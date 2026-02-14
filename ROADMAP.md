@@ -4,7 +4,7 @@ Designed for survivalist, high-pressure play.
 
 ## Phase 1 — Operational Foundation (Immediate)
 
-### Status (February 12, 2026)
+### Status (February 14, 2026)
 - ✅ Roles assignment implemented (Quartermaster, Cartographer, Marshal, Chronicler, Steward)
 - ✅ SOP toggle tracking implemented
 - ✅ Resource ledger implemented (food, water, torches, ammunition, encumbrance, field supplies)
@@ -18,7 +18,11 @@ Designed for survivalist, high-pressure play.
 - ✅ Supply line mechanics scaffold added (caches, safehouses, resupply risk, logistics pressure)
 - ✅ Base of Operations scaffold added (safehouse/chapel/watchtower/cell with maintenance pressure)
 - ✅ Optional automation integration added (Auto/Flags/DAE sync to actor flags and Active Effects)
-- 🔜 Next build target: Operational Strain Meter (fatigue, paranoia, morale fracture, cohesion thresholds)
+- ✅ SOP notes added (player-editable per SOP)
+- ✅ Environment hazard controls added (GM preset/DC/actor assignment + movement-trigger checks)
+- ✅ Upkeep Inputs + Gather/Weather DC edits restricted to GM
+- ✅ Water Stores input removed from planning UI
+- ⏸️ Operational Strain Meter deferred for now
 
 ### 1) Defined Party Roles (Table Infrastructure)
 Create fixed operational roles:
@@ -116,7 +120,7 @@ Add maintenance costs and risk of discovery.
 
 ## Phase 4 — Advanced Systems
 
-### 10) Operational Strain Meter
+### 10) Operational Strain Meter (Deferred)
 Track:
 - Fatigue
 - Paranoia
@@ -124,6 +128,9 @@ Track:
 - Cohesion
 
 Trigger events when thresholds hit.
+
+Status:
+- Deferred pending further playtest signal; environment hazard system is active in its place.
 
 ### 11) Intelligence & Recon Layer
 Before major missions:
@@ -149,7 +156,7 @@ Create:
 - Journal template: Operational Log
 - Actor sheet: Party Ledger
 - Roll table: Operational Mishaps
-- Custom clock tracker: Strain Meter
+- Custom clock tracker: Strain Meter (optional, deferred)
 - Scene flags: Supply drain per long rest
 
 Keep UI minimal and systemic.
@@ -167,7 +174,7 @@ Operational depth should support narrative weight, not replace it.
 ## Next Up (Immediate Priority)
 
 1. Base of Operations scaffold (safehouse / chapel / watchtower / underground cell + maintenance pressure)
-2. Operational Strain Meter (fatigue, paranoia, morale fracture, cohesion thresholds)
-3. Intelligence & Recon Layer (recon checks, rumor network, bribes, spy placement)
+2. Intelligence & Recon Layer (recon checks, rumor network, bribes, spy placement)
+3. Supply line mechanics extension (cache risk profiles, escort contracts, scarcity events)
 
 These three systems extend the now-established baseline into strategic persistence and mission prep depth.

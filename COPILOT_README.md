@@ -26,7 +26,7 @@ All generated systems must be organized logically:
 /systems
 /roles
 /logistics
-/strain
+/environment
 /injury
 /marching
 /reputation
@@ -106,17 +106,19 @@ Must:
 
 ---
 
-## 5. Strain / Cohesion Meter
+## 5. Environment Hazard Controls
 Track:
-- Fatigue accumulation
-- Paranoia thresholds
-- Moral fracture triggers
-- Party cohesion decay
+- Active environment preset
+- Hidden movement-check DC (GM controlled)
+- Per-actor assignment state
 
 Must:
-- Use clock-style escalation
-- Trigger events at thresholds
-- Avoid constant micro-tracking
+- Support per-actor effects without hard-coding actor IDs
+- Keep DC/private-roll flow GM-authoritative
+- Avoid extra player-side micromanagement
+
+### Strain Meter Note
+- Operational Strain/Cohesion remains a deferred optional module and is not current implementation priority.
 
 ---
 

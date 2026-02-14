@@ -358,7 +358,47 @@
             <input type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
             <span>{{label}}</span>
           </label>
+          <label class="po-resource-row">
+            <span>Notes</span>
+            <input type="text" class="po-input" data-action="set-sop-note" data-sop="{{key}}" value="{{note}}" placeholder="Player notes for {{label}}" />
+          </label>
           {{/each}}
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Environment</div>
+          <div class="po-hint">Assign an environment profile and apply it to specific party members.</div>
+          <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
+          <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
+          {{#if operations.environment.movementCheckActive}}
+          <div class="po-op-summary">Movement Check: {{operations.environment.preset.checkSkill}} vs hidden DC {{operations.environment.movementDc}}</div>
+          {{else}}
+          <div class="po-op-summary">Movement Check: Off</div>
+          {{/if}}
+          {{#if @root.isGM}}
+          <label class="po-resource-row">
+            <span>Environment Preset</span>
+            <select class="po-select" data-action="set-environment-preset">
+              {{#each operations.environment.presetOptions}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Movement DC</span>
+            <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{operations.environment.movementDc}}" />
+          </label>
+          {{#if operations.environment.targets.length}}
+          {{#each operations.environment.targets}}
+          <label class="po-switch">
+            <input type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
+            <span>{{actorName}}</span>
+          </label>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary is-warn">No player actors available for assignment.</div>
+          {{/if}}
+          <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
+          {{/if}}
         </div>
         {{/if}}
 
@@ -391,10 +431,6 @@
           <label class="po-resource-row">
             <span>Water Rations (Steward Pool)</span>
             <input type="number" min="0" class="po-input" data-action="set-resource" data-resource="partyWaterRations" value="{{operations.resources.partyWaterRations}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Water Stores (days)</span>
-            <input type="number" min="0" class="po-input" data-action="set-resource" data-resource="water" value="{{operations.resources.water}}" />
           </label>
           <label class="po-resource-row">
             <span>Torches</span>
@@ -461,6 +497,7 @@
 
             <div class="po-op-divider"></div>
             <div class="po-section-title">Upkeep Inputs</div>
+            {{#if @root.isGM}}
             <label class="po-resource-row">
               <span>Party Size</span>
               <input type="number" min="0" step="1" class="po-input" data-action="set-resource" data-resource="partySize" value="{{operations.resources.upkeep.partySize}}" />
@@ -481,18 +518,33 @@
               <span>Water Environment Multiplier</span>
               <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="waterMultiplier" value="{{operations.resources.upkeep.waterMultiplier}}" />
             </label>
+            {{else}}
+            <div class="po-op-summary">Party Size: {{operations.resources.upkeep.partySize}}</div>
+            <div class="po-op-summary">Food per Member / Day: {{operations.resources.upkeep.foodPerMember}}</div>
+            <div class="po-op-summary">Water per Member / Day: {{operations.resources.upkeep.waterPerMember}}</div>
+            <div class="po-op-summary">Food Environment Multiplier: {{operations.resources.upkeep.foodMultiplier}}</div>
+            <div class="po-op-summary">Water Environment Multiplier: {{operations.resources.upkeep.waterMultiplier}}</div>
+            {{/if}}
 
             <div class="po-op-divider"></div>
             <div class="po-section-title">Gather & Weather DC</div>
             <div class="po-hint">Applied to hidden DC before the Wisdom (Survival) gather roll.</div>
+            {{#if @root.isGM}}
             {{#each operations.resources.gatherWeatherOptions}}
             <label class="po-resource-row">
               <span>{{label}}</span>
               <input type="number" min="-10" max="20" step="1" class="po-input" data-action="set-resource" data-resource="weatherMod:{{value}}" value="{{dcMod}}" />
             </label>
             {{/each}}
+            {{else}}
+            {{#each operations.resources.gatherWeatherOptions}}
+            <div class="po-op-summary">{{label}}: {{dcMod}}</div>
+            {{/each}}
+            {{/if}}
             <button type="button" class="po-btn" data-action="gather-resource-check" title="Run the hidden resource gathering Wisdom check">Gather Resources (Wisdom Check)</button>
+            {{#if @root.isGM}}
             <button type="button" class="po-btn" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>
+            {{/if}}
           </div>
         </div>
         {{/if}}
@@ -553,39 +605,6 @@
           <div class="po-op-summary">Risk Tier: {{operations.summary.effects.riskTier}}</div>
           <div class="po-op-summary">Disorder Risk: {{operations.summary.disorderRisk}}</div>
           <button type="button" class="po-btn po-btn-sm" data-action="show-operational-brief">Show Operational Brief</button>
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Operational Strain Meter</div>
-          <div class="po-hint">Track fatigue, paranoia, morale fracture, and cohesion thresholds.</div>
-          <label class="po-resource-row">
-            <span>Fatigue (0-10)</span>
-            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="fatigue" value="{{operations.strain.values.fatigue}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Paranoia (0-10)</span>
-            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="paranoia" value="{{operations.strain.values.paranoia}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Moral Fracture (0-10)</span>
-            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="moraleFracture" value="{{operations.strain.values.moraleFracture}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Cohesion (0-10)</span>
-            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="cohesion" value="{{operations.strain.values.cohesion}}" />
-          </label>
-          <div class="po-op-summary">Strain Level: {{operations.strain.levelLabel}}</div>
-          <div class="po-op-summary">Pressure: {{operations.strain.summary.pressureScore}} (Warning {{operations.strain.summary.warningThreshold}} / Critical {{operations.strain.summary.criticalThreshold}})</div>
-          {{#if operations.strain.triggers.length}}
-          {{#each operations.strain.triggers}}
-          <div class="po-op-summary is-warn">{{this}}</div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary is-good">No active strain thresholds.</div>
-          {{/if}}
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="show-strain-brief">Show Strain Brief</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="reset-strain">Reset Strain</button>
-          </div>
         </div>
 
         {{/if}}

@@ -67,6 +67,33 @@ In **Operations**, use the right-side panel sections:
 
 All values persist in world settings and sync to all clients.
 
+## Environment Controls (Current)
+
+In `Rest Watch` → `Operations` → `Planning` → `SOPs`, use **Environment**:
+
+- **All users can view**:
+    - Current environment preset
+    - Assigned actor count
+    - Whether movement checks are active
+- **GM-only controls**:
+    - Choose environment preset
+    - Set hidden movement DC
+    - Toggle which player actors are affected
+    - Open **Show Environment Brief** summary
+
+### Movement Check Behavior
+
+- Movement checks trigger when an assigned actor's token is moved.
+- If the selected preset has movement checks enabled, the module requests the configured skill check against the hidden DC.
+- When Monks TokenBar is available, it is used first for prompt handling.
+- If Monks is unavailable/fails, the module falls back to native rolls and whispers the result summary to GMs.
+
+### Notes
+
+- Players can edit SOP notes directly in the SOP list.
+- Upkeep Inputs and Gather/Weather DC edits are GM-only.
+- Water Stores input has been removed from the planning UI.
+
 ## What Was Fixed (Latest Version)
 
 ## Phase 2 Marching Doctrine (New)

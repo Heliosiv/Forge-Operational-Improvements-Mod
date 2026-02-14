@@ -45,6 +45,8 @@ const INTEGRATION_EFFECT_ORIGIN = `module.${MODULE_ID}`;
 const INTEGRATION_EFFECT_NAME = "Party Operations Sync";
 const INJURY_EFFECT_ORIGIN = `module.${MODULE_ID}.injury`;
 const INJURY_EFFECT_NAME_PREFIX = "Injury:";
+const ENVIRONMENT_EFFECT_ORIGIN = `module.${MODULE_ID}.environment`;
+const ENVIRONMENT_EFFECT_NAME_PREFIX = "Environment:";
 
 const SCROLL_STATE_SELECTORS = [
   ".po-body",
@@ -59,7 +61,56 @@ const SCROLL_STATE_SELECTORS = [
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const UPKEEP_DUSK_MINUTES = 20 * 60;
-const STRAIN_KEYS = ["fatigue", "paranoia", "moraleFracture", "cohesion"];
+const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
+const environmentMovePromptByActor = new Map();
+
+const ENVIRONMENT_PRESETS = [
+  {
+    key: "none",
+    label: "None",
+    description: "No active environmental penalty.",
+    icon: "icons/svg/sun.svg",
+    movementCheck: false,
+    checkSkill: "",
+    effectChange: null
+  },
+  {
+    key: "difficult-terrain",
+    label: "Difficult Terrain",
+    description: "Unstable footing and rough terrain slow tactical movement.",
+    icon: "icons/svg/falling.svg",
+    movementCheck: true,
+    checkSkill: "ath",
+    effectChange: { key: "system.attributes.init.bonus", value: "-1" }
+  },
+  {
+    key: "slippery-ground",
+    label: "Slippery Ground",
+    description: "Icy or slick ground causes footing checks when moving.",
+    icon: "icons/svg/acid.svg",
+    movementCheck: true,
+    checkSkill: "acr",
+    effectChange: { key: "system.bonuses.abilities.check", value: "-1" }
+  },
+  {
+    key: "high-winds",
+    label: "High Winds",
+    description: "Strong gusts reduce situational awareness.",
+    icon: "icons/svg/windmill.svg",
+    movementCheck: false,
+    checkSkill: "",
+    effectChange: { key: "system.skills.prc.bonuses.check", value: "-1" }
+  },
+  {
+    key: "oppressive-heat",
+    label: "Oppressive Heat",
+    description: "Heat stress taxes composure and endurance.",
+    icon: "icons/svg/fire.svg",
+    movementCheck: false,
+    checkSkill: "",
+    effectChange: { key: "system.bonuses.abilities.save", value: "-1" }
+  }
+];
 
 function isFormActionElement(element) {
   if (!element?.tagName) return false;
@@ -250,8 +301,9 @@ function buildActorIntegrationPayload(actorId, globalContext) {
   const communicationReadiness = globalContext.operations.communication?.readiness ?? { ready: false, enabledCount: 0 };
   const reputationSummary = globalContext.operations.reputation?.summary ?? { hostileCount: 0, highStandingCount: 0 };
   const baseSummary = globalContext.operations.baseOperations ?? { maintenancePressure: 0, readiness: false, activeSites: 0 };
-  const strainSummary = globalContext.operations.strain?.summary ?? { pressureScore: 0, level: "stable" };
-  const strainValues = globalContext.operations.strain?.values ?? { fatigue: 0, paranoia: 0, moraleFracture: 0, cohesion: 5 };
+  const environment = globalContext.operations.environment ?? { presetKey: "none", movementDc: 12, appliedActorIds: [], preset: null };
+  const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
+  const environmentApplies = Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId);
   const globalModifiers = globalContext.operations.summary?.effects?.globalModifiers ?? {};
 
   return {
@@ -273,12 +325,6 @@ function buildActorIntegrationPayload(actorId, globalContext) {
       baseSites: Number(baseSummary.activeSites ?? 0),
       baseMaintenancePressure: Number(baseSummary.maintenancePressure ?? 0),
       baseReadiness: Boolean(baseSummary.readiness),
-      strainLevel: String(strainSummary.level ?? "stable"),
-      strainPressure: Number(strainSummary.pressureScore ?? 0),
-      strainFatigue: Number(strainValues.fatigue ?? 0),
-      strainParanoia: Number(strainValues.paranoia ?? 0),
-      strainMoraleFracture: Number(strainValues.moraleFracture ?? 0),
-      strainCohesion: Number(strainValues.cohesion ?? 5),
       minorInitiativeBonus: Number(globalModifiers.initiative ?? 0),
       minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
       minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
@@ -307,6 +353,15 @@ function buildActorIntegrationPayload(actorId, globalContext) {
       severity: Number(injury?.severity ?? 0),
       recoveryDays: Number(injury?.recoveryDays ?? 0)
     },
+    environment: {
+      active: Boolean(environmentApplies && environmentPreset && environmentPreset.key !== "none"),
+      presetKey: String(environmentPreset?.key ?? "none"),
+      label: String(environmentPreset?.label ?? "None"),
+      movementCheck: Boolean(environmentPreset?.movementCheck),
+      checkSkill: String(environmentPreset?.checkSkill ?? ""),
+      movementDc: Math.max(1, Math.floor(Number(environment.movementDc ?? 12) || 12)),
+      appliesToActor: Boolean(environmentApplies)
+    },
     resources: {
       campfire: Boolean(globalContext.restState.campfire),
       foodDays: Number(globalContext.ledger.resources?.food ?? 0),
@@ -329,6 +384,36 @@ function getInjuryStatusEffect(actor) {
     if (effect.getFlag(MODULE_ID, "injuryStatus") === true) return true;
     return String(effect.name ?? "").startsWith(`${INJURY_EFFECT_NAME_PREFIX} `);
   });
+}
+
+function getEnvironmentStatusEffect(actor) {
+  return actor.effects.find((effect) => {
+    if (effect.origin === ENVIRONMENT_EFFECT_ORIGIN) return true;
+    if (effect.getFlag(MODULE_ID, "environmentStatus") === true) return true;
+    return String(effect.name ?? "").startsWith(`${ENVIRONMENT_EFFECT_NAME_PREFIX} `);
+  });
+}
+
+function getEnvironmentPresetByKey(key) {
+  return ENVIRONMENT_PRESETS.find((preset) => preset.key === key) ?? ENVIRONMENT_PRESETS[0];
+}
+
+function ensureEnvironmentState(ledger) {
+  if (!ledger.environment || typeof ledger.environment !== "object") {
+    ledger.environment = {
+      presetKey: "none",
+      movementDc: 12,
+      appliedActorIds: []
+    };
+  }
+  ledger.environment.presetKey = getEnvironmentPresetByKey(String(ledger.environment.presetKey ?? "none")).key;
+  const dc = Number(ledger.environment.movementDc ?? 12);
+  ledger.environment.movementDc = Number.isFinite(dc) ? Math.max(1, Math.min(30, Math.floor(dc))) : 12;
+  if (!Array.isArray(ledger.environment.appliedActorIds)) ledger.environment.appliedActorIds = [];
+  ledger.environment.appliedActorIds = ledger.environment.appliedActorIds
+    .map((actorId) => String(actorId ?? "").trim())
+    .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index);
+  return ledger.environment;
 }
 
 function formatSignedModifier(value) {
@@ -395,18 +480,6 @@ function buildIntegrationEffectData(payload) {
       key: `flags.${MODULE_ID}.ae.injured`,
       mode,
       value: payload.injury.active ? "1" : "0",
-      priority
-    },
-    {
-      key: `flags.${MODULE_ID}.ae.strainLevel`,
-      mode,
-      value: String(payload.operations.strainLevel ?? "stable"),
-      priority
-    },
-    {
-      key: `flags.${MODULE_ID}.ae.strainPressure`,
-      mode,
-      value: String(payload.operations.strainPressure ?? 0),
       priority
     }
   ];
@@ -507,6 +580,70 @@ function buildInjuryStatusEffectData(payload) {
   };
 }
 
+function buildEnvironmentStatusEffectData(payload) {
+  const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
+  const addMode = CONST.ACTIVE_EFFECT_MODES.ADD;
+  const priority = 20;
+  const environment = payload?.environment ?? {};
+  const label = String(environment.label ?? "Environment").trim() || "Environment";
+  const icon = String(getEnvironmentPresetByKey(environment.presetKey).icon ?? "icons/svg/hazard.svg");
+  const movementCheck = Boolean(environment.movementCheck);
+  const checkSkill = String(environment.checkSkill ?? "").toUpperCase();
+  const description = movementCheck
+    ? `${label} active. Movement checks required (${checkSkill || "skill"}).`
+    : `${label} active.`;
+
+  const changes = [
+    {
+      key: `flags.${MODULE_ID}.ae.environmentPreset`,
+      mode,
+      value: String(environment.presetKey ?? "none"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.environmentActive`,
+      mode,
+      value: "1",
+      priority
+    }
+  ];
+
+  const preset = getEnvironmentPresetByKey(environment.presetKey);
+  if (preset.effectChange?.key && preset.effectChange?.value) {
+    changes.push({
+      key: preset.effectChange.key,
+      mode: addMode,
+      value: String(preset.effectChange.value),
+      priority
+    });
+  }
+
+  return {
+    name: `${ENVIRONMENT_EFFECT_NAME_PREFIX} ${label}`,
+    img: icon,
+    origin: ENVIRONMENT_EFFECT_ORIGIN,
+    disabled: false,
+    transfer: false,
+    description,
+    duration: {
+      startTime: game.time?.worldTime ?? 0
+    },
+    changes,
+    flags: {
+      [MODULE_ID]: {
+        environmentStatus: true,
+        syncedAt: payload.syncedAt,
+        environment: {
+          presetKey: String(environment.presetKey ?? "none"),
+          label,
+          movementCheck,
+          checkSkill: String(environment.checkSkill ?? "")
+        }
+      }
+    }
+  };
+}
+
 async function upsertIntegrationEffect(actor, payload) {
   const existing = getIntegrationEffect(actor);
   const data = buildIntegrationEffectData(payload);
@@ -544,6 +681,27 @@ async function removeInjuryStatusEffect(actor) {
   await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 }
 
+async function upsertEnvironmentStatusEffect(actor, payload) {
+  const existing = getEnvironmentStatusEffect(actor);
+  const active = Boolean(payload?.environment?.active);
+  if (!active) {
+    if (existing) await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+    return;
+  }
+  const data = buildEnvironmentStatusEffectData(payload);
+  if (!existing) {
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    return;
+  }
+  await existing.update(data);
+}
+
+async function removeEnvironmentStatusEffect(actor) {
+  const existing = getEnvironmentStatusEffect(actor);
+  if (!existing) return;
+  await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+}
+
 async function applyActorIntegrationPayload(actor, payload, resolvedMode) {
   await actor.update({
     [`flags.${MODULE_ID}.sync`]: payload,
@@ -552,16 +710,19 @@ async function applyActorIntegrationPayload(actor, payload, resolvedMode) {
 
   await upsertIntegrationEffect(actor, payload);
   await upsertInjuryStatusEffect(actor, payload);
+  await upsertEnvironmentStatusEffect(actor, payload);
 }
 
 async function clearActorIntegrationPayload(actor) {
   await removeIntegrationEffect(actor);
   await removeInjuryStatusEffect(actor);
+  await removeEnvironmentStatusEffect(actor);
   await actor.update({
     [`flags.${MODULE_ID}.-=sync`]: null,
     [`flags.${MODULE_ID}.-=syncMode`]: null,
     [`flags.${MODULE_ID}.-=ae`]: null,
-    [`flags.${MODULE_ID}.-=injury`]: null
+    [`flags.${MODULE_ID}.-=injury`]: null,
+    [`flags.${MODULE_ID}.-=environment`]: null
   });
 }
 
@@ -578,7 +739,8 @@ async function syncIntegrationState() {
       const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
       const hasEffect = Boolean(getIntegrationEffect(actor));
       const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
-      return hasSync || hasEffect || hasInjuryEffect;
+      const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+      return hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect;
     });
     for (const actor of actorsToClear) {
       await clearActorIntegrationPayload(actor);
@@ -598,7 +760,8 @@ async function syncIntegrationState() {
     const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
     const hasEffect = Boolean(getIntegrationEffect(actor));
     const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
-    return hasSync || hasEffect || hasInjuryEffect;
+    const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+    return hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect;
   });
 
   for (const actor of staleActors) {
@@ -1194,20 +1357,26 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "toggle-sop":
         await toggleOperationalSOP(element, { skipLocalRefresh: true });
         break;
+      case "set-sop-note":
+        await setOperationalSopNote(element);
+        break;
       case "set-resource":
         await setOperationalResource(element);
         break;
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
         break;
-      case "set-strain-value":
-        await setOperationalStrainValue(element);
+      case "set-environment-preset":
+        await setOperationalEnvironmentPreset(element);
         break;
-      case "show-strain-brief":
-        await showOperationalStrainBrief();
+      case "set-environment-dc":
+        await setOperationalEnvironmentDc(element);
         break;
-      case "reset-strain":
-        await resetOperationalStrain();
+      case "toggle-environment-actor":
+        await toggleOperationalEnvironmentActor(element);
+        break;
+      case "show-environment-brief":
+        await showOperationalEnvironmentBrief();
         break;
       case "apply-upkeep":
         await applyOperationalUpkeep();
@@ -1785,6 +1954,14 @@ function buildDefaultOperationsLedger() {
       prisonerHandling: false,
       retreatProtocol: false
     },
+    sopNotes: {
+      campSetup: "",
+      watchRotation: "",
+      dungeonBreach: "",
+      urbanEntry: "",
+      prisonerHandling: "",
+      retreatProtocol: ""
+    },
     communication: {
       silentSignals: "",
       codePhrase: "",
@@ -1808,11 +1985,10 @@ function buildDefaultOperationsLedger() {
       maintenanceRisk: "moderate",
       sites: []
     },
-    strain: {
-      fatigue: 0,
-      paranoia: 0,
-      moraleFracture: 0,
-      cohesion: 5
+    environment: {
+      presetKey: "none",
+      movementDc: 12,
+      appliedActorIds: []
     },
     partyHealth: {
       modifierEnabled: {}
@@ -2044,7 +2220,8 @@ function buildOperationsContext() {
   const sops = sopMeta.map((sop) => ({
     key: sop.key,
     label: sop.label,
-    active: Boolean(ledger.sops?.[sop.key])
+    active: Boolean(ledger.sops?.[sop.key]),
+    note: String(ledger.sopNotes?.[sop.key] ?? "")
   }));
 
   const roleCoverage = roles.filter((role) => role.hasActor).length;
@@ -2056,7 +2233,15 @@ function buildOperationsContext() {
   const communicationReadiness = getCommunicationReadiness(communication);
   const reputation = buildReputationContext(ledger.reputation ?? {});
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
-  const strain = buildOperationalStrainContext(ledger.strain ?? {});
+  const environmentState = ensureEnvironmentState(ledger);
+  const environmentPreset = getEnvironmentPresetByKey(environmentState.presetKey);
+  const environmentTargets = getOwnedPcActors()
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    .map((actor) => ({
+      actorId: actor.id,
+      actorName: actor.name,
+      selected: environmentState.appliedActorIds.includes(actor.id)
+    }));
 
   const upkeep = {
     partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
@@ -2083,7 +2268,7 @@ function buildOperationsContext() {
   };
   const linkedFoodStock = getSelectedResourceItemQuantity(resourcesState, "food");
   const totalFoodReserve = Math.max(0, resourcesNumeric.partyFoodRations) + linkedFoodStock;
-  const totalWaterReserve = Math.max(0, resourcesNumeric.water) + Math.max(0, resourcesNumeric.partyWaterRations);
+  const totalWaterReserve = Math.max(0, resourcesNumeric.partyWaterRations);
 
   const formatCyclesLeft = (stock, drain) => {
     if (drain <= 0) return "∞";
@@ -2146,7 +2331,20 @@ function buildOperationsContext() {
       preCombatPlan: Boolean(communication.preCombatPlan),
       readiness: communicationReadiness
     },
-    strain,
+    environment: {
+      presetKey: environmentState.presetKey,
+      preset: environmentPreset,
+      movementDc: environmentState.movementDc,
+      movementCheckActive: Boolean(environmentPreset.movementCheck),
+      targetCount: environmentTargets.filter((target) => target.selected).length,
+      appliedActorIds: [...environmentState.appliedActorIds],
+      targets: environmentTargets,
+      presetOptions: ENVIRONMENT_PRESETS.map((preset) => ({
+        key: preset.key,
+        label: preset.label,
+        selected: preset.key === environmentState.presetKey
+      }))
+    },
     reputation,
     baseOperations,
     summary: {
@@ -2156,7 +2354,6 @@ function buildOperationsContext() {
       sopTotal: sops.length,
       prepEdge: roleCoverage >= 3 && activeSops >= 3,
       disorderRisk,
-      strainPressure: strain.summary.pressureScore,
       maintenancePressure: baseOperations.maintenancePressure,
       effects
     },
@@ -2178,7 +2375,6 @@ function getOperationalEffects(ledger, roles, sops) {
   const comms = getCommunicationReadiness(communication);
   const reputation = buildReputationContext(ledger.reputation ?? {});
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
-  const strain = buildOperationalStrainContext(ledger.strain ?? {});
   const prepEdge = roleCoverage >= 3 && activeSops >= 3;
 
   const bonuses = [];
@@ -2221,7 +2417,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (comms.ready) bonuses.push("Communication discipline active: improve one coordinated response roll by a minor margin.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
-  if (strain.summary.hasCohesionEdge) bonuses.push("High cohesion active: one coordinated maneuver gains improved initiative posture.");
 
   if (roleCoverage >= 2) {
     const modifier = addGlobalModifier("team-rhythm", "initiative", 1, "Team rhythm (2+ roles)", "Initiative rolls");
@@ -2239,10 +2434,6 @@ function getOperationalEffects(ledger, roles, sops) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
     if (modifier.enabled) globalMinorBonuses.push("Operational sheltering: all player actors gain +1 to saving throws while base readiness is stable.");
   }
-  if (strain.summary.hasCohesionEdge) {
-    const modifier = addGlobalModifier("cohesion-momentum", "initiative", 1, "Cohesion momentum (8+ cohesion)", "Initiative rolls");
-    if (modifier.enabled) globalMinorBonuses.push("Cohesion momentum: all player actors gain +1 initiative while cohesion is 8+.");
-  }
 
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
   if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
@@ -2250,24 +2441,14 @@ function getOperationalEffects(ledger, roles, sops) {
   if (!comms.ready) risks.push("Communication gaps: increase misread signal risk during first contact.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
-  if (strain.summary.hasFatiguePenalty) risks.push("Fatigue strain high: reduce one ability-check outcome by one step.");
-  if (strain.summary.hasParanoiaPenalty) risks.push("Paranoia strain high: increase misread threat/signal risk.");
-  if (strain.summary.hasMoralePenalty) risks.push("Morale fracture high: stress responses become less reliable.");
-  if (strain.summary.hasCohesionPenalty) risks.push("Low cohesion: the first coordinated push starts one step behind.");
-  if (strain.summary.warningTriggered) risks.push(`Strain pressure elevated (${strain.summary.pressureScore}): keep one complication trigger in reserve.`);
 
   if (roleCoverage <= 1) addGlobalModifier("poor-role-coverage", "initiative", -1, "Poor role coverage", "Initiative rolls");
   if (activeSops <= 1) addGlobalModifier("insufficient-sop-coverage", "abilityChecks", -1, "Insufficient SOP coverage", "All ability checks");
   if (!comms.ready) addGlobalModifier("communication-gaps", "perceptionChecks", -1, "Communication gaps", "Perception checks");
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
-  if (strain.summary.hasFatiguePenalty) addGlobalModifier("fatigue-strain", "abilityChecks", -1, "Fatigue strain (7+)", "All ability checks");
-  if (strain.summary.hasParanoiaPenalty) addGlobalModifier("paranoia-strain", "perceptionChecks", -1, "Paranoia strain (7+)", "Perception checks");
-  if (strain.summary.hasMoralePenalty) addGlobalModifier("morale-fracture-strain", "savingThrows", -1, "Morale fracture strain (7+)", "All saving throws");
-  if (strain.summary.hasCohesionPenalty) addGlobalModifier("cohesion-collapse", "initiative", -1, "Cohesion collapse (<=2)", "Initiative rolls");
 
   const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
-  const strainPenalty = strain.summary.criticalTriggered ? 2 : (strain.summary.warningTriggered ? 1 : 0);
-  const riskScore = roleCoverage + activeSops - pressurePenalty - strainPenalty;
+  const riskScore = roleCoverage + activeSops - pressurePenalty;
   const riskTier = riskScore >= 8 ? "low" : riskScore >= 5 ? "moderate" : "high";
 
   return {
@@ -2451,72 +2632,13 @@ function ensurePartyHealthState(ledger) {
   return ledger.partyHealth;
 }
 
-function clampOperationalStrainValue(key, value) {
-  const numeric = Number(value ?? 0);
-  const safe = Number.isFinite(numeric) ? Math.floor(numeric) : 0;
-  if (key === "cohesion") return Math.max(0, Math.min(10, safe));
-  return Math.max(0, Math.min(10, safe));
-}
-
-function ensureOperationalStrainState(ledger) {
-  if (!ledger.strain || typeof ledger.strain !== "object") {
-    ledger.strain = {
-      fatigue: 0,
-      paranoia: 0,
-      moraleFracture: 0,
-      cohesion: 5
-    };
+function ensureSopNotesState(ledger) {
+  if (!ledger.sopNotes || typeof ledger.sopNotes !== "object") ledger.sopNotes = {};
+  const sopKeys = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+  for (const key of sopKeys) {
+    if (typeof ledger.sopNotes[key] !== "string") ledger.sopNotes[key] = "";
   }
-  for (const key of STRAIN_KEYS) {
-    if (key === "cohesion") {
-      ledger.strain[key] = clampOperationalStrainValue(key, ledger.strain[key] ?? 5);
-      continue;
-    }
-    ledger.strain[key] = clampOperationalStrainValue(key, ledger.strain[key] ?? 0);
-  }
-  return ledger.strain;
-}
-
-function buildOperationalStrainContext(strainState) {
-  const values = {
-    fatigue: clampOperationalStrainValue("fatigue", strainState?.fatigue ?? 0),
-    paranoia: clampOperationalStrainValue("paranoia", strainState?.paranoia ?? 0),
-    moraleFracture: clampOperationalStrainValue("moraleFracture", strainState?.moraleFracture ?? 0),
-    cohesion: clampOperationalStrainValue("cohesion", strainState?.cohesion ?? 5)
-  };
-
-  const pressureScore = values.fatigue + values.paranoia + values.moraleFracture + Math.max(0, 5 - values.cohesion);
-  const warningThreshold = 9;
-  const criticalThreshold = 13;
-  const level = pressureScore >= criticalThreshold ? "critical" : (pressureScore >= warningThreshold ? "elevated" : "stable");
-
-  const summary = {
-    pressureScore,
-    warningThreshold,
-    criticalThreshold,
-    warningTriggered: pressureScore >= warningThreshold,
-    criticalTriggered: pressureScore >= criticalThreshold,
-    level,
-    hasFatiguePenalty: values.fatigue >= 7,
-    hasParanoiaPenalty: values.paranoia >= 7,
-    hasMoralePenalty: values.moraleFracture >= 7,
-    hasCohesionPenalty: values.cohesion <= 2,
-    hasCohesionEdge: values.cohesion >= 9
-  };
-
-  const triggers = [];
-  if (summary.hasFatiguePenalty) triggers.push("Fatigue 7+: -1 ability checks.");
-  if (summary.hasParanoiaPenalty) triggers.push("Paranoia 7+: -1 Perception checks.");
-  if (summary.hasMoralePenalty) triggers.push("Moral Fracture 7+: -1 saving throws.");
-  if (summary.hasCohesionPenalty) triggers.push("Cohesion 2 or lower: -1 initiative.");
-  if (summary.hasCohesionEdge) triggers.push("Cohesion 9+: +1 initiative.");
-
-  return {
-    values,
-    summary,
-    triggers,
-    levelLabel: level === "critical" ? "Critical" : (level === "elevated" ? "Elevated" : "Stable")
-  };
+  return ledger.sopNotes;
 }
 
 async function setOperationalRole(element) {
@@ -2550,6 +2672,21 @@ async function toggleOperationalSOP(element, options = {}) {
 async function setOperationalResource(element) {
   const resourceKey = element?.dataset?.resource;
   if (!resourceKey) return;
+  const isGm = Boolean(game.user?.isGM);
+  const upkeepNumericKeys = new Set([
+    "partySize",
+    "foodPerMember",
+    "waterPerMember",
+    "foodMultiplier",
+    "waterMultiplier",
+    "torchPerRest"
+  ]);
+
+  if (!isGm && (resourceKey.startsWith("weatherMod:") || upkeepNumericKeys.has(resourceKey))) {
+    ui.notifications?.warn("Only the GM can edit upkeep and gather DC settings.");
+    return;
+  }
+
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
     ensureOperationalResourceConfig(ledger.resources);
@@ -2586,14 +2723,6 @@ async function setOperationalResource(element) {
       ledger.resources.gather.weatherMods[weatherKey] = value;
       return;
     }
-    const upkeepNumericKeys = new Set([
-      "partySize",
-      "foodPerMember",
-      "waterPerMember",
-      "foodMultiplier",
-      "waterMultiplier",
-      "torchPerRest"
-    ]);
     if (upkeepNumericKeys.has(resourceKey)) {
       const raw = Number(element?.value ?? 0);
       const value = Number.isFinite(raw) ? Math.max(0, raw) : 0;
@@ -2619,45 +2748,75 @@ async function setPartyHealthModifier(element) {
   });
 }
 
-async function setOperationalStrainValue(element) {
-  const key = String(element?.dataset?.strain ?? "").trim();
-  if (!STRAIN_KEYS.includes(key)) return;
-  const value = clampOperationalStrainValue(key, Number(element?.value ?? 0));
+async function setOperationalSopNote(element) {
+  const sopKey = String(element?.dataset?.sop ?? "").trim();
+  if (!sopKey) return;
+  const note = String(element?.value ?? "").trim();
   await updateOperationsLedger((ledger) => {
-    const strain = ensureOperationalStrainState(ledger);
-    strain[key] = value;
+    const sopNotes = ensureSopNotesState(ledger);
+    sopNotes[sopKey] = note;
   });
 }
 
-async function resetOperationalStrain() {
+async function setOperationalEnvironmentPreset(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can change environment controls.");
+    return;
+  }
+  const presetKey = getEnvironmentPresetByKey(String(element?.value ?? "none")).key;
   await updateOperationsLedger((ledger) => {
-    ledger.strain = {
-      fatigue: 0,
-      paranoia: 0,
-      moraleFracture: 0,
-      cohesion: 5
-    };
+    const environment = ensureEnvironmentState(ledger);
+    environment.presetKey = presetKey;
+    if (presetKey === "none") environment.appliedActorIds = [];
   });
 }
 
-async function showOperationalStrainBrief() {
-  const strain = buildOperationsContext().strain;
+async function setOperationalEnvironmentDc(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can change environment controls.");
+    return;
+  }
+  const raw = Number(element?.value ?? 12);
+  const dc = Number.isFinite(raw) ? Math.max(1, Math.min(30, Math.floor(raw))) : 12;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.movementDc = dc;
+  });
+}
+
+async function toggleOperationalEnvironmentActor(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can assign environment effects.");
+    return;
+  }
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  if (!actorId) return;
+  const checked = Boolean(element?.checked);
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const set = new Set(environment.appliedActorIds ?? []);
+    if (checked) set.add(actorId);
+    else set.delete(actorId);
+    environment.appliedActorIds = Array.from(set);
+  });
+}
+
+async function showOperationalEnvironmentBrief() {
+  const environment = buildOperationsContext().environment;
+  const selected = environment.targets.filter((target) => target.selected).map((target) => target.actorName);
   const content = `
     <div class="po-help">
-      <p><strong>Strain Level:</strong> ${strain.levelLabel}</p>
-      <p><strong>Pressure Score:</strong> ${strain.summary.pressureScore}</p>
-      <p><strong>Warning / Critical:</strong> ${strain.summary.warningThreshold} / ${strain.summary.criticalThreshold}</p>
-      <p><strong>Fatigue:</strong> ${strain.values.fatigue}</p>
-      <p><strong>Paranoia:</strong> ${strain.values.paranoia}</p>
-      <p><strong>Moral Fracture:</strong> ${strain.values.moraleFracture}</p>
-      <p><strong>Cohesion:</strong> ${strain.values.cohesion}</p>
-      <p><strong>Threshold Triggers</strong></p>
-      <ul>${strain.triggers.map((entry) => `<li>${entry}</li>`).join("") || "<li>No active strain triggers.</li>"}</ul>
+      <p><strong>Environment:</strong> ${environment.preset.label}</p>
+      <p><strong>Description:</strong> ${environment.preset.description}</p>
+      <p><strong>Movement Check:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
+      <p><strong>Check Skill:</strong> ${environment.preset.checkSkill ? environment.preset.checkSkill.toUpperCase() : "-"}</p>
+      <p><strong>Movement DC (GM):</strong> ${environment.movementDc}</p>
+      <p><strong>Applies To:</strong> ${selected.length > 0 ? selected.join(", ") : "No actors selected."}</p>
     </div>
   `;
 
   await Dialog.prompt({
-    title: "Operational Strain Brief",
+    title: "Environment Brief",
     content,
     rejectClose: false,
     callback: () => {}
@@ -2952,6 +3111,83 @@ async function rollWisdomSurvival(actor, options = {}) {
     flavor
   });
   return { total: Number(roll.total ?? 0), source: "native", roll };
+}
+
+function getActorEnvironmentAssignment(actorId) {
+  const ledger = getOperationsLedger();
+  const environment = ensureEnvironmentState(ledger);
+  const preset = getEnvironmentPresetByKey(environment.presetKey);
+  const applies = preset.key !== "none" && environment.appliedActorIds.includes(String(actorId ?? ""));
+  if (!applies) return null;
+  return {
+    preset,
+    movementDc: Number(environment.movementDc ?? 12)
+  };
+}
+
+async function promptEnvironmentMovementCheck(actor, assignment) {
+  if (!game.user.isGM || !actor || !assignment?.preset?.movementCheck) return;
+  const preset = assignment.preset;
+  const dc = Math.max(1, Math.floor(Number(assignment.movementDc ?? 12) || 12));
+  const flavor = `${preset.label} movement check`;
+  const skill = String(preset.checkSkill ?? "").trim() || "ath";
+
+  if (isMonksTokenBarActive()) {
+    const api = getMonksTokenBarApi();
+    if (api && typeof api.requestRoll === "function") {
+      try {
+        await api.requestRoll([actor], {
+          request: `skill:${skill}`,
+          dc,
+          flavor,
+          showdc: false,
+          showDC: false,
+          silent: false,
+          fastForward: false,
+          rollmode: "roll",
+          rollMode: "roll"
+        });
+        return;
+      } catch (error) {
+        console.warn(`${MODULE_ID}: monks movement check request failed`, error);
+      }
+    }
+  }
+
+  let total = null;
+  if (typeof actor.rollSkill === "function") {
+    try {
+      const roll = await actor.rollSkill(skill, { fastForward: false, chatMessage: true });
+      total = Number(roll?.total ?? roll?.roll?.total);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: native movement check failed`, error);
+    }
+  }
+
+  if (!Number.isFinite(total)) return;
+  const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    whisper: gmIds,
+    content: `<p><strong>${actor.name}</strong> ${flavor}: ${total >= dc ? "Success" : "Fail"} (${total})</p>`
+  });
+}
+
+async function maybePromptEnvironmentMovementCheck(tokenDoc, changed) {
+  if (!game.user.isGM) return;
+  if (!changed || (changed.x === undefined && changed.y === undefined)) return;
+  const actor = tokenDoc?.actor;
+  if (!actor) return;
+
+  const assignment = getActorEnvironmentAssignment(actor.id);
+  if (!assignment?.preset?.movementCheck) return;
+
+  const now = Date.now();
+  const last = Number(environmentMovePromptByActor.get(actor.id) ?? 0);
+  if (now - last < ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS) return;
+  environmentMovePromptByActor.set(actor.id, now);
+
+  await promptEnvironmentMovementCheck(actor, assignment);
 }
 
 async function runGatherResourceCheck() {
@@ -3428,7 +3664,6 @@ async function applyOperationalUpkeep(options = {}) {
 
 async function showOperationalBrief() {
   const context = buildOperationsContext();
-  const strain = context.strain;
   const bonusItems = context.summary.effects.bonuses.map((item) => `<li>${item}</li>`).join("");
   const globalMinorBonusItems = context.summary.effects.globalMinorBonuses.map((item) => `<li>${item}</li>`).join("");
   const globalModifierItems = (context.summary.effects.globalModifierRows ?? [])
@@ -3446,8 +3681,6 @@ async function showOperationalBrief() {
     <div class="po-help">
       <p><strong>Preparation Edge:</strong> ${context.summary.effects.prepEdge ? "Active" : "Inactive"}</p>
       <p><strong>Risk Tier:</strong> ${context.summary.effects.riskTier.toUpperCase()}</p>
-      <p><strong>Strain Level:</strong> ${strain.levelLabel}</p>
-      <p><strong>Strain Pressure:</strong> ${strain.summary.pressureScore} (Warning ${strain.summary.warningThreshold} / Critical ${strain.summary.criticalThreshold})</p>
       <p><strong>Missing Roles:</strong> ${missingRoles}</p>
       <p><strong>Inactive SOPs:</strong> ${inactiveSops}</p>
       <p><strong>Bonuses</strong></p>
@@ -6580,6 +6813,10 @@ Hooks.once("ready", () => {
     await notifyDailyInjuryReminders();
     if (!game.user.isGM) return;
     await applyOperationalUpkeep({ automatic: true });
+  });
+
+  Hooks.on("updateToken", async (tokenDoc, changed) => {
+    await maybePromptEnvironmentMovementCheck(tokenDoc, changed);
   });
 
   Hooks.on("updateSetting", (setting) => {
