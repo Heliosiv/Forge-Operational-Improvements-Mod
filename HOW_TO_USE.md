@@ -4,6 +4,8 @@
 
 For a focused Foundry + Forge packaging, compatibility, and deployment checklist, see `BEST_PRACTICES_FORGE.md`.
 
+For paid Patreon launch workflow (`$3.50` tier), see `PATREON_LAUNCH.md`.
+
 ## Opening the Module
 
 After enabling the module in Foundry, open the apps using the console:

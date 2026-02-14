@@ -553,6 +553,39 @@
           <div class="po-op-summary">Risk Tier: {{operations.summary.effects.riskTier}}</div>
           <div class="po-op-summary">Disorder Risk: {{operations.summary.disorderRisk}}</div>
           <button type="button" class="po-btn po-btn-sm" data-action="show-operational-brief">Show Operational Brief</button>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Operational Strain Meter</div>
+          <div class="po-hint">Track fatigue, paranoia, morale fracture, and cohesion thresholds.</div>
+          <label class="po-resource-row">
+            <span>Fatigue (0-10)</span>
+            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="fatigue" value="{{operations.strain.values.fatigue}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Paranoia (0-10)</span>
+            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="paranoia" value="{{operations.strain.values.paranoia}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Moral Fracture (0-10)</span>
+            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="moraleFracture" value="{{operations.strain.values.moraleFracture}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Cohesion (0-10)</span>
+            <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-strain-value" data-strain="cohesion" value="{{operations.strain.values.cohesion}}" />
+          </label>
+          <div class="po-op-summary">Strain Level: {{operations.strain.levelLabel}}</div>
+          <div class="po-op-summary">Pressure: {{operations.strain.summary.pressureScore}} (Warning {{operations.strain.summary.warningThreshold}} / Critical {{operations.strain.summary.criticalThreshold}})</div>
+          {{#if operations.strain.triggers.length}}
+          {{#each operations.strain.triggers}}
+          <div class="po-op-summary is-warn">{{this}}</div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary is-good">No active strain thresholds.</div>
+          {{/if}}
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="show-strain-brief">Show Strain Brief</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="reset-strain">Reset Strain</button>
+          </div>
         </div>
 
         {{/if}}

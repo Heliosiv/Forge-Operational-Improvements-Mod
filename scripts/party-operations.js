@@ -59,6 +59,7 @@ const SCROLL_STATE_SELECTORS = [
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const UPKEEP_DUSK_MINUTES = 20 * 60;
+const STRAIN_KEYS = ["fatigue", "paranoia", "moraleFracture", "cohesion"];
 
 function isFormActionElement(element) {
   if (!element?.tagName) return false;
@@ -249,6 +250,8 @@ function buildActorIntegrationPayload(actorId, globalContext) {
   const communicationReadiness = globalContext.operations.communication?.readiness ?? { ready: false, enabledCount: 0 };
   const reputationSummary = globalContext.operations.reputation?.summary ?? { hostileCount: 0, highStandingCount: 0 };
   const baseSummary = globalContext.operations.baseOperations ?? { maintenancePressure: 0, readiness: false, activeSites: 0 };
+  const strainSummary = globalContext.operations.strain?.summary ?? { pressureScore: 0, level: "stable" };
+  const strainValues = globalContext.operations.strain?.values ?? { fatigue: 0, paranoia: 0, moraleFracture: 0, cohesion: 5 };
   const globalModifiers = globalContext.operations.summary?.effects?.globalModifiers ?? {};
 
   return {
@@ -270,6 +273,12 @@ function buildActorIntegrationPayload(actorId, globalContext) {
       baseSites: Number(baseSummary.activeSites ?? 0),
       baseMaintenancePressure: Number(baseSummary.maintenancePressure ?? 0),
       baseReadiness: Boolean(baseSummary.readiness),
+      strainLevel: String(strainSummary.level ?? "stable"),
+      strainPressure: Number(strainSummary.pressureScore ?? 0),
+      strainFatigue: Number(strainValues.fatigue ?? 0),
+      strainParanoia: Number(strainValues.paranoia ?? 0),
+      strainMoraleFracture: Number(strainValues.moraleFracture ?? 0),
+      strainCohesion: Number(strainValues.cohesion ?? 5),
       minorInitiativeBonus: Number(globalModifiers.initiative ?? 0),
       minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
       minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
@@ -386,6 +395,18 @@ function buildIntegrationEffectData(payload) {
       key: `flags.${MODULE_ID}.ae.injured`,
       mode,
       value: payload.injury.active ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.strainLevel`,
+      mode,
+      value: String(payload.operations.strainLevel ?? "stable"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.strainPressure`,
+      mode,
+      value: String(payload.operations.strainPressure ?? 0),
       priority
     }
   ];
@@ -1179,6 +1200,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
         break;
+      case "set-strain-value":
+        await setOperationalStrainValue(element);
+        break;
+      case "show-strain-brief":
+        await showOperationalStrainBrief();
+        break;
+      case "reset-strain":
+        await resetOperationalStrain();
+        break;
       case "apply-upkeep":
         await applyOperationalUpkeep();
         break;
@@ -1778,6 +1808,12 @@ function buildDefaultOperationsLedger() {
       maintenanceRisk: "moderate",
       sites: []
     },
+    strain: {
+      fatigue: 0,
+      paranoia: 0,
+      moraleFracture: 0,
+      cohesion: 5
+    },
     partyHealth: {
       modifierEnabled: {}
     },
@@ -2020,6 +2056,7 @@ function buildOperationsContext() {
   const communicationReadiness = getCommunicationReadiness(communication);
   const reputation = buildReputationContext(ledger.reputation ?? {});
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const strain = buildOperationalStrainContext(ledger.strain ?? {});
 
   const upkeep = {
     partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
@@ -2109,6 +2146,7 @@ function buildOperationsContext() {
       preCombatPlan: Boolean(communication.preCombatPlan),
       readiness: communicationReadiness
     },
+    strain,
     reputation,
     baseOperations,
     summary: {
@@ -2118,6 +2156,7 @@ function buildOperationsContext() {
       sopTotal: sops.length,
       prepEdge: roleCoverage >= 3 && activeSops >= 3,
       disorderRisk,
+      strainPressure: strain.summary.pressureScore,
       maintenancePressure: baseOperations.maintenancePressure,
       effects
     },
@@ -2139,6 +2178,7 @@ function getOperationalEffects(ledger, roles, sops) {
   const comms = getCommunicationReadiness(communication);
   const reputation = buildReputationContext(ledger.reputation ?? {});
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const strain = buildOperationalStrainContext(ledger.strain ?? {});
   const prepEdge = roleCoverage >= 3 && activeSops >= 3;
 
   const bonuses = [];
@@ -2181,6 +2221,7 @@ function getOperationalEffects(ledger, roles, sops) {
   if (comms.ready) bonuses.push("Communication discipline active: improve one coordinated response roll by a minor margin.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
+  if (strain.summary.hasCohesionEdge) bonuses.push("High cohesion active: one coordinated maneuver gains improved initiative posture.");
 
   if (roleCoverage >= 2) {
     const modifier = addGlobalModifier("team-rhythm", "initiative", 1, "Team rhythm (2+ roles)", "Initiative rolls");
@@ -2198,6 +2239,10 @@ function getOperationalEffects(ledger, roles, sops) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
     if (modifier.enabled) globalMinorBonuses.push("Operational sheltering: all player actors gain +1 to saving throws while base readiness is stable.");
   }
+  if (strain.summary.hasCohesionEdge) {
+    const modifier = addGlobalModifier("cohesion-momentum", "initiative", 1, "Cohesion momentum (8+ cohesion)", "Initiative rolls");
+    if (modifier.enabled) globalMinorBonuses.push("Cohesion momentum: all player actors gain +1 initiative while cohesion is 8+.");
+  }
 
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
   if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
@@ -2205,14 +2250,24 @@ function getOperationalEffects(ledger, roles, sops) {
   if (!comms.ready) risks.push("Communication gaps: increase misread signal risk during first contact.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
+  if (strain.summary.hasFatiguePenalty) risks.push("Fatigue strain high: reduce one ability-check outcome by one step.");
+  if (strain.summary.hasParanoiaPenalty) risks.push("Paranoia strain high: increase misread threat/signal risk.");
+  if (strain.summary.hasMoralePenalty) risks.push("Morale fracture high: stress responses become less reliable.");
+  if (strain.summary.hasCohesionPenalty) risks.push("Low cohesion: the first coordinated push starts one step behind.");
+  if (strain.summary.warningTriggered) risks.push(`Strain pressure elevated (${strain.summary.pressureScore}): keep one complication trigger in reserve.`);
 
   if (roleCoverage <= 1) addGlobalModifier("poor-role-coverage", "initiative", -1, "Poor role coverage", "Initiative rolls");
   if (activeSops <= 1) addGlobalModifier("insufficient-sop-coverage", "abilityChecks", -1, "Insufficient SOP coverage", "All ability checks");
   if (!comms.ready) addGlobalModifier("communication-gaps", "perceptionChecks", -1, "Communication gaps", "Perception checks");
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
+  if (strain.summary.hasFatiguePenalty) addGlobalModifier("fatigue-strain", "abilityChecks", -1, "Fatigue strain (7+)", "All ability checks");
+  if (strain.summary.hasParanoiaPenalty) addGlobalModifier("paranoia-strain", "perceptionChecks", -1, "Paranoia strain (7+)", "Perception checks");
+  if (strain.summary.hasMoralePenalty) addGlobalModifier("morale-fracture-strain", "savingThrows", -1, "Morale fracture strain (7+)", "All saving throws");
+  if (strain.summary.hasCohesionPenalty) addGlobalModifier("cohesion-collapse", "initiative", -1, "Cohesion collapse (<=2)", "Initiative rolls");
 
   const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
-  const riskScore = roleCoverage + activeSops - pressurePenalty;
+  const strainPenalty = strain.summary.criticalTriggered ? 2 : (strain.summary.warningTriggered ? 1 : 0);
+  const riskScore = roleCoverage + activeSops - pressurePenalty - strainPenalty;
   const riskTier = riskScore >= 8 ? "low" : riskScore >= 5 ? "moderate" : "high";
 
   return {
@@ -2396,6 +2451,74 @@ function ensurePartyHealthState(ledger) {
   return ledger.partyHealth;
 }
 
+function clampOperationalStrainValue(key, value) {
+  const numeric = Number(value ?? 0);
+  const safe = Number.isFinite(numeric) ? Math.floor(numeric) : 0;
+  if (key === "cohesion") return Math.max(0, Math.min(10, safe));
+  return Math.max(0, Math.min(10, safe));
+}
+
+function ensureOperationalStrainState(ledger) {
+  if (!ledger.strain || typeof ledger.strain !== "object") {
+    ledger.strain = {
+      fatigue: 0,
+      paranoia: 0,
+      moraleFracture: 0,
+      cohesion: 5
+    };
+  }
+  for (const key of STRAIN_KEYS) {
+    if (key === "cohesion") {
+      ledger.strain[key] = clampOperationalStrainValue(key, ledger.strain[key] ?? 5);
+      continue;
+    }
+    ledger.strain[key] = clampOperationalStrainValue(key, ledger.strain[key] ?? 0);
+  }
+  return ledger.strain;
+}
+
+function buildOperationalStrainContext(strainState) {
+  const values = {
+    fatigue: clampOperationalStrainValue("fatigue", strainState?.fatigue ?? 0),
+    paranoia: clampOperationalStrainValue("paranoia", strainState?.paranoia ?? 0),
+    moraleFracture: clampOperationalStrainValue("moraleFracture", strainState?.moraleFracture ?? 0),
+    cohesion: clampOperationalStrainValue("cohesion", strainState?.cohesion ?? 5)
+  };
+
+  const pressureScore = values.fatigue + values.paranoia + values.moraleFracture + Math.max(0, 5 - values.cohesion);
+  const warningThreshold = 9;
+  const criticalThreshold = 13;
+  const level = pressureScore >= criticalThreshold ? "critical" : (pressureScore >= warningThreshold ? "elevated" : "stable");
+
+  const summary = {
+    pressureScore,
+    warningThreshold,
+    criticalThreshold,
+    warningTriggered: pressureScore >= warningThreshold,
+    criticalTriggered: pressureScore >= criticalThreshold,
+    level,
+    hasFatiguePenalty: values.fatigue >= 7,
+    hasParanoiaPenalty: values.paranoia >= 7,
+    hasMoralePenalty: values.moraleFracture >= 7,
+    hasCohesionPenalty: values.cohesion <= 2,
+    hasCohesionEdge: values.cohesion >= 9
+  };
+
+  const triggers = [];
+  if (summary.hasFatiguePenalty) triggers.push("Fatigue 7+: -1 ability checks.");
+  if (summary.hasParanoiaPenalty) triggers.push("Paranoia 7+: -1 Perception checks.");
+  if (summary.hasMoralePenalty) triggers.push("Moral Fracture 7+: -1 saving throws.");
+  if (summary.hasCohesionPenalty) triggers.push("Cohesion 2 or lower: -1 initiative.");
+  if (summary.hasCohesionEdge) triggers.push("Cohesion 9+: +1 initiative.");
+
+  return {
+    values,
+    summary,
+    triggers,
+    levelLabel: level === "critical" ? "Critical" : (level === "elevated" ? "Elevated" : "Stable")
+  };
+}
+
 async function setOperationalRole(element) {
   const roleKey = element?.dataset?.role;
   const actorId = element?.value ?? "";
@@ -2493,6 +2616,51 @@ async function setPartyHealthModifier(element) {
   await updateOperationsLedger((ledger) => {
     const partyHealth = ensurePartyHealthState(ledger);
     partyHealth.modifierEnabled[modifierId] = enabled;
+  });
+}
+
+async function setOperationalStrainValue(element) {
+  const key = String(element?.dataset?.strain ?? "").trim();
+  if (!STRAIN_KEYS.includes(key)) return;
+  const value = clampOperationalStrainValue(key, Number(element?.value ?? 0));
+  await updateOperationsLedger((ledger) => {
+    const strain = ensureOperationalStrainState(ledger);
+    strain[key] = value;
+  });
+}
+
+async function resetOperationalStrain() {
+  await updateOperationsLedger((ledger) => {
+    ledger.strain = {
+      fatigue: 0,
+      paranoia: 0,
+      moraleFracture: 0,
+      cohesion: 5
+    };
+  });
+}
+
+async function showOperationalStrainBrief() {
+  const strain = buildOperationsContext().strain;
+  const content = `
+    <div class="po-help">
+      <p><strong>Strain Level:</strong> ${strain.levelLabel}</p>
+      <p><strong>Pressure Score:</strong> ${strain.summary.pressureScore}</p>
+      <p><strong>Warning / Critical:</strong> ${strain.summary.warningThreshold} / ${strain.summary.criticalThreshold}</p>
+      <p><strong>Fatigue:</strong> ${strain.values.fatigue}</p>
+      <p><strong>Paranoia:</strong> ${strain.values.paranoia}</p>
+      <p><strong>Moral Fracture:</strong> ${strain.values.moraleFracture}</p>
+      <p><strong>Cohesion:</strong> ${strain.values.cohesion}</p>
+      <p><strong>Threshold Triggers</strong></p>
+      <ul>${strain.triggers.map((entry) => `<li>${entry}</li>`).join("") || "<li>No active strain triggers.</li>"}</ul>
+    </div>
+  `;
+
+  await Dialog.prompt({
+    title: "Operational Strain Brief",
+    content,
+    rejectClose: false,
+    callback: () => {}
   });
 }
 
@@ -3260,6 +3428,7 @@ async function applyOperationalUpkeep(options = {}) {
 
 async function showOperationalBrief() {
   const context = buildOperationsContext();
+  const strain = context.strain;
   const bonusItems = context.summary.effects.bonuses.map((item) => `<li>${item}</li>`).join("");
   const globalMinorBonusItems = context.summary.effects.globalMinorBonuses.map((item) => `<li>${item}</li>`).join("");
   const globalModifierItems = (context.summary.effects.globalModifierRows ?? [])
@@ -3277,6 +3446,8 @@ async function showOperationalBrief() {
     <div class="po-help">
       <p><strong>Preparation Edge:</strong> ${context.summary.effects.prepEdge ? "Active" : "Inactive"}</p>
       <p><strong>Risk Tier:</strong> ${context.summary.effects.riskTier.toUpperCase()}</p>
+      <p><strong>Strain Level:</strong> ${strain.levelLabel}</p>
+      <p><strong>Strain Pressure:</strong> ${strain.summary.pressureScore} (Warning ${strain.summary.warningThreshold} / Critical ${strain.summary.criticalThreshold})</p>
       <p><strong>Missing Roles:</strong> ${missingRoles}</p>
       <p><strong>Inactive SOPs:</strong> ${inactiveSops}</p>
       <p><strong>Bonuses</strong></p>

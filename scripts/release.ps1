@@ -20,7 +20,7 @@ $module.version = $Version
 $module | ConvertTo-Json -Depth 20 | Set-Content -NoNewline "module.json"
 
 git add module.json
-git add .
+git add -u
 
 git commit -m "$Message v$Version"
 git tag -a "v$Version" -m "Release v$Version"

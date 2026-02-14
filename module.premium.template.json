@@ -1,0 +1,27 @@
+{
+  "id": "party-operations-premium",
+  "title": "Party Operations Premium",
+  "description": "Premium release channel for Party Operations.",
+  "version": "2.0.3",
+  "authors": [
+    {
+      "name": "Foundry Operations Module"
+    }
+  ],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12",
+    "maximum": "13"
+  },
+  "esmodules": [
+    "scripts/party-operations.js"
+  ],
+  "styles": [
+    "styles/party-operations.css"
+  ],
+  "templates": [
+    "templates/rest-watch.hbs",
+    "templates/marching-order.hbs",
+    "templates/rest-watch-player.hbs"
+  ]
+}
