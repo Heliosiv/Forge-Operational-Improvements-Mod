@@ -170,6 +170,15 @@ party-operations/
 
 ## Packaging for Forge
 
+### Forge API Key (What It Is For)
+
+Forge API keys are for Forge account automation (world/server/package operations through Forge services).
+
+For this module's current GitHub-manifest release flow, you do **not** need a Forge API key.
+
+- Forge API key needed: when a script/tool talks directly to Forge APIs
+- Forge API key not needed: when Forge installs/updates from a public manifest URL hosted on GitHub Releases
+
 ### Install/Update via Manifest URL (No Manual ZIP Upload)
 
 Use this manifest URL in Forge's module installer:
@@ -183,6 +192,12 @@ Release flow:
 3. Create and push a matching tag: `vX.Y.Z` (example: `v2.0.2`)
 4. GitHub Actions builds and publishes `module.zip` + `module.json` to Releases
 5. Forge detects the new version via manifest and offers update
+
+One-command option from this repo:
+
+`./scripts/release.ps1 -Version 2.0.2 -Message "Release"`
+
+That script updates `module.json`, commits, tags, and pushes `main` + tag.
 
 1. Create a ZIP (not 7z) with this structure:
    ```
