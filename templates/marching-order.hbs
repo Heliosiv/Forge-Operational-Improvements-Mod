@@ -1,0 +1,308 @@
+<div class="po-window" data-tool="marching-order">
+  <header class="po-header">
+    <div>
+      <h1 class="po-title">Party Operations</h1>
+      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+      {{#if showPopout}}
+      <button type="button" class="po-icon-btn" data-action="popout" aria-label="Pop out">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </button>
+      {{/if}}
+    </div>
+  </header>
+
+  {{#if lockBannerText}}
+  <div class="po-lock-banner {{lockBannerClass}}" title="{{lockBannerTooltip}}">{{lockBannerText}}</div>
+  {{/if}}
+
+  <div class="po-body">
+
+  <nav class="po-tabs" role="tablist">
+    <button type="button" class="po-tab" data-tab="rest-watch" role="tab" aria-selected="false">Rest Watch</button>
+    <button type="button" class="po-tab is-active" data-tab="marching-order" role="tab" aria-selected="true">Marching Order</button>
+    <button type="button" class="po-tab" data-tab="operations" role="tab" aria-selected="false">Operations</button>
+  </nav>
+
+  <section class="po-content">
+    <section class="po-usage-panel po-collapsible {{#if usageCollapsed}}is-collapsed{{/if}}" data-section-id="usage">
+      <header class="po-collapsible-head">
+        <div class="po-section-title">How to Use</div>
+        <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="usage" aria-label="{{usageToggleLabel}} Help" title="{{usageToggleLabel}} Help">
+          <i class="fa-solid {{usageToggleIcon}}"></i>
+        </button>
+      </header>
+      {{#unless usageCollapsed}}
+      <div class="po-collapsible-body">
+        <ul class="po-help-list">
+          <li>Use <strong>Add Actor</strong> in each rank to assign party members.</li>
+          <li>Drag actor cards by the grip handle to reorder within a rank.</li>
+          <li>Edit each actor's <strong>Notes</strong> directly inside their card.</li>
+          <li>Use <strong>Lock Marching Order</strong> to freeze player edits during planning.</li>
+          <li>Use <strong>Share with Players</strong> after confirming the current formation.</li>
+        </ul>
+      </div>
+      {{/unless}}
+    </section>
+
+    <div class="po-grid">
+      <div class="po-ranks">
+        {{#each ranks}}
+        <section class="po-rank-col po-collapsible {{#if collapsed}}is-collapsed{{/if}}" data-rank-id="{{id}}" data-section-id="rank-{{id}}">
+          <header class="po-rank-header">
+            <div class="po-rank-info">
+              <div class="po-rank-title-group">
+                <i class="po-rank-icon fa-solid {{icon}}"></i>
+                <div>
+                  <div class="po-rank-title">{{label}}</div>
+                  <div class="po-rank-desc">{{desc}}</div>
+                </div>
+              </div>
+              {{#if capacity}}
+              <div class="po-rank-capacity">
+                <div class="po-rank-cap-text">{{entries.length}} / {{capacity}}</div>
+                <div class="po-rank-cap-bar">
+                  <div class="po-rank-cap-fill" style="width: {{capacityPercent}}%"></div>
+                </div>
+              </div>
+              {{/if}}
+            </div>
+            {{#if ../isGM}}
+            <button type="button" class="po-btn po-btn-sm" data-action="assign-rank" data-rank-id="{{id}}"><i class="fa-solid fa-user-plus"></i> Add Actor</button>
+            {{/if}}
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="rank-{{id}}" aria-label="{{toggleLabel}} {{label}}" title="{{toggleLabel}} {{label}}">
+              <i class="fa-solid {{toggleIcon}}"></i>
+            </button>
+          </header>
+
+          {{#unless collapsed}}
+          <div class="po-rank-entries">
+            {{#each entries}}
+            <article class="po-entry {{#if ../isGM}}is-draggable{{/if}}" data-actor-id="{{actorId}}" {{#if ../isGM}}draggable="true"{{/if}}>
+              {{#if ../../isGM}}
+              <button type="button" class="po-entry-handle" aria-label="Drag">
+                <i class="fa-solid fa-grip-lines"></i>
+              </button>
+              {{/if}}
+              <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+              <div class="po-entry-main">
+                <div class="po-entry-title">
+                  {{actor.name}}
+                  <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                    <i class="fa-solid fa-location-dot"></i>
+                  </button>
+                </div>
+                <div class="po-entry-sub">
+                  <span class="po-pill">PP {{actor.passivePerception}}</span>
+                  {{#if ../../isGM}}
+                  {{#if actor.ac}}
+                  <span class="po-pill">AC {{actor.ac}}</span>
+                  {{/if}}
+                  {{#if actor.darkvision}}
+                  <span class="po-pill">Darkvision {{actor.darkvision}}</span>
+                  {{/if}}
+                  {{#if actor.stealthDisadv}}
+                  <span class="po-pill is-warn">Stealth Disadv</span>
+                  {{/if}}
+                  {{#if actor.languages}}
+                  <span class="po-pill">Lang {{actor.languages}}</span>
+                  {{/if}}
+                  {{#if actor.passiveInsight}}
+                  <span class="po-pill">PI {{actor.passiveInsight}}</span>
+                  {{/if}}
+                  {{#if actor.passiveInvestigation}}
+                  <span class="po-pill">PIv {{actor.passiveInvestigation}}</span>
+                  {{/if}}
+                  {{/if}}
+                </div>
+                <div class="po-entry-notes" data-actor-id="{{actorId}}">
+                  <div class="po-note-label">Notes</div>
+                  <textarea class="po-notes-input po-entry-notes-input" rows="2" placeholder="Notes" {{#unless canEditNote}}disabled{{/unless}}>{{notes}}</textarea>
+                </div>
+              </div>
+              <div class="po-entry-actions-inline">
+                {{#if hasLight}}
+                <div class="po-light-indicator {{#if hasLight}}is-active{{/if}}" title="{{lightTooltip}}">
+                  <i class="fa-solid fa-fire"></i>
+                </div>
+                {{/if}}
+                {{#if ../../isGM}}
+                <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{actorId}}" aria-label="Remove">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+                {{/if}}
+              </div>
+            </article>
+            {{/each}}
+
+            {{#unless entries}}
+            <div class="po-rank-empty">
+              <i class="fa-solid fa-inbox"></i>
+              <span>Empty</span>
+            </div>
+            {{/unless}}
+          </div>
+          {{/unless}}
+        </section>
+        {{/each}}
+      </div>
+
+      {{#if isGM}}
+      <aside class="po-gm-panel">
+        <div class="po-gm-section po-collapsible {{#if gmSections.shareCollapsed}}is-collapsed{{/if}}" data-section-id="gm-share">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Share</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-share" aria-label="{{gmSections.shareToggleLabel}} Share" title="{{gmSections.shareToggleLabel}} Share">
+              <i class="fa-solid {{gmSections.shareToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.shareCollapsed}}
+          <div class="po-collapsible-body">
+            <button type="button" class="po-btn" data-action="open-for-players"><i class="fa-solid fa-share-from-square"></i> Share with Players</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.helpCollapsed}}is-collapsed{{/if}}" data-section-id="gm-help">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Help</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-help" aria-label="{{gmSections.helpToggleLabel}} Help" title="{{gmSections.helpToggleLabel}} Help">
+              <i class="fa-solid {{gmSections.helpToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.helpCollapsed}}
+          <div class="po-collapsible-body">
+            <button type="button" class="po-btn" data-action="help">Help</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.lockCollapsed}}is-collapsed{{/if}}" data-section-id="gm-lock">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Lock</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-lock" aria-label="{{gmSections.lockToggleLabel}} Lock" title="{{gmSections.lockToggleLabel}} Lock">
+              <i class="fa-solid {{gmSections.lockToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.lockCollapsed}}
+          <div class="po-collapsible-body">
+            <label class="po-switch">
+              <input type="checkbox" data-action="toggle-lock" {{#if locked}}checked{{/if}} />
+              <span>Lock Marching Order</span>
+            </label>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.formationsCollapsed}}is-collapsed{{/if}}" data-section-id="gm-formations">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Formations</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-formations" aria-label="{{gmSections.formationsToggleLabel}} Formations" title="{{gmSections.formationsToggleLabel}} Formations">
+              <i class="fa-solid {{gmSections.formationsToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.formationsCollapsed}}
+          <div class="po-collapsible-body">
+            <div class="po-formation-display">Current: <strong>{{formationLabel}}</strong></div>
+            <div class="po-formation-effect">Surprise: {{doctrineEffects.surprise}}</div>
+            <div class="po-formation-effect">Ambush: {{doctrineEffects.ambush}}</div>
+            <div class="po-formation-effect">Last doctrine check: {{doctrineTracker.lastCheckAt}}</div>
+            <button type="button" class="po-btn {{#if activateFormation.default}}is-active{{/if}}" data-action="formation-standard">Default Formation</button>
+            <button type="button" class="po-btn {{#if activateFormation.combatReady}}is-active{{/if}}" data-action="formation-combat-ready">Combat-Ready Formation</button>
+            <button type="button" class="po-btn {{#if activateFormation.tightCorridor}}is-active{{/if}}" data-action="formation-tight-corridor">Tight Corridor Formation</button>
+            <button type="button" class="po-btn {{#if activateFormation.lowVisibility}}is-active{{/if}}" data-action="formation-low-visibility">Low-Visibility Formation</button>
+            <button type="button" class="po-btn" data-action="doctrine-check">Post Doctrine Check Prompt</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Torch / Light</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-light" aria-label="{{gmSections.lightToggleLabel}} Torch and Light" title="{{gmSections.lightToggleLabel}} Torch and Light">
+              <i class="fa-solid {{gmSections.lightToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.lightCollapsed}}
+          <div class="po-collapsible-body">
+            {{#each lightToggles}}
+            <label class="po-switch" data-actor-id="{{actorId}}">
+              <input type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+              <span>{{actorName}}</span>
+            </label>
+            {{/each}}
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.exportCollapsed}}is-collapsed{{/if}}" data-section-id="gm-export">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Export</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-export" aria-label="{{gmSections.exportToggleLabel}} Export" title="{{gmSections.exportToggleLabel}} Export">
+              <i class="fa-solid {{gmSections.exportToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.exportCollapsed}}
+          <div class="po-collapsible-body">
+            <button type="button" class="po-btn" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
+            <button type="button" class="po-btn" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.snapshotCollapsed}}is-collapsed{{/if}}" data-section-id="gm-snapshot">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Snapshot</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-snapshot" aria-label="{{gmSections.snapshotToggleLabel}} Snapshot" title="{{gmSections.snapshotToggleLabel}} Snapshot">
+              <i class="fa-solid {{gmSections.snapshotToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.snapshotCollapsed}}
+          <div class="po-collapsible-body">
+            <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.clearCollapsed}}is-collapsed{{/if}}" data-section-id="gm-clear">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Clear</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-clear" aria-label="{{gmSections.clearToggleLabel}} Clear" title="{{gmSections.clearToggleLabel}} Clear">
+              <i class="fa-solid {{gmSections.clearToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.clearCollapsed}}
+          <div class="po-collapsible-body">
+            <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
+          </div>
+          {{/unless}}
+        </div>
+
+        <div class="po-gm-section po-collapsible {{#if gmSections.gmNotesCollapsed}}is-collapsed{{/if}}" data-section-id="gm-notes">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">GM Marching Notes</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-notes" aria-label="{{gmSections.gmNotesToggleLabel}} GM Notes" title="{{gmSections.gmNotesToggleLabel}} GM Notes">
+              <i class="fa-solid {{gmSections.gmNotesToggleIcon}}"></i>
+            </button>
+          </header>
+          {{#unless gmSections.gmNotesCollapsed}}
+          <div class="po-collapsible-body">
+            <textarea class="po-gm-notes" rows="4" placeholder="Global notes">{{gmNotes}}</textarea>
+          </div>
+          {{/unless}}
+        </div>
+      </aside>
+      {{/if}}
+    </div>
+  </section>
+  </div>
+
+  <footer class="po-footer">
+    <div class="po-footer-text">Marching Order</div>
+    <div class="po-footer-text">Drag and drop to reorder ranks</div>
+  </footer>
+</div>

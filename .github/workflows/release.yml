@@ -1,0 +1,62 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1) Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2) Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 3) Validate module.json version matches tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MODULE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).version")
+          echo "Tag version:    ${TAG_VERSION}"
+          echo "Module version: ${MODULE_VERSION}"
+          test "${TAG_VERSION}" = "${MODULE_VERSION}"
+
+      - name: 4) Prepare Forge package contents
+        run: |
+          mkdir -p release
+          cp module.json release/
+          cp -r scripts release/
+          cp -r styles release/
+          cp -r templates release/
+
+      - name: 5) Build module.zip artifact
+        run: |
+          cd release
+          zip -r ../module.zip .
+
+      - name: 6) Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: party-operations-package
+          path: |
+            module.zip
+            module.json
+
+      - name: 7) Create GitHub release with module artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            module.zip
+            module.json
+          generate_release_notes: true
