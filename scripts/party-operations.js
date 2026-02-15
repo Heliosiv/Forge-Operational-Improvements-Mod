@@ -843,13 +843,33 @@ function ensureEnvironmentState(ledger) {
   if (!Array.isArray(ledger.environment.logs)) ledger.environment.logs = [];
   ledger.environment.logs = ledger.environment.logs
     .map((entry) => {
+      const logType = String(entry?.logType ?? "environment").trim().toLowerCase() === "weather"
+        ? "weather"
+        : "environment";
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      if (logType === "weather") {
+        return {
+          id: String(entry?.id ?? foundry.utils.randomID()),
+          logType,
+          label: String(entry?.label ?? "Weather").trim() || "Weather",
+          weatherId: String(entry?.weatherId ?? "").trim(),
+          darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
+          visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier)))) : 0,
+          note: String(entry?.note ?? ""),
+          daeChanges: Array.isArray(entry?.daeChanges)
+            ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
+            : [],
+          createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+          createdBy: String(entry?.createdBy ?? "GM")
+        };
+      }
       const actorIds = Array.isArray(entry?.actorIds)
         ? entry.actorIds.map((actorId) => String(actorId ?? "").trim()).filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
         : [];
-      const createdAt = Number(entry?.createdAt ?? Date.now());
       const checkMeta = getEnvironmentCheckMeta(entry);
       return {
         id: String(entry?.id ?? foundry.utils.randomID()),
+        logType,
         presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
         movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
         actorIds,
@@ -1388,7 +1408,9 @@ function getGmQuickWeatherDraft() {
       selectedKey: String(parsed.selectedKey ?? "").trim(),
       darkness: Number(parsed.darkness ?? 0),
       visibilityModifier: Number(parsed.visibilityModifier ?? 0),
-      note: String(parsed.note ?? "")
+      note: String(parsed.note ?? ""),
+      presetName: String(parsed.presetName ?? ""),
+      daeChanges: Array.isArray(parsed.daeChanges) ? parsed.daeChanges : []
     };
   } catch (_error) {
     return null;
@@ -1404,7 +1426,9 @@ function setGmQuickWeatherDraft(draft = null) {
     selectedKey: String(draft.selectedKey ?? "").trim(),
     darkness: Number(draft.darkness ?? 0),
     visibilityModifier: Number(draft.visibilityModifier ?? 0),
-    note: String(draft.note ?? "")
+    note: String(draft.note ?? ""),
+    presetName: String(draft.presetName ?? ""),
+    daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : []
   }));
 }
 
@@ -2046,6 +2070,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-reputation-note":
         await setReputationNote(element);
         break;
+      case "log-reputation-note":
+        await logReputationNote(element);
+        break;
+      case "load-reputation-note-log":
+        await loadReputationNoteLog(element);
+        break;
       case "set-reputation-label":
         await setReputationLabel(element);
         break;
@@ -2127,6 +2157,29 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "gm-quick-submit-weather":
         await gmQuickSubmitWeather(element);
+        break;
+      case "gm-quick-weather-select":
+        await gmQuickSelectWeatherPreset(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "gm-quick-weather-set":
+        gmQuickUpdateWeatherDraftField(element);
+        break;
+      case "gm-quick-weather-add-dae":
+        await gmQuickAddWeatherDaeChange(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "gm-quick-weather-remove-dae":
+        await gmQuickRemoveWeatherDaeChange(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "gm-quick-weather-save-preset":
+        await gmQuickSaveWeatherPreset(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "gm-quick-weather-delete-preset":
+        await gmQuickDeleteWeatherPreset(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "show-gm-logs-manager":
         await showOperationalLogsManager();
@@ -3044,6 +3097,7 @@ function buildOperationsContext() {
     }));
   const environmentActorNames = new Map(environmentTargets.map((target) => [target.actorId, target.actorName]));
   const environmentLogs = (environmentState.logs ?? [])
+    .filter((entry) => String(entry?.logType ?? "environment").trim().toLowerCase() !== "weather")
     .map((entry) => {
       const preset = getEnvironmentPresetByKey(entry.presetKey);
       const check = getEnvironmentCheckMeta({
@@ -3159,7 +3213,7 @@ function buildOperationsContext() {
     };
   });
   const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherQuickOptions = buildWeatherSelectionCatalog(weatherSceneSnapshot);
+  const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
   const storedWeatherDraft = getGmQuickWeatherDraft();
   const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
   const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
@@ -3172,38 +3226,54 @@ function buildOperationsContext() {
     visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
       ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
       : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
-    note: String(storedWeatherDraft?.note ?? "")
+    note: String(storedWeatherDraft?.note ?? ""),
+    presetName: String(storedWeatherDraft?.presetName ?? ""),
+    daeChanges: Array.isArray(storedWeatherDraft?.daeChanges)
+      ? storedWeatherDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+      : (Array.isArray(selectedWeatherOption?.daeChanges)
+        ? selectedWeatherOption.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+        : [])
   };
-  const globalLogs = [
-    ...environmentLogs.map((entry) => ({
-      id: `env:${entry.id}`,
-      sourceId: entry.id,
-      logType: "environment",
-      logTypeLabel: "Environment",
-      title: entry.presetLabel,
-      summary: `${entry.checkLabel} · DC ${entry.movementDc}`,
-      details: `Affected: ${entry.actorNamesText}`,
-      note: entry.note,
-      hasNote: entry.hasNote,
-      createdBy: entry.createdBy,
-      createdAt: Number(entry.createdAt ?? Date.now()),
-      createdAtLabel: entry.createdAtLabel
-    })),
-    ...weatherLogs.map((entry) => ({
-      id: `weather:${entry.id}`,
-      sourceId: entry.id,
-      logType: "weather",
-      logTypeLabel: "Weather",
-      title: String(entry.label ?? "Weather").trim() || "Weather",
-      summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} · Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
-      details: getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0)),
-      note: String(entry.note ?? ""),
-      hasNote: String(entry.note ?? "").trim().length > 0,
-      createdBy: String(entry.loggedBy ?? "GM"),
-      createdAt: Number(entry.loggedAt ?? Date.now()),
-      createdAtLabel: String(entry.loggedAtLabel ?? "Unknown")
-    }))
-  ].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
+  const globalLogs = (environmentState.logs ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      const createdAtLabel = Number.isFinite(createdAt) ? new Date(createdAt).toLocaleString() : "Unknown";
+      const logType = String(entry?.logType ?? "environment").trim().toLowerCase() === "weather" ? "weather" : "environment";
+      if (logType === "weather") {
+        return {
+          id: `weather:${entry.id}`,
+          sourceId: entry.id,
+          logType,
+          logTypeLabel: "Weather",
+          title: String(entry.label ?? "Weather").trim() || "Weather",
+          summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} · Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
+          details: `${getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0))} · ${describeWeatherDaeChanges(entry.daeChanges ?? [])}`,
+          note: String(entry.note ?? ""),
+          hasNote: String(entry.note ?? "").trim().length > 0,
+          createdBy: String(entry.createdBy ?? "GM"),
+          createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+          createdAtLabel
+        };
+      }
+      const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const check = getEnvironmentCheckMeta(entry);
+      const actorNames = (entry.actorIds ?? []).map((actorId) => environmentActorNames.get(actorId) ?? (game.actors.get(actorId)?.name ?? `Actor ${actorId}`));
+      return {
+        id: `env:${entry.id}`,
+        sourceId: entry.id,
+        logType,
+        logTypeLabel: "Environment",
+        title: preset.label,
+        summary: `${check.checkLabel} · DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
+        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}`,
+        note: String(entry.note ?? ""),
+        hasNote: String(entry.note ?? "").trim().length > 0,
+        createdBy: String(entry.createdBy ?? "GM"),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+        createdAtLabel
+      };
+    })
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
   const activeSyncEffectsTab = getActiveSyncEffectsTab();
   const archivedSyncEffects = (partyHealthState.archivedSyncEffects ?? [])
     .map((entry) => {
@@ -3344,11 +3414,16 @@ function buildOperationsContext() {
         key: option.key,
         label: option.label,
         weatherId: option.weatherId,
+        isBuiltIn: Boolean(option.isBuiltIn),
         visibilityModifier: Number(option.visibilityModifier ?? 0),
         visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
         effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
+        daeSummary: describeWeatherDaeChanges(option.daeChanges ?? []),
         selected: option.key === weatherQuickDraft.selectedKey
       })),
+      weatherDaeModeOptions: Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+        .map(([label, value]) => ({ label, value: Number(value) }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
       weatherDraft: weatherQuickDraft
     },
     globalLogs: {
@@ -3388,6 +3463,9 @@ function getOperationalEffects(ledger, roles, sops) {
   const weatherState = ensureWeatherState(ledger);
   const weatherVisibilityModifier = Number(weatherState.current?.visibilityModifier ?? 0);
   const weatherLabel = String(weatherState.current?.label ?? "Weather");
+  const weatherDaeChanges = Array.isArray(weatherState.current?.daeChanges)
+    ? weatherState.current.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+    : [];
   const prepEdge = roleCoverage >= 3 && activeSops >= 3;
 
   const bonuses = [];
@@ -3470,6 +3548,9 @@ function getOperationalEffects(ledger, roles, sops) {
       }
     }
   }
+  if (weatherDaeChanges.length > 0) {
+    bonuses.push(`Weather profile (${weatherLabel}) applies ${weatherDaeChanges.length} global DAE change(s).`);
+  }
 
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
   if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
@@ -3484,6 +3565,16 @@ function getOperationalEffects(ledger, roles, sops) {
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const customDaeChanges = [];
+  for (const [index, weatherChange] of weatherDaeChanges.entries()) {
+    customDaeChanges.push({
+      modifierId: `weather:${index}`,
+      label: `Weather (${weatherLabel})`,
+      note: String(weatherChange.note ?? ""),
+      key: weatherChange.key,
+      mode: weatherChange.mode,
+      value: weatherChange.value
+    });
+  }
   for (const custom of partyHealth.customModifiers ?? []) {
     const key = String(custom?.key ?? "").trim();
     const value = String(custom?.value ?? "").trim();
@@ -3576,19 +3667,41 @@ function getCommunicationReadiness(communication) {
 
 function getDefaultReputationFactions() {
   return [
-    { id: "religious", label: "Religious Authority", score: 0, note: "", isCore: true },
-    { id: "nobility", label: "Nobility", score: 0, note: "", isCore: true },
-    { id: "criminal", label: "Criminal Factions", score: 0, note: "", isCore: true },
-    { id: "commoners", label: "Common Populace", score: 0, note: "", isCore: true }
+    { id: "religious", label: "Religious Authority", score: 0, note: "", noteLogs: [], isCore: true },
+    { id: "nobility", label: "Nobility", score: 0, note: "", noteLogs: [], isCore: true },
+    { id: "criminal", label: "Criminal Factions", score: 0, note: "", noteLogs: [], isCore: true },
+    { id: "commoners", label: "Common Populace", score: 0, note: "", noteLogs: [], isCore: true }
   ];
 }
 
+function normalizeReputationNoteLog(entry = {}) {
+  const loggedAt = Number(entry?.loggedAt ?? Date.now());
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    note: String(entry?.note ?? "").trim(),
+    score: Math.max(-5, Math.min(5, Math.floor(Number(entry?.score ?? 0) || 0))),
+    loggedAt: Number.isFinite(loggedAt) ? loggedAt : Date.now(),
+    loggedBy: String(entry?.loggedBy ?? "GM").trim() || "GM",
+    dayLabel: String(entry?.dayLabel ?? "").trim(),
+    clockLabel: String(entry?.clockLabel ?? "").trim(),
+    calendarEntryId: String(entry?.calendarEntryId ?? "").trim()
+  };
+}
+
 function normalizeReputationFaction(entry = {}) {
+  const noteLogs = Array.isArray(entry?.noteLogs)
+    ? entry.noteLogs
+      .map((row) => normalizeReputationNoteLog(row))
+      .filter((row) => row.note)
+      .sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
+      .slice(0, 100)
+    : [];
   return {
     id: String(entry.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     label: String(entry.label ?? "Faction").trim() || "Faction",
     score: Math.max(-5, Math.min(5, Math.floor(Number(entry.score ?? 0) || 0))),
     note: String(entry.note ?? ""),
+    noteLogs,
     isCore: Boolean(entry.isCore)
   };
 }
@@ -3608,7 +3721,8 @@ function ensureReputationState(ledger) {
       return normalizeReputationFaction({
         ...row,
         score: Number(legacy?.score ?? row.score),
-        note: String(legacy?.note ?? row.note)
+        note: String(legacy?.note ?? row.note),
+        noteLogs: Array.isArray(legacy?.noteLogs) ? legacy.noteLogs : []
       });
     });
   }
@@ -3651,11 +3765,28 @@ function buildReputationContext(reputationState, filters = {}) {
     : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
   const factions = rawFactions.map((faction) => {
     const band = getReputationBand(faction.score);
+    const noteLogs = Array.isArray(faction.noteLogs)
+      ? faction.noteLogs.map((row) => normalizeReputationNoteLog(row)).sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
+      : [];
+    const noteLogOptions = noteLogs.slice(0, 50).map((row) => {
+      const signedScore = row.score > 0 ? `+${row.score}` : String(row.score);
+      const stamp = row.dayLabel || formatRecoveryDueLabel(Number(row.loggedAt ?? Date.now()));
+      const summary = row.note.length > 64 ? `${row.note.slice(0, 61)}...` : row.note;
+      return {
+        value: row.id,
+        label: `${stamp} · Rep ${signedScore} · ${summary}`,
+        note: row.note
+      };
+    });
     return {
       ...faction,
       key: faction.id,
       band,
-      access: getReputationAccessLabel(faction.score)
+      access: getReputationAccessLabel(faction.score),
+      noteLogs,
+      noteLogOptions,
+      hasNoteLogs: noteLogOptions.length > 0,
+      noteLogCount: noteLogOptions.length
     };
   });
 
@@ -3669,7 +3800,8 @@ function buildReputationContext(reputationState, filters = {}) {
       || faction.band === filterStanding;
     if (!standingMatch) return false;
     if (!filterKeyword) return true;
-    const haystack = `${faction.label} ${faction.note} ${faction.band} ${faction.access} ${faction.score}`.toLowerCase();
+    const historical = (faction.noteLogs ?? []).map((row) => String(row.note ?? "")).join(" ");
+    const haystack = `${faction.label} ${faction.note} ${historical} ${faction.band} ${faction.access} ${faction.score}`.toLowerCase();
     return haystack.includes(filterKeyword);
   });
 
@@ -3878,10 +4010,91 @@ function ensureBaseOperationsState(ledger) {
   return ledger.baseOperations;
 }
 
+const WEATHER_PRESET_DEFINITIONS = [
+  { id: "clear", label: "Clear", visibilityModifier: 0, darkness: 0.1, note: "Clear skies and stable visibility." },
+  { id: "cloudy", label: "Cloudy", visibilityModifier: -1, darkness: 0.3, note: "Low cloud cover and muted light." },
+  { id: "rainy", label: "Rainy", visibilityModifier: -1, darkness: 0.4, note: "Rain interferes with spotting and footing." },
+  { id: "stormy", label: "Stormy", visibilityModifier: -3, darkness: 0.65, note: "Thunderstorm conditions reduce awareness." },
+  { id: "snowy", label: "Snowy", visibilityModifier: -2, darkness: 0.45, note: "Snowfall obscures distance and tracks." },
+  { id: "hail", label: "Hail", visibilityModifier: -2, darkness: 0.5, note: "Hail disrupts movement and ranged visibility." }
+];
+
+function normalizeWeatherDaeChange(entry = {}) {
+  const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    key: String(entry?.key ?? "").trim(),
+    mode: validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
+    value: String(entry?.value ?? "").trim(),
+    label: String(entry?.label ?? "Weather Effect").trim() || "Weather Effect",
+    note: String(entry?.note ?? "")
+  };
+}
+
+function normalizeWeatherPreset(entry = {}, defaults = {}) {
+  const daeChanges = Array.isArray(entry?.daeChanges)
+    ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
+    : [];
+  return {
+    id: String(entry?.id ?? defaults?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    label: String(entry?.label ?? defaults?.label ?? "Custom Weather").trim() || "Custom Weather",
+    visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier))))
+      : Math.max(-5, Math.min(5, Math.floor(Number(defaults?.visibilityModifier ?? 0)))),
+    darkness: Number.isFinite(Number(entry?.darkness))
+      ? Math.max(0, Math.min(1, Number(entry.darkness)))
+      : Math.max(0, Math.min(1, Number(defaults?.darkness ?? 0))),
+    note: String(entry?.note ?? defaults?.note ?? ""),
+    isBuiltIn: Boolean(entry?.isBuiltIn ?? defaults?.isBuiltIn),
+    daeChanges
+  };
+}
+
+function getBuiltInWeatherPresets() {
+  return WEATHER_PRESET_DEFINITIONS.map((entry) => normalizeWeatherPreset({
+    ...entry,
+    isBuiltIn: true,
+    daeChanges: []
+  }, entry));
+}
+
+function getWeatherPresetCatalog(weatherState = {}) {
+  const builtIns = getBuiltInWeatherPresets();
+  const customPresets = Array.isArray(weatherState?.customPresets)
+    ? weatherState.customPresets
+      .map((entry) => normalizeWeatherPreset(entry, { isBuiltIn: false }))
+      .filter((entry) => !entry.isBuiltIn)
+    : [];
+  const seen = new Set();
+  return [...builtIns, ...customPresets].filter((entry) => {
+    const id = String(entry.id ?? "").trim().toLowerCase();
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
+function describeWeatherDaeChanges(changes = []) {
+  const rows = Array.isArray(changes) ? changes : [];
+  if (!rows.length) return "No additional global DAE changes.";
+  return rows
+    .map((entry) => `${entry.label || entry.key}: ${entry.value} (${getActiveEffectModeLabel(entry.mode)})`)
+    .join("; ");
+}
+
 function ensureWeatherState(ledger) {
   if (!ledger.weather || typeof ledger.weather !== "object") {
-    ledger.weather = { current: null, logs: [] };
+    ledger.weather = { current: null, logs: [], customPresets: [] };
   }
+  if (!Array.isArray(ledger.weather.customPresets)) ledger.weather.customPresets = [];
+  ledger.weather.customPresets = ledger.weather.customPresets
+    .map((entry) => normalizeWeatherPreset(entry, { isBuiltIn: false }))
+    .filter((entry, index, arr) => {
+      const id = String(entry.id ?? "").trim();
+      if (!id || entry.isBuiltIn) return false;
+      return arr.findIndex((candidate) => String(candidate.id ?? "").trim() === id) === index;
+    });
   if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
   ledger.weather.logs = ledger.weather.logs
     .map((entry) => ({
@@ -3891,6 +4104,9 @@ function ensureWeatherState(ledger) {
       darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
       visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier)))) : 0,
       note: String(entry?.note ?? ""),
+      daeChanges: Array.isArray(entry?.daeChanges)
+        ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
+        : [],
       loggedAt: Number.isFinite(Number(entry?.loggedAt)) ? Number(entry.loggedAt) : Date.now(),
       loggedBy: String(entry?.loggedBy ?? "GM")
     }))
@@ -3906,6 +4122,9 @@ function ensureWeatherState(ledger) {
       darkness: Number.isFinite(Number(current?.darkness)) ? Math.max(0, Math.min(1, Number(current.darkness))) : 0,
       visibilityModifier: Number.isFinite(Number(current?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(current.visibilityModifier)))) : 0,
       note: String(current?.note ?? ""),
+      daeChanges: Array.isArray(current?.daeChanges)
+        ? current.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
+        : [],
       loggedAt: Number.isFinite(Number(current?.loggedAt)) ? Number(current.loggedAt) : Date.now(),
       loggedBy: String(current?.loggedBy ?? "GM")
     };
@@ -3943,64 +4162,63 @@ function getWeatherEffectSummary(visibilityModifier) {
   return "No perception modifier from weather.";
 }
 
-function buildWeatherSelectionCatalog(sceneSnapshot = null) {
-  const options = [];
-  const currentDarkness = Number(sceneSnapshot?.darkness ?? 0);
+function buildWeatherSelectionCatalog(weatherState = {}, sceneSnapshot = null) {
+  const sceneDarkness = Number.isFinite(Number(sceneSnapshot?.darkness))
+    ? Math.max(0, Math.min(1, Number(sceneSnapshot.darkness)))
+    : null;
+  return getWeatherPresetCatalog(weatherState)
+    .map((preset) => ({
+      key: String(preset.id ?? "").trim(),
+      label: String(preset.label ?? "Weather").trim() || "Weather",
+      weatherId: String(preset.id ?? "").trim(),
+      darkness: sceneDarkness ?? Math.max(0, Math.min(1, Number(preset.darkness ?? 0))),
+      visibilityModifier: Math.max(-5, Math.min(5, Math.floor(Number(preset.visibilityModifier ?? 0) || 0))),
+      note: String(preset.note ?? ""),
+      daeChanges: Array.isArray(preset.daeChanges) ? preset.daeChanges : [],
+      isBuiltIn: Boolean(preset.isBuiltIn)
+    }))
+    .filter((entry) => entry.key);
+}
 
-  if (sceneSnapshot) {
-    options.push({
-      key: "scene-current",
-      label: `Current Scene: ${sceneSnapshot.label}`,
-      weatherId: String(sceneSnapshot.weatherId ?? ""),
-      darkness: Math.max(0, Math.min(1, Number(sceneSnapshot.darkness ?? 0))),
-      visibilityModifier: Math.max(-5, Math.min(5, Math.floor(Number(sceneSnapshot.visibilityModifier ?? 0) || 0))),
-      source: "scene"
-    });
-  }
+function resolveWeatherFxEffectIdForPreset(preset = {}) {
+  const presetKey = String(preset?.key ?? preset?.weatherId ?? "").trim().toLowerCase();
+  const presetLabel = String(preset?.label ?? "").trim().toLowerCase();
+  if (!presetKey || presetKey.includes("clear") || presetLabel.includes("clear")) return "";
 
-  const configuredEntries = Object.entries(CONFIG.weatherEffects ?? {})
-    .map(([weatherId, cfg]) => {
-      const label = String(cfg?.label ?? cfg?.name ?? weatherId).trim() || weatherId;
-      return {
-        key: `config:${weatherId}`,
-        label,
-        weatherId,
-        darkness: Number.isFinite(currentDarkness) ? Math.max(0, Math.min(1, currentDarkness)) : 0,
-        visibilityModifier: computeWeatherVisibilityModifier({
-          label,
-          weatherId,
-          darkness: currentDarkness
-        }),
-        source: "config"
-      };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
+  const effects = Object.entries(CONFIG.weatherEffects ?? {})
+    .map(([id, cfg]) => ({
+      id: String(id ?? "").trim(),
+      text: `${String(id ?? "")} ${String(cfg?.label ?? cfg?.name ?? "")}`.toLowerCase()
+    }))
+    .filter((entry) => entry.id);
+  if (!effects.length) return "";
 
-  const fallbackProfiles = [
-    { key: "fallback:clear", label: "Clear", weatherId: "clear", visibilityModifier: 0 },
-    { key: "fallback:cloudy", label: "Cloudy", weatherId: "cloudy", visibilityModifier: -1 },
-    { key: "fallback:fog", label: "Fog", weatherId: "fog", visibilityModifier: -2 },
-    { key: "fallback:rain", label: "Rain", weatherId: "rain", visibilityModifier: -1 },
-    { key: "fallback:storm", label: "Storm", weatherId: "storm", visibilityModifier: -3 },
-    { key: "fallback:snow", label: "Snow", weatherId: "snow", visibilityModifier: -2 },
-    { key: "fallback:blizzard", label: "Blizzard", weatherId: "blizzard", visibilityModifier: -4 },
-    { key: "fallback:smoke", label: "Smoke", weatherId: "smoke", visibilityModifier: -2 },
-    { key: "fallback:wind", label: "High Wind", weatherId: "wind", visibilityModifier: -1 }
-  ].map((entry) => ({
-    ...entry,
-    darkness: Number.isFinite(currentDarkness) ? Math.max(0, Math.min(1, currentDarkness)) : 0,
-    source: "fallback"
-  }));
+  const keywordMap = {
+    rainy: ["rain", "drizzle", "shower"],
+    stormy: ["storm", "thunder", "lightning", "tempest"],
+    snowy: ["snow", "blizzard", "flurry"],
+    cloudy: ["cloud", "overcast", "fog", "mist"],
+    hail: ["hail", "sleet", "ice"]
+  };
+  const targetWords = keywordMap[presetKey]
+    ?? keywordMap[String(presetLabel).split(" ")[0]]
+    ?? Object.values(keywordMap).find((words) => words.some((word) => presetLabel.includes(word)))
+    ?? [];
+  if (!targetWords.length) return "";
+  const match = effects.find((entry) => targetWords.some((word) => entry.text.includes(word)));
+  return String(match?.id ?? "").trim();
+}
 
-  options.push(...(configuredEntries.length > 0 ? configuredEntries : fallbackProfiles));
-
-  const seen = new Set();
-  return options.filter((entry) => {
-    const key = `${String(entry.weatherId ?? "").trim().toLowerCase()}::${String(entry.label ?? "").trim().toLowerCase()}`;
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+async function applyWeatherSceneFxForPreset(preset = {}) {
+  if (!game.user.isGM) return;
+  const scene = game.scenes?.current;
+  if (!scene) return;
+  const presetKey = String(preset?.key ?? preset?.weatherId ?? "").trim().toLowerCase();
+  const effectId = resolveWeatherFxEffectIdForPreset(preset);
+  const nextWeatherId = (presetKey.includes("clear") || !effectId) ? "" : effectId;
+  const currentWeatherId = String(scene.weather ?? "").trim();
+  if (nextWeatherId === currentWeatherId) return;
+  await scene.update({ weather: nextWeatherId });
 }
 
 function resolveCurrentSceneWeatherSnapshot() {
@@ -4337,6 +4555,7 @@ async function addOperationalEnvironmentLog() {
     const check = getEnvironmentCheckMeta(preset);
     environment.logs.unshift({
       id: foundry.utils.randomID(),
+      logType: "environment",
       presetKey: environment.presetKey,
       movementDc: environment.movementDc,
       actorIds: [...environment.appliedActorIds],
@@ -4363,7 +4582,7 @@ async function editOperationalEnvironmentLog(element) {
 
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const entry = environment.logs.find((candidate) => candidate.id === logId);
+    const entry = environment.logs.find((candidate) => candidate.id === logId && String(candidate.logType ?? "environment") !== "weather");
     if (!entry) return;
     environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
@@ -4379,7 +4598,7 @@ async function editOperationalEnvironmentLogById(logId) {
   if (!id) return false;
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const entry = environment.logs.find((candidate) => candidate.id === id);
+    const entry = environment.logs.find((candidate) => candidate.id === id && String(candidate.logType ?? "environment") !== "weather");
     if (!entry) return;
     environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
@@ -4399,7 +4618,7 @@ async function removeOperationalEnvironmentLog(element) {
 
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    environment.logs = environment.logs.filter((entry) => entry.id !== logId);
+    environment.logs = environment.logs.filter((entry) => !(entry.id === logId && String(entry.logType ?? "environment") !== "weather"));
   });
 }
 
@@ -4410,7 +4629,7 @@ async function removeOperationalEnvironmentLogById(logId) {
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
     const before = environment.logs.length;
-    environment.logs = environment.logs.filter((entry) => entry.id !== id);
+    environment.logs = environment.logs.filter((entry) => !(entry.id === id && String(entry.logType ?? "environment") !== "weather"));
     removed = environment.logs.length < before;
   });
   return removed;
@@ -5469,6 +5688,122 @@ async function setReputationNote(element) {
   });
 }
 
+function buildReputationCalendarPayload(faction, logEntry) {
+  const now = Number(logEntry?.loggedAt ?? getCurrentWorldTimestamp());
+  const score = Number(logEntry?.score ?? 0);
+  const signedScore = score > 0 ? `+${score}` : String(score);
+  const title = `Reputation Update: ${String(faction?.label ?? "Faction")}`;
+  const body = [
+    `<p><strong>Faction:</strong> ${foundry.utils.escapeHTML(String(faction?.label ?? "Faction"))}</p>`,
+    `<p><strong>Reputation:</strong> ${signedScore} (${foundry.utils.escapeHTML(getReputationAccessLabel(score))})</p>`,
+    `<p><strong>Logged:</strong> ${foundry.utils.escapeHTML(String(logEntry?.dayLabel ?? formatRecoveryDueLabel(now)))}</p>`,
+    `<p><strong>Note:</strong> ${foundry.utils.escapeHTML(String(logEntry?.note ?? ""))}</p>`
+  ].join("");
+  return {
+    title,
+    name: title,
+    description: body,
+    content: body,
+    startTime: now,
+    endTime: now + 60,
+    timestamp: now,
+    allDay: false,
+    playerVisible: true,
+    public: true
+  };
+}
+
+async function syncReputationLogToSimpleCalendar(faction, logEntry) {
+  if (!game.user.isGM || !isSimpleCalendarActive()) return "";
+  const api = getSimpleCalendarApi();
+  if (!api || !hasSimpleCalendarMutationApi(api)) return "";
+  const created = await createSimpleCalendarEntry(api, buildReputationCalendarPayload(faction, logEntry));
+  return created?.success ? String(created.id ?? "") : "";
+}
+
+async function logReputationNote(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  if (!factionId) return;
+  const root = element?.closest("[data-faction]") ?? element?.closest(".po-op-role-row");
+  const note = String(root?.querySelector("textarea[data-action='set-reputation-note']")?.value ?? "").trim();
+  if (!note) {
+    ui.notifications?.warn("Add a note before logging reputation history.");
+    return;
+  }
+
+  const loggedAt = Date.now();
+  const dayLabel = formatRecoveryDueLabel(loggedAt);
+  const clock = getClockContext();
+  let createdLog = null;
+  let factionLabel = "Faction";
+
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === factionId);
+    if (!entry) return;
+    factionLabel = String(entry.label ?? "Faction");
+    if (!Array.isArray(entry.noteLogs)) entry.noteLogs = [];
+    const logEntry = normalizeReputationNoteLog({
+      id: foundry.utils.randomID(),
+      note,
+      score: Number(entry.score ?? 0),
+      loggedAt,
+      loggedBy: String(game.user?.name ?? "GM"),
+      dayLabel,
+      clockLabel: String(clock?.label ?? "")
+    });
+    entry.noteLogs.unshift(logEntry);
+    if (entry.noteLogs.length > 100) entry.noteLogs = entry.noteLogs.slice(0, 100);
+    createdLog = logEntry;
+  });
+
+  if (!createdLog) return;
+  const calendarEntryId = await syncReputationLogToSimpleCalendar({ label: factionLabel }, createdLog);
+  if (calendarEntryId) {
+    await updateOperationsLedger((ledger) => {
+      const reputation = ensureReputationState(ledger);
+      const entry = reputation.factions.find((row) => row.id === factionId);
+      if (!entry || !Array.isArray(entry.noteLogs)) return;
+      const logRow = entry.noteLogs.find((row) => String(row.id ?? "") === String(createdLog.id ?? ""));
+      if (!logRow) return;
+      logRow.calendarEntryId = String(calendarEntryId);
+    });
+  }
+
+  ui.notifications?.info(`Logged reputation note for ${factionLabel}.`);
+  const signedScore = Number(createdLog.score ?? 0) > 0 ? `+${Number(createdLog.score)}` : String(Number(createdLog.score ?? 0));
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Reputation Log:</strong> ${foundry.utils.escapeHTML(factionLabel)} · ${signedScore}</p><p>${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p><p>${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>`
+  });
+}
+
+async function loadReputationNoteLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  const logId = String(element?.value ?? "").trim();
+  if (!factionId || !logId) return;
+
+  let loaded = false;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === factionId);
+    if (!entry || !Array.isArray(entry.noteLogs)) return;
+    const logRow = entry.noteLogs.find((row) => String(row.id ?? "") === logId);
+    if (!logRow) return;
+    entry.note = String(logRow.note ?? "");
+    loaded = true;
+  });
+  if (loaded) ui.notifications?.info("Loaded historical reputation note into editor.");
+}
+
 async function setReputationLabel(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can update reputation.");
@@ -5503,6 +5838,7 @@ async function addReputationFaction(element) {
       label,
       score: 0,
       note: "",
+      noteLogs: [],
       isCore: false
     }));
   });
@@ -5953,29 +6289,156 @@ async function gmQuickSubmitModifier(element) {
   setActiveGmQuickPanel("none");
 }
 
+function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {
+  const presetChanges = Array.isArray(preset?.daeChanges)
+    ? preset.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+    : [];
+  const previousChanges = Array.isArray(previousDraft?.daeChanges)
+    ? previousDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+    : null;
+  return {
+    selectedKey: String(preset?.key ?? ""),
+    darkness: Number.isFinite(Number(previousDraft?.darkness))
+      ? Math.max(0, Math.min(1, Number(previousDraft.darkness)))
+      : Math.max(0, Math.min(1, Number(preset?.darkness ?? sceneSnapshot?.darkness ?? 0))),
+    visibilityModifier: Number.isFinite(Number(previousDraft?.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(previousDraft.visibilityModifier))))
+      : Math.max(-5, Math.min(5, Math.floor(Number(preset?.visibilityModifier ?? 0) || 0))),
+    note: String(previousDraft?.note ?? preset?.note ?? sceneSnapshot?.note ?? ""),
+    presetName: String(previousDraft?.presetName ?? preset?.label ?? ""),
+    daeChanges: previousChanges ?? presetChanges
+  };
+}
+
+function getWeatherPresetByKey(weatherState, sceneSnapshot, key) {
+  const options = buildWeatherSelectionCatalog(weatherState, sceneSnapshot);
+  const selectedKey = String(key ?? "").trim();
+  return options.find((entry) => entry.key === selectedKey) ?? options[0] ?? null;
+}
+
 async function gmQuickLogCurrentWeather() {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can log weather.");
     return;
   }
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
-  const defaultOption = weatherOptions[0] ?? {
-    key: "manual",
-    label: sceneSnapshot.label,
-    weatherId: sceneSnapshot.weatherId,
-    darkness: sceneSnapshot.darkness,
-    visibilityModifier: sceneSnapshot.visibilityModifier
-  };
-
-  setGmQuickWeatherDraft({
-    selectedKey: String(defaultOption.key ?? ""),
-    darkness: Number(defaultOption.darkness ?? sceneSnapshot.darkness ?? 0),
-    visibilityModifier: Number(defaultOption.visibilityModifier ?? sceneSnapshot.visibilityModifier ?? 0),
-    note: String(sceneSnapshot.note ?? "")
-  });
+  const defaultPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, "clear")
+    ?? buildWeatherSelectionCatalog(weatherState, sceneSnapshot)[0]
+    ?? null;
+  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(defaultPreset, sceneSnapshot));
   const current = getActiveGmQuickPanel();
   setActiveGmQuickPanel(current === "weather" ? "none" : "weather");
+}
+
+async function gmQuickSelectWeatherPreset(element) {
+  const selectedKey = String(element?.value ?? "").trim();
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey);
+  if (!selectedPreset) return;
+  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot, { selectedKey }));
+}
+
+function gmQuickUpdateWeatherDraftField(element) {
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!field) return;
+  const draft = getGmQuickWeatherDraft() ?? {};
+  if (field === "darkness") {
+    const value = Number(element?.value ?? 0);
+    draft.darkness = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0;
+  } else if (field === "visibilityModifier") {
+    const value = Number(element?.value ?? 0);
+    draft.visibilityModifier = Number.isFinite(value) ? Math.max(-5, Math.min(5, Math.floor(value))) : 0;
+  } else if (field === "note") {
+    draft.note = String(element?.value ?? "");
+  } else if (field === "presetName") {
+    draft.presetName = String(element?.value ?? "");
+  }
+  setGmQuickWeatherDraft(draft);
+}
+
+async function gmQuickAddWeatherDaeChange(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const key = String(root?.querySelector("input[name='quickWeatherDaeKeyInput']")?.value ?? root?.querySelector("select[name='quickWeatherDaeKey']")?.value ?? "").trim();
+  const value = String(root?.querySelector("input[name='quickWeatherDaeValue']")?.value ?? "").trim();
+  const note = String(root?.querySelector("input[name='quickWeatherDaeNote']")?.value ?? "").trim();
+  const rawMode = Math.floor(Number(root?.querySelector("select[name='quickWeatherDaeMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  if (!key || !value) {
+    ui.notifications?.warn("DAE change requires key and value.");
+    return;
+  }
+  const draft = getGmQuickWeatherDraft() ?? {};
+  draft.daeChanges = [
+    ...(Array.isArray(draft.daeChanges) ? draft.daeChanges : []),
+    normalizeWeatherDaeChange({
+      id: foundry.utils.randomID(),
+      key,
+      mode: rawMode,
+      value,
+      label: getDaeKeyLabel(key),
+      note
+    })
+  ];
+  setGmQuickWeatherDraft(draft);
+}
+
+async function gmQuickRemoveWeatherDaeChange(element) {
+  const changeId = String(element?.dataset?.changeId ?? "").trim();
+  if (!changeId) return;
+  const draft = getGmQuickWeatherDraft() ?? {};
+  draft.daeChanges = (Array.isArray(draft.daeChanges) ? draft.daeChanges : []).filter((entry) => String(entry?.id ?? "") !== changeId);
+  setGmQuickWeatherDraft(draft);
+}
+
+async function gmQuickSaveWeatherPreset(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const draft = getGmQuickWeatherDraft() ?? {};
+  const presetName = String(root?.querySelector("input[name='quickWeatherPresetName']")?.value ?? draft.presetName ?? "").trim();
+  if (!presetName) {
+    ui.notifications?.warn("Custom preset name is required.");
+    return;
+  }
+  const presetId = `custom-${foundry.utils.randomID()}`;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.customPresets.push(normalizeWeatherPreset({
+      id: presetId,
+      label: presetName,
+      visibilityModifier: Number(draft.visibilityModifier ?? 0),
+      darkness: Number(draft.darkness ?? 0),
+      note: String(draft.note ?? ""),
+      daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : [],
+      isBuiltIn: false
+    }));
+  });
+  setGmQuickWeatherDraft({
+    ...draft,
+    selectedKey: presetId,
+    presetName
+  });
+  ui.notifications?.info(`Saved custom weather preset: ${presetName}.`);
+}
+
+async function gmQuickDeleteWeatherPreset(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const selectedKey = String(root?.querySelector("select[name='quickWeatherProfile']")?.value ?? getGmQuickWeatherDraft()?.selectedKey ?? "").trim();
+  if (!selectedKey.startsWith("custom-")) {
+    ui.notifications?.warn("Only custom presets can be removed.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.customPresets = weather.customPresets.filter((entry) => String(entry?.id ?? "") !== selectedKey);
+  });
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const fallbackPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, "clear");
+  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(fallbackPreset, sceneSnapshot));
+  ui.notifications?.info("Removed custom weather preset.");
 }
 
 async function gmQuickSubmitWeather(element) {
@@ -5985,53 +6448,76 @@ async function gmQuickSubmitWeather(element) {
   }
   const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
+  const ledger = getOperationsLedger();
+  const weatherState = ensureWeatherState(ledger);
   const selectedKey = String(root?.querySelector("select[name='quickWeatherProfile']")?.value ?? "").trim();
-  const selected = weatherOptions.find((entry) => entry.key === selectedKey) ?? weatherOptions[0] ?? {
-    key: "manual",
-    label: sceneSnapshot.label,
-    weatherId: sceneSnapshot.weatherId,
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey) ?? {
+    key: "clear",
+    label: "Clear",
+    weatherId: "clear",
     darkness: sceneSnapshot.darkness,
-    visibilityModifier: sceneSnapshot.visibilityModifier
+    visibilityModifier: sceneSnapshot.visibilityModifier,
+    daeChanges: []
   };
-  const rawDarkness = Number(root?.querySelector("input[name='quickWeatherDarkness']")?.value ?? selected.darkness ?? sceneSnapshot.darkness ?? 0);
+  const draft = getGmQuickWeatherDraft() ?? buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot);
+  const rawDarkness = Number(root?.querySelector("input[name='quickWeatherDarkness']")?.value ?? draft.darkness ?? selectedPreset.darkness ?? sceneSnapshot.darkness ?? 0);
   const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
-  const rawVisibility = Number(root?.querySelector("input[name='quickWeatherVisibility']")?.value ?? selected.visibilityModifier ?? 0);
+  const rawVisibility = Number(root?.querySelector("input[name='quickWeatherVisibility']")?.value ?? draft.visibilityModifier ?? selectedPreset.visibilityModifier ?? 0);
   const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
-  const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? "").trim();
+  const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? draft.note ?? "").trim();
+  const daeChanges = (Array.isArray(draft.daeChanges) ? draft.daeChanges : selectedPreset.daeChanges ?? [])
+    .map((entry) => normalizeWeatherDaeChange(entry))
+    .filter((entry) => entry.key && entry.value);
 
   const snapshot = {
     id: foundry.utils.randomID(),
-    label: String(selected?.label ?? sceneSnapshot.label ?? "Weather").trim() || "Weather",
-    weatherId: String(selected?.weatherId ?? sceneSnapshot.weatherId ?? "").trim(),
+    label: String(selectedPreset.label ?? "Weather").trim() || "Weather",
+    weatherId: String(selectedPreset.weatherId ?? selectedPreset.key ?? "").trim(),
     darkness,
     visibilityModifier,
     note: note || `Weather profile logged · darkness ${darkness.toFixed(2)}`,
+    daeChanges,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };
 
   await updateOperationsLedger((ledger) => {
     const weather = ensureWeatherState(ledger);
+    const environment = ensureEnvironmentState(ledger);
     weather.current = snapshot;
     weather.logs.unshift(snapshot);
     if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
+    environment.logs.unshift({
+      id: snapshot.id,
+      logType: "weather",
+      label: snapshot.label,
+      weatherId: snapshot.weatherId,
+      darkness: snapshot.darkness,
+      visibilityModifier: snapshot.visibilityModifier,
+      note: snapshot.note,
+      daeChanges: snapshot.daeChanges,
+      createdAt: snapshot.loggedAt,
+      createdBy: snapshot.loggedBy
+    });
+    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
   });
 
-  const signedModifier = snapshot.visibilityModifier > 0
-    ? `+${snapshot.visibilityModifier}`
-    : String(snapshot.visibilityModifier);
+  await applyWeatherSceneFxForPreset(selectedPreset);
+
+  const signedModifier = snapshot.visibilityModifier > 0 ? `+${snapshot.visibilityModifier}` : String(snapshot.visibilityModifier);
   ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+    content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${foundry.utils.escapeHTML(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
   });
 
   setGmQuickWeatherDraft({
     selectedKey,
     darkness,
     visibilityModifier,
-    note
+    note,
+    presetName: String(selectedPreset.label ?? ""),
+    daeChanges
   });
   setActiveGmQuickPanel("none");
 }
@@ -6045,16 +6531,14 @@ async function loadWeatherLogToQuickPanel(logId) {
   if (!entry) return false;
 
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
-  const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
-  const selectedOption = weatherOptions.find((option) => String(option.weatherId ?? "") === String(entry.weatherId ?? ""))
-    ?? weatherOptions.find((option) => String(option.label ?? "") === String(entry.label ?? ""))
-    ?? weatherOptions[0];
-
+  const selectedPreset = getWeatherPresetByKey(weather, sceneSnapshot, entry.weatherId);
   setGmQuickWeatherDraft({
-    selectedKey: String(selectedOption?.key ?? ""),
+    ...buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot),
+    selectedKey: String(selectedPreset?.key ?? entry.weatherId ?? ""),
     darkness: Number(entry.darkness ?? 0),
     visibilityModifier: Number(entry.visibilityModifier ?? 0),
-    note: String(entry.note ?? "")
+    note: String(entry.note ?? ""),
+    daeChanges: Array.isArray(entry.daeChanges) ? entry.daeChanges : []
   });
   setActiveGmQuickPanel("weather");
   return true;
@@ -6066,8 +6550,10 @@ async function removeWeatherLogById(logId) {
   let removed = false;
   await updateOperationsLedger((ledger) => {
     const weather = ensureWeatherState(ledger);
+    const environment = ensureEnvironmentState(ledger);
     const before = weather.logs.length;
     weather.logs = weather.logs.filter((entry) => String(entry?.id ?? "") !== id);
+    environment.logs = environment.logs.filter((entry) => !(String(entry?.id ?? "") === id && String(entry?.logType ?? "") === "weather"));
     if (weather.current && String(weather.current.id ?? "") === id) {
       weather.current = weather.logs[0] ?? null;
     }

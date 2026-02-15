@@ -655,6 +655,18 @@
                   <span>Notes / Outcome Impact</span>
                   <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
                 </label>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
+                </div>
+                <label class="po-resource-row">
+                  <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                  <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
+                    <option value="">Select date/reputation note...</option>
+                    {{#each noteLogOptions}}
+                    <option value="{{value}}">{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
                 {{#unless isCore}}
                 <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
                 {{/unless}}
@@ -690,6 +702,18 @@
                 <label class="po-resource-row po-notes-row-lg">
                   <span>Notes / Outcome Impact</span>
                   <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
+                </label>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
+                </div>
+                <label class="po-resource-row">
+                  <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                  <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
+                    <option value="">Select date/reputation note...</option>
+                    {{#each noteLogOptions}}
+                    <option value="{{value}}">{{label}}</option>
+                    {{/each}}
+                  </select>
                 </label>
                 {{#unless isCore}}
                 <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
@@ -985,24 +1009,81 @@
             <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} · Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
             <label class="po-resource-row">
               <span>Weather Preset</span>
-              <select name="quickWeatherProfile" class="po-select">
+              <select name="quickWeatherProfile" class="po-select" data-action="gm-quick-weather-select">
                 {{#each operations.gmQuickTools.weatherOptions}}
                 <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} · {{visibilityLabel}} ({{effectSummary}})</option>
                 {{/each}}
               </select>
             </label>
+            <div class="po-op-summary">Preset Effects: {{#each operations.gmQuickTools.weatherOptions}}{{#if selected}}{{daeSummary}}{{/if}}{{/each}}</div>
             <label class="po-resource-row">
               <span>Darkness (0-1)</span>
-              <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" value="{{operations.gmQuickTools.weatherDraft.darkness}}" />
+              <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" data-action="gm-quick-weather-set" data-field="darkness" value="{{operations.gmQuickTools.weatherDraft.darkness}}" />
             </label>
             <label class="po-resource-row">
               <span>Perception Modifier</span>
-              <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" value="{{operations.gmQuickTools.weatherDraft.visibilityModifier}}" />
+              <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" data-action="gm-quick-weather-set" data-field="visibilityModifier" value="{{operations.gmQuickTools.weatherDraft.visibilityModifier}}" />
             </label>
             <label class="po-resource-row po-notes-row-lg">
               <span>Log Note</span>
-              <textarea name="quickWeatherNote" rows="3" class="po-input" placeholder="Optional global weather note">{{operations.gmQuickTools.weatherDraft.note}}</textarea>
+              <textarea name="quickWeatherNote" rows="3" class="po-input" data-action="gm-quick-weather-set" data-field="note" placeholder="Optional global weather note">{{operations.gmQuickTools.weatherDraft.note}}</textarea>
             </label>
+            <div class="po-op-divider"></div>
+            <div class="po-section-title">Global DAE Effects</div>
+            {{#if operations.gmQuickTools.weatherDraft.daeChanges.length}}
+            {{#each operations.gmQuickTools.weatherDraft.daeChanges}}
+            <div class="po-op-role-row">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">{{label}}</div>
+                <div class="po-op-role-status">{{value}} ({{mode}})</div>
+              </div>
+              {{#if note}}<div class="po-op-summary">{{note}}</div>{{/if}}
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-remove-dae" data-change-id="{{id}}">Remove Effect</button>
+            </div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No global DAE effects on this weather draft yet.</div>
+            {{/if}}
+            <label class="po-resource-row">
+              <span>DAE Key</span>
+              <input type="text" name="quickWeatherDaeKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.movement.walk" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key Presets</span>
+              <select name="quickWeatherDaeKey" class="po-select">
+                <option value="">Select key preset</option>
+                {{#each operations.gmQuickTools.modifierKeyOptions}}
+                <option value="{{value}}">{{label}} — {{value}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select name="quickWeatherDaeMode" class="po-select">
+                {{#each operations.gmQuickTools.weatherDaeModeOptions}}
+                <option value="{{value}}">{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Value</span>
+              <input type="text" name="quickWeatherDaeValue" class="po-input" value="-1" />
+            </label>
+            <label class="po-resource-row">
+              <span>Effect Note</span>
+              <input type="text" name="quickWeatherDaeNote" class="po-input" placeholder="Optional effect note" />
+            </label>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-add-dae">Add DAE Effect</button>
+            <div class="po-op-divider"></div>
+            <div class="po-section-title">Custom Preset</div>
+            <label class="po-resource-row">
+              <span>Preset Name</span>
+              <input type="text" name="quickWeatherPresetName" class="po-input" data-action="gm-quick-weather-set" data-field="presetName" value="{{operations.gmQuickTools.weatherDraft.presetName}}" placeholder="e.g., Dust Storm" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Selected Custom</button>
+            </div>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
