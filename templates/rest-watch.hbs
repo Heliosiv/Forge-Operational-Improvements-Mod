@@ -818,7 +818,7 @@
           <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
           <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
           {{#if operations.environment.movementCheckActive}}
-          <div class="po-op-summary">Movement Check: {{operations.environment.preset.checkSkill}} vs hidden DC {{operations.environment.movementDc}}</div>
+          <div class="po-op-summary">Movement Check: {{operations.environment.checkLabel}} vs hidden DC {{operations.environment.movementDc}}</div>
           {{else}}
           <div class="po-op-summary">Movement Check: Off</div>
           {{/if}}
@@ -853,7 +853,7 @@
 
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove DAE Effects</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
           </div>
 
@@ -866,6 +866,7 @@
               <div class="po-op-role-name">{{presetLabel}}</div>
               <div class="po-op-role-status">DC {{movementDc}}</div>
             </div>
+            <div class="po-op-summary">Check: {{checkLabel}}</div>
             <div class="po-op-summary">Affected: {{actorNamesText}}</div>
             {{#if hasNote}}
             <div class="po-op-summary">Notes: {{note}}</div>

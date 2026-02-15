@@ -63,6 +63,7 @@ const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
 const environmentMovePromptByActor = new Map();
+const environmentMoveOriginByToken = new Map();
 
 const ENVIRONMENT_PRESETS = [
   {
@@ -71,44 +72,375 @@ const ENVIRONMENT_PRESETS = [
     description: "No active environmental penalty.",
     icon: "icons/svg/sun.svg",
     movementCheck: false,
-    checkSkill: "",
-    effectChange: null
+    checkType: "skill",
+    checkKey: "",
+    checkLabel: "",
+    effectChanges: []
   },
   {
-    key: "difficult-terrain",
-    label: "Difficult Terrain",
-    description: "Unstable footing and rough terrain slow tactical movement.",
+    key: "climbing-vertical",
+    label: "Climbing & Vertical Movement",
+    description: "Sheer, slick, or unstable surfaces demand climbing control.",
     icon: "icons/svg/falling.svg",
     movementCheck: true,
-    checkSkill: "ath",
-    effectChange: { key: "system.attributes.init.bonus", value: "-1" }
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "jumping-gaps",
+    label: "Jumping Gaps",
+    description: "Collapsed bridges and rooftop breaks require committed leaps.",
+    icon: "icons/svg/falling.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "balancing-narrow",
+    label: "Balancing Hazards",
+    description: "Narrow beams, rope spans, and frozen crossings threaten footing.",
+    icon: "icons/svg/acid.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "acr",
+    checkLabel: "Acrobatics",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
   },
   {
     key: "slippery-ground",
     label: "Slippery Ground",
-    description: "Icy or slick ground causes footing checks when moving.",
-    icon: "icons/svg/acid.svg",
+    description: "Slick surfaces threaten a fall; failed checks cause prone slips.",
+    icon: "icons/svg/falling.svg",
     movementCheck: true,
-    checkSkill: "acr",
-    effectChange: { key: "system.bonuses.abilities.check", value: "-1" }
+    checkType: "skill",
+    checkKey: "acr",
+    checkLabel: "Acrobatics",
+    failStatusId: "prone",
+    failHaltSquares: 1,
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "difficult-terrain",
+    label: "Difficult Terrain",
+    description: "Snow, mud, rubble, and unstable footing tax movement plans.",
+    icon: "icons/svg/falling.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "sur",
+    checkLabel: "Survival",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "extreme-cold",
+    label: "Extreme Cold",
+    description: "Freezing exposure tests endurance and shelter discipline.",
+    icon: "icons/svg/snowflake.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "extreme-heat",
+    label: "Extreme Heat",
+    description: "Heat stress drains stamina and worsens resource pressure.",
+    icon: "icons/svg/fire.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "storms",
+    label: "Storms",
+    description: "Lightning, rain, and blowing grit reduce control and visibility.",
+    icon: "icons/svg/lightning.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "sur",
+    checkLabel: "Survival",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
   },
   {
     key: "high-winds",
-    label: "High Winds",
-    description: "Strong gusts reduce situational awareness.",
+    label: "Strong Winds",
+    description: "Powerful gusts threaten footing and battlefield control.",
     icon: "icons/svg/windmill.svg",
-    movementCheck: false,
-    checkSkill: "",
-    effectChange: { key: "system.skills.prc.bonuses.check", value: "-1" }
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "str",
+    checkLabel: "Strength Save",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
   },
   {
-    key: "oppressive-heat",
-    label: "Oppressive Heat",
-    description: "Heat stress taxes composure and endurance.",
-    icon: "icons/svg/fire.svg",
+    key: "dim-light-obscurement",
+    label: "Dim Light / Heavy Obscurement",
+    description: "Smoke, night, and fog suppress vision and hazard spotting.",
+    icon: "icons/svg/blind.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "prc",
+    checkLabel: "Perception",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-5" }]
+  },
+  {
+    key: "temporal-distortion",
+    label: "Illusions / Temporal Distortion",
+    description: "Shifting architecture and timeline echoes scramble certainty.",
+    icon: "icons/svg/ruins.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "arc",
+    checkLabel: "Arcana",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "quicksand-bog",
+    label: "Quicksand / Bog",
+    description: "Marsh hazards trap movement and punish poor route reading.",
+    icon: "icons/svg/swirl.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "avalanche-rockslide",
+    label: "Avalanche / Rockslide",
+    description: "Sudden collapse events demand immediate evasive movement.",
+    icon: "icons/svg/mountain.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "dex",
+    checkLabel: "Dexterity Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "flash-flood",
+    label: "Flash Flood",
+    description: "Rapid surges turn routes into violent currents.",
+    icon: "icons/svg/water.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "thin-ice",
+    label: "Thin Ice",
+    description: "Surface fractures can collapse under sudden pressure.",
+    icon: "icons/svg/ice-aura.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "dex",
+    checkLabel: "Dexterity Save",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "cave-ins",
+    label: "Cave-Ins",
+    description: "Unstable tunnels and crypt ceilings shed deadly debris.",
+    icon: "icons/svg/cave.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "dex",
+    checkLabel: "Dexterity Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "rooftop-chase",
+    label: "Rooftop Chase",
+    description: "Sloped tiles and gaps punish slow or unsteady pursuit.",
+    icon: "icons/svg/city.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "acr",
+    checkLabel: "Acrobatics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "sewer-navigation",
+    label: "Sewer Navigation",
+    description: "Slippery channels and hidden drops confound route control.",
+    icon: "icons/svg/hazard.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "sur",
+    checkLabel: "Survival",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
+  },
+  {
+    key: "crowd-movement",
+    label: "Crowd Movement",
+    description: "Riots and panic flows obstruct movement and timing.",
+    icon: "icons/svg/group.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "rough-water-swim",
+    label: "Rough Water",
+    description: "Currents and surf force repeated swim control checks.",
+    icon: "icons/svg/water.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "underwater-exploration",
+    label: "Underwater Exploration",
+    description: "Breath and visibility constraints punish prolonged action.",
+    icon: "icons/svg/bubbles.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "necrotic-zone",
+    label: "Necrotic Zone",
+    description: "Blighted ground erodes vitality and invites sickness.",
+    icon: "icons/svg/skull.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "anti-magic-field",
+    label: "Anti-Magic Field",
+    description: "Spell flux drops out and magical assumptions fail.",
+    icon: "icons/svg/mage-shield.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "arc",
+    checkLabel: "Arcana",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "time-warped-area",
+    label: "Time-Warped Area",
+    description: "Temporal drag/surge introduces reaction desync and confusion.",
+    icon: "icons/svg/clockwork.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ins",
+    checkLabel: "Insight",
+    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+  },
+  {
+    key: "haunting-fear-aura",
+    label: "Haunting / Fear Aura",
+    description: "Oppressive dread weakens resolve in haunted ground.",
+    icon: "icons/svg/terror.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "wis",
+    checkLabel: "Wisdom Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "foraging-pressure",
+    label: "Foraging Pressure",
+    description: "Sparse regions increase search strain and time cost.",
+    icon: "icons/svg/leaf.svg",
     movementCheck: false,
-    checkSkill: "",
-    effectChange: { key: "system.bonuses.abilities.save", value: "-1" }
+    checkType: "skill",
+    checkKey: "sur",
+    checkLabel: "Survival",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "hunting-pressure",
+    label: "Hunting Pressure",
+    description: "Alert prey and bad cover punish stealthy procurement.",
+    icon: "icons/svg/pawprint.svg",
+    movementCheck: false,
+    checkType: "skill",
+    checkKey: "ste",
+    checkLabel: "Stealth",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "navigation-pressure",
+    label: "Navigation Pressure",
+    description: "Trackless routes degrade orientation and route confidence.",
+    icon: "icons/svg/compass.svg",
+    movementCheck: false,
+    checkType: "skill",
+    checkKey: "sur",
+    checkLabel: "Survival",
+    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
+  },
+  {
+    key: "forced-march",
+    label: "Forced March",
+    description: "Extended pace increases fatigue and collapse risk.",
+    icon: "icons/svg/wingfoot.svg",
+    movementCheck: false,
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "breaking-barriers",
+    label: "Breaking Barriers",
+    description: "Rotting beams and locked obstructions require brute force.",
+    icon: "icons/svg/door-closed-outline.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "environmental-traps",
+    label: "Environmental Traps",
+    description: "Hidden mechanisms and unstable triggers demand careful detection.",
+    icon: "icons/svg/trap.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "inv",
+    checkLabel: "Investigation",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+  },
+  {
+    key: "witnessing-horror",
+    label: "Witnessing Horror",
+    description: "Ritual carnage and mass death strain composure.",
+    icon: "icons/svg/terror.svg",
+    movementCheck: true,
+    checkType: "save",
+    checkKey: "wis",
+    checkLabel: "Wisdom Save",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+  },
+  {
+    key: "soul-marked-manifestation",
+    label: "Soul-Marked Manifestation",
+    description: "Sigil flares and omen echoes fracture judgment under stress.",
+    icon: "icons/svg/eye.svg",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "rel",
+    checkLabel: "Religion",
+    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
   }
 ];
 
@@ -304,6 +636,7 @@ function buildActorIntegrationPayload(actorId, globalContext) {
   const environment = globalContext.operations.environment ?? { presetKey: "none", movementDc: 12, appliedActorIds: [], preset: null };
   const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
   const environmentApplies = Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId);
+  const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
   const globalModifiers = globalContext.operations.summary?.effects?.globalModifiers ?? {};
 
   return {
@@ -358,7 +691,10 @@ function buildActorIntegrationPayload(actorId, globalContext) {
       presetKey: String(environmentPreset?.key ?? "none"),
       label: String(environmentPreset?.label ?? "None"),
       movementCheck: Boolean(environmentPreset?.movementCheck),
-      checkSkill: String(environmentPreset?.checkSkill ?? ""),
+      checkType: environmentCheck.checkType,
+      checkKey: environmentCheck.checkKey,
+      checkSkill: environmentCheck.checkType === "skill" ? environmentCheck.checkKey : "",
+      checkLabel: environmentCheck.checkLabel,
       movementDc: Math.max(1, Math.floor(Number(environment.movementDc ?? 12) || 12)),
       appliesToActor: Boolean(environmentApplies)
     },
@@ -398,6 +734,23 @@ function getEnvironmentPresetByKey(key) {
   return ENVIRONMENT_PRESETS.find((preset) => preset.key === key) ?? ENVIRONMENT_PRESETS[0];
 }
 
+function getEnvironmentCheckMeta(source = {}) {
+  const checkType = String(source.checkType ?? "skill").toLowerCase() === "save" ? "save" : "skill";
+  const fallbackKey = checkType === "save" ? "con" : "ath";
+  const rawKey = String(source.checkKey ?? source.checkSkill ?? "").trim().toLowerCase();
+  const movementCheck = Boolean(source.movementCheck);
+  const checkKey = rawKey || (movementCheck ? fallbackKey : "");
+  const defaultLabel = checkKey
+    ? (checkType === "save" ? `${checkKey.toUpperCase()} Save` : checkKey.toUpperCase())
+    : "";
+  const checkLabel = String(source.checkLabel ?? defaultLabel).trim();
+  return {
+    checkType,
+    checkKey,
+    checkLabel
+  };
+}
+
 function ensureEnvironmentState(ledger) {
   if (!ledger.environment || typeof ledger.environment !== "object") {
     ledger.environment = {
@@ -423,12 +776,16 @@ function ensureEnvironmentState(ledger) {
         ? entry.actorIds.map((actorId) => String(actorId ?? "").trim()).filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
         : [];
       const createdAt = Number(entry?.createdAt ?? Date.now());
+      const checkMeta = getEnvironmentCheckMeta(entry);
       return {
         id: String(entry?.id ?? foundry.utils.randomID()),
         presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
         movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
         actorIds,
         note: String(entry?.note ?? ""),
+        checkType: checkMeta.checkType,
+        checkKey: checkMeta.checkKey,
+        checkLabel: checkMeta.checkLabel,
         createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
         createdBy: String(entry?.createdBy ?? "GM")
       };
@@ -609,9 +966,9 @@ function buildEnvironmentStatusEffectData(payload) {
   const label = String(environment.label ?? "Environment").trim() || "Environment";
   const icon = String(getEnvironmentPresetByKey(environment.presetKey).icon ?? "icons/svg/hazard.svg");
   const movementCheck = Boolean(environment.movementCheck);
-  const checkSkill = String(environment.checkSkill ?? "").toUpperCase();
+  const check = getEnvironmentCheckMeta(environment);
   const description = movementCheck
-    ? `${label} active. Movement checks required (${checkSkill || "skill"}).`
+    ? `${label} active. Movement checks required (${check.checkLabel || "check"}).`
     : `${label} active.`;
 
   const changes = [
@@ -630,11 +987,12 @@ function buildEnvironmentStatusEffectData(payload) {
   ];
 
   const preset = getEnvironmentPresetByKey(environment.presetKey);
-  if (preset.effectChange?.key && preset.effectChange?.value) {
+  for (const effectChange of preset.effectChanges ?? []) {
+    if (!effectChange?.key || effectChange?.value === undefined || effectChange?.value === null) continue;
     changes.push({
-      key: preset.effectChange.key,
+      key: effectChange.key,
       mode: addMode,
-      value: String(preset.effectChange.value),
+      value: String(effectChange.value),
       priority
     });
   }
@@ -658,7 +1016,10 @@ function buildEnvironmentStatusEffectData(payload) {
           presetKey: String(environment.presetKey ?? "none"),
           label,
           movementCheck,
-          checkSkill: String(environment.checkSkill ?? "")
+          checkType: check.checkType,
+          checkKey: check.checkKey,
+          checkSkill: check.checkType === "skill" ? check.checkKey : "",
+          checkLabel: check.checkLabel
         }
       }
     }
@@ -1196,6 +1557,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.#onNotesChange(event);
         }
       });
+
+      this.element.addEventListener("dblclick", (event) => {
+        const portrait = event.target?.closest(".po-portrait");
+        if (portrait) openActorSheetFromElement(portrait);
+      });
     }
 
     // Update activity UI state
@@ -1575,6 +1941,11 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           this.#onNotesChange(event);
         }
       });
+
+      this.element.addEventListener("dblclick", (event) => {
+        const portrait = event.target?.closest(".po-portrait");
+        if (portrait) openActorSheetFromElement(portrait);
+      });
     }
 
     this.#updateActivityUI();
@@ -1773,6 +2144,11 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         } else if (event.target?.matches("textarea.po-gm-notes")) {
           this.#onGMNotesChange(event);
         }
+      });
+
+      this.element.addEventListener("dblclick", (event) => {
+        const portrait = event.target?.closest(".po-portrait");
+        if (portrait) openActorSheetFromElement(portrait);
       });
 
       this.element.addEventListener("input", (event) => {
@@ -2287,12 +2663,18 @@ function buildOperationsContext() {
   const environmentLogs = (environmentState.logs ?? [])
     .map((entry) => {
       const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const check = getEnvironmentCheckMeta({
+        checkType: entry.checkType ?? preset.checkType,
+        checkKey: entry.checkKey ?? preset.checkKey,
+        checkLabel: entry.checkLabel ?? preset.checkLabel
+      });
       const actorNames = (entry.actorIds ?? []).map((actorId) => environmentActorNames.get(actorId) ?? (game.actors.get(actorId)?.name ?? `Actor ${actorId}`));
       const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
       return {
         id: entry.id,
         presetKey: entry.presetKey,
         presetLabel: preset.label,
+        checkLabel: check.checkLabel,
         movementDc: Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12)),
         actorNames,
         actorNamesText: actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned",
@@ -2394,6 +2776,7 @@ function buildOperationsContext() {
     environment: {
       presetKey: environmentState.presetKey,
       preset: environmentPreset,
+      checkLabel: getEnvironmentCheckMeta(environmentPreset).checkLabel,
       movementDc: environmentState.movementDc,
       note: environmentState.note,
       movementCheckActive: Boolean(environmentPreset.movementCheck),
@@ -2890,12 +3273,17 @@ async function addOperationalEnvironmentLog() {
 
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
+    const preset = getEnvironmentPresetByKey(environment.presetKey);
+    const check = getEnvironmentCheckMeta(preset);
     environment.logs.unshift({
       id: foundry.utils.randomID(),
       presetKey: environment.presetKey,
       movementDc: environment.movementDc,
       actorIds: [...environment.appliedActorIds],
       note: String(environment.note ?? ""),
+      checkType: check.checkType,
+      checkKey: check.checkKey,
+      checkLabel: check.checkLabel,
       createdAt: Date.now(),
       createdBy: String(game.user?.name ?? "GM")
     });
@@ -2961,7 +3349,7 @@ async function showOperationalEnvironmentBrief() {
       <p><strong>Environment:</strong> ${environment.preset.label}</p>
       <p><strong>Description:</strong> ${environment.preset.description}</p>
       <p><strong>Movement Check:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
-      <p><strong>Check Skill:</strong> ${environment.preset.checkSkill ? environment.preset.checkSkill.toUpperCase() : "-"}</p>
+      <p><strong>Check:</strong> ${environment.preset.movementCheck ? (environment.checkLabel || "-") : "-"}</p>
       <p><strong>Movement DC (GM):</strong> ${environment.movementDc}</p>
       <p><strong>Applies To:</strong> ${selected.length > 0 ? selected.join(", ") : "No actors selected."}</p>
     </div>
@@ -3025,19 +3413,21 @@ function extractRollTotalFromMonksResult(result, actorId) {
   return null;
 }
 
-async function requestMonksSurvivalRoll(actor, dc, flavor) {
+async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) {
   if (!actor || !isMonksTokenBarActive()) return null;
   const api = getMonksTokenBarApi();
   if (!api || typeof api.requestRoll !== "function") return null;
 
+  const requestType = String(request ?? "skill:sur").trim() || "skill:sur";
+  const showDc = Boolean(options.showDc);
   const requestOptions = {
-    request: "skill:sur",
+    request: requestType,
     dc,
     flavor,
     silent: false,
     fastForward: false,
-    showdc: true,
-    showDC: true,
+    showdc: showDc,
+    showDC: showDc,
     rollmode: "roll",
     rollMode: "roll"
   };
@@ -3088,7 +3478,7 @@ async function requestMonksSurvivalRoll(actor, dc, flavor) {
     const attempts = [
       () => api.requestRoll(actorTargets, requestOptions),
       () => api.requestRoll(firstToken ? [firstToken] : actorTargets, requestOptions),
-      () => api.requestRoll(actorTargets, "skill:sur", requestOptions)
+      () => api.requestRoll(actorTargets, requestType, requestOptions)
     ];
 
     for (const attempt of attempts) {
@@ -3112,6 +3502,10 @@ async function requestMonksSurvivalRoll(actor, dc, flavor) {
 
     settle(null);
   });
+}
+
+async function requestMonksSurvivalRoll(actor, dc, flavor) {
+  return requestMonksActorCheck(actor, "skill:sur", dc, flavor, { showDc: true });
 }
 
 async function consumeSelectedInventoryItem(selection, amount) {
@@ -3273,60 +3667,110 @@ function getActorEnvironmentAssignment(actorId) {
   if (!applies) return null;
   return {
     preset,
-    movementDc: Number(environment.movementDc ?? 12)
+    movementDc: Number(environment.movementDc ?? 12),
+    failStatusId: String(preset.failStatusId ?? "").trim(),
+    failHaltSquares: Math.max(0, Number(preset.failHaltSquares ?? 0) || 0)
   };
 }
 
-async function promptEnvironmentMovementCheck(actor, assignment) {
-  if (!game.user.isGM || !actor || !assignment?.preset?.movementCheck) return;
-  const preset = assignment.preset;
-  const dc = Math.max(1, Math.floor(Number(assignment.movementDc ?? 12) || 12));
-  const flavor = `${preset.label} movement check`;
-  const skill = String(preset.checkSkill ?? "").trim() || "ath";
+async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext = null) {
+  if (!game.user.isGM || !tokenDoc || !assignment) return;
 
-  if (isMonksTokenBarActive()) {
-    const api = getMonksTokenBarApi();
-    if (api && typeof api.requestRoll === "function") {
-      try {
-        await api.requestRoll([actor], {
-          request: `skill:${skill}`,
-          dc,
-          flavor,
-          showdc: false,
-          showDC: false,
-          silent: false,
-          fastForward: false,
-          rollmode: "roll",
-          rollMode: "roll"
-        });
-        return;
-      } catch (error) {
-        console.warn(`${MODULE_ID}: monks movement check request failed`, error);
+  const statusId = String(assignment.failStatusId ?? "").trim();
+  if (statusId) {
+    try {
+      if (typeof tokenDoc.actor?.toggleStatusEffect === "function") {
+        await tokenDoc.actor.toggleStatusEffect(statusId, { active: true, overlay: false });
+      } else if (tokenDoc.object && typeof tokenDoc.object.toggleEffect === "function") {
+        const statusEffect = CONFIG.statusEffects?.find((entry) => entry?.id === statusId) ?? statusId;
+        await tokenDoc.object.toggleEffect(statusEffect, { active: true });
       }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to apply environment status '${statusId}'`, error);
     }
   }
 
+  const haltSquares = Math.max(0, Number(assignment.failHaltSquares ?? 0) || 0);
+  if (haltSquares <= 0) return;
+
+  const origin = movementContext?.origin;
+  const destination = movementContext?.destination;
+  if (!origin || !destination) return;
+
+  const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 0);
+  if (!Number.isFinite(gridSize) || gridSize <= 0) return;
+  const maxDistance = haltSquares * gridSize;
+  const dx = Number(destination.x ?? 0) - Number(origin.x ?? 0);
+  const dy = Number(destination.y ?? 0) - Number(origin.y ?? 0);
+  const distance = Math.hypot(dx, dy);
+  if (!Number.isFinite(distance) || distance <= maxDistance) return;
+
+  const ratio = maxDistance / distance;
+  const nextX = Math.round(Number(origin.x ?? 0) + (dx * ratio));
+  const nextY = Math.round(Number(origin.y ?? 0) + (dy * ratio));
+
+  await tokenDoc.update({ x: nextX, y: nextY }, { poEnvironmentClamp: true });
+}
+
+async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
+  if (!game.user.isGM || !actor || !assignment?.preset?.movementCheck) return;
+  const preset = assignment.preset;
+  const dc = Math.max(1, Math.floor(Number(assignment.movementDc ?? 12) || 12));
+  const check = getEnvironmentCheckMeta(preset);
+  const request = `${check.checkType}:${check.checkKey}`;
+  const flavor = `${preset.label} movement ${check.checkType === "save" ? "save" : "check"} (${check.checkLabel})`;
+
   let total = null;
-  if (typeof actor.rollSkill === "function") {
+  let passed = null;
+
+  if (isMonksTokenBarActive()) {
     try {
-      const roll = await actor.rollSkill(skill, { fastForward: false, chatMessage: true });
+      const monksResult = await requestMonksActorCheck(actor, request, dc, flavor, { showDc: false });
+      total = Number(monksResult?.total);
+      if (Number.isFinite(total)) passed = total >= dc;
+      else if (typeof monksResult?.passed === "boolean") passed = monksResult.passed;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: monks movement check request failed`, error);
+    }
+  }
+
+  if (!Number.isFinite(total) && check.checkType === "save" && typeof actor.rollAbilitySave === "function") {
+    try {
+      const roll = await actor.rollAbilitySave(check.checkKey, { fastForward: false, chatMessage: true });
       total = Number(roll?.total ?? roll?.roll?.total);
+      if (Number.isFinite(total)) passed = total >= dc;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: native movement save failed`, error);
+    }
+  } else if (!Number.isFinite(total) && typeof actor.rollSkill === "function") {
+    try {
+      const roll = await actor.rollSkill(check.checkKey, { fastForward: false, chatMessage: true });
+      total = Number(roll?.total ?? roll?.roll?.total);
+      if (Number.isFinite(total)) passed = total >= dc;
     } catch (error) {
       console.warn(`${MODULE_ID}: native movement check failed`, error);
     }
   }
 
-  if (!Number.isFinite(total)) return;
+  if (!Number.isFinite(total) && typeof passed !== "boolean") return;
+  const failed = typeof passed === "boolean" ? !passed : (Number.isFinite(total) ? total < dc : false);
+  if (failed) {
+    await applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext);
+  }
+
   const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+  const resultText = failed ? "Fail" : "Success";
+  const totalText = Number.isFinite(total) ? ` (${total})` : "";
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     whisper: gmIds,
-    content: `<p><strong>${actor.name}</strong> ${flavor}: ${total >= dc ? "Success" : "Fail"} (${total})</p>`
+    content: `<p><strong>${actor.name}</strong> ${flavor}: ${resultText}${totalText}</p>`
   });
 }
 
-async function maybePromptEnvironmentMovementCheck(tokenDoc, changed) {
+async function maybePromptEnvironmentMovementCheck(tokenDoc, changed, options = {}) {
   if (!game.user.isGM) return;
+  if (options?.poEnvironmentClamp) return;
   if (!changed || (changed.x === undefined && changed.y === undefined)) return;
   const actor = tokenDoc?.actor;
   if (!actor) return;
@@ -3339,7 +3783,14 @@ async function maybePromptEnvironmentMovementCheck(tokenDoc, changed) {
   if (now - last < ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS) return;
   environmentMovePromptByActor.set(actor.id, now);
 
-  await promptEnvironmentMovementCheck(actor, assignment);
+  const origin = environmentMoveOriginByToken.get(tokenDoc.id) ?? { x: Number(tokenDoc.x ?? 0), y: Number(tokenDoc.y ?? 0) };
+  environmentMoveOriginByToken.delete(tokenDoc.id);
+  const destination = {
+    x: Number(changed.x ?? tokenDoc.x ?? 0),
+    y: Number(changed.y ?? tokenDoc.y ?? 0)
+  };
+
+  await promptEnvironmentMovementCheck(tokenDoc, actor, assignment, { origin, destination });
 }
 
 async function runGatherResourceCheck() {
@@ -5435,6 +5886,23 @@ async function pingActorFromElement(element) {
   canvas.ping(center, { pingType: "pulse" });
 }
 
+function canUserOpenActorSheet(actor, user = game.user) {
+  if (!actor || !user) return false;
+  if (user.isGM) return true;
+  return Boolean(actor.testUserPermission?.(user, "OBSERVER") || actor.isOwner);
+}
+
+function openActorSheetFromElement(element) {
+  const actorId = element?.closest("[data-actor-id], .po-card")?.dataset?.actorId;
+  const actor = actorId ? game.actors.get(actorId) : null;
+  if (!actor) return;
+  if (!canUserOpenActorSheet(actor)) {
+    ui.notifications?.warn(`You do not have permission to open ${actor.name}.`);
+    return;
+  }
+  actor.sheet?.render(true);
+}
+
 function getRestWatchState() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.REST_STATE);
   return foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
@@ -6356,7 +6824,7 @@ function getFloatingLauncherPosition() {
 function getFloatingLauncherCenteredPosition() {
   const launcher = document.getElementById("po-floating-launcher");
   const launcherWidth = Math.max(56, Number(launcher?.offsetWidth ?? 56));
-  const launcherHeight = Math.max(172, Number(launcher?.offsetHeight ?? 172));
+  const launcherHeight = Math.max(248, Number(launcher?.offsetHeight ?? 248));
   const viewportWidth = Math.max(240, Number(window.innerWidth ?? 1200));
   const viewportHeight = Math.max(240, Number(window.innerHeight ?? 800));
 
@@ -6415,7 +6883,7 @@ function clampFloatingLauncherPosition(pos, options = {}) {
   const height = Math.max(240, window.innerHeight || 800);
   const launcher = document.getElementById("po-floating-launcher");
   const launcherWidth = Math.max(48, Number(launcher?.offsetWidth ?? 48));
-  const launcherHeight = Math.max(140, Number(launcher?.offsetHeight ?? 140));
+  const launcherHeight = Math.max(220, Number(launcher?.offsetHeight ?? 220));
   const lockAware = options?.lockAware !== false;
   const locked = lockAware ? isFloatingLauncherLocked() : false;
   const minLeft = locked ? 8 : getFloatingLauncherLeftInset();
@@ -6432,16 +6900,20 @@ async function saveFloatingLauncherPosition(pos) {
 
 function ensureFloatingLauncher() {
   let launcher = document.getElementById("po-floating-launcher");
-  if (!launcher) {
-    launcher = document.createElement("div");
-    launcher.id = "po-floating-launcher";
-    launcher.classList.add("po-floating-launcher");
-    launcher.innerHTML = `
+
+  const setLauncherMarkup = (target) => {
+    target.innerHTML = `
       <div class="po-floating-handle" title="Drag to move">⋮⋮</div>
       <button type="button" class="po-floating-btn" data-action="rest" title="Open Rest Watch" aria-label="Open Rest Watch">
         <i class="fas fa-moon"></i>
       </button>
+      <button type="button" class="po-floating-btn" data-action="operations" title="Open Operations" aria-label="Open Operations">
+        <i class="fas fa-clipboard-list"></i>
+      </button>
       <button type="button" class="po-floating-btn" data-action="march" title="Open Marching Order" aria-label="Open Marching Order"><i class="fas fa-arrow-up"></i></button>
+      <button type="button" class="po-floating-btn po-floating-gm" data-action="gm" title="Open GM Section" aria-label="Open GM Section">
+        <i class="fas fa-user-shield"></i>
+      </button>
       <button type="button" class="po-floating-btn po-floating-lock" data-action="lock" title="Lock launcher" aria-label="Lock launcher">
         <i class="fas fa-lock"></i>
       </button>
@@ -6449,6 +6921,13 @@ function ensureFloatingLauncher() {
         <i class="fas fa-lock-open"></i>
       </button>
     `;
+  };
+
+  if (!launcher) {
+    launcher = document.createElement("div");
+    launcher.id = "po-floating-launcher";
+    launcher.classList.add("po-floating-launcher");
+    setLauncherMarkup(launcher);
     document.body.appendChild(launcher);
 
     launcher.addEventListener("click", (event) => {
@@ -6456,7 +6935,20 @@ function ensureFloatingLauncher() {
       if (!button) return;
       const action = button.dataset.action;
       if (action === "rest") new RestWatchApp().render({ force: true });
+      if (action === "operations") {
+        setActiveRestMainTab("operations");
+        new RestWatchApp().render({ force: true });
+      }
       if (action === "march") new MarchingOrderApp().render({ force: true });
+      if (action === "gm") {
+        if (!game.user?.isGM) {
+          ui.notifications?.warn("GM permissions are required for the GM section.");
+          return;
+        }
+        setActiveRestMainTab("operations");
+        setActiveOperationsPage("gm");
+        new RestWatchApp().render({ force: true });
+      }
       if (action === "lock") {
         const current = clampFloatingLauncherPosition({
           left: parseFloat(launcher.style.left || "16"),
@@ -6532,7 +7024,16 @@ function ensureFloatingLauncher() {
       launcher.style.left = `${clamped.left}px`;
       launcher.style.top = `${clamped.top}px`;
     });
+  } else {
+    const hasOperationsBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="operations"]'));
+    const hasGmBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="gm"]'));
+    if (!hasOperationsBtn || !hasGmBtn) {
+      setLauncherMarkup(launcher);
+    }
   }
+
+  const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
+  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
   launcher.style.display = "flex";
@@ -6967,8 +7468,17 @@ Hooks.once("ready", () => {
     await applyOperationalUpkeep({ automatic: true });
   });
 
-  Hooks.on("updateToken", async (tokenDoc, changed) => {
-    await maybePromptEnvironmentMovementCheck(tokenDoc, changed);
+  Hooks.on("preUpdateToken", (tokenDoc, changed, options) => {
+    if (options?.poEnvironmentClamp) return;
+    if (!changed || (changed.x === undefined && changed.y === undefined)) return;
+    environmentMoveOriginByToken.set(tokenDoc.id, {
+      x: Number(tokenDoc.x ?? 0),
+      y: Number(tokenDoc.y ?? 0)
+    });
+  });
+
+  Hooks.on("updateToken", async (tokenDoc, changed, options) => {
+    await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
   });
 
   Hooks.on("updateSetting", (setting) => {
