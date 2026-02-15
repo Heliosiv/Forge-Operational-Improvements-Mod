@@ -230,10 +230,10 @@
           {{#unless gmSections.lightCollapsed}}
           <div class="po-collapsible-body">
             {{#each lightToggles}}
-            <label class="po-switch" data-actor-id="{{actorId}}">
-              <input type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
-              <span>{{actorName}}</span>
-            </label>
+            <div class="po-checkbox-target" data-actor-id="{{actorId}}">
+              <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+              <label class="po-checkbox-target-label" for="po-light-target-{{actorId}}">{{actorName}}</label>
+            </div>
             {{/each}}
           </div>
           {{/unless}}

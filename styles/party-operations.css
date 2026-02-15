@@ -20,6 +20,7 @@
   --po-success: var(--color-level-success, #57b881);
   --po-warn: var(--color-level-warning, #d3a245);
   --po-danger: var(--color-level-error, #c95e5e);
+  --po-neon-green: color-mix(in srgb, var(--po-success) 82%, white 18%);
 
   --po-radius: 10px;
   --po-space-1: 3px;
@@ -462,6 +463,27 @@
   font-size: 0.72rem;
 }
 
+.party-operations .po-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-two-col .po-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-notes-row-lg {
+  align-items: start;
+}
+
+.party-operations textarea.po-input.po-reputation-note,
+.party-operations .po-notes-row-lg textarea.po-input {
+  min-height: 96px;
+}
+
 .party-operations .po-sop-note-block {
   margin-top: var(--po-space-1);
 }
@@ -482,6 +504,21 @@
 
 .party-operations .po-switch {
   grid-template-columns: auto 1fr;
+}
+
+.party-operations .po-checkbox-target,
+.party-operations .po-environment-target {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--po-space-2);
+  width: max-content;
+  margin-bottom: var(--po-space-1);
+}
+
+.party-operations .po-checkbox-target-label,
+.party-operations .po-environment-target-label {
+  cursor: pointer;
+  user-select: none;
 }
 
 .party-operations .po-btn,
@@ -589,6 +626,15 @@
 .party-operations .po-switch input:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--po-accent) 75%, white 10%);
   outline-offset: 1px;
+}
+
+.party-operations .po-select:focus,
+.party-operations .po-select:focus-visible,
+.party-operations .po-activity-select:focus,
+.party-operations .po-activity-select:focus-visible {
+  border-color: var(--po-neon-green);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 55%, transparent), 0 0 8px color-mix(in srgb, var(--po-neon-green) 45%, transparent);
+  outline: none;
 }
 
 .party-operations .po-select,
@@ -969,6 +1015,10 @@
 
   .party-operations .po-resource-config-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .party-operations .po-two-col {
+    grid-template-columns: 1fr;
   }
 
   .party-operations [data-tool="rest-watch-player"] .po-cards {

@@ -521,15 +521,12 @@
         {{#if operationsPlanningBonuses}}
         <div class="po-gm-section">
           <div class="po-section-title">Party Health</div>
-          <div class="po-hint">Global positive and negative modifiers are auto-calculated and synced into DAE effects for player actors.</div>
+          <div class="po-hint">Read-only party modifier summary. Use the GM page to enable/disable and add custom DAE modifiers.</div>
           {{#if operations.summary.effects.hasGlobalModifiers}}
           {{#each operations.summary.effects.globalModifierRows}}
-          <div class="po-op-summary {{#if isPositive}}is-good{{/if}} {{#if isNegative}}is-warn{{/if}} {{#unless enabled}}is-disabled{{/unless}}" title="Applies to {{appliesTo}}; synced to player actor effects when enabled.">{{label}}: {{formatted}} · Applies to: {{appliesTo}}{{#unless enabled}} · Off{{/unless}}</div>
-          {{#if @root.isGM}}
-          <label class="po-switch">
-            <input type="checkbox" data-action="set-party-health-modifier" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
-            <span>Enable this modifier</span>
-          </label>
+          <div class="po-op-summary {{#if isPositive}}is-good{{/if}} {{#if isNegative}}is-warn{{/if}} {{#unless enabled}}is-disabled{{/unless}}" title="Applies to {{appliesTo}}; synced to player actor effects when enabled.">{{label}}: {{formatted}} · {{#if source}}{{source}}{{else}}derived{{/if}} · Applies to: {{appliesTo}}{{#unless enabled}} · Off{{/unless}}</div>
+          {{#if note}}
+          <div class="po-op-summary">Note: {{note}}</div>
           {{/if}}
           {{/each}}
           {{else}}
@@ -614,25 +611,97 @@
 
         <div class="po-gm-section">
           <div class="po-section-title">Reputation & Factions</div>
-          <div class="po-hint">Track standing and pressure by major power group.</div>
-          {{#each operations.reputation.factions}}
-          <div class="po-op-role-row" data-faction="{{key}}">
+          <div class="po-hint">Two-column faction tracker. Players see read-only values; GM can manage and add custom factions.</div>
+          <div class="po-two-col">
+            <div class="po-col">
+              {{#each operations.reputation.leftColumn}}
+              <div class="po-op-role-row" data-faction="{{id}}">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{label}}</div>
+                  <div class="po-op-role-status">{{band}} · {{access}}</div>
+                </div>
+                {{#if @root.isGM}}
+                {{#unless isCore}}
+                <label class="po-resource-row">
+                  <span>Faction Name</span>
+                  <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
+                </label>
+                {{/unless}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">-1</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">+1</button>
+                </div>
+                <label class="po-resource-row">
+                  <span>Standing (-5 to +5)</span>
+                  <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
+                </label>
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Notes / Outcome Impact</span>
+                  <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
+                </label>
+                {{#unless isCore}}
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
+                {{/unless}}
+                {{else}}
+                <div class="po-op-summary">Standing: {{score}}</div>
+                <div class="po-op-summary">Notes: {{#if note}}{{note}}{{else}}-{{/if}}</div>
+                {{/if}}
+              </div>
+              {{/each}}
+            </div>
+            <div class="po-col">
+              {{#each operations.reputation.rightColumn}}
+              <div class="po-op-role-row" data-faction="{{id}}">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{label}}</div>
+                  <div class="po-op-role-status">{{band}} · {{access}}</div>
+                </div>
+                {{#if @root.isGM}}
+                {{#unless isCore}}
+                <label class="po-resource-row">
+                  <span>Faction Name</span>
+                  <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
+                </label>
+                {{/unless}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">-1</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">+1</button>
+                </div>
+                <label class="po-resource-row">
+                  <span>Standing (-5 to +5)</span>
+                  <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
+                </label>
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Notes / Outcome Impact</span>
+                  <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
+                </label>
+                {{#unless isCore}}
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
+                {{/unless}}
+                {{else}}
+                <div class="po-op-summary">Standing: {{score}}</div>
+                <div class="po-op-summary">Notes: {{#if note}}{{note}}{{else}}-{{/if}}</div>
+                {{/if}}
+              </div>
+              {{/each}}
+            </div>
+          </div>
+          {{#if @root.isGM}}
+          <div class="po-op-divider"></div>
+          <div class="po-op-role-row po-reputation-gm-tools">
             <div class="po-op-role-head">
-              <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status">{{band}} · {{access}}</div>
+              <div class="po-op-role-name">Add Custom Faction</div>
             </div>
             <label class="po-resource-row">
-              <span>Standing (-5 to +5)</span>
-              <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{key}}" value="{{score}}" />
+              <span>Faction Name</span>
+              <input type="text" name="repFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
             </label>
-            <label class="po-resource-row">
-              <span>Notes</span>
-              <input type="text" class="po-input" data-action="set-reputation-note" data-faction="{{key}}" value="{{note}}" placeholder="Access changes, favors, tensions" />
-            </label>
+            <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-faction">Add Faction</button>
           </div>
-          {{/each}}
+          {{/if}}
           <div class="po-op-summary">High standing factions: {{operations.reputation.highStandingCount}}</div>
           <div class="po-op-summary">Hostile factions: {{operations.reputation.hostileCount}}</div>
+          <div class="po-op-summary">Custom factions: {{operations.reputation.customCount}}</div>
           <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
         </div>
 
@@ -813,6 +882,15 @@
         {{#if @root.isGM}}
         {{#if operationsPageGm}}
         <div class="po-gm-section">
+          <div class="po-section-title">GM Quick Actions</div>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-faction">+ Faction</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync DAE/Effects Now</button>
+          </div>
+        </div>
+
+        <div class="po-gm-section">
           <div class="po-section-title">GM Environment Controls</div>
           <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
           <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
@@ -822,6 +900,11 @@
           {{else}}
           <div class="po-op-summary">Movement Check: Off</div>
           {{/if}}
+          <div class="po-op-summary">On Success: {{operations.environment.outcomes.onSuccess}}</div>
+          <div class="po-op-summary">On Fail: {{operations.environment.outcomes.onFail}}</div>
+          <div class="po-op-summary">On Fail by 5+: {{operations.environment.outcomes.onFailBy5}}</div>
+          <div class="po-op-summary">On Successive Fail: {{operations.environment.outcomes.onSuccessiveFail}}</div>
+          <div class="po-op-summary">Always-On Status: {{operations.environment.outcomes.alwaysOn}}</div>
 
           <label class="po-resource-row">
             <span>Environment Preset</span>
@@ -835,6 +918,61 @@
             <span>Movement DC</span>
             <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{operations.environment.movementDc}}" />
           </label>
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Successive Failure Override (Per Preset)</div>
+          <div class="po-hint">These values apply on 2+ consecutive movement-check failures for the selected preset.</div>
+          <label class="po-resource-row">
+            <span>Status</span>
+            <select class="po-select" data-action="set-environment-successive" data-field="statusId">
+              {{#each operations.environment.successiveConfig.statusOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Slide (ft)</span>
+            <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-successive" data-field="slideFeet" value="{{operations.environment.successiveConfig.slideFeet}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Exhaustion</span>
+            <input type="number" min="0" max="6" step="1" class="po-input" data-action="set-environment-successive" data-field="exhaustion" value="{{operations.environment.successiveConfig.exhaustion}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Damage Formula</span>
+            <input type="text" class="po-input" data-action="set-environment-successive" data-field="damageFormula" placeholder="e.g. 1d6" value="{{operations.environment.successiveConfig.damageFormula}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Damage Type</span>
+            <input type="text" class="po-input" data-action="set-environment-successive" data-field="damageType" placeholder="e.g. cold" value="{{operations.environment.successiveConfig.damageType}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Max HP Reduction</span>
+            <input type="text" class="po-input" data-action="set-environment-successive" data-field="maxHpReductionFormula" placeholder="e.g. 1d4" value="{{operations.environment.successiveConfig.maxHpReductionFormula}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>DAE Change Key</span>
+            <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-successive" data-field="daeChangeKey" placeholder="Search key (e.g. system.attributes.movement.walk)" value="{{operations.environment.successiveConfig.daeChangeKey}}" />
+          </label>
+          <datalist id="po-env-dae-key-options">
+            {{#each operations.environment.successiveConfig.daeKeyOptions}}
+            <option value="{{value}}"></option>
+            {{/each}}
+          </datalist>
+          <label class="po-resource-row">
+            <span>DAE Change Mode</span>
+            <select class="po-select" data-action="set-environment-successive" data-field="daeChangeMode">
+              {{#each operations.environment.successiveConfig.daeModeOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>DAE Change Value</span>
+            <input type="text" class="po-input" data-action="set-environment-successive" data-field="daeChangeValue" placeholder="e.g. -10" value="{{operations.environment.successiveConfig.daeChangeValue}}" />
+          </label>
+          {{#unless operations.environment.successiveConfig.daeAvailable}}
+          <div class="po-op-summary is-warn">DAE module not active. Change fields still save and apply as Active Effect changes.</div>
+          {{/unless}}
           <label class="po-resource-row">
             <span>Notes</span>
             <textarea class="po-input" rows="4" data-action="set-environment-note" placeholder="Add GM notes for this preset application">{{operations.environment.note}}</textarea>
@@ -842,20 +980,39 @@
 
           {{#if operations.environment.targets.length}}
           {{#each operations.environment.targets}}
-          <label class="po-switch">
-            <input type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
-            <span>{{actorName}}</span>
-          </label>
+          <div class="po-checkbox-target">
+            <input id="po-env-target-{{actorId}}" type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
+            <label class="po-checkbox-target-label" for="po-env-target-{{actorId}}">{{actorName}}{{#if failureStreak}} · Streak {{failureStreak}}{{/if}}</label>
+          </div>
           {{/each}}
           {{else}}
           <div class="po-op-summary is-warn">No player actors available for assignment.</div>
           {{/if}}
 
           <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="reset-environment-successive-defaults">Reset to Preset Defaults</button>
             <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
           </div>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Recent Movement Checks</div>
+          {{#if operations.environment.hasCheckResults}}
+          {{#each operations.environment.checkResults}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{actorName}}</div>
+              <div class="po-op-role-status">{{resultLabel}} · {{rollVsDc}}</div>
+            </div>
+            <div class="po-op-summary">Preset: {{presetLabel}}</div>
+            <div class="po-op-summary">Fail Streak: {{streak}}</div>
+            <div class="po-op-summary">Logged: {{createdAtLabel}} by {{createdBy}}</div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No movement checks logged yet.</div>
+          {{/if}}
 
           <div class="po-op-divider"></div>
           <div class="po-section-title">Environment Logs</div>
@@ -881,6 +1038,104 @@
           {{else}}
           <div class="po-op-summary">No environment logs yet.</div>
           {{/if}}
+        </div>
+
+        <div class="po-gm-section po-party-health-manager">
+          <div class="po-section-title">GM Party Modifier Manager</div>
+          <div class="po-hint">Enable/disable derived modifiers and add custom DAE changes that sync to all player actors.</div>
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Derived Modifiers</div>
+          {{#each operations.summary.effects.derivedModifierRows}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{label}}</div>
+              <div class="po-op-role-status">{{formatted}} · {{appliesTo}}</div>
+            </div>
+            <label class="po-switch">
+              <input type="checkbox" data-action="set-party-health-modifier" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
+              <span>Enabled</span>
+            </label>
+            {{#if note}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
+          </div>
+          {{/each}}
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Custom Global Modifiers (DAE Simple)</div>
+          <div class="po-hint">Set key, mode, and value. Example: key `system.attributes.init.bonus`, mode `ADD`, value `1`.</div>
+          {{#if operations.partyHealth.customModifiers.length}}
+          {{#each operations.partyHealth.customModifiers}}
+          <div class="po-op-role-row">
+            <label class="po-resource-row">
+              <span>Label</span>
+              <input type="text" class="po-input" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="label" value="{{label}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key</span>
+              <input type="text" list="po-party-mod-key-options" class="po-input" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="key" value="{{key}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select class="po-select" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="mode">
+                {{#each modeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Value</span>
+              <input type="text" class="po-input" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="value" value="{{value}}" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Notes / Why this applies</span>
+              <textarea class="po-input" rows="4" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="note">{{note}}</textarea>
+            </label>
+            <label class="po-switch">
+              <input type="checkbox" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="enabled" {{#if enabled}}checked{{/if}} />
+              <span>Enabled</span>
+            </label>
+            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-party-health-custom" data-modifier-id="{{id}}">Remove</button>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No custom global modifiers yet.</div>
+          {{/if}}
+
+          <div class="po-op-role-row">
+            <div class="po-op-role-head"><div class="po-op-role-name">Add Custom Modifier</div></div>
+            <label class="po-resource-row">
+              <span>Label</span>
+              <input type="text" name="customModifierLabel" class="po-input" placeholder="e.g. War Drums Morale" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key</span>
+              <input type="text" list="po-party-mod-key-options" name="customModifierKey" class="po-input" placeholder="system.attributes.init.bonus" />
+            </label>
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select name="customModifierMode" class="po-select">
+                {{#each operations.partyHealth.modifierModeOptions}}
+                <option value="{{value}}">{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Value</span>
+              <input type="text" name="customModifierValue" class="po-input" placeholder="1" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Notes</span>
+              <textarea name="customModifierNote" class="po-input" rows="4" placeholder="What this change represents and when it applies"></textarea>
+            </label>
+            <button type="button" class="po-btn" data-action="add-party-health-custom">Add Custom Modifier</button>
+          </div>
+          <datalist id="po-party-mod-key-options">
+            {{#each operations.partyHealth.modifierKeyOptions}}
+            <option value="{{value}}"></option>
+            {{/each}}
+          </datalist>
+          {{#unless operations.partyHealth.daeAvailable}}
+          <div class="po-op-summary is-warn">DAE module not active. Modifiers still sync as standard Active Effects.</div>
+          {{/unless}}
         </div>
         {{/if}}
         {{/if}}
