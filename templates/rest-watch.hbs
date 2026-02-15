@@ -779,6 +779,14 @@
               <span>Notes</span>
               <input type="text" name="baseSiteNote" class="po-input" placeholder="Wardens loyal, crypt route unstable" />
             </label>
+            <label class="po-resource-row">
+              <span>Storage Weight Capacity</span>
+              <input type="number" min="0" step="0.1" name="baseSiteMaxWeight" class="po-input" value="0" />
+            </label>
+            <label class="po-resource-row">
+              <span>Storage Space Capacity</span>
+              <input type="number" min="0" step="1" name="baseSiteMaxSpace" class="po-input" value="0" />
+            </label>
             <button type="button" class="po-btn" data-action="upsert-base-site">Add Site</button>
           </div>
 
@@ -790,9 +798,13 @@
             </div>
             <div class="po-op-summary">Maintenance Load: {{pressure}}</div>
             <div class="po-op-summary">Discovery Risk: {{risk}}</div>
+            <div class="po-op-summary">Storage Weight: {{storageWeightSummary}}</div>
+            <div class="po-op-summary">Storage Space: {{storageSpaceSummary}}</div>
+            <div class="po-op-summary">Stored Items: {{storageItemCount}}</div>
             {{#if note}}
             <div class="po-op-summary">Note: {{note}}</div>
             {{/if}}
+            <button type="button" class="po-btn po-btn-sm" data-action="open-base-site-storage" data-base-site-id="{{id}}">Open Storage</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-base-site" data-base-site-id="{{id}}">Remove site</button>
           </div>
           {{/each}}
@@ -897,16 +909,18 @@
 
         {{#if @root.isGM}}
         {{#if operationsPageGm}}
-        <div class="po-gm-section">
+        <div class="po-gm-section po-gm-quick-actions">
           <div class="po-section-title">GM Quick Actions</div>
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-faction">+ Faction</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Current Weather</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync DAE/Effects Now</button>
           </div>
+          <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} · Visibility Modifier {{operations.weather.currentVisibilityModifier}} · Darkness {{operations.weather.currentDarkness}}</div>
         </div>
 
-        <nav class="po-tabs po-tabs-sub" role="tablist" aria-label="GM Operations Sections">
+        <nav class="po-tabs po-tabs-sub po-gm-ops-tabs" role="tablist" aria-label="GM Operations Sections">
           <button type="button" class="po-tab {{#if gmOpsTabEnvironment}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="environment">Environment Override</button>
           <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Environment Logs</button>
           <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">Derived Modifiers</button>

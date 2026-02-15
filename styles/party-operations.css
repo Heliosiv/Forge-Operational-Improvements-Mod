@@ -550,6 +550,33 @@
   background: color-mix(in srgb, var(--po-surface) 72%, transparent);
 }
 
+.party-operations .po-storage-drop-zone {
+  border: 1px dashed var(--po-border-strong);
+  border-radius: var(--po-radius);
+  padding: var(--po-space-2);
+  min-height: 56px;
+  background: color-mix(in srgb, var(--po-bg-alt) 66%, transparent);
+}
+
+.party-operations .po-gm-ops-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.party-operations .po-gm-ops-tabs .po-tab {
+  flex: 0 0 auto;
+}
+
+.party-operations .po-gm-quick-actions .po-op-action-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+
+.party-operations .po-gm-quick-actions .po-op-action-row .po-btn {
+  flex: 0 0 auto;
+}
+
 .party-operations .po-btn,
 .party-operations .po-icon-btn,
 .party-operations .po-tab,

@@ -2031,6 +2031,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         scheduleIntegrationSync("gm-quick-action");
         ui.notifications?.info("Party Operations integration sync queued.");
         break;
+      case "gm-quick-log-weather":
+        await gmQuickLogCurrentWeather();
+        break;
       case "show-gm-logs-manager":
         await showOperationalLogsManager();
         break;
@@ -2042,6 +2045,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "clear-base-site":
         await clearBaseOperationsSite(element);
+        break;
+      case "open-base-site-storage":
+        await showBaseSiteStorageManager(element);
         break;
       case "show-base-ops-brief":
         await showBaseOperationsBrief();
@@ -2631,9 +2637,14 @@ function buildDefaultOperationsLedger() {
       checkResults: [],
       successiveByPreset: {}
     },
+    weather: {
+      current: null,
+      logs: []
+    },
     partyHealth: {
       modifierEnabled: {},
-      customModifiers: []
+      customModifiers: [],
+      archivedSyncEffects: []
     },
     resources: {
       food: 14,
@@ -2879,6 +2890,7 @@ function buildOperationsContext() {
   const partyHealthState = ensurePartyHealthState(ledger);
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const environmentState = ensureEnvironmentState(ledger);
+  const weatherState = ensureWeatherState(ledger);
   const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey);
   const environmentPreset = applyEnvironmentSuccessiveConfigToPreset(environmentPresetBase, environmentState);
   const environmentOutcomes = buildEnvironmentOutcomeSummary(environmentPreset);
@@ -3029,6 +3041,14 @@ function buildOperationsContext() {
       };
     })
     .filter(Boolean);
+  const currentWeather = weatherState.current ?? null;
+  const weatherLogs = (weatherState.logs ?? []).map((entry) => {
+    const loggedAtDate = new Date(Number(entry.loggedAt ?? Date.now()));
+    return {
+      ...entry,
+      loggedAtLabel: Number.isFinite(loggedAtDate.getTime()) ? loggedAtDate.toLocaleString() : "Unknown"
+    };
+  });
   const activeSyncEffectsTab = getActiveSyncEffectsTab();
   const archivedSyncEffects = (partyHealthState.archivedSyncEffects ?? [])
     .map((entry) => {
@@ -3147,6 +3167,15 @@ function buildOperationsContext() {
         selected: preset.key === environmentState.presetKey
       }))
     },
+    weather: {
+      current: currentWeather,
+      hasCurrent: Boolean(currentWeather),
+      currentLabel: String(currentWeather?.label ?? "Not logged"),
+      currentVisibilityModifier: Number(currentWeather?.visibilityModifier ?? 0),
+      currentDarkness: Number(currentWeather?.darkness ?? 0),
+      logs: weatherLogs,
+      hasLogs: weatherLogs.length > 0
+    },
     reputation,
     baseOperations,
     summary: {
@@ -3177,6 +3206,9 @@ function getOperationalEffects(ledger, roles, sops) {
   const comms = getCommunicationReadiness(communication);
   const reputation = buildReputationContext(ensureReputationState(ledger));
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const weatherState = ensureWeatherState(ledger);
+  const weatherVisibilityModifier = Number(weatherState.current?.visibilityModifier ?? 0);
+  const weatherLabel = String(weatherState.current?.label ?? "Weather");
   const prepEdge = roleCoverage >= 3 && activeSops >= 3;
 
   const bonuses = [];
@@ -3241,6 +3273,23 @@ function getOperationalEffects(ledger, roles, sops) {
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
     if (modifier.enabled) globalMinorBonuses.push("Operational sheltering: all player actors gain +1 to saving throws while base readiness is stable.");
+  }
+  if (weatherVisibilityModifier !== 0) {
+    const modifier = addGlobalModifier(
+      "weather-visibility",
+      "perceptionChecks",
+      weatherVisibilityModifier,
+      `Weather visibility (${weatherLabel})`,
+      "Perception checks",
+      { note: `Logged weather visibility modifier ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.` }
+    );
+    if (modifier.enabled) {
+      if (weatherVisibilityModifier > 0) {
+        globalMinorBonuses.push(`Weather visibility (${weatherLabel}): perception improves by ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.`);
+      } else {
+        risks.push(`Weather visibility (${weatherLabel}): apply ${weatherVisibilityModifier} to perception checks.`);
+      }
+    }
   }
 
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
@@ -3486,7 +3535,8 @@ function getBaseSiteTypeLabel(type) {
     safehouse: "Safehouse",
     chapel: "Chapel",
     watchtower: "Watchtower",
-    cell: "Underground Cell"
+    cell: "Underground Cell",
+    "storage-cache": "Storage Cache"
   };
   return map[type] ?? "Site";
 }
@@ -3501,23 +3551,95 @@ function getBaseSiteStatusLabel(status) {
   return map[status] ?? "Secure";
 }
 
+function getItemWeightValue(itemLike) {
+  const direct = Number(itemLike?.weight);
+  if (Number.isFinite(direct)) return direct;
+  const systemWeight = Number(itemLike?.system?.weight?.value);
+  if (Number.isFinite(systemWeight)) return systemWeight;
+  const flatWeight = Number(itemLike?.system?.weight);
+  if (Number.isFinite(flatWeight)) return flatWeight;
+  const bulk = Number(itemLike?.system?.bulk);
+  if (Number.isFinite(bulk)) return bulk;
+  return 0;
+}
+
+function normalizeBaseSiteStorageItem(entry = {}) {
+  const quantityRaw = Number(entry?.quantity ?? 1);
+  const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
+  const weightRaw = Number(entry?.weight ?? 0);
+  const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    name: String(entry?.name ?? "Stored Item").trim() || "Stored Item",
+    type: String(entry?.type ?? "item").trim() || "item",
+    quantity,
+    weight,
+    note: String(entry?.note ?? ""),
+    img: String(entry?.img ?? "icons/svg/item-bag.svg"),
+    uuid: String(entry?.uuid ?? "")
+  };
+}
+
+function normalizeBaseSiteEntry(site = {}, index = 0) {
+  const storageRaw = site?.storage && typeof site.storage === "object" ? site.storage : {};
+  const maxWeightRaw = Number(storageRaw?.maxWeight ?? site?.maxWeight ?? 0);
+  const maxSpaceRaw = Number(storageRaw?.maxSpace ?? site?.maxSpace ?? 0);
+  const maxWeight = Number.isFinite(maxWeightRaw) ? Math.max(0, maxWeightRaw) : 0;
+  const maxSpace = Number.isFinite(maxSpaceRaw) ? Math.max(0, Math.floor(maxSpaceRaw)) : 0;
+  const items = Array.isArray(storageRaw?.items)
+    ? storageRaw.items.map((entry) => normalizeBaseSiteStorageItem(entry))
+    : [];
+  return {
+    id: site.id ?? `legacy-base-site-${index}`,
+    type: String(site.type ?? "safehouse"),
+    name: String(site.name ?? "Unnamed Site"),
+    status: String(site.status ?? "secure"),
+    risk: String(site.risk ?? "moderate"),
+    pressure: Math.max(0, Number(site.pressure ?? 0) || 0),
+    note: String(site.note ?? ""),
+    storage: {
+      maxWeight,
+      maxSpace,
+      items
+    }
+  };
+}
+
 function buildBaseOperationsContext(baseState) {
   const sites = Array.isArray(baseState?.sites)
     ? baseState.sites.map((site, index) => {
-      const type = String(site.type ?? "safehouse");
-      const status = String(site.status ?? "secure");
-      const risk = String(site.risk ?? "moderate");
-      const pressure = Math.max(0, Number(site.pressure ?? 0));
+      const normalizedSite = normalizeBaseSiteEntry(site, index);
+      const type = normalizedSite.type;
+      const status = normalizedSite.status;
+      const risk = normalizedSite.risk;
+      const pressure = normalizedSite.pressure;
+      const storageItems = normalizedSite.storage.items;
+      const storageItemCount = storageItems.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity ?? 0) || 0), 0);
+      const storageWeightUsed = storageItems.reduce((sum, entry) => {
+        const quantity = Math.max(0, Number(entry.quantity ?? 0) || 0);
+        const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
+        return sum + (quantity * weight);
+      }, 0);
+      const maxWeight = Math.max(0, Number(normalizedSite.storage.maxWeight ?? 0) || 0);
+      const maxSpace = Math.max(0, Number(normalizedSite.storage.maxSpace ?? 0) || 0);
       return {
-        id: site.id ?? `legacy-base-site-${index}`,
+        id: normalizedSite.id,
         type,
         typeLabel: getBaseSiteTypeLabel(type),
-        name: String(site.name ?? "Unnamed Site"),
+        name: normalizedSite.name,
         status,
         statusLabel: getBaseSiteStatusLabel(status),
         risk,
         pressure,
-        note: String(site.note ?? "")
+        note: normalizedSite.note,
+        storageMaxWeight: maxWeight,
+        storageMaxSpace: maxSpace,
+        storageWeightUsed,
+        storageSpaceUsed: storageItemCount,
+        storageItemCount,
+        hasStorageCapacity: maxWeight > 0 || maxSpace > 0,
+        storageWeightSummary: maxWeight > 0 ? `${storageWeightUsed.toFixed(1)} / ${maxWeight.toFixed(1)}` : `${storageWeightUsed.toFixed(1)} / ∞`,
+        storageSpaceSummary: maxSpace > 0 ? `${storageItemCount} / ${maxSpace}` : `${storageItemCount} / ∞`
       };
     })
     : [];
@@ -3547,7 +3669,8 @@ function buildBaseOperationsContext(baseState) {
       { value: "safehouse", label: "Safehouse", selected: true },
       { value: "chapel", label: "Chapel", selected: false },
       { value: "watchtower", label: "Watchtower", selected: false },
-      { value: "cell", label: "Underground Cell", selected: false }
+      { value: "cell", label: "Underground Cell", selected: false },
+      { value: "storage-cache", label: "Storage Cache", selected: false }
     ],
     statusOptions: [
       { value: "secure", label: "Secure", selected: true },
@@ -3571,8 +3694,81 @@ function ensureBaseOperationsState(ledger) {
     };
   }
   if (!Array.isArray(ledger.baseOperations.sites)) ledger.baseOperations.sites = [];
+  ledger.baseOperations.sites = ledger.baseOperations.sites.map((site, index) => normalizeBaseSiteEntry(site, index));
   if (!ledger.baseOperations.maintenanceRisk) ledger.baseOperations.maintenanceRisk = "moderate";
   return ledger.baseOperations;
+}
+
+function ensureWeatherState(ledger) {
+  if (!ledger.weather || typeof ledger.weather !== "object") {
+    ledger.weather = { current: null, logs: [] };
+  }
+  if (!Array.isArray(ledger.weather.logs)) ledger.weather.logs = [];
+  ledger.weather.logs = ledger.weather.logs
+    .map((entry) => ({
+      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      label: String(entry?.label ?? "Unknown Weather").trim() || "Unknown Weather",
+      weatherId: String(entry?.weatherId ?? "").trim(),
+      darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
+      visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier)))) : 0,
+      note: String(entry?.note ?? ""),
+      loggedAt: Number.isFinite(Number(entry?.loggedAt)) ? Number(entry.loggedAt) : Date.now(),
+      loggedBy: String(entry?.loggedBy ?? "GM")
+    }))
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .slice(0, 100);
+
+  const current = ledger.weather.current;
+  if (current && typeof current === "object") {
+    ledger.weather.current = {
+      id: String(current?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      label: String(current?.label ?? "Unknown Weather").trim() || "Unknown Weather",
+      weatherId: String(current?.weatherId ?? "").trim(),
+      darkness: Number.isFinite(Number(current?.darkness)) ? Math.max(0, Math.min(1, Number(current.darkness))) : 0,
+      visibilityModifier: Number.isFinite(Number(current?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(current.visibilityModifier)))) : 0,
+      note: String(current?.note ?? ""),
+      loggedAt: Number.isFinite(Number(current?.loggedAt)) ? Number(current.loggedAt) : Date.now(),
+      loggedBy: String(current?.loggedBy ?? "GM")
+    };
+  } else {
+    ledger.weather.current = null;
+  }
+
+  return ledger.weather;
+}
+
+function resolveCurrentSceneWeatherSnapshot() {
+  const scene = game.scenes?.current;
+  const rawId = String(scene?.weather ?? "").trim();
+  const weatherId = rawId;
+  const weatherCfg = weatherId ? CONFIG.weatherEffects?.[weatherId] : null;
+  const label = String(weatherCfg?.label ?? weatherCfg?.name ?? (weatherId ? weatherId : "Clear")).trim() || "Clear";
+  const darkness = Number.isFinite(Number(scene?.darkness)) ? Math.max(0, Math.min(1, Number(scene.darkness))) : 0;
+
+  const weatherLabelLower = label.toLowerCase();
+  let visibilityModifier = 0;
+  if (!weatherId || weatherLabelLower.includes("clear") || weatherLabelLower.includes("sun")) visibilityModifier += 0;
+  if (weatherLabelLower.includes("rain") || weatherLabelLower.includes("wind")) visibilityModifier -= 1;
+  if (weatherLabelLower.includes("heavy") || weatherLabelLower.includes("storm") || weatherLabelLower.includes("fog") || weatherLabelLower.includes("mist") || weatherLabelLower.includes("blizzard") || weatherLabelLower.includes("smoke") || weatherLabelLower.includes("snow")) {
+    visibilityModifier -= 2;
+  }
+
+  if (darkness >= 0.75) visibilityModifier -= 2;
+  else if (darkness >= 0.4) visibilityModifier -= 1;
+  else if (darkness <= 0.15 && (!weatherId || weatherLabelLower.includes("clear"))) visibilityModifier += 1;
+
+  visibilityModifier = Math.max(-5, Math.min(5, visibilityModifier));
+
+  return {
+    id: foundry.utils.randomID(),
+    label,
+    weatherId,
+    darkness,
+    visibilityModifier,
+    note: `Scene weather${weatherId ? ` (${weatherId})` : ""} · darkness ${darkness.toFixed(2)}`,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
 }
 
 function ensurePartyHealthState(ledger) {
@@ -5415,29 +5611,202 @@ async function gmQuickAddFaction() {
   });
 }
 
+function getDaeModifierCategoryOptions() {
+  return [
+    { value: "all", label: "All Modifiers", test: () => true },
+    { value: "movement", label: "Movement", test: (key) => key.includes("movement") },
+    { value: "defense", label: "Defense (AC/HP)", test: (key) => key.includes("ac") || key.includes("hp") },
+    { value: "initiative", label: "Initiative", test: (key) => key.includes("init") },
+    { value: "checks", label: "Ability Checks", test: (key) => key.includes("abilities.check") },
+    { value: "saves", label: "Saving Throws", test: (key) => key.includes("abilities.save") || key.includes(".save") },
+    { value: "attacks", label: "Attacks", test: (key) => key.includes(".attack") },
+    { value: "skills", label: "Skills", test: (key) => key.includes("skills.") },
+    { value: "other", label: "Other", test: (key) => !(
+      key.includes("movement")
+      || key.includes("ac")
+      || key.includes("hp")
+      || key.includes("init")
+      || key.includes("abilities.check")
+      || key.includes("abilities.save")
+      || key.includes(".save")
+      || key.includes(".attack")
+      || key.includes("skills.")
+    ) }
+  ];
+}
+
 async function gmQuickAddModifier() {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
     return;
   }
-  const label = String(window.prompt("Modifier label", "Custom Modifier") ?? "").trim() || "Custom Modifier";
-  const key = String(window.prompt("DAE/AE key", "system.attributes.init.bonus") ?? "").trim();
-  if (!key) return;
-  const value = String(window.prompt("Value", "1") ?? "").trim();
-  if (!value) return;
-  const note = String(window.prompt("Notes (optional)", "") ?? "");
+  const keyCatalog = buildPartyHealthModifierKeyCatalog();
+  if (!Array.isArray(keyCatalog) || keyCatalog.length === 0) {
+    ui.notifications?.warn("No modifier keys available.");
+    return;
+  }
 
+  const categories = getDaeModifierCategoryOptions();
+  const modeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+    .map(([label, value]) => ({ label, value: Number(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  const renderKeyOptions = (entries, selectedKey = "") => entries
+    .map((entry, index) => {
+      const selected = selectedKey
+        ? entry.key === selectedKey
+        : index === 0;
+      return `<option value="${foundry.utils.escapeHTML(entry.key)}" ${selected ? "selected" : ""}>${foundry.utils.escapeHTML(entry.label)} — ${foundry.utils.escapeHTML(entry.key)}</option>`;
+    })
+    .join("");
+
+  const initialKey = String(keyCatalog[0]?.key ?? "");
+  const initialHint = String(keyCatalog[0]?.hint ?? "");
+
+  const content = `
+    <div class="po-help po-quick-mod-dialog">
+      <div class="po-hint">Create a global modifier with full DAE key guidance and filtering.</div>
+      <label class="po-resource-row">
+        <span>Modifier Name</span>
+        <input type="text" class="po-input" name="quickModifierLabel" value="Custom Modifier" />
+      </label>
+      <label class="po-resource-row">
+        <span>Type Filter</span>
+        <select class="po-select" name="quickModifierCategory">
+          ${categories.map((entry, index) => `<option value="${foundry.utils.escapeHTML(entry.value)}" ${index === 0 ? "selected" : ""}>${foundry.utils.escapeHTML(entry.label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="po-resource-row">
+        <span>Search Key</span>
+        <input type="text" class="po-input" name="quickModifierSearch" placeholder="Filter key name or path" />
+      </label>
+      <label class="po-resource-row">
+        <span>Modifier Key</span>
+        <select class="po-select" name="quickModifierKey">
+          ${renderKeyOptions(keyCatalog, initialKey)}
+        </select>
+      </label>
+      <div class="po-op-summary" data-quick-key-description>${foundry.utils.escapeHTML(initialHint || `System field: ${initialKey}`)}</div>
+      <label class="po-resource-row">
+        <span>Effect Mode</span>
+        <select class="po-select" name="quickModifierMode">
+          ${modeOptions.map((entry) => `<option value="${entry.value}" ${entry.value === Number(CONST.ACTIVE_EFFECT_MODES.ADD) ? "selected" : ""}>${foundry.utils.escapeHTML(entry.label)}</option>`).join("")}
+        </select>
+      </label>
+      <label class="po-resource-row">
+        <span>Value</span>
+        <input type="text" class="po-input" name="quickModifierValue" value="1" />
+      </label>
+      <label class="po-resource-row po-notes-row-lg">
+        <span>Notes</span>
+        <textarea class="po-input" rows="3" name="quickModifierNote" placeholder="What this modifier does for the party"></textarea>
+      </label>
+    </div>
+  `;
+
+  const dialog = new Dialog({
+    title: "Quick Add Global Modifier",
+    content,
+    buttons: {
+      add: {
+        label: "Add Modifier",
+        callback: async (html) => {
+          const root = html?.[0] ?? html;
+          const label = String(root?.querySelector("[name='quickModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
+          const key = String(root?.querySelector("[name='quickModifierKey']")?.value ?? "").trim();
+          const value = String(root?.querySelector("[name='quickModifierValue']")?.value ?? "").trim();
+          const note = String(root?.querySelector("[name='quickModifierNote']")?.value ?? "");
+          const rawMode = Math.floor(Number(root?.querySelector("[name='quickModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+          const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
+          const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
+
+          if (!key || !value) {
+            ui.notifications?.warn("Global modifier requires both a key and value.");
+            return;
+          }
+
+          await updateOperationsLedger((ledger) => {
+            const partyHealth = ensurePartyHealthState(ledger);
+            partyHealth.customModifiers.push({
+              id: foundry.utils.randomID(),
+              label,
+              key,
+              mode,
+              value,
+              note,
+              enabled: true
+            });
+          });
+        }
+      },
+      cancel: {
+        label: "Cancel"
+      }
+    },
+    render: (html) => {
+      const root = html?.[0] ?? html;
+      if (!root) return;
+      const categoryEl = root.querySelector("[name='quickModifierCategory']");
+      const searchEl = root.querySelector("[name='quickModifierSearch']");
+      const keyEl = root.querySelector("[name='quickModifierKey']");
+      const descEl = root.querySelector("[data-quick-key-description]");
+
+      const refreshKeyList = () => {
+        const categoryValue = String(categoryEl?.value ?? "all").trim().toLowerCase();
+        const search = String(searchEl?.value ?? "").trim().toLowerCase();
+        const previousKey = String(keyEl?.value ?? "").trim();
+        const category = categories.find((entry) => entry.value === categoryValue) ?? categories[0];
+
+        const filtered = keyCatalog.filter((entry) => {
+          const key = String(entry.key ?? "").toLowerCase();
+          const label = String(entry.label ?? "").toLowerCase();
+          const hint = String(entry.hint ?? "").toLowerCase();
+          const categoryMatch = category.test(key);
+          if (!categoryMatch) return false;
+          if (!search) return true;
+          return key.includes(search) || label.includes(search) || hint.includes(search);
+        });
+
+        keyEl.innerHTML = renderKeyOptions(filtered, previousKey);
+        if (!keyEl.value && filtered[0]) keyEl.value = filtered[0].key;
+
+        const selected = filtered.find((entry) => entry.key === keyEl.value);
+        const hintText = String(selected?.hint ?? (selected?.key ? `System field: ${selected.key}` : "No matching modifier keys."));
+        if (descEl) descEl.textContent = hintText;
+      };
+
+      keyEl?.addEventListener("change", () => {
+        const selected = keyCatalog.find((entry) => entry.key === String(keyEl?.value ?? "").trim());
+        if (!descEl) return;
+        descEl.textContent = String(selected?.hint ?? (selected?.key ? `System field: ${selected.key}` : "No matching modifier keys."));
+      });
+      categoryEl?.addEventListener("change", refreshKeyList);
+      searchEl?.addEventListener("input", refreshKeyList);
+      refreshKeyList();
+    }
+  });
+
+  dialog.render(true);
+}
+
+async function gmQuickLogCurrentWeather() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can log weather.");
+    return;
+  }
+  const snapshot = resolveCurrentSceneWeatherSnapshot();
   await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.customModifiers.push({
-      id: foundry.utils.randomID(),
-      label,
-      key,
-      mode: Number(CONST.ACTIVE_EFFECT_MODES.ADD),
-      value,
-      note,
-      enabled: true
-    });
+    const weather = ensureWeatherState(ledger);
+    weather.current = snapshot;
+    weather.logs.unshift(snapshot);
+    if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
+  });
+
+  const signedModifier = snapshot.visibilityModifier > 0 ? `+${snapshot.visibilityModifier}` : String(snapshot.visibilityModifier);
+  ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Scene Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
   });
 }
 
@@ -5461,11 +5830,15 @@ async function upsertBaseOperationsSite(element) {
   const pressureRaw = Number(root.querySelector("input[name='baseSitePressure']")?.value ?? 0);
   const risk = String(root.querySelector("select[name='baseSiteRisk']")?.value ?? "moderate");
   const note = String(root.querySelector("input[name='baseSiteNote']")?.value ?? "").trim();
+  const maxWeightRaw = Number(root.querySelector("input[name='baseSiteMaxWeight']")?.value ?? 0);
+  const maxSpaceRaw = Number(root.querySelector("input[name='baseSiteMaxSpace']")?.value ?? 0);
   if (!name) {
     ui.notifications?.warn("Base site name is required.");
     return;
   }
   const pressure = Number.isFinite(pressureRaw) ? Math.max(0, Math.floor(pressureRaw)) : 0;
+  const maxWeight = Number.isFinite(maxWeightRaw) ? Math.max(0, maxWeightRaw) : 0;
+  const maxSpace = Number.isFinite(maxSpaceRaw) ? Math.max(0, Math.floor(maxSpaceRaw)) : 0;
 
   await updateOperationsLedger((ledger) => {
     const baseOperations = ensureBaseOperationsState(ledger);
@@ -5479,6 +5852,10 @@ async function upsertBaseOperationsSite(element) {
       existing.pressure = pressure;
       existing.risk = risk;
       existing.note = note;
+      if (!existing.storage || typeof existing.storage !== "object") existing.storage = { maxWeight: 0, maxSpace: 0, items: [] };
+      existing.storage.maxWeight = maxWeight;
+      existing.storage.maxSpace = maxSpace;
+      if (!Array.isArray(existing.storage.items)) existing.storage.items = [];
       if (!existing.id) existing.id = foundry.utils.randomID();
       return;
     }
@@ -5489,7 +5866,12 @@ async function upsertBaseOperationsSite(element) {
       status,
       pressure,
       risk,
-      note
+      note,
+      storage: {
+        maxWeight,
+        maxSpace,
+        items: []
+      }
     });
   });
 }
@@ -5510,10 +5892,263 @@ async function clearBaseOperationsSite(element) {
   });
 }
 
+function buildBaseSiteStorageDialogContent(site) {
+  const storage = site?.storage ?? { maxWeight: 0, maxSpace: 0, items: [] };
+  const items = Array.isArray(storage.items) ? storage.items : [];
+  const weightUsed = items.reduce((sum, entry) => {
+    const quantity = Math.max(0, Number(entry.quantity ?? 0) || 0);
+    const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
+    return sum + (quantity * weight);
+  }, 0);
+  const spaceUsed = items.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity ?? 0) || 0), 0);
+
+  const itemRows = items.map((entry) => {
+    const icon = foundry.utils.escapeHTML(String(entry.img ?? "icons/svg/item-bag.svg"));
+    const name = foundry.utils.escapeHTML(String(entry.name ?? "Stored Item"));
+    const note = foundry.utils.escapeHTML(String(entry.note ?? ""));
+    const qty = Math.max(1, Number(entry.quantity ?? 1) || 1);
+    const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
+    return `
+      <div class="po-op-role-row" data-storage-item-id="${foundry.utils.escapeHTML(entry.id)}">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name"><img src="${icon}" width="18" height="18" /> ${name}</div>
+          <div class="po-op-role-status">Qty ${qty} · ${weight.toFixed(1)} wt each</div>
+        </div>
+        ${note ? `<div class="po-op-summary">${note}</div>` : ""}
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-storage-action="dec" data-item-id="${foundry.utils.escapeHTML(entry.id)}">-1</button>
+          <button type="button" class="po-btn po-btn-sm" data-storage-action="inc" data-item-id="${foundry.utils.escapeHTML(entry.id)}">+1</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-storage-action="remove" data-item-id="${foundry.utils.escapeHTML(entry.id)}">Remove</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="po-help po-base-storage-dialog">
+      <div class="po-op-summary"><strong>${foundry.utils.escapeHTML(String(site.name ?? "Storage Site"))}</strong> · ${foundry.utils.escapeHTML(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
+      <div class="po-op-summary">Weight: ${weightUsed.toFixed(1)} / ${Math.max(0, Number(storage.maxWeight ?? 0) || 0).toFixed(1)} · Space: ${spaceUsed} / ${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}</div>
+
+      <label class="po-resource-row">
+        <span>Max Weight Capacity</span>
+        <input type="number" min="0" step="0.1" class="po-input" data-storage-config="maxWeight" value="${Math.max(0, Number(storage.maxWeight ?? 0) || 0)}" />
+      </label>
+      <label class="po-resource-row">
+        <span>Max Space Capacity</span>
+        <input type="number" min="0" step="1" class="po-input" data-storage-config="maxSpace" value="${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}" />
+      </label>
+
+      <div class="po-op-divider"></div>
+      <div class="po-section-title">Add Item</div>
+      <div class="po-hint">Drag and drop an Item onto this window or add manually below.</div>
+      <div class="po-op-role-row">
+        <label class="po-resource-row"><span>Name</span><input type="text" class="po-input" data-storage-add="name" placeholder="e.g. Healing Potion" /></label>
+        <label class="po-resource-row"><span>Qty</span><input type="number" min="1" step="1" class="po-input" data-storage-add="quantity" value="1" /></label>
+        <label class="po-resource-row"><span>Weight Each</span><input type="number" min="0" step="0.1" class="po-input" data-storage-add="weight" value="0" /></label>
+        <label class="po-resource-row"><span>Notes</span><input type="text" class="po-input" data-storage-add="note" placeholder="optional" /></label>
+        <button type="button" class="po-btn po-btn-sm" data-storage-action="add-manual">Add Item</button>
+      </div>
+
+      <div class="po-op-divider"></div>
+      <div class="po-section-title">Stored Inventory</div>
+      <div class="po-storage-drop-zone" data-storage-drop-zone>
+        ${itemRows || '<div class="po-op-summary">No stored items yet.</div>'}
+      </div>
+    </div>
+  `;
+}
+
+async function updateBaseSiteStorage(siteId, mutator) {
+  const id = String(siteId ?? "").trim();
+  if (!id || typeof mutator !== "function") return;
+  await updateOperationsLedger((ledger) => {
+    const baseOperations = ensureBaseOperationsState(ledger);
+    const site = baseOperations.sites.find((entry) => entry.id === id);
+    if (!site) return;
+    if (!site.storage || typeof site.storage !== "object") site.storage = { maxWeight: 0, maxSpace: 0, items: [] };
+    if (!Array.isArray(site.storage.items)) site.storage.items = [];
+    mutator(site);
+    site.storage.items = site.storage.items.map((entry) => normalizeBaseSiteStorageItem(entry));
+  });
+}
+
+function buildStorageItemFromDocument(itemDoc, quantity = 1) {
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+  const weight = Math.max(0, Number(getItemWeightValue(itemDoc) || 0));
+  return {
+    id: foundry.utils.randomID(),
+    name: String(itemDoc?.name ?? "Stored Item").trim() || "Stored Item",
+    type: String(itemDoc?.type ?? "item").trim() || "item",
+    quantity: qty,
+    weight,
+    note: "",
+    img: String(itemDoc?.img ?? "icons/svg/item-bag.svg"),
+    uuid: String(itemDoc?.uuid ?? "")
+  };
+}
+
+async function showBaseSiteStorageManager(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage base site storage.");
+    return;
+  }
+  const siteId = String(element?.dataset?.baseSiteId ?? "").trim();
+  if (!siteId) return;
+
+  const getCurrentSite = () => {
+    const ledger = getOperationsLedger();
+    const baseOperations = ensureBaseOperationsState(ledger);
+    return baseOperations.sites.find((site) => site.id === siteId) ?? null;
+  };
+
+  let site = getCurrentSite();
+  if (!site) {
+    ui.notifications?.warn("Base site not found.");
+    return;
+  }
+
+  const dialog = new Dialog({
+    title: `Storage Inventory · ${String(site.name ?? "Site")}`,
+    content: buildBaseSiteStorageDialogContent(site),
+    buttons: {
+      close: {
+        label: "Close"
+      }
+    },
+    render: (html) => {
+      const root = html?.[0] ?? html;
+      if (!root) return;
+
+      const rerenderStorage = () => {
+        site = getCurrentSite();
+        if (!site) return;
+        const contentRoot = root.querySelector(".po-base-storage-dialog");
+        if (!contentRoot) return;
+        contentRoot.outerHTML = buildBaseSiteStorageDialogContent(site);
+      };
+
+      const onStorageClick = async (event) => {
+        const actionEl = event.target.closest("[data-storage-action]");
+        if (!actionEl) return;
+        const action = String(actionEl.dataset.storageAction ?? "").trim();
+        const itemId = String(actionEl.dataset.itemId ?? "").trim();
+
+        if (action === "add-manual") {
+          const name = String(root.querySelector("[data-storage-add='name']")?.value ?? "").trim();
+          const quantityRaw = Number(root.querySelector("[data-storage-add='quantity']")?.value ?? 1);
+          const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
+          const weightRaw = Number(root.querySelector("[data-storage-add='weight']")?.value ?? 0);
+          const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
+          const note = String(root.querySelector("[data-storage-add='note']")?.value ?? "");
+          if (!name) {
+            ui.notifications?.warn("Item name is required.");
+            return;
+          }
+          await updateBaseSiteStorage(siteId, (targetSite) => {
+            targetSite.storage.items.push(normalizeBaseSiteStorageItem({
+              id: foundry.utils.randomID(),
+              name,
+              quantity,
+              weight,
+              note,
+              img: "icons/svg/item-bag.svg",
+              type: "item"
+            }));
+          });
+          rerenderStorage();
+          return;
+        }
+
+        if (!itemId) return;
+        if (action === "remove") {
+          await updateBaseSiteStorage(siteId, (targetSite) => {
+            targetSite.storage.items = targetSite.storage.items.filter((entry) => entry.id !== itemId);
+          });
+          rerenderStorage();
+          return;
+        }
+
+        if (action === "inc" || action === "dec") {
+          await updateBaseSiteStorage(siteId, (targetSite) => {
+            const row = targetSite.storage.items.find((entry) => entry.id === itemId);
+            if (!row) return;
+            const delta = action === "inc" ? 1 : -1;
+            row.quantity = Math.max(0, Math.floor(Number(row.quantity ?? 0) || 0) + delta);
+            if (row.quantity <= 0) {
+              targetSite.storage.items = targetSite.storage.items.filter((entry) => entry.id !== itemId);
+            }
+          });
+          rerenderStorage();
+        }
+      };
+
+      const onStorageChange = async (event) => {
+        const configEl = event.target.closest("[data-storage-config]");
+        if (!configEl) return;
+        const configKey = String(configEl.dataset.storageConfig ?? "").trim();
+        if (!configKey) return;
+        await updateBaseSiteStorage(siteId, (targetSite) => {
+          if (configKey === "maxWeight") {
+            const raw = Number(configEl.value ?? 0);
+            targetSite.storage.maxWeight = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+          }
+          if (configKey === "maxSpace") {
+            const raw = Number(configEl.value ?? 0);
+            targetSite.storage.maxSpace = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+          }
+        });
+        rerenderStorage();
+      };
+
+      const onStorageDrop = async (event) => {
+        const dropZone = event.target.closest("[data-storage-drop-zone]");
+        if (!dropZone) return;
+        event.preventDefault();
+
+        let itemDoc = null;
+        const data = TextEditor.getDragEventData(event);
+        if (data?.uuid && typeof fromUuid === "function") {
+          itemDoc = await fromUuid(data.uuid);
+        } else if (data?.type === "Item" && data?.data) {
+          itemDoc = data.data;
+        }
+
+        if (!itemDoc) {
+          ui.notifications?.warn("Could not read dropped item data.");
+          return;
+        }
+
+        const nextItem = buildStorageItemFromDocument(itemDoc, 1);
+        await updateBaseSiteStorage(siteId, (targetSite) => {
+          const same = targetSite.storage.items.find((entry) => {
+            const entryUuid = String(entry.uuid ?? "").trim();
+            const nextUuid = String(nextItem.uuid ?? "").trim();
+            if (entryUuid && nextUuid) return entryUuid === nextUuid;
+            return String(entry.name ?? "").trim().toLowerCase() === String(nextItem.name ?? "").trim().toLowerCase()
+              && Number(entry.weight ?? 0) === Number(nextItem.weight ?? 0);
+          });
+          if (same) same.quantity = Math.max(1, Math.floor(Number(same.quantity ?? 0) || 0) + 1);
+          else targetSite.storage.items.push(normalizeBaseSiteStorageItem(nextItem));
+        });
+        rerenderStorage();
+      };
+
+      root.addEventListener("click", onStorageClick);
+      root.addEventListener("change", onStorageChange);
+      root.addEventListener("drop", onStorageDrop);
+      root.addEventListener("dragover", (event) => {
+        if (event.target.closest("[data-storage-drop-zone]")) event.preventDefault();
+      });
+    }
+  });
+
+  dialog.render(true);
+}
+
 async function showBaseOperationsBrief() {
   const baseOperations = buildOperationsContext().baseOperations;
   const sites = baseOperations.sites
-    .map((site) => `<li>${site.typeLabel}: ${site.name} · ${site.statusLabel} · Pressure ${site.pressure} · Risk ${site.risk}${site.note ? ` · ${site.note}` : ""}</li>`)
+    .map((site) => `<li>${site.typeLabel}: ${site.name} · ${site.statusLabel} · Pressure ${site.pressure} · Risk ${site.risk} · Storage ${site.storageItemCount} items (${site.storageWeightSummary} wt, ${site.storageSpaceSummary} space)${site.note ? ` · ${site.note}` : ""}</li>`)
     .join("");
 
   const content = `
@@ -5936,6 +6571,8 @@ function buildInjuryCalendarPayload(actor, entry) {
     ? `${injuryName} - Permanent`
     : `${injuryName} - ${recoveryDays} day(s) left`;
   const description = `${actor?.name ?? "Unknown"} | ${injuryName} | ${stabilized ? "Stabilized" : "Unstable"}${permanent ? " | Permanent" : ` | ${recoveryDays} day(s) remaining`}${note ? ` | ${note}` : ""}`;
+  const gmUser = game.users?.find((user) => user.isGM && user.active) ?? game.users?.find((user) => user.isGM) ?? game.user;
+  const gmUserId = String(gmUser?.id ?? game.user?.id ?? "");
   return {
     title,
     name: title,
@@ -5947,9 +6584,19 @@ function buildInjuryCalendarPayload(actor, entry) {
     isPrivate: false,
     showToPlayers: true,
     playerVisible: true,
+    visibleToPlayers: true,
+    userId: gmUserId,
+    createdBy: gmUserId,
+    author: gmUserId,
+    owner: gmUserId,
+    permissions: {
+      players: true,
+      default: "observer"
+    },
     flags: {
       [MODULE_ID]: {
-        injuryActorId: actor?.id ?? ""
+        injuryActorId: actor?.id ?? "",
+        gmCreated: true
       }
     }
   };
