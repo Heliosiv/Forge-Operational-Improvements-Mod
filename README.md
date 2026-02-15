@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.23 -Message "Release"
+./scripts/release.ps1 -Version 2.0.24 -Message "Release"
 ```
 
 What it does:
@@ -28,11 +28,11 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.23 highlights
+### 2.0.24 highlights
 
-- Added GM Session Autopilot quick actions with one-click run and undo snapshot restore.
-- Added non-party scene sync controls so global/weather modifiers and environment presets can apply to monsters/NPCs.
-- Added scene-ready integration refresh to keep non-party effect sync aligned when changing scenes.
+- Fixed ActiveEffect sync status deletion errors caused by non-UUID origins in third-party hook chains.
+- Hardened injury Simple Calendar payload normalization for missing/invalid recovery timestamps.
+- Added safer cleanup fallback when deleting synced effects fails via embedded-document hooks.
 
 ### After pushing
 

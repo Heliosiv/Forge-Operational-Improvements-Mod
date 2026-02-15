@@ -1064,7 +1064,52 @@ function buildInjuryStatusSummary(injury = {}) {
   };
 }
 
-function buildIntegrationEffectData(payload) {
+function isParsableUuid(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  const parser = foundry?.utils?.parseUuid;
+  if (typeof parser === "function") {
+    try {
+      parser(text);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return !text.startsWith("module.") && text.includes(".");
+}
+
+function getEffectOriginForActor(actor) {
+  const uuid = String(actor?.uuid ?? "").trim();
+  return uuid && isParsableUuid(uuid) ? uuid : "";
+}
+
+async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
+  if (!actor || !effect?.id) return false;
+  const currentOrigin = String(effect.origin ?? "").trim();
+  const actorOrigin = getEffectOriginForActor(actor);
+  if (actorOrigin && currentOrigin && !isParsableUuid(currentOrigin)) {
+    try {
+      await effect.update({ origin: actorOrigin });
+    } catch {
+      // Continue with best-effort deletion.
+    }
+  }
+  try {
+    await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+    return true;
+  } catch (error) {
+    try {
+      await effect.delete();
+      return true;
+    } catch {
+      console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effect.id}`, error);
+      return false;
+    }
+  }
+}
+
+function buildIntegrationEffectData(payload, actor = null) {
   const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
   const addMode = CONST.ACTIVE_EFFECT_MODES.ADD;
   const priority = 20;
@@ -1132,10 +1177,9 @@ function buildIntegrationEffectData(payload) {
     changes.push({ key, mode, value, priority });
   }
 
-  return {
+  const data = {
     name: INTEGRATION_EFFECT_NAME,
     img: "icons/svg/aura.svg",
-    origin: INTEGRATION_EFFECT_ORIGIN,
     disabled: false,
     transfer: false,
     duration: {
@@ -1149,9 +1193,12 @@ function buildIntegrationEffectData(payload) {
       }
     }
   };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
 }
 
-function buildInjuryStatusEffectData(payload) {
+function buildInjuryStatusEffectData(payload, actor = null) {
   const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
   const priority = 20;
   const injury = payload?.injury ?? {};
@@ -1168,10 +1215,9 @@ function buildInjuryStatusEffectData(payload) {
     ? "icons/svg/skull.svg"
     : (stabilized ? "icons/svg/regen.svg" : "icons/svg/hazard.svg");
 
-  return {
+  const data = {
     name: `${INJURY_EFFECT_NAME_PREFIX} ${injuryName}`,
     img: icon,
-    origin: INJURY_EFFECT_ORIGIN,
     disabled: false,
     transfer: false,
     description: status.summary,
@@ -1213,9 +1259,12 @@ function buildInjuryStatusEffectData(payload) {
       }
     }
   };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
 }
 
-function buildEnvironmentStatusEffectData(payload) {
+function buildEnvironmentStatusEffectData(payload, actor = null) {
   const mode = CONST.ACTIVE_EFFECT_MODES.OVERRIDE;
   const addMode = CONST.ACTIVE_EFFECT_MODES.ADD;
   const priority = 20;
@@ -1255,10 +1304,9 @@ function buildEnvironmentStatusEffectData(payload) {
     });
   }
 
-  return {
+  const data = {
     name: `${ENVIRONMENT_EFFECT_NAME_PREFIX} ${label}`,
     img: icon,
-    origin: ENVIRONMENT_EFFECT_ORIGIN,
     disabled: false,
     transfer: false,
     description,
@@ -1284,11 +1332,14 @@ function buildEnvironmentStatusEffectData(payload) {
       }
     }
   };
+  const origin = getEffectOriginForActor(actor);
+  if (origin) data.origin = origin;
+  return data;
 }
 
 async function upsertIntegrationEffect(actor, payload) {
   const existing = getIntegrationEffect(actor);
-  const data = buildIntegrationEffectData(payload);
+  const data = buildIntegrationEffectData(payload, actor);
   if (!existing) {
     await actor.createEmbeddedDocuments("ActiveEffect", [data]);
     return;
@@ -1299,17 +1350,17 @@ async function upsertIntegrationEffect(actor, payload) {
 async function removeIntegrationEffect(actor) {
   const existing = getIntegrationEffect(actor);
   if (!existing) return;
-  await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+  await safeDeleteActiveEffect(actor, existing, "integration");
 }
 
 async function upsertInjuryStatusEffect(actor, payload) {
   const existing = getInjuryStatusEffect(actor);
   const injuryActive = Boolean(payload?.injury?.active);
   if (!injuryActive) {
-    if (existing) await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+    if (existing) await safeDeleteActiveEffect(actor, existing, "injury");
     return;
   }
-  const data = buildInjuryStatusEffectData(payload);
+  const data = buildInjuryStatusEffectData(payload, actor);
   if (!existing) {
     await actor.createEmbeddedDocuments("ActiveEffect", [data]);
     return;
@@ -1320,17 +1371,17 @@ async function upsertInjuryStatusEffect(actor, payload) {
 async function removeInjuryStatusEffect(actor) {
   const existing = getInjuryStatusEffect(actor);
   if (!existing) return;
-  await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+  await safeDeleteActiveEffect(actor, existing, "injury");
 }
 
 async function upsertEnvironmentStatusEffect(actor, payload) {
   const existing = getEnvironmentStatusEffect(actor);
   const active = Boolean(payload?.environment?.active);
   if (!active) {
-    if (existing) await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+    if (existing) await safeDeleteActiveEffect(actor, existing, "environment");
     return;
   }
-  const data = buildEnvironmentStatusEffectData(payload);
+  const data = buildEnvironmentStatusEffectData(payload, actor);
   if (!existing) {
     await actor.createEmbeddedDocuments("ActiveEffect", [data]);
     return;
@@ -1341,7 +1392,7 @@ async function upsertEnvironmentStatusEffect(actor, payload) {
 async function removeEnvironmentStatusEffect(actor) {
   const existing = getEnvironmentStatusEffect(actor);
   if (!existing) return;
-  await actor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
+  await safeDeleteActiveEffect(actor, existing, "environment");
 }
 
 async function applyActorIntegrationPayload(actor, payload, resolvedMode) {
@@ -8081,8 +8132,13 @@ function buildInjuryRecoveryContext() {
 }
 
 function buildInjuryCalendarPayload(actor, entry) {
-  const dueTimestamp = Number(entry?.recoveryDueTs ?? getCurrentWorldTimestamp());
+  const worldNow = getCurrentWorldTimestamp();
   const recoveryDays = Math.max(0, Number(entry?.recoveryDays ?? 0));
+  const rawDueTimestamp = Number(entry?.recoveryDueTs);
+  const fallbackDueTimestamp = worldNow + (recoveryDays * 86400);
+  const dueTimestamp = Number.isFinite(rawDueTimestamp) ? rawDueTimestamp : fallbackDueTimestamp;
+  const startTimestamp = Math.floor(dueTimestamp);
+  const endTimestamp = startTimestamp + 60;
   const injuryName = String(entry?.injuryName ?? "Injury");
   const stabilized = Boolean(entry?.stabilized);
   const permanent = Boolean(entry?.permanent);
@@ -8096,9 +8152,11 @@ function buildInjuryCalendarPayload(actor, entry) {
     name: title,
     description,
     content: description,
-    startTime: dueTimestamp,
-    endTime: dueTimestamp + 60,
-    timestamp: dueTimestamp,
+    startTime: startTimestamp,
+    endTime: endTimestamp,
+    timestamp: startTimestamp,
+    startTimestamp,
+    endTimestamp,
     allDay: true,
     playerVisible: true,
     public: true,
@@ -10041,14 +10099,17 @@ function toSimpleCalendarDateObject(api, timestamp) {
 
 function buildSimpleCalendarPayloadVariants(api, payload) {
   const base = payload && typeof payload === "object" ? foundry.utils.deepClone(payload) : {};
-  const startTs = Number(base.timestamp ?? base.startTimestamp ?? base.startTime ?? getCurrentWorldTimestamp());
-  const endTs = Number(base.endTimestamp ?? base.endTime ?? startTs);
+  const rawStartTs = Number(base.timestamp ?? base.startTimestamp ?? base.startTime ?? getCurrentWorldTimestamp());
+  const startTs = Number.isFinite(rawStartTs) ? rawStartTs : getCurrentWorldTimestamp();
+  const rawEndTs = Number(base.endTimestamp ?? base.endTime ?? startTs);
+  const endTs = Number.isFinite(rawEndTs) ? rawEndTs : (startTs + 60);
+  const safeEndTs = endTs >= startTs ? endTs : (startTs + 60);
   const title = String(base.name ?? base.title ?? "Party Operations").trim() || "Party Operations";
   const content = String(base.content ?? base.description ?? "");
   const visible = base.playerVisible ?? base.visibleToPlayers ?? true;
   const allDay = Boolean(base.allDay ?? true);
-  const startDate = toSimpleCalendarDateObject(api, startTs);
-  const endDate = toSimpleCalendarDateObject(api, endTs);
+  const startDate = toSimpleCalendarDateObject(api, startTs) ?? toSimpleCalendarDateObject(null, startTs);
+  const endDate = toSimpleCalendarDateObject(api, safeEndTs) ?? toSimpleCalendarDateObject(null, safeEndTs);
 
   const variants = [
     base,
@@ -10060,9 +10121,9 @@ function buildSimpleCalendarPayloadVariants(api, payload) {
       description: content,
       timestamp: startTs,
       startTime: startTs,
-      endTime: endTs,
+      endTime: safeEndTs,
       startTimestamp: startTs,
-      endTimestamp: endTs,
+      endTimestamp: safeEndTs,
       allDay,
       public: true,
       isPrivate: false,
@@ -10076,7 +10137,9 @@ function buildSimpleCalendarPayloadVariants(api, payload) {
       ...variants[1],
       date: startDate,
       startDate,
-      endDate: endDate ?? startDate
+      endDate: endDate ?? startDate,
+      start: startDate,
+      end: endDate ?? startDate
     });
   }
 
