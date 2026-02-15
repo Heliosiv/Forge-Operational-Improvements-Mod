@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.20 -Message "Release"
+./scripts/release.ps1 -Version 2.0.21 -Message "Release"
 ```
 
 What it does:
@@ -28,10 +28,10 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.20 highlights
+### 2.0.21 highlights
 
-- Fixed Recovery -> Injury Simple Calendar logging when API method fallback signatures are used.
-- Resolved a runtime error in calendar sync helpers that prevented injury events from being created in some setups.
+- Expanded Simple Calendar injury create compatibility across API signatures.
+- Simplified injury calendar payload fields to match working cross-version note/event formats.
 
 ### After pushing
 

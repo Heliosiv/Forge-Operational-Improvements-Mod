@@ -7760,7 +7760,6 @@ function buildInjuryRecoveryContext() {
 
 function buildInjuryCalendarPayload(actor, entry) {
   const dueTimestamp = Number(entry?.recoveryDueTs ?? getCurrentWorldTimestamp());
-  const nowTimestamp = getCurrentWorldTimestamp();
   const recoveryDays = Math.max(0, Number(entry?.recoveryDays ?? 0));
   const injuryName = String(entry?.injuryName ?? "Injury");
   const stabilized = Boolean(entry?.stabilized);
@@ -7770,28 +7769,17 @@ function buildInjuryCalendarPayload(actor, entry) {
     ? `${injuryName} - Permanent`
     : `${injuryName} - ${recoveryDays} day(s) left`;
   const description = `${actor?.name ?? "Unknown"} | ${injuryName} | ${stabilized ? "Stabilized" : "Unstable"}${permanent ? " | Permanent" : ` | ${recoveryDays} day(s) remaining`}${note ? ` | ${note}` : ""}`;
-  const gmUser = game.users?.find((user) => user.isGM && user.active) ?? game.users?.find((user) => user.isGM) ?? game.user;
-  const gmUserId = String(gmUser?.id ?? game.user?.id ?? "");
   return {
     title,
     name: title,
     description,
-    startTimestamp: nowTimestamp,
+    content: description,
+    startTime: dueTimestamp,
+    endTime: dueTimestamp + 60,
     timestamp: dueTimestamp,
-    endTimestamp: dueTimestamp,
     allDay: true,
-    isPrivate: false,
-    showToPlayers: true,
     playerVisible: true,
-    visibleToPlayers: true,
-    userId: gmUserId,
-    createdBy: gmUserId,
-    author: gmUserId,
-    owner: gmUserId,
-    permissions: {
-      players: true,
-      default: "observer"
-    },
+    public: true,
     flags: {
       [MODULE_ID]: {
         injuryActorId: actor?.id ?? "",
@@ -9687,9 +9675,12 @@ function buildSimpleCalendarPayloadVariants(api, payload) {
       content,
       description: content,
       timestamp: startTs,
+      startTime: startTs,
+      endTime: endTs,
       startTimestamp: startTs,
       endTimestamp: endTs,
       allDay,
+      public: true,
       isPrivate: false,
       playerVisible: visible,
       visibleToPlayers: visible
@@ -9788,6 +9779,25 @@ async function createSimpleCalendarEntry(api, payload) {
         } catch (nestedError) {
           lastError = nestedError;
           signatureError = nestedError;
+        }
+        const variantDate = variant.startDate ?? variant.date ?? null;
+        if (variantDate) {
+          try {
+            const result = await fn.call(ctx, variantDate, variant);
+            const id = extractCalendarEntryId(result);
+            return { success: true, id };
+          } catch (dateFirstError) {
+            lastError = dateFirstError;
+            signatureError = dateFirstError;
+          }
+          try {
+            const result = await fn.call(ctx, variant, variantDate);
+            const id = extractCalendarEntryId(result);
+            return { success: true, id };
+          } catch (dateSecondError) {
+            lastError = dateSecondError;
+            signatureError = dateSecondError;
+          }
         }
         logSimpleCalendarSyncDebug("Create method signature attempts failed", {
           methodName,
