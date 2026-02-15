@@ -634,7 +634,7 @@
               <div class="po-op-role-row" data-faction="{{id}}">
                 <div class="po-op-role-head">
                   <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-op-role-status">{{band}} · {{access}}</div>
+                  <div class="po-op-role-status">Standing {{score}} · {{access}}</div>
                 </div>
                 {{#if @root.isGM}}
                 {{#unless isCore}}
@@ -670,7 +670,7 @@
               <div class="po-op-role-row" data-faction="{{id}}">
                 <div class="po-op-role-head">
                   <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-op-role-status">{{band}} · {{access}}</div>
+                  <div class="po-op-role-status">Standing {{score}} · {{access}}</div>
                 </div>
                 {{#if @root.isGM}}
                 {{#unless isCore}}
@@ -906,9 +906,18 @@
           </div>
         </div>
 
+        <nav class="po-tabs po-tabs-sub" role="tablist" aria-label="GM Operations Sections">
+          <button type="button" class="po-tab {{#if gmOpsTabEnvironment}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="environment">Environment Override</button>
+          <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Environment Logs</button>
+          <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">Derived Modifiers</button>
+          <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">Active Sync Effects</button>
+          <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">Custom Modifiers</button>
+        </nav>
+
         <div class="po-gm-section">
           <div class="po-section-title">GM Environment Controls</div>
           <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
+          {{#if gmOpsTabEnvironment}}
           <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
           <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
           {{#if operations.environment.movementCheckActive}}
@@ -1022,7 +1031,9 @@
             <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
           </div>
+          {{/if}}
 
+          {{#if gmOpsTabLogs}}
           <div class="po-op-divider"></div>
           <div class="po-section-title">Recent Movement Checks</div>
           {{#if operations.environment.hasCheckResults}}
@@ -1068,11 +1079,16 @@
           {{else}}
           <div class="po-op-summary">No environment logs yet.</div>
           {{/if}}
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
+          </div>
+          {{/if}}
         </div>
 
         <div class="po-gm-section po-party-health-manager">
           <div class="po-section-title">GM Party Modifier Manager</div>
           <div class="po-hint">Enable/disable derived modifiers and add custom DAE changes that sync to all player actors.</div>
+          {{#if gmOpsTabDerived}}
           <div class="po-op-divider"></div>
           <div class="po-section-title">Derived Modifiers</div>
           {{#each operations.summary.effects.derivedModifierRows}}
@@ -1088,7 +1104,9 @@
             {{#if note}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
           </div>
           {{/each}}
+          {{/if}}
 
+          {{#if gmOpsTabCustom}}
           <div class="po-op-divider"></div>
           <div class="po-section-title">Custom Global Modifiers (DAE Simple)</div>
           <div class="po-hint">Set key, mode, and value. Example: key `system.attributes.init.bonus`, mode `ADD`, value `1`.</div>
@@ -1139,23 +1157,66 @@
           {{else}}
           <div class="po-op-summary">No custom global modifiers yet.</div>
           {{/if}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Active Synced Effects</div>
-          {{#if operations.partyHealth.hasActiveSyncEffects}}
-          {{#each operations.partyHealth.activeSyncEffects}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{actorName}}</div>
-              <div class="po-op-role-status">{{effectName}}</div>
-            </div>
-            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-active-sync-effect" data-actor-id="{{actorId}}" data-effect-id="{{effectId}}">Remove Effect</button>
-          </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No active synced global effects currently on tracked actors.</div>
           {{/if}}
 
+          {{#if gmOpsTabActiveSync}}
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Active Synced Effects</div>
+          <nav class="po-tabs po-tabs-sub" role="tablist" aria-label="Active Sync Effects">
+            <button type="button" class="po-tab {{#if operations.partyHealth.activeSyncEffectsTabActive}}is-active{{/if}}" data-action="set-active-sync-effects-tab" data-tab="active">Active ({{operations.partyHealth.activeSyncEffectsCount}})</button>
+            <button type="button" class="po-tab {{#if operations.partyHealth.activeSyncEffectsTabArchived}}is-active{{/if}}" data-action="set-active-sync-effects-tab" data-tab="archived">Archived ({{operations.partyHealth.archivedSyncEffectsCount}})</button>
+          </nav>
+
+          {{#if operations.partyHealth.activeSyncEffectsTabActive}}
+            {{#if operations.partyHealth.hasActiveSyncEffects}}
+            {{#each operations.partyHealth.activeSyncEffects}}
+            <div class="po-op-role-row">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">{{actorName}}</div>
+                <div class="po-op-role-status">{{effectName}}</div>
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="archive-active-sync-effect" data-actor-id="{{actorId}}" data-effect-id="{{effectId}}">Archive</button>
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-active-sync-effect" data-actor-id="{{actorId}}" data-effect-id="{{effectId}}">Remove</button>
+              </div>
+            </div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No active synced global effects currently on tracked actors.</div>
+            {{/if}}
+          {{/if}}
+
+          {{#if operations.partyHealth.activeSyncEffectsTabArchived}}
+            {{#if operations.partyHealth.hasArchivedSyncEffects}}
+            {{#each operations.partyHealth.archivedSyncEffects}}
+            <div class="po-op-role-row">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">{{label}}</div>
+                <div class="po-op-role-status">{{actorName}}</div>
+              </div>
+              <div class="po-op-summary">Original Effect: {{effectName}}</div>
+              <div class="po-op-summary">Archived: {{archivedAtLabel}} by {{archivedBy}}</div>
+              <label class="po-resource-row">
+                <span>Archive Label</span>
+                <input type="text" class="po-input" data-action="set-archived-sync-field" data-archive-id="{{id}}" data-field="label" value="{{label}}" />
+              </label>
+              <label class="po-resource-row po-notes-row-lg">
+                <span>Archive Notes</span>
+                <textarea class="po-input" rows="3" data-action="set-archived-sync-field" data-archive-id="{{id}}" data-field="note">{{note}}</textarea>
+              </label>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="restore-archived-sync-effect" data-archive-id="{{id}}">Restore</button>
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-archived-sync-effect" data-archive-id="{{id}}">Remove Permanently</button>
+              </div>
+            </div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No archived synced effects.</div>
+            {{/if}}
+          {{/if}}
+          {{/if}}
+
+          {{#if gmOpsTabCustom}}
           <div class="po-op-role-row">
             <div class="po-op-role-head"><div class="po-op-role-name">Add Custom Modifier</div></div>
             <label class="po-resource-row">
@@ -1201,6 +1262,7 @@
           {{#unless operations.partyHealth.daeAvailable}}
           <div class="po-op-summary is-warn">DAE module not active. Modifiers still sync as standard Active Effects.</div>
           {{/unless}}
+          {{/if}}
         </div>
         {{/if}}
         {{/if}}

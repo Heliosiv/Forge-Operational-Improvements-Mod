@@ -1329,6 +1329,36 @@ function setReputationFilterState(patch = {}) {
   sessionStorage.setItem(getReputationFilterStorageKey(), JSON.stringify(next));
 }
 
+function getActiveSyncEffectsTabStorageKey() {
+  return `po-active-sync-effects-tab-${game.user?.id ?? "anon"}`;
+}
+
+function getActiveSyncEffectsTab() {
+  const stored = String(sessionStorage.getItem(getActiveSyncEffectsTabStorageKey()) ?? "active").trim().toLowerCase();
+  return stored === "archived" ? "archived" : "active";
+}
+
+function setActiveSyncEffectsTab(tab) {
+  const value = String(tab ?? "active").trim().toLowerCase() === "archived" ? "archived" : "active";
+  sessionStorage.setItem(getActiveSyncEffectsTabStorageKey(), value);
+}
+
+function getGmOperationsTabStorageKey() {
+  return `po-gm-ops-tab-${game.user?.id ?? "anon"}`;
+}
+
+function getActiveGmOperationsTab() {
+  const stored = String(sessionStorage.getItem(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "custom"]);
+  return allowed.has(stored) ? stored : "environment";
+}
+
+function setActiveGmOperationsTab(tab) {
+  const value = String(tab ?? "environment").trim().toLowerCase();
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "custom"]);
+  sessionStorage.setItem(getGmOperationsTabStorageKey(), allowed.has(value) ? value : "environment");
+}
+
 function getActiveOperationsPlanningTab() {
   const allowed = new Set(["roles", "sops", "resources", "bonuses"]);
   const stored = sessionStorage.getItem(getOperationsPlanningTabStorageKey()) ?? "roles";
@@ -1592,6 +1622,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const mainTab = getActiveRestMainTab();
     const operationsPage = getActiveOperationsPage();
     const operationsPlanningTab = getActiveOperationsPlanningTab();
+    const gmOperationsTab = getActiveGmOperationsTab();
     const miniViz = buildMiniVisualizationContext({ visibility });
     const miniVizUi = buildMiniVizUiContext();
     
@@ -1630,6 +1661,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       operationsPageBase: operationsPage === "base",
       operationsPageRecovery: operationsPage === "recovery",
       operationsPageGm: operationsPage === "gm",
+      gmOpsTabEnvironment: gmOperationsTab === "environment",
+      gmOpsTabLogs: gmOperationsTab === "logs",
+      gmOpsTabDerived: gmOperationsTab === "derived",
+      gmOpsTabActiveSync: gmOperationsTab === "active-sync",
+      gmOpsTabCustom: gmOperationsTab === "custom",
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
       operationsPlanningResources: operationsPlanningTab === "resources",
@@ -1851,6 +1887,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         setActiveOperationsPlanningTab(element?.dataset?.planningTab);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
+      case "gm-ops-tab":
+        setActiveGmOperationsTab(element?.dataset?.gmTab);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
       case "set-role":
         await setOperationalRole(element);
         break;
@@ -1964,6 +2004,22 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "remove-active-sync-effect":
         await removeActiveSyncEffect(element);
+        break;
+      case "archive-active-sync-effect":
+        await archiveActiveSyncEffect(element);
+        break;
+      case "restore-archived-sync-effect":
+        await restoreArchivedSyncEffect(element);
+        break;
+      case "remove-archived-sync-effect":
+        await removeArchivedSyncEffect(element);
+        break;
+      case "set-archived-sync-field":
+        await setArchivedSyncField(element);
+        break;
+      case "set-active-sync-effects-tab":
+        setActiveSyncEffectsTab(String(element?.dataset?.tab ?? "active"));
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "gm-quick-add-faction":
         await gmQuickAddFaction();
@@ -2973,6 +3029,23 @@ function buildOperationsContext() {
       };
     })
     .filter(Boolean);
+  const activeSyncEffectsTab = getActiveSyncEffectsTab();
+  const archivedSyncEffects = (partyHealthState.archivedSyncEffects ?? [])
+    .map((entry) => {
+      const archivedAtDate = new Date(Number(entry.archivedAt ?? Date.now()));
+      return {
+        id: entry.id,
+        actorId: entry.actorId,
+        actorName: entry.actorName,
+        effectName: entry.effectName,
+        label: entry.label,
+        note: entry.note,
+        archivedBy: entry.archivedBy,
+        archivedAt: Number(entry.archivedAt ?? 0) || 0,
+        archivedAtLabel: Number.isFinite(archivedAtDate.getTime()) ? archivedAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .sort((a, b) => Number(b.archivedAt ?? 0) - Number(a.archivedAt ?? 0));
 
   return {
     roles,
@@ -3036,6 +3109,13 @@ function buildOperationsContext() {
       modifierKeyOptions: partyModifierKeyOptions,
       activeSyncEffects,
       hasActiveSyncEffects: activeSyncEffects.length > 0,
+      activeSyncEffectsTab,
+      activeSyncEffectsTabActive: activeSyncEffectsTab === "active",
+      activeSyncEffectsTabArchived: activeSyncEffectsTab === "archived",
+      activeSyncEffectsCount: activeSyncEffects.length,
+      archivedSyncEffects,
+      hasArchivedSyncEffects: archivedSyncEffects.length > 0,
+      archivedSyncEffectsCount: archivedSyncEffects.length,
       daeAvailable
     },
     environment: {
@@ -3320,15 +3400,21 @@ function getReputationBand(score) {
 }
 
 function getReputationAccessLabel(score) {
-  const band = getReputationBand(score);
+  const value = Math.max(-5, Math.min(5, Math.floor(Number(score ?? 0) || 0)));
   const map = {
-    hostile: "Denied",
-    cold: "Restricted",
-    neutral: "Conditional",
-    favorable: "Open",
-    trusted: "Privileged"
+    "-5": "Nemesis",
+    "-4": "Hated",
+    "-3": "Hostile",
+    "-2": "Distrusted",
+    "-1": "Cold",
+    "0": "Neutral",
+    "1": "Noticed",
+    "2": "Friendly",
+    "3": "Favored",
+    "4": "Allied",
+    "5": "Exalted"
   };
-  return map[band] ?? "Conditional";
+  return map[String(value)] ?? "Neutral";
 }
 
 function buildReputationContext(reputationState, filters = {}) {
@@ -3348,10 +3434,14 @@ function buildReputationContext(reputationState, filters = {}) {
   const filterKeyword = String(filters?.keyword ?? "").trim().toLowerCase();
   const filterStanding = String(filters?.standing ?? "all").trim().toLowerCase();
   const filteredFactions = factions.filter((faction) => {
-    const standingMatch = filterStanding === "all" || faction.band === filterStanding;
+    const numericStanding = Number(filterStanding);
+    const filterAsExactScore = Number.isFinite(numericStanding) && String(Math.floor(numericStanding)) === filterStanding;
+    const standingMatch = filterStanding === "all"
+      || (filterAsExactScore && faction.score === Math.floor(numericStanding))
+      || faction.band === filterStanding;
     if (!standingMatch) return false;
     if (!filterKeyword) return true;
-    const haystack = `${faction.label} ${faction.note} ${faction.band} ${faction.access}`.toLowerCase();
+    const haystack = `${faction.label} ${faction.note} ${faction.band} ${faction.access} ${faction.score}`.toLowerCase();
     return haystack.includes(filterKeyword);
   });
 
@@ -3373,11 +3463,17 @@ function buildReputationContext(reputationState, filters = {}) {
       standing: filterStanding || "all",
       standingOptions: [
         { value: "all", label: "All Standing", selected: (filterStanding || "all") === "all" },
-        { value: "hostile", label: "Hostile", selected: filterStanding === "hostile" },
-        { value: "cold", label: "Cold", selected: filterStanding === "cold" },
-        { value: "neutral", label: "Neutral", selected: filterStanding === "neutral" },
-        { value: "favorable", label: "Favorable", selected: filterStanding === "favorable" },
-        { value: "trusted", label: "Trusted", selected: filterStanding === "trusted" }
+        { value: "5", label: "+5 Exalted", selected: filterStanding === "5" },
+        { value: "4", label: "+4 Allied", selected: filterStanding === "4" },
+        { value: "3", label: "+3 Favored", selected: filterStanding === "3" },
+        { value: "2", label: "+2 Friendly", selected: filterStanding === "2" },
+        { value: "1", label: "+1 Noticed", selected: filterStanding === "1" },
+        { value: "0", label: "0 Neutral", selected: filterStanding === "0" },
+        { value: "-1", label: "-1 Cold", selected: filterStanding === "-1" },
+        { value: "-2", label: "-2 Distrusted", selected: filterStanding === "-2" },
+        { value: "-3", label: "-3 Hostile", selected: filterStanding === "-3" },
+        { value: "-4", label: "-4 Hated", selected: filterStanding === "-4" },
+        { value: "-5", label: "-5 Nemesis", selected: filterStanding === "-5" }
       ]
     },
     highStandingCount: factions.filter((faction) => ["favorable", "trusted"].includes(faction.band)).length,
@@ -3481,12 +3577,13 @@ function ensureBaseOperationsState(ledger) {
 
 function ensurePartyHealthState(ledger) {
   if (!ledger.partyHealth || typeof ledger.partyHealth !== "object") {
-    ledger.partyHealth = { modifierEnabled: {}, customModifiers: [] };
+    ledger.partyHealth = { modifierEnabled: {}, customModifiers: [], archivedSyncEffects: [] };
   }
   if (!ledger.partyHealth.modifierEnabled || typeof ledger.partyHealth.modifierEnabled !== "object") {
     ledger.partyHealth.modifierEnabled = {};
   }
   if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
+  if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
   ledger.partyHealth.customModifiers = ledger.partyHealth.customModifiers
     .map((entry) => {
       const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
@@ -3499,6 +3596,25 @@ function ensurePartyHealthState(ledger) {
         value: String(entry?.value ?? "").trim(),
         note: String(entry?.note ?? ""),
         enabled: entry?.enabled !== false
+      };
+    })
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  ledger.partyHealth.archivedSyncEffects = ledger.partyHealth.archivedSyncEffects
+    .map((entry) => {
+      const effectData = entry?.effectData && typeof entry.effectData === "object"
+        ? foundry.utils.deepClone(entry.effectData)
+        : {};
+      if (effectData && typeof effectData === "object" && Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        actorId: String(entry?.actorId ?? "").trim(),
+        actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        effectName: String(entry?.effectName ?? INTEGRATION_EFFECT_NAME).trim() || INTEGRATION_EFFECT_NAME,
+        label: String(entry?.label ?? entry?.effectName ?? "Archived Sync Effect").trim() || "Archived Sync Effect",
+        note: String(entry?.note ?? ""),
+        archivedAt: Number.isFinite(Number(entry?.archivedAt)) ? Number(entry.archivedAt) : Date.now(),
+        archivedBy: String(entry?.archivedBy ?? game.user?.name ?? "GM"),
+        effectData
       };
     })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
@@ -5063,6 +5179,118 @@ async function removeActiveSyncEffect(element) {
 
   await removeIntegrationEffect(actor);
   ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
+}
+
+async function archiveActiveSyncEffect(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can archive synced effects.");
+    return;
+  }
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  const effectId = String(element?.dataset?.effectId ?? "").trim();
+  if (!actorId || !effectId) return;
+
+  const actor = game.actors.get(actorId);
+  if (!actor) {
+    ui.notifications?.warn("Actor not found.");
+    return;
+  }
+  const effect = actor.effects.get(effectId);
+  if (!effect) {
+    ui.notifications?.warn("Synced effect not found.");
+    return;
+  }
+
+  const effectData = foundry.utils.deepClone(effect.toObject());
+  if (Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
+
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    partyHealth.archivedSyncEffects.push({
+      id: foundry.utils.randomID(),
+      actorId: actor.id,
+      actorName: String(actor.name ?? "Unknown Actor"),
+      effectName: String(effect.name ?? INTEGRATION_EFFECT_NAME),
+      label: String(effect.name ?? "Archived Sync Effect"),
+      note: "",
+      archivedAt: Date.now(),
+      archivedBy: String(game.user?.name ?? "GM"),
+      effectData
+    });
+  });
+
+  await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+  ui.notifications?.info(`Archived synced effect from ${actor.name}.`);
+}
+
+async function restoreArchivedSyncEffect(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can restore archived synced effects.");
+    return;
+  }
+  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
+  if (!archiveId) return;
+
+  const ledger = getOperationsLedger();
+  const partyHealth = ensurePartyHealthState(ledger);
+  const archived = partyHealth.archivedSyncEffects.find((entry) => entry.id === archiveId);
+  if (!archived) {
+    ui.notifications?.warn("Archived effect not found.");
+    return;
+  }
+
+  const actor = game.actors.get(String(archived.actorId ?? "").trim());
+  if (!actor) {
+    ui.notifications?.warn("Target actor for archived effect not found.");
+    return;
+  }
+
+  const effectData = foundry.utils.deepClone(archived.effectData ?? {});
+  if (!effectData || typeof effectData !== "object") {
+    ui.notifications?.warn("Archived effect data is invalid.");
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
+  if (!String(effectData.name ?? "").trim()) {
+    effectData.name = String(archived.effectName ?? archived.label ?? INTEGRATION_EFFECT_NAME);
+  }
+
+  await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+  await updateOperationsLedger((nextLedger) => {
+    const nextPartyHealth = ensurePartyHealthState(nextLedger);
+    nextPartyHealth.archivedSyncEffects = nextPartyHealth.archivedSyncEffects.filter((entry) => entry.id !== archiveId);
+  });
+  ui.notifications?.info(`Restored archived effect to ${actor.name}.`);
+}
+
+async function removeArchivedSyncEffect(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can remove archived synced effects.");
+    return;
+  }
+  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
+  if (!archiveId) return;
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    partyHealth.archivedSyncEffects = partyHealth.archivedSyncEffects.filter((entry) => entry.id !== archiveId);
+  });
+}
+
+async function setArchivedSyncField(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit archived synced effects.");
+    return;
+  }
+  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!archiveId || !field) return;
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    const row = partyHealth.archivedSyncEffects.find((entry) => entry.id === archiveId);
+    if (!row) return;
+    if (field === "label") row.label = String(element?.value ?? "").trim() || "Archived Sync Effect";
+    else if (field === "note") row.note = String(element?.value ?? "");
+  });
 }
 
 async function showOperationalLogsManager() {
