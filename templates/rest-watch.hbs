@@ -1020,10 +1020,10 @@
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-faction">+ Faction</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Current Weather</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync DAE/Effects Now</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Session Autopilot</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Last Autopilot</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Weather</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
           </div>
           {{#if operations.gmQuickTools.showFactionPanel}}
           <div class="po-op-role-row">
@@ -1166,7 +1166,7 @@
             </label>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Selected Custom</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Custom</button>
             </div>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
@@ -1178,17 +1178,43 @@
         </div>
 
         <nav class="po-tabs po-tabs-sub po-gm-ops-tabs" role="tablist" aria-label="GM Operations Sections">
-          <button type="button" class="po-tab {{#if gmOpsTabEnvironment}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="environment">Environment Override</button>
-          <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Global Logs</button>
-          <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">Derived Modifiers</button>
-          <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">Active Sync Effects</button>
-          <button type="button" class="po-tab {{#if gmOpsTabNonParty}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="non-party">Non-Party Sync</button>
-          <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">Custom Modifiers</button>
-          <button type="button" class="po-tab {{#if gmOpsTabLootSources}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="loot-sources">Loot Sources</button>
+          <button type="button" class="po-tab {{#if gmOpsTabEnvironment}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="environment">
+            <span class="po-gm-tab-title">Environment</span>
+            <span class="po-gm-tab-sub">Hazards &amp; checks</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">
+            <span class="po-gm-tab-title">Logs</span>
+            <span class="po-gm-tab-sub">Global history</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">
+            <span class="po-gm-tab-title">Derived</span>
+            <span class="po-gm-tab-sub">Auto modifiers</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">
+            <span class="po-gm-tab-title">Sync Effects</span>
+            <span class="po-gm-tab-sub">Active &amp; archived</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabNonParty}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="non-party">
+            <span class="po-gm-tab-title">Non-Party</span>
+            <span class="po-gm-tab-sub">Scene/world targets</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">
+            <span class="po-gm-tab-title">Custom Mods</span>
+            <span class="po-gm-tab-sub">Manual effects</span>
+          </button>
+          <button type="button" class="po-tab {{#if gmOpsTabLootSources}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="loot-sources">
+            <span class="po-gm-tab-title">Loot</span>
+            <span class="po-gm-tab-sub">Sources &amp; preview</span>
+          </button>
         </nav>
 
         <div class="po-gm-section">
-          <div class="po-section-title">GM Environment Controls</div>
+          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">GM Environment Controls</span>
+              <span class="po-op-summary">Presets, assignments, movement checks, and logs</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
           <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
           {{#if gmOpsTabEnvironment}}
           <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
@@ -1366,11 +1392,18 @@
             <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
           </div>
           {{/if}}
+            </div>
+          </details>
         </div>
 
         {{#if gmOpsTabLootSources}}
         <div class="po-gm-section">
-          <div class="po-section-title">Loot Source Registry</div>
+          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Loot Source Registry</span>
+              <span class="po-op-summary">Sources, filters, and dry-run previews</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
           <div class="po-hint">Configure compendium and roll-table sources for the upcoming GM Loot Roller workflows.</div>
           <div class="po-op-summary">Item Packs Enabled: {{operations.lootSources.summary.enabledItemPacks}} / {{operations.lootSources.summary.totalItemPacks}}</div>
           <div class="po-op-summary">Roll-Table Sources Enabled: {{operations.lootSources.summary.enabledTables}} / {{operations.lootSources.summary.totalTables}}</div>
@@ -1378,27 +1411,54 @@
           <div class="po-op-summary">Last Updated: {{operations.lootSources.summary.updatedAtLabel}} by {{operations.lootSources.summary.updatedBy}}</div>
 
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Item Pack Sources</div>
-          {{#if operations.lootSources.itemPackOptions.length}}
-          {{#each operations.lootSources.itemPackOptions}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
-            </div>
-            <label class="po-switch">
-              <input type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} />
-              <span>Enabled</span>
-            </label>
-            <label class="po-resource-row">
-              <span>Weight</span>
-              <input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" />
-            </label>
+          <div class="po-collapsible-head">
+            <div class="po-section-title">Item Pack Sources</div>
+            <button type="button" class="po-icon-btn" data-action="toggle-loot-pack-sources-collapsed" aria-label="{{operations.lootSources.itemPackToggleLabel}} Item Pack Sources" title="{{operations.lootSources.itemPackToggleLabel}} Item Pack Sources">
+              <i class="fa-solid {{operations.lootSources.itemPackToggleIcon}}"></i>
+            </button>
           </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No item-pack sources detected.</div>
-          {{/if}}
+          {{#unless operations.lootSources.itemPackCollapsed}}
+          <div class="po-collapsible-body">
+            <div class="po-op-summary">Showing {{operations.lootSources.itemPackVisibleCount}} of {{operations.lootSources.itemPackOptions.length}} item pack sources.</div>
+            <div class="po-op-role-row">
+              <label class="po-resource-row">
+                <span>Filter</span>
+                <input type="search" class="po-input" data-action="set-loot-pack-filter" value="{{operations.lootSources.itemPackFilter}}" placeholder="Search pack name, ID, source kind" />
+              </label>
+              {{#if operations.lootSources.itemPackFilterActive}}
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-pack-filter">Clear Filter</button>
+              {{/if}}
+            </div>
+            <div class="po-hint" title="Supports approximate matching on pack name, id, and source kind.">
+              Filter supports approximate matches (for example: "equip", "equipment", or minor typos like "eqiup").
+            </div>
+
+            {{#if operations.lootSources.itemPackVisibleOptions.length}}
+            {{#each operations.lootSources.itemPackVisibleOptions}}
+            <div class="po-op-role-row">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">{{label}}</div>
+                <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
+              </div>
+              <label class="po-switch">
+                <input type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} />
+                <span>Enabled</span>
+              </label>
+              <label class="po-resource-row">
+                <span>Weight</span>
+                <input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" />
+              </label>
+            </div>
+            {{/each}}
+            {{else}}
+            {{#if operations.lootSources.itemPackOptions.length}}
+            <div class="po-op-summary">No item-pack sources matched the current filter.</div>
+            {{else}}
+            <div class="po-op-summary">No item-pack sources detected.</div>
+            {{/if}}
+            {{/if}}
+          </div>
+          {{/unless}}
 
           <div class="po-op-divider"></div>
           <div class="po-section-title">Roll-Table Sources</div>
@@ -1453,17 +1513,128 @@
             </select>
           </label>
           <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="reset-loot-source-config">Reset Loot Source Defaults</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="reset-loot-source-config">Reset Loot Defaults</button>
           </div>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Loot Preview (Dry Run)</div>
+          <div class="po-hint">Generates preview payload only. No inventory changes are applied yet.</div>
+          <div class="po-op-role-row po-loot-preview-panel">
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select name="lootPreviewMode" class="po-select" data-action="set-loot-preview-field" data-field="mode">
+                {{#each operations.lootSources.preview.modeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Equipment Profile</span>
+              <select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">
+                {{#each operations.lootSources.preview.profileOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Challenge Tier</span>
+              <select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">
+                {{#each operations.lootSources.preview.challengeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Scale</span>
+              <select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">
+                {{#each operations.lootSources.preview.scaleOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Actor Count</span>
+              <input name="lootPreviewActorCount" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="actorCount" value="{{operations.lootSources.preview.draft.actorCount}}" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="roll-loot-preview">Run Dry-Run</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear</button>
+            </div>
+          </div>
+
+          {{#if operations.lootSources.preview.hasResult}}
+          <div class="po-op-summary">Generated: {{operations.lootSources.preview.generatedAtLabel}} by {{operations.lootSources.preview.generatedBy}}</div>
+          <div class="po-op-summary">Currency: {{operations.lootSources.preview.currency.pp}} pp · {{operations.lootSources.preview.currency.gp}} gp · {{operations.lootSources.preview.currency.sp}} sp · {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
+          <div class="po-op-summary">Currency Roll: {{operations.lootSources.preview.currency.formula}}</div>
+          <div class="po-op-summary">Candidates: {{operations.lootSources.preview.stats.candidateCount}} · Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} · Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Preview Items</div>
+          {{#if operations.lootSources.preview.items.length}}
+          {{#each operations.lootSources.preview.items}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{name}}</div>
+              <div class="po-op-role-status">{{itemType}}</div>
+            </div>
+            {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
+            <div class="po-op-summary">Source: {{sourceLabel}}</div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No items generated for current settings.</div>
+          {{/if}}
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Preview Table Rolls</div>
+          {{#if operations.lootSources.preview.tableRolls.length}}
+          {{#each operations.lootSources.preview.tableRolls}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{tableName}}</div>
+              <div class="po-op-role-status">{{sourceType}}</div>
+            </div>
+            <div class="po-op-summary">Source: {{sourceLabel}}</div>
+            <div class="po-op-summary">Roll: {{formula}} = {{total}}</div>
+            <div class="po-op-summary">Result: {{result}}</div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No table rolls generated.</div>
+          {{/if}}
+
+          {{#if operations.lootSources.preview.warnings.length}}
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Warnings</div>
+          {{#each operations.lootSources.preview.warnings}}
+          <div class="po-op-summary is-warn">{{this}}</div>
+          {{/each}}
+          {{/if}}
+          {{/if}}
+            </div>
+          </details>
         </div>
         {{/if}}
 
         <div class="po-gm-section po-party-health-manager">
-          <div class="po-section-title">GM Party Modifier Manager</div>
-          <div class="po-hint">Enable/disable derived modifiers and add custom DAE changes that sync to all player actors.</div>
+          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">GM Party Modifier Manager</span>
+              <span class="po-op-summary">Derived, custom, and sync effect controls</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+          <div class="po-hint">Enable/disable derived modifiers and add custom DAE changes that sync to all player actors, with optional non-party target scope.</div>
           <label class="po-switch">
             <input type="checkbox" data-action="set-party-health-sync-non-party" {{#if operations.partyHealth.syncToSceneNonParty}}checked{{/if}} />
-            <span>Also sync global/weather modifiers to non-party scene actors</span>
+            <span>Also sync global/weather modifiers to selected non-party sync scope</span>
+          </label>
+          <label class="po-resource-row">
+            <span>Non-Party Sync Scope</span>
+            <select class="po-select" data-action="set-party-health-sync-scope">
+              {{#each operations.nonPartySync.scopeOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
           </label>
           {{#if gmOpsTabDerived}}
           <div class="po-op-divider"></div>
@@ -1595,8 +1766,9 @@
 
           {{#if gmOpsTabNonParty}}
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Scene Non-Party Sync</div>
+          <div class="po-section-title">Non-Party Sync Targets</div>
           <div class="po-op-summary">Scene: {{operations.nonPartySync.sceneName}}</div>
+          <div class="po-op-summary">Target Scope: {{operations.nonPartySync.scopeLabel}}</div>
           <div class="po-op-summary">Mode: {{operations.nonPartySync.integrationModeLabel}} | Enabled: {{operations.nonPartySync.enabledLabel}}</div>
           <div class="po-op-summary">Global Modifiers: {{#if operations.nonPartySync.syncGlobalEnabled}}ON{{else}}OFF{{/if}} | Environment: {{#if operations.nonPartySync.syncEnvironmentEnabled}}ON{{else}}OFF{{/if}} ({{operations.nonPartySync.environmentPresetLabel}})</div>
           <div class="po-op-summary">Tracked Actors: {{operations.nonPartySync.actorCount}} | Active Sync Markers: {{operations.nonPartySync.syncedCount}} | Stale: {{operations.nonPartySync.staleCount}}</div>
@@ -1604,8 +1776,8 @@
           <div class="po-op-summary is-warn">Integration mode is currently OFF. Reapply will clear stale non-party sync data.</div>
           {{/if}}
           <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="reapply-all-non-party-sync">Reapply Scene Non-Party Sync</button>
-            <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-all-non-party-sync">Clear Scene Non-Party Sync</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="reapply-all-non-party-sync">Reapply Scope</button>
+            <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-all-non-party-sync">Clear Scope</button>
           </div>
 
           {{#if operations.nonPartySync.hasTargets}}
@@ -1615,17 +1787,17 @@
               <div class="po-op-role-name">{{actorName}}</div>
               <div class="po-op-role-status {{#if shouldBeCleared}}is-warn{{/if}}">{{statusLabel}}</div>
             </div>
-            <div class="po-op-summary">Tokens: {{tokenCount}} | {{tokenNamesLabel}}</div>
+            <div class="po-op-summary">{{locationLabel}}</div>
             <div class="po-op-summary">Sync Flag: {{#if hasSyncFlag}}Yes{{else}}No{{/if}} | Integration: {{#if hasIntegrationEffect}}Yes{{else}}No{{/if}} | Injury: {{#if hasInjuryEffect}}Yes{{else}}No{{/if}} | Environment: {{#if hasEnvironmentEffect}}Yes{{else}}No{{/if}}</div>
             <div class="po-op-summary">Effects: {{effectsSummary}}</div>
             <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="apply-non-party-sync-actor" data-actor-ref="{{actorRef}}">Reapply</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="apply-non-party-sync-actor" data-actor-ref="{{actorRef}}" data-scene-target="{{#if isSceneTarget}}true{{else}}false{{/if}}">Reapply</button>
               <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-non-party-sync-actor" data-actor-ref="{{actorRef}}">Clear</button>
             </div>
           </div>
           {{/each}}
           {{else}}
-          <div class="po-op-summary">No non-party scene actors detected on the current scene.</div>
+          <div class="po-op-summary">No actors found for the selected non-party sync scope.</div>
           {{/if}}
           {{/if}}
 
@@ -1676,6 +1848,8 @@
           <div class="po-op-summary is-warn">DAE module not active. Modifiers still sync as standard Active Effects.</div>
           {{/unless}}
           {{/if}}
+            </div>
+          </details>
         </div>
         {{/if}}
         {{/if}}

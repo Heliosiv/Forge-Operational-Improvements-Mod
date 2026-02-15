@@ -44,6 +44,12 @@ const INTEGRATION_MODES = {
   DAE: "dae"
 };
 
+const NON_PARTY_SYNC_SCOPES = {
+  SCENE: "scene",
+  WORLD_NON_PARTY: "world-non-party",
+  WORLD_ALL: "world-all"
+};
+
 const INTEGRATION_EFFECT_ORIGIN = `module.${MODULE_ID}`;
 const INTEGRATION_EFFECT_NAME = "Party Operations Sync";
 const INJURY_EFFECT_ORIGIN = `module.${MODULE_ID}.injury`;
@@ -97,6 +103,27 @@ const LOOT_RARITY_OPTIONS = [
   { value: "very-rare", label: "Very Rare" },
   { value: "legendary", label: "Legendary" }
 ];
+const LOOT_PREVIEW_MODE_OPTIONS = [
+  { value: "horde", label: "Horde Loot" },
+  { value: "defeated", label: "Defeated Enemy Loot" },
+  { value: "encounter", label: "Encounter Assignment Loot" }
+];
+const LOOT_PREVIEW_PROFILE_OPTIONS = [
+  { value: "poor", label: "Poorly Equipped" },
+  { value: "standard", label: "Standard Equipment" },
+  { value: "well", label: "Well Equipped" }
+];
+const LOOT_PREVIEW_CHALLENGE_OPTIONS = [
+  { value: "low", label: "Low (CR 0-4)" },
+  { value: "mid", label: "Mid (CR 5-10)" },
+  { value: "high", label: "High (CR 11-16)" },
+  { value: "epic", label: "Epic (CR 17+)" }
+];
+const LOOT_PREVIEW_SCALE_OPTIONS = [
+  { value: "small", label: "Small" },
+  { value: "medium", label: "Medium" },
+  { value: "major", label: "Major" }
+];
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -126,6 +153,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-injury",
   "apply-recovery-cycle",
   "set-party-health-modifier",
+  "set-party-health-sync-scope",
   "set-party-health-custom-field",
   "set-party-health-sync-non-party",
   "add-party-health-custom",
@@ -138,6 +166,9 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-loot-rarity-floor",
   "set-loot-rarity-ceiling",
   "reset-loot-source-config",
+  "set-loot-preview-field",
+  "roll-loot-preview",
+  "clear-loot-preview",
   "remove-active-sync-effect",
   "archive-active-sync-effect",
   "restore-archived-sync-effect",
@@ -444,6 +475,12 @@ function consumeSuppressedSettingRefresh(fullSettingKey) {
   if (count === 1) suppressedSettingRefreshKeys.delete(fullSettingKey);
   else suppressedSettingRefreshKeys.set(fullSettingKey, count - 1);
   return true;
+}
+
+async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
+  const fullSettingKey = `${MODULE_ID}.${settingKey}`;
+  suppressNextSettingRefresh(fullSettingKey);
+  await game.settings.set(MODULE_ID, settingKey, value);
 }
 
 function getIntegrationModeSetting() {
@@ -1469,17 +1506,20 @@ function getSceneNonPartySyncConfig(globalContext) {
   const context = globalContext ?? buildIntegrationGlobalContext();
   const partyHealth = context.operations?.partyHealth ?? {};
   const environment = context.operations?.environment ?? {};
+  const scope = getNonPartySyncScope(partyHealth.nonPartySyncScope);
   const syncWorldGlobal = Boolean(partyHealth.syncToSceneNonParty);
   const syncEnvironment = Boolean(environment.syncToSceneNonParty && String(environment.presetKey ?? "none") !== "none");
   return {
     context,
+    scope,
+    scopeLabel: getNonPartySyncScopeLabel(scope),
     syncWorldGlobal,
     syncEnvironment,
     enabled: syncWorldGlobal || syncEnvironment
   };
 }
 
-async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode) {
+async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, options = {}) {
   if (!actor) return { synced: false, cleared: false, skipped: true, enabled: false };
   const mode = resolvedMode ?? resolveIntegrationMode();
   const config = getSceneNonPartySyncConfig(globalContext);
@@ -1497,30 +1537,43 @@ async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode) 
     return { synced: false, cleared: false, skipped: true, enabled };
   }
 
+  const applyAsNonParty = !isTrackableCharacter(actor);
   const payload = buildActorIntegrationPayload(actor.id, config.context, {
-    nonParty: true,
+    nonParty: applyAsNonParty,
     includeWorldGlobal: config.syncWorldGlobal,
-    forceEnvironmentApply: config.syncEnvironment
+    forceEnvironmentApply: config.syncEnvironment && options.includeEnvironment === true
   });
   await applyActorIntegrationPayload(actor, payload, mode);
   return { synced: true, cleared: false, skipped: false, enabled };
 }
 
-async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode) {
+async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, options = {}) {
   if (!game.user.isGM) return { synced: 0, cleared: 0, total: 0, enabled: false };
   const mode = resolvedMode ?? resolveIntegrationMode();
   const config = getSceneNonPartySyncConfig(globalContext);
-  const actors = getSceneNonPartyIntegrationActors();
+  const scope = getNonPartySyncScope(options.scope ?? config.scope);
+  const targets = getNonPartyIntegrationTargets(scope);
   let synced = 0;
   let cleared = 0;
 
-  for (const actor of actors) {
-    const result = await syncSingleSceneNonPartyActor(actor, config.context, mode);
+  for (const target of targets) {
+    const actor = target?.actor;
+    if (!actor) continue;
+    const result = await syncSingleSceneNonPartyActor(actor, config.context, mode, {
+      includeEnvironment: target.isSceneTarget === true
+    });
     if (result.synced) synced += 1;
     if (result.cleared) cleared += 1;
   }
 
-  return { synced, cleared, total: actors.length, enabled: Boolean(config.enabled) };
+  return {
+    synced,
+    cleared,
+    total: targets.length,
+    enabled: Boolean(config.enabled),
+    scope,
+    scopeLabel: getNonPartySyncScopeLabel(scope)
+  };
 }
 
 async function syncIntegrationState() {
@@ -1547,6 +1600,7 @@ async function syncIntegrationState() {
   }
 
   const globalContext = buildIntegrationGlobalContext();
+  await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
   for (const actor of trackedActors) {
     const payload = buildActorIntegrationPayload(actor.id, globalContext);
     await applyActorIntegrationPayload(actor, payload, resolvedMode);
@@ -1565,8 +1619,6 @@ async function syncIntegrationState() {
   for (const actor of staleActors) {
     await clearActorIntegrationPayload(actor);
   }
-
-  await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
 }
 
 function scheduleIntegrationSync(reason = "") {
@@ -1662,6 +1714,38 @@ function setReputationFilterState(patch = {}) {
   sessionStorage.setItem(getReputationFilterStorageKey(), JSON.stringify(next));
 }
 
+function getLootPackSourcesUiStorageKey() {
+  return `po-loot-pack-sources-ui-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeLootPackSourcesFilter(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function getLootPackSourcesUiState() {
+  const defaults = { collapsed: false, filter: "" };
+  const raw = sessionStorage.getItem(getLootPackSourcesUiStorageKey());
+  if (!raw) return defaults;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      collapsed: Boolean(parsed?.collapsed),
+      filter: normalizeLootPackSourcesFilter(parsed?.filter)
+    };
+  } catch (_error) {
+    return defaults;
+  }
+}
+
+function setLootPackSourcesUiState(patch = {}) {
+  const previous = getLootPackSourcesUiState();
+  const next = {
+    collapsed: (patch?.collapsed === undefined) ? previous.collapsed : Boolean(patch.collapsed),
+    filter: (patch?.filter === undefined) ? previous.filter : normalizeLootPackSourcesFilter(patch.filter)
+  };
+  sessionStorage.setItem(getLootPackSourcesUiStorageKey(), JSON.stringify(next));
+}
+
 function getActiveSyncEffectsTabStorageKey() {
   return `po-active-sync-effects-tab-${game.user?.id ?? "anon"}`;
 }
@@ -1682,6 +1766,69 @@ function getGmQuickPanelStorageKey() {
 
 function getGmQuickWeatherDraftStorageKey() {
   return `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
+}
+
+function getLootPreviewDraftStorageKey() {
+  return `po-loot-preview-draft-${game.user?.id ?? "anon"}`;
+}
+
+function getLootPreviewResultStorageKey() {
+  return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeLootPreviewDraft(input = {}) {
+  const mode = String(input?.mode ?? "horde").trim().toLowerCase();
+  const profile = String(input?.profile ?? "standard").trim().toLowerCase();
+  const challenge = String(input?.challenge ?? "mid").trim().toLowerCase();
+  const scale = String(input?.scale ?? "medium").trim().toLowerCase();
+  const actorCountRaw = Number(input?.actorCount ?? 1);
+  const actorCount = Number.isFinite(actorCountRaw) ? Math.max(1, Math.min(100, Math.floor(actorCountRaw))) : 1;
+  const modeAllowed = new Set(LOOT_PREVIEW_MODE_OPTIONS.map((entry) => entry.value));
+  const profileAllowed = new Set(LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => entry.value));
+  const challengeAllowed = new Set(LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => entry.value));
+  const scaleAllowed = new Set(LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => entry.value));
+  return {
+    mode: modeAllowed.has(mode) ? mode : "horde",
+    profile: profileAllowed.has(profile) ? profile : "standard",
+    challenge: challengeAllowed.has(challenge) ? challenge : "mid",
+    scale: scaleAllowed.has(scale) ? scale : "medium",
+    actorCount
+  };
+}
+
+function getLootPreviewDraft() {
+  const raw = sessionStorage.getItem(getLootPreviewDraftStorageKey());
+  if (!raw) return normalizeLootPreviewDraft({});
+  try {
+    return normalizeLootPreviewDraft(JSON.parse(raw));
+  } catch {
+    return normalizeLootPreviewDraft({});
+  }
+}
+
+function setLootPreviewDraft(draft = {}) {
+  const normalized = normalizeLootPreviewDraft(draft);
+  sessionStorage.setItem(getLootPreviewDraftStorageKey(), JSON.stringify(normalized));
+}
+
+function getLootPreviewResult() {
+  const raw = sessionStorage.getItem(getLootPreviewResultStorageKey());
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setLootPreviewResult(result = null) {
+  if (!result) {
+    sessionStorage.removeItem(getLootPreviewResultStorageKey());
+    return;
+  }
+  sessionStorage.setItem(getLootPreviewResultStorageKey(), JSON.stringify(result));
 }
 
 function getGmQuickWeatherDraft() {
@@ -2092,6 +2239,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
 
       this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
+          this.#onAction(event);
+          return;
+        }
         if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
         }
@@ -2300,6 +2451,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
         break;
+      case "set-party-health-sync-scope":
+        await setPartyHealthSyncScope(element);
+        break;
       case "set-environment-preset":
         await setOperationalEnvironmentPreset(element);
         break;
@@ -2414,6 +2568,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "remove-party-health-custom":
         await removePartyHealthCustomModifier(element);
         break;
+      case "toggle-loot-pack-sources-collapsed": {
+        const current = getLootPackSourcesUiState();
+        setLootPackSourcesUiState({ collapsed: !current.collapsed });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      }
+      case "set-loot-pack-filter":
+        setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "clear-loot-pack-filter":
+        setLootPackSourcesUiState({ filter: "" });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
       case "toggle-loot-pack-source":
         await toggleLootPackSource(element);
         break;
@@ -2437,6 +2605,17 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "reset-loot-source-config":
         await resetLootSourceConfig();
+        break;
+      case "set-loot-preview-field":
+        setLootPreviewField(element);
+        break;
+      case "roll-loot-preview":
+        await rollLootPreview(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "clear-loot-preview":
+        clearLootPreviewResult();
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "remove-active-sync-effect":
         await removeActiveSyncEffect(element);
@@ -3214,8 +3393,7 @@ async function updateLootSourceConfig(mutator, options = {}) {
   const next = normalizeLootSourceConfig(config);
   next.updatedAt = Date.now();
   next.updatedBy = String(game.user?.name ?? "GM");
-  if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`);
-  await game.settings.set(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG, next);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LOOT_SOURCE_CONFIG, next);
   if (!options.skipLocalRefresh) refreshOpenApps();
   emitSocketRefresh();
 }
@@ -3286,6 +3464,89 @@ function getAvailableLootTableSources() {
   return rows
     .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
     .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function normalizeLootSourceSearchText(value) {
+  return String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeLootSourceSearchText(value) {
+  const normalized = normalizeLootSourceSearchText(value);
+  return normalized ? normalized.split(" ") : [];
+}
+
+function hasEditDistanceWithin(sourceToken, queryToken, maxDistance = 1) {
+  if (sourceToken === queryToken) return true;
+  const sourceLength = sourceToken.length;
+  const queryLength = queryToken.length;
+  if (!sourceLength || !queryLength) return false;
+  if (Math.abs(sourceLength - queryLength) > maxDistance) return false;
+
+  let previousRow = Array.from({ length: queryLength + 1 }, (_entry, index) => index);
+  for (let rowIndex = 1; rowIndex <= sourceLength; rowIndex += 1) {
+    const currentRow = [rowIndex];
+    let rowMin = currentRow[0];
+    for (let colIndex = 1; colIndex <= queryLength; colIndex += 1) {
+      const substitutionCost = sourceToken[rowIndex - 1] === queryToken[colIndex - 1] ? 0 : 1;
+      const value = Math.min(
+        previousRow[colIndex] + 1,
+        currentRow[colIndex - 1] + 1,
+        previousRow[colIndex - 1] + substitutionCost
+      );
+      currentRow[colIndex] = value;
+      if (value < rowMin) rowMin = value;
+    }
+    if (rowMin > maxDistance) return false;
+    previousRow = currentRow;
+  }
+  return previousRow[queryLength] <= maxDistance;
+}
+
+function doesLootSourceTokenMatch(queryToken, candidateToken) {
+  if (!queryToken || !candidateToken) return false;
+  if (candidateToken.includes(queryToken) || queryToken.includes(candidateToken)) return true;
+
+  const queryStem = queryToken.length > 4 && queryToken.endsWith("s") ? queryToken.slice(0, -1) : queryToken;
+  const candidateStem = candidateToken.length > 4 && candidateToken.endsWith("s") ? candidateToken.slice(0, -1) : candidateToken;
+  if (candidateStem.includes(queryStem) || queryStem.includes(candidateStem)) return true;
+
+  const queryPrefix = queryStem.slice(0, Math.min(4, queryStem.length));
+  const candidatePrefix = candidateStem.slice(0, Math.min(4, candidateStem.length));
+  if (queryPrefix.length >= 3 && candidateStem.startsWith(queryPrefix)) return true;
+  if (candidatePrefix.length >= 3 && queryStem.startsWith(candidatePrefix)) return true;
+
+  const maxDistance = queryStem.length >= 6 ? 2 : 1;
+  return hasEditDistanceWithin(candidateStem, queryStem, maxDistance);
+}
+
+function matchesLootSourceSearchQuery(query, source = {}) {
+  const normalizedQuery = normalizeLootSourceSearchText(query);
+  if (!normalizedQuery) return true;
+  const queryTokens = tokenizeLootSourceSearchText(normalizedQuery);
+  if (queryTokens.length === 0) return true;
+
+  const searchableText = normalizeLootSourceSearchText([
+    source.label,
+    source.id,
+    source.sourceKind,
+    source.available ? "available" : "unavailable",
+    source.enabled ? "enabled" : "disabled"
+  ].join(" "));
+
+  if (!searchableText) return false;
+  if (searchableText.includes(normalizedQuery)) return true;
+
+  const searchableTokens = tokenizeLootSourceSearchText(searchableText);
+  return queryTokens.every((queryToken) => {
+    if (searchableText.includes(queryToken)) return true;
+    return searchableTokens.some((candidateToken) => doesLootSourceTokenMatch(queryToken, candidateToken));
+  });
 }
 
 function buildLootSourceRegistryContext() {
@@ -3368,6 +3629,11 @@ function buildLootSourceRegistryContext() {
     return a.label.localeCompare(b.label);
   });
 
+  const itemPackUi = getLootPackSourcesUiState();
+  const itemPackFilter = normalizeLootPackSourcesFilter(itemPackUi.filter);
+  const itemPackVisibleOptions = itemPackOptions.filter((entry) => matchesLootSourceSearchQuery(itemPackFilter, entry));
+  const itemPackCollapsed = Boolean(itemPackUi.collapsed);
+
   const selectedTypes = new Set(config.filters?.allowedTypes ?? []);
   const itemTypeOptions = buildLootItemTypeCatalog().map((entry) => ({
     value: entry.value,
@@ -3381,6 +3647,13 @@ function buildLootSourceRegistryContext() {
   const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "Not set";
   return {
     itemPackOptions,
+    itemPackVisibleOptions,
+    itemPackCollapsed,
+    itemPackToggleLabel: itemPackCollapsed ? "Expand" : "Collapse",
+    itemPackToggleIcon: itemPackCollapsed ? "fa-chevron-down" : "fa-chevron-up",
+    itemPackFilter,
+    itemPackFilterActive: itemPackFilter.length > 0,
+    itemPackVisibleCount: itemPackVisibleOptions.length,
     tableOptions,
     itemTypeOptions,
     rarityFloorOptions: LOOT_RARITY_OPTIONS.map((entry) => ({
@@ -3403,6 +3676,531 @@ function buildLootSourceRegistryContext() {
       updatedAtLabel,
       updatedBy: String(config.updatedBy ?? "").trim() || "GM"
     }
+  };
+}
+
+function getCollectionValues(collectionLike) {
+  if (!collectionLike) return [];
+  if (Array.isArray(collectionLike)) return collectionLike;
+  if (typeof collectionLike.values === "function") return Array.from(collectionLike.values());
+  if (Array.isArray(collectionLike.contents)) return collectionLike.contents;
+  return [];
+}
+
+function normalizeLootRarity(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (["veryrare", "very rare", "very_rare", "very-rare"].includes(raw)) return "very-rare";
+  if (["legend", "legendary"].includes(raw)) return "legendary";
+  if (["rare"].includes(raw)) return "rare";
+  if (["uncommon"].includes(raw)) return "uncommon";
+  if (["common"].includes(raw)) return "common";
+  return "";
+}
+
+function getLootRarityFromData(data = {}) {
+  const candidates = [
+    data?.rarity,
+    data?.system?.rarity,
+    data?.system?.details?.rarity,
+    data?.system?.traits?.rarity,
+    data?.system?.properties?.rarity
+  ];
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    if (typeof candidate === "object") {
+      const nested = normalizeLootRarity(candidate.value ?? candidate.label ?? candidate.name ?? "");
+      if (nested) return nested;
+      continue;
+    }
+    const normalized = normalizeLootRarity(candidate);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+function isLootRarityAllowed(rarity, floor, ceiling) {
+  const rankMap = {
+    common: 1,
+    uncommon: 2,
+    rare: 3,
+    "very-rare": 4,
+    legendary: 5
+  };
+  const normalized = normalizeLootRarity(rarity);
+  if (!normalized) return true;
+  const value = Number(rankMap[normalized] ?? 0);
+  if (!value) return true;
+  const floorValue = Number(rankMap[normalizeLootRarity(floor)] ?? 0);
+  const ceilingValue = Number(rankMap[normalizeLootRarity(ceiling)] ?? 0);
+  if (floorValue > 0 && value < floorValue) return false;
+  if (ceilingValue > 0 && value > ceilingValue) return false;
+  return true;
+}
+
+function getLootProfileRarityWeight(profile, rarity) {
+  const normalizedProfile = String(profile ?? "standard").trim().toLowerCase();
+  const normalizedRarity = normalizeLootRarity(rarity);
+  if (!normalizedRarity) return 1;
+  if (normalizedProfile === "poor") {
+    if (normalizedRarity === "common") return 1.2;
+    if (normalizedRarity === "uncommon") return 1;
+    if (normalizedRarity === "rare") return 0.6;
+    if (normalizedRarity === "very-rare") return 0.3;
+    if (normalizedRarity === "legendary") return 0.1;
+    return 1;
+  }
+  if (normalizedProfile === "well") {
+    if (normalizedRarity === "common") return 0.7;
+    if (normalizedRarity === "uncommon") return 1;
+    if (normalizedRarity === "rare") return 1.3;
+    if (normalizedRarity === "very-rare") return 1.7;
+    if (normalizedRarity === "legendary") return 2;
+    return 1;
+  }
+  return 1;
+}
+
+function chooseWeightedEntry(entries, weightAccessor) {
+  if (!Array.isArray(entries) || entries.length === 0) return null;
+  const getWeight = typeof weightAccessor === "function"
+    ? weightAccessor
+    : (entry) => Number(entry?.weight ?? 1);
+  let total = 0;
+  const weighted = entries.map((entry) => {
+    const raw = Number(getWeight(entry));
+    const weight = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    total += weight;
+    return { entry, weight };
+  });
+  if (total <= 0) return entries[0] ?? null;
+  let cursor = Math.random() * total;
+  for (const row of weighted) {
+    cursor -= row.weight;
+    if (cursor <= 0) return row.entry;
+  }
+  return weighted[weighted.length - 1]?.entry ?? null;
+}
+
+function shuffleArray(input = []) {
+  const rows = [...input];
+  for (let index = rows.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [rows[index], rows[swapIndex]] = [rows[swapIndex], rows[index]];
+  }
+  return rows;
+}
+
+function getLootCurrencyProfile(draft = {}) {
+  const mode = String(draft.mode ?? "horde");
+  const challenge = String(draft.challenge ?? "mid");
+  const table = {
+    horde: {
+      low: { dice: "6d10", bonus: 60 },
+      mid: { dice: "8d12", bonus: 180 },
+      high: { dice: "10d20", bonus: 450 },
+      epic: { dice: "12d30", bonus: 1200 }
+    },
+    defeated: {
+      low: { dice: "1d8", bonus: 2 },
+      mid: { dice: "2d10", bonus: 5 },
+      high: { dice: "3d12", bonus: 12 },
+      epic: { dice: "4d20", bonus: 30 }
+    },
+    encounter: {
+      low: { dice: "3d10", bonus: 20 },
+      mid: { dice: "5d12", bonus: 55 },
+      high: { dice: "7d16", bonus: 180 },
+      epic: { dice: "9d24", bonus: 500 }
+    }
+  };
+  const modeRows = table[mode] ?? table.horde;
+  return modeRows[challenge] ?? modeRows.mid;
+}
+
+function getLootScaleMultiplier(scale = "medium") {
+  if (scale === "small") return 0.75;
+  if (scale === "major") return 1.8;
+  return 1;
+}
+
+function getLootProfileMultiplier(profile = "standard") {
+  if (profile === "poor") return 0.75;
+  if (profile === "well") return 1.35;
+  return 1;
+}
+
+function convertGpToCurrency(gpValue = 0) {
+  const gp = Math.max(0, Number(gpValue) || 0);
+  let cpTotal = Math.max(0, Math.round(gp * 100));
+  const pp = Math.floor(cpTotal / 1000);
+  cpTotal -= (pp * 1000);
+  const finalGp = Math.floor(cpTotal / 100);
+  cpTotal -= (finalGp * 100);
+  const sp = Math.floor(cpTotal / 10);
+  cpTotal -= (sp * 10);
+  const cp = cpTotal;
+  return {
+    pp,
+    gp: finalGp,
+    sp,
+    cp,
+    gpEquivalent: gp
+  };
+}
+
+async function rollLootCurrency(draft = {}) {
+  const profile = getLootCurrencyProfile(draft);
+  const roll = await (new Roll(String(profile.dice ?? "1d1"))).evaluate();
+  const rollTotal = Number(roll?.total ?? 0);
+  const actorCount = Math.max(1, Number(draft.actorCount ?? 1) || 1);
+  const mode = String(draft.mode ?? "horde");
+  const modeFactor = mode === "defeated"
+    ? actorCount
+    : mode === "encounter"
+      ? Math.max(1, Math.round(actorCount * 0.6))
+      : 1;
+  const scaled = (Math.max(0, rollTotal) + Math.max(0, Number(profile.bonus ?? 0)))
+    * getLootScaleMultiplier(String(draft.scale ?? "medium"))
+    * getLootProfileMultiplier(String(draft.profile ?? "standard"))
+    * modeFactor;
+  const gpEquivalent = Math.max(0, Math.round(scaled));
+  return {
+    formula: `${profile.dice} + ${profile.bonus}`,
+    rolled: Math.max(0, Math.floor(rollTotal)),
+    modeFactor,
+    scaleMultiplier: getLootScaleMultiplier(String(draft.scale ?? "medium")),
+    profileMultiplier: getLootProfileMultiplier(String(draft.profile ?? "standard")),
+    ...convertGpToCurrency(gpEquivalent)
+  };
+}
+
+function getLootItemCount(draft = {}) {
+  const mode = String(draft.mode ?? "horde");
+  const challenge = String(draft.challenge ?? "mid");
+  const profile = String(draft.profile ?? "standard");
+  const actorCount = Math.max(1, Number(draft.actorCount ?? 1) || 1);
+  const baseByMode = { horde: 5, defeated: 1, encounter: 3 };
+  const challengeMod = { low: 0, mid: 1, high: 2, epic: 4 };
+  const profileMod = { poor: -1, standard: 0, well: 1 };
+  const base = Number(baseByMode[mode] ?? 3);
+  const delta = Number(challengeMod[challenge] ?? 1) + Number(profileMod[profile] ?? 0);
+  const scaleFactor = getLootScaleMultiplier(String(draft.scale ?? "medium"));
+  const modeFactor = mode === "defeated"
+    ? actorCount
+    : mode === "encounter"
+      ? Math.max(1, Math.round(actorCount * 0.5))
+      : 1;
+  const total = Math.max(0, Math.round((base + delta) * scaleFactor * modeFactor));
+  return Math.min(60, total);
+}
+
+async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
+  const allowedTypes = new Set(sourceConfig?.filters?.allowedTypes ?? []);
+  const floor = String(sourceConfig?.filters?.rarityFloor ?? "");
+  const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
+  const enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
+  const candidates = [];
+  for (const source of enabledSources) {
+    const sourceId = String(source?.id ?? "").trim();
+    const sourceLabel = String(source?.label ?? sourceId).trim() || sourceId;
+    const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
+    if (!sourceId) continue;
+    if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) {
+      for (const item of game.items?.contents ?? []) {
+        if (!item) continue;
+        const itemType = String(item.type ?? "").trim();
+        if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
+        const rarity = getLootRarityFromData(item);
+        if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
+        candidates.push({
+          key: String(item.uuid ?? item.id ?? foundry.utils.randomID()),
+          name: String(item.name ?? "Item").trim() || "Item",
+          img: String(item.img ?? "icons/svg/item-bag.svg"),
+          itemType,
+          rarity,
+          uuid: String(item.uuid ?? ""),
+          sourceId,
+          sourceLabel,
+          sourceWeight,
+          profileWeight: getLootProfileRarityWeight(draft.profile, rarity)
+        });
+      }
+      continue;
+    }
+
+    const pack = game.packs?.get(sourceId);
+    if (!pack) {
+      warnings.push(`Item source missing: ${sourceLabel}.`);
+      continue;
+    }
+    try {
+      const index = await pack.getIndex({
+        fields: ["type", "img", "system.rarity", "system.details.rarity", "system.traits.rarity", "rarity"]
+      });
+      for (const row of getCollectionValues(index)) {
+        const entry = Array.isArray(row) ? row[1] : row;
+        if (!entry) continue;
+        const itemType = String(entry.type ?? "").trim();
+        if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
+        const rarity = getLootRarityFromData(entry);
+        if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
+        const docId = String(entry._id ?? entry.id ?? "").trim();
+        if (!docId) continue;
+        candidates.push({
+          key: `Compendium.${pack.collection}.${docId}`,
+          name: String(entry.name ?? "Item").trim() || "Item",
+          img: String(entry.img ?? "icons/svg/item-bag.svg"),
+          itemType,
+          rarity,
+          uuid: `Compendium.${pack.collection}.${docId}`,
+          sourceId,
+          sourceLabel,
+          sourceWeight,
+          profileWeight: getLootProfileRarityWeight(draft.profile, rarity)
+        });
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to read loot source pack`, sourceId, error);
+      warnings.push(`Could not read item source: ${sourceLabel}.`);
+    }
+  }
+  return candidates;
+}
+
+function pickLootItemsFromCandidates(candidates, count = 0) {
+  const targetCount = Math.max(0, Math.floor(Number(count) || 0));
+  if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) return [];
+  const pool = [...candidates];
+  const selected = [];
+  while (pool.length > 0 && selected.length < targetCount) {
+    const picked = chooseWeightedEntry(pool, (entry) => {
+      const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
+      const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
+      return sourceWeight * profileWeight;
+    });
+    if (!picked) break;
+    selected.push({
+      name: picked.name,
+      img: picked.img,
+      itemType: picked.itemType,
+      rarity: picked.rarity || "",
+      sourceLabel: picked.sourceLabel,
+      uuid: picked.uuid
+    });
+    const index = pool.indexOf(picked);
+    if (index >= 0) pool.splice(index, 1);
+  }
+  return selected;
+}
+
+async function resolveUuidDocument(uuid) {
+  const ref = String(uuid ?? "").trim();
+  if (!ref) return null;
+  if (typeof fromUuidSync === "function") {
+    try {
+      const syncDoc = fromUuidSync(ref);
+      if (syncDoc) return syncDoc;
+    } catch {
+      // Fall back to async lookup.
+    }
+  }
+  if (typeof fromUuid === "function") {
+    try {
+      return await fromUuid(ref);
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function getLootTableRollBudget(draft = {}) {
+  const mode = String(draft.mode ?? "horde");
+  const challenge = String(draft.challenge ?? "mid");
+  const scale = String(draft.scale ?? "medium");
+  const modeBase = mode === "horde" ? 2 : 1;
+  const challengeBonus = challenge === "high" ? 1 : challenge === "epic" ? 2 : 0;
+  const scaleBonus = scale === "major" ? 1 : 0;
+  return Math.max(0, Math.min(6, modeBase + challengeBonus + scaleBonus));
+}
+
+async function resolveLootTableFromSource(source = {}) {
+  const sourceId = String(source?.id ?? "").trim();
+  if (!sourceId) return null;
+
+  if (sourceId.startsWith("world-table:")) {
+    const uuid = sourceId.slice("world-table:".length);
+    const document = await resolveUuidDocument(uuid);
+    if (document?.documentName === "RollTable") return document;
+    return null;
+  }
+
+  if (sourceId.startsWith("table-pack:")) {
+    const collection = sourceId.slice("table-pack:".length);
+    const pack = game.packs?.get(collection);
+    if (!pack) return null;
+    const index = await pack.getIndex();
+    const rows = getCollectionValues(index);
+    if (!rows.length) return null;
+    const row = rows[Math.floor(Math.random() * rows.length)];
+    const entry = Array.isArray(row) ? row[1] : row;
+    const docId = String(entry?._id ?? entry?.id ?? "").trim();
+    if (!docId) return null;
+    return pack.getDocument(docId);
+  }
+
+  return null;
+}
+
+function getRollTableResultLabel(result = {}) {
+  const text = String(result?.text ?? "").trim();
+  if (text) return text;
+  const collection = String(result?.documentCollection ?? "").trim();
+  const docId = String(result?.documentId ?? "").trim();
+  if (collection && docId) return `${collection} (${docId})`;
+  return "No result text";
+}
+
+async function rollLootTableDry(tableDoc) {
+  if (!tableDoc) return null;
+  const formula = String(tableDoc.formula ?? "1d100").trim() || "1d100";
+  const roll = await (new Roll(formula)).evaluate();
+  const total = Number(roll?.total ?? 0);
+  const results = getCollectionValues(tableDoc.results);
+  const matches = results.filter((result) => {
+    const range = Array.isArray(result?.range) ? result.range : [1, 1];
+    const min = Number(range[0] ?? 1);
+    const max = Number(range[1] ?? min);
+    return total >= min && total <= max;
+  });
+  const picked = matches.length > 0
+    ? matches[Math.floor(Math.random() * matches.length)]
+    : (results[0] ?? null);
+  return {
+    tableName: String(tableDoc.name ?? "Roll Table").trim() || "Roll Table",
+    formula,
+    total: Number.isFinite(total) ? Math.floor(total) : 0,
+    result: picked ? getRollTableResultLabel(picked) : "No matching result",
+    resultType: String(picked?.type ?? "").trim()
+  };
+}
+
+async function buildLootTableRolls(sourceConfig, draft, warnings = []) {
+  const enabledSources = (sourceConfig?.tables ?? []).filter((entry) => entry?.enabled !== false);
+  if (!enabledSources.length) return [];
+  const budget = getLootTableRollBudget(draft);
+  if (budget <= 0) return [];
+  const sources = shuffleArray(enabledSources).slice(0, budget);
+  const rolls = [];
+  for (const source of sources) {
+    try {
+      const tableDoc = await resolveLootTableFromSource(source);
+      if (!tableDoc) {
+        warnings.push(`Table source unavailable: ${source.label || source.id}.`);
+        continue;
+      }
+      const rolled = await rollLootTableDry(tableDoc);
+      if (!rolled) continue;
+      rolls.push({
+        sourceLabel: String(source.label ?? source.id ?? "Roll Table Source"),
+        sourceType: String(source.tableType ?? "currency"),
+        ...rolled
+      });
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed loot table roll`, source?.id, error);
+      warnings.push(`Failed to roll table source: ${source?.label || source?.id || "Unknown source"}.`);
+    }
+  }
+  return rolls;
+}
+
+async function generateLootPreviewPayload(draftInput = {}) {
+  const draft = normalizeLootPreviewDraft(draftInput);
+  const sourceConfig = getLootSourceConfig();
+  const warnings = [];
+  const currency = await rollLootCurrency(draft);
+  const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
+  const itemCountTarget = getLootItemCount(draft);
+  const items = pickLootItemsFromCandidates(candidates, itemCountTarget);
+  const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings);
+  if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
+  return {
+    generatedAt: Date.now(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    draft,
+    currency,
+    items,
+    tableRolls,
+    stats: {
+      candidateCount: candidates.length,
+      itemCountTarget,
+      itemCountGenerated: items.length,
+      tableRollCount: tableRolls.length,
+      enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+      enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
+    },
+    warnings
+  };
+}
+
+function buildLootPreviewContext() {
+  const draft = getLootPreviewDraft();
+  const result = getLootPreviewResult();
+  const hasResult = Boolean(result && typeof result === "object");
+  const mode = String(draft.mode ?? "horde");
+  const profile = String(draft.profile ?? "standard");
+  const challenge = String(draft.challenge ?? "mid");
+  const scale = String(draft.scale ?? "medium");
+  const generatedAt = Number(result?.generatedAt ?? 0);
+  const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
+  return {
+    draft,
+    modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === mode })),
+    profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === profile })),
+    challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === challenge })),
+    scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === scale })),
+    hasResult,
+    generatedAtLabel,
+    generatedBy: String(result?.generatedBy ?? "GM"),
+    currency: {
+      pp: Math.max(0, Number(result?.currency?.pp ?? 0) || 0),
+      gp: Math.max(0, Number(result?.currency?.gp ?? 0) || 0),
+      sp: Math.max(0, Number(result?.currency?.sp ?? 0) || 0),
+      cp: Math.max(0, Number(result?.currency?.cp ?? 0) || 0),
+      gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0),
+      formula: String(result?.currency?.formula ?? "")
+    },
+    stats: {
+      candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
+      itemCountTarget: Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0),
+      itemCountGenerated: Math.max(0, Number(result?.stats?.itemCountGenerated ?? 0) || 0),
+      tableRollCount: Math.max(0, Number(result?.stats?.tableRollCount ?? 0) || 0),
+      enabledItemSources: Math.max(0, Number(result?.stats?.enabledItemSources ?? 0) || 0),
+      enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0)
+    },
+    items: Array.isArray(result?.items)
+      ? result.items.map((entry) => ({
+        name: String(entry?.name ?? "Item"),
+        itemType: String(entry?.itemType ?? ""),
+        rarity: String(entry?.rarity ?? ""),
+        sourceLabel: String(entry?.sourceLabel ?? ""),
+        hasRarity: String(entry?.rarity ?? "").trim().length > 0
+      }))
+      : [],
+    tableRolls: Array.isArray(result?.tableRolls)
+      ? result.tableRolls.map((entry) => ({
+        sourceLabel: String(entry?.sourceLabel ?? "Source"),
+        sourceType: String(entry?.sourceType ?? "currency"),
+        tableName: String(entry?.tableName ?? "Roll Table"),
+        formula: String(entry?.formula ?? ""),
+        total: Math.max(0, Number(entry?.total ?? 0) || 0),
+        result: String(entry?.result ?? "No result")
+      }))
+      : [],
+    warnings: Array.isArray(result?.warnings)
+      ? result.warnings.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : []
   };
 }
 
@@ -3482,7 +4280,8 @@ function buildDefaultOperationsLedger() {
       modifierEnabled: {},
       customModifiers: [],
       archivedSyncEffects: [],
-      syncToSceneNonParty: true
+      syncToSceneNonParty: true,
+      nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
     },
     resources: {
       food: 14,
@@ -3555,8 +4354,7 @@ async function updateOperationsLedger(mutator, options = {}) {
   const ledger = getOperationsLedger();
   mutator(ledger);
 
-  if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.OPS_LEDGER}`);
-  await game.settings.set(MODULE_ID, SETTINGS.OPS_LEDGER, ledger);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
   scheduleIntegrationSync("operations-ledger");
   if (!options.skipLocalRefresh) refreshOpenApps();
   emitSocketRefresh();
@@ -3644,6 +4442,61 @@ function getSceneNonPartyIntegrationTargets() {
 
 function getSceneNonPartyIntegrationActors() {
   return getSceneNonPartyIntegrationTargets()
+    .map((entry) => entry.actor)
+    .filter(Boolean);
+}
+
+function getNonPartySyncScope(rawScope) {
+  const value = String(rawScope ?? "").trim().toLowerCase();
+  if (value === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY;
+  if (value === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return NON_PARTY_SYNC_SCOPES.WORLD_ALL;
+  return NON_PARTY_SYNC_SCOPES.SCENE;
+}
+
+function getNonPartySyncScopeLabel(scope) {
+  if (scope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return "All Non-Party Monsters (World)";
+  if (scope === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return "All Actors (World)";
+  return "Non-Party Actors on Current Scene";
+}
+
+function getWorldNonPartyIntegrationTargets() {
+  const partyActorIds = getPartyMemberActorIds();
+  return game.actors.contents
+    .filter((actor) => actor && !actor.hasPlayerOwner && !partyActorIds.has(String(actor.id ?? "")))
+    .map((actor) => ({
+      actor,
+      actorRef: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      tokenCount: 0,
+      tokenNamesLabel: "Not on active scene",
+      isSceneTarget: false
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getWorldAllIntegrationTargets() {
+  return game.actors.contents
+    .filter((actor) => Boolean(actor))
+    .map((actor) => ({
+      actor,
+      actorRef: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      tokenCount: 0,
+      tokenNamesLabel: "Not on active scene",
+      isSceneTarget: false
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getNonPartyIntegrationTargets(scope = NON_PARTY_SYNC_SCOPES.SCENE) {
+  const normalizedScope = getNonPartySyncScope(scope);
+  if (normalizedScope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY) return getWorldNonPartyIntegrationTargets();
+  if (normalizedScope === NON_PARTY_SYNC_SCOPES.WORLD_ALL) return getWorldAllIntegrationTargets();
+  return getSceneNonPartyIntegrationTargets().map((entry) => ({ ...entry, isSceneTarget: true }));
+}
+
+function getNonPartyIntegrationActors(scope = NON_PARTY_SYNC_SCOPES.SCENE) {
+  return getNonPartyIntegrationTargets(scope)
     .map((entry) => entry.actor)
     .filter(Boolean);
 }
@@ -3805,6 +4658,7 @@ function buildOperationsContext() {
   const reputation = buildReputationContext(reputationState, reputationFilters);
   const partyHealthState = ensurePartyHealthState(ledger);
   const lootSources = buildLootSourceRegistryContext();
+  lootSources.preview = buildLootPreviewContext();
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const environmentState = ensureEnvironmentState(ledger);
   const weatherState = ensureWeatherState(ledger);
@@ -4056,10 +4910,21 @@ function buildOperationsContext() {
     .sort((a, b) => Number(b.archivedAt ?? 0) - Number(a.archivedAt ?? 0));
   const resolvedIntegrationMode = resolveIntegrationMode();
   const integrationModeLabel = getIntegrationModeLabel(resolvedIntegrationMode);
+  const nonPartySyncScope = getNonPartySyncScope(partyHealthState.nonPartySyncScope);
+  const nonPartySyncScopeLabel = getNonPartySyncScopeLabel(nonPartySyncScope);
+  const nonPartySyncScopeOptions = [
+    { value: NON_PARTY_SYNC_SCOPES.SCENE, label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.SCENE), selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.SCENE },
+    {
+      value: NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY,
+      label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY),
+      selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.WORLD_NON_PARTY
+    },
+    { value: NON_PARTY_SYNC_SCOPES.WORLD_ALL, label: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.WORLD_ALL), selected: nonPartySyncScope === NON_PARTY_SYNC_SCOPES.WORLD_ALL }
+  ];
   const nonPartySyncGlobal = Boolean(partyHealthState.syncToSceneNonParty);
   const nonPartySyncEnvironment = Boolean(environmentState.syncToSceneNonParty && String(environmentState.presetKey ?? "none") !== "none");
   const nonPartySyncEnabled = nonPartySyncGlobal || nonPartySyncEnvironment;
-  const nonPartyTargets = getSceneNonPartyIntegrationTargets();
+  const nonPartyTargets = getNonPartyIntegrationTargets(nonPartySyncScope);
   const nonPartyRows = nonPartyTargets.map((target) => {
     const actor = target.actor;
     const hasSyncFlag = Boolean(actor?.getFlag(MODULE_ID, "sync"));
@@ -4080,6 +4945,10 @@ function buildOperationsContext() {
       actorName: target.actorName,
       tokenCount: target.tokenCount,
       tokenNamesLabel: target.tokenNamesLabel,
+      isSceneTarget: target.isSceneTarget === true,
+      locationLabel: target.isSceneTarget === true
+        ? `Scene Tokens: ${target.tokenCount} | ${target.tokenNamesLabel}`
+        : "World Actor Target",
       hasSyncFlag,
       hasIntegrationEffect,
       hasInjuryEffect,
@@ -4164,11 +5033,15 @@ function buildOperationsContext() {
       hasArchivedSyncEffects: archivedSyncEffects.length > 0,
       archivedSyncEffectsCount: archivedSyncEffects.length,
       daeAvailable,
-      syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty)
+      syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty),
+      nonPartySyncScope: nonPartySyncScope
     },
     lootSources,
     nonPartySync: {
       sceneName: String(game.scenes?.current?.name ?? "No Active Scene"),
+      scope: nonPartySyncScope,
+      scopeLabel: nonPartySyncScopeLabel,
+      scopeOptions: nonPartySyncScopeOptions,
       integrationMode: resolvedIntegrationMode,
       integrationModeLabel,
       syncGlobalEnabled: nonPartySyncGlobal,
@@ -5214,7 +6087,13 @@ function resolveCurrentSceneWeatherSnapshot() {
 
 function ensurePartyHealthState(ledger) {
   if (!ledger.partyHealth || typeof ledger.partyHealth !== "object") {
-    ledger.partyHealth = { modifierEnabled: {}, customModifiers: [], archivedSyncEffects: [], syncToSceneNonParty: true };
+    ledger.partyHealth = {
+      modifierEnabled: {},
+      customModifiers: [],
+      archivedSyncEffects: [],
+      syncToSceneNonParty: true,
+      nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
+    };
   }
   if (!ledger.partyHealth.modifierEnabled || typeof ledger.partyHealth.modifierEnabled !== "object") {
     ledger.partyHealth.modifierEnabled = {};
@@ -5222,6 +6101,7 @@ function ensurePartyHealthState(ledger) {
   if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
   if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
   ledger.partyHealth.syncToSceneNonParty = ledger.partyHealth.syncToSceneNonParty !== false;
+  ledger.partyHealth.nonPartySyncScope = getNonPartySyncScope(ledger.partyHealth.nonPartySyncScope);
   ledger.partyHealth.customModifiers = ledger.partyHealth.customModifiers
     .map((entry) => {
       const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
@@ -5393,6 +6273,18 @@ async function setPartyHealthSyncNonParty(element) {
   await updateOperationsLedger((ledger) => {
     const partyHealth = ensurePartyHealthState(ledger);
     partyHealth.syncToSceneNonParty = enabled;
+  });
+}
+
+async function setPartyHealthSyncScope(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const scope = getNonPartySyncScope(element?.value);
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    partyHealth.nonPartySyncScope = scope;
   });
 }
 
@@ -7087,13 +7979,16 @@ async function applyNonPartySyncActor(element) {
     return;
   }
   const actorRef = String(element?.dataset?.actorRef ?? "").trim();
+  const includeEnvironment = String(element?.dataset?.sceneTarget ?? "").trim().toLowerCase() === "true";
   if (!actorRef) return;
   const actor = resolveActorFromReference(actorRef);
   if (!actor) {
-    ui.notifications?.warn("Scene non-party actor not found.");
+    ui.notifications?.warn("Sync target actor not found.");
     return;
   }
-  const result = await syncSingleSceneNonPartyActor(actor, null, resolveIntegrationMode());
+  const result = await syncSingleSceneNonPartyActor(actor, null, resolveIntegrationMode(), {
+    includeEnvironment
+  });
   refreshOpenApps();
   emitSocketRefresh();
   if (result.synced) {
@@ -7116,7 +8011,7 @@ async function clearNonPartySyncActor(element) {
   if (!actorRef) return;
   const actor = resolveActorFromReference(actorRef);
   if (!actor) {
-    ui.notifications?.warn("Scene non-party actor not found.");
+    ui.notifications?.warn("Sync target actor not found.");
     return;
   }
   await clearActorIntegrationPayload(actor);
@@ -7133,7 +8028,7 @@ async function reapplyAllNonPartySync() {
   const result = await syncSceneNonPartyIntegrationActors(null, resolveIntegrationMode());
   refreshOpenApps();
   emitSocketRefresh();
-  ui.notifications?.info(`Non-party sync applied: ${result.synced} synced, ${result.cleared} cleared across ${result.total} actor(s).`);
+  ui.notifications?.info(`Non-party sync applied (${result.scopeLabel}): ${result.synced} synced, ${result.cleared} cleared across ${result.total} actor(s).`);
 }
 
 async function clearAllNonPartySync() {
@@ -7141,7 +8036,8 @@ async function clearAllNonPartySync() {
     ui.notifications?.warn("Only the GM can clear non-party sync.");
     return;
   }
-  const targets = getSceneNonPartyIntegrationActors();
+  const config = getSceneNonPartySyncConfig();
+  const targets = getNonPartyIntegrationActors(config.scope);
   let cleared = 0;
   for (const actor of targets) {
     const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
@@ -7154,7 +8050,7 @@ async function clearAllNonPartySync() {
   }
   refreshOpenApps();
   emitSocketRefresh();
-  ui.notifications?.info(`Cleared non-party sync from ${cleared} actor(s).`);
+  ui.notifications?.info(`Cleared non-party sync (${config.scopeLabel}) from ${cleared} actor(s).`);
 }
 
 async function removeActiveSyncEffect(element) {
@@ -7598,6 +8494,49 @@ async function resetLootSourceConfig() {
     config.filters = foundry.utils.deepClone(defaults.filters);
   });
   ui.notifications?.info("Loot source configuration reset to defaults.");
+}
+
+function setLootPreviewField(element) {
+  if (!game.user.isGM) return;
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!field) return;
+  const current = getLootPreviewDraft();
+  const next = {
+    ...current,
+    [field]: (field === "actorCount")
+      ? Number(element?.value ?? current.actorCount ?? 1)
+      : String(element?.value ?? current[field] ?? "")
+  };
+  setLootPreviewDraft(next);
+}
+
+function readLootPreviewDraftFromUi(element) {
+  const root = element?.closest(".po-loot-preview-panel");
+  if (!root) return null;
+  return normalizeLootPreviewDraft({
+    mode: root.querySelector("select[name='lootPreviewMode']")?.value ?? "",
+    profile: root.querySelector("select[name='lootPreviewProfile']")?.value ?? "",
+    challenge: root.querySelector("select[name='lootPreviewChallenge']")?.value ?? "",
+    scale: root.querySelector("select[name='lootPreviewScale']")?.value ?? "",
+    actorCount: root.querySelector("input[name='lootPreviewActorCount']")?.value ?? 1
+  });
+}
+
+async function rollLootPreview(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can generate loot previews.");
+    return;
+  }
+  const draft = readLootPreviewDraftFromUi(element) ?? getLootPreviewDraft();
+  setLootPreviewDraft(draft);
+  const payload = await generateLootPreviewPayload(draft);
+  setLootPreviewResult(payload);
+  ui.notifications?.info(`Loot preview generated (${payload.items.length} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`);
+}
+
+function clearLootPreviewResult() {
+  if (!game.user.isGM) return;
+  setLootPreviewResult(null);
 }
 
 async function gmQuickAddFaction() {
@@ -8635,7 +9574,8 @@ async function runSessionAutopilot() {
   const context = buildOperationsContext();
   const nonPartyGlobal = Boolean(context.partyHealth?.syncToSceneNonParty);
   const nonPartyEnvironment = Boolean(context.environment?.syncToSceneNonParty && String(context.environment?.presetKey ?? "none") !== "none");
-  const nonPartyLine = `Non-party scene sync: modifiers ${nonPartyGlobal ? "ON" : "OFF"} | environment ${nonPartyEnvironment ? "ON" : "OFF"}.`;
+  const nonPartyScopeLabel = getNonPartySyncScopeLabel(getNonPartySyncScope(context.partyHealth?.nonPartySyncScope));
+  const nonPartyLine = `Non-party sync (${nonPartyScopeLabel}): modifiers ${nonPartyGlobal ? "ON" : "OFF"} | environment ${nonPartyEnvironment ? "ON" : "OFF"}.`;
   notes.push(nonPartyLine);
 
   const stamp = new Date().toLocaleString();
@@ -8842,7 +9782,7 @@ async function updateInjuryRecoveryState(mutator) {
   const state = getInjuryRecoveryState();
   mutator(state);
 
-  await game.settings.set(MODULE_ID, SETTINGS.INJURY_RECOVERY, state);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
   scheduleIntegrationSync("injury-recovery");
   refreshOpenApps();
   emitSocketRefresh();
@@ -8981,7 +9921,7 @@ async function persistInjuryCalendarMetadata(actorId, fields) {
     ...state.injuries[actorId],
     ...fields
   };
-  await game.settings.set(MODULE_ID, SETTINGS.INJURY_RECOVERY, state);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
 }
 
 async function syncInjuryWithSimpleCalendar(actorId) {
@@ -9689,8 +10629,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     return;
   }
   stampUpdate(state);
-  if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.REST_STATE}`);
-  await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
   scheduleIntegrationSync("rest-watch");
   if (!options.skipLocalRefresh) refreshOpenApps();
   emitSocketRefresh();
@@ -9715,8 +10654,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     return;
   }
   stampUpdate(state);
-  if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.MARCH_STATE}`);
-  await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
   scheduleIntegrationSync("marching-order");
   if (!options.skipLocalRefresh) refreshOpenApps();
   emitSocketRefresh();
@@ -9978,7 +10916,8 @@ async function autofillFromParty() {
 
 async function restoreRestCommitted() {
   const committed = game.settings.get(MODULE_ID, SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
-  await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  scheduleIntegrationSync("rest-watch-restore");
   refreshOpenApps();        // ensures local refresh even if socket doesn't echo back
   emitSocketRefresh();
 }
@@ -10471,7 +11410,7 @@ async function updateExhaustion(element) {
   if (!activities.activities[actorId]) activities.activities[actorId] = {};
   activities.activities[actorId].exhaustion = level;
 
-  await game.settings.set(MODULE_ID, SETTINGS.REST_ACTIVITIES, activities);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
   refreshOpenApps();
   emitSocketRefresh();
 }
@@ -10486,8 +11425,7 @@ async function updateActivity(element, options = {}) {
     const activities = getRestActivities();
     if (!activities.activities[actorId]) activities.activities[actorId] = {};
     activities.activities[actorId].activity = activityType;
-    if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`);
-    await game.settings.set(MODULE_ID, SETTINGS.REST_ACTIVITIES, activities);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
     if (!options.skipLocalRefresh) refreshOpenApps();
     emitSocketRefresh();
   } else {
@@ -10528,7 +11466,7 @@ async function resetAllActivities() {
     };
   });
 
-  await game.settings.set(MODULE_ID, SETTINGS.REST_ACTIVITIES, activities);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
 
   for (const actorId of actorIds) {
     const actor = game.actors.get(actorId);
@@ -12084,6 +13022,9 @@ Hooks.once("init", () => {
     undoSessionAutopilot: () => undoLastSessionAutopilot(),
     syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
     syncIntegrations: () => scheduleIntegrationSync("api"),
+    getLootSourceConfig: () => foundry.utils.deepClone(getLootSourceConfig()),
+    previewLoot: (draft) => generateLootPreviewPayload(draft),
+    getLootPreviewResult: () => foundry.utils.deepClone(getLootPreviewResult()),
     diagnoseWorldData: (options) => diagnoseWorldData(options),
     repairWorldData: () => diagnoseWorldData({ repair: true }),
     resetLauncherPosition: () => resetFloatingLauncherPosition()
@@ -12170,7 +13111,7 @@ Hooks.once("ready", () => {
       const activities = getRestActivities();
       if (!activities.activities[message.actorId]) activities.activities[message.actorId] = {};
       activities.activities[message.actorId].activity = message.activity;
-      await game.settings.set(MODULE_ID, SETTINGS.REST_ACTIVITIES, activities);
+      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
       refreshOpenApps();
       emitSocketRefresh();
       return;
@@ -12278,7 +13219,8 @@ async function applyRestRequest(request, userId) {
     // Add new entry
     slot.entries.push({ actorId: request.actorId, notes: "" });
     stampUpdate(state, requester);
-    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps();
     emitSocketRefresh();
     return;
@@ -12300,7 +13242,8 @@ async function applyRestRequest(request, userId) {
     if (slot.entries[entryIndex].actorId !== request.actorId) return; // security check
     slot.entries.splice(entryIndex, 1);
     stampUpdate(state, requester);
-    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps();
     emitSocketRefresh();
     return;
@@ -12321,7 +13264,8 @@ async function applyRestRequest(request, userId) {
     if (!entry || !requesterActor || entry.actorId !== requesterActor.id) return;
     entry.notes = String(request.text ?? "");
     stampUpdate(state, requester);
-    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps();
     emitSocketRefresh();
     return;
@@ -12346,7 +13290,8 @@ async function applyMarchRequest(request, userId) {
     if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
     state.ranks[request.rankId].push(request.actorId);
     stampUpdate(state, requester);
-    await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps();
     emitSocketRefresh();
     return;
@@ -12358,7 +13303,8 @@ async function applyMarchRequest(request, userId) {
     if (!state.notes) state.notes = {};
     state.notes[request.actorId] = String(request.text ?? "");
     stampUpdate(state, requester);
-    await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps();
     emitSocketRefresh();
     return;
