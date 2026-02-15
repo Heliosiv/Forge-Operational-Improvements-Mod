@@ -542,34 +542,93 @@ function getActiveEffectModeLabel(mode) {
   return entry ? entry[0] : "ADD";
 }
 
-function buildEnvironmentDaeChangeKeyCatalog() {
-  const keys = new Set([
-    "system.attributes.movement.walk",
-    "system.attributes.ac.value",
-    "system.attributes.hp.temp",
-    "system.attributes.init.bonus",
-    "system.bonuses.abilities.check",
-    "system.bonuses.abilities.save",
-    "system.bonuses.mwak.attack",
-    "system.bonuses.rwak.attack",
-    "system.bonuses.msak.attack",
-    "system.bonuses.rsak.attack",
-    "system.skills.ath.bonuses.check",
-    "system.skills.acr.bonuses.check",
-    "system.skills.prc.bonuses.check",
-    "system.skills.ste.bonuses.check"
-  ]);
+const FRIENDLY_DAE_KEYS = [
+  { key: "system.attributes.movement.walk", label: "Movement Speed (Walk)", hint: "Changes base walking speed." },
+  { key: "system.attributes.movement.fly", label: "Movement Speed (Fly)", hint: "Changes base flying speed." },
+  { key: "system.attributes.movement.swim", label: "Movement Speed (Swim)", hint: "Changes base swimming speed." },
+  { key: "system.attributes.ac.value", label: "Armor Class", hint: "Changes AC value." },
+  { key: "system.attributes.hp.value", label: "Current HP", hint: "Directly changes current HP." },
+  { key: "system.attributes.hp.max", label: "Max HP", hint: "Changes maximum HP." },
+  { key: "system.attributes.hp.temp", label: "Temporary HP", hint: "Adds or sets temporary HP." },
+  { key: "system.attributes.init.bonus", label: "Initiative Bonus", hint: "Adds to initiative rolls." },
+  { key: "system.bonuses.abilities.check", label: "All Ability Checks", hint: "Global bonus/penalty for ability checks." },
+  { key: "system.bonuses.abilities.save", label: "All Saving Throws", hint: "Global bonus/penalty for saves." },
+  { key: "system.bonuses.mwak.attack", label: "Melee Weapon Attacks", hint: "Bonus/penalty to melee weapon attacks." },
+  { key: "system.bonuses.rwak.attack", label: "Ranged Weapon Attacks", hint: "Bonus/penalty to ranged weapon attacks." },
+  { key: "system.bonuses.msak.attack", label: "Melee Spell Attacks", hint: "Bonus/penalty to melee spell attacks." },
+  { key: "system.bonuses.rsak.attack", label: "Ranged Spell Attacks", hint: "Bonus/penalty to ranged spell attacks." },
+  { key: "system.skills.ath.bonuses.check", label: "Athletics Checks", hint: "Bonus/penalty to Athletics checks." },
+  { key: "system.skills.acr.bonuses.check", label: "Acrobatics Checks", hint: "Bonus/penalty to Acrobatics checks." },
+  { key: "system.skills.prc.bonuses.check", label: "Perception Checks", hint: "Bonus/penalty to Perception checks." },
+  { key: "system.skills.ste.bonuses.check", label: "Stealth Checks", hint: "Bonus/penalty to Stealth checks." }
+];
+
+let daeModifierCatalogCache = null;
+
+function humanizeDaeKey(key) {
+  return String(key ?? "")
+    .split(".")
+    .filter(Boolean)
+    .slice(-2)
+    .map((part) => part.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[-_]/g, " "))
+    .join(" ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function collectObjectPaths(source, prefix = "", output = new Set(), depth = 0) {
+  if (!source || typeof source !== "object" || depth > 8) return output;
+  for (const [rawKey, value] of Object.entries(source)) {
+    const key = String(rawKey ?? "").trim();
+    if (!key) continue;
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (path.startsWith("system.")) output.add(path);
+    if (value && typeof value === "object") collectObjectPaths(value, path, output, depth + 1);
+  }
+  return output;
+}
+
+function buildDaeModifierCatalog() {
+  const map = new Map();
+  for (const entry of FRIENDLY_DAE_KEYS) {
+    map.set(entry.key, { key: entry.key, label: entry.label, hint: entry.hint });
+  }
+
   for (const preset of ENVIRONMENT_PRESETS) {
     for (const change of preset.effectChanges ?? []) {
       const key = String(change?.key ?? "").trim();
-      if (key) keys.add(key);
+      if (!key || map.has(key)) continue;
+      map.set(key, { key, label: humanizeDaeKey(key), hint: `System field: ${key}` });
     }
   }
-  return Array.from(keys).sort((a, b) => a.localeCompare(b));
+
+  const model = game.system?.model?.Actor ?? {};
+  const discovered = new Set();
+  for (const value of Object.values(model)) {
+    collectObjectPaths(value, "system", discovered);
+  }
+  for (const key of discovered) {
+    if (map.has(key)) continue;
+    map.set(key, { key, label: humanizeDaeKey(key), hint: `System field: ${key}` });
+  }
+
+  return Array.from(map.values()).sort((a, b) => {
+    const labelCompare = String(a.label).localeCompare(String(b.label));
+    if (labelCompare !== 0) return labelCompare;
+    return String(a.key).localeCompare(String(b.key));
+  });
+}
+
+function getDaeModifierCatalog() {
+  if (!daeModifierCatalogCache) daeModifierCatalogCache = buildDaeModifierCatalog();
+  return daeModifierCatalogCache;
+}
+
+function buildEnvironmentDaeChangeKeyCatalog() {
+  return getDaeModifierCatalog();
 }
 
 function buildPartyHealthModifierKeyCatalog() {
-  return buildEnvironmentDaeChangeKeyCatalog();
+  return getDaeModifierCatalog();
 }
 
 function buildEnvironmentOutcomeSummary(preset) {
@@ -784,6 +843,7 @@ function ensureEnvironmentState(ledger) {
       const dcRaw = Number(entry?.dc);
       const streakRaw = Number(entry?.streak ?? 0);
       const resultValue = String(entry?.result ?? "").toLowerCase() === "fail" ? "fail" : "pass";
+      const outcomeSummary = String(entry?.outcomeSummary ?? "").trim();
       return {
         id: String(entry?.id ?? foundry.utils.randomID()),
         actorId: String(entry?.actorId ?? "").trim(),
@@ -793,6 +853,7 @@ function ensureEnvironmentState(ledger) {
         rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : null,
         dc: Number.isFinite(dcRaw) ? Math.floor(dcRaw) : null,
         streak: Number.isFinite(streakRaw) ? Math.max(0, Math.min(99, Math.floor(streakRaw))) : 0,
+        outcomeSummary,
         createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
         createdBy: String(entry?.createdBy ?? "GM")
       };
@@ -1238,6 +1299,34 @@ function setActiveOperationsPage(page) {
 
 function getOperationsPlanningTabStorageKey() {
   return `po-operations-planning-tab-${game.user?.id ?? "anon"}`;
+}
+
+function getReputationFilterStorageKey() {
+  return `po-reputation-filter-${game.user?.id ?? "anon"}`;
+}
+
+function getReputationFilterState() {
+  const defaults = { keyword: "", standing: "all" };
+  const raw = sessionStorage.getItem(getReputationFilterStorageKey());
+  if (!raw) return defaults;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      keyword: String(parsed?.keyword ?? ""),
+      standing: String(parsed?.standing ?? "all")
+    };
+  } catch (_error) {
+    return defaults;
+  }
+}
+
+function setReputationFilterState(patch = {}) {
+  const previous = getReputationFilterState();
+  const next = {
+    keyword: String(patch.keyword ?? previous.keyword ?? ""),
+    standing: String(patch.standing ?? previous.standing ?? "all")
+  };
+  sessionStorage.setItem(getReputationFilterStorageKey(), JSON.stringify(next));
 }
 
 function getActiveOperationsPlanningTab() {
@@ -1849,6 +1938,18 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "remove-reputation-faction":
         await removeReputationFaction(element);
         break;
+      case "set-reputation-filter-keyword":
+        setReputationFilterState({ keyword: String(element?.value ?? "") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-reputation-filter-standing":
+        setReputationFilterState({ standing: String(element?.value ?? "all") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "clear-reputation-filters":
+        setReputationFilterState({ keyword: "", standing: "all" });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
       case "show-reputation-brief":
         await showReputationBrief();
         break;
@@ -1861,6 +1962,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "remove-party-health-custom":
         await removePartyHealthCustomModifier(element);
         break;
+      case "remove-active-sync-effect":
+        await removeActiveSyncEffect(element);
+        break;
       case "gm-quick-add-faction":
         await gmQuickAddFaction();
         break;
@@ -1870,6 +1974,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "gm-quick-sync-integrations":
         scheduleIntegrationSync("gm-quick-action");
         ui.notifications?.info("Party Operations integration sync queued.");
+        break;
+      case "show-gm-logs-manager":
+        await showOperationalLogsManager();
         break;
       case "set-base-ops-config":
         await setBaseOperationsConfig(element);
@@ -2711,7 +2818,8 @@ function buildOperationsContext() {
   const communication = ledger.communication ?? {};
   const communicationReadiness = getCommunicationReadiness(communication);
   const reputationState = ensureReputationState(ledger);
-  const reputation = buildReputationContext(reputationState);
+  const reputationFilters = getReputationFilterState();
+  const reputation = buildReputationContext(reputationState, reputationFilters);
   const partyHealthState = ensurePartyHealthState(ledger);
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const environmentState = ensureEnvironmentState(ledger);
@@ -2720,7 +2828,12 @@ function buildOperationsContext() {
   const environmentOutcomes = buildEnvironmentOutcomeSummary(environmentPreset);
   const environmentSuccessiveConfig = getEnvironmentSuccessiveConfig(environmentState, environmentPresetBase);
   const daeAvailable = isDaeAvailable();
-  const partyModifierKeyOptions = buildPartyHealthModifierKeyCatalog().map((value) => ({ value }));
+  const partyModifierKeyCatalog = buildPartyHealthModifierKeyCatalog();
+  const partyModifierKeyOptions = partyModifierKeyCatalog.map((entry) => ({
+    value: entry.key,
+    label: entry.label,
+    hint: entry.hint
+  }));
   const partyModifierModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
     .map(([label, value]) => ({ label, value: Number(value) }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -2731,7 +2844,13 @@ function buildOperationsContext() {
       selected: Number(value) === Number(environmentSuccessiveConfig.daeChangeMode)
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const daeKeyOptions = buildEnvironmentDaeChangeKeyCatalog().map((value) => ({ value }));
+  const daeKeyOptions = buildEnvironmentDaeChangeKeyCatalog().map((entry) => ({
+    value: entry.key,
+    label: entry.label,
+    hint: entry.hint,
+    selected: entry.key === environmentSuccessiveConfig.daeChangeKey
+  }));
+  const selectedEnvDaeHint = daeKeyOptions.find((entry) => entry.selected)?.hint ?? "Select a system field to change on successive failure.";
   const statusEffectOptions = [
     { value: "", label: "None", selected: !environmentSuccessiveConfig.statusId },
     ...(CONFIG.statusEffects ?? []).map((entry) => {
@@ -2794,6 +2913,8 @@ function buildOperationsContext() {
         isFail: entry.result === "fail",
         rollVsDc: `${rollLabel} vs ${dcLabel}`,
         streak: Math.max(0, Number(entry.streak ?? 0) || 0),
+        outcomeSummary: String(entry.outcomeSummary ?? ""),
+        hasOutcomeSummary: String(entry.outcomeSummary ?? "").trim().length > 0,
         createdBy: String(entry.createdBy ?? "GM"),
         createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
       };
@@ -2840,6 +2961,18 @@ function buildOperationsContext() {
   const nextDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
   const gatherFoodCoveredNextUpkeep = Number(resourcesState.gather?.foodCoverageDueKey) === nextDueKey;
   const gatherWaterCoveredNextUpkeep = Number(resourcesState.gather?.waterCoverageDueKey) === nextDueKey;
+  const activeSyncEffects = getOwnedPcActors()
+    .map((actor) => {
+      const effect = getIntegrationEffect(actor);
+      if (!effect) return null;
+      return {
+        actorId: actor.id,
+        actorName: actor.name,
+        effectId: effect.id,
+        effectName: String(effect.name ?? INTEGRATION_EFFECT_NAME)
+      };
+    })
+    .filter(Boolean);
 
   return {
     roles,
@@ -2892,6 +3025,7 @@ function buildOperationsContext() {
       customModifiers: partyHealthState.customModifiers.map((entry) => ({
         ...entry,
         modeLabel: getActiveEffectModeLabel(entry.mode),
+        keyHint: partyModifierKeyOptions.find((option) => option.value === entry.key)?.hint ?? "",
         modeOptions: partyModifierModeOptions.map((option) => ({
           ...option,
           selected: Number(option.value) === Number(entry.mode)
@@ -2900,6 +3034,8 @@ function buildOperationsContext() {
       })),
       modifierModeOptions: partyModifierModeOptions,
       modifierKeyOptions: partyModifierKeyOptions,
+      activeSyncEffects,
+      hasActiveSyncEffects: activeSyncEffects.length > 0,
       daeAvailable
     },
     environment: {
@@ -2915,7 +3051,8 @@ function buildOperationsContext() {
         daeAvailable,
         statusOptions: statusEffectOptions,
         daeModeOptions,
-        daeKeyOptions
+        daeKeyOptions,
+        daeKeyHint: selectedEnvDaeHint
       },
       targetCount: environmentTargets.filter((target) => target.selected).length,
       appliedActorIds: [...environmentState.appliedActorIds],
@@ -3194,7 +3331,7 @@ function getReputationAccessLabel(score) {
   return map[band] ?? "Conditional";
 }
 
-function buildReputationContext(reputationState) {
+function buildReputationContext(reputationState, filters = {}) {
   const rawFactions = Array.isArray(reputationState?.factions)
     ? reputationState.factions.map((entry) => normalizeReputationFaction(entry))
     : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
@@ -3207,16 +3344,42 @@ function buildReputationContext(reputationState) {
       access: getReputationAccessLabel(faction.score)
     };
   });
+
+  const filterKeyword = String(filters?.keyword ?? "").trim().toLowerCase();
+  const filterStanding = String(filters?.standing ?? "all").trim().toLowerCase();
+  const filteredFactions = factions.filter((faction) => {
+    const standingMatch = filterStanding === "all" || faction.band === filterStanding;
+    if (!standingMatch) return false;
+    if (!filterKeyword) return true;
+    const haystack = `${faction.label} ${faction.note} ${faction.band} ${faction.access}`.toLowerCase();
+    return haystack.includes(filterKeyword);
+  });
+
   const columns = [[], []];
-  for (let index = 0; index < factions.length; index += 1) {
-    columns[index % 2].push(factions[index]);
+  for (let index = 0; index < filteredFactions.length; index += 1) {
+    columns[index % 2].push(filteredFactions[index]);
   }
   return {
     factions,
+    filteredFactions,
     leftColumn: columns[0],
     rightColumn: columns[1],
     coreCount: factions.filter((faction) => faction.isCore).length,
     customCount: factions.filter((faction) => !faction.isCore).length,
+    totalCount: factions.length,
+    visibleCount: filteredFactions.length,
+    filters: {
+      keyword: String(filters?.keyword ?? ""),
+      standing: filterStanding || "all",
+      standingOptions: [
+        { value: "all", label: "All Standing", selected: (filterStanding || "all") === "all" },
+        { value: "hostile", label: "Hostile", selected: filterStanding === "hostile" },
+        { value: "cold", label: "Cold", selected: filterStanding === "cold" },
+        { value: "neutral", label: "Neutral", selected: filterStanding === "neutral" },
+        { value: "favorable", label: "Favorable", selected: filterStanding === "favorable" },
+        { value: "trusted", label: "Trusted", selected: filterStanding === "trusted" }
+      ]
+    },
     highStandingCount: factions.filter((faction) => ["favorable", "trusted"].includes(faction.band)).length,
     hostileCount: factions.filter((faction) => faction.band === "hostile").length
   };
@@ -3646,6 +3809,21 @@ async function editOperationalEnvironmentLog(element) {
   ui.notifications?.info("Loaded environment log into current controls.");
 }
 
+async function editOperationalEnvironmentLogById(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const entry = environment.logs.find((candidate) => candidate.id === id);
+    if (!entry) return;
+    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
+    environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
+    environment.appliedActorIds = [...(entry.actorIds ?? [])];
+    environment.note = String(entry.note ?? "");
+  });
+  return true;
+}
+
 async function removeOperationalEnvironmentLog(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can edit environment logs.");
@@ -3658,6 +3836,19 @@ async function removeOperationalEnvironmentLog(element) {
     const environment = ensureEnvironmentState(ledger);
     environment.logs = environment.logs.filter((entry) => entry.id !== logId);
   });
+}
+
+async function removeOperationalEnvironmentLogById(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const before = environment.logs.length;
+    environment.logs = environment.logs.filter((entry) => entry.id !== id);
+    removed = environment.logs.length < before;
+  });
+  return removed;
 }
 
 async function clearOperationalEnvironmentEffects() {
@@ -3701,6 +3892,13 @@ async function showOperationalEnvironmentBrief() {
     rejectClose: false,
     callback: () => {}
   });
+}
+
+function getDaeKeyLabel(key) {
+  const target = String(key ?? "").trim();
+  if (!target) return "";
+  const match = getDaeModifierCatalog().find((entry) => entry.key === target);
+  return String(match?.label ?? "").trim();
 }
 
 function getResourceSyncActors() {
@@ -4041,6 +4239,7 @@ async function recordEnvironmentCheckResult(actor, assignment, movementContext =
   const dcRaw = Number(movementContext?.dc);
   const rollTotal = Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : null;
   const dc = Number.isFinite(dcRaw) ? Math.floor(dcRaw) : null;
+  const outcomeSummary = String(movementContext?.outcomeSummary ?? "").trim();
   const presetKey = getEnvironmentPresetByKey(String(assignment?.preset?.key ?? "none")).key;
 
   let previous = 0;
@@ -4063,6 +4262,7 @@ async function recordEnvironmentCheckResult(actor, assignment, movementContext =
       rollTotal,
       dc,
       streak: next,
+      outcomeSummary,
       createdAt: Date.now(),
       createdBy: String(game.user?.name ?? "GM")
     });
@@ -4075,7 +4275,7 @@ async function recordEnvironmentCheckResult(actor, assignment, movementContext =
 }
 
 async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext = null) {
-  if (!game.user.isGM || !tokenDoc || !assignment) return;
+  if (!game.user.isGM || !tokenDoc || !assignment) return { summary: "" };
 
   const rollTotal = Number(movementContext?.rollTotal ?? NaN);
   const dc = Number(movementContext?.dc ?? NaN);
@@ -4083,6 +4283,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
   const failedByFive = failedBy >= 5;
   const failStreak = Math.max(0, Number(movementContext?.failStreak ?? 0) || 0);
   const successiveFailure = failStreak >= 2;
+  const summaryParts = [];
 
   const getStatusEffectById = (statusId) => CONFIG.statusEffects?.find((entry) => String(entry?.id ?? "") === statusId) ?? statusId;
 
@@ -4095,6 +4296,8 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
       } else if (tokenDoc.object && typeof tokenDoc.object.toggleEffect === "function") {
         await tokenDoc.object.toggleEffect(getStatusEffectById(id), { active: true });
       }
+      const statusLabel = getStatusLabelById(id);
+      summaryParts.push(`Status: ${statusLabel || id}`);
     } catch (error) {
       console.warn(`${MODULE_ID}: failed to apply environment status '${id}'`, error);
     }
@@ -4273,11 +4476,14 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     ? Math.max(0, Number(assignment.failBy5SlideFeet ?? assignment.failSlideFeet ?? 0) || 0)
     : Math.max(0, Number(assignment.failSlideFeet ?? 0) || 0);
   if (slideFeet > 0) await slideTokenByFeet(slideFeet);
+  if (slideFeet > 0) summaryParts.push(`Slide ${slideFeet} ft`);
 
   const speedZeroTurns = Math.max(0, Number(assignment.failSpeedZeroTurns ?? 0) || 0);
   if (speedZeroTurns > 0) await applyTemporarySpeedZero(speedZeroTurns);
+  if (speedZeroTurns > 0) summaryParts.push(`Speed 0 for ${speedZeroTurns} turn(s)`);
 
   await applyExhaustionLevels(Number(assignment.failExhaustion ?? 0));
+  if (Number(assignment.failExhaustion ?? 0) > 0) summaryParts.push(`Exhaustion +${Number(assignment.failExhaustion ?? 0)}`);
 
   const damageFormula = failedByFive
     ? String(assignment.failBy5DamageFormula ?? assignment.failDamageFormula ?? "")
@@ -4289,6 +4495,9 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
 
   if (failedByFive) {
     await applyMaxHpReductionFormula(String(assignment.failBy5MaxHpReductionFormula ?? ""));
+    if (String(assignment.failBy5MaxHpReductionFormula ?? "").trim()) {
+      summaryParts.push(`Max HP reduction: ${String(assignment.failBy5MaxHpReductionFormula ?? "").trim()}`);
+    }
   }
 
   if (successiveFailure) {
@@ -4297,8 +4506,12 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
 
     const successiveSlideFeet = Math.max(0, Number(assignment.successiveFailSlideFeet ?? 0) || 0);
     if (successiveSlideFeet > 0) await slideTokenByFeet(successiveSlideFeet);
+    if (successiveSlideFeet > 0) summaryParts.push(`Successive slide ${successiveSlideFeet} ft`);
 
     await applyExhaustionLevels(Number(assignment.successiveFailExhaustion ?? 0));
+    if (Number(assignment.successiveFailExhaustion ?? 0) > 0) {
+      summaryParts.push(`Successive exhaustion +${Number(assignment.successiveFailExhaustion ?? 0)}`);
+    }
 
     const successiveDamageResult = await applyDamageFormula(
       String(assignment.successiveFailDamageFormula ?? ""),
@@ -4315,11 +4528,17 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     }
 
     await applyMaxHpReductionFormula(String(assignment.successiveFailMaxHpReductionFormula ?? ""));
+    if (String(assignment.successiveFailMaxHpReductionFormula ?? "").trim()) {
+      summaryParts.push(`Successive max HP reduction: ${String(assignment.successiveFailMaxHpReductionFormula ?? "").trim()}`);
+    }
     await applyCustomDaeChange(
       assignment.successiveFailDaeChangeKey,
       assignment.successiveFailDaeChangeMode,
       assignment.successiveFailDaeChangeValue
     );
+    if (String(assignment.successiveFailDaeChangeKey ?? "").trim() && String(assignment.successiveFailDaeChangeValue ?? "").trim()) {
+      summaryParts.push(`DAE ${String(assignment.successiveFailDaeChangeKey ?? "").trim()} ${getActiveEffectModeLabel(assignment.successiveFailDaeChangeMode)} ${String(assignment.successiveFailDaeChangeValue ?? "").trim()}`);
+    }
   }
 
   if (damageResult?.amount > 0) {
@@ -4330,7 +4549,10 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
       whisper: gmIds,
       content: `<p><strong>${tokenDoc.actor?.name ?? "Actor"}</strong> suffers ${damageResult.amount}${typed} damage from ${assignment?.preset?.label ?? "environment"}.</p>`
     });
+    summaryParts.push(`Damage ${damageResult.amount}${damageResult.damageType ? ` ${damageResult.damageType}` : ""}`);
   }
+
+  return { summary: summaryParts.join(" · ") };
 }
 
 async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
@@ -4376,20 +4598,27 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
   if (!Number.isFinite(total) && typeof passed !== "boolean") return;
   const failed = typeof passed === "boolean" ? !passed : (Number.isFinite(total) ? total < dc : false);
 
-  const streakState = await recordEnvironmentCheckResult(actor, assignment, {
-    failed,
-    rollTotal: Number.isFinite(total) ? total : null,
-    dc
-  });
-
+  let failureSummary = "";
+  let predictedStreak = 0;
   if (failed) {
-    await applyEnvironmentFailureConsequences(tokenDoc, assignment, {
+    const ledger = getOperationsLedger();
+    const environment = ensureEnvironmentState(ledger);
+    predictedStreak = Math.max(1, Math.max(0, Number(environment.failureStreaks?.[actor.id] ?? 0) || 0) + 1);
+    const consequence = await applyEnvironmentFailureConsequences(tokenDoc, assignment, {
       ...(movementContext ?? {}),
       rollTotal: Number.isFinite(total) ? total : null,
       dc,
-      failStreak: streakState.next
+      failStreak: predictedStreak
     });
+    failureSummary = String(consequence?.summary ?? "").trim();
   }
+
+  const streakState = await recordEnvironmentCheckResult(actor, assignment, {
+    failed,
+    rollTotal: Number.isFinite(total) ? total : null,
+    dc,
+    outcomeSummary: failed ? (failureSummary || `Failed by ${Math.max(0, dc - Number(total || 0))}`) : "Success"
+  });
 
   const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
   const resultText = failed ? "Fail" : "Success";
@@ -4782,7 +5011,9 @@ async function addPartyHealthCustomModifier(element) {
   }
   const root = element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
   const label = String(root?.querySelector("input[name='customModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const key = String(root?.querySelector("input[name='customModifierKey']")?.value ?? "").trim();
+  const inputKey = String(root?.querySelector("input[name='customModifierKey']")?.value ?? "").trim();
+  const selectedKey = String(root?.querySelector("select[name='customModifierKeySelect']")?.value ?? "").trim();
+  const key = inputKey || selectedKey;
   const value = String(root?.querySelector("input[name='customModifierValue']")?.value ?? "").trim();
   const note = String(root?.querySelector("textarea[name='customModifierNote']")?.value ?? "");
   const rawMode = Math.floor(Number(root?.querySelector("select[name='customModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
@@ -4805,6 +5036,123 @@ async function addPartyHealthCustomModifier(element) {
       enabled: true
     });
   });
+}
+
+async function removeActiveSyncEffect(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can remove synced effects.");
+    return;
+  }
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  const effectId = String(element?.dataset?.effectId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor) {
+    ui.notifications?.warn("Actor not found.");
+    return;
+  }
+
+  if (effectId) {
+    const effect = actor.effects.get(effectId);
+    if (effect) {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+      ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
+      return;
+    }
+  }
+
+  await removeIntegrationEffect(actor);
+  ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
+}
+
+async function showOperationalLogsManager() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage environment logs.");
+    return;
+  }
+
+  const context = buildOperationsContext();
+  const logs = Array.isArray(context?.environment?.logs) ? context.environment.logs : [];
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+
+  const rows = logs
+    .map((entry) => {
+      const noteLabel = entry.hasNote ? `<div class="po-op-summary">Note: ${escape(entry.note)}</div>` : "";
+      return `
+      <div class="po-log-manager-row" data-log-id="${escape(entry.id)}" data-search="${escape(`${entry.presetLabel} ${entry.checkLabel} ${entry.actorNamesText} ${entry.note} ${entry.createdBy}`.toLowerCase())}">
+        <div><strong>${escape(entry.presetLabel)}</strong> · DC ${escape(entry.movementDc)}</div>
+        <div class="po-op-summary">${escape(entry.checkLabel)} · ${escape(entry.actorNamesText)}</div>
+        ${noteLabel}
+        <div class="po-op-summary">${escape(entry.createdAtLabel)} by ${escape(entry.createdBy)}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-log-action="load" data-log-id="${escape(entry.id)}">Load</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-log-action="remove" data-log-id="${escape(entry.id)}">Remove</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  const content = `
+    <div class="po-help po-log-manager">
+      <label class="po-resource-row">
+        <span>Filter logs</span>
+        <input type="text" class="po-input" data-log-filter placeholder="Search preset, check, actor, note" />
+      </label>
+      <div class="po-op-summary">${logs.length} total log entries.</div>
+      <div class="po-log-manager-list" data-log-list>
+        ${rows || '<div class="po-op-summary">No environment logs available.</div>'}
+      </div>
+    </div>
+  `;
+
+  const dialog = new Dialog({
+    title: "Environment Logs Manager",
+    content,
+    buttons: {
+      close: {
+        label: "Close"
+      }
+    },
+    render: (html) => {
+      const root = html?.[0];
+      if (!root) return;
+      const filterInput = root.querySelector("[data-log-filter]");
+      const list = root.querySelector("[data-log-list]");
+
+      const applyFilter = () => {
+        const query = String(filterInput?.value ?? "").trim().toLowerCase();
+        for (const row of list?.querySelectorAll(".po-log-manager-row") ?? []) {
+          const haystack = String(row?.dataset?.search ?? "");
+          row.style.display = !query || haystack.includes(query) ? "" : "none";
+        }
+      };
+
+      filterInput?.addEventListener("input", applyFilter);
+      list?.addEventListener("click", async (event) => {
+        const button = event.target.closest("button[data-log-action]");
+        if (!button) return;
+        const action = String(button.dataset.logAction ?? "").trim();
+        const logId = String(button.dataset.logId ?? "").trim();
+        if (!logId) return;
+        if (action === "load") {
+          const loaded = await editOperationalEnvironmentLogById(logId);
+          if (loaded) {
+            ui.notifications?.info("Loaded environment log into current controls.");
+            dialog.close();
+          }
+          return;
+        }
+        if (action === "remove") {
+          const removed = await removeOperationalEnvironmentLogById(logId);
+          if (!removed) return;
+          const row = list.querySelector(`.po-log-manager-row[data-log-id=\"${CSS.escape(logId)}\"]`);
+          row?.remove();
+        }
+      });
+    }
+  });
+
+  dialog.render(true);
 }
 
 async function removePartyHealthCustomModifier(element) {

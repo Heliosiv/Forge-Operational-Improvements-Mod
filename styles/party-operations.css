@@ -164,6 +164,14 @@
   max-width: 4cm;
 }
 
+.party-operations .po-tabs-main .po-tab.is-active,
+.party-operations .po-tabs-ops .po-tab.is-active,
+.party-operations .po-tabs-sub .po-tab.is-active {
+  border-color: var(--po-neon-green);
+  background: color-mix(in srgb, var(--po-neon-green) 24%, var(--po-bg-alt));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 42%, transparent), 0 0 8px color-mix(in srgb, var(--po-neon-green) 35%, transparent);
+}
+
 .party-operations .po-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
@@ -519,6 +527,27 @@
 .party-operations .po-environment-target-label {
   cursor: pointer;
   user-select: none;
+}
+
+.party-operations .po-reputation-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-log-manager-list {
+  max-height: 55vh;
+  overflow: auto;
+  display: grid;
+  gap: var(--po-space-2);
+  margin-top: var(--po-space-2);
+}
+
+.party-operations .po-log-manager-row {
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  padding: var(--po-space-2);
+  background: color-mix(in srgb, var(--po-surface) 72%, transparent);
 }
 
 .party-operations .po-btn,

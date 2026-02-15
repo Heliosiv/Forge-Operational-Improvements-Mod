@@ -612,6 +612,22 @@
         <div class="po-gm-section">
           <div class="po-section-title">Reputation & Factions</div>
           <div class="po-hint">Two-column faction tracker. Players see read-only values; GM can manage and add custom factions.</div>
+          <div class="po-op-role-row po-reputation-filters">
+            <label class="po-resource-row">
+              <span>Filter</span>
+              <input type="text" class="po-input" data-action="set-reputation-filter-keyword" value="{{operations.reputation.filters.keyword}}" placeholder="Search faction, notes, standing" />
+            </label>
+            <label class="po-resource-row">
+              <span>Standing</span>
+              <select class="po-select" data-action="set-reputation-filter-standing">
+                {{#each operations.reputation.filters.standingOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-filters">Clear Filters</button>
+            <div class="po-op-summary">Showing {{operations.reputation.visibleCount}} of {{operations.reputation.totalCount}} factions</div>
+          </div>
           <div class="po-two-col">
             <div class="po-col">
               {{#each operations.reputation.leftColumn}}
@@ -953,9 +969,19 @@
             <span>DAE Change Key</span>
             <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-successive" data-field="daeChangeKey" placeholder="Search key (e.g. system.attributes.movement.walk)" value="{{operations.environment.successiveConfig.daeChangeKey}}" />
           </label>
+          <label class="po-resource-row">
+            <span>Key Presets</span>
+            <select class="po-select" data-action="set-environment-successive" data-field="daeChangeKey">
+              <option value="">Select key preset</option>
+              {{#each operations.environment.successiveConfig.daeKeyOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} — {{value}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <div class="po-op-summary">Selected Key Hint: {{operations.environment.successiveConfig.daeKeyHint}}</div>
           <datalist id="po-env-dae-key-options">
             {{#each operations.environment.successiveConfig.daeKeyOptions}}
-            <option value="{{value}}"></option>
+            <option value="{{value}}" label="{{label}}"></option>
             {{/each}}
           </datalist>
           <label class="po-resource-row">
@@ -992,6 +1018,7 @@
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="reset-environment-successive-defaults">Reset to Preset Defaults</button>
             <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
           </div>
@@ -1007,6 +1034,9 @@
             </div>
             <div class="po-op-summary">Preset: {{presetLabel}}</div>
             <div class="po-op-summary">Fail Streak: {{streak}}</div>
+            {{#if hasOutcomeSummary}}
+            <div class="po-op-summary">Outcome: {{outcomeSummary}}</div>
+            {{/if}}
             <div class="po-op-summary">Logged: {{createdAtLabel}} by {{createdBy}}</div>
           </div>
           {{/each}}
@@ -1074,6 +1104,16 @@
               <input type="text" list="po-party-mod-key-options" class="po-input" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="key" value="{{key}}" />
             </label>
             <label class="po-resource-row">
+              <span>Key Presets</span>
+              <select class="po-select" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="key">
+                <option value="">Select key preset</option>
+                {{#each keyOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} — {{value}}</option>
+                {{/each}}
+              </select>
+            </label>
+            {{#if keyHint}}<div class="po-op-summary">Key Hint: {{keyHint}}</div>{{/if}}
+            <label class="po-resource-row">
               <span>Mode</span>
               <select class="po-select" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="mode">
                 {{#each modeOptions}}
@@ -1100,6 +1140,22 @@
           <div class="po-op-summary">No custom global modifiers yet.</div>
           {{/if}}
 
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Active Synced Effects</div>
+          {{#if operations.partyHealth.hasActiveSyncEffects}}
+          {{#each operations.partyHealth.activeSyncEffects}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{actorName}}</div>
+              <div class="po-op-role-status">{{effectName}}</div>
+            </div>
+            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-active-sync-effect" data-actor-id="{{actorId}}" data-effect-id="{{effectId}}">Remove Effect</button>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No active synced global effects currently on tracked actors.</div>
+          {{/if}}
+
           <div class="po-op-role-row">
             <div class="po-op-role-head"><div class="po-op-role-name">Add Custom Modifier</div></div>
             <label class="po-resource-row">
@@ -1109,6 +1165,15 @@
             <label class="po-resource-row">
               <span>Key</span>
               <input type="text" list="po-party-mod-key-options" name="customModifierKey" class="po-input" placeholder="system.attributes.init.bonus" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key Presets</span>
+              <select name="customModifierKeySelect" class="po-select">
+                <option value="">Select key preset</option>
+                {{#each operations.partyHealth.modifierKeyOptions}}
+                <option value="{{value}}">{{label}} — {{value}}</option>
+                {{/each}}
+              </select>
             </label>
             <label class="po-resource-row">
               <span>Mode</span>
@@ -1130,7 +1195,7 @@
           </div>
           <datalist id="po-party-mod-key-options">
             {{#each operations.partyHealth.modifierKeyOptions}}
-            <option value="{{value}}"></option>
+            <option value="{{value}}" label="{{label}}"></option>
             {{/each}}
           </datalist>
           {{#unless operations.partyHealth.daeAvailable}}
