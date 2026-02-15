@@ -2060,6 +2060,59 @@ function getWatchEntryStateKey(entry) {
   return `${slotId}:${actorId}`;
 }
 
+function getElementStatePath(node, root) {
+  if (!node || !root || !(node instanceof HTMLElement)) return "";
+  const segments = [];
+  let cursor = node;
+  while (cursor && cursor !== root && cursor instanceof HTMLElement) {
+    const parent = cursor.parentElement;
+    let siblingIndex = 0;
+    if (parent) {
+      const siblings = Array.from(parent.children).filter((entry) => entry.tagName === cursor.tagName);
+      const found = siblings.indexOf(cursor);
+      siblingIndex = found >= 0 ? found : 0;
+    }
+    const tag = cursor.tagName.toLowerCase();
+    const idPart = cursor.id ? `#${cursor.id}` : "";
+    const actionPart = cursor.dataset?.action ? `[a=${cursor.dataset.action}]` : "";
+    const pagePart = cursor.dataset?.page ? `[p=${cursor.dataset.page}]` : "";
+    const tabPart = cursor.dataset?.tab ? `[t=${cursor.dataset.tab}]` : "";
+    segments.unshift(`${tag}:${siblingIndex}${idPart}${actionPart}${pagePart}${tabPart}`);
+    cursor = parent;
+  }
+  return segments.join(">");
+}
+
+function captureDisclosureState(root) {
+  if (!root) return [];
+  return Array.from(root.querySelectorAll("details"))
+    .map((details) => {
+      const key = getElementStatePath(details, root);
+      if (!key) return null;
+      return {
+        key,
+        open: details.open === true
+      };
+    })
+    .filter(Boolean);
+}
+
+function applyDisclosureState(root, disclosureState) {
+  if (!root || !Array.isArray(disclosureState) || disclosureState.length === 0) return;
+  const map = new Map(
+    disclosureState
+      .filter((entry) => entry && typeof entry.key === "string")
+      .map((entry) => [entry.key, entry.open === true])
+  );
+  if (map.size === 0) return;
+  root.querySelectorAll("details").forEach((details) => {
+    const key = getElementStatePath(details, root);
+    if (!key || !map.has(key)) return;
+    const shouldOpen = map.get(key) === true;
+    if (details.open !== shouldOpen) details.open = shouldOpen;
+  });
+}
+
 function captureUiState(app) {
   const root = getAppRootElement(app);
   if (!root) return null;
@@ -2068,11 +2121,18 @@ function captureUiState(app) {
     const openNotes = Array.from(root.querySelectorAll(".po-watch-entry .po-notes.is-active"))
       .map((notes) => getWatchEntryStateKey(notes.closest(".po-watch-entry")))
       .filter(Boolean);
-    return { type: "rest", openNotes };
+    return {
+      type: "rest",
+      openNotes,
+      disclosures: captureDisclosureState(root)
+    };
   }
 
   if (app instanceof MarchingOrderApp) {
-    return { type: "march" };
+    return {
+      type: "march",
+      disclosures: captureDisclosureState(root)
+    };
   }
 
   return null;
@@ -2082,6 +2142,7 @@ function applyUiState(app, state) {
   if (!state) return;
   const root = getAppRootElement(app);
   if (!root) return;
+  applyDisclosureState(root, state.disclosures);
 
   if (state.type === "rest") {
     const openSet = new Set(state.openNotes ?? []);
@@ -2152,10 +2213,13 @@ function restorePendingScrollState(app) {
   pendingScrollRestore.delete(app);
   const root = getAppRootElement(app);
   if (!root) return;
+  const apply = () => applyScrollState(root, states);
   requestAnimationFrame(() => {
-    applyScrollState(root, states);
-    requestAnimationFrame(() => applyScrollState(root, states));
+    apply();
+    requestAnimationFrame(apply);
   });
+  setTimeout(apply, 50);
+  setTimeout(apply, 180);
 }
 
 function captureWindowState(app) {
@@ -2997,6 +3061,14 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     });
   }
 
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"] }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
   async #onAction(event) {
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
@@ -3009,7 +3081,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         break;
       case "toggle-mini-viz":
         setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.render({ force: true, parts: ["main"] });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "assign-me":
         await assignSlotToUser(element);
@@ -3214,6 +3286,14 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
   }
 
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"] }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
   async #onAction(event) {
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
@@ -3235,13 +3315,13 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         break;
       case "toggle-mini-viz":
         setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.render({ force: true, parts: ["main"] });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "toggle-section": {
         const sectionId = element?.dataset?.sectionId;
         if (!sectionId) break;
         setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
-        this.render({ force: true, parts: ["main"] });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       }
       case "assign-rank":
