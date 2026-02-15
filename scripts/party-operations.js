@@ -61,6 +61,72 @@ const SCROLL_STATE_SELECTORS = [
 ];
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
+const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+const NON_GM_READONLY_ACTIONS = new Set([
+  "set-role",
+  "clear-role",
+  "toggle-sop",
+  "set-resource",
+  "set-comm-toggle",
+  "set-comm-text",
+  "set-recon-field",
+  "run-recon-check",
+  "set-reputation-score",
+  "adjust-reputation-score",
+  "set-reputation-note",
+  "log-reputation-note",
+  "load-reputation-note-log",
+  "set-reputation-label",
+  "add-reputation-faction",
+  "remove-reputation-faction",
+  "set-base-ops-config",
+  "upsert-base-site",
+  "clear-base-site",
+  "open-base-site-storage",
+  "set-injury-config",
+  "upsert-injury",
+  "roll-injury-table",
+  "set-injury-result",
+  "stabilize-injury",
+  "clear-injury",
+  "apply-recovery-cycle",
+  "set-party-health-modifier",
+  "set-party-health-custom-field",
+  "add-party-health-custom",
+  "remove-party-health-custom",
+  "remove-active-sync-effect",
+  "archive-active-sync-effect",
+  "restore-archived-sync-effect",
+  "remove-archived-sync-effect",
+  "set-archived-sync-field",
+  "set-active-sync-effects-tab",
+  "set-environment-preset",
+  "set-environment-dc",
+  "set-environment-note",
+  "set-environment-successive",
+  "reset-environment-successive-defaults",
+  "toggle-environment-actor",
+  "add-environment-log",
+  "edit-environment-log",
+  "remove-environment-log",
+  "clear-environment-effects",
+  "show-gm-logs-manager",
+  "edit-global-log",
+  "remove-global-log",
+  "gm-quick-add-faction",
+  "gm-quick-add-modifier",
+  "gm-quick-submit-faction",
+  "gm-quick-submit-modifier",
+  "gm-quick-sync-integrations",
+  "gm-quick-log-weather",
+  "gm-quick-submit-weather",
+  "gm-quick-weather-select",
+  "gm-quick-weather-set",
+  "gm-quick-weather-add-dae",
+  "gm-quick-weather-remove-dae",
+  "gm-quick-weather-save-preset",
+  "gm-quick-weather-delete-preset"
+]);
 const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
 const environmentMovePromptByActor = new Map();
@@ -278,6 +344,41 @@ function ensurePartyOperationsClass(appOrElement) {
   const root = getAppRootElement(appOrElement);
   if (!root?.classList) return;
   root.classList.add("party-operations");
+}
+
+function applyNonGmOperationsReadonly(appOrElement) {
+  if (game.user?.isGM) return;
+  const root = getAppRootElement(appOrElement);
+  if (!root) return;
+  const operationsWindow = root.querySelector(".po-window[data-main-tab='operations']");
+  if (!operationsWindow) return;
+
+  operationsWindow.querySelectorAll("[data-action]").forEach((element) => {
+    const action = String(element?.dataset?.action ?? "").trim();
+    if (!NON_GM_READONLY_ACTIONS.has(action)) return;
+    if ("disabled" in element) element.disabled = true;
+    element.setAttribute("aria-disabled", "true");
+    element.dataset.poReadonly = "true";
+    const existingTitle = String(element.getAttribute("title") ?? "").trim();
+    if (!existingTitle.includes("GM only")) {
+      const suffix = existingTitle ? ` ${existingTitle}` : "";
+      element.setAttribute("title", `GM only.${suffix}`.trim());
+    }
+  });
+
+  const selector = [
+    ".po-base-site-editor input",
+    ".po-base-site-editor select",
+    ".po-injury-editor input",
+    ".po-injury-editor select",
+    ".po-injury-editor textarea",
+    ".po-reputation-gm-tools input[name='repFactionName']"
+  ].join(", ");
+  operationsWindow.querySelectorAll(selector).forEach((element) => {
+    if ("disabled" in element) element.disabled = true;
+    element.setAttribute("aria-disabled", "true");
+    element.dataset.poReadonly = "true";
+  });
 }
 
 function suppressNextSettingRefresh(fullSettingKey) {
@@ -635,12 +736,21 @@ function buildDamageTypeOptions(selected = "") {
     { value: "", label: "None", selected: selectedValue === "" }
   ];
 
+  const resolveDamageTypeLabel = (raw, fallback) => {
+    if (typeof raw === "string") {
+      return raw.includes(".") ? (game.i18n?.localize?.(raw) ?? raw) : raw;
+    }
+    if (raw && typeof raw === "object") {
+      const candidate = String(raw.label ?? raw.name ?? raw.value ?? "").trim();
+      if (candidate) return candidate.includes(".") ? (game.i18n?.localize?.(candidate) ?? candidate) : candidate;
+    }
+    return fallback;
+  };
+
   for (const [valueRaw, labelRaw] of Object.entries(rawDamageTypes)) {
     const value = String(valueRaw ?? "").trim();
     if (!value) continue;
-    const localized = typeof labelRaw === "string" && labelRaw.includes(".")
-      ? game.i18n?.localize?.(labelRaw) ?? labelRaw
-      : String(labelRaw ?? value);
+    const localized = resolveDamageTypeLabel(labelRaw, value);
     options.push({
       value,
       label: localized,
@@ -1330,7 +1440,7 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery", "gm"]);
+  const allowed = new Set(["planning", "readiness", "comms", "recon", "reputation", "base", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
   if (stored === "gm" && !game.user?.isGM) return "planning";
@@ -1339,7 +1449,7 @@ function getActiveOperationsPage() {
 
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery", "gm"]);
+  const allowed = new Set(["planning", "readiness", "comms", "recon", "reputation", "base", "recovery", "gm"]);
   if (page === "gm" && !game.user?.isGM) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
@@ -1758,6 +1868,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       operationsPagePlanning: operationsPage === "planning",
       operationsPageReadiness: operationsPage === "readiness",
       operationsPageComms: operationsPage === "comms",
+      operationsPageRecon: operationsPage === "recon",
       operationsPageReputation: operationsPage === "reputation",
       operationsPageSupply: false,
       operationsPageBase: operationsPage === "base",
@@ -1818,6 +1929,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Update activity UI state
     this.#updateActivityUI();
     this.#applyOperationsHoverHints();
+    applyNonGmOperationsReadonly(this);
 
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDrop(this.element);
@@ -2058,6 +2170,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "set-comm-text":
         await setCommunicationText(element);
+        break;
+      case "set-recon-field":
+        await setReconField(element);
+        break;
+      case "run-recon-check":
+        await runReconCheck();
+        break;
+      case "show-recon-brief":
+        await showReconBrief();
         break;
       case "show-communication-brief":
         await showCommunicationBrief();
@@ -2779,6 +2900,19 @@ function buildDefaultOperationsLedger() {
       caches: [],
       safehouses: []
     },
+    recon: {
+      objective: "",
+      region: "",
+      intelSource: "",
+      heatLevel: "moderate",
+      network: "limited",
+      rumorReliability: 50,
+      bribeBudget: 0,
+      spySlots: 0,
+      recentFindings: "",
+      lastBriefAt: "-",
+      lastBriefBy: "-"
+    },
     baseOperations: {
       maintenanceRisk: "moderate",
       sites: []
@@ -2866,18 +3000,12 @@ function getOperationsLedger() {
 
 async function updateOperationsLedger(mutator, options = {}) {
   if (typeof mutator !== "function") return;
-  const ledger = getOperationsLedger();
-  mutator(ledger);
-
   if (!game.user.isGM) {
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "ops:replace",
-      userId: game.user.id,
-      ledger
-    });
-    if (!options.skipLocalRefresh) refreshOpenApps();
+    ui.notifications?.warn("Only the GM can update operations data.");
     return;
   }
+  const ledger = getOperationsLedger();
+  mutator(ledger);
 
   if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.OPS_LEDGER}`);
   await game.settings.set(MODULE_ID, SETTINGS.OPS_LEDGER, ledger);
@@ -3040,6 +3168,8 @@ function buildOperationsContext() {
   const effects = getOperationalEffects(ledger, roles, sops);
   const communication = ledger.communication ?? {};
   const communicationReadiness = getCommunicationReadiness(communication);
+  const reconState = ensureReconState(ledger);
+  const recon = buildReconContext(reconState);
   const reputationState = ensureReputationState(ledger);
   const reputationFilters = getReputationFilterState();
   const reputation = buildReputationContext(reputationState, reputationFilters);
@@ -3340,6 +3470,7 @@ function buildOperationsContext() {
       preCombatPlan: Boolean(communication.preCombatPlan),
       readiness: communicationReadiness
     },
+    recon,
     partyHealth: {
       customModifiers: partyHealthState.customModifiers.map((entry) => ({
         ...entry,
@@ -3440,6 +3571,7 @@ function buildOperationsContext() {
       sopTotal: sops.length,
       prepEdge: roleCoverage >= 3 && activeSops >= 3,
       disorderRisk,
+      reconReadiness: recon.readinessLabel,
       maintenancePressure: baseOperations.maintenancePressure,
       effects
     },
@@ -3459,6 +3591,7 @@ function getOperationalEffects(ledger, roles, sops) {
   const hasSteward = Boolean(ledger.roles?.steward);
   const communication = ledger.communication ?? {};
   const comms = getCommunicationReadiness(communication);
+  const recon = buildReconContext(ensureReconState(ledger));
   const reputation = buildReputationContext(ensureReputationState(ledger));
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const weatherState = ensureWeatherState(ledger);
@@ -3513,6 +3646,7 @@ function getOperationalEffects(ledger, roles, sops) {
   if (hasChronicler) bonuses.push("Operational recall active: clarify one unknown clue or timeline detail once per session.");
   if (hasSteward) bonuses.push("Stewardship active: reduce one lifestyle/logistics cost friction once per session.");
   if (comms.ready) bonuses.push("Communication discipline active: improve one coordinated response roll by a minor margin.");
+  if (recon.tier === "ready") bonuses.push("Recon posture ready: reveal one mission unknown before first contact.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
 
@@ -3527,6 +3661,14 @@ function getOperationalEffects(ledger, roles, sops) {
   if (comms.ready) {
     const modifier = addGlobalModifier("signal-discipline", "perceptionChecks", 1, "Signal discipline (comms ready)", "Perception checks");
     if (modifier.enabled) globalMinorBonuses.push("Signal discipline: all player actors gain +1 to Perception checks while communication readiness is active.");
+  }
+  if (recon.initiativeEdge !== 0) {
+    const modifier = addGlobalModifier("recon-briefing", "initiative", recon.initiativeEdge, "Recon briefing posture", "Initiative rolls", {
+      note: `Recon tier: ${recon.readinessLabel}`
+    });
+    if (modifier.enabled && recon.initiativeEdge > 0) {
+      globalMinorBonuses.push("Recon briefing: all player actors gain +1 initiative while recon posture is ready.");
+    }
   }
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
@@ -3557,6 +3699,7 @@ function getOperationalEffects(ledger, roles, sops) {
   if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
   if (activeSops <= 2) risks.push("Low SOP coverage: apply disadvantage on one unplanned operation check.");
   if (!comms.ready) risks.push("Communication gaps: increase misread signal risk during first contact.");
+  if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
 
@@ -4011,6 +4154,122 @@ function ensureBaseOperationsState(ledger) {
   return ledger.baseOperations;
 }
 
+function ensureReconState(ledger) {
+  if (!ledger.recon || typeof ledger.recon !== "object") {
+    ledger.recon = {};
+  }
+  const recon = ledger.recon;
+  const toText = (value) => String(value ?? "");
+  recon.objective = toText(recon.objective);
+  recon.region = toText(recon.region);
+  recon.intelSource = toText(recon.intelSource);
+  recon.recentFindings = toText(recon.recentFindings);
+  recon.lastBriefAt = toText(recon.lastBriefAt || "-");
+  recon.lastBriefBy = toText(recon.lastBriefBy || "-");
+
+  const heat = String(recon.heatLevel ?? "moderate").trim().toLowerCase();
+  recon.heatLevel = ["low", "moderate", "high"].includes(heat) ? heat : "moderate";
+
+  const network = String(recon.network ?? "limited").trim().toLowerCase();
+  recon.network = ["limited", "established", "deep"].includes(network) ? network : "limited";
+
+  const reliability = Number(recon.rumorReliability ?? 50);
+  recon.rumorReliability = Number.isFinite(reliability)
+    ? Math.max(0, Math.min(100, Math.floor(reliability)))
+    : 50;
+
+  const bribeBudget = Number(recon.bribeBudget ?? 0);
+  recon.bribeBudget = Number.isFinite(bribeBudget)
+    ? Math.max(0, Math.floor(bribeBudget))
+    : 0;
+
+  const spySlots = Number(recon.spySlots ?? 0);
+  recon.spySlots = Number.isFinite(spySlots)
+    ? Math.max(0, Math.floor(spySlots))
+    : 0;
+
+  return recon;
+}
+
+function buildReconContext(reconState = {}) {
+  const objective = String(reconState.objective ?? "").trim();
+  const region = String(reconState.region ?? "").trim();
+  const intelSource = String(reconState.intelSource ?? "").trim();
+  const recentFindings = String(reconState.recentFindings ?? "").trim();
+  const heatLevel = String(reconState.heatLevel ?? "moderate").trim().toLowerCase();
+  const network = String(reconState.network ?? "limited").trim().toLowerCase();
+  const rumorReliability = Math.max(0, Math.min(100, Math.floor(Number(reconState.rumorReliability ?? 50) || 0)));
+  const bribeBudget = Math.max(0, Math.floor(Number(reconState.bribeBudget ?? 0) || 0));
+  const spySlots = Math.max(0, Math.floor(Number(reconState.spySlots ?? 0) || 0));
+  const intelCoverage = [objective, region, intelSource, recentFindings].filter((entry) => entry.length > 0).length;
+
+  const heatPenalty = heatLevel === "high" ? 2 : heatLevel === "low" ? 0 : 1;
+  const networkScore = network === "deep" ? 2 : network === "established" ? 1 : 0;
+  const reliabilityScore = rumorReliability >= 70 ? 2 : rumorReliability >= 50 ? 1 : 0;
+  const budgetScore = bribeBudget >= 100 ? 2 : bribeBudget >= 25 ? 1 : 0;
+  const spyScore = spySlots >= 2 ? 2 : spySlots >= 1 ? 1 : 0;
+
+  const readinessScore = intelCoverage + networkScore + reliabilityScore + budgetScore + spyScore - heatPenalty;
+  const tier = readinessScore >= 6 ? "ready" : readinessScore >= 3 ? "contested" : "blind";
+  const readinessLabel = tier === "ready" ? "Ready" : tier === "contested" ? "Contested" : "Blind";
+  const initiativeEdge = tier === "ready" ? 1 : tier === "blind" ? -1 : 0;
+  const suggestedDc = Math.max(
+    8,
+    Math.min(
+      22,
+      10
+      + (heatLevel === "high" ? 4 : heatLevel === "moderate" ? 2 : 0)
+      + (network === "limited" ? 2 : 0)
+      - (network === "deep" ? 1 : 0)
+      - (rumorReliability >= 70 ? 1 : 0)
+    )
+  );
+
+  const recommendations = [];
+  if (!objective) recommendations.push("Define a concrete mission objective before the next recon pass.");
+  if (!region) recommendations.push("Set target region to tighten scouting scope.");
+  if (rumorReliability < 50) recommendations.push("Corroborate rumor channels before acting on intel.");
+  if (network === "limited") recommendations.push("Expand local network contacts to reduce blind approaches.");
+  if (spySlots <= 0) recommendations.push("Allocate at least one spy slot for forward observation.");
+  if (heatLevel === "high") recommendations.push("High heat: expect counter-surveillance and misinformation.");
+  if (recommendations.length === 0) recommendations.push("Recon posture is stable. Maintain cadence and refresh leads after major events.");
+
+  return {
+    objective,
+    region,
+    intelSource,
+    recentFindings,
+    heatLevel,
+    network,
+    rumorReliability,
+    bribeBudget,
+    spySlots,
+    intelCoverage,
+    readinessScore,
+    tier,
+    readinessLabel,
+    initiativeEdge,
+    suggestedDc,
+    recommendations,
+    hasRecentFindings: recentFindings.length > 0,
+    hasObjective: objective.length > 0,
+    hasRegion: region.length > 0,
+    hasIntelSource: intelSource.length > 0,
+    lastBriefAt: String(reconState.lastBriefAt ?? "-"),
+    lastBriefBy: String(reconState.lastBriefBy ?? "-"),
+    heatOptions: [
+      { value: "low", label: "Low", selected: heatLevel === "low" },
+      { value: "moderate", label: "Moderate", selected: heatLevel === "moderate" },
+      { value: "high", label: "High", selected: heatLevel === "high" }
+    ],
+    networkOptions: [
+      { value: "limited", label: "Limited", selected: network === "limited" },
+      { value: "established", label: "Established", selected: network === "established" },
+      { value: "deep", label: "Deep", selected: network === "deep" }
+    ]
+  };
+}
+
 const WEATHER_PRESET_DEFINITIONS = [
   { id: "clear", label: "Clear", visibilityModifier: 0, darkness: 0.1, note: "Clear skies and stable visibility." },
   { id: "cloudy", label: "Cloudy", visibilityModifier: -1, darkness: 0.3, note: "Low cloud cover and muted light." },
@@ -4291,14 +4550,17 @@ function ensurePartyHealthState(ledger) {
 
 function ensureSopNotesState(ledger) {
   if (!ledger.sopNotes || typeof ledger.sopNotes !== "object") ledger.sopNotes = {};
-  const sopKeys = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
-  for (const key of sopKeys) {
+  for (const key of SOP_KEYS) {
     if (typeof ledger.sopNotes[key] !== "string") ledger.sopNotes[key] = "";
   }
   return ledger.sopNotes;
 }
 
 async function setOperationalRole(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can assign operational roles.");
+    return;
+  }
   const roleKey = element?.dataset?.role;
   const actorId = element?.value ?? "";
   if (!roleKey) return;
@@ -4309,6 +4571,10 @@ async function setOperationalRole(element) {
 }
 
 async function clearOperationalRole(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can assign operational roles.");
+    return;
+  }
   const roleKey = element?.dataset?.role;
   if (!roleKey) return;
   await updateOperationsLedger((ledger) => {
@@ -4318,8 +4584,12 @@ async function clearOperationalRole(element) {
 }
 
 async function toggleOperationalSOP(element, options = {}) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update SOP status.");
+    return;
+  }
   const sopKey = element?.dataset?.sop;
-  if (!sopKey) return;
+  if (!sopKey || !SOP_KEYS.includes(String(sopKey))) return;
   await updateOperationsLedger((ledger) => {
     if (!ledger.sops) ledger.sops = {};
     ledger.sops[sopKey] = Boolean(element?.checked);
@@ -4327,9 +4597,12 @@ async function toggleOperationalSOP(element, options = {}) {
 }
 
 async function setOperationalResource(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit resources.");
+    return;
+  }
   const resourceKey = element?.dataset?.resource;
   if (!resourceKey) return;
-  const isGm = Boolean(game.user?.isGM);
   const upkeepNumericKeys = new Set([
     "partySize",
     "foodPerMember",
@@ -4338,11 +4611,6 @@ async function setOperationalResource(element) {
     "waterMultiplier",
     "torchPerRest"
   ]);
-
-  if (!isGm && (resourceKey.startsWith("weatherMod:") || upkeepNumericKeys.has(resourceKey))) {
-    ui.notifications?.warn("Only the GM can edit upkeep and gather DC settings.");
-    return;
-  }
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -4407,8 +4675,17 @@ async function setPartyHealthModifier(element) {
 
 async function setOperationalSopNote(element) {
   const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey) return;
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
   const note = String(element?.value ?? "");
+  if (!game.user.isGM) {
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "ops:setSopNote",
+      userId: game.user.id,
+      sopKey,
+      note
+    });
+    return;
+  }
   await updateOperationsLedger((ledger) => {
     const sopNotes = ensureSopNotesState(ledger);
     sopNotes[sopKey] = note;
@@ -5594,7 +5871,128 @@ async function runGatherResourceCheck() {
   dialog.render(true);
 }
 
+async function setReconField(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update recon planning.");
+    return;
+  }
+  const field = String(element?.dataset?.reconField ?? "").trim();
+  if (!field) return;
+
+  await updateOperationsLedger((ledger) => {
+    const recon = ensureReconState(ledger);
+    if (field === "objective" || field === "region" || field === "intelSource" || field === "recentFindings") {
+      recon[field] = String(element?.value ?? "");
+      return;
+    }
+    if (field === "heatLevel") {
+      const value = String(element?.value ?? "moderate").trim().toLowerCase();
+      recon.heatLevel = ["low", "moderate", "high"].includes(value) ? value : "moderate";
+      return;
+    }
+    if (field === "network") {
+      const value = String(element?.value ?? "limited").trim().toLowerCase();
+      recon.network = ["limited", "established", "deep"].includes(value) ? value : "limited";
+      return;
+    }
+    if (field === "rumorReliability") {
+      const value = Number(element?.value ?? 50);
+      recon.rumorReliability = Number.isFinite(value) ? Math.max(0, Math.min(100, Math.floor(value))) : 50;
+      return;
+    }
+    if (field === "bribeBudget") {
+      const value = Number(element?.value ?? 0);
+      recon.bribeBudget = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+      return;
+    }
+    if (field === "spySlots") {
+      const value = Number(element?.value ?? 0);
+      recon.spySlots = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    }
+  });
+}
+
+async function runReconCheck() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can run recon checks.");
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const recon = buildReconContext(ensureReconState(ledger));
+  const fallbackActor = getOwnedPcActors()
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))[0];
+  const reconActor = game.actors.get(String(ledger.roles?.cartographer ?? "")) ?? fallbackActor;
+  if (!reconActor) {
+    ui.notifications?.warn("No eligible actor found for recon check.");
+    return;
+  }
+
+  const dc = recon.suggestedDc;
+  let total = 0;
+  try {
+    if (typeof reconActor.rollSkill === "function") {
+      const roll = await reconActor.rollSkill("inv", { fastForward: true, chatMessage: false });
+      total = Number(roll?.total ?? roll?.roll?.total ?? 0);
+    } else {
+      const intMod = Number(reconActor.system?.abilities?.int?.mod ?? 0);
+      const roll = await (new Roll("1d20 + @mod", { mod: intMod })).evaluate({ async: true });
+      total = Number(roll.total ?? 0);
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: recon check failed`, error);
+    ui.notifications?.warn("Recon check failed to resolve.");
+    return;
+  }
+
+  const passed = Number.isFinite(total) && total >= dc;
+  const summary = `${reconActor.name}: ${passed ? "Success" : "Fail"} (${Math.floor(Number(total) || 0)} vs DC ${dc})`;
+  const insight = passed
+    ? "Recon success: lower entry uncertainty and improve first-contact posture."
+    : "Recon miss: proceed with increased unknowns and tighter fallback planning.";
+  const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextRecon = ensureReconState(nextLedger);
+    const nextFindings = `${stamp} ${summary}`;
+    nextRecon.recentFindings = nextFindings;
+    nextRecon.lastBriefAt = stamp;
+    nextRecon.lastBriefBy = String(game.user?.name ?? "GM");
+  });
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Recon Check</strong></p><p><strong>Actor:</strong> ${foundry.utils.escapeHTML(reconActor.name)}</p><p><strong>Result:</strong> ${passed ? "Success" : "Failure"} (${Math.floor(Number(total) || 0)} vs DC ${dc})</p><p>${foundry.utils.escapeHTML(insight)}</p>`
+  });
+}
+
+async function showReconBrief() {
+  const recon = buildOperationsContext().recon;
+  const recommendationRows = recon.recommendations.map((entry) => `<li>${foundry.utils.escapeHTML(entry)}</li>`).join("");
+  const content = `
+    <div class="po-help">
+      <p><strong>Readiness:</strong> ${foundry.utils.escapeHTML(recon.readinessLabel)} (score ${recon.readinessScore})</p>
+      <p><strong>Suggested Recon DC:</strong> ${recon.suggestedDc}</p>
+      <p><strong>Objective:</strong> ${foundry.utils.escapeHTML(recon.objective || "-")}</p>
+      <p><strong>Region:</strong> ${foundry.utils.escapeHTML(recon.region || "-")}</p>
+      <p><strong>Source:</strong> ${foundry.utils.escapeHTML(recon.intelSource || "-")}</p>
+      <p><strong>Recent Findings:</strong> ${foundry.utils.escapeHTML(recon.recentFindings || "-")}</p>
+      <ul>${recommendationRows || "<li>No recommendations.</li>"}</ul>
+    </div>
+  `;
+  await Dialog.prompt({
+    title: "Recon Brief",
+    content,
+    rejectClose: false,
+    callback: () => {}
+  });
+}
+
 async function setCommunicationToggle(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update communication discipline.");
+    return;
+  }
   const key = element?.dataset?.comm;
   if (!key) return;
   await updateOperationsLedger((ledger) => {
@@ -5604,6 +6002,10 @@ async function setCommunicationToggle(element) {
 }
 
 async function setCommunicationText(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update communication discipline.");
+    return;
+  }
   const key = element?.dataset?.commText;
   if (!key) return;
   const value = String(element?.value ?? "").trim();
@@ -6602,6 +7004,10 @@ async function removeGlobalLog(element) {
 }
 
 async function setBaseOperationsConfig(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage base operations.");
+    return;
+  }
   const key = element?.dataset?.baseConfig;
   if (!key) return;
   await updateOperationsLedger((ledger) => {
@@ -6613,6 +7019,10 @@ async function setBaseOperationsConfig(element) {
 }
 
 async function upsertBaseOperationsSite(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage base operations.");
+    return;
+  }
   const root = element?.closest(".po-base-site-editor");
   if (!root) return;
   const type = String(root.querySelector("select[name='baseSiteType']")?.value ?? "safehouse");
@@ -6668,6 +7078,10 @@ async function upsertBaseOperationsSite(element) {
 }
 
 async function clearBaseOperationsSite(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage base operations.");
+    return;
+  }
   const id = element?.dataset?.baseSiteId;
   if (!id) return;
   await updateOperationsLedger((ledger) => {
@@ -7243,18 +7657,12 @@ function getInjuryRecoveryState() {
 
 async function updateInjuryRecoveryState(mutator) {
   if (typeof mutator !== "function") return;
-  const state = getInjuryRecoveryState();
-  mutator(state);
-
   if (!game.user.isGM) {
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "injury:replace",
-      userId: game.user.id,
-      state
-    });
-    refreshOpenApps();
+    ui.notifications?.warn("Only the GM can update injury recovery.");
     return;
   }
+  const state = getInjuryRecoveryState();
+  mutator(state);
 
   await game.settings.set(MODULE_ID, SETTINGS.INJURY_RECOVERY, state);
   scheduleIntegrationSync("injury-recovery");
@@ -7482,6 +7890,10 @@ async function syncAllInjuriesToSimpleCalendar() {
 }
 
 async function setInjuryRecoveryConfig(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
   const key = element?.dataset?.injuryConfig;
   if (!key) return;
   await updateInjuryRecoveryState((state) => {
@@ -7596,6 +8008,10 @@ async function rollTreatmentCheck(injuredActorId, treatmentSkill, dc) {
 }
 
 async function upsertInjuryEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
   const root = element?.closest(".po-injury-editor");
   if (!root) return;
   const actorId = root.querySelector("select[name='actorId']")?.value ?? "";
@@ -7694,6 +8110,10 @@ async function notifyDailyInjuryReminders() {
 }
 
 async function stabilizeInjuryEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
   const actorId = element?.dataset?.actorId;
   if (!actorId) return;
   const initial = getInjuryRecoveryState().injuries?.[actorId];
@@ -7763,6 +8183,10 @@ async function stabilizeInjuryEntry(element) {
 }
 
 async function clearInjuryEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
   const actorId = element?.dataset?.actorId;
   if (!actorId) return;
   const state = getInjuryRecoveryState();
@@ -7777,6 +8201,10 @@ async function clearInjuryEntry(element) {
 }
 
 async function applyRecoveryCycle() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can manage injury recovery.");
+    return;
+  }
   const state = getInjuryRecoveryState();
 
   const entries = Object.entries(state.injuries ?? {});
@@ -9107,11 +9535,59 @@ function getSimpleCalendarApi() {
   return globalThis.SimpleCalendar?.api ?? game?.simpleCalendar?.api ?? null;
 }
 
+function collectSimpleCalendarMethods(source, test, prefix = "api", depth = 0, seen = new Set()) {
+  if (!source || typeof source !== "object" || depth > 2) return [];
+  const methods = [];
+  for (const [key, value] of Object.entries(source)) {
+    const path = `${prefix}.${key}`;
+    if (typeof value === "function") {
+      const token = `${path}:${String(value.name || "anonymous")}`;
+      if (!seen.has(token) && test(key, path)) {
+        seen.add(token);
+        methods.push({ fn: value, ctx: source, name: path });
+      }
+      continue;
+    }
+    if (value && typeof value === "object") {
+      methods.push(...collectSimpleCalendarMethods(value, test, path, depth + 1, seen));
+    }
+  }
+  return methods;
+}
+
 function getSimpleCalendarMutationMethods(api) {
   if (!api) return { updateMethods: [], createMethods: [], removeMethods: [] };
-  const updateMethods = [api.updateEvent, api.updateNote, api.updateEntry].filter((fn) => typeof fn === "function");
-  const createMethods = [api.addEvent, api.createEvent, api.addNote, api.createNote, api.addCalendarNote].filter((fn) => typeof fn === "function");
-  const removeMethods = [api.removeEvent, api.deleteEvent, api.removeNote, api.deleteNote, api.removeEntry].filter((fn) => typeof fn === "function");
+  const isCreateMethod = (key, path) => /(add|create)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
+  const isUpdateMethod = (key, path) => /(update|edit|set)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
+  const isRemoveMethod = (key, path) => /(remove|delete)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
+
+  const preferredUpdate = [
+    { fn: api.updateEvent, ctx: api, name: "api.updateEvent" },
+    { fn: api.updateNote, ctx: api, name: "api.updateNote" },
+    { fn: api.updateEntry, ctx: api, name: "api.updateEntry" }
+  ].filter((entry) => typeof entry.fn === "function");
+  const preferredCreate = [
+    { fn: api.addEvent, ctx: api, name: "api.addEvent" },
+    { fn: api.createEvent, ctx: api, name: "api.createEvent" },
+    { fn: api.addNote, ctx: api, name: "api.addNote" },
+    { fn: api.createNote, ctx: api, name: "api.createNote" },
+    { fn: api.addCalendarNote, ctx: api, name: "api.addCalendarNote" }
+  ].filter((entry) => typeof entry.fn === "function");
+  const preferredRemove = [
+    { fn: api.removeEvent, ctx: api, name: "api.removeEvent" },
+    { fn: api.deleteEvent, ctx: api, name: "api.deleteEvent" },
+    { fn: api.removeNote, ctx: api, name: "api.removeNote" },
+    { fn: api.deleteNote, ctx: api, name: "api.deleteNote" },
+    { fn: api.removeEntry, ctx: api, name: "api.removeEntry" }
+  ].filter((entry) => typeof entry.fn === "function");
+
+  const discoveredUpdate = collectSimpleCalendarMethods(api, isUpdateMethod).filter((candidate) => !preferredUpdate.some((entry) => entry.fn === candidate.fn));
+  const discoveredCreate = collectSimpleCalendarMethods(api, isCreateMethod).filter((candidate) => !preferredCreate.some((entry) => entry.fn === candidate.fn));
+  const discoveredRemove = collectSimpleCalendarMethods(api, isRemoveMethod).filter((candidate) => !preferredRemove.some((entry) => entry.fn === candidate.fn));
+
+  const updateMethods = [...preferredUpdate, ...discoveredUpdate];
+  const createMethods = [...preferredCreate, ...discoveredCreate];
+  const removeMethods = [...preferredRemove, ...discoveredRemove];
   return { updateMethods, createMethods, removeMethods };
 }
 
@@ -9161,27 +9637,112 @@ function logSimpleCalendarSyncDebug(message, details = {}) {
   }
 }
 
+function toSimpleCalendarDateObject(api, timestamp) {
+  const worldTimeSeconds = Number(timestamp ?? getCurrentWorldTimestamp());
+  if (!Number.isFinite(worldTimeSeconds)) return null;
+  if (typeof api?.timestampToDate === "function") {
+    try {
+      const date = api.timestampToDate(worldTimeSeconds);
+      return {
+        year: Number(date?.year ?? 0),
+        month: Number(date?.month ?? 0),
+        day: Number(date?.day ?? 0),
+        hour: Number(date?.hour ?? date?.hours ?? 0),
+        minute: Number(date?.minute ?? date?.minutes ?? 0),
+        second: Number(date?.second ?? date?.seconds ?? 0)
+      };
+    } catch {
+      // Fallback below
+    }
+  }
+  const day = Math.floor(worldTimeSeconds / 86400);
+  const totalMinutes = ((Math.floor(worldTimeSeconds / 60) % 1440) + 1440) % 1440;
+  return {
+    year: 0,
+    month: 1,
+    day: day + 1,
+    hour: Math.floor(totalMinutes / 60),
+    minute: totalMinutes % 60,
+    second: 0
+  };
+}
+
+function buildSimpleCalendarPayloadVariants(api, payload) {
+  const base = payload && typeof payload === "object" ? foundry.utils.deepClone(payload) : {};
+  const startTs = Number(base.timestamp ?? base.startTimestamp ?? base.startTime ?? getCurrentWorldTimestamp());
+  const endTs = Number(base.endTimestamp ?? base.endTime ?? startTs);
+  const title = String(base.name ?? base.title ?? "Party Operations").trim() || "Party Operations";
+  const content = String(base.content ?? base.description ?? "");
+  const visible = base.playerVisible ?? base.visibleToPlayers ?? true;
+  const allDay = Boolean(base.allDay ?? true);
+  const startDate = toSimpleCalendarDateObject(api, startTs);
+  const endDate = toSimpleCalendarDateObject(api, endTs);
+
+  const variants = [
+    base,
+    {
+      ...base,
+      name: title,
+      title,
+      content,
+      description: content,
+      timestamp: startTs,
+      startTimestamp: startTs,
+      endTimestamp: endTs,
+      allDay,
+      isPrivate: false,
+      playerVisible: visible,
+      visibleToPlayers: visible
+    }
+  ];
+
+  if (startDate) {
+    variants.push({
+      ...variants[1],
+      date: startDate,
+      startDate,
+      endDate: endDate ?? startDate
+    });
+  }
+
+  const unique = [];
+  const seen = new Set();
+  for (const variant of variants) {
+    const token = JSON.stringify(variant);
+    if (seen.has(token)) continue;
+    seen.add(token);
+    unique.push(variant);
+  }
+  return unique;
+}
+
 async function updateSimpleCalendarEntry(api, entryId, payload) {
   if (!api || !entryId) return false;
   const candidates = getSimpleCalendarMutationMethods(api).updateMethods;
+  const payloadVariants = buildSimpleCalendarPayloadVariants(api, payload);
   let lastError = null;
-  for (const fn of candidates) {
-    const methodName = String(fn.name || "unknownUpdateMethod");
-    try {
-      await fn.call(api, entryId, payload);
-      return true;
-    } catch (error) {
-      lastError = error;
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    const methodName = String(candidate?.name ?? fn?.name ?? "unknownUpdateMethod");
+    if (typeof fn !== "function") continue;
+    for (const variant of payloadVariants) {
       try {
-        await fn.call(api, { id: entryId, ...payload });
+        await fn.call(ctx, entryId, variant);
         return true;
-      } catch (nestedError) {
-        lastError = nestedError;
+      } catch (error) {
+        lastError = error;
         try {
-          await fn.call(api, payload, entryId);
+          await fn.call(ctx, { id: entryId, ...variant });
           return true;
-        } catch (fallbackError) {
-          lastError = fallbackError;
+        } catch (nestedError) {
+          lastError = nestedError;
+          try {
+            await fn.call(ctx, variant, entryId);
+            return true;
+          } catch (fallbackError) {
+            lastError = fallbackError;
+          }
           logSimpleCalendarSyncDebug("Update method signature attempts failed", {
             methodName,
             entryId,
@@ -9203,21 +9764,27 @@ async function updateSimpleCalendarEntry(api, entryId, payload) {
 async function createSimpleCalendarEntry(api, payload) {
   if (!api) return { success: false, id: "" };
   const candidates = getSimpleCalendarMutationMethods(api).createMethods;
+  const payloadVariants = buildSimpleCalendarPayloadVariants(api, payload);
   let lastError = null;
-  for (const fn of candidates) {
-    const methodName = String(fn.name || "unknownCreateMethod");
-    try {
-      const result = await fn.call(api, payload);
-      const id = extractCalendarEntryId(result);
-      return { success: true, id };
-    } catch (error) {
-      lastError = error;
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    const methodName = String(candidate?.name ?? fn?.name ?? "unknownCreateMethod");
+    if (typeof fn !== "function") continue;
+    for (const variant of payloadVariants) {
       try {
-        const result = await fn.call(api, { ...payload });
+        const result = await fn.call(ctx, variant);
         const id = extractCalendarEntryId(result);
         return { success: true, id };
-      } catch (nestedError) {
-        lastError = nestedError;
+      } catch (error) {
+        lastError = error;
+        try {
+          const result = await fn.call(ctx, { ...variant });
+          const id = extractCalendarEntryId(result);
+          return { success: true, id };
+        } catch (nestedError) {
+          lastError = nestedError;
+        }
         logSimpleCalendarSyncDebug("Create method signature attempts failed", {
           methodName,
           reason: String(nestedError?.message ?? nestedError ?? "unknown")
@@ -9237,9 +9804,12 @@ async function createSimpleCalendarEntry(api, payload) {
 async function removeSimpleCalendarEntry(api, entryId) {
   if (!api || !entryId) return false;
   const candidates = getSimpleCalendarMutationMethods(api).removeMethods;
-  for (const fn of candidates) {
+  for (const candidate of candidates) {
+    const fn = candidate?.fn;
+    const ctx = candidate?.ctx ?? api;
+    if (typeof fn !== "function") continue;
     try {
-      await fn.call(api, entryId);
+      await fn.call(ctx, entryId);
       return true;
     } catch {
       // Try next signature.
@@ -9523,10 +10093,49 @@ function getArmorClass(actor) {
 }
 
 function getLanguages(actor) {
-  const langs = actor?.system?.traits?.languages?.value;
-  if (!langs || langs.length === 0) return null;
-  if (langs.length <= 3) return langs.join(", ");
-  return `${langs.length} langs`;
+  const languageState = actor?.system?.traits?.languages;
+  if (!languageState) return null;
+
+  const rawValue = languageState.value;
+  let keys = [];
+  if (Array.isArray(rawValue)) {
+    keys = rawValue.map((entry) => String(entry ?? "").trim());
+  } else if (rawValue instanceof Set) {
+    keys = Array.from(rawValue).map((entry) => String(entry ?? "").trim());
+  } else if (typeof rawValue === "string") {
+    keys = rawValue.split(/[;,]/).map((entry) => String(entry ?? "").trim());
+  } else if (rawValue && typeof rawValue === "object") {
+    keys = Object.entries(rawValue)
+      .filter(([, enabled]) => enabled === true || enabled === 1 || enabled === "1")
+      .map(([key]) => String(key ?? "").trim());
+    if (keys.length === 0) keys = Object.keys(rawValue).map((key) => String(key ?? "").trim());
+  }
+
+  const catalog = CONFIG?.DND5E?.languages ?? CONFIG?.languages ?? {};
+  const resolveLabel = (key) => {
+    const id = String(key ?? "").trim();
+    if (!id || id.toLowerCase() === "undefined") return "";
+    const raw = catalog?.[id];
+    if (typeof raw === "string") return raw.includes(".") ? (game.i18n?.localize?.(raw) ?? raw) : raw;
+    if (raw && typeof raw === "object") {
+      const label = String(raw.label ?? raw.name ?? raw.value ?? id).trim();
+      return label.includes(".") ? (game.i18n?.localize?.(label) ?? label) : label;
+    }
+    return id;
+  };
+
+  const customRaw = String(languageState.custom ?? languageState.special ?? "").trim();
+  const customValues = customRaw
+    ? customRaw.split(/[;,]/).map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+
+  const labels = [...keys.map((key) => resolveLabel(key)), ...customValues]
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, arr) => entry && entry.toLowerCase() !== "undefined" && arr.indexOf(entry) === index);
+
+  if (labels.length === 0) return null;
+  if (labels.length <= 3) return labels.join(", ");
+  return `${labels.length} langs`;
 }
 
 function computeHighestPP(slots) {
@@ -10295,31 +10904,8 @@ Hooks.once("ready", () => {
       await applyMarchRequest(message.request, message.userId);
       return;
     }
-    if (message.type === "ops:replace") {
-      const ledger = message.ledger;
-      if (!ledger || typeof ledger !== "object") return;
-      await game.settings.set(MODULE_ID, SETTINGS.OPS_LEDGER, ledger);
-      scheduleIntegrationSync("operations-ledger-socket");
-      refreshOpenApps();
-      emitSocketRefresh();
-      return;
-    }
-    if (message.type === "injury:replace") {
-      const previous = getInjuryRecoveryState();
-      const state = message.state;
-      if (!state || typeof state !== "object") return;
-      await game.settings.set(MODULE_ID, SETTINGS.INJURY_RECOVERY, state);
-      const previousInjuries = previous.injuries ?? {};
-      const nextInjuries = state.injuries ?? {};
-      const removedActorIds = Object.keys(previousInjuries).filter((actorId) => !nextInjuries[actorId]);
-      for (const actorId of removedActorIds) {
-        const priorCalendarEntryId = String(previousInjuries[actorId]?.calendarEntryId ?? "");
-        if (priorCalendarEntryId) await clearInjuryFromSimpleCalendar(priorCalendarEntryId);
-      }
-      await syncAllInjuriesToSimpleCalendar();
-      scheduleIntegrationSync("injury-recovery-socket");
-      refreshOpenApps();
-      emitSocketRefresh();
+    if (message.type === "ops:setSopNote") {
+      await applyPlayerSopNoteRequest(message);
       return;
     }
   });
@@ -10362,6 +10948,20 @@ Hooks.once("ready", () => {
     }
   });
 });
+
+async function applyPlayerSopNoteRequest(message) {
+  const requester = game.users.get(message?.userId);
+  if (!requester || requester.isGM) return;
+
+  const sopKey = String(message?.sopKey ?? "").trim();
+  if (!SOP_KEYS.includes(sopKey)) return;
+  const note = String(message?.note ?? "");
+
+  await updateOperationsLedger((ledger) => {
+    const sopNotes = ensureSopNotesState(ledger);
+    sopNotes[sopKey] = note.slice(0, 4000);
+  });
+}
 
 async function applyRestRequest(request, userId) {
   if (!request || typeof request !== "object") return;

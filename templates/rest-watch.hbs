@@ -300,6 +300,7 @@
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReadiness}}is-active{{/if}}" data-action="operations-page" data-page="readiness" title="Review risk tier, readiness level, and current edges">Readiness</button>
           <button type="button" class="po-tab {{#if operationsPageComms}}is-active{{/if}}" data-action="operations-page" data-page="comms" title="Configure communication discipline and emergency signaling">Comms</button>
+          <button type="button" class="po-tab {{#if operationsPageRecon}}is-active{{/if}}" data-action="operations-page" data-page="recon" title="Manage intel posture, recon checks, and mission uncertainty">Recon</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
@@ -603,6 +604,87 @@
           <div class="po-op-summary">Comms status: {{operations.communication.readiness.statusText}}</div>
           <div class="po-op-summary">Alert channels enabled: {{operations.communication.readiness.enabledCount}}</div>
           <button type="button" class="po-btn po-btn-sm" data-action="show-communication-brief">Show Communication Brief</button>
+        </div>
+
+        {{/if}}
+
+        {{#if operationsPageRecon}}
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Intelligence & Recon</div>
+          <div class="po-hint">Shape mission intel posture before contact and run a recon check when you need a fresh read.</div>
+          <div class="po-info-strip">
+            <div class="po-info-chip" title="Overall reconnaissance readiness tier"><span>Readiness</span><strong>{{operations.recon.readinessLabel}}</strong></div>
+            <div class="po-info-chip" title="Combined recon readiness score"><span>Score</span><strong>{{operations.recon.readinessScore}}</strong></div>
+            <div class="po-info-chip" title="Recommended DC for a recon roll"><span>Recon DC</span><strong>{{operations.recon.suggestedDc}}</strong></div>
+            <div class="po-info-chip" title="Number of populated intel fields"><span>Coverage</span><strong>{{operations.recon.intelCoverage}} / 4</strong></div>
+            <div class="po-info-chip" title="Reliability of current rumor channels"><span>Reliability</span><strong>{{operations.recon.rumorReliability}}%</strong></div>
+            <div class="po-info-chip" title="Last recon brief stamp"><span>Last Brief</span><strong>{{operations.recon.lastBriefAt}}</strong></div>
+          </div>
+
+          {{#if @root.isGM}}
+          <label class="po-resource-row">
+            <span>Mission Objective</span>
+            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="objective" value="{{operations.recon.objective}}" placeholder="e.g., Enter citadel unnoticed and extract prisoner" />
+          </label>
+          <label class="po-resource-row">
+            <span>Target Region</span>
+            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="region" value="{{operations.recon.region}}" placeholder="e.g., North Wall district" />
+          </label>
+          <label class="po-resource-row">
+            <span>Primary Intel Source</span>
+            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="intelSource" value="{{operations.recon.intelSource}}" placeholder="e.g., Dockhands, temple courier, coded letters" />
+          </label>
+          <label class="po-resource-row">
+            <span>Heat Level</span>
+            <select class="po-select" data-action="set-recon-field" data-recon-field="heatLevel">
+              {{#each operations.recon.heatOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Network Depth</span>
+            <select class="po-select" data-action="set-recon-field" data-recon-field="network">
+              {{#each operations.recon.networkOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Rumor Reliability (%)</span>
+            <input type="number" min="0" max="100" step="1" class="po-input" data-action="set-recon-field" data-recon-field="rumorReliability" value="{{operations.recon.rumorReliability}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Bribe Budget</span>
+            <input type="number" min="0" step="1" class="po-input" data-action="set-recon-field" data-recon-field="bribeBudget" value="{{operations.recon.bribeBudget}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Spy Slots</span>
+            <input type="number" min="0" step="1" class="po-input" data-action="set-recon-field" data-recon-field="spySlots" value="{{operations.recon.spySlots}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Recent Findings</span>
+            <textarea class="po-input" rows="4" data-action="set-recon-field" data-recon-field="recentFindings" placeholder="Most recent confirmations, blind spots, and threat cues">{{operations.recon.recentFindings}}</textarea>
+          </label>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="run-recon-check">Run Recon Check</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="show-recon-brief">Show Recon Brief</button>
+          </div>
+          {{else}}
+          <div class="po-op-summary">Objective: {{#if operations.recon.hasObjective}}{{operations.recon.objective}}{{else}}-{{/if}}</div>
+          <div class="po-op-summary">Region: {{#if operations.recon.hasRegion}}{{operations.recon.region}}{{else}}-{{/if}}</div>
+          <div class="po-op-summary">Intel Source: {{#if operations.recon.hasIntelSource}}{{operations.recon.intelSource}}{{else}}-{{/if}}</div>
+          <div class="po-op-summary">Recent Findings: {{#if operations.recon.hasRecentFindings}}{{operations.recon.recentFindings}}{{else}}-{{/if}}</div>
+          <button type="button" class="po-btn po-btn-sm" data-action="show-recon-brief">Show Recon Brief</button>
+          {{/if}}
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Recommendations</div>
+          {{#each operations.recon.recommendations}}
+          <div class="po-op-summary">{{this}}</div>
+          {{/each}}
+          <div class="po-op-summary">Last brief by: {{operations.recon.lastBriefBy}}</div>
         </div>
 
         {{/if}}

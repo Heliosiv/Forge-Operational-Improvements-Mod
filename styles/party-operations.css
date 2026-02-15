@@ -1011,6 +1011,11 @@
   display: none !important;
 }
 
+.party-operations [data-po-readonly="true"] {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
 .party-operations .u-mt-1 { margin-top: var(--po-space-1); }
 .party-operations .u-mt-2 { margin-top: var(--po-space-2); }
 .party-operations .u-mt-3 { margin-top: var(--po-space-3); }
