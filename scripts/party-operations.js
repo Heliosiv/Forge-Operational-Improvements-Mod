@@ -124,6 +124,53 @@ const LOOT_PREVIEW_SCALE_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "major", label: "Major" }
 ];
+const DOWNTIME_ACTION_OPTIONS = [
+  {
+    key: "carousing",
+    label: "Carousing",
+    guidance: "Social networking, rumors, and contacts."
+  },
+  {
+    key: "crafting",
+    label: "Crafting",
+    guidance: "Create mundane items and accrue work progress."
+  },
+  {
+    key: "profession",
+    label: "Practicing A Profession",
+    guidance: "Earn coin through work during downtime."
+  },
+  {
+    key: "recuperating",
+    label: "Recuperating",
+    guidance: "Recover condition and reduce stress/wounds."
+  },
+  {
+    key: "research",
+    label: "Research",
+    guidance: "Discover clues, lore, or leads."
+  },
+  {
+    key: "training",
+    label: "Training",
+    guidance: "Build progress toward a language/tool proficiency."
+  }
+];
+const DOWNTIME_TUNING_ECONOMY_OPTIONS = [
+  { value: "stingy", label: "Stingy Economy" },
+  { value: "standard", label: "Standard Economy" },
+  { value: "generous", label: "Generous Economy" }
+];
+const DOWNTIME_TUNING_RISK_OPTIONS = [
+  { value: "safe", label: "Low Complication Risk" },
+  { value: "standard", label: "Standard Risk" },
+  { value: "hazardous", label: "High Complication Risk" }
+];
+const DOWNTIME_TUNING_DISCOVERY_OPTIONS = [
+  { value: "low", label: "Sparse Discovery" },
+  { value: "standard", label: "Standard Discovery" },
+  { value: "high", label: "Rich Discovery" }
+];
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -152,6 +199,10 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "stabilize-injury",
   "clear-injury",
   "apply-recovery-cycle",
+  "set-downtime-hours",
+  "set-downtime-tuning",
+  "resolve-downtime-actions",
+  "clear-downtime-results",
   "set-party-health-modifier",
   "set-party-health-sync-scope",
   "set-party-health-custom-field",
@@ -1667,7 +1718,7 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "readiness", "comms", "recon", "reputation", "base", "recovery", "gm"]);
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "downtime", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
   if (stored === "gm" && !game.user?.isGM) return "planning";
@@ -1676,7 +1727,7 @@ function getActiveOperationsPage() {
 
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
-  const allowed = new Set(["planning", "readiness", "comms", "recon", "reputation", "base", "recovery", "gm"]);
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "downtime", "recovery", "gm"]);
   if (page === "gm" && !game.user?.isGM) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
@@ -1744,6 +1795,41 @@ function setLootPackSourcesUiState(patch = {}) {
     filter: (patch?.filter === undefined) ? previous.filter : normalizeLootPackSourcesFilter(patch.filter)
   };
   sessionStorage.setItem(getLootPackSourcesUiStorageKey(), JSON.stringify(next));
+}
+
+function getLootRegistryTabStorageKey() {
+  return `po-loot-registry-tab-${game.user?.id ?? "anon"}`;
+}
+
+function getActiveLootRegistryTab() {
+  const stored = String(sessionStorage.getItem(getLootRegistryTabStorageKey()) ?? "preview").trim().toLowerCase();
+  return stored === "settings" ? "settings" : "preview";
+}
+
+function setActiveLootRegistryTab(tab) {
+  const value = String(tab ?? "preview").trim().toLowerCase();
+  sessionStorage.setItem(getLootRegistryTabStorageKey(), value === "settings" ? "settings" : "preview");
+}
+
+function getNonPartySyncFilterStorageKey() {
+  return `po-non-party-sync-filter-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeNonPartySyncFilterKeyword(value) {
+  return normalizeLootPackSourcesFilter(value);
+}
+
+function getNonPartySyncFilterKeyword() {
+  return normalizeNonPartySyncFilterKeyword(sessionStorage.getItem(getNonPartySyncFilterStorageKey()));
+}
+
+function setNonPartySyncFilterKeyword(value) {
+  const normalized = normalizeNonPartySyncFilterKeyword(value);
+  if (!normalized) {
+    sessionStorage.removeItem(getNonPartySyncFilterStorageKey());
+    return;
+  }
+  sessionStorage.setItem(getNonPartySyncFilterStorageKey(), normalized);
 }
 
 function getActiveSyncEffectsTabStorageKey() {
@@ -2190,10 +2276,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       operationsPagePlanning: operationsPage === "planning",
       operationsPageReadiness: operationsPage === "readiness",
       operationsPageComms: operationsPage === "comms",
-      operationsPageRecon: operationsPage === "recon",
       operationsPageReputation: operationsPage === "reputation",
       operationsPageSupply: false,
       operationsPageBase: operationsPage === "base",
+      operationsPageDowntime: operationsPage === "downtime",
       operationsPageRecovery: operationsPage === "recovery",
       operationsPageGm: operationsPage === "gm",
       gmOpsTabEnvironment: gmOperationsTab === "environment",
@@ -2240,6 +2326,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       this.element.addEventListener("input", (event) => {
         if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
+          this.#onAction(event);
+          return;
+        }
+        if (event.target?.matches("input[data-action='set-non-party-sync-filter-keyword']")) {
           this.#onAction(event);
           return;
         }
@@ -2448,6 +2538,24 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-resource":
         await setOperationalResource(element);
         break;
+      case "set-downtime-hours":
+        await setDowntimeHoursGranted(element);
+        break;
+      case "set-downtime-tuning":
+        await setDowntimeTuningField(element);
+        break;
+      case "submit-downtime-action":
+        await submitDowntimeAction(element);
+        break;
+      case "clear-downtime-entry":
+        await clearDowntimeEntry(element);
+        break;
+      case "resolve-downtime-actions":
+        await resolveDowntimeActions();
+        break;
+      case "clear-downtime-results":
+        await clearDowntimeResults();
+        break;
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
         break;
@@ -2574,6 +2682,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       }
+      case "set-loot-registry-tab":
+        setActiveLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
       case "set-loot-pack-filter":
         setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -2634,6 +2746,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "set-active-sync-effects-tab":
         setActiveSyncEffectsTab(String(element?.dataset?.tab ?? "active"));
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-non-party-sync-filter-keyword":
+        setNonPartySyncFilterKeyword(String(element?.value ?? ""));
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "clear-non-party-sync-filter-keyword":
+        setNonPartySyncFilterKeyword("");
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "apply-non-party-sync-actor":
@@ -3740,25 +3860,113 @@ function isLootRarityAllowed(rarity, floor, ceiling) {
 
 function getLootProfileRarityWeight(profile, rarity) {
   const normalizedProfile = String(profile ?? "standard").trim().toLowerCase();
-  const normalizedRarity = normalizeLootRarity(rarity);
+  const normalizedRarity = getLootRarityBucket(rarity);
   if (!normalizedRarity) return 1;
   if (normalizedProfile === "poor") {
-    if (normalizedRarity === "common") return 1.2;
-    if (normalizedRarity === "uncommon") return 1;
-    if (normalizedRarity === "rare") return 0.6;
-    if (normalizedRarity === "very-rare") return 0.3;
-    if (normalizedRarity === "legendary") return 0.1;
+    if (normalizedRarity === "common") return 1.15;
+    if (normalizedRarity === "uncommon") return 0.75;
+    if (normalizedRarity === "rare") return 0.4;
+    if (normalizedRarity === "very-rare") return 0.2;
+    if (normalizedRarity === "legendary") return 0.08;
     return 1;
   }
   if (normalizedProfile === "well") {
-    if (normalizedRarity === "common") return 0.7;
-    if (normalizedRarity === "uncommon") return 1;
-    if (normalizedRarity === "rare") return 1.3;
-    if (normalizedRarity === "very-rare") return 1.7;
-    if (normalizedRarity === "legendary") return 2;
+    if (normalizedRarity === "common") return 0.9;
+    if (normalizedRarity === "uncommon") return 1.08;
+    if (normalizedRarity === "rare") return 1.18;
+    if (normalizedRarity === "very-rare") return 1.28;
+    if (normalizedRarity === "legendary") return 1.38;
     return 1;
   }
   return 1;
+}
+
+function getLootRarityBucket(rarity) {
+  return normalizeLootRarity(rarity) || "common";
+}
+
+function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const bucket = getLootRarityBucket(rarity);
+  const table = {
+    defeated: {
+      low: { common: 24, uncommon: 2.2, rare: 0.15, "very-rare": 0.01, legendary: 0 },
+      mid: { common: 22, uncommon: 3, rare: 0.35, "very-rare": 0.03, legendary: 0 },
+      high: { common: 20, uncommon: 4.2, rare: 0.8, "very-rare": 0.1, legendary: 0.01 },
+      epic: { common: 17, uncommon: 5.5, rare: 1.4, "very-rare": 0.25, legendary: 0.03 }
+    },
+    encounter: {
+      low: { common: 20, uncommon: 3.5, rare: 0.4, "very-rare": 0.03, legendary: 0 },
+      mid: { common: 18, uncommon: 4.5, rare: 0.8, "very-rare": 0.08, legendary: 0.01 },
+      high: { common: 16, uncommon: 5.8, rare: 1.5, "very-rare": 0.22, legendary: 0.02 },
+      epic: { common: 14, uncommon: 6.5, rare: 2.4, "very-rare": 0.4, legendary: 0.05 }
+    },
+    horde: {
+      low: { common: 16, uncommon: 4.5, rare: 0.9, "very-rare": 0.08, legendary: 0 },
+      mid: { common: 14, uncommon: 5.8, rare: 1.5, "very-rare": 0.18, legendary: 0.01 },
+      high: { common: 12, uncommon: 6.8, rare: 2.6, "very-rare": 0.45, legendary: 0.03 },
+      epic: { common: 10.5, uncommon: 7.2, rare: 3.8, "very-rare": 0.95, legendary: 0.08 }
+    }
+  };
+  const byMode = table[mode] ?? table.horde;
+  const byChallenge = byMode[challenge] ?? byMode.mid;
+  const base = Number(byChallenge[bucket] ?? 1);
+  return Number.isFinite(base) ? Math.max(0, base) : 1;
+}
+
+function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const count = Math.max(0, Math.floor(Number(targetCount) || 0));
+  const ratioTable = {
+    defeated: {
+      low: { uncommon: 0.12, rare: 0, "very-rare": 0, legendary: 0 },
+      mid: { uncommon: 0.16, rare: 0.03, "very-rare": 0, legendary: 0 },
+      high: { uncommon: 0.22, rare: 0.06, "very-rare": 0.01, legendary: 0 },
+      epic: { uncommon: 0.28, rare: 0.1, "very-rare": 0.03, legendary: 0.005 }
+    },
+    encounter: {
+      low: { uncommon: 0.2, rare: 0.03, "very-rare": 0, legendary: 0 },
+      mid: { uncommon: 0.26, rare: 0.06, "very-rare": 0.01, legendary: 0 },
+      high: { uncommon: 0.33, rare: 0.11, "very-rare": 0.03, legendary: 0.005 },
+      epic: { uncommon: 0.38, rare: 0.15, "very-rare": 0.05, legendary: 0.01 }
+    },
+    horde: {
+      low: { uncommon: 0.3, rare: 0.08, "very-rare": 0.01, legendary: 0 },
+      mid: { uncommon: 0.36, rare: 0.12, "very-rare": 0.03, legendary: 0.002 },
+      high: { uncommon: 0.42, rare: 0.18, "very-rare": 0.06, legendary: 0.01 },
+      epic: { uncommon: 0.48, rare: 0.24, "very-rare": 0.1, legendary: 0.02 }
+    }
+  };
+  const byMode = ratioTable[mode] ?? ratioTable.horde;
+  const byChallenge = byMode[challenge] ?? byMode.mid;
+  const caps = {
+    uncommon: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.uncommon ?? 0)))),
+    rare: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.rare ?? 0)))),
+    "very-rare": Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge["very-rare"] ?? 0)))),
+    legendary: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.legendary ?? 0))))
+  };
+
+  if (mode === "horde") {
+    if (count >= 4) caps.uncommon = Math.max(caps.uncommon, 1);
+    if (challenge !== "low" && count >= 8) caps.rare = Math.max(caps.rare, 1);
+    if ((challenge === "high" || challenge === "epic") && count >= 14) caps["very-rare"] = Math.max(caps["very-rare"], 1);
+    if (challenge === "epic" && count >= 30) caps.legendary = Math.max(caps.legendary, 1);
+  } else if (mode === "encounter") {
+    if ((challenge === "high" || challenge === "epic") && count >= 14) caps.rare = Math.max(caps.rare, 1);
+    if (challenge === "epic" && count >= 20) caps["very-rare"] = Math.max(caps["very-rare"], 1);
+  }
+
+  return caps;
+}
+
+function canSelectLootRarityWithCaps(rarity, selectedCounts = {}, caps = {}) {
+  const bucket = getLootRarityBucket(rarity);
+  if (bucket === "common") return true;
+  const cap = Math.max(0, Number(caps?.[bucket] ?? 0) || 0);
+  const current = Math.max(0, Number(selectedCounts?.[bucket] ?? 0) || 0);
+  return current < cap;
 }
 
 function chooseWeightedEntry(entries, weightAccessor) {
@@ -3880,18 +4088,38 @@ function getLootItemCount(draft = {}) {
   const challenge = String(draft.challenge ?? "mid");
   const profile = String(draft.profile ?? "standard");
   const actorCount = Math.max(1, Number(draft.actorCount ?? 1) || 1);
-  const baseByMode = { horde: 5, defeated: 1, encounter: 3 };
-  const challengeMod = { low: 0, mid: 1, high: 2, epic: 4 };
-  const profileMod = { poor: -1, standard: 0, well: 1 };
-  const base = Number(baseByMode[mode] ?? 3);
-  const delta = Number(challengeMod[challenge] ?? 1) + Number(profileMod[profile] ?? 0);
   const scaleFactor = getLootScaleMultiplier(String(draft.scale ?? "medium"));
-  const modeFactor = mode === "defeated"
-    ? actorCount
-    : mode === "encounter"
-      ? Math.max(1, Math.round(actorCount * 0.5))
-      : 1;
-  const total = Math.max(0, Math.round((base + delta) * scaleFactor * modeFactor));
+  const profileFactor = profile === "poor" ? 0.8 : profile === "well" ? 1.2 : 1;
+
+  if (mode === "defeated") {
+    const perActorChance = {
+      low: 0.08,
+      mid: 0.14,
+      high: 0.22,
+      epic: 0.32
+    };
+    const expected = actorCount * Number(perActorChance[challenge] ?? perActorChance.mid) * profileFactor * scaleFactor;
+    const challengeBonus = challenge === "high" ? 0.5 : challenge === "epic" ? 1 : 0;
+    return Math.min(24, Math.max(0, Math.round(expected + challengeBonus)));
+  }
+
+  if (mode === "encounter") {
+    const perActorRate = {
+      low: 0.18,
+      mid: 0.28,
+      high: 0.4,
+      epic: 0.55
+    };
+    const baseline = challenge === "low" ? 1 : 2;
+    const expected = actorCount * Number(perActorRate[challenge] ?? perActorRate.mid) * profileFactor * scaleFactor;
+    return Math.min(40, Math.max(0, baseline + Math.round(expected)));
+  }
+
+  const hordeBase = { low: 3, mid: 5, high: 8, epic: 12 };
+  const hordeProfileMod = { poor: -1, standard: 0, well: 2 };
+  const base = Number(hordeBase[challenge] ?? hordeBase.mid);
+  const delta = Number(hordeProfileMod[profile] ?? 0);
+  const total = Math.max(0, Math.round((base + delta) * scaleFactor));
   return Math.min(60, total);
 }
 
@@ -3912,6 +4140,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         const itemType = String(item.type ?? "").trim();
         if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
         const rarity = getLootRarityFromData(item);
+        const rarityBucket = getLootRarityBucket(rarity);
         if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
         candidates.push({
           key: String(item.uuid ?? item.id ?? foundry.utils.randomID()),
@@ -3919,11 +4148,13 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
           img: String(item.img ?? "icons/svg/item-bag.svg"),
           itemType,
           rarity,
+          rarityBucket,
           uuid: String(item.uuid ?? ""),
           sourceId,
           sourceLabel,
           sourceWeight,
-          profileWeight: getLootProfileRarityWeight(draft.profile, rarity)
+          profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
+          rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
         });
       }
       continue;
@@ -3944,6 +4175,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         const itemType = String(entry.type ?? "").trim();
         if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
         const rarity = getLootRarityFromData(entry);
+        const rarityBucket = getLootRarityBucket(rarity);
         if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
         const docId = String(entry._id ?? entry.id ?? "").trim();
         if (!docId) continue;
@@ -3953,11 +4185,13 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
           img: String(entry.img ?? "icons/svg/item-bag.svg"),
           itemType,
           rarity,
+          rarityBucket,
           uuid: `Compendium.${pack.collection}.${docId}`,
           sourceId,
           sourceLabel,
           sourceWeight,
-          profileWeight: getLootProfileRarityWeight(draft.profile, rarity)
+          profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
+          rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
         });
       }
     } catch (error) {
@@ -3968,18 +4202,31 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   return candidates;
 }
 
-function pickLootItemsFromCandidates(candidates, count = 0) {
+function pickLootItemsFromCandidates(candidates, count = 0, draft = {}) {
   const targetCount = Math.max(0, Math.floor(Number(count) || 0));
   if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) return [];
   const pool = [...candidates];
   const selected = [];
+  const rarityCaps = getLootRaritySelectionCaps(draft, targetCount);
+  const selectedByRarity = {
+    common: 0,
+    uncommon: 0,
+    rare: 0,
+    "very-rare": 0,
+    legendary: 0
+  };
   while (pool.length > 0 && selected.length < targetCount) {
-    const picked = chooseWeightedEntry(pool, (entry) => {
+    const cappedPool = pool.filter((entry) => canSelectLootRarityWithCaps(entry?.rarity, selectedByRarity, rarityCaps));
+    const selectionPool = cappedPool.length > 0 ? cappedPool : pool;
+    const picked = chooseWeightedEntry(selectionPool, (entry) => {
       const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
       const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
-      return sourceWeight * profileWeight;
+      const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
+      return sourceWeight * profileWeight * rarityWeight;
     });
     if (!picked) break;
+    const rarityBucket = getLootRarityBucket(picked.rarity);
+    selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
     selected.push({
       name: picked.name,
       img: picked.img,
@@ -4122,7 +4369,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
   const currency = await rollLootCurrency(draft);
   const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
   const itemCountTarget = getLootItemCount(draft);
-  const items = pickLootItemsFromCandidates(candidates, itemCountTarget);
+  const items = pickLootItemsFromCandidates(candidates, itemCountTarget, draft);
   const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings);
   if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
   return {
@@ -4260,6 +4507,16 @@ function buildDefaultOperationsLedger() {
     baseOperations: {
       maintenanceRisk: "moderate",
       sites: []
+    },
+    downtime: {
+      hoursGranted: 4,
+      tuning: {
+        economy: "standard",
+        risk: "standard",
+        discovery: "standard"
+      },
+      entries: {},
+      logs: []
     },
     environment: {
       presetKey: "none",
@@ -4657,7 +4914,13 @@ function buildOperationsContext() {
   const reputationFilters = getReputationFilterState();
   const reputation = buildReputationContext(reputationState, reputationFilters);
   const partyHealthState = ensurePartyHealthState(ledger);
+  const downtimeState = ensureDowntimeState(ledger);
+  const downtime = buildDowntimeContext(downtimeState);
   const lootSources = buildLootSourceRegistryContext();
+  const lootRegistryTab = getActiveLootRegistryTab();
+  lootSources.registryTab = lootRegistryTab;
+  lootSources.registryTabPreview = lootRegistryTab === "preview";
+  lootSources.registryTabSettings = lootRegistryTab === "settings";
   lootSources.preview = buildLootPreviewContext();
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const environmentState = ensureEnvironmentState(ledger);
@@ -4925,7 +5188,7 @@ function buildOperationsContext() {
   const nonPartySyncEnvironment = Boolean(environmentState.syncToSceneNonParty && String(environmentState.presetKey ?? "none") !== "none");
   const nonPartySyncEnabled = nonPartySyncGlobal || nonPartySyncEnvironment;
   const nonPartyTargets = getNonPartyIntegrationTargets(nonPartySyncScope);
-  const nonPartyRows = nonPartyTargets.map((target) => {
+  const nonPartyRowsAll = nonPartyTargets.map((target) => {
     const actor = target.actor;
     const hasSyncFlag = Boolean(actor?.getFlag(MODULE_ID, "sync"));
     const integrationEffect = getIntegrationEffect(actor);
@@ -4959,8 +5222,19 @@ function buildOperationsContext() {
       effectsSummary: effectNames.length > 0 ? effectNames.join(" | ") : "None"
     };
   });
-  const nonPartySyncedCount = nonPartyRows.filter((entry) => entry.hasAnySync).length;
-  const nonPartyStaleCount = nonPartyRows.filter((entry) => entry.shouldBeCleared).length;
+  const nonPartyFilterKeyword = getNonPartySyncFilterKeyword();
+  const nonPartyFilterActive = nonPartyFilterKeyword.length > 0;
+  const nonPartyRows = nonPartyFilterActive
+    ? nonPartyRowsAll.filter((entry) => matchesLootSourceSearchQuery(nonPartyFilterKeyword, {
+      label: entry.actorName,
+      id: entry.actorRef,
+      sourceKind: `${entry.locationLabel} ${entry.effectsSummary} ${entry.statusLabel}`,
+      available: entry.hasAnySync,
+      enabled: !entry.shouldBeCleared
+    }))
+    : [];
+  const nonPartySyncedCount = nonPartyRowsAll.filter((entry) => entry.hasAnySync).length;
+  const nonPartyStaleCount = nonPartyRowsAll.filter((entry) => entry.shouldBeCleared).length;
 
   return {
     roles,
@@ -5050,9 +5324,15 @@ function buildOperationsContext() {
       enabledLabel: nonPartySyncEnabled ? "ON" : "OFF",
       modeOff: resolvedIntegrationMode === INTEGRATION_MODES.OFF,
       environmentPresetLabel: String(environmentPreset?.label ?? "None"),
-      actorCount: nonPartyRows.length,
+      actorCount: nonPartyRowsAll.length,
       syncedCount: nonPartySyncedCount,
       staleCount: nonPartyStaleCount,
+      visibleCount: nonPartyRows.length,
+      hasAnyTargets: nonPartyRowsAll.length > 0,
+      filter: {
+        keyword: nonPartyFilterKeyword,
+        active: nonPartyFilterActive
+      },
       hasTargets: nonPartyRows.length > 0,
       rows: nonPartyRows
     },
@@ -5120,6 +5400,7 @@ function buildOperationsContext() {
         .sort((a, b) => a.label.localeCompare(b.label)),
       weatherDraft: weatherQuickDraft
     },
+    downtime,
     globalLogs: {
       entries: globalLogs,
       hasEntries: globalLogs.length > 0
@@ -5736,6 +6017,407 @@ function ensureBaseOperationsState(ledger) {
   return ledger.baseOperations;
 }
 
+function getDowntimeActionDefinition(actionKey = "") {
+  const key = String(actionKey ?? "").trim().toLowerCase();
+  return DOWNTIME_ACTION_OPTIONS.find((entry) => entry.key === key) ?? DOWNTIME_ACTION_OPTIONS[0];
+}
+
+function normalizeDowntimeResult(result = {}) {
+  const resolvedAtRaw = Number(result?.resolvedAt ?? result?.rolledAt ?? Date.now());
+  const resolvedAt = Number.isFinite(resolvedAtRaw) ? resolvedAtRaw : Date.now();
+  const actionDef = getDowntimeActionDefinition(result?.actionKey);
+  const details = Array.isArray(result?.details)
+    ? result.details.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const rollTotalRaw = Number(result?.rollTotal ?? 0);
+  const gpDeltaRaw = Number(result?.gpDelta ?? 0);
+  const progressRaw = Number(result?.progress ?? 0);
+  return {
+    id: String(result?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    actionKey: actionDef.key,
+    actionLabel: String(result?.actionLabel ?? actionDef.label).trim() || actionDef.label,
+    summary: String(result?.summary ?? "").trim(),
+    details,
+    rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : 0,
+    gpDelta: Number.isFinite(gpDeltaRaw) ? Math.floor(gpDeltaRaw) : 0,
+    progress: Number.isFinite(progressRaw) ? Math.max(0, Math.floor(progressRaw)) : 0,
+    complication: String(result?.complication ?? "").trim(),
+    resolvedAt,
+    resolvedBy: String(result?.resolvedBy ?? "GM").trim() || "GM"
+  };
+}
+
+function ensureDowntimeState(ledger) {
+  if (!ledger.downtime || typeof ledger.downtime !== "object") {
+    ledger.downtime = {};
+  }
+  const downtime = ledger.downtime;
+  const hoursGrantedRaw = Number(downtime.hoursGranted ?? 4);
+  downtime.hoursGranted = Number.isFinite(hoursGrantedRaw)
+    ? Math.max(1, Math.min(24, Math.floor(hoursGrantedRaw)))
+    : 4;
+  if (!downtime.tuning || typeof downtime.tuning !== "object") downtime.tuning = {};
+
+  const economyAllowed = new Set(DOWNTIME_TUNING_ECONOMY_OPTIONS.map((entry) => entry.value));
+  const riskAllowed = new Set(DOWNTIME_TUNING_RISK_OPTIONS.map((entry) => entry.value));
+  const discoveryAllowed = new Set(DOWNTIME_TUNING_DISCOVERY_OPTIONS.map((entry) => entry.value));
+  const economy = String(downtime.tuning.economy ?? "standard").trim().toLowerCase();
+  const risk = String(downtime.tuning.risk ?? "standard").trim().toLowerCase();
+  const discovery = String(downtime.tuning.discovery ?? "standard").trim().toLowerCase();
+  downtime.tuning.economy = economyAllowed.has(economy) ? economy : "standard";
+  downtime.tuning.risk = riskAllowed.has(risk) ? risk : "standard";
+  downtime.tuning.discovery = discoveryAllowed.has(discovery) ? discovery : "standard";
+
+  if (!downtime.entries || typeof downtime.entries !== "object" || Array.isArray(downtime.entries)) {
+    downtime.entries = {};
+  }
+
+  const normalizedEntries = {};
+  for (const [rawActorId, rawEntry] of Object.entries(downtime.entries ?? {})) {
+    const actorId = String(rawEntry?.actorId ?? rawActorId ?? "").trim();
+    if (!actorId) continue;
+    const actionDef = getDowntimeActionDefinition(rawEntry?.actionKey);
+    const rawHours = Number(rawEntry?.hours ?? downtime.hoursGranted);
+    const hours = Number.isFinite(rawHours) ? Math.max(1, Math.min(downtime.hoursGranted, Math.floor(rawHours))) : downtime.hoursGranted;
+    const updatedAtRaw = Number(rawEntry?.updatedAt ?? rawEntry?.submittedAt ?? 0);
+    const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0;
+    const lastResult = rawEntry?.lastResult && typeof rawEntry.lastResult === "object"
+      ? normalizeDowntimeResult(rawEntry.lastResult)
+      : null;
+    normalizedEntries[actorId] = {
+      actorId,
+      actorName: String(rawEntry?.actorName ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`,
+      actionKey: actionDef.key,
+      hours,
+      note: String(rawEntry?.note ?? "").slice(0, 1000),
+      pending: rawEntry?.pending !== false,
+      updatedAt,
+      updatedBy: String(rawEntry?.updatedBy ?? rawEntry?.submittedBy ?? "").trim() || "Player",
+      updatedByUserId: String(rawEntry?.updatedByUserId ?? rawEntry?.submittedByUserId ?? "").trim(),
+      lastResult
+    };
+  }
+  downtime.entries = normalizedEntries;
+
+  if (!Array.isArray(downtime.logs)) downtime.logs = [];
+  downtime.logs = downtime.logs
+    .map((entry) => {
+      const normalized = normalizeDowntimeResult(entry);
+      return {
+        ...normalized,
+        actorId: String(entry?.actorId ?? "").trim(),
+        actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4))
+      };
+    })
+    .filter((entry) => entry.actorId)
+    .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
+    .slice(0, 80);
+
+  return downtime;
+}
+
+function getDowntimeSelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || actor.type !== "character" || !actor.hasPlayerOwner || !actor.id) return;
+    unique.set(String(actor.id), actor);
+  };
+
+  if (user.isGM) {
+    for (const actor of getOwnedPcActors()) addActor(actor);
+  } else {
+    for (const actor of game.actors.contents) {
+      if (!actor || actor.type !== "character" || !actor.hasPlayerOwner) continue;
+      if (actor.testUserPermission?.(user, "OWNER")) addActor(actor);
+    }
+    if (user.character && user.character.testUserPermission?.(user, "OWNER")) addActor(user.character);
+  }
+
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function canUserManageDowntimeActor(user, actor) {
+  if (!user || !actor) return false;
+  if (user.isGM) return true;
+  if (!actor.hasPlayerOwner || actor.type !== "character") return false;
+  return Boolean(actor.testUserPermission?.(user, "OWNER"));
+}
+
+function buildDowntimeContext(downtimeState = {}, options = {}) {
+  const user = options.user ?? game.user;
+  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+  const tuning = downtimeState?.tuning ?? {};
+  const economy = String(tuning.economy ?? "standard");
+  const risk = String(tuning.risk ?? "standard");
+  const discovery = String(tuning.discovery ?? "standard");
+  const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const activeActorId = String(getActiveActorForUser()?.id ?? "").trim();
+  const defaultActorId = selectableActors.some((actor) => String(actor.id) === activeActorId)
+    ? activeActorId
+    : String(selectableActors[0]?.id ?? "");
+  const actorOptions = [
+    { id: "", name: "Select actor", selected: !defaultActorId },
+    ...selectableActors.map((actor) => ({
+      id: actor.id,
+      name: actor.name,
+      selected: String(actor.id) === defaultActorId
+    }))
+  ];
+
+  const actorEntries = Object.values(downtimeState?.entries ?? {}).map((entry) => {
+    const actor = game.actors.get(String(entry?.actorId ?? "").trim());
+    const actionDef = getDowntimeActionDefinition(entry?.actionKey);
+    const updatedAtRaw = Number(entry?.updatedAt ?? 0);
+    const updatedAtDate = updatedAtRaw > 0 ? new Date(updatedAtRaw) : null;
+    const updatedAtLabel = updatedAtDate && Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Not set";
+    const result = entry?.lastResult ? normalizeDowntimeResult(entry.lastResult) : null;
+    const gpDelta = Number(result?.gpDelta ?? 0);
+    return {
+      actorId: String(entry?.actorId ?? "").trim(),
+      actorName: String(entry?.actorName ?? actor?.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      actionKey: actionDef.key,
+      actionLabel: actionDef.label,
+      actionGuidance: actionDef.guidance,
+      hours: Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted))),
+      note: String(entry?.note ?? ""),
+      hasNote: String(entry?.note ?? "").trim().length > 0,
+      pending: entry?.pending !== false,
+      statusLabel: entry?.pending !== false ? "Pending Resolution" : "Resolved",
+      updatedAtLabel,
+      updatedBy: String(entry?.updatedBy ?? "Player"),
+      canClear: canUserManageDowntimeActor(user, actor),
+      hasResult: Boolean(result),
+      resultSummary: String(result?.summary ?? ""),
+      resultDetails: Array.isArray(result?.details) ? result.details : [],
+      hasResultDetails: Array.isArray(result?.details) && result.details.length > 0,
+      rollTotal: Number(result?.rollTotal ?? 0),
+      gpDelta,
+      gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
+      progress: Math.max(0, Number(result?.progress ?? 0) || 0),
+      hasComplication: String(result?.complication ?? "").trim().length > 0,
+      complication: String(result?.complication ?? ""),
+      resolvedAtLabel: result?.resolvedAt ? new Date(Number(result.resolvedAt)).toLocaleString() : "",
+      resolvedBy: String(result?.resolvedBy ?? "")
+    };
+  }).sort((a, b) => {
+    const pendingA = a.pending ? 0 : 1;
+    const pendingB = b.pending ? 0 : 1;
+    if (pendingA !== pendingB) return pendingA - pendingB;
+    return a.actorName.localeCompare(b.actorName);
+  });
+
+  const currentEntry = actorEntries.find((entry) => entry.actorId === defaultActorId) ?? null;
+  const selectedActionKey = currentEntry?.actionKey ?? DOWNTIME_ACTION_OPTIONS[0]?.key ?? "carousing";
+  const submitHours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(currentEntry?.hours ?? hoursGranted) || hoursGranted)));
+  const actionOptions = DOWNTIME_ACTION_OPTIONS.map((entry) => ({
+    ...entry,
+    selected: entry.key === selectedActionKey
+  }));
+
+  const logs = Array.isArray(downtimeState?.logs)
+    ? downtimeState.logs
+      .map((entry) => {
+        const normalized = normalizeDowntimeResult(entry);
+        const gpDelta = Number(normalized.gpDelta ?? 0);
+        const resolvedAtValue = Number(normalized.resolvedAt);
+        const resolvedAtDate = new Date(resolvedAtValue);
+        return {
+          actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+          actionLabel: normalized.actionLabel,
+          hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4)),
+          summary: normalized.summary,
+          resolvedAtLabel: Number.isFinite(resolvedAtDate.getTime()) ? resolvedAtDate.toLocaleString() : "Unknown",
+          resolvedBy: normalized.resolvedBy,
+          gpDelta,
+          gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
+          hasComplication: normalized.complication.length > 0,
+          complication: normalized.complication
+        };
+      })
+      .slice(0, 20)
+    : [];
+
+  return {
+    hoursGranted,
+    tuning: {
+      economy,
+      risk,
+      discovery,
+      economyOptions: DOWNTIME_TUNING_ECONOMY_OPTIONS.map((entry) => ({
+        ...entry,
+        selected: entry.value === economy
+      })),
+      riskOptions: DOWNTIME_TUNING_RISK_OPTIONS.map((entry) => ({
+        ...entry,
+        selected: entry.value === risk
+      })),
+      discoveryOptions: DOWNTIME_TUNING_DISCOVERY_OPTIONS.map((entry) => ({
+        ...entry,
+        selected: entry.value === discovery
+      }))
+    },
+    submit: {
+      actorOptions,
+      actionOptions,
+      hours: submitHours,
+      note: currentEntry?.note ?? ""
+    },
+    entries: actorEntries,
+    hasEntries: actorEntries.length > 0,
+    pendingCount: actorEntries.filter((entry) => entry.pending).length,
+    resolvedCount: actorEntries.filter((entry) => entry.hasResult).length,
+    logs,
+    logCount: logs.length,
+    hasLogs: logs.length > 0
+  };
+}
+
+function getRandomDowntimeComplication(actionKey = "") {
+  const catalog = {
+    carousing: [
+      "A rival social contact starts spreading false rumors.",
+      "A favor is now owed to a dangerous patron.",
+      "A local authority notices the character's spending and asks questions."
+    ],
+    crafting: [
+      "Critical materials are delayed by a supplier dispute.",
+      "A flaw forces rework and wastes part of the effort.",
+      "A competitor undercuts the project and drives up costs."
+    ],
+    profession: [
+      "Unexpected fees or guild dues reduce net earnings.",
+      "A difficult client disputes payment terms.",
+      "Work demand drops suddenly for this cycle."
+    ],
+    recuperating: [
+      "Recovery is interrupted by stress, weather, or poor shelter.",
+      "Treatment supplies are consumed faster than expected.",
+      "A follow-up check or specialist consultation is required."
+    ],
+    research: [
+      "A key source is missing, damaged, or intentionally altered.",
+      "Conflicting accounts produce misleading conclusions.",
+      "A relevant authority restricts access to records."
+    ],
+    training: [
+      "Instruction quality drops and progress slows this block.",
+      "An interruption forces missed practice sessions.",
+      "Additional equipment or tutoring costs are required."
+    ]
+  };
+  const list = Array.isArray(catalog[actionKey]) ? catalog[actionKey] : [];
+  if (list.length === 0) return "";
+  return String(list[Math.floor(Math.random() * list.length)] ?? "").trim();
+}
+
+async function generateDowntimeResult(entry, downtimeState) {
+  const actionDef = getDowntimeActionDefinition(entry?.actionKey);
+  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+  const hours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
+  const blocks = Math.max(1, Math.ceil(hours / 4));
+  const tuning = downtimeState?.tuning ?? {};
+  const economy = String(tuning.economy ?? "standard");
+  const risk = String(tuning.risk ?? "standard");
+  const discovery = String(tuning.discovery ?? "standard");
+
+  const economyMultiplier = economy === "stingy" ? 0.8 : economy === "generous" ? 1.3 : 1;
+  const discoveryBonus = discovery === "low" ? 0 : discovery === "high" ? 2 : 1;
+  const riskComplicationChance = risk === "safe" ? 0.1 : risk === "hazardous" ? 0.38 : 0.22;
+
+  const roll = await (new Roll("1d20")).evaluate();
+  const rollTotal = Math.max(1, Math.floor(Number(roll?.total ?? 1) || 1));
+  let gpDelta = 0;
+  let progress = 0;
+  let summary = "";
+  const details = [];
+
+  switch (actionDef.key) {
+    case "carousing": {
+      progress = Math.max(0, Math.min(3, Math.floor((rollTotal + discoveryBonus - 4) / 6)));
+      const spend = Math.max(2, Math.round((5 * blocks) * economyMultiplier));
+      gpDelta = -spend;
+      summary = progress > 0
+        ? `Built ${progress} social contact(s) while carousing.`
+        : "No lasting contact was secured while carousing.";
+      details.push(`Spent ${spend} gp on social costs and favors.`);
+      break;
+    }
+    case "crafting": {
+      progress = Math.max(1, Math.round((2 * blocks) + Math.floor((rollTotal + discoveryBonus) / 10)));
+      const cost = Math.max(1, Math.round(progress * (economy === "stingy" ? 2 : economy === "generous" ? 1 : 1.5)));
+      gpDelta = -cost;
+      summary = `Made ${progress} crafting progress point(s).`;
+      details.push(`Materials consumed: ${cost} gp.`);
+      break;
+    }
+    case "profession": {
+      const lifestyleTier = rollTotal >= 16 ? 2 : rollTotal >= 11 ? 1 : 0;
+      const wageBase = lifestyleTier === 2 ? 2 : lifestyleTier === 1 ? 1 : 0;
+      const wage = Math.max(0, Math.round((wageBase * blocks) * economyMultiplier));
+      gpDelta = wage;
+      progress = Math.max(1, blocks);
+      summary = wage > 0
+        ? `Earned ${wage} gp through professional work.`
+        : "Covered basic living expenses but earned no spare coin.";
+      break;
+    }
+    case "recuperating": {
+      const recoveryScore = rollTotal + (risk === "safe" ? 2 : risk === "hazardous" ? -2 : 0);
+      progress = recoveryScore >= 18 ? 3 : recoveryScore >= 13 ? 2 : recoveryScore >= 8 ? 1 : 0;
+      summary = progress >= 3
+        ? "Exceptional recovery progress."
+        : progress === 2
+          ? "Solid recovery progress."
+          : progress === 1
+            ? "Minor recovery progress."
+            : "No meaningful recovery progress this cycle.";
+      details.push(`Recovery score ${recoveryScore} (${rollTotal} on d20).`);
+      break;
+    }
+    case "research": {
+      progress = Math.max(0, Math.floor((rollTotal + (discoveryBonus * 2) - 6) / 7));
+      summary = progress > 0
+        ? `Uncovered ${progress} research lead(s).`
+        : "No actionable lead was uncovered this cycle.";
+      details.push("Cross-reference discovered leads with faction, map, and journal notes.");
+      break;
+    }
+    case "training": {
+      progress = Math.max(1, Math.floor(hours / 2));
+      summary = `Logged ${hours} hour(s) of structured training (${progress} progress).`;
+      details.push("Apply progress toward language/tool proficiency milestones.");
+      break;
+    }
+    default: {
+      progress = Math.max(1, blocks);
+      summary = `${actionDef.label} advanced by ${progress} progress point(s).`;
+      break;
+    }
+  }
+
+  const adjustedComplicationChance = Math.max(0, Math.min(0.9, riskComplicationChance + (rollTotal <= 6 ? 0.1 : 0) - (rollTotal >= 18 ? 0.08 : 0)));
+  const complication = Math.random() < adjustedComplicationChance
+    ? getRandomDowntimeComplication(actionDef.key)
+    : "";
+  if (complication) details.push(`Complication: ${complication}`);
+
+  return normalizeDowntimeResult({
+    id: foundry.utils.randomID(),
+    actionKey: actionDef.key,
+    actionLabel: actionDef.label,
+    rollTotal,
+    summary,
+    details,
+    gpDelta,
+    progress,
+    complication,
+    resolvedAt: Date.now(),
+    resolvedBy: String(game.user?.name ?? "GM")
+  });
+}
+
 function ensureReconState(ledger) {
   if (!ledger.recon || typeof ledger.recon !== "object") {
     ledger.recon = {};
@@ -6248,6 +6930,254 @@ async function setOperationalResource(element) {
     const value = Number(element?.value ?? 0);
     ledger.resources[resourceKey] = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
   });
+}
+
+function normalizeDowntimeSubmission(raw = {}, downtimeState = {}) {
+  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+  const actorId = String(raw?.actorId ?? "").trim();
+  const actionDef = getDowntimeActionDefinition(raw?.actionKey);
+  const hoursRaw = Number(raw?.hours ?? hoursGranted);
+  const hours = Number.isFinite(hoursRaw)
+    ? Math.max(1, Math.min(hoursGranted, Math.floor(hoursRaw)))
+    : hoursGranted;
+  const note = String(raw?.note ?? "").slice(0, 1000);
+  return {
+    actorId,
+    actionKey: actionDef.key,
+    hours,
+    note
+  };
+}
+
+function readDowntimeSubmissionFromUi(element) {
+  const root = element?.closest(".po-downtime-panel");
+  if (!root) return null;
+  return {
+    actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
+    actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
+    hours: Number(root.querySelector("input[name='downtimeHours']")?.value ?? 0),
+    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
+  };
+}
+
+async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
+  if (!user) return false;
+  const ledger = getOperationsLedger();
+  const downtimeState = ensureDowntimeState(ledger);
+  const submission = normalizeDowntimeSubmission(rawSubmission, downtimeState);
+  if (!submission.actorId) return false;
+
+  const actor = game.actors.get(submission.actorId);
+  if (!actor || !canUserManageDowntimeActor(user, actor)) return false;
+
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    const normalized = normalizeDowntimeSubmission(submission, downtime);
+    const previous = downtime.entries?.[normalized.actorId] ?? {};
+    downtime.entries[normalized.actorId] = {
+      ...previous,
+      actorId: normalized.actorId,
+      actorName: String(actor.name ?? `Actor ${normalized.actorId}`),
+      actionKey: normalized.actionKey,
+      hours: normalized.hours,
+      note: normalized.note,
+      pending: true,
+      updatedAt: Date.now(),
+      updatedBy: String(user.name ?? "Player"),
+      updatedByUserId: String(user.id ?? ""),
+      lastResult: null
+    };
+  });
+  return true;
+}
+
+async function submitDowntimeAction(element) {
+  const submission = readDowntimeSubmissionFromUi(element);
+  if (!submission) return;
+  if (!submission.actorId) {
+    ui.notifications?.warn("Select an actor for downtime submission.");
+    return;
+  }
+
+  if (game.user.isGM) {
+    const applied = await applyDowntimeSubmissionForUser(game.user, submission);
+    if (!applied) ui.notifications?.warn("Downtime submission failed.");
+    else ui.notifications?.info("Downtime action submitted.");
+    return;
+  }
+
+  const actor = game.actors.get(submission.actorId);
+  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only submit downtime for actors you own.");
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtime-submit",
+    userId: game.user.id,
+    entry: submission
+  });
+  ui.notifications?.info("Downtime request sent to GM.");
+}
+
+async function clearDowntimeEntry(element) {
+  const actorId = String(element?.dataset?.actorId ?? readDowntimeSubmissionFromUi(element)?.actorId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor) {
+    ui.notifications?.warn("Actor for downtime entry was not found.");
+    return;
+  }
+
+  if (game.user.isGM) {
+    await updateOperationsLedger((ledger) => {
+      const downtime = ensureDowntimeState(ledger);
+      if (!downtime.entries) return;
+      delete downtime.entries[actorId];
+    });
+    ui.notifications?.info(`Cleared downtime entry for ${actor.name}.`);
+    return;
+  }
+
+  if (!canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only clear downtime entries for actors you own.");
+    return;
+  }
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtime-clear",
+    userId: game.user.id,
+    actorId
+  });
+  ui.notifications?.info("Downtime clear request sent to GM.");
+}
+
+async function setDowntimeHoursGranted(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can set downtime hours.");
+    return;
+  }
+  const valueRaw = Number(element?.value ?? 4);
+  const value = Number.isFinite(valueRaw) ? Math.max(1, Math.min(24, Math.floor(valueRaw))) : 4;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    downtime.hoursGranted = value;
+  });
+}
+
+async function setDowntimeTuningField(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit downtime tuning.");
+    return;
+  }
+  const key = String(element?.dataset?.tuning ?? "").trim().toLowerCase();
+  const value = String(element?.value ?? "").trim().toLowerCase();
+  if (!key) return;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    if (!downtime.tuning || typeof downtime.tuning !== "object") downtime.tuning = {};
+    if (key === "economy") {
+      const allowed = new Set(DOWNTIME_TUNING_ECONOMY_OPTIONS.map((entry) => entry.value));
+      downtime.tuning.economy = allowed.has(value) ? value : "standard";
+      return;
+    }
+    if (key === "risk") {
+      const allowed = new Set(DOWNTIME_TUNING_RISK_OPTIONS.map((entry) => entry.value));
+      downtime.tuning.risk = allowed.has(value) ? value : "standard";
+      return;
+    }
+    if (key === "discovery") {
+      const allowed = new Set(DOWNTIME_TUNING_DISCOVERY_OPTIONS.map((entry) => entry.value));
+      downtime.tuning.discovery = allowed.has(value) ? value : "standard";
+    }
+  });
+}
+
+async function resolveDowntimeActions() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can resolve downtime.");
+    return;
+  }
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const entries = Object.values(downtime.entries ?? {}).filter((entry) => {
+    const actorId = String(entry?.actorId ?? "").trim();
+    if (!actorId) return false;
+    return entry?.pending !== false || !entry?.lastResult;
+  });
+  if (entries.length === 0) {
+    ui.notifications?.info("No pending downtime entries to resolve.");
+    return;
+  }
+
+  const generated = [];
+  for (const entry of entries) {
+    const result = await generateDowntimeResult(entry, downtime);
+    generated.push({
+      actorId: String(entry.actorId),
+      actorName: String(game.actors.get(entry.actorId)?.name ?? entry.actorName ?? `Actor ${entry.actorId}`),
+      actionKey: getDowntimeActionDefinition(entry.actionKey).key,
+      actionLabel: getDowntimeActionDefinition(entry.actionKey).label,
+      hours: Math.max(1, Math.min(downtime.hoursGranted, Math.floor(Number(entry.hours ?? downtime.hoursGranted) || downtime.hoursGranted))),
+      result
+    });
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const state = ensureDowntimeState(ledger);
+    if (!state.entries || typeof state.entries !== "object") state.entries = {};
+    if (!Array.isArray(state.logs)) state.logs = [];
+
+    for (const row of generated) {
+      const entry = state.entries[row.actorId] ?? {};
+      state.entries[row.actorId] = {
+        ...entry,
+        actorId: row.actorId,
+        actorName: row.actorName,
+        actionKey: row.actionKey,
+        hours: row.hours,
+        pending: false,
+        updatedAt: Date.now(),
+        updatedBy: String(game.user?.name ?? "GM"),
+        updatedByUserId: String(game.user?.id ?? ""),
+        lastResult: normalizeDowntimeResult(row.result)
+      };
+      state.logs.unshift({
+        ...normalizeDowntimeResult(row.result),
+        actorId: row.actorId,
+        actorName: row.actorName,
+        hours: row.hours
+      });
+    }
+    state.logs = state.logs
+      .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
+      .slice(0, 80);
+  });
+
+  const lines = generated
+    .map((row) => `<li><strong>${row.actorName}</strong>: ${row.result.summary}</li>`)
+    .join("");
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Downtime Resolution</strong></p><ul>${lines}</ul>`
+  });
+  ui.notifications?.info(`Resolved downtime for ${generated.length} actor(s).`);
+}
+
+async function clearDowntimeResults() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear downtime results.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    for (const entry of Object.values(downtime.entries ?? {})) {
+      if (!entry || typeof entry !== "object") continue;
+      entry.pending = true;
+      entry.lastResult = null;
+    }
+    downtime.logs = [];
+  });
+  ui.notifications?.info("Downtime results cleared.");
 }
 
 async function setPartyHealthModifier(element) {
@@ -9741,7 +10671,7 @@ function buildInjuryTableHtml() {
   `).join("");
   return `
     <div class="po-help">
-      <p><strong>Healer's Kit:</strong> 10 charges total. Spend charges per injury severity and required checks.</p>
+      <p><strong>Healer's Kit:</strong> Charges are consumed from the selected healer's kit item in Injury & Recovery.</p>
       <table style="width:100%; border-collapse:collapse;">
         <thead><tr><th style="text-align:left;">d100</th><th style="text-align:left;">Injury</th><th style="text-align:left;">Effect</th><th style="text-align:left;">Recovery</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -9753,7 +10683,9 @@ function buildInjuryTableHtml() {
 function buildDefaultInjuryRecoveryState() {
   return {
     supplies: {
-      healersKitCharges: 10
+      healersKitCharges: 10,
+      healersKitActorId: "",
+      healersKitItemId: ""
     },
     config: {
       baseRecoveryDays: 3
@@ -9805,10 +10737,265 @@ function resolveDefaultInjuryActorId() {
   return String(getOwnedPcActors()[0]?.id ?? "");
 }
 
+function normalizeHealersKitText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/['`]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isHealersKitItem(item) {
+  if (!item) return false;
+  const nameText = normalizeHealersKitText(item.name);
+  const idText = normalizeHealersKitText(item.system?.identifier ?? item.system?.slug ?? item.id);
+  const combined = `${nameText} ${idText}`.trim();
+  if (!combined) return false;
+  if (combined.includes("healers kit") || combined.includes("healer kit")) return true;
+  return combined.includes("healer") && combined.includes("kit");
+}
+
+function getHealersKitTrackedCharges(item) {
+  const uses = Number(item?.system?.uses?.value);
+  if (Number.isFinite(uses)) return Math.max(0, Math.floor(uses));
+  const quantity = Number(item?.system?.quantity);
+  if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
+  return 0;
+}
+
+async function setHealersKitTrackedCharges(item, value) {
+  const next = Math.max(0, Math.floor(Number(value) || 0));
+  if (item?.system?.uses?.value !== undefined) {
+    await item.update({ "system.uses.value": next });
+    return;
+  }
+  if (item?.system?.quantity !== undefined) {
+    await item.update({ "system.quantity": next });
+  }
+}
+
+function getHealersKitOwnerActors() {
+  return game.actors.contents
+    .filter((actor) => actor && actor.isOwner)
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function getHealersKitItems(actor, options = {}) {
+  if (!actor?.items?.contents) return [];
+  const includeDepleted = options?.includeDepleted === true;
+  return actor.items.contents
+    .filter((item) => isHealersKitItem(item))
+    .map((item) => ({
+      id: item.id,
+      name: String(item.name ?? "Healer's Kit").trim() || "Healer's Kit",
+      charges: getHealersKitTrackedCharges(item)
+    }))
+    .filter((item) => includeDepleted || item.charges > 0)
+    .sort((a, b) => {
+      const chargeDelta = Number(b.charges ?? 0) - Number(a.charges ?? 0);
+      if (chargeDelta !== 0) return chargeDelta;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
+}
+
+function normalizeHealersKitSelection(supplies = {}) {
+  return {
+    actorId: String(supplies?.healersKitActorId ?? "").trim(),
+    itemId: String(supplies?.healersKitItemId ?? "").trim()
+  };
+}
+
+function getAllHealersKitEntries(options = {}) {
+  const includeDepleted = options?.includeDepleted === true;
+  const entries = [];
+  for (const actor of getHealersKitOwnerActors()) {
+    const items = getHealersKitItems(actor, { includeDepleted });
+    for (const item of items) {
+      entries.push({
+        actorId: actor.id,
+        actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+        itemId: item.id,
+        itemName: item.name,
+        charges: item.charges
+      });
+    }
+  }
+  return entries;
+}
+
+function buildHealersKitSelectionContext(state) {
+  const supplies = state?.supplies ?? {};
+  const selected = normalizeHealersKitSelection(supplies);
+  const actorRows = getHealersKitOwnerActors()
+    .map((actor) => {
+      const items = getHealersKitItems(actor, { includeDepleted: true });
+      if (items.length === 0) return null;
+      const totalCharges = items.reduce((sum, item) => sum + Math.max(0, Number(item.charges ?? 0)), 0);
+      return { actor, items, totalCharges };
+    })
+    .filter(Boolean);
+
+  const actorFallback = actorRows[0]?.actor.id ?? "";
+  const selectedActorId = actorRows.some((entry) => entry.actor.id === selected.actorId)
+    ? selected.actorId
+    : actorFallback;
+  const activeActorRow = actorRows.find((entry) => entry.actor.id === selectedActorId) ?? null;
+
+  let selectedItemId = selected.itemId;
+  const activeItems = activeActorRow?.items ?? [];
+  if (!activeItems.some((item) => item.id === selectedItemId && item.charges > 0)) {
+    selectedItemId = activeItems.find((item) => item.charges > 0)?.id ?? activeItems[0]?.id ?? "";
+  }
+
+  const actorOptions = [
+    { id: "", name: "None", selected: !selectedActorId },
+    ...actorRows.map((entry) => ({
+      id: entry.actor.id,
+      name: `${entry.actor.name} (${entry.totalCharges})`,
+      selected: entry.actor.id === selectedActorId
+    }))
+  ];
+  const itemOptions = [
+    { id: "", name: "None", selected: !selectedItemId },
+    ...activeItems.map((item) => ({
+      id: item.id,
+      name: `${item.name} (${item.charges})`,
+      selected: item.id === selectedItemId
+    }))
+  ];
+
+  const selectedItem = activeItems.find((item) => item.id === selectedItemId) ?? null;
+  const allEntries = getAllHealersKitEntries({ includeDepleted: false });
+  const totalCharges = allEntries.reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+
+  return {
+    actorOptions,
+    itemOptions,
+    selectedActorId,
+    selectedItemId,
+    hasActor: Boolean(activeActorRow),
+    hasItem: Boolean(selectedItem),
+    selectedCharges: Math.max(0, Number(selectedItem?.charges ?? 0)),
+    selectedLabel: selectedItem
+      ? `${String(activeActorRow?.actor?.name ?? "")} · ${selectedItem.name}`
+      : "None",
+    totalCharges
+  };
+}
+
+function getOrderedHealersKitCandidates(state) {
+  const selected = normalizeHealersKitSelection(state?.supplies ?? {});
+  const allEntries = getAllHealersKitEntries({ includeDepleted: false });
+  if (allEntries.length === 0) return [];
+
+  const prioritized = [];
+  const pushEntry = (entry) => {
+    if (!entry) return;
+    const key = `${entry.actorId}:${entry.itemId}`;
+    if (prioritized.some((candidate) => `${candidate.actorId}:${candidate.itemId}` === key)) return;
+    prioritized.push(entry);
+  };
+
+  if (selected.actorId && selected.itemId) {
+    pushEntry(allEntries.find((entry) => entry.actorId === selected.actorId && entry.itemId === selected.itemId));
+  }
+  if (selected.actorId) {
+    for (const entry of allEntries.filter((candidate) => candidate.actorId === selected.actorId)) pushEntry(entry);
+  }
+  for (const entry of allEntries) pushEntry(entry);
+  return prioritized;
+}
+
+async function consumeHealersKitCharges(requiredCharges, state = null) {
+  const needed = Math.max(0, Math.floor(Number(requiredCharges) || 0));
+  if (needed <= 0) {
+    const context = buildHealersKitSelectionContext(state ?? getInjuryRecoveryState());
+    return {
+      ok: true,
+      needed: 0,
+      consumed: 0,
+      missing: 0,
+      details: [],
+      nextSelection: {
+        actorId: context.selectedActorId,
+        itemId: context.selectedItemId
+      },
+      totalCharges: context.totalCharges
+    };
+  }
+
+  const currentState = state ?? getInjuryRecoveryState();
+  const candidates = getOrderedHealersKitCandidates(currentState);
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      needed,
+      consumed: 0,
+      missing: needed,
+      details: [],
+      nextSelection: { actorId: "", itemId: "" },
+      totalCharges: 0
+    };
+  }
+  const availableCharges = candidates.reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+  if (availableCharges < needed) {
+    const context = buildHealersKitSelectionContext(currentState);
+    return {
+      ok: false,
+      needed,
+      consumed: 0,
+      missing: needed,
+      details: [],
+      nextSelection: {
+        actorId: context.selectedActorId,
+        itemId: context.selectedItemId
+      },
+      totalCharges: context.totalCharges
+    };
+  }
+
+  let remaining = needed;
+  const details = [];
+  for (const candidate of candidates) {
+    if (remaining <= 0) break;
+    const actor = game.actors.get(candidate.actorId);
+    const item = actor?.items?.get(candidate.itemId);
+    if (!actor || !item) continue;
+    const available = getHealersKitTrackedCharges(item);
+    if (available <= 0) continue;
+    const spent = Math.min(available, remaining);
+    await setHealersKitTrackedCharges(item, available - spent);
+    remaining -= spent;
+    details.push({
+      actorId: actor.id,
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      itemId: item.id,
+      itemName: String(item.name ?? "Healer's Kit").trim() || "Healer's Kit",
+      spent,
+      remainingCharges: Math.max(0, available - spent)
+    });
+  }
+
+  const nextContext = buildHealersKitSelectionContext(currentState);
+  return {
+    ok: remaining <= 0,
+    needed,
+    consumed: needed - remaining,
+    missing: Math.max(0, remaining),
+    details,
+    nextSelection: {
+      actorId: nextContext.selectedActorId,
+      itemId: nextContext.selectedItemId
+    },
+    totalCharges: nextContext.totalCharges
+  };
+}
+
 function buildInjuryRecoveryContext() {
   const state = getInjuryRecoveryState();
   const config = state.config ?? {};
   const defaultActorId = resolveDefaultInjuryActorId();
+  const healerKitSelection = buildHealersKitSelectionContext(state);
   const entries = Object.entries(state.injuries ?? {})
     .map(([actorId, entry]) => {
       const actor = game.actors.get(actorId);
@@ -9851,7 +11038,8 @@ function buildInjuryRecoveryContext() {
 
   return {
     supplies: {
-      healersKitCharges: Number(state.supplies?.healersKitCharges ?? state.supplies?.stabilizationKits ?? 10)
+      healersKitCharges: Number(healerKitSelection.totalCharges ?? 0),
+      kitSelection: healerKitSelection
     },
     config: {
       baseRecoveryDays: Number(config.baseRecoveryDays ?? 3)
@@ -10012,6 +11200,32 @@ async function setInjuryRecoveryConfig(element) {
   await updateInjuryRecoveryState((state) => {
     if (!state.config) state.config = {};
     if (!state.supplies) state.supplies = {};
+    const stringValue = String(element?.value ?? "").trim();
+
+    if (key === "healersKitActorId") {
+      state.supplies.healersKitActorId = stringValue;
+      if (!stringValue) {
+        state.supplies.healersKitItemId = "";
+      } else {
+        const actor = game.actors.get(stringValue);
+        const items = getHealersKitItems(actor, { includeDepleted: true });
+        const currentItemId = String(state.supplies.healersKitItemId ?? "").trim();
+        if (!items.some((item) => item.id === currentItemId && item.charges > 0)) {
+          state.supplies.healersKitItemId = items.find((item) => item.charges > 0)?.id ?? items[0]?.id ?? "";
+        }
+      }
+      state.supplies.healersKitCharges = getAllHealersKitEntries({ includeDepleted: false })
+        .reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+      return;
+    }
+
+    if (key === "healersKitItemId") {
+      state.supplies.healersKitItemId = stringValue;
+      state.supplies.healersKitCharges = getAllHealersKitEntries({ includeDepleted: false })
+        .reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+      return;
+    }
+
     const raw = Number(element?.value ?? 0);
     const value = Number.isFinite(raw) ? Math.max(0, raw) : 0;
     if (key === "healersKitCharges" || key === "stabilizationKits") {
@@ -10230,7 +11444,8 @@ async function stabilizeInjuryEntry(element) {
   }
   const actorId = element?.dataset?.actorId;
   if (!actorId) return;
-  const initial = getInjuryRecoveryState().injuries?.[actorId];
+  const recoveryState = getInjuryRecoveryState();
+  const initial = recoveryState.injuries?.[actorId];
   if (!initial) return;
   if (initial.permanent) {
     ui.notifications?.warn("This injury is permanent and cannot be stabilized by kit treatment.");
@@ -10241,27 +11456,30 @@ async function stabilizeInjuryEntry(element) {
   const treatmentDc = Math.max(0, Number(initial.treatmentDc ?? 0));
   const treatmentSkill = String(initial.treatmentSkill ?? "");
 
-  let consumedCharges = false;
-  let insufficientCharges = false;
+  const kitResult = await consumeHealersKitCharges(requiredCharges, recoveryState);
   await updateInjuryRecoveryState((state) => {
-    if (!state.injuries?.[actorId]) return;
-    if (!state.supplies) state.supplies = { healersKitCharges: 10 };
-    const charges = Math.max(0, Number(state.supplies.healersKitCharges ?? state.supplies.stabilizationKits ?? 0));
-    if (charges < requiredCharges) {
-      insufficientCharges = true;
+    if (!state.supplies) state.supplies = {};
+    state.supplies.healersKitActorId = String(kitResult.nextSelection?.actorId ?? "");
+    state.supplies.healersKitItemId = String(kitResult.nextSelection?.itemId ?? "");
+    state.supplies.healersKitCharges = Math.max(0, Number(kitResult.totalCharges ?? 0));
+  });
+
+  const consumedSummary = kitResult.details
+    .map((entry) => `${entry.actorName} - ${entry.itemName} (-${entry.spent})`)
+    .join(", ");
+
+  if (!kitResult.ok) {
+    if (kitResult.consumed > 0) {
+      ui.notifications?.warn(`Healer's Kit partially consumed (${consumedSummary || `${kitResult.consumed} charge(s)`}), but ${kitResult.missing} additional charge(s) are required.`);
       return;
     }
-    state.supplies.healersKitCharges = charges - requiredCharges;
-    consumedCharges = true;
-  });
-  if (insufficientCharges) {
-    ui.notifications?.warn("Not enough Healer's Kit charges for this treatment.");
+    ui.notifications?.warn("No usable Healer's Kit charges are available for this treatment.");
     return;
   }
 
   const passedCheck = await rollTreatmentCheck(actorId, treatmentSkill, treatmentDc);
   if (!passedCheck) {
-    if (consumedCharges) ui.notifications?.warn("Treatment attempt failed after consuming kit charges.");
+    if (kitResult.consumed > 0) ui.notifications?.warn(`Treatment attempt failed after consuming ${kitResult.consumed} Healer's Kit charge(s).`);
     await updateInjuryRecoveryState((state) => {
       const entry = state.injuries?.[actorId];
       if (!entry) return;
@@ -10292,7 +11510,8 @@ async function stabilizeInjuryEntry(element) {
     }
   });
 
-  ui.notifications?.info(`Treatment succeeded. ${requiredCharges} Healer's Kit charge(s) consumed.`);
+  const consumedLabel = consumedSummary || `${kitResult.consumed} charge(s)`;
+  ui.notifications?.info(`Treatment succeeded. Consumed ${consumedLabel}.`);
   await syncInjuryWithSimpleCalendar(actorId);
 }
 
@@ -10404,7 +11623,8 @@ async function showRecoveryBrief() {
       <p><strong>Active Injuries:</strong> ${context.summary.activeInjuries}</p>
       <p><strong>Unstable:</strong> ${context.summary.unstableCount}</p>
       <p><strong>Permanent:</strong> ${context.summary.permanentCount}</p>
-      <p><strong>Healer's Kit Charges:</strong> ${context.supplies.healersKitCharges}</p>
+      <p><strong>Selected Healer's Kit:</strong> ${context.supplies.kitSelection.selectedLabel} (${context.supplies.kitSelection.selectedCharges})</p>
+      <p><strong>Total Healer's Kit Charges:</strong> ${context.supplies.kitSelection.totalCharges}</p>
       <p><strong>Last Cycle:</strong> ${context.summary.lastCycleAt} (${context.summary.lastCycleSummary})</p>
       <ul>${entryLines || "<li>No active injuries.</li>"}</ul>
     </div>
@@ -13131,6 +14351,14 @@ Hooks.once("ready", () => {
       await applyPlayerSopNoteRequest(message);
       return;
     }
+    if (message.type === "ops:downtime-submit") {
+      await applyPlayerDowntimeSubmitRequest(message);
+      return;
+    }
+    if (message.type === "ops:downtime-clear") {
+      await applyPlayerDowntimeClearRequest(message);
+      return;
+    }
   });
 
   Hooks.on("updateWorldTime", async () => {
@@ -13189,6 +14417,28 @@ async function applyPlayerSopNoteRequest(message) {
   await updateOperationsLedger((ledger) => {
     const sopNotes = ensureSopNotesState(ledger);
     sopNotes[sopKey] = note.slice(0, 4000);
+  });
+}
+
+async function applyPlayerDowntimeSubmitRequest(message) {
+  const requester = game.users.get(message?.userId);
+  if (!requester) return;
+  const entry = message?.entry && typeof message.entry === "object" ? message.entry : null;
+  if (!entry) return;
+  await applyDowntimeSubmissionForUser(requester, entry);
+}
+
+async function applyPlayerDowntimeClearRequest(message) {
+  const requester = game.users.get(message?.userId);
+  if (!requester) return;
+  const actorId = String(message?.actorId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    if (!downtime.entries) return;
+    delete downtime.entries[actorId];
   });
 }
 

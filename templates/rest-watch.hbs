@@ -300,9 +300,9 @@
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReadiness}}is-active{{/if}}" data-action="operations-page" data-page="readiness" title="Review risk tier, readiness level, and current edges">Readiness</button>
           <button type="button" class="po-tab {{#if operationsPageComms}}is-active{{/if}}" data-action="operations-page" data-page="comms" title="Configure communication discipline and emergency signaling">Comms</button>
-          <button type="button" class="po-tab {{#if operationsPageRecon}}is-active{{/if}}" data-action="operations-page" data-page="recon" title="Manage intel posture, recon checks, and mission uncertainty">Recon</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
+          <button type="button" class="po-tab {{#if operationsPageDowntime}}is-active{{/if}}" data-action="operations-page" data-page="downtime" title="Track player downtime actions and GM-resolved outcomes">Downtime</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
           {{#if @root.isGM}}
           <button type="button" class="po-tab {{#if operationsPageGm}}is-active{{/if}}" data-action="operations-page" data-page="gm" title="GM-only environment controls and logs">GM</button>
@@ -608,87 +608,6 @@
 
         {{/if}}
 
-        {{#if operationsPageRecon}}
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Intelligence & Recon</div>
-          <div class="po-hint">Shape mission intel posture before contact and run a recon check when you need a fresh read.</div>
-          <div class="po-info-strip">
-            <div class="po-info-chip" title="Overall reconnaissance readiness tier"><span>Readiness</span><strong>{{operations.recon.readinessLabel}}</strong></div>
-            <div class="po-info-chip" title="Combined recon readiness score"><span>Score</span><strong>{{operations.recon.readinessScore}}</strong></div>
-            <div class="po-info-chip" title="Recommended DC for a recon roll"><span>Recon DC</span><strong>{{operations.recon.suggestedDc}}</strong></div>
-            <div class="po-info-chip" title="Number of populated intel fields"><span>Coverage</span><strong>{{operations.recon.intelCoverage}} / 4</strong></div>
-            <div class="po-info-chip" title="Reliability of current rumor channels"><span>Reliability</span><strong>{{operations.recon.rumorReliability}}%</strong></div>
-            <div class="po-info-chip" title="Last recon brief stamp"><span>Last Brief</span><strong>{{operations.recon.lastBriefAt}}</strong></div>
-          </div>
-
-          {{#if @root.isGM}}
-          <label class="po-resource-row">
-            <span>Mission Objective</span>
-            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="objective" value="{{operations.recon.objective}}" placeholder="e.g., Enter citadel unnoticed and extract prisoner" />
-          </label>
-          <label class="po-resource-row">
-            <span>Target Region</span>
-            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="region" value="{{operations.recon.region}}" placeholder="e.g., North Wall district" />
-          </label>
-          <label class="po-resource-row">
-            <span>Primary Intel Source</span>
-            <input type="text" class="po-input" data-action="set-recon-field" data-recon-field="intelSource" value="{{operations.recon.intelSource}}" placeholder="e.g., Dockhands, temple courier, coded letters" />
-          </label>
-          <label class="po-resource-row">
-            <span>Heat Level</span>
-            <select class="po-select" data-action="set-recon-field" data-recon-field="heatLevel">
-              {{#each operations.recon.heatOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Network Depth</span>
-            <select class="po-select" data-action="set-recon-field" data-recon-field="network">
-              {{#each operations.recon.networkOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Rumor Reliability (%)</span>
-            <input type="number" min="0" max="100" step="1" class="po-input" data-action="set-recon-field" data-recon-field="rumorReliability" value="{{operations.recon.rumorReliability}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Bribe Budget</span>
-            <input type="number" min="0" step="1" class="po-input" data-action="set-recon-field" data-recon-field="bribeBudget" value="{{operations.recon.bribeBudget}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Spy Slots</span>
-            <input type="number" min="0" step="1" class="po-input" data-action="set-recon-field" data-recon-field="spySlots" value="{{operations.recon.spySlots}}" />
-          </label>
-          <label class="po-resource-row">
-            <span>Recent Findings</span>
-            <textarea class="po-input" rows="4" data-action="set-recon-field" data-recon-field="recentFindings" placeholder="Most recent confirmations, blind spots, and threat cues">{{operations.recon.recentFindings}}</textarea>
-          </label>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="run-recon-check">Run Recon Check</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="show-recon-brief">Show Recon Brief</button>
-          </div>
-          {{else}}
-          <div class="po-op-summary">Objective: {{#if operations.recon.hasObjective}}{{operations.recon.objective}}{{else}}-{{/if}}</div>
-          <div class="po-op-summary">Region: {{#if operations.recon.hasRegion}}{{operations.recon.region}}{{else}}-{{/if}}</div>
-          <div class="po-op-summary">Intel Source: {{#if operations.recon.hasIntelSource}}{{operations.recon.intelSource}}{{else}}-{{/if}}</div>
-          <div class="po-op-summary">Recent Findings: {{#if operations.recon.hasRecentFindings}}{{operations.recon.recentFindings}}{{else}}-{{/if}}</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-recon-brief">Show Recon Brief</button>
-          {{/if}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Recommendations</div>
-          {{#each operations.recon.recommendations}}
-          <div class="po-op-summary">{{this}}</div>
-          {{/each}}
-          <div class="po-op-summary">Last brief by: {{operations.recon.lastBriefBy}}</div>
-        </div>
-
-        {{/if}}
-
         {{#if operationsPageReputation}}
 
         <div class="po-gm-section">
@@ -924,15 +843,177 @@
 
         {{/if}}
 
+        {{#if operationsPageDowntime}}
+
+        <div class="po-gm-section po-downtime-panel">
+          <div class="po-section-title">Downtime Actions</div>
+          <div class="po-hint">Players submit one DMG-style downtime action per actor. GM resolves pending entries using tuning in the GM page.</div>
+
+          <div class="po-info-strip">
+            <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
+            <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
+            <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
+            <div class="po-info-chip"><span>Recent Logs</span><strong>{{operations.downtime.logCount}}</strong></div>
+          </div>
+
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Downtime Guide</span>
+              <span class="po-op-summary">How submissions and resolution work</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-op-summary"><strong>Step 1:</strong> Pick an actor you own, choose an action, and enter hours up to the granted limit.</div>
+              <div class="po-op-summary"><strong>Step 2:</strong> Add an optional note (goal, item, location, contact, etc.) and submit.</div>
+              <div class="po-op-summary"><strong>Step 3:</strong> GM clicks <em>Resolve Pending</em> in the GM page to roll results and post a chat summary.</div>
+              <div class="po-op-summary"><strong>Step 4:</strong> Review outcomes here, including gp delta, progress, and complications.</div>
+              <div class="po-hint">This workflow uses short downtime blocks (default 4 hours) so outcomes are intentionally smaller than a full downtime day.</div>
+            </div>
+          </details>
+
+          <div class="po-two-col">
+            <div class="po-col">
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">Submit Downtime Action</div>
+                  <div class="po-op-role-status">Per actor</div>
+                </div>
+                <label class="po-resource-row">
+                  <span>Actor</span>
+                  <select name="downtimeActorId" class="po-select">
+                    {{#each operations.downtime.submit.actorOptions}}
+                    <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label class="po-resource-row">
+                  <span>Action</span>
+                  <select name="downtimeActionKey" class="po-select">
+                    {{#each operations.downtime.submit.actionOptions}}
+                    <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <details class="po-panel-disclosure">
+                  <summary class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Action Reference</span>
+                    <span class="po-op-summary">Quick descriptions for each option</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
+                    {{#each operations.downtime.submit.actionOptions}}
+                    <div class="po-op-summary"><strong>{{label}}:</strong> {{guidance}}</div>
+                    {{/each}}
+                  </div>
+                </details>
+                <label class="po-resource-row">
+                  <span>Hours</span>
+                  <input name="downtimeHours" type="number" min="1" max="{{operations.downtime.hoursGranted}}" step="1" class="po-input" value="{{operations.downtime.submit.hours}}" />
+                </label>
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Note</span>
+                  <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional intent, location, contact, or item target">{{operations.downtime.submit.note}}</textarea>
+                </label>
+                <button type="button" class="po-btn" data-action="submit-downtime-action">Submit Downtime Action</button>
+              </div>
+            </div>
+
+            <div class="po-col">
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">Submitted Entries</div>
+                  <div class="po-op-role-status">{{operations.downtime.pendingCount}} pending</div>
+                </div>
+                {{#if operations.downtime.hasEntries}}
+                {{#each operations.downtime.entries}}
+                <div class="po-op-role-row">
+                  <div class="po-op-role-head">
+                    <div class="po-op-role-name">{{actorName}}</div>
+                    <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
+                  </div>
+                  <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+                  {{#if hasNote}}
+                  <div class="po-op-summary">Note: {{note}}</div>
+                  {{/if}}
+                  <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
+                  {{#if hasResult}}
+                  <div class="po-op-summary">Result: {{resultSummary}}</div>
+                  <div class="po-op-summary">Roll {{rollTotal}} - GP {{gpDeltaLabel}} - Progress {{progress}}</div>
+                  {{#if hasComplication}}
+                  <div class="po-op-summary is-warn">Complication: {{complication}}</div>
+                  {{/if}}
+                  {{#if hasResultDetails}}
+                  {{#each resultDetails}}
+                  <div class="po-op-summary">{{this}}</div>
+                  {{/each}}
+                  {{/if}}
+                  {{#if resolvedAtLabel}}
+                  <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
+                  {{/if}}
+                  {{/if}}
+                  {{#if canClear}}
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-downtime-entry" data-actor-id="{{actorId}}">Clear Entry</button>
+                  {{/if}}
+                </div>
+                {{/each}}
+                {{else}}
+                <div class="po-op-summary">No downtime entries submitted yet.</div>
+                {{/if}}
+              </div>
+            </div>
+          </div>
+
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Recent Downtime Logs</span>
+              <span class="po-op-summary">Last 20 resolved outcomes</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              {{#if operations.downtime.hasLogs}}
+              {{#each operations.downtime.logs}}
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{actorName}} - {{actionLabel}}</div>
+                  <div class="po-op-role-status">{{hours}} hour(s)</div>
+                </div>
+                <div class="po-op-summary">{{summary}}</div>
+                <div class="po-op-summary">GP {{gpDeltaLabel}}</div>
+                {{#if hasComplication}}
+                <div class="po-op-summary is-warn">Complication: {{complication}}</div>
+                {{/if}}
+                <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
+              </div>
+              {{/each}}
+              {{else}}
+              <div class="po-op-summary">No downtime logs yet.</div>
+              {{/if}}
+            </div>
+          </details>
+        </div>
+
+        {{/if}}
+
         {{#if operationsPageRecovery}}
 
         <div class="po-gm-section">
           <div class="po-section-title">Injury & Recovery</div>
           <div class="po-hint">Track injuries using the d100 table and treatment rules.</div>
           <label class="po-resource-row">
-            <span>Healer's Kit Charges</span>
-            <input type="number" min="0" step="1" class="po-input" data-action="set-injury-config" data-injury-config="healersKitCharges" value="{{injuryRecovery.supplies.healersKitCharges}}" />
+            <span>Healer's Kit Actor</span>
+            <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitActorId">
+              {{#each injuryRecovery.supplies.kitSelection.actorOptions}}
+              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
           </label>
+          <label class="po-resource-row">
+            <span>Healer's Kit Item</span>
+            <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitItemId" {{#unless injuryRecovery.supplies.kitSelection.hasActor}}disabled{{/unless}}>
+              {{#each injuryRecovery.supplies.kitSelection.itemOptions}}
+              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <div class="po-op-summary">Selected Kit: {{injuryRecovery.supplies.kitSelection.selectedLabel}} ({{injuryRecovery.supplies.kitSelection.selectedCharges}})</div>
+          <div class="po-op-summary">Total Healer's Kit Charges Available: {{injuryRecovery.supplies.kitSelection.totalCharges}}</div>
           <label class="po-resource-row">
             <span>Base Recovery Days</span>
             <input type="number" min="1" step="1" class="po-input" data-action="set-injury-config" data-injury-config="baseRecoveryDays" value="{{injuryRecovery.config.baseRecoveryDays}}" />
@@ -1017,6 +1098,22 @@
         {{#if operationsPageGm}}
         <div class="po-gm-section po-gm-quick-actions">
           <div class="po-section-title">GM Quick Actions</div>
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Quick Actions Guide</span>
+              <span class="po-op-summary">How to activate and what each action does</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-hint">Use any button below to open its quick tool, fill fields, then click the matching submit button. All actions are GM-only.</div>
+              <div class="po-op-summary"><strong>+ Faction:</strong> Opens a short form and adds a new faction into Reputation tracking.</div>
+              <div class="po-op-summary"><strong>+ Global Modifier:</strong> Creates a party-wide modifier/effect entry you can sync to actors.</div>
+              <div class="po-op-summary"><strong>Log Weather:</strong> Opens weather controls to record scene weather, visibility, darkness, and optional DAE effects.</div>
+              <div class="po-op-summary"><strong>Sync Effects:</strong> Re-runs integration sync so actor effects/flags match current operations state.</div>
+              <div class="po-op-summary"><strong>Run Autopilot:</strong> Runs the session automation cycle (upkeep, recovery/sync flows, and related logs).</div>
+              <div class="po-op-summary"><strong>Undo Autopilot:</strong> Reverts the most recent autopilot run snapshot when available.</div>
+              <div class="po-op-summary"><strong>Tip:</strong> Use <em>Cancel</em> inside any quick panel to close it without saving.</div>
+            </div>
+          </details>
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-faction">+ Faction</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
@@ -1175,6 +1272,55 @@
           </div>
           {{/if}}
           <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} · Visibility Modifier {{operations.weather.currentVisibilityModifier}} · Darkness {{operations.weather.currentDarkness}}</div>
+        </div>
+
+        <div class="po-gm-section">
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Downtime Tuning</span>
+              <span class="po-op-summary">Grant hours, set bias, resolve pending actions</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-hint">Players submit actions in the Downtime page. Configure bias here, then resolve pending entries to roll outcomes and publish chat results.</div>
+              <div class="po-info-strip">
+                <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
+                <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
+                <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
+              </div>
+              <label class="po-resource-row">
+                <span>Granted Hours</span>
+                <input type="number" min="1" max="24" step="1" class="po-input" value="{{operations.downtime.hoursGranted}}" data-action="set-downtime-hours" />
+              </label>
+              <label class="po-resource-row">
+                <span>Economy</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="economy">
+                  {{#each operations.downtime.tuning.economyOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Complication Risk</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="risk">
+                  {{#each operations.downtime.tuning.riskOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Discovery Density</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="discovery">
+                  {{#each operations.downtime.tuning.discoveryOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="resolve-downtime-actions">Resolve Pending</button>
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-results">Clear Resolved Results</button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <nav class="po-tabs po-tabs-sub po-gm-ops-tabs" role="tablist" aria-label="GM Operations Sections">
@@ -1398,7 +1544,7 @@
 
         {{#if gmOpsTabLootSources}}
         <div class="po-gm-section">
-          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+          <details class="po-panel-disclosure po-panel-disclosure-lg">
             <summary class="po-panel-disclosure-summary">
               <span class="po-section-title">Loot Source Registry</span>
               <span class="po-op-summary">Sources, filters, and dry-run previews</span>
@@ -1411,114 +1557,22 @@
           <div class="po-op-summary">Last Updated: {{operations.lootSources.summary.updatedAtLabel}} by {{operations.lootSources.summary.updatedBy}}</div>
 
           <div class="po-op-divider"></div>
-          <div class="po-collapsible-head">
-            <div class="po-section-title">Item Pack Sources</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-loot-pack-sources-collapsed" aria-label="{{operations.lootSources.itemPackToggleLabel}} Item Pack Sources" title="{{operations.lootSources.itemPackToggleLabel}} Item Pack Sources">
-              <i class="fa-solid {{operations.lootSources.itemPackToggleIcon}}"></i>
+          <div class="po-tabs po-tabs-sub">
+            <button type="button" class="po-tab {{#if operations.lootSources.registryTabPreview}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="preview">
+              Preview
+            </button>
+            <button type="button" class="po-tab {{#if operations.lootSources.registryTabSettings}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="settings">
+              Settings
             </button>
           </div>
-          {{#unless operations.lootSources.itemPackCollapsed}}
-          <div class="po-collapsible-body">
-            <div class="po-op-summary">Showing {{operations.lootSources.itemPackVisibleCount}} of {{operations.lootSources.itemPackOptions.length}} item pack sources.</div>
-            <div class="po-op-role-row">
-              <label class="po-resource-row">
-                <span>Filter</span>
-                <input type="search" class="po-input" data-action="set-loot-pack-filter" value="{{operations.lootSources.itemPackFilter}}" placeholder="Search pack name, ID, source kind" />
-              </label>
-              {{#if operations.lootSources.itemPackFilterActive}}
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-pack-filter">Clear Filter</button>
-              {{/if}}
-            </div>
-            <div class="po-hint" title="Supports approximate matching on pack name, id, and source kind.">
-              Filter supports approximate matches (for example: "equip", "equipment", or minor typos like "eqiup").
-            </div>
 
-            {{#if operations.lootSources.itemPackVisibleOptions.length}}
-            {{#each operations.lootSources.itemPackVisibleOptions}}
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
-              </div>
-              <label class="po-switch">
-                <input type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} />
-                <span>Enabled</span>
-              </label>
-              <label class="po-resource-row">
-                <span>Weight</span>
-                <input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" />
-              </label>
-            </div>
-            {{/each}}
-            {{else}}
-            {{#if operations.lootSources.itemPackOptions.length}}
-            <div class="po-op-summary">No item-pack sources matched the current filter.</div>
-            {{else}}
-            <div class="po-op-summary">No item-pack sources detected.</div>
-            {{/if}}
-            {{/if}}
-          </div>
-          {{/unless}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Roll-Table Sources</div>
-          {{#if operations.lootSources.tableOptions.length}}
-          {{#each operations.lootSources.tableOptions}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
-            </div>
-            <label class="po-switch">
-              <input type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} />
-              <span>Enabled</span>
-            </label>
-            <label class="po-resource-row">
-              <span>Roll Category</span>
-              <select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">
-                {{#each typeOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-          </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No roll-table sources detected.</div>
-          {{/if}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Item Filters</div>
-          <div class="po-hint">Use these filters as defaults for upcoming loot generation rules.</div>
-          {{#each operations.lootSources.itemTypeOptions}}
-          <div class="po-checkbox-target">
-            <input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} />
-            <label class="po-checkbox-target-label" for="po-loot-item-type-{{value}}">{{label}}</label>
-          </div>
-          {{/each}}
-          <label class="po-resource-row">
-            <span>Rarity Floor</span>
-            <select class="po-select" data-action="set-loot-rarity-floor">
-              {{#each operations.lootSources.rarityFloorOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Rarity Ceiling</span>
-            <select class="po-select" data-action="set-loot-rarity-ceiling">
-              {{#each operations.lootSources.rarityCeilingOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="reset-loot-source-config">Reset Loot Defaults</button>
-          </div>
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Loot Preview (Dry Run)</div>
-          <div class="po-hint">Generates preview payload only. No inventory changes are applied yet.</div>
+          {{#if operations.lootSources.registryTabPreview}}
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Loot Preview (Dry Run)</span>
+              <span class="po-op-summary">Generates preview payload only</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
           <div class="po-op-role-row po-loot-preview-panel">
             <label class="po-resource-row">
               <span>Mode</span>
@@ -1610,6 +1664,124 @@
           <div class="po-op-summary is-warn">{{this}}</div>
           {{/each}}
           {{/if}}
+          {{/if}}
+            </div>
+          </details>
+          {{/if}}
+
+          {{#if operations.lootSources.registryTabSettings}}
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Item Pack Sources</span>
+              <span class="po-op-summary">Showing {{operations.lootSources.itemPackVisibleCount}} of {{operations.lootSources.itemPackOptions.length}}</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+          <div class="po-op-role-row">
+            <label class="po-resource-row">
+              <span>Filter</span>
+              <input type="search" class="po-input" data-action="set-loot-pack-filter" value="{{operations.lootSources.itemPackFilter}}" placeholder="Search pack name, ID, source kind" />
+            </label>
+            {{#if operations.lootSources.itemPackFilterActive}}
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-pack-filter">Clear Filter</button>
+            {{/if}}
+          </div>
+          <div class="po-hint" title="Supports approximate matching on pack name, id, and source kind.">
+            Filter supports approximate matches (for example: "equip", "equipment", or minor typos like "eqiup").
+          </div>
+          {{#if operations.lootSources.itemPackVisibleOptions.length}}
+          {{#each operations.lootSources.itemPackVisibleOptions}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{label}}</div>
+              <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
+            </div>
+            <label class="po-switch">
+              <input type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} />
+              <span>Enabled</span>
+            </label>
+            <label class="po-resource-row">
+              <span>Weight</span>
+              <input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" />
+            </label>
+          </div>
+          {{/each}}
+          {{else}}
+          {{#if operations.lootSources.itemPackOptions.length}}
+          <div class="po-op-summary">No item-pack sources matched the current filter.</div>
+          {{else}}
+          <div class="po-op-summary">No item-pack sources detected.</div>
+          {{/if}}
+          {{/if}}
+            </div>
+          </details>
+
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Roll-Table Sources</span>
+              <span class="po-op-summary">{{operations.lootSources.summary.enabledTables}} enabled of {{operations.lootSources.summary.totalTables}}</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+          {{#if operations.lootSources.tableOptions.length}}
+          {{#each operations.lootSources.tableOptions}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{label}}</div>
+              <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
+            </div>
+            <label class="po-switch">
+              <input type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} />
+              <span>Enabled</span>
+            </label>
+            <label class="po-resource-row">
+              <span>Roll Category</span>
+              <select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">
+                {{#each typeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No roll-table sources detected.</div>
+          {{/if}}
+            </div>
+          </details>
+
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Item Filters</span>
+              <span class="po-op-summary">{{operations.lootSources.summary.enabledItemTypes}} enabled of {{operations.lootSources.summary.totalItemTypes}}</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+          <div class="po-hint">Use these filters as defaults for upcoming loot generation rules.</div>
+          {{#each operations.lootSources.itemTypeOptions}}
+          <div class="po-checkbox-target">
+            <input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} />
+            <label class="po-checkbox-target-label" for="po-loot-item-type-{{value}}">{{label}}</label>
+          </div>
+          {{/each}}
+          <label class="po-resource-row">
+            <span>Rarity Floor</span>
+            <select class="po-select" data-action="set-loot-rarity-floor">
+              {{#each operations.lootSources.rarityFloorOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Rarity Ceiling</span>
+            <select class="po-select" data-action="set-loot-rarity-ceiling">
+              {{#each operations.lootSources.rarityCeilingOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="reset-loot-source-config">Reset Loot Defaults</button>
+          </div>
+            </div>
+          </details>
           {{/if}}
             </div>
           </details>
@@ -1772,6 +1944,17 @@
           <div class="po-op-summary">Mode: {{operations.nonPartySync.integrationModeLabel}} | Enabled: {{operations.nonPartySync.enabledLabel}}</div>
           <div class="po-op-summary">Global Modifiers: {{#if operations.nonPartySync.syncGlobalEnabled}}ON{{else}}OFF{{/if}} | Environment: {{#if operations.nonPartySync.syncEnvironmentEnabled}}ON{{else}}OFF{{/if}} ({{operations.nonPartySync.environmentPresetLabel}})</div>
           <div class="po-op-summary">Tracked Actors: {{operations.nonPartySync.actorCount}} | Active Sync Markers: {{operations.nonPartySync.syncedCount}} | Stale: {{operations.nonPartySync.staleCount}}</div>
+          <div class="po-op-role-row">
+            <label class="po-resource-row">
+              <span>Keyword Filter</span>
+              <input type="search" class="po-input" data-action="set-non-party-sync-filter-keyword" value="{{operations.nonPartySync.filter.keyword}}" placeholder="Search actor name, status, location, effects" />
+            </label>
+            {{#if operations.nonPartySync.filter.active}}
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-non-party-sync-filter-keyword">Clear Filter</button>
+            {{/if}}
+          </div>
+          <div class="po-hint">Targets are shown only after a keyword search to keep this panel focused on what you need.</div>
+          <div class="po-op-summary">Matching Targets: {{operations.nonPartySync.visibleCount}}</div>
           {{#if operations.nonPartySync.modeOff}}
           <div class="po-op-summary is-warn">Integration mode is currently OFF. Reapply will clear stale non-party sync data.</div>
           {{/if}}
@@ -1780,6 +1963,7 @@
             <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-all-non-party-sync">Clear Scope</button>
           </div>
 
+          {{#if operations.nonPartySync.filter.active}}
           {{#if operations.nonPartySync.hasTargets}}
           {{#each operations.nonPartySync.rows}}
           <div class="po-op-role-row">
@@ -1797,7 +1981,14 @@
           </div>
           {{/each}}
           {{else}}
+          {{#if operations.nonPartySync.hasAnyTargets}}
+          <div class="po-op-summary">No non-party sync targets matched the keyword filter.</div>
+          {{else}}
           <div class="po-op-summary">No actors found for the selected non-party sync scope.</div>
+          {{/if}}
+          {{/if}}
+          {{else}}
+          <div class="po-op-summary">Enter a keyword filter to browse non-party sync targets.</div>
           {{/if}}
           {{/if}}
 
