@@ -6864,7 +6864,13 @@ function ensureFloatingLauncher() {
       <button type="button" class="po-floating-btn" data-action="rest" title="Open Rest Watch" aria-label="Open Rest Watch">
         <i class="fas fa-moon"></i>
       </button>
+      <button type="button" class="po-floating-btn" data-action="operations" title="Open Operations" aria-label="Open Operations">
+        <i class="fas fa-clipboard-list"></i>
+      </button>
       <button type="button" class="po-floating-btn" data-action="march" title="Open Marching Order" aria-label="Open Marching Order"><i class="fas fa-arrow-up"></i></button>
+      <button type="button" class="po-floating-btn po-floating-gm" data-action="gm" title="Open GM Section" aria-label="Open GM Section">
+        <i class="fas fa-user-shield"></i>
+      </button>
       <button type="button" class="po-floating-btn po-floating-lock" data-action="lock" title="Lock launcher" aria-label="Lock launcher">
         <i class="fas fa-lock"></i>
       </button>
@@ -6886,7 +6892,20 @@ function ensureFloatingLauncher() {
       if (!button) return;
       const action = button.dataset.action;
       if (action === "rest") new RestWatchApp().render({ force: true });
+      if (action === "operations") {
+        setActiveRestMainTab("operations");
+        new RestWatchApp().render({ force: true });
+      }
       if (action === "march") new MarchingOrderApp().render({ force: true });
+      if (action === "gm") {
+        if (!game.user?.isGM) {
+          ui.notifications?.warn("GM permissions are required for the GM section.");
+          return;
+        }
+        setActiveRestMainTab("operations");
+        setActiveOperationsPage("gm");
+        new RestWatchApp().render({ force: true });
+      }
       if (action === "lock") {
         const current = clampFloatingLauncherPosition({
           left: parseFloat(launcher.style.left || "16"),
@@ -6964,13 +6983,18 @@ function ensureFloatingLauncher() {
     });
   } else {
     const hasRestBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="rest"]'));
+    const hasOperationsBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="operations"]'));
     const hasMarchBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="march"]'));
+    const hasGmBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="gm"]'));
     const hasLockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="lock"]'));
     const hasUnlockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="unlock"]'));
-    if (!hasRestBtn || !hasMarchBtn || !hasLockBtn || !hasUnlockBtn) {
+    if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasLockBtn || !hasUnlockBtn) {
       setLauncherMarkup(launcher);
     }
   }
+
+  const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
+  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
   launcher.style.display = "flex";
