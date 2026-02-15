@@ -4964,7 +4964,7 @@ async function rollWisdomSurvival(actor, options = {}) {
 
   if (actor && typeof actor.rollSkill === "function") {
     try {
-      const rollResult = await actor.rollSkill("sur", { fastForward: true, chatMessage: true });
+      const rollResult = await actor.rollSkill("sur", { fastForward: true, chatMessage: false });
       const total = Number(rollResult?.total ?? rollResult?.roll?.total);
       if (Number.isFinite(total)) return { total, source: "native", roll: rollResult };
     } catch (error) {
@@ -5363,7 +5363,7 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
 
   if (!Number.isFinite(total) && check.checkType === "save" && typeof actor.rollAbilitySave === "function") {
     try {
-      const roll = await actor.rollAbilitySave(check.checkKey, { fastForward: false, chatMessage: true });
+      const roll = await actor.rollAbilitySave(check.checkKey, { fastForward: true, chatMessage: false });
       total = Number(roll?.total ?? roll?.roll?.total);
       if (Number.isFinite(total)) passed = total >= dc;
     } catch (error) {
@@ -5371,7 +5371,7 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
     }
   } else if (!Number.isFinite(total) && typeof actor.rollSkill === "function") {
     try {
-      const roll = await actor.rollSkill(check.checkKey, { fastForward: false, chatMessage: true });
+      const roll = await actor.rollSkill(check.checkKey, { fastForward: true, chatMessage: false });
       total = Number(roll?.total ?? roll?.roll?.total);
       if (Number.isFinite(total)) passed = total >= dc;
     } catch (error) {
@@ -7589,7 +7589,7 @@ async function rollTreatmentCheck(injuredActorId, treatmentSkill, dc) {
   const healer = game.actors.get(healerActorId);
   if (!healer) return false;
   const skill = treatmentSkill === "ins" ? "ins" : "med";
-  const rollResult = await healer.rollSkill(skill, { fastForward: true, chatMessage: true });
+  const rollResult = await healer.rollSkill(skill, { fastForward: true, chatMessage: false });
   const total = Number(rollResult?.total ?? rollResult?.roll?.total ?? 0);
   return total >= dcValue;
 }
