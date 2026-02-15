@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.19 -Message "Release"
+./scripts/release.ps1 -Version 2.0.20 -Message "Release"
 ```
 
 What it does:
@@ -28,11 +28,10 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.19 highlights
+### 2.0.20 highlights
 
-- Hardened socket mutation flow by removing broad non-GM ledger replace writes.
-- Added Operations `Recon` page with intel posture fields, readiness scoring, recon check, and recon brief.
-- Non-GM operations controls now render as read-only for GM-only actions.
+- Fixed Recovery -> Injury Simple Calendar logging when API method fallback signatures are used.
+- Resolved a runtime error in calendar sync helpers that prevented injury events from being created in some setups.
 
 ### After pushing
 

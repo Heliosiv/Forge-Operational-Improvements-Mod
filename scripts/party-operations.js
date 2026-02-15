@@ -9737,16 +9737,18 @@ async function updateSimpleCalendarEntry(api, entryId, payload) {
           return true;
         } catch (nestedError) {
           lastError = nestedError;
+          let signatureError = nestedError;
           try {
             await fn.call(ctx, variant, entryId);
             return true;
           } catch (fallbackError) {
             lastError = fallbackError;
+            signatureError = fallbackError;
           }
           logSimpleCalendarSyncDebug("Update method signature attempts failed", {
             methodName,
             entryId,
-            reason: String(fallbackError?.message ?? fallbackError ?? "unknown")
+            reason: String(signatureError?.message ?? signatureError ?? "unknown")
           });
           // Try next signature.
         }
@@ -9778,16 +9780,18 @@ async function createSimpleCalendarEntry(api, payload) {
         return { success: true, id };
       } catch (error) {
         lastError = error;
+        let signatureError = error;
         try {
           const result = await fn.call(ctx, { ...variant });
           const id = extractCalendarEntryId(result);
           return { success: true, id };
         } catch (nestedError) {
           lastError = nestedError;
+          signatureError = nestedError;
         }
         logSimpleCalendarSyncDebug("Create method signature attempts failed", {
           methodName,
-          reason: String(nestedError?.message ?? nestedError ?? "unknown")
+          reason: String(signatureError?.message ?? signatureError ?? "unknown")
         });
         // Try next signature.
       }
