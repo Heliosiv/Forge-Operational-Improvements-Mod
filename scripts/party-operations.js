@@ -17,7 +17,8 @@ export const SETTINGS = {
   INTEGRATION_MODE: "integrationMode",
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
-  FLOATING_LAUNCHER_RESET: "floatingLauncherReset"
+  FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
+  PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest"
 };
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -9749,7 +9750,7 @@ function ensureFloatingLauncher() {
 
   const setLauncherMarkup = (target) => {
     target.innerHTML = `
-      <div class="po-floating-handle" title="Drag to move">⋮⋮</div>
+      <div class="po-floating-handle" title="Drag to move" aria-label="Drag to move"><i class="fas fa-grip-lines-vertical"></i></div>
       <button type="button" class="po-floating-btn" data-action="rest" title="Open Rest Watch" aria-label="Open Rest Watch">
         <i class="fas fa-moon"></i>
       </button>
@@ -10173,6 +10174,15 @@ Hooks.once("init", () => {
     }
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST, {
+    name: "Auto-open Rest Watch for Players",
+    hint: "When enabled, non-GM users automatically open Rest Watch when Foundry is ready.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
   game.partyOperations = {
     restWatch: () => new RestWatchApp().render({ force: true }),
     marchingOrder: () => new MarchingOrderApp().render({ force: true }),
@@ -10215,7 +10225,10 @@ Hooks.once("ready", () => {
 
   // Auto-open player UI for non-GM players
   if (!game.user.isGM) {
-    new RestWatchApp().render({ force: true });
+    const autoOpenPlayerUi = game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST) ?? true;
+    if (autoOpenPlayerUi) {
+      new RestWatchApp().render({ force: true });
+    }
   } else {
     scheduleIntegrationSync("ready");
   }
@@ -10608,3 +10621,4 @@ export function emitSocketRefresh() {
 function emitOpenRestPlayers() {
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
 }
+
