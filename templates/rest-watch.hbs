@@ -917,6 +917,65 @@
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Current Weather</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync DAE/Effects Now</button>
           </div>
+          {{#if operations.gmQuickTools.showFactionPanel}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Quick Add Faction</div>
+            </div>
+            <label class="po-resource-row">
+              <span>Faction Name</span>
+              <input type="text" name="quickFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-faction">Add Faction</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
+            </div>
+          </div>
+          {{/if}}
+          {{#if operations.gmQuickTools.showModifierPanel}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Quick Add Global Modifier</div>
+            </div>
+            <label class="po-resource-row">
+              <span>Label</span>
+              <input type="text" name="quickGlobalModifierLabel" class="po-input" value="Custom Modifier" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key (Search/Input)</span>
+              <input type="text" name="quickGlobalModifierKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.init.bonus" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key Presets</span>
+              <select name="quickGlobalModifierKey" class="po-select">
+                <option value="">Select key preset</option>
+                {{#each operations.gmQuickTools.modifierKeyOptions}}
+                <option value="{{value}}">{{label}} — {{value}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select name="quickGlobalModifierMode" class="po-select">
+                {{#each operations.gmQuickTools.modifierModeOptions}}
+                <option value="{{value}}">{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Value</span>
+              <input type="text" name="quickGlobalModifierValue" class="po-input" value="1" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Notes</span>
+              <textarea name="quickGlobalModifierNote" rows="3" class="po-input" placeholder="What this modifier does for the party"></textarea>
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-modifier">Add Modifier</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
+            </div>
+          </div>
+          {{/if}}
           <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} · Visibility Modifier {{operations.weather.currentVisibilityModifier}} · Darkness {{operations.weather.currentDarkness}}</div>
         </div>
 
@@ -982,7 +1041,11 @@
           </label>
           <label class="po-resource-row">
             <span>Damage Type</span>
-            <input type="text" class="po-input" data-action="set-environment-successive" data-field="damageType" placeholder="e.g. cold" value="{{operations.environment.successiveConfig.damageType}}" />
+            <select class="po-select" data-action="set-environment-successive" data-field="damageType">
+              {{#each operations.environment.successiveConfig.damageTypeOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
           </label>
           <label class="po-resource-row">
             <span>Max HP Reduction</span>
