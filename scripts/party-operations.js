@@ -403,7 +403,9 @@ function ensureEnvironmentState(ledger) {
     ledger.environment = {
       presetKey: "none",
       movementDc: 12,
-      appliedActorIds: []
+      appliedActorIds: [],
+      note: "",
+      logs: []
     };
   }
   ledger.environment.presetKey = getEnvironmentPresetByKey(String(ledger.environment.presetKey ?? "none")).key;
@@ -413,6 +415,25 @@ function ensureEnvironmentState(ledger) {
   ledger.environment.appliedActorIds = ledger.environment.appliedActorIds
     .map((actorId) => String(actorId ?? "").trim())
     .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index);
+  ledger.environment.note = String(ledger.environment.note ?? "");
+  if (!Array.isArray(ledger.environment.logs)) ledger.environment.logs = [];
+  ledger.environment.logs = ledger.environment.logs
+    .map((entry) => {
+      const actorIds = Array.isArray(entry?.actorIds)
+        ? entry.actorIds.map((actorId) => String(actorId ?? "").trim()).filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
+        : [];
+      const createdAt = Number(entry?.createdAt ?? Date.now());
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
+        movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
+        actorIds,
+        note: String(entry?.note ?? ""),
+        createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
+        createdBy: String(entry?.createdBy ?? "GM")
+      };
+    })
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
   return ledger.environment;
 }
 
@@ -815,15 +836,17 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery"]);
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
+  if (stored === "gm" && !game.user?.isGM) return "planning";
   return allowed.has(stored) ? stored : "planning";
 }
 
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery"]);
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "recovery", "gm"]);
+  if (page === "gm" && !game.user?.isGM) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
 }
@@ -1132,6 +1155,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       operationsPageSupply: false,
       operationsPageBase: operationsPage === "base",
       operationsPageRecovery: operationsPage === "recovery",
+      operationsPageGm: operationsPage === "gm",
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
       operationsPlanningResources: operationsPlanningTab === "resources",
@@ -1160,7 +1184,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
       
       this.element.addEventListener("change", (event) => {
-        if (event.target?.matches("select[data-action], input[data-action]")) {
+        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
           this.#onAction(event);
         } else if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
@@ -1372,8 +1396,23 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-environment-dc":
         await setOperationalEnvironmentDc(element);
         break;
+      case "set-environment-note":
+        await setOperationalEnvironmentNote(element);
+        break;
       case "toggle-environment-actor":
         await toggleOperationalEnvironmentActor(element);
+        break;
+      case "add-environment-log":
+        await addOperationalEnvironmentLog();
+        break;
+      case "edit-environment-log":
+        await editOperationalEnvironmentLog(element);
+        break;
+      case "remove-environment-log":
+        await removeOperationalEnvironmentLog(element);
+        break;
+      case "clear-environment-effects":
+        await clearOperationalEnvironmentEffects();
         break;
       case "show-environment-brief":
         await showOperationalEnvironmentBrief();
@@ -1988,7 +2027,9 @@ function buildDefaultOperationsLedger() {
     environment: {
       presetKey: "none",
       movementDc: 12,
-      appliedActorIds: []
+      appliedActorIds: [],
+      note: "",
+      logs: []
     },
     partyHealth: {
       modifierEnabled: {}
@@ -2242,6 +2283,25 @@ function buildOperationsContext() {
       actorName: actor.name,
       selected: environmentState.appliedActorIds.includes(actor.id)
     }));
+  const environmentActorNames = new Map(environmentTargets.map((target) => [target.actorId, target.actorName]));
+  const environmentLogs = (environmentState.logs ?? [])
+    .map((entry) => {
+      const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const actorNames = (entry.actorIds ?? []).map((actorId) => environmentActorNames.get(actorId) ?? (game.actors.get(actorId)?.name ?? `Actor ${actorId}`));
+      const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
+      return {
+        id: entry.id,
+        presetKey: entry.presetKey,
+        presetLabel: preset.label,
+        movementDc: Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12)),
+        actorNames,
+        actorNamesText: actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned",
+        note: String(entry.note ?? ""),
+        hasNote: String(entry.note ?? "").trim().length > 0,
+        createdBy: String(entry.createdBy ?? "GM"),
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    });
 
   const upkeep = {
     partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
@@ -2335,10 +2395,13 @@ function buildOperationsContext() {
       presetKey: environmentState.presetKey,
       preset: environmentPreset,
       movementDc: environmentState.movementDc,
+      note: environmentState.note,
       movementCheckActive: Boolean(environmentPreset.movementCheck),
       targetCount: environmentTargets.filter((target) => target.selected).length,
       appliedActorIds: [...environmentState.appliedActorIds],
       targets: environmentTargets,
+      logs: environmentLogs,
+      hasLogs: environmentLogs.length > 0,
       presetOptions: ENVIRONMENT_PRESETS.map((preset) => ({
         key: preset.key,
         label: preset.label,
@@ -2751,7 +2814,7 @@ async function setPartyHealthModifier(element) {
 async function setOperationalSopNote(element) {
   const sopKey = String(element?.dataset?.sop ?? "").trim();
   if (!sopKey) return;
-  const note = String(element?.value ?? "").trim();
+  const note = String(element?.value ?? "");
   await updateOperationsLedger((ledger) => {
     const sopNotes = ensureSopNotesState(ledger);
     sopNotes[sopKey] = note;
@@ -2784,6 +2847,18 @@ async function setOperationalEnvironmentDc(element) {
   });
 }
 
+async function setOperationalEnvironmentNote(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can change environment controls.");
+    return;
+  }
+  const note = String(element?.value ?? "");
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.note = note;
+  });
+}
+
 async function toggleOperationalEnvironmentActor(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can assign environment effects.");
@@ -2799,6 +2874,83 @@ async function toggleOperationalEnvironmentActor(element) {
     else set.delete(actorId);
     environment.appliedActorIds = Array.from(set);
   });
+}
+
+async function addOperationalEnvironmentLog() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can log environment presets.");
+    return;
+  }
+
+  const current = buildOperationsContext().environment;
+  if (current.presetKey === "none") {
+    ui.notifications?.warn("Select an environment preset before logging.");
+    return;
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.logs.unshift({
+      id: foundry.utils.randomID(),
+      presetKey: environment.presetKey,
+      movementDc: environment.movementDc,
+      actorIds: [...environment.appliedActorIds],
+      note: String(environment.note ?? ""),
+      createdAt: Date.now(),
+      createdBy: String(game.user?.name ?? "GM")
+    });
+    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
+  });
+
+  ui.notifications?.info("Environment preset logged.");
+}
+
+async function editOperationalEnvironmentLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit environment logs.");
+    return;
+  }
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) return;
+
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const entry = environment.logs.find((candidate) => candidate.id === logId);
+    if (!entry) return;
+    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
+    environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
+    environment.appliedActorIds = [...(entry.actorIds ?? [])];
+    environment.note = String(entry.note ?? "");
+  });
+
+  ui.notifications?.info("Loaded environment log into current controls.");
+}
+
+async function removeOperationalEnvironmentLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit environment logs.");
+    return;
+  }
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) return;
+
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.logs = environment.logs.filter((entry) => entry.id !== logId);
+  });
+}
+
+async function clearOperationalEnvironmentEffects() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear environment effects.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.presetKey = "none";
+    environment.appliedActorIds = [];
+  });
+  ui.notifications?.info("Active environment effects cleared.");
 }
 
 async function showOperationalEnvironmentBrief() {

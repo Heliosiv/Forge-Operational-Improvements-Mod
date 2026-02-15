@@ -303,6 +303,9 @@
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
+          {{#if @root.isGM}}
+          <button type="button" class="po-tab {{#if operationsPageGm}}is-active{{/if}}" data-action="operations-page" data-page="gm" title="GM-only environment controls and logs">GM</button>
+          {{/if}}
         </nav>
 
         <div class="po-gm-section po-gm-section-compact">
@@ -354,51 +357,17 @@
           <div class="po-section-title">SOP Status</div>
           <div class="po-hint">Toggle procedures currently briefed and active.</div>
           {{#each operations.sops}}
-          <label class="po-switch" title="Enable or disable SOP: {{label}}">
-            <input type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
-            <span>{{label}}</span>
-          </label>
-          <label class="po-resource-row">
-            <span>Notes</span>
-            <input type="text" class="po-input" data-action="set-sop-note" data-sop="{{key}}" value="{{note}}" placeholder="Player notes for {{label}}" />
-          </label>
+          <div class="po-op-role-row">
+            <label class="po-switch" title="Enable or disable SOP: {{label}}">
+              <input type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
+              <span>{{label}}</span>
+            </label>
+            <details class="po-sop-note-block">
+              <summary>Notes</summary>
+              <textarea class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{note}}</textarea>
+            </details>
+          </div>
           {{/each}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Environment</div>
-          <div class="po-hint">Assign an environment profile and apply it to specific party members.</div>
-          <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
-          <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
-          {{#if operations.environment.movementCheckActive}}
-          <div class="po-op-summary">Movement Check: {{operations.environment.preset.checkSkill}} vs hidden DC {{operations.environment.movementDc}}</div>
-          {{else}}
-          <div class="po-op-summary">Movement Check: Off</div>
-          {{/if}}
-          {{#if @root.isGM}}
-          <label class="po-resource-row">
-            <span>Environment Preset</span>
-            <select class="po-select" data-action="set-environment-preset">
-              {{#each operations.environment.presetOptions}}
-              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Movement DC</span>
-            <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{operations.environment.movementDc}}" />
-          </label>
-          {{#if operations.environment.targets.length}}
-          {{#each operations.environment.targets}}
-          <label class="po-switch">
-            <input type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
-            <span>{{actorName}}</span>
-          </label>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary is-warn">No player actors available for assignment.</div>
-          {{/if}}
-          <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
-          {{/if}}
         </div>
         {{/if}}
 
@@ -839,6 +808,80 @@
           <button type="button" class="po-btn po-btn-sm" data-action="show-recovery-brief"><i class="fa-solid fa-file-lines"></i> Show Recovery Brief</button>
         </div>
 
+        {{/if}}
+
+        {{#if @root.isGM}}
+        {{#if operationsPageGm}}
+        <div class="po-gm-section">
+          <div class="po-section-title">GM Environment Controls</div>
+          <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
+          <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
+          <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
+          {{#if operations.environment.movementCheckActive}}
+          <div class="po-op-summary">Movement Check: {{operations.environment.preset.checkSkill}} vs hidden DC {{operations.environment.movementDc}}</div>
+          {{else}}
+          <div class="po-op-summary">Movement Check: Off</div>
+          {{/if}}
+
+          <label class="po-resource-row">
+            <span>Environment Preset</span>
+            <select class="po-select" data-action="set-environment-preset">
+              {{#each operations.environment.presetOptions}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <label class="po-resource-row">
+            <span>Movement DC</span>
+            <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{operations.environment.movementDc}}" />
+          </label>
+          <label class="po-resource-row">
+            <span>Notes</span>
+            <textarea class="po-input" rows="4" data-action="set-environment-note" placeholder="Add GM notes for this preset application">{{operations.environment.note}}</textarea>
+          </label>
+
+          {{#if operations.environment.targets.length}}
+          {{#each operations.environment.targets}}
+          <label class="po-switch">
+            <input type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
+            <span>{{actorName}}</span>
+          </label>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary is-warn">No player actors available for assignment.</div>
+          {{/if}}
+
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove DAE Effects</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
+          </div>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Environment Logs</div>
+          {{#if operations.environment.hasLogs}}
+          {{#each operations.environment.logs}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{presetLabel}}</div>
+              <div class="po-op-role-status">DC {{movementDc}}</div>
+            </div>
+            <div class="po-op-summary">Affected: {{actorNamesText}}</div>
+            {{#if hasNote}}
+            <div class="po-op-summary">Notes: {{note}}</div>
+            {{/if}}
+            <div class="po-op-summary">Logged: {{createdAtLabel}} by {{createdBy}}</div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="edit-environment-log" data-log-id="{{id}}">Edit</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="remove-environment-log" data-log-id="{{id}}">Remove</button>
+            </div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No environment logs yet.</div>
+          {{/if}}
+        </div>
+        {{/if}}
         {{/if}}
 
         {{/if}}

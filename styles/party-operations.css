@@ -462,6 +462,24 @@
   font-size: 0.72rem;
 }
 
+.party-operations .po-sop-note-block {
+  margin-top: var(--po-space-1);
+}
+
+.party-operations .po-sop-note-block > summary {
+  cursor: pointer;
+  color: var(--po-muted);
+  font-size: 0.72rem;
+  margin-bottom: var(--po-space-1);
+}
+
+.party-operations .po-sop-note-block textarea.po-input,
+.party-operations textarea.po-input {
+  width: 100%;
+  min-height: 80px;
+  resize: vertical;
+}
+
 .party-operations .po-switch {
   grid-template-columns: auto 1fr;
 }
