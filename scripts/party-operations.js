@@ -78,60 +78,31 @@ const ENVIRONMENT_PRESETS = [
     effectChanges: []
   },
   {
-    key: "climbing-vertical",
-    label: "Climbing & Vertical Movement",
-    description: "Sheer, slick, or unstable surfaces demand climbing control.",
-    icon: "icons/svg/falling.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "jumping-gaps",
-    label: "Jumping Gaps",
-    description: "Collapsed bridges and rooftop breaks require committed leaps.",
-    icon: "icons/svg/falling.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "balancing-narrow",
-    label: "Balancing Hazards",
-    description: "Narrow beams, rope spans, and frozen crossings threaten footing.",
-    icon: "icons/svg/acid.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "acr",
-    checkLabel: "Acrobatics",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "slippery-ground",
-    label: "Slippery Ground",
-    description: "Slick surfaces threaten a fall; failed checks cause prone slips.",
+    key: "slippery-surface",
+    label: "Slippery Surface",
+    description: "Ice, wet stone, blood-slick floors, or algae force balance control.",
     icon: "icons/svg/falling.svg",
     movementCheck: true,
     checkType: "skill",
     checkKey: "acr",
     checkLabel: "Acrobatics",
+    defaultDc: 13,
     failStatusId: "prone",
-    failHaltSquares: 1,
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
+    failBy5SlideFeet: 5,
+    effectChanges: [{ key: "system.attributes.movement.walk", value: "-10" }]
   },
   {
-    key: "difficult-terrain",
-    label: "Difficult Terrain",
-    description: "Snow, mud, rubble, and unstable footing tax movement plans.",
-    icon: "icons/svg/falling.svg",
+    key: "unstable-footing",
+    label: "Unstable Footing",
+    description: "Loose gravel, rubble, corpses, and shifting sand punish hard movement.",
+    icon: "icons/svg/hazard.svg",
     movementCheck: true,
-    checkType: "skill",
-    checkKey: "sur",
-    checkLabel: "Survival",
+    checkType: "save",
+    checkKey: "dex",
+    checkLabel: "Dexterity Save",
+    defaultDc: 13,
+    failSpeedZeroTurns: 1,
+    failBy5StatusId: "prone",
     effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
   },
   {
@@ -143,6 +114,8 @@ const ENVIRONMENT_PRESETS = [
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
+    defaultDc: 15,
+    failExhaustion: 1,
     effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
   },
   {
@@ -154,293 +127,95 @@ const ENVIRONMENT_PRESETS = [
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
+    defaultDc: 14,
+    failExhaustion: 1,
+    failBy5DamageFormula: "1d6",
+    failBy5DamageType: "fire",
     effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
   },
   {
-    key: "storms",
-    label: "Storms",
-    description: "Lightning, rain, and blowing grit reduce control and visibility.",
-    icon: "icons/svg/lightning.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "sur",
-    checkLabel: "Survival",
-    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
-  },
-  {
-    key: "high-winds",
-    label: "Strong Winds",
-    description: "Powerful gusts threaten footing and battlefield control.",
-    icon: "icons/svg/windmill.svg",
-    movementCheck: true,
-    checkType: "save",
-    checkKey: "str",
-    checkLabel: "Strength Save",
-    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
-  },
-  {
-    key: "dim-light-obscurement",
-    label: "Dim Light / Heavy Obscurement",
-    description: "Smoke, night, and fog suppress vision and hazard spotting.",
+    key: "heavy-obscurement",
+    label: "Heavy Obscurement",
+    description: "Thick fog, smoke, or magical darkness blinds line-of-sight engagement.",
     icon: "icons/svg/blind.svg",
-    movementCheck: true,
+    movementCheck: false,
     checkType: "skill",
     checkKey: "prc",
     checkLabel: "Perception",
+    alwaysStatusId: "blinded",
     effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-5" }]
   },
   {
-    key: "temporal-distortion",
-    label: "Illusions / Temporal Distortion",
-    description: "Shifting architecture and timeline echoes scramble certainty.",
-    icon: "icons/svg/ruins.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "arc",
-    checkLabel: "Arcana",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "quicksand-bog",
-    label: "Quicksand / Bog",
-    description: "Marsh hazards trap movement and punish poor route reading.",
-    icon: "icons/svg/swirl.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "avalanche-rockslide",
-    label: "Avalanche / Rockslide",
-    description: "Sudden collapse events demand immediate evasive movement.",
-    icon: "icons/svg/mountain.svg",
-    movementCheck: true,
-    checkType: "save",
-    checkKey: "dex",
-    checkLabel: "Dexterity Save",
-    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
-  },
-  {
-    key: "flash-flood",
-    label: "Flash Flood",
-    description: "Rapid surges turn routes into violent currents.",
-    icon: "icons/svg/water.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "thin-ice",
-    label: "Thin Ice",
-    description: "Surface fractures can collapse under sudden pressure.",
-    icon: "icons/svg/ice-aura.svg",
-    movementCheck: true,
-    checkType: "save",
-    checkKey: "dex",
-    checkLabel: "Dexterity Save",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "cave-ins",
-    label: "Cave-Ins",
-    description: "Unstable tunnels and crypt ceilings shed deadly debris.",
-    icon: "icons/svg/cave.svg",
-    movementCheck: true,
-    checkType: "save",
-    checkKey: "dex",
-    checkLabel: "Dexterity Save",
-    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
-  },
-  {
-    key: "rooftop-chase",
-    label: "Rooftop Chase",
-    description: "Sloped tiles and gaps punish slow or unsteady pursuit.",
-    icon: "icons/svg/city.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "acr",
-    checkLabel: "Acrobatics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "sewer-navigation",
-    label: "Sewer Navigation",
-    description: "Slippery channels and hidden drops confound route control.",
-    icon: "icons/svg/hazard.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "sur",
-    checkLabel: "Survival",
-    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
-  },
-  {
-    key: "crowd-movement",
-    label: "Crowd Movement",
-    description: "Riots and panic flows obstruct movement and timing.",
-    icon: "icons/svg/group.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "rough-water-swim",
-    label: "Rough Water",
-    description: "Currents and surf force repeated swim control checks.",
-    icon: "icons/svg/water.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ath",
-    checkLabel: "Athletics",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "underwater-exploration",
-    label: "Underwater Exploration",
-    description: "Breath and visibility constraints punish prolonged action.",
-    icon: "icons/svg/bubbles.svg",
-    movementCheck: true,
-    checkType: "save",
-    checkKey: "con",
-    checkLabel: "Constitution Save",
-    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
-  },
-  {
-    key: "necrotic-zone",
-    label: "Necrotic Zone",
-    description: "Blighted ground erodes vitality and invites sickness.",
+    key: "necrotic-saturation",
+    label: "Necrotic Saturation",
+    description: "Blighted ritual zones erode flesh and vitality.",
     icon: "icons/svg/skull.svg",
     movementCheck: true,
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
+    defaultDc: 14,
+    failDamageFormula: "1d6",
+    failDamageType: "necrotic",
+    failBy5MaxHpReductionFormula: "1d6",
     effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
   },
   {
-    key: "anti-magic-field",
-    label: "Anti-Magic Field",
-    description: "Spell flux drops out and magical assumptions fail.",
-    icon: "icons/svg/mage-shield.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "arc",
-    checkLabel: "Arcana",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "time-warped-area",
-    label: "Time-Warped Area",
-    description: "Temporal drag/surge introduces reaction desync and confusion.",
-    icon: "icons/svg/clockwork.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "ins",
-    checkLabel: "Insight",
-    effectChanges: [{ key: "system.attributes.init.bonus", value: "-1" }]
-  },
-  {
-    key: "haunting-fear-aura",
-    label: "Haunting / Fear Aura",
-    description: "Oppressive dread weakens resolve in haunted ground.",
-    icon: "icons/svg/terror.svg",
+    key: "high-wind",
+    label: "High Wind",
+    description: "Gale force winds disrupt ranged pressure and force balance saves.",
+    icon: "icons/svg/windmill.svg",
     movementCheck: true,
     checkType: "save",
-    checkKey: "wis",
-    checkLabel: "Wisdom Save",
-    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
+    checkKey: "str",
+    checkLabel: "Strength Save",
+    defaultDc: 13,
+    failSlideFeet: 5,
+    effectChanges: [
+      { key: "system.skills.prc.bonuses.check", value: "-1" },
+      { key: "system.bonuses.rwak.attack", value: "-2" }
+    ]
   },
   {
-    key: "foraging-pressure",
-    label: "Foraging Pressure",
-    description: "Sparse regions increase search strain and time cost.",
-    icon: "icons/svg/leaf.svg",
-    movementCheck: false,
-    checkType: "skill",
-    checkKey: "sur",
-    checkLabel: "Survival",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "hunting-pressure",
-    label: "Hunting Pressure",
-    description: "Alert prey and bad cover punish stealthy procurement.",
-    icon: "icons/svg/pawprint.svg",
-    movementCheck: false,
-    checkType: "skill",
-    checkKey: "ste",
-    checkLabel: "Stealth",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "navigation-pressure",
-    label: "Navigation Pressure",
-    description: "Trackless routes degrade orientation and route confidence.",
-    icon: "icons/svg/compass.svg",
-    movementCheck: false,
-    checkType: "skill",
-    checkKey: "sur",
-    checkLabel: "Survival",
-    effectChanges: [{ key: "system.skills.prc.bonuses.check", value: "-1" }]
-  },
-  {
-    key: "forced-march",
-    label: "Forced March",
-    description: "Extended pace increases fatigue and collapse risk.",
-    icon: "icons/svg/wingfoot.svg",
-    movementCheck: false,
-    checkType: "save",
-    checkKey: "con",
-    checkLabel: "Constitution Save",
-    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
-  },
-  {
-    key: "breaking-barriers",
-    label: "Breaking Barriers",
-    description: "Rotting beams and locked obstructions require brute force.",
-    icon: "icons/svg/door-closed-outline.svg",
+    key: "shifting-ground",
+    label: "Shifting Ground",
+    description: "Quicksand or moving stone catches and restrains movement.",
+    icon: "icons/svg/swirl.svg",
     movementCheck: true,
     checkType: "skill",
     checkKey: "ath",
     checkLabel: "Athletics",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+    defaultDc: 14,
+    failStatusId: "restrained",
+    effectChanges: [{ key: "system.attributes.movement.walk", value: "-10" }]
   },
   {
-    key: "environmental-traps",
-    label: "Environmental Traps",
-    description: "Hidden mechanisms and unstable triggers demand careful detection.",
-    icon: "icons/svg/trap.svg",
-    movementCheck: true,
-    checkType: "skill",
-    checkKey: "inv",
-    checkLabel: "Investigation",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
-  },
-  {
-    key: "witnessing-horror",
-    label: "Witnessing Horror",
-    description: "Ritual carnage and mass death strain composure.",
+    key: "psychic-pressure-field",
+    label: "Psychic Pressure Field",
+    description: "Fractured timeline pressure and sigil echoes fracture resolve.",
     icon: "icons/svg/terror.svg",
     movementCheck: true,
     checkType: "save",
     checkKey: "wis",
     checkLabel: "Wisdom Save",
+    defaultDc: 15,
+    failStatusId: "frightened",
+    failBy5StatusId: "incapacitated",
     effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
   },
   {
-    key: "soul-marked-manifestation",
-    label: "Soul-Marked Manifestation",
-    description: "Sigil flares and omen echoes fracture judgment under stress.",
-    icon: "icons/svg/eye.svg",
+    key: "corrosive-atmosphere",
+    label: "Corrosive Atmosphere",
+    description: "Acid mist and caustic vapors burn flesh and degrade gear.",
+    icon: "icons/svg/acid.svg",
     movementCheck: true,
-    checkType: "skill",
-    checkKey: "rel",
-    checkLabel: "Religion",
-    effectChanges: [{ key: "system.bonuses.abilities.check", value: "-1" }]
+    checkType: "save",
+    checkKey: "con",
+    checkLabel: "Constitution Save",
+    defaultDc: 13,
+    failDamageFormula: "1d4",
+    failDamageType: "acid",
+    effectChanges: [{ key: "system.bonuses.abilities.save", value: "-1" }]
   }
 ];
 
@@ -751,6 +526,13 @@ function getEnvironmentCheckMeta(source = {}) {
   };
 }
 
+function getStatusLabelById(statusId) {
+  const id = String(statusId ?? "").trim();
+  if (!id) return "";
+  const match = CONFIG.statusEffects?.find((entry) => String(entry?.id ?? "") === id);
+  return String(match?.name ?? id);
+}
+
 function ensureEnvironmentState(ledger) {
   if (!ledger.environment || typeof ledger.environment !== "object") {
     ledger.environment = {
@@ -987,6 +769,7 @@ function buildEnvironmentStatusEffectData(payload) {
   ];
 
   const preset = getEnvironmentPresetByKey(environment.presetKey);
+  const alwaysStatusId = String(preset.alwaysStatusId ?? "").trim();
   for (const effectChange of preset.effectChanges ?? []) {
     if (!effectChange?.key || effectChange?.value === undefined || effectChange?.value === null) continue;
     changes.push({
@@ -1007,6 +790,7 @@ function buildEnvironmentStatusEffectData(payload) {
     duration: {
       startTime: game.time?.worldTime ?? 0
     },
+    statuses: alwaysStatusId ? [alwaysStatusId] : [],
     changes,
     flags: {
       [MODULE_ID]: {
@@ -1016,6 +800,7 @@ function buildEnvironmentStatusEffectData(payload) {
           presetKey: String(environment.presetKey ?? "none"),
           label,
           movementCheck,
+          alwaysStatusId,
           checkType: check.checkType,
           checkKey: check.checkKey,
           checkSkill: check.checkType === "skill" ? check.checkKey : "",
@@ -3212,7 +2997,12 @@ async function setOperationalEnvironmentPreset(element) {
   const presetKey = getEnvironmentPresetByKey(String(element?.value ?? "none")).key;
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
+    const preset = getEnvironmentPresetByKey(presetKey);
     environment.presetKey = presetKey;
+    const defaultDc = Number(preset.defaultDc ?? 12);
+    if (Number.isFinite(defaultDc) && defaultDc > 0) {
+      environment.movementDc = Math.max(1, Math.min(30, Math.floor(defaultDc)));
+    }
     if (presetKey === "none") environment.appliedActorIds = [];
   });
 }
@@ -3344,12 +3134,15 @@ async function clearOperationalEnvironmentEffects() {
 async function showOperationalEnvironmentBrief() {
   const environment = buildOperationsContext().environment;
   const selected = environment.targets.filter((target) => target.selected).map((target) => target.actorName);
+  const alwaysStatusId = String(environment.preset?.alwaysStatusId ?? "").trim();
+  const alwaysStatusLabel = alwaysStatusId ? getStatusLabelById(alwaysStatusId) : "-";
   const content = `
     <div class="po-help">
       <p><strong>Environment:</strong> ${environment.preset.label}</p>
       <p><strong>Description:</strong> ${environment.preset.description}</p>
       <p><strong>Movement Check:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
       <p><strong>Check:</strong> ${environment.preset.movementCheck ? (environment.checkLabel || "-") : "-"}</p>
+      <p><strong>Always-On Status:</strong> ${alwaysStatusLabel}</p>
       <p><strong>Movement DC (GM):</strong> ${environment.movementDc}</p>
       <p><strong>Applies To:</strong> ${selected.length > 0 ? selected.join(", ") : "No actors selected."}</p>
     </div>
@@ -3669,47 +3462,207 @@ function getActorEnvironmentAssignment(actorId) {
     preset,
     movementDc: Number(environment.movementDc ?? 12),
     failStatusId: String(preset.failStatusId ?? "").trim(),
-    failHaltSquares: Math.max(0, Number(preset.failHaltSquares ?? 0) || 0)
+    failBy5StatusId: String(preset.failBy5StatusId ?? "").trim(),
+    failSlideFeet: Math.max(0, Number(preset.failSlideFeet ?? 0) || 0),
+    failBy5SlideFeet: Math.max(0, Number(preset.failBy5SlideFeet ?? 0) || 0),
+    failSpeedZeroTurns: Math.max(0, Number(preset.failSpeedZeroTurns ?? 0) || 0),
+    failDamageFormula: String(preset.failDamageFormula ?? "").trim(),
+    failDamageType: String(preset.failDamageType ?? "").trim(),
+    failBy5DamageFormula: String(preset.failBy5DamageFormula ?? "").trim(),
+    failBy5DamageType: String(preset.failBy5DamageType ?? "").trim(),
+    failExhaustion: Math.max(0, Number(preset.failExhaustion ?? 0) || 0),
+    failBy5MaxHpReductionFormula: String(preset.failBy5MaxHpReductionFormula ?? "").trim()
   };
 }
 
 async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext = null) {
   if (!game.user.isGM || !tokenDoc || !assignment) return;
 
-  const statusId = String(assignment.failStatusId ?? "").trim();
-  if (statusId) {
+  const rollTotal = Number(movementContext?.rollTotal ?? NaN);
+  const dc = Number(movementContext?.dc ?? NaN);
+  const failedBy = Number.isFinite(rollTotal) && Number.isFinite(dc) ? Math.max(0, dc - rollTotal) : 0;
+  const failedByFive = failedBy >= 5;
+
+  const getStatusEffectById = (statusId) => CONFIG.statusEffects?.find((entry) => String(entry?.id ?? "") === statusId) ?? statusId;
+
+  const toggleStatusOn = async (statusId) => {
+    const id = String(statusId ?? "").trim();
+    if (!id) return;
     try {
       if (typeof tokenDoc.actor?.toggleStatusEffect === "function") {
-        await tokenDoc.actor.toggleStatusEffect(statusId, { active: true, overlay: false });
+        await tokenDoc.actor.toggleStatusEffect(id, { active: true, overlay: false });
       } else if (tokenDoc.object && typeof tokenDoc.object.toggleEffect === "function") {
-        const statusEffect = CONFIG.statusEffects?.find((entry) => entry?.id === statusId) ?? statusId;
-        await tokenDoc.object.toggleEffect(statusEffect, { active: true });
+        await tokenDoc.object.toggleEffect(getStatusEffectById(id), { active: true });
       }
     } catch (error) {
-      console.warn(`${MODULE_ID}: failed to apply environment status '${statusId}'`, error);
+      console.warn(`${MODULE_ID}: failed to apply environment status '${id}'`, error);
     }
+  };
+
+  const getFeetToPixels = (feet) => {
+    const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 0);
+    const gridDistance = Number(canvas?.scene?.grid?.distance ?? canvas?.grid?.distance ?? 5);
+    if (!Number.isFinite(gridSize) || gridSize <= 0) return 0;
+    if (!Number.isFinite(gridDistance) || gridDistance <= 0) return gridSize;
+    return (Number(feet || 0) / gridDistance) * gridSize;
+  };
+
+  const slideTokenByFeet = async (feet) => {
+    const distancePixels = getFeetToPixels(feet);
+    if (!Number.isFinite(distancePixels) || distancePixels <= 0) return;
+    const origin = movementContext?.origin;
+    const destination = movementContext?.destination;
+    if (!origin || !destination) return;
+
+    const dx = Number(destination.x ?? 0) - Number(origin.x ?? 0);
+    const dy = Number(destination.y ?? 0) - Number(origin.y ?? 0);
+    const magnitude = Math.hypot(dx, dy);
+    if (!Number.isFinite(magnitude) || magnitude <= 0) return;
+
+    const ux = dx / magnitude;
+    const uy = dy / magnitude;
+    const nextX = Math.round(Number(destination.x ?? 0) + (ux * distancePixels));
+    const nextY = Math.round(Number(destination.y ?? 0) + (uy * distancePixels));
+    await tokenDoc.update({ x: nextX, y: nextY }, { poEnvironmentClamp: true });
+  };
+
+  const applyDamageFormula = async (formula, damageType = "") => {
+    const text = String(formula ?? "").trim();
+    if (!text) return null;
+    try {
+      const roll = await (new Roll(text)).evaluate({ async: true });
+      const amount = Math.max(0, Math.floor(Number(roll.total ?? 0)));
+      if (amount <= 0) return { amount: 0 };
+      const hpPath = "system.attributes.hp.value";
+      const hpValue = Number(foundry.utils.getProperty(tokenDoc.actor, hpPath) ?? 0);
+      if (Number.isFinite(hpValue)) {
+        await tokenDoc.actor.update({ [hpPath]: Math.max(0, hpValue - amount) });
+      }
+      return { amount, damageType: String(damageType ?? "").trim() };
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to evaluate damage formula '${text}'`, error);
+      return null;
+    }
+  };
+
+  const applyExhaustionLevels = async (levels) => {
+    const amount = Math.max(0, Math.floor(Number(levels ?? 0)));
+    if (amount <= 0) return;
+    const path = "system.attributes.exhaustion";
+    const current = Number(foundry.utils.getProperty(tokenDoc.actor, path) ?? 0);
+    if (!Number.isFinite(current)) return;
+    await tokenDoc.actor.update({ [path]: Math.max(0, Math.min(6, current + amount)) });
+  };
+
+  const applyTemporarySpeedZero = async (turns = 1) => {
+    const durationRounds = Math.max(1, Math.floor(Number(turns ?? 1) || 1));
+    const combat = game.combat;
+    const duration = combat
+      ? { rounds: durationRounds, startRound: Number(combat.round ?? 0), startTurn: Number(combat.turn ?? 0) }
+      : { seconds: 6 * durationRounds, startTime: Number(game.time?.worldTime ?? 0) };
+    const effectData = {
+      name: "Environment: Unstable Footing (Speed 0)",
+      img: assignment?.preset?.icon ?? "icons/svg/hazard.svg",
+      origin: `${ENVIRONMENT_EFFECT_ORIGIN}.failure`,
+      disabled: false,
+      transfer: false,
+      duration,
+      changes: [
+        {
+          key: "system.attributes.movement.walk",
+          mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE,
+          value: "0",
+          priority: 20
+        }
+      ],
+      flags: {
+        [MODULE_ID]: {
+          environmentFailure: true,
+          speedZero: true
+        }
+      }
+    };
+    await tokenDoc.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+  };
+
+  const applyMaxHpReductionFormula = async (formula) => {
+    const text = String(formula ?? "").trim();
+    if (!text) return null;
+    try {
+      const roll = await (new Roll(text)).evaluate({ async: true });
+      const reduction = Math.max(0, Math.floor(Number(roll.total ?? 0)));
+      if (reduction <= 0) return { reduction: 0 };
+      const effectData = {
+        name: "Environment: Max HP Reduction",
+        img: assignment?.preset?.icon ?? "icons/svg/skull.svg",
+        origin: `${ENVIRONMENT_EFFECT_ORIGIN}.failure`,
+        disabled: false,
+        transfer: false,
+        duration: {
+          seconds: 86400,
+          startTime: Number(game.time?.worldTime ?? 0)
+        },
+        changes: [
+          {
+            key: "system.attributes.hp.max",
+            mode: CONST.ACTIVE_EFFECT_MODES.ADD,
+            value: String(-reduction),
+            priority: 20
+          }
+        ],
+        flags: {
+          [MODULE_ID]: {
+            environmentFailure: true,
+            maxHpReduction: reduction
+          }
+        }
+      };
+      await tokenDoc.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+      return { reduction };
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to apply max HP reduction formula '${text}'`, error);
+      return null;
+    }
+  };
+
+  const statusId = String(assignment.failStatusId ?? "").trim();
+  if (statusId) await toggleStatusOn(statusId);
+  if (failedByFive) {
+    const failBy5StatusId = String(assignment.failBy5StatusId ?? "").trim();
+    if (failBy5StatusId) await toggleStatusOn(failBy5StatusId);
   }
 
-  const haltSquares = Math.max(0, Number(assignment.failHaltSquares ?? 0) || 0);
-  if (haltSquares <= 0) return;
+  const slideFeet = failedByFive
+    ? Math.max(0, Number(assignment.failBy5SlideFeet ?? assignment.failSlideFeet ?? 0) || 0)
+    : Math.max(0, Number(assignment.failSlideFeet ?? 0) || 0);
+  if (slideFeet > 0) await slideTokenByFeet(slideFeet);
 
-  const origin = movementContext?.origin;
-  const destination = movementContext?.destination;
-  if (!origin || !destination) return;
+  const speedZeroTurns = Math.max(0, Number(assignment.failSpeedZeroTurns ?? 0) || 0);
+  if (speedZeroTurns > 0) await applyTemporarySpeedZero(speedZeroTurns);
 
-  const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 0);
-  if (!Number.isFinite(gridSize) || gridSize <= 0) return;
-  const maxDistance = haltSquares * gridSize;
-  const dx = Number(destination.x ?? 0) - Number(origin.x ?? 0);
-  const dy = Number(destination.y ?? 0) - Number(origin.y ?? 0);
-  const distance = Math.hypot(dx, dy);
-  if (!Number.isFinite(distance) || distance <= maxDistance) return;
+  await applyExhaustionLevels(Number(assignment.failExhaustion ?? 0));
 
-  const ratio = maxDistance / distance;
-  const nextX = Math.round(Number(origin.x ?? 0) + (dx * ratio));
-  const nextY = Math.round(Number(origin.y ?? 0) + (dy * ratio));
+  const damageFormula = failedByFive
+    ? String(assignment.failBy5DamageFormula ?? assignment.failDamageFormula ?? "")
+    : String(assignment.failDamageFormula ?? "");
+  const damageType = failedByFive
+    ? String(assignment.failBy5DamageType ?? assignment.failDamageType ?? "")
+    : String(assignment.failDamageType ?? "");
+  const damageResult = await applyDamageFormula(damageFormula, damageType);
 
-  await tokenDoc.update({ x: nextX, y: nextY }, { poEnvironmentClamp: true });
+  if (failedByFive) {
+    await applyMaxHpReductionFormula(String(assignment.failBy5MaxHpReductionFormula ?? ""));
+  }
+
+  if (damageResult?.amount > 0) {
+    const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+    const typed = damageResult.damageType ? ` ${damageResult.damageType}` : "";
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      whisper: gmIds,
+      content: `<p><strong>${tokenDoc.actor?.name ?? "Actor"}</strong> suffers ${damageResult.amount}${typed} damage from ${assignment?.preset?.label ?? "environment"}.</p>`
+    });
+  }
 }
 
 async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
@@ -3755,7 +3708,11 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
   if (!Number.isFinite(total) && typeof passed !== "boolean") return;
   const failed = typeof passed === "boolean" ? !passed : (Number.isFinite(total) ? total < dc : false);
   if (failed) {
-    await applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext);
+    await applyEnvironmentFailureConsequences(tokenDoc, assignment, {
+      ...(movementContext ?? {}),
+      rollTotal: Number.isFinite(total) ? total : null,
+      dc
+    });
   }
 
   const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
@@ -6824,7 +6781,7 @@ function getFloatingLauncherPosition() {
 function getFloatingLauncherCenteredPosition() {
   const launcher = document.getElementById("po-floating-launcher");
   const launcherWidth = Math.max(56, Number(launcher?.offsetWidth ?? 56));
-  const launcherHeight = Math.max(248, Number(launcher?.offsetHeight ?? 248));
+  const launcherHeight = Math.max(172, Number(launcher?.offsetHeight ?? 172));
   const viewportWidth = Math.max(240, Number(window.innerWidth ?? 1200));
   const viewportHeight = Math.max(240, Number(window.innerHeight ?? 800));
 
@@ -6883,7 +6840,7 @@ function clampFloatingLauncherPosition(pos, options = {}) {
   const height = Math.max(240, window.innerHeight || 800);
   const launcher = document.getElementById("po-floating-launcher");
   const launcherWidth = Math.max(48, Number(launcher?.offsetWidth ?? 48));
-  const launcherHeight = Math.max(220, Number(launcher?.offsetHeight ?? 220));
+  const launcherHeight = Math.max(140, Number(launcher?.offsetHeight ?? 140));
   const lockAware = options?.lockAware !== false;
   const locked = lockAware ? isFloatingLauncherLocked() : false;
   const minLeft = locked ? 8 : getFloatingLauncherLeftInset();
@@ -6907,13 +6864,7 @@ function ensureFloatingLauncher() {
       <button type="button" class="po-floating-btn" data-action="rest" title="Open Rest Watch" aria-label="Open Rest Watch">
         <i class="fas fa-moon"></i>
       </button>
-      <button type="button" class="po-floating-btn" data-action="operations" title="Open Operations" aria-label="Open Operations">
-        <i class="fas fa-clipboard-list"></i>
-      </button>
       <button type="button" class="po-floating-btn" data-action="march" title="Open Marching Order" aria-label="Open Marching Order"><i class="fas fa-arrow-up"></i></button>
-      <button type="button" class="po-floating-btn po-floating-gm" data-action="gm" title="Open GM Section" aria-label="Open GM Section">
-        <i class="fas fa-user-shield"></i>
-      </button>
       <button type="button" class="po-floating-btn po-floating-lock" data-action="lock" title="Lock launcher" aria-label="Lock launcher">
         <i class="fas fa-lock"></i>
       </button>
@@ -6935,20 +6886,7 @@ function ensureFloatingLauncher() {
       if (!button) return;
       const action = button.dataset.action;
       if (action === "rest") new RestWatchApp().render({ force: true });
-      if (action === "operations") {
-        setActiveRestMainTab("operations");
-        new RestWatchApp().render({ force: true });
-      }
       if (action === "march") new MarchingOrderApp().render({ force: true });
-      if (action === "gm") {
-        if (!game.user?.isGM) {
-          ui.notifications?.warn("GM permissions are required for the GM section.");
-          return;
-        }
-        setActiveRestMainTab("operations");
-        setActiveOperationsPage("gm");
-        new RestWatchApp().render({ force: true });
-      }
       if (action === "lock") {
         const current = clampFloatingLauncherPosition({
           left: parseFloat(launcher.style.left || "16"),
@@ -7025,15 +6963,14 @@ function ensureFloatingLauncher() {
       launcher.style.top = `${clamped.top}px`;
     });
   } else {
-    const hasOperationsBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="operations"]'));
-    const hasGmBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="gm"]'));
-    if (!hasOperationsBtn || !hasGmBtn) {
+    const hasRestBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="rest"]'));
+    const hasMarchBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="march"]'));
+    const hasLockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="lock"]'));
+    const hasUnlockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="unlock"]'));
+    if (!hasRestBtn || !hasMarchBtn || !hasLockBtn || !hasUnlockBtn) {
       setLauncherMarkup(launcher);
     }
   }
-
-  const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
-  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
   launcher.style.display = "flex";
