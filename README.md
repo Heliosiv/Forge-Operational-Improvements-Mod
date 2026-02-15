@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.21 -Message "Release"
+./scripts/release.ps1 -Version 2.0.22 -Message "Release"
 ```
 
 What it does:
@@ -28,10 +28,11 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.21 highlights
+### 2.0.22 highlights
 
-- Expanded Simple Calendar injury create compatibility across API signatures.
-- Simplified injury calendar payload fields to match working cross-version note/event formats.
+- Added broader Simple Calendar API source selection for mutation calls and reduced false-positive method discovery.
+- Improved injury sync failure messaging to include concise rejection reason details.
+- Updated Foundry v12 compatibility warnings: migrated scene darkness access and removed deprecated Roll evaluate async option.
 
 ### After pushing
 

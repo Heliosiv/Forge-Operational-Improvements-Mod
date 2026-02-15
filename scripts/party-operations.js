@@ -4487,7 +4487,8 @@ function resolveCurrentSceneWeatherSnapshot() {
   const weatherId = rawId;
   const weatherCfg = weatherId ? CONFIG.weatherEffects?.[weatherId] : null;
   const label = String(weatherCfg?.label ?? weatherCfg?.name ?? (weatherId ? weatherId : "Clear")).trim() || "Clear";
-  const darkness = Number.isFinite(Number(scene?.darkness)) ? Math.max(0, Math.min(1, Number(scene.darkness))) : 0;
+  const darknessLevel = scene?.environment?.darknessLevel;
+  const darkness = Number.isFinite(Number(darknessLevel)) ? Math.max(0, Math.min(1, Number(darknessLevel))) : 0;
   const visibilityModifier = computeWeatherVisibilityModifier({ label, weatherId, darkness });
 
   return {
@@ -5251,7 +5252,7 @@ async function rollWisdomSurvival(actor, options = {}) {
   }
 
   const wisMod = Number(actor?.system?.abilities?.wis?.mod ?? 0);
-  const roll = await (new Roll("1d20 + @mod", { mod: wisMod })).evaluate({ async: true });
+  const roll = await (new Roll("1d20 + @mod", { mod: wisMod })).evaluate();
   await roll.toMessage({
     speaker: ChatMessage.getSpeaker({ actor }),
     flavor
@@ -5396,7 +5397,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     const text = String(formula ?? "").trim();
     if (!text) return null;
     try {
-      const roll = await (new Roll(text)).evaluate({ async: true });
+      const roll = await (new Roll(text)).evaluate();
       const amount = Math.max(0, Math.floor(Number(roll.total ?? 0)));
       if (amount <= 0) return { amount: 0 };
       const hpPath = "system.attributes.hp.value";
@@ -5455,7 +5456,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     const text = String(formula ?? "").trim();
     if (!text) return null;
     try {
-      const roll = await (new Roll(text)).evaluate({ async: true });
+      const roll = await (new Roll(text)).evaluate();
       const reduction = Math.max(0, Math.floor(Number(roll.total ?? 0)));
       if (reduction <= 0) return { reduction: 0 };
       const effectData = {
@@ -5808,11 +5809,11 @@ async function runGatherResourceCheck() {
           if (success) {
             const coverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
             if (gatherType === "food" || gatherType === "both") {
-              const foodRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate({ async: true });
+              const foodRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
               gainedFood = Math.max(0, Math.floor(Number(foodRoll.total ?? 0)));
             }
             if (gatherType === "water" || gatherType === "both") {
-              const waterRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate({ async: true });
+              const waterRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
               gainedWater = Math.max(0, Math.floor(Number(waterRoll.total ?? 0)));
             }
 
@@ -5936,7 +5937,7 @@ async function runReconCheck() {
       total = Number(roll?.total ?? roll?.roll?.total ?? 0);
     } else {
       const intMod = Number(reconActor.system?.abilities?.int?.mod ?? 0);
-      const roll = await (new Roll("1d20 + @mod", { mod: intMod })).evaluate({ async: true });
+      const roll = await (new Roll("1d20 + @mod", { mod: intMod })).evaluate();
       total = Number(roll.total ?? 0);
     }
   } catch (error) {
@@ -6118,8 +6119,8 @@ function buildReputationCalendarPayload(faction, logEntry) {
 
 async function syncReputationLogToSimpleCalendar(faction, logEntry) {
   if (!game.user.isGM || !isSimpleCalendarActive()) return "";
-  const api = getSimpleCalendarApi();
-  if (!api || !hasSimpleCalendarMutationApi(api)) return "";
+  const api = getSimpleCalendarMutationApi();
+  if (!api) return "";
   const created = await createSimpleCalendarEntry(api, buildReputationCalendarPayload(faction, logEntry));
   return created?.success ? String(created.id ?? "") : "";
 }
@@ -7800,15 +7801,11 @@ async function persistInjuryCalendarMetadata(actorId, fields) {
 }
 
 async function syncInjuryWithSimpleCalendar(actorId) {
-  if (!game.user.isGM || !isSimpleCalendarActive()) return false;
-  const api = getSimpleCalendarApi();
+  if (!game.user.isGM || !isSimpleCalendarActive()) return { synced: false, reason: "Simple Calendar inactive or user is not GM.", entryId: "" };
+  const api = getSimpleCalendarMutationApi();
   if (!api) {
     logSimpleCalendarSyncDebug("Simple Calendar API missing during injury sync", { actorId });
-    return false;
-  }
-  if (!hasSimpleCalendarMutationApi(api)) {
-    logSimpleCalendarSyncDebug("Simple Calendar API present but has no recognized mutation methods", { actorId });
-    return false;
+    return { synced: false, reason: "Simple Calendar mutation API not found.", entryId: "" };
   }
   const state = getInjuryRecoveryState();
   const entry = state.injuries?.[actorId];
@@ -7819,16 +7816,18 @@ async function syncInjuryWithSimpleCalendar(actorId) {
       hasEntry: Boolean(entry),
       hasActor: Boolean(actor)
     });
-    return false;
+    return { synced: false, reason: "Missing actor or injury entry.", entryId: "" };
   }
 
   const payload = buildInjuryCalendarPayload(actor, entry);
   const existingId = String(entry.calendarEntryId ?? "");
   let syncedId = existingId;
   let synced = false;
+  let failureReason = "";
 
   if (existingId) {
     synced = await updateSimpleCalendarEntry(api, existingId, payload);
+    if (!synced) failureReason = `Update failed for calendar entry ${existingId}.`;
   }
 
   if (!synced) {
@@ -7837,6 +7836,7 @@ async function syncInjuryWithSimpleCalendar(actorId) {
       synced = true;
       if (created.id) syncedId = created.id;
     } else {
+      failureReason = String(created.reason ?? "Create fallback failed.");
       logSimpleCalendarSyncDebug("Create fallback failed for injury sync", {
         actorId,
         actorName: actor.name,
@@ -7853,16 +7853,17 @@ async function syncInjuryWithSimpleCalendar(actorId) {
     logSimpleCalendarSyncDebug("Injury sync failed after update/create attempts", {
       actorId,
       actorName: actor.name,
-      existingEntryId: existingId || "(none)"
+      existingEntryId: existingId || "(none)",
+      reason: failureReason || "unknown"
     });
   }
 
-  return synced;
+  return { synced, reason: synced ? "" : (failureReason || "unknown"), entryId: syncedId };
 }
 
 async function clearInjuryFromSimpleCalendar(entryId) {
   if (!game.user.isGM || !isSimpleCalendarActive() || !entryId) return false;
-  const api = getSimpleCalendarApi();
+  const api = getSimpleCalendarMutationApi();
   if (!api) return false;
   return removeSimpleCalendarEntry(api, entryId);
 }
@@ -7872,7 +7873,7 @@ async function syncAllInjuriesToSimpleCalendar() {
   const injuries = Object.keys(getInjuryRecoveryState().injuries ?? {});
   let synced = 0;
   for (const actorId of injuries) {
-    if (await syncInjuryWithSimpleCalendar(actorId)) synced += 1;
+    if ((await syncInjuryWithSimpleCalendar(actorId)).synced) synced += 1;
   }
   return { synced, total: injuries.length };
 }
@@ -7911,7 +7912,7 @@ async function showInjuryTable() {
 async function rollInjuryTableForEditor(element) {
   const root = element?.closest(".po-injury-editor");
   if (!root) return;
-  const rollResult = await (new Roll("1d100")).evaluate({ async: true });
+  const rollResult = await (new Roll("1d100")).evaluate();
   try {
     if (game.dice3d?.showForRoll) {
       await game.dice3d.showForRoll(rollResult, game.user, true);
@@ -7962,7 +7963,7 @@ async function rollTreatmentCheck(injuredActorId, treatmentSkill, dc) {
     const actor = game.actors.get(injuredActorId);
     if (!actor) return false;
     const conMod = Number(actor.system?.abilities?.con?.mod ?? 0);
-    const roll = await (new Roll("1d20 + @mod", { mod: conMod })).evaluate({ async: true });
+    const roll = await (new Roll("1d20 + @mod", { mod: conMod })).evaluate();
     await roll.toMessage({
       speaker: ChatMessage.getSpeaker({ actor }),
       flavor: `Treatment Check: CON vs DC ${dcValue}`
@@ -8051,14 +8052,15 @@ async function upsertInjuryEntry(element) {
   });
 
   if (game.user.isGM) {
-    const simpleCalendarApi = getSimpleCalendarApi();
-    const hasMutationApi = hasSimpleCalendarMutationApi(simpleCalendarApi);
-    const synced = await syncInjuryWithSimpleCalendar(actorId);
-    if (isSimpleCalendarActive() && hasMutationApi && !synced) {
-      ui.notifications?.warn(`Injury saved, but Simple Calendar sync was unavailable for ${game.actors.get(actorId)?.name ?? "actor"}.`);
+    const hasMutationApi = Boolean(getSimpleCalendarMutationApi());
+    const syncResult = await syncInjuryWithSimpleCalendar(actorId);
+    if (isSimpleCalendarActive() && hasMutationApi && !syncResult.synced) {
+      const reason = String(syncResult.reason ?? "").trim();
+      const detail = reason ? ` (${reason.length > 120 ? `${reason.slice(0, 117)}...` : reason})` : "";
+      ui.notifications?.warn(`Injury saved, but Simple Calendar sync was unavailable for ${game.actors.get(actorId)?.name ?? "actor"}${detail}.`);
     } else if (isSimpleCalendarActive() && !hasMutationApi) {
       ui.notifications?.info("Injury saved. Simple Calendar API is not currently available in this session.");
-    } else if (synced) {
+    } else if (syncResult.synced) {
       ui.notifications?.info(`Injury saved and scheduled in Simple Calendar (${savedRecoveryDays} day recovery window).`);
     }
   } else {
@@ -9519,8 +9521,58 @@ function isSimpleCalendarActive() {
   return Boolean(game.modules.get("foundryvtt-simple-calendar")?.active || game.modules.get("simple-calendar")?.active);
 }
 
+function getSimpleCalendarApiCandidates() {
+  const moduleApi = game.modules.get("foundryvtt-simple-calendar")?.api ?? game.modules.get("simple-calendar")?.api ?? null;
+  const rawCandidates = [
+    globalThis.SimpleCalendar?.api,
+    globalThis.SimpleCalendar,
+    game?.simpleCalendar?.api,
+    game?.simpleCalendar,
+    moduleApi
+  ];
+  const unique = [];
+  const seen = new Set();
+  for (const candidate of rawCandidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    unique.push(candidate);
+  }
+  return unique;
+}
+
 function getSimpleCalendarApi() {
-  return globalThis.SimpleCalendar?.api ?? game?.simpleCalendar?.api ?? null;
+  const candidates = getSimpleCalendarApiCandidates();
+  if (!candidates.length) return null;
+  return candidates.find((api) => typeof api?.timestampToDate === "function") ?? candidates[0];
+}
+
+function hasKnownSimpleCalendarMutationMethods(api) {
+  if (!api || typeof api !== "object") return false;
+  return [
+    api.addEvent,
+    api.createEvent,
+    api.addNote,
+    api.createNote,
+    api.addCalendarNote,
+    api.updateEvent,
+    api.updateNote,
+    api.updateEntry,
+    api.removeEvent,
+    api.deleteEvent,
+    api.removeNote,
+    api.deleteNote,
+    api.removeEntry
+  ].some((fn) => typeof fn === "function");
+}
+
+function getSimpleCalendarMutationApi() {
+  const candidates = getSimpleCalendarApiCandidates();
+  if (!candidates.length) return null;
+  const known = candidates.find((api) => hasKnownSimpleCalendarMutationMethods(api));
+  if (known) return known;
+  const discovered = candidates.find((api) => hasSimpleCalendarMutationApi(api));
+  return discovered ?? null;
 }
 
 function collectSimpleCalendarMethods(source, test, prefix = "api", depth = 0, seen = new Set()) {
@@ -9545,9 +9597,9 @@ function collectSimpleCalendarMethods(source, test, prefix = "api", depth = 0, s
 
 function getSimpleCalendarMutationMethods(api) {
   if (!api) return { updateMethods: [], createMethods: [], removeMethods: [] };
-  const isCreateMethod = (key, path) => /(add|create)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
-  const isUpdateMethod = (key, path) => /(update|edit|set)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
-  const isRemoveMethod = (key, path) => /(remove|delete)/i.test(key) && /(note|event|entry|calendar)/i.test(path);
+  const isCreateMethod = (key, path) => /(add|create)/i.test(key) && /(note|event|entry)/i.test(path);
+  const isUpdateMethod = (key, path) => /(update|edit|set)/i.test(key) && /(note|event|entry)/i.test(path);
+  const isRemoveMethod = (key, path) => /(remove|delete)/i.test(key) && /(note|event|entry)/i.test(path);
 
   const preferredUpdate = [
     { fn: api.updateEvent, ctx: api, name: "api.updateEvent" },
