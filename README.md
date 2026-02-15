@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.22 -Message "Release"
+./scripts/release.ps1 -Version 2.0.23 -Message "Release"
 ```
 
 What it does:
@@ -28,11 +28,11 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.22 highlights
+### 2.0.23 highlights
 
-- Added broader Simple Calendar API source selection for mutation calls and reduced false-positive method discovery.
-- Improved injury sync failure messaging to include concise rejection reason details.
-- Updated Foundry v12 compatibility warnings: migrated scene darkness access and removed deprecated Roll evaluate async option.
+- Added GM Session Autopilot quick actions with one-click run and undo snapshot restore.
+- Added non-party scene sync controls so global/weather modifiers and environment presets can apply to monsters/NPCs.
+- Added scene-ready integration refresh to keep non-party effect sync aligned when changing scenes.
 
 ### After pushing
 

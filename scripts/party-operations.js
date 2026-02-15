@@ -15,6 +15,7 @@ export const SETTINGS = {
   INJURY_RECOVERY: "injuryRecoveryState",
   INJURY_REMINDER_DAY: "injuryReminderDay",
   INTEGRATION_MODE: "integrationMode",
+  SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
@@ -92,6 +93,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "apply-recovery-cycle",
   "set-party-health-modifier",
   "set-party-health-custom-field",
+  "set-party-health-sync-non-party",
   "add-party-health-custom",
   "remove-party-health-custom",
   "remove-active-sync-effect",
@@ -104,6 +106,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-environment-dc",
   "set-environment-note",
   "set-environment-successive",
+  "set-environment-sync-non-party",
   "reset-environment-successive-defaults",
   "toggle-environment-actor",
   "add-environment-log",
@@ -119,6 +122,8 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-submit-modifier",
   "gm-quick-sync-integrations",
   "gm-quick-log-weather",
+  "gm-quick-session-autopilot",
+  "gm-quick-undo-autopilot",
   "gm-quick-submit-weather",
   "gm-quick-weather-select",
   "gm-quick-weather-set",
@@ -503,7 +508,10 @@ function buildIntegrationGlobalContext() {
   };
 }
 
-function buildActorIntegrationPayload(actorId, globalContext) {
+function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
+  const isNonParty = Boolean(options?.nonParty);
+  const includeWorldGlobal = isNonParty ? options?.includeWorldGlobal !== false : false;
+  const forceEnvironmentApply = Boolean(options?.forceEnvironmentApply);
   const injury = globalContext.injuryRecovery.injuries?.[actorId] ?? null;
   const roleKeys = globalContext.rolesByActorId[actorId] ?? [];
   const watchSlots = globalContext.watchSlotsByActorId[actorId] ?? [];
@@ -512,9 +520,17 @@ function buildActorIntegrationPayload(actorId, globalContext) {
   const baseSummary = globalContext.operations.baseOperations ?? { maintenancePressure: 0, readiness: false, activeSites: 0 };
   const environment = globalContext.operations.environment ?? { presetKey: "none", movementDc: 12, appliedActorIds: [], preset: null };
   const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
-  const environmentApplies = Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId);
+  const environmentApplies = forceEnvironmentApply || (Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId));
   const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
-  const globalModifiers = globalContext.operations.summary?.effects?.globalModifiers ?? {};
+  const summaryEffects = globalContext.operations.summary?.effects ?? {};
+  const globalModifiers = isNonParty && includeWorldGlobal
+    ? (summaryEffects.worldGlobalModifiers ?? {})
+    : (summaryEffects.globalModifiers ?? {});
+  const customDaeChanges = isNonParty
+    ? (includeWorldGlobal
+      ? (Array.isArray(summaryEffects.worldDaeChanges) ? summaryEffects.worldDaeChanges : [])
+      : [])
+    : (Array.isArray(summaryEffects.customDaeChanges) ? summaryEffects.customDaeChanges : []);
 
   return {
     syncedAt: globalContext.syncedAt,
@@ -539,9 +555,7 @@ function buildActorIntegrationPayload(actorId, globalContext) {
       minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
       minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
       minorSavingThrowBonus: Number(globalModifiers.savingThrows ?? 0),
-      customDaeChanges: Array.isArray(globalContext.operations.summary?.effects?.customDaeChanges)
-        ? globalContext.operations.summary.effects.customDaeChanges
-        : []
+      customDaeChanges
     },
     doctrine: {
       formation: globalContext.formation,
@@ -914,6 +928,7 @@ function ensureEnvironmentState(ledger) {
       presetKey: "none",
       movementDc: 12,
       appliedActorIds: [],
+      syncToSceneNonParty: true,
       note: "",
       logs: [],
       failureStreaks: {},
@@ -928,6 +943,7 @@ function ensureEnvironmentState(ledger) {
   ledger.environment.appliedActorIds = ledger.environment.appliedActorIds
     .map((actorId) => String(actorId ?? "").trim())
     .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index);
+  ledger.environment.syncToSceneNonParty = ledger.environment.syncToSceneNonParty !== false;
   ledger.environment.note = String(ledger.environment.note ?? "");
   if (!ledger.environment.failureStreaks || typeof ledger.environment.failureStreaks !== "object") {
     ledger.environment.failureStreaks = {};
@@ -984,6 +1000,7 @@ function ensureEnvironmentState(ledger) {
         presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
         movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
         actorIds,
+        syncToSceneNonParty: entry?.syncToSceneNonParty !== false,
         note: String(entry?.note ?? ""),
         checkType: checkMeta.checkType,
         checkKey: checkMeta.checkKey,
@@ -1351,6 +1368,42 @@ async function clearActorIntegrationPayload(actor) {
   });
 }
 
+async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode) {
+  if (!game.user.isGM) return { synced: 0, cleared: 0, total: 0, enabled: false };
+  const context = globalContext ?? buildIntegrationGlobalContext();
+  const partyHealth = context.operations?.partyHealth ?? {};
+  const environment = context.operations?.environment ?? {};
+  const syncWorldGlobal = Boolean(partyHealth.syncToSceneNonParty);
+  const syncEnvironment = Boolean(environment.syncToSceneNonParty && String(environment.presetKey ?? "none") !== "none");
+  const enabled = syncWorldGlobal || syncEnvironment;
+  const actors = getSceneNonPartyIntegrationActors();
+  let synced = 0;
+  let cleared = 0;
+
+  for (const actor of actors) {
+    if (!enabled || resolvedMode === INTEGRATION_MODES.OFF) {
+      const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+      const hasEffect = Boolean(getIntegrationEffect(actor));
+      const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
+      const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+      if (hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect) {
+        await clearActorIntegrationPayload(actor);
+        cleared += 1;
+      }
+      continue;
+    }
+    const payload = buildActorIntegrationPayload(actor.id, context, {
+      nonParty: true,
+      includeWorldGlobal: syncWorldGlobal,
+      forceEnvironmentApply: syncEnvironment
+    });
+    await applyActorIntegrationPayload(actor, payload, resolvedMode);
+    synced += 1;
+  }
+
+  return { synced, cleared, total: actors.length, enabled };
+}
+
 async function syncIntegrationState() {
   if (!game.user.isGM) return;
 
@@ -1370,6 +1423,7 @@ async function syncIntegrationState() {
     for (const actor of actorsToClear) {
       await clearActorIntegrationPayload(actor);
     }
+    await syncSceneNonPartyIntegrationActors(null, resolvedMode);
     return;
   }
 
@@ -1392,6 +1446,8 @@ async function syncIntegrationState() {
   for (const actor of staleActors) {
     await clearActorIntegrationPayload(actor);
   }
+
+  await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
 }
 
 function scheduleIntegrationSync(reason = "") {
@@ -2132,6 +2188,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-environment-note":
         await setOperationalEnvironmentNote(element);
         break;
+      case "set-environment-sync-non-party":
+        await setOperationalEnvironmentSyncNonParty(element);
+        break;
       case "set-environment-successive":
         await setOperationalEnvironmentSuccessive(element);
         break;
@@ -2225,6 +2284,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-party-health-custom-field":
         await setPartyHealthCustomField(element);
         break;
+      case "set-party-health-sync-non-party":
+        await setPartyHealthSyncNonParty(element);
+        break;
       case "add-party-health-custom":
         await addPartyHealthCustomModifier(element);
         break;
@@ -2272,6 +2334,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "gm-quick-sync-integrations":
         scheduleIntegrationSync("gm-quick-action");
         ui.notifications?.info("Party Operations integration sync queued.");
+        break;
+      case "gm-quick-session-autopilot":
+        await runSessionAutopilot();
+        break;
+      case "gm-quick-undo-autopilot":
+        await undoLastSessionAutopilot();
         break;
       case "gm-quick-log-weather":
         await gmQuickLogCurrentWeather();
@@ -2921,6 +2989,7 @@ function buildDefaultOperationsLedger() {
       presetKey: "none",
       movementDc: 12,
       appliedActorIds: [],
+      syncToSceneNonParty: true,
       note: "",
       logs: [],
       failureStreaks: {},
@@ -2934,7 +3003,8 @@ function buildDefaultOperationsLedger() {
     partyHealth: {
       modifierEnabled: {},
       customModifiers: [],
-      archivedSyncEffects: []
+      archivedSyncEffects: [],
+      syncToSceneNonParty: true
     },
     resources: {
       food: 14,
@@ -3037,6 +3107,37 @@ function getOwnedPcActors() {
       if (!actor || actor.type !== "character" || !actor.hasPlayerOwner) continue;
       unique.set(actor.id, actor);
     }
+  }
+  return Array.from(unique.values());
+}
+
+function getPartyMemberActorIds() {
+  const ids = new Set();
+  for (const actor of Array.isArray(game.party?.members) ? game.party.members : []) {
+    if (!actor?.id) continue;
+    ids.add(String(actor.id));
+  }
+  for (const actor of getOwnedPcActors()) {
+    if (!actor?.id) continue;
+    ids.add(String(actor.id));
+  }
+  return ids;
+}
+
+function getSceneNonPartyIntegrationActors() {
+  const scene = game.scenes?.current;
+  if (!scene) return [];
+  const partyActorIds = getPartyMemberActorIds();
+  const unique = new Map();
+  for (const tokenDoc of scene.tokens?.contents ?? []) {
+    const actor = tokenDoc?.actor;
+    if (!actor) continue;
+    const actorId = String(actor.id ?? tokenDoc.actorId ?? "").trim();
+    if (actorId && partyActorIds.has(actorId)) continue;
+    if (actor.hasPlayerOwner) continue;
+    const key = String(actor.uuid ?? `${scene.id}:${tokenDoc.id}:${actorId || tokenDoc.id}`);
+    if (!key || unique.has(key)) continue;
+    unique.set(key, actor);
   }
   return Array.from(unique.values());
 }
@@ -3246,6 +3347,7 @@ function buildOperationsContext() {
         movementDc: Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12)),
         actorNames,
         actorNamesText: actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned",
+        syncToSceneNonParty: entry.syncToSceneNonParty !== false,
         note: String(entry.note ?? ""),
         hasNote: String(entry.note ?? "").trim().length > 0,
         createdBy: String(entry.createdBy ?? "GM"),
@@ -3396,7 +3498,7 @@ function buildOperationsContext() {
         logTypeLabel: "Environment",
         title: preset.label,
         summary: `${check.checkLabel} · DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
-        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}`,
+        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}${entry.syncToSceneNonParty !== false ? " · + non-party scene actors" : ""}`,
         note: String(entry.note ?? ""),
         hasNote: String(entry.note ?? "").trim().length > 0,
         createdBy: String(entry.createdBy ?? "GM"),
@@ -3493,7 +3595,8 @@ function buildOperationsContext() {
       archivedSyncEffects,
       hasArchivedSyncEffects: archivedSyncEffects.length > 0,
       archivedSyncEffectsCount: archivedSyncEffects.length,
-      daeAvailable
+      daeAvailable,
+      syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty)
     },
     environment: {
       presetKey: environmentState.presetKey,
@@ -3501,6 +3604,7 @@ function buildOperationsContext() {
       checkLabel: getEnvironmentCheckMeta(environmentPreset).checkLabel,
       movementDc: environmentState.movementDc,
       note: environmentState.note,
+      syncToSceneNonParty: Boolean(environmentState.syncToSceneNonParty),
       movementCheckActive: Boolean(environmentPreset.movementCheck),
       outcomes: environmentOutcomes,
       successiveConfig: {
@@ -3612,6 +3716,12 @@ function getOperationalEffects(ledger, roles, sops) {
     perceptionChecks: 0,
     savingThrows: 0
   };
+  const worldGlobalModifiers = {
+    initiative: 0,
+    abilityChecks: 0,
+    perceptionChecks: 0,
+    savingThrows: 0
+  };
   const globalModifierRows = [];
 
   const addGlobalModifier = (modifierId, key, amount, label, appliesTo, options = {}) => {
@@ -3638,6 +3748,11 @@ function getOperationalEffects(ledger, roles, sops) {
       effectiveFormatted: enabled ? (value > 0 ? `+${value}` : String(value)) : "0"
     });
     return { enabled, value };
+  };
+  const addWorldModifier = (key, amount) => {
+    const value = Number(amount ?? 0);
+    if (!Number.isFinite(value) || value === 0) return;
+    worldGlobalModifiers[key] = Number(worldGlobalModifiers[key] ?? 0) + value;
   };
 
   if (prepEdge) bonuses.push("Preparation edge active: grant advantage on one operational check this session.");
@@ -3684,6 +3799,7 @@ function getOperationalEffects(ledger, roles, sops) {
       { note: `Logged weather visibility modifier ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.` }
     );
     if (modifier.enabled) {
+      addWorldModifier("perceptionChecks", weatherVisibilityModifier);
       if (weatherVisibilityModifier > 0) {
         globalMinorBonuses.push(`Weather visibility (${weatherLabel}): perception improves by ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.`);
       } else {
@@ -3709,15 +3825,18 @@ function getOperationalEffects(ledger, roles, sops) {
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const customDaeChanges = [];
+  const worldDaeChanges = [];
   for (const [index, weatherChange] of weatherDaeChanges.entries()) {
-    customDaeChanges.push({
+    const normalized = {
       modifierId: `weather:${index}`,
       label: `Weather (${weatherLabel})`,
       note: String(weatherChange.note ?? ""),
       key: weatherChange.key,
       mode: weatherChange.mode,
       value: weatherChange.value
-    });
+    };
+    customDaeChanges.push(normalized);
+    worldDaeChanges.push(foundry.utils.deepClone(normalized));
   }
   for (const custom of partyHealth.customModifiers ?? []) {
     const key = String(custom?.key ?? "").trim();
@@ -3742,6 +3861,7 @@ function getOperationalEffects(ledger, roles, sops) {
         enabled,
         note
       });
+      if (enabled) addWorldModifier(mappedSummaryKey, numericValue);
     } else {
       globalModifierRows.push({
         modifierId: `custom:${custom.id}`,
@@ -3761,14 +3881,16 @@ function getOperationalEffects(ledger, roles, sops) {
     }
 
     if (enabled && key && value) {
-      customDaeChanges.push({
+      const normalized = {
         modifierId: `custom:${custom.id}`,
         label,
         note,
         key,
         mode,
         value
-      });
+      };
+      customDaeChanges.push(normalized);
+      worldDaeChanges.push(foundry.utils.deepClone(normalized));
     }
   }
 
@@ -3782,12 +3904,14 @@ function getOperationalEffects(ledger, roles, sops) {
     bonuses,
     globalMinorBonuses,
     globalModifiers,
+    worldGlobalModifiers,
     globalModifierRows,
     derivedModifierRows: globalModifierRows.filter((row) => row.source !== "custom"),
     customModifierRows: globalModifierRows.filter((row) => row.source === "custom"),
     hasGlobalModifiers: globalModifierRows.length > 0,
     hasCustomModifiers: globalModifierRows.some((row) => row.source === "custom"),
     customDaeChanges,
+    worldDaeChanges,
     hasGlobalMinorBonuses: globalMinorBonuses.length > 0,
     hasRisks: risks.length > 0,
     risks
@@ -4497,7 +4621,7 @@ function resolveCurrentSceneWeatherSnapshot() {
     weatherId,
     darkness,
     visibilityModifier,
-    note: `Scene weather${weatherId ? ` (${weatherId})` : ""} · darkness ${darkness.toFixed(2)}`,
+    note: `Scene weather${weatherId ? ` (${weatherId})` : ""} | darkness ${darkness.toFixed(2)}`,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };
@@ -4505,13 +4629,14 @@ function resolveCurrentSceneWeatherSnapshot() {
 
 function ensurePartyHealthState(ledger) {
   if (!ledger.partyHealth || typeof ledger.partyHealth !== "object") {
-    ledger.partyHealth = { modifierEnabled: {}, customModifiers: [], archivedSyncEffects: [] };
+    ledger.partyHealth = { modifierEnabled: {}, customModifiers: [], archivedSyncEffects: [], syncToSceneNonParty: true };
   }
   if (!ledger.partyHealth.modifierEnabled || typeof ledger.partyHealth.modifierEnabled !== "object") {
     ledger.partyHealth.modifierEnabled = {};
   }
   if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
   if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
+  ledger.partyHealth.syncToSceneNonParty = ledger.partyHealth.syncToSceneNonParty !== false;
   ledger.partyHealth.customModifiers = ledger.partyHealth.customModifiers
     .map((entry) => {
       const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
@@ -4674,6 +4799,18 @@ async function setPartyHealthModifier(element) {
   });
 }
 
+async function setPartyHealthSyncNonParty(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const enabled = Boolean(element?.checked);
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    partyHealth.syncToSceneNonParty = enabled;
+  });
+}
+
 async function setOperationalSopNote(element) {
   const sopKey = String(element?.dataset?.sop ?? "").trim();
   if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
@@ -4733,6 +4870,18 @@ async function setOperationalEnvironmentNote(element) {
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
     environment.note = note;
+  });
+}
+
+async function setOperationalEnvironmentSyncNonParty(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can change environment controls.");
+    return;
+  }
+  const enabled = Boolean(element?.checked);
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.syncToSceneNonParty = enabled;
   });
 }
 
@@ -4838,6 +4987,7 @@ async function addOperationalEnvironmentLog() {
       presetKey: environment.presetKey,
       movementDc: environment.movementDc,
       actorIds: [...environment.appliedActorIds],
+      syncToSceneNonParty: Boolean(environment.syncToSceneNonParty),
       note: String(environment.note ?? ""),
       checkType: check.checkType,
       checkKey: check.checkKey,
@@ -4866,6 +5016,7 @@ async function editOperationalEnvironmentLog(element) {
     environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
     environment.appliedActorIds = [...(entry.actorIds ?? [])];
+    environment.syncToSceneNonParty = entry.syncToSceneNonParty !== false;
     environment.note = String(entry.note ?? "");
   });
 
@@ -4882,6 +5033,7 @@ async function editOperationalEnvironmentLogById(logId) {
     environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
     environment.appliedActorIds = [...(entry.actorIds ?? [])];
+    environment.syncToSceneNonParty = entry.syncToSceneNonParty !== false;
     environment.note = String(entry.note ?? "");
   });
   return true;
@@ -4945,6 +5097,7 @@ async function showOperationalEnvironmentBrief() {
       <p><strong>On Successive Fail:</strong> ${String(outcomes.onSuccessiveFail ?? "-")}</p>
       <p><strong>Always-On Status:</strong> ${alwaysStatusLabel}</p>
       <p><strong>Movement DC (GM):</strong> ${environment.movementDc}</p>
+      <p><strong>Scene Non-Party Sync:</strong> ${environment.syncToSceneNonParty ? "Enabled" : "Disabled"}</p>
       <p><strong>Applies To:</strong> ${selected.length > 0 ? selected.join(", ") : "No actors selected."}</p>
     </div>
   `;
@@ -6845,6 +6998,53 @@ async function gmQuickDeleteWeatherPreset(element) {
   ui.notifications?.info("Removed custom weather preset.");
 }
 
+async function commitWeatherSnapshot(snapshot, options = {}) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const environment = ensureEnvironmentState(ledger);
+    weather.current = snapshot;
+    weather.logs.unshift(snapshot);
+    if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
+    environment.logs.unshift({
+      id: snapshot.id,
+      logType: "weather",
+      label: snapshot.label,
+      weatherId: snapshot.weatherId,
+      darkness: snapshot.darkness,
+      visibilityModifier: snapshot.visibilityModifier,
+      note: snapshot.note,
+      daeChanges: snapshot.daeChanges,
+      createdAt: snapshot.loggedAt,
+      createdBy: snapshot.loggedBy
+    });
+    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
+  });
+
+  if (options?.preset) await applyWeatherSceneFxForPreset(options.preset);
+
+  const signedModifier = Number(snapshot.visibilityModifier ?? 0) > 0
+    ? `+${Number(snapshot.visibilityModifier ?? 0)}`
+    : String(Number(snapshot.visibilityModifier ?? 0));
+  if (!silent) {
+    ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
+  }
+  if (!suppressChat) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${foundry.utils.escapeHTML(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+    });
+  }
+  return {
+    logged: true,
+    label: String(snapshot.label ?? "Weather"),
+    visibilityModifier: Number(snapshot.visibilityModifier ?? 0),
+    darkness: Number(snapshot.darkness ?? 0)
+  };
+}
+
 async function gmQuickSubmitWeather(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can log weather.");
@@ -6885,35 +7085,7 @@ async function gmQuickSubmitWeather(element) {
     loggedBy: String(game.user?.name ?? "GM")
   };
 
-  await updateOperationsLedger((ledger) => {
-    const weather = ensureWeatherState(ledger);
-    const environment = ensureEnvironmentState(ledger);
-    weather.current = snapshot;
-    weather.logs.unshift(snapshot);
-    if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
-    environment.logs.unshift({
-      id: snapshot.id,
-      logType: "weather",
-      label: snapshot.label,
-      weatherId: snapshot.weatherId,
-      darkness: snapshot.darkness,
-      visibilityModifier: snapshot.visibilityModifier,
-      note: snapshot.note,
-      daeChanges: snapshot.daeChanges,
-      createdAt: snapshot.loggedAt,
-      createdBy: snapshot.loggedBy
-    });
-    if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
-  });
-
-  await applyWeatherSceneFxForPreset(selectedPreset);
-
-  const signedModifier = snapshot.visibilityModifier > 0 ? `+${snapshot.visibilityModifier}` : String(snapshot.visibilityModifier);
-  ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${foundry.utils.escapeHTML(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
-  });
+  await commitWeatherSnapshot(snapshot, { preset: selectedPreset });
 
   setGmQuickWeatherDraft({
     selectedKey,
@@ -7383,6 +7555,8 @@ async function applyOperationalUpkeep(options = {}) {
   const currentTimestamp = getCurrentWorldTimestamp();
   const upkeep = before.resources?.upkeep ?? {};
   const isAutomatic = Boolean(options?.automatic);
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
 
   if (isAutomatic && !Number.isFinite(Number(before.resources?.upkeepLastAppliedTs))) {
     await updateOperationsLedger((ledger) => {
@@ -7390,7 +7564,7 @@ async function applyOperationalUpkeep(options = {}) {
       ensureOperationalResourceConfig(ledger.resources);
       ledger.resources.upkeepLastAppliedTs = currentTimestamp;
     }, { skipLocalRefresh: true });
-    return;
+    return { applied: false, initializedClock: true, upkeepDays: 0, summary: "Initialized upkeep clock." };
   }
 
   const partySize = Math.max(0, Number(upkeep.partySize ?? 0));
@@ -7402,8 +7576,8 @@ async function applyOperationalUpkeep(options = {}) {
 
   const upkeepDays = getUpkeepDaysFromCalendar(before.resources?.upkeepLastAppliedTs, currentTimestamp);
   if (upkeepDays <= 0) {
-    if (!isAutomatic) ui.notifications?.info("No upkeep is due yet (next deduction occurs at 20:00 world time).");
-    return;
+    if (!isAutomatic && !silent) ui.notifications?.info("No upkeep is due yet (next deduction occurs at 20:00 world time).");
+    return { applied: false, upkeepDays: 0, summary: "No upkeep due yet." };
   }
 
   const foodDrainPerDay = Math.ceil(partySize * foodPerMember * foodMultiplier);
@@ -7493,9 +7667,9 @@ async function applyOperationalUpkeep(options = {}) {
     .map((entry) => `${entry.name}: ${entry.consumed}/${entry.needed}${entry.missing > 0 ? ` (missing ${entry.missing})` : ""}`)
     .join(" | ");
 
-  if (shortages.length > 0) {
+  if (!silent && shortages.length > 0) {
     ui.notifications?.warn(`${summary} Shortages: ${shortages.join(", ")}.`);
-  } else if (!isAutomatic) {
+  } else if (!isAutomatic && !silent) {
     ui.notifications?.info(summary);
   }
 
@@ -7507,12 +7681,159 @@ async function applyOperationalUpkeep(options = {}) {
       ? "Operational risk is MODERATE: keep one risk trigger in reserve."
       : "Operational risk is LOW.";
 
-  if (!isAutomatic || shortages.length > 0) {
+  if (!suppressChat && (!isAutomatic || shortages.length > 0)) {
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
       content: `<p><strong>Daily Upkeep</strong></p><p>${summary}</p>${itemSummary ? `<p><strong>Actor Item Depletion:</strong> ${itemSummary}</p>` : ""}<p>${riskLine}</p>`
     });
   }
+
+  return {
+    applied: true,
+    upkeepDays,
+    summary,
+    shortages,
+    itemSummary,
+    riskLine
+  };
+}
+
+function getSessionAutopilotSnapshot() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT);
+  return raw && typeof raw === "object" ? raw : {};
+}
+
+function buildSessionAutopilotSnapshot() {
+  return {
+    id: foundry.utils.randomID(),
+    createdAt: Date.now(),
+    createdBy: String(game.user?.name ?? "GM"),
+    restState: foundry.utils.deepClone(getRestWatchState()),
+    marchState: foundry.utils.deepClone(getMarchingOrderState()),
+    restActivities: foundry.utils.deepClone(getRestActivities()),
+    operationsLedger: foundry.utils.deepClone(getOperationsLedger()),
+    injuryRecovery: foundry.utils.deepClone(getInjuryRecoveryState())
+  };
+}
+
+async function logCurrentSceneWeatherSnapshot(options = {}) {
+  if (!game.user.isGM) return { logged: false, reason: "gm-only" };
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherState = ensureWeatherState(getOperationsLedger());
+  const previous = weatherState.current ?? null;
+  const previousDae = Array.isArray(previous?.daeChanges)
+    ? previous.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+    : [];
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label: String(sceneSnapshot.label ?? previous?.label ?? "Weather").trim() || "Weather",
+    weatherId: String(sceneSnapshot.weatherId ?? previous?.weatherId ?? "").trim(),
+    darkness: Number.isFinite(Number(sceneSnapshot.darkness)) ? Math.max(0, Math.min(1, Number(sceneSnapshot.darkness))) : 0,
+    visibilityModifier: Number.isFinite(Number(sceneSnapshot.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(sceneSnapshot.visibilityModifier)))) : 0,
+    note: String(sceneSnapshot.note ?? previous?.note ?? "").trim() || `Scene weather snapshot logged at darkness ${Number(sceneSnapshot.darkness ?? 0).toFixed(2)}`,
+    daeChanges: previousDae,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
+  const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, snapshot.weatherId);
+  return commitWeatherSnapshot(snapshot, {
+    preset: selectedPreset,
+    silent: Boolean(options?.silent),
+    suppressChat: Boolean(options?.suppressChat)
+  });
+}
+
+async function runSessionAutopilot() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can run session autopilot.");
+    return null;
+  }
+
+  const snapshot = buildSessionAutopilotSnapshot();
+  await game.settings.set(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, snapshot);
+
+  const notes = [];
+  const upkeepResult = await applyOperationalUpkeep({ silent: true, suppressChat: true });
+  if (upkeepResult?.applied) notes.push(`Upkeep applied (${upkeepResult.upkeepDays} day(s)).`);
+  else if (upkeepResult?.upkeepDays === 0) notes.push("Upkeep skipped (not due).");
+  else if (upkeepResult?.initializedClock) notes.push("Upkeep clock initialized.");
+
+  const recoveryResult = await applyRecoveryCycle({ silent: true, suppressChat: true });
+  if (recoveryResult?.applied) {
+    notes.push(`Recovery cycle processed (${recoveryResult.total} tracked injuries, ${recoveryResult.syncedActors} synced).`);
+  } else {
+    notes.push("Recovery cycle skipped (no tracked injuries).");
+  }
+
+  const weatherResult = await logCurrentSceneWeatherSnapshot({ silent: true, suppressChat: true });
+  if (weatherResult?.logged) {
+    notes.push(`Weather logged (${weatherResult.label}, visibility ${formatSignedModifier(weatherResult.visibilityModifier)}).`);
+  }
+
+  await syncIntegrationState();
+  notes.push("Integration sync completed.");
+
+  const calendarResult = await syncAllInjuriesToSimpleCalendar();
+  notes.push(`Injury calendar sync ${calendarResult.synced}/${calendarResult.total}.`);
+
+  const context = buildOperationsContext();
+  const nonPartyGlobal = Boolean(context.partyHealth?.syncToSceneNonParty);
+  const nonPartyEnvironment = Boolean(context.environment?.syncToSceneNonParty && String(context.environment?.presetKey ?? "none") !== "none");
+  const nonPartyLine = `Non-party scene sync: modifiers ${nonPartyGlobal ? "ON" : "OFF"} | environment ${nonPartyEnvironment ? "ON" : "OFF"}.`;
+  notes.push(nonPartyLine);
+
+  const stamp = new Date().toLocaleString();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Session Autopilot</strong></p><p>${notes.map((line) => foundry.utils.escapeHTML(line)).join("<br>")}</p><p><em>${foundry.utils.escapeHTML(stamp)}</em></p>`
+  });
+  ui.notifications?.info("Session Autopilot complete. Snapshot saved for undo.");
+  return {
+    ok: true,
+    notes,
+    snapshotId: snapshot.id
+  };
+}
+
+async function undoLastSessionAutopilot() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can undo session autopilot.");
+    return false;
+  }
+  const snapshot = getSessionAutopilotSnapshot();
+  if (!snapshot || !snapshot.createdAt) {
+    ui.notifications?.warn("No saved session autopilot snapshot found.");
+    return false;
+  }
+
+  const writes = [
+    [SETTINGS.REST_STATE, foundry.utils.deepClone(snapshot.restState ?? buildDefaultRestWatchState())],
+    [SETTINGS.MARCH_STATE, foundry.utils.deepClone(snapshot.marchState ?? buildDefaultMarchingOrderState())],
+    [SETTINGS.REST_ACTIVITIES, foundry.utils.deepClone(snapshot.restActivities ?? buildDefaultActivityState())],
+    [SETTINGS.OPS_LEDGER, foundry.utils.deepClone(snapshot.operationsLedger ?? buildDefaultOperationsLedger())],
+    [SETTINGS.INJURY_RECOVERY, foundry.utils.deepClone(snapshot.injuryRecovery ?? buildDefaultInjuryRecoveryState())]
+  ];
+
+  for (const [settingKey, value] of writes) {
+    suppressNextSettingRefresh(`${MODULE_ID}.${settingKey}`);
+    await game.settings.set(MODULE_ID, settingKey, value);
+  }
+
+  await game.settings.set(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
+    ...snapshot,
+    undoneAt: Date.now(),
+    undoneBy: String(game.user?.name ?? "GM")
+  });
+
+  scheduleIntegrationSync("session-autopilot-undo");
+  refreshOpenApps();
+  emitSocketRefresh();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Session Autopilot Undo</strong></p><p>Restored snapshot from ${foundry.utils.escapeHTML(new Date(Number(snapshot.createdAt)).toLocaleString())}.</p>`
+  });
+  ui.notifications?.info("Session Autopilot snapshot restored.");
+  return true;
 }
 
 async function showOperationalBrief() {
@@ -8190,17 +8511,19 @@ async function clearInjuryEntry(element) {
   }
 }
 
-async function applyRecoveryCycle() {
+async function applyRecoveryCycle(options = {}) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
-    return;
+    return { applied: false, total: 0, reason: "gm-only" };
   }
+  const silent = Boolean(options?.silent);
+  const suppressChat = Boolean(options?.suppressChat);
   const state = getInjuryRecoveryState();
 
   const entries = Object.entries(state.injuries ?? {});
   if (entries.length === 0) {
-    ui.notifications?.info("No tracked injuries to process.");
-    return;
+    if (!silent) ui.notifications?.info("No tracked injuries to process.");
+    return { applied: false, total: 0, reason: "no-entries" };
   }
 
   const lines = [];
@@ -8246,10 +8569,12 @@ async function applyRecoveryCycle() {
   });
 
   const summary = lines.join("<br>");
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Recovery Cycle</strong></p><p>${summary}</p>`
-  });
+  if (!suppressChat) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: `<p><strong>Recovery Cycle</strong></p><p>${summary}</p>`
+    });
+  }
 
   for (const entryId of calendarEntriesToClear) {
     await clearInjuryFromSimpleCalendar(entryId);
@@ -8257,6 +8582,13 @@ async function applyRecoveryCycle() {
   for (const actorId of actorsToSync) {
     await syncInjuryWithSimpleCalendar(actorId);
   }
+  return {
+    applied: true,
+    total: entries.length,
+    summary,
+    syncedActors: actorsToSync.size,
+    clearedCalendarEntries: calendarEntriesToClear.length
+  };
 }
 
 async function showRecoveryBrief() {
@@ -10800,6 +11132,13 @@ Hooks.once("init", () => {
     default: "auto"
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.GATHER_ROLL_MODE, {
     name: "Gather Roll Mode",
     hint: "Choose how Gather Resource checks request Wisdom (Survival) rolls.",
@@ -10866,6 +11205,8 @@ Hooks.once("init", () => {
     applyUpkeep: () => applyOperationalUpkeep(),
     getInjuryRecovery: () => foundry.utils.deepClone(getInjuryRecoveryState()),
     applyRecoveryCycle: () => applyRecoveryCycle(),
+    runSessionAutopilot: () => runSessionAutopilot(),
+    undoSessionAutopilot: () => undoLastSessionAutopilot(),
     syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
     syncIntegrations: () => scheduleIntegrationSync("api"),
     diagnoseWorldData: (options) => diagnoseWorldData(options),
@@ -11012,6 +11353,11 @@ Hooks.once("ready", () => {
     if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
       scheduleIntegrationSync("update-setting");
     }
+  });
+
+  Hooks.on("canvasReady", () => {
+    if (!game.user.isGM) return;
+    scheduleIntegrationSync("canvas-ready");
   });
 });
 

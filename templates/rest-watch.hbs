@@ -1022,6 +1022,8 @@
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Current Weather</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync DAE/Effects Now</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Session Autopilot</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Last Autopilot</button>
           </div>
           {{#if operations.gmQuickTools.showFactionPanel}}
           <div class="po-op-role-row">
@@ -1199,6 +1201,10 @@
           <div class="po-op-summary">On Fail by 5+: {{operations.environment.outcomes.onFailBy5}}</div>
           <div class="po-op-summary">On Successive Fail: {{operations.environment.outcomes.onSuccessiveFail}}</div>
           <div class="po-op-summary">Always-On Status: {{operations.environment.outcomes.alwaysOn}}</div>
+          <label class="po-switch">
+            <input type="checkbox" data-action="set-environment-sync-non-party" {{#if operations.environment.syncToSceneNonParty}}checked{{/if}} />
+            <span>Also apply environment preset effects to non-party scene actors</span>
+          </label>
 
           <label class="po-resource-row">
             <span>Environment Preset</span>
@@ -1363,6 +1369,10 @@
         <div class="po-gm-section po-party-health-manager">
           <div class="po-section-title">GM Party Modifier Manager</div>
           <div class="po-hint">Enable/disable derived modifiers and add custom DAE changes that sync to all player actors.</div>
+          <label class="po-switch">
+            <input type="checkbox" data-action="set-party-health-sync-non-party" {{#if operations.partyHealth.syncToSceneNonParty}}checked{{/if}} />
+            <span>Also sync global/weather modifiers to non-party scene actors</span>
+          </label>
           {{#if gmOpsTabDerived}}
           <div class="po-op-divider"></div>
           <div class="po-section-title">Derived Modifiers</div>
