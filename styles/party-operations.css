@@ -559,22 +559,30 @@
 }
 
 .party-operations .po-gm-ops-tabs {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  white-space: nowrap;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  white-space: normal;
+  gap: var(--po-space-1);
 }
 
 .party-operations .po-gm-ops-tabs .po-tab {
-  flex: 0 0 auto;
+  flex: 1 1 170px;
+  min-height: 22px;
+  padding: 2px 6px;
+  font-size: 0.74rem;
 }
 
 .party-operations .po-gm-quick-actions .po-op-action-row {
-  flex-wrap: nowrap;
-  overflow-x: auto;
+  flex-wrap: wrap;
+  overflow-x: visible;
+  gap: var(--po-space-1);
 }
 
 .party-operations .po-gm-quick-actions .po-op-action-row .po-btn {
-  flex: 0 0 auto;
+  flex: 1 1 170px;
+  min-height: 22px;
+  padding: 2px 6px;
+  font-size: 0.74rem;
 }
 
 .party-operations .po-btn,
