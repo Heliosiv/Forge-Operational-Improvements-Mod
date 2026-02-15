@@ -1182,6 +1182,7 @@
           <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Global Logs</button>
           <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">Derived Modifiers</button>
           <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">Active Sync Effects</button>
+          <button type="button" class="po-tab {{#if gmOpsTabNonParty}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="non-party">Non-Party Sync</button>
           <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">Custom Modifiers</button>
         </nav>
 
@@ -1498,6 +1499,42 @@
             {{else}}
             <div class="po-op-summary">No archived synced effects.</div>
             {{/if}}
+          {{/if}}
+          {{/if}}
+
+          {{#if gmOpsTabNonParty}}
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Scene Non-Party Sync</div>
+          <div class="po-op-summary">Scene: {{operations.nonPartySync.sceneName}}</div>
+          <div class="po-op-summary">Mode: {{operations.nonPartySync.integrationModeLabel}} | Enabled: {{operations.nonPartySync.enabledLabel}}</div>
+          <div class="po-op-summary">Global Modifiers: {{#if operations.nonPartySync.syncGlobalEnabled}}ON{{else}}OFF{{/if}} | Environment: {{#if operations.nonPartySync.syncEnvironmentEnabled}}ON{{else}}OFF{{/if}} ({{operations.nonPartySync.environmentPresetLabel}})</div>
+          <div class="po-op-summary">Tracked Actors: {{operations.nonPartySync.actorCount}} | Active Sync Markers: {{operations.nonPartySync.syncedCount}} | Stale: {{operations.nonPartySync.staleCount}}</div>
+          {{#if operations.nonPartySync.modeOff}}
+          <div class="po-op-summary is-warn">Integration mode is currently OFF. Reapply will clear stale non-party sync data.</div>
+          {{/if}}
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="reapply-all-non-party-sync">Reapply Scene Non-Party Sync</button>
+            <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-all-non-party-sync">Clear Scene Non-Party Sync</button>
+          </div>
+
+          {{#if operations.nonPartySync.hasTargets}}
+          {{#each operations.nonPartySync.rows}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{actorName}}</div>
+              <div class="po-op-role-status {{#if shouldBeCleared}}is-warn{{/if}}">{{statusLabel}}</div>
+            </div>
+            <div class="po-op-summary">Tokens: {{tokenCount}} | {{tokenNamesLabel}}</div>
+            <div class="po-op-summary">Sync Flag: {{#if hasSyncFlag}}Yes{{else}}No{{/if}} | Integration: {{#if hasIntegrationEffect}}Yes{{else}}No{{/if}} | Injury: {{#if hasInjuryEffect}}Yes{{else}}No{{/if}} | Environment: {{#if hasEnvironmentEffect}}Yes{{else}}No{{/if}}</div>
+            <div class="po-op-summary">Effects: {{effectsSummary}}</div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="apply-non-party-sync-actor" data-actor-ref="{{actorRef}}">Reapply</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-non-party-sync-actor" data-actor-ref="{{actorRef}}">Clear</button>
+            </div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No non-party scene actors detected on the current scene.</div>
           {{/if}}
           {{/if}}
 

@@ -130,7 +130,11 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-weather-add-dae",
   "gm-quick-weather-remove-dae",
   "gm-quick-weather-save-preset",
-  "gm-quick-weather-delete-preset"
+  "gm-quick-weather-delete-preset",
+  "apply-non-party-sync-actor",
+  "clear-non-party-sync-actor",
+  "reapply-all-non-party-sync",
+  "clear-all-non-party-sync"
 ]);
 const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
@@ -1419,40 +1423,62 @@ async function clearActorIntegrationPayload(actor) {
   });
 }
 
-async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode) {
-  if (!game.user.isGM) return { synced: 0, cleared: 0, total: 0, enabled: false };
+function getSceneNonPartySyncConfig(globalContext) {
   const context = globalContext ?? buildIntegrationGlobalContext();
   const partyHealth = context.operations?.partyHealth ?? {};
   const environment = context.operations?.environment ?? {};
   const syncWorldGlobal = Boolean(partyHealth.syncToSceneNonParty);
   const syncEnvironment = Boolean(environment.syncToSceneNonParty && String(environment.presetKey ?? "none") !== "none");
-  const enabled = syncWorldGlobal || syncEnvironment;
+  return {
+    context,
+    syncWorldGlobal,
+    syncEnvironment,
+    enabled: syncWorldGlobal || syncEnvironment
+  };
+}
+
+async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode) {
+  if (!actor) return { synced: false, cleared: false, skipped: true, enabled: false };
+  const mode = resolvedMode ?? resolveIntegrationMode();
+  const config = getSceneNonPartySyncConfig(globalContext);
+  const enabled = Boolean(config.enabled);
+
+  if (!enabled || mode === INTEGRATION_MODES.OFF) {
+    const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+    const hasEffect = Boolean(getIntegrationEffect(actor));
+    const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
+    const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+    if (hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect) {
+      await clearActorIntegrationPayload(actor);
+      return { synced: false, cleared: true, skipped: false, enabled };
+    }
+    return { synced: false, cleared: false, skipped: true, enabled };
+  }
+
+  const payload = buildActorIntegrationPayload(actor.id, config.context, {
+    nonParty: true,
+    includeWorldGlobal: config.syncWorldGlobal,
+    forceEnvironmentApply: config.syncEnvironment
+  });
+  await applyActorIntegrationPayload(actor, payload, mode);
+  return { synced: true, cleared: false, skipped: false, enabled };
+}
+
+async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode) {
+  if (!game.user.isGM) return { synced: 0, cleared: 0, total: 0, enabled: false };
+  const mode = resolvedMode ?? resolveIntegrationMode();
+  const config = getSceneNonPartySyncConfig(globalContext);
   const actors = getSceneNonPartyIntegrationActors();
   let synced = 0;
   let cleared = 0;
 
   for (const actor of actors) {
-    if (!enabled || resolvedMode === INTEGRATION_MODES.OFF) {
-      const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
-      const hasEffect = Boolean(getIntegrationEffect(actor));
-      const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
-      const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
-      if (hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect) {
-        await clearActorIntegrationPayload(actor);
-        cleared += 1;
-      }
-      continue;
-    }
-    const payload = buildActorIntegrationPayload(actor.id, context, {
-      nonParty: true,
-      includeWorldGlobal: syncWorldGlobal,
-      forceEnvironmentApply: syncEnvironment
-    });
-    await applyActorIntegrationPayload(actor, payload, resolvedMode);
-    synced += 1;
+    const result = await syncSingleSceneNonPartyActor(actor, config.context, mode);
+    if (result.synced) synced += 1;
+    if (result.cleared) cleared += 1;
   }
 
-  return { synced, cleared, total: actors.length, enabled };
+  return { synced, cleared, total: actors.length, enabled: Boolean(config.enabled) };
 }
 
 async function syncIntegrationState() {
@@ -1668,13 +1694,13 @@ function getGmOperationsTabStorageKey() {
 
 function getActiveGmOperationsTab() {
   const stored = String(sessionStorage.getItem(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "custom"]);
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom"]);
   return allowed.has(stored) ? stored : "environment";
 }
 
 function setActiveGmOperationsTab(tab) {
   const value = String(tab ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "custom"]);
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom"]);
   sessionStorage.setItem(getGmOperationsTabStorageKey(), allowed.has(value) ? value : "environment");
 }
 
@@ -1985,6 +2011,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       gmOpsTabLogs: gmOperationsTab === "logs",
       gmOpsTabDerived: gmOperationsTab === "derived",
       gmOpsTabActiveSync: gmOperationsTab === "active-sync",
+      gmOpsTabNonParty: gmOperationsTab === "non-party",
       gmOpsTabCustom: gmOperationsTab === "custom",
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
@@ -2362,6 +2389,18 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-active-sync-effects-tab":
         setActiveSyncEffectsTab(String(element?.dataset?.tab ?? "active"));
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "apply-non-party-sync-actor":
+        await applyNonPartySyncActor(element);
+        break;
+      case "clear-non-party-sync-actor":
+        await clearNonPartySyncActor(element);
+        break;
+      case "reapply-all-non-party-sync":
+        await reapplyAllNonPartySync();
+        break;
+      case "clear-all-non-party-sync":
+        await clearAllNonPartySync();
         break;
       case "gm-quick-add-faction":
         await gmQuickAddFaction();
@@ -3175,7 +3214,7 @@ function getPartyMemberActorIds() {
   return ids;
 }
 
-function getSceneNonPartyIntegrationActors() {
+function getSceneNonPartyIntegrationTargets() {
   const scene = game.scenes?.current;
   if (!scene) return [];
   const partyActorIds = getPartyMemberActorIds();
@@ -3186,11 +3225,62 @@ function getSceneNonPartyIntegrationActors() {
     const actorId = String(actor.id ?? tokenDoc.actorId ?? "").trim();
     if (actorId && partyActorIds.has(actorId)) continue;
     if (actor.hasPlayerOwner) continue;
-    const key = String(actor.uuid ?? `${scene.id}:${tokenDoc.id}:${actorId || tokenDoc.id}`);
-    if (!key || unique.has(key)) continue;
-    unique.set(key, actor);
+    const actorUuid = String(actor.uuid ?? "").trim();
+    const tokenUuid = String(tokenDoc.uuid ?? "").trim();
+    const key = actorUuid || tokenUuid || `${scene.id}:${tokenDoc.id}:${actorId || tokenDoc.id}`;
+    if (!key) continue;
+    if (!unique.has(key)) {
+      unique.set(key, {
+        key,
+        actor,
+        actorName: String(actor.name ?? tokenDoc.name ?? "Unknown Actor").trim() || "Unknown Actor",
+        tokenCount: 0,
+        tokenNames: []
+      });
+    }
+    const row = unique.get(key);
+    row.tokenCount += 1;
+    const tokenName = String(tokenDoc.name ?? actor.name ?? "").trim();
+    if (tokenName && !row.tokenNames.includes(tokenName)) row.tokenNames.push(tokenName);
   }
-  return Array.from(unique.values());
+  return Array.from(unique.values())
+    .map((row) => ({
+      actor: row.actor,
+      actorRef: String(row.key),
+      actorName: row.actorName,
+      tokenCount: Math.max(1, Number(row.tokenCount ?? 0) || 1),
+      tokenNamesLabel: row.tokenNames.length > 0 ? row.tokenNames.join(", ") : row.actorName
+    }))
+    .sort((a, b) => a.actorName.localeCompare(b.actorName));
+}
+
+function getSceneNonPartyIntegrationActors() {
+  return getSceneNonPartyIntegrationTargets()
+    .map((entry) => entry.actor)
+    .filter(Boolean);
+}
+
+function resolveActorFromReference(actorRef) {
+  const ref = String(actorRef ?? "").trim();
+  if (!ref) return null;
+  if (typeof fromUuidSync === "function" && ref.includes(".")) {
+    try {
+      const doc = fromUuidSync(ref);
+      if (doc && doc.documentName === "Actor") return doc;
+      if (doc && doc.documentName === "Token") return doc.actor ?? null;
+      if (doc?.actor) return doc.actor;
+    } catch {
+      // Fall through to actor id lookup.
+    }
+  }
+  return game.actors.get(ref) ?? null;
+}
+
+function getIntegrationModeLabel(mode) {
+  if (mode === INTEGRATION_MODES.DAE) return "DAE + Flags";
+  if (mode === INTEGRATION_MODES.FLAGS) return "Flags Only";
+  if (mode === INTEGRATION_MODES.OFF) return "Off";
+  return "Auto";
 }
 
 function getResourceOwnerActors() {
@@ -3575,6 +3665,44 @@ function buildOperationsContext() {
       };
     })
     .sort((a, b) => Number(b.archivedAt ?? 0) - Number(a.archivedAt ?? 0));
+  const resolvedIntegrationMode = resolveIntegrationMode();
+  const integrationModeLabel = getIntegrationModeLabel(resolvedIntegrationMode);
+  const nonPartySyncGlobal = Boolean(partyHealthState.syncToSceneNonParty);
+  const nonPartySyncEnvironment = Boolean(environmentState.syncToSceneNonParty && String(environmentState.presetKey ?? "none") !== "none");
+  const nonPartySyncEnabled = nonPartySyncGlobal || nonPartySyncEnvironment;
+  const nonPartyTargets = getSceneNonPartyIntegrationTargets();
+  const nonPartyRows = nonPartyTargets.map((target) => {
+    const actor = target.actor;
+    const hasSyncFlag = Boolean(actor?.getFlag(MODULE_ID, "sync"));
+    const integrationEffect = getIntegrationEffect(actor);
+    const injuryEffect = getInjuryStatusEffect(actor);
+    const environmentEffect = getEnvironmentStatusEffect(actor);
+    const hasIntegrationEffect = Boolean(integrationEffect);
+    const hasInjuryEffect = Boolean(injuryEffect);
+    const hasEnvironmentEffect = Boolean(environmentEffect);
+    const hasAnySync = hasSyncFlag || hasIntegrationEffect || hasInjuryEffect || hasEnvironmentEffect;
+    const effectNames = [];
+    if (hasIntegrationEffect) effectNames.push(String(integrationEffect?.name ?? INTEGRATION_EFFECT_NAME));
+    if (hasInjuryEffect) effectNames.push(String(injuryEffect?.name ?? `${INJURY_EFFECT_NAME_PREFIX} Status`));
+    if (hasEnvironmentEffect) effectNames.push(String(environmentEffect?.name ?? `${ENVIRONMENT_EFFECT_NAME_PREFIX} Status`));
+    const shouldBeCleared = hasAnySync && (!nonPartySyncEnabled || resolvedIntegrationMode === INTEGRATION_MODES.OFF);
+    return {
+      actorRef: target.actorRef,
+      actorName: target.actorName,
+      tokenCount: target.tokenCount,
+      tokenNamesLabel: target.tokenNamesLabel,
+      hasSyncFlag,
+      hasIntegrationEffect,
+      hasInjuryEffect,
+      hasEnvironmentEffect,
+      hasAnySync,
+      shouldBeCleared,
+      statusLabel: hasAnySync ? (shouldBeCleared ? "Stale (should clear)" : "Synced") : "Clear",
+      effectsSummary: effectNames.length > 0 ? effectNames.join(" | ") : "None"
+    };
+  });
+  const nonPartySyncedCount = nonPartyRows.filter((entry) => entry.hasAnySync).length;
+  const nonPartyStaleCount = nonPartyRows.filter((entry) => entry.shouldBeCleared).length;
 
   return {
     roles,
@@ -3648,6 +3776,22 @@ function buildOperationsContext() {
       archivedSyncEffectsCount: archivedSyncEffects.length,
       daeAvailable,
       syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty)
+    },
+    nonPartySync: {
+      sceneName: String(game.scenes?.current?.name ?? "No Active Scene"),
+      integrationMode: resolvedIntegrationMode,
+      integrationModeLabel,
+      syncGlobalEnabled: nonPartySyncGlobal,
+      syncEnvironmentEnabled: nonPartySyncEnvironment,
+      enabled: nonPartySyncEnabled,
+      enabledLabel: nonPartySyncEnabled ? "ON" : "OFF",
+      modeOff: resolvedIntegrationMode === INTEGRATION_MODES.OFF,
+      environmentPresetLabel: String(environmentPreset?.label ?? "None"),
+      actorCount: nonPartyRows.length,
+      syncedCount: nonPartySyncedCount,
+      staleCount: nonPartyStaleCount,
+      hasTargets: nonPartyRows.length > 0,
+      rows: nonPartyRows
     },
     environment: {
       presetKey: environmentState.presetKey,
@@ -6547,6 +6691,82 @@ async function addPartyHealthCustomModifier(element) {
   });
 }
 
+async function applyNonPartySyncActor(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can apply non-party sync.");
+    return;
+  }
+  const actorRef = String(element?.dataset?.actorRef ?? "").trim();
+  if (!actorRef) return;
+  const actor = resolveActorFromReference(actorRef);
+  if (!actor) {
+    ui.notifications?.warn("Scene non-party actor not found.");
+    return;
+  }
+  const result = await syncSingleSceneNonPartyActor(actor, null, resolveIntegrationMode());
+  refreshOpenApps();
+  emitSocketRefresh();
+  if (result.synced) {
+    ui.notifications?.info(`Reapplied non-party sync to ${actor.name}.`);
+    return;
+  }
+  if (result.cleared) {
+    ui.notifications?.info(`Cleared non-party sync from ${actor.name} because sync is currently disabled.`);
+    return;
+  }
+  ui.notifications?.info(`No non-party sync changes were needed for ${actor.name}.`);
+}
+
+async function clearNonPartySyncActor(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear non-party sync.");
+    return;
+  }
+  const actorRef = String(element?.dataset?.actorRef ?? "").trim();
+  if (!actorRef) return;
+  const actor = resolveActorFromReference(actorRef);
+  if (!actor) {
+    ui.notifications?.warn("Scene non-party actor not found.");
+    return;
+  }
+  await clearActorIntegrationPayload(actor);
+  refreshOpenApps();
+  emitSocketRefresh();
+  ui.notifications?.info(`Cleared non-party sync from ${actor.name}.`);
+}
+
+async function reapplyAllNonPartySync() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can reapply non-party sync.");
+    return;
+  }
+  const result = await syncSceneNonPartyIntegrationActors(null, resolveIntegrationMode());
+  refreshOpenApps();
+  emitSocketRefresh();
+  ui.notifications?.info(`Non-party sync applied: ${result.synced} synced, ${result.cleared} cleared across ${result.total} actor(s).`);
+}
+
+async function clearAllNonPartySync() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear non-party sync.");
+    return;
+  }
+  const targets = getSceneNonPartyIntegrationActors();
+  let cleared = 0;
+  for (const actor of targets) {
+    const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
+    const hasEffect = Boolean(getIntegrationEffect(actor));
+    const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
+    const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
+    if (!hasSync && !hasEffect && !hasInjuryEffect && !hasEnvironmentEffect) continue;
+    await clearActorIntegrationPayload(actor);
+    cleared += 1;
+  }
+  refreshOpenApps();
+  emitSocketRefresh();
+  ui.notifications?.info(`Cleared non-party sync from ${cleared} actor(s).`);
+}
+
 async function removeActiveSyncEffect(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can remove synced effects.");
@@ -6564,7 +6784,7 @@ async function removeActiveSyncEffect(element) {
   if (effectId) {
     const effect = actor.effects.get(effectId);
     if (effect) {
-      await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+      await safeDeleteActiveEffect(actor, effect, "integration");
       ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
       return;
     }
@@ -6613,7 +6833,7 @@ async function archiveActiveSyncEffect(element) {
     });
   });
 
-  await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+  await safeDeleteActiveEffect(actor, effect, "integration");
   ui.notifications?.info(`Archived synced effect from ${actor.name}.`);
 }
 
