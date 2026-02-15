@@ -976,12 +976,45 @@
             </div>
           </div>
           {{/if}}
+          {{#if operations.gmQuickTools.showWeatherPanel}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Quick Weather Presets</div>
+              <div class="po-op-role-status">Current: {{operations.gmQuickTools.weatherSceneSnapshot.label}}</div>
+            </div>
+            <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} · Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
+            <label class="po-resource-row">
+              <span>Weather Preset</span>
+              <select name="quickWeatherProfile" class="po-select">
+                {{#each operations.gmQuickTools.weatherOptions}}
+                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} · {{visibilityLabel}} ({{effectSummary}})</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Darkness (0-1)</span>
+              <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" value="{{operations.gmQuickTools.weatherDraft.darkness}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Perception Modifier</span>
+              <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" value="{{operations.gmQuickTools.weatherDraft.visibilityModifier}}" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Log Note</span>
+              <textarea name="quickWeatherNote" rows="3" class="po-input" placeholder="Optional global weather note">{{operations.gmQuickTools.weatherDraft.note}}</textarea>
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
+            </div>
+          </div>
+          {{/if}}
           <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} · Visibility Modifier {{operations.weather.currentVisibilityModifier}} · Darkness {{operations.weather.currentDarkness}}</div>
         </div>
 
         <nav class="po-tabs po-tabs-sub po-gm-ops-tabs" role="tablist" aria-label="GM Operations Sections">
           <button type="button" class="po-tab {{#if gmOpsTabEnvironment}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="environment">Environment Override</button>
-          <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Environment Logs</button>
+          <button type="button" class="po-tab {{#if gmOpsTabLogs}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="logs">Global Logs</button>
           <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">Derived Modifiers</button>
           <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">Active Sync Effects</button>
           <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">Custom Modifiers</button>
@@ -1133,28 +1166,30 @@
           {{/if}}
 
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Environment Logs</div>
-          {{#if operations.environment.hasLogs}}
-          {{#each operations.environment.logs}}
+          <div class="po-section-title">Global Logs</div>
+          {{#if operations.globalLogs.hasEntries}}
+          {{#each operations.globalLogs.entries}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
-              <div class="po-op-role-name">{{presetLabel}}</div>
-              <div class="po-op-role-status">DC {{movementDc}}</div>
+              <div class="po-op-role-name">{{logTypeLabel}} · {{title}}</div>
+              <div class="po-op-role-status">{{createdAtLabel}}</div>
             </div>
-            <div class="po-op-summary">Check: {{checkLabel}}</div>
-            <div class="po-op-summary">Affected: {{actorNamesText}}</div>
+            <div class="po-op-summary">{{summary}}</div>
+            {{#if details}}
+            <div class="po-op-summary">{{details}}</div>
+            {{/if}}
             {{#if hasNote}}
             <div class="po-op-summary">Notes: {{note}}</div>
             {{/if}}
-            <div class="po-op-summary">Logged: {{createdAtLabel}} by {{createdBy}}</div>
+            <div class="po-op-summary">Logged by {{createdBy}}</div>
             <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="edit-environment-log" data-log-id="{{id}}">Edit</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="remove-environment-log" data-log-id="{{id}}">Remove</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="edit-global-log" data-log-type="{{logType}}" data-log-id="{{sourceId}}">Edit</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="remove-global-log" data-log-type="{{logType}}" data-log-id="{{sourceId}}">Remove</button>
             </div>
           </div>
           {{/each}}
           {{else}}
-          <div class="po-op-summary">No environment logs yet.</div>
+          <div class="po-op-summary">No global logs yet.</div>
           {{/if}}
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>

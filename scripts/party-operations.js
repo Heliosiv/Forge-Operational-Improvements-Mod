@@ -1374,15 +1374,49 @@ function getGmQuickPanelStorageKey() {
   return `po-gm-quick-panel-${game.user?.id ?? "anon"}`;
 }
 
+function getGmQuickWeatherDraftStorageKey() {
+  return `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
+}
+
+function getGmQuickWeatherDraft() {
+  const raw = sessionStorage.getItem(getGmQuickWeatherDraftStorageKey());
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      selectedKey: String(parsed.selectedKey ?? "").trim(),
+      darkness: Number(parsed.darkness ?? 0),
+      visibilityModifier: Number(parsed.visibilityModifier ?? 0),
+      note: String(parsed.note ?? "")
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function setGmQuickWeatherDraft(draft = null) {
+  if (!draft || typeof draft !== "object") {
+    sessionStorage.removeItem(getGmQuickWeatherDraftStorageKey());
+    return;
+  }
+  sessionStorage.setItem(getGmQuickWeatherDraftStorageKey(), JSON.stringify({
+    selectedKey: String(draft.selectedKey ?? "").trim(),
+    darkness: Number(draft.darkness ?? 0),
+    visibilityModifier: Number(draft.visibilityModifier ?? 0),
+    note: String(draft.note ?? "")
+  }));
+}
+
 function getActiveGmQuickPanel() {
   const stored = String(sessionStorage.getItem(getGmQuickPanelStorageKey()) ?? "none").trim().toLowerCase();
-  const allowed = new Set(["none", "faction", "modifier"]);
+  const allowed = new Set(["none", "faction", "modifier", "weather"]);
   return allowed.has(stored) ? stored : "none";
 }
 
 function setActiveGmQuickPanel(panel) {
   const value = String(panel ?? "none").trim().toLowerCase();
-  const allowed = new Set(["none", "faction", "modifier"]);
+  const allowed = new Set(["none", "faction", "modifier", "weather"]);
   sessionStorage.setItem(getGmQuickPanelStorageKey(), allowed.has(value) ? value : "none");
 }
 
@@ -2074,6 +2108,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "gm-quick-cancel-panel":
         setActiveGmQuickPanel("none");
+        setGmQuickWeatherDraft(null);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "gm-quick-submit-faction":
@@ -2088,9 +2123,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "gm-quick-log-weather":
         await gmQuickLogCurrentWeather();
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "gm-quick-submit-weather":
+        await gmQuickSubmitWeather(element);
         break;
       case "show-gm-logs-manager":
         await showOperationalLogsManager();
+        break;
+      case "edit-global-log":
+        await editGlobalLog(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "remove-global-log":
+        await removeGlobalLog(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "set-base-ops-config":
         await setBaseOperationsConfig(element);
@@ -3111,6 +3158,52 @@ function buildOperationsContext() {
       loggedAtLabel: Number.isFinite(loggedAtDate.getTime()) ? loggedAtDate.toLocaleString() : "Unknown"
     };
   });
+  const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherQuickOptions = buildWeatherSelectionCatalog(weatherSceneSnapshot);
+  const storedWeatherDraft = getGmQuickWeatherDraft();
+  const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
+  const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
+  const selectedWeatherOption = weatherQuickOptions.find((entry) => entry.key === selectedWeatherKey) ?? fallbackWeatherOption;
+  const weatherQuickDraft = {
+    selectedKey: String(selectedWeatherOption?.key ?? ""),
+    darkness: Number.isFinite(Number(storedWeatherDraft?.darkness))
+      ? Math.max(0, Math.min(1, Number(storedWeatherDraft.darkness)))
+      : Math.max(0, Math.min(1, Number(selectedWeatherOption?.darkness ?? weatherSceneSnapshot.darkness ?? 0))),
+    visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
+      ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
+      : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
+    note: String(storedWeatherDraft?.note ?? "")
+  };
+  const globalLogs = [
+    ...environmentLogs.map((entry) => ({
+      id: `env:${entry.id}`,
+      sourceId: entry.id,
+      logType: "environment",
+      logTypeLabel: "Environment",
+      title: entry.presetLabel,
+      summary: `${entry.checkLabel} · DC ${entry.movementDc}`,
+      details: `Affected: ${entry.actorNamesText}`,
+      note: entry.note,
+      hasNote: entry.hasNote,
+      createdBy: entry.createdBy,
+      createdAt: Number(entry.createdAt ?? Date.now()),
+      createdAtLabel: entry.createdAtLabel
+    })),
+    ...weatherLogs.map((entry) => ({
+      id: `weather:${entry.id}`,
+      sourceId: entry.id,
+      logType: "weather",
+      logTypeLabel: "Weather",
+      title: String(entry.label ?? "Weather").trim() || "Weather",
+      summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} · Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
+      details: getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0)),
+      note: String(entry.note ?? ""),
+      hasNote: String(entry.note ?? "").trim().length > 0,
+      createdBy: String(entry.loggedBy ?? "GM"),
+      createdAt: Number(entry.loggedAt ?? Date.now()),
+      createdAtLabel: String(entry.loggedAtLabel ?? "Unknown")
+    }))
+  ].sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0));
   const activeSyncEffectsTab = getActiveSyncEffectsTab();
   const archivedSyncEffects = (partyHealthState.archivedSyncEffects ?? [])
     .map((entry) => {
@@ -3243,8 +3336,24 @@ function buildOperationsContext() {
       activePanel: gmQuickPanel,
       showFactionPanel: gmQuickPanel === "faction",
       showModifierPanel: gmQuickPanel === "modifier",
+      showWeatherPanel: gmQuickPanel === "weather",
       modifierModeOptions: partyModifierModeOptions,
-      modifierKeyOptions: partyModifierKeyOptions
+      modifierKeyOptions: partyModifierKeyOptions,
+      weatherSceneSnapshot,
+      weatherOptions: weatherQuickOptions.map((option) => ({
+        key: option.key,
+        label: option.label,
+        weatherId: option.weatherId,
+        visibilityModifier: Number(option.visibilityModifier ?? 0),
+        visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
+        effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
+        selected: option.key === weatherQuickDraft.selectedKey
+      })),
+      weatherDraft: weatherQuickDraft
+    },
+    globalLogs: {
+      entries: globalLogs,
+      hasEntries: globalLogs.length > 0
     },
     reputation,
     baseOperations,
@@ -5636,26 +5745,26 @@ async function setArchivedSyncField(element) {
 
 async function showOperationalLogsManager() {
   if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can manage environment logs.");
+    ui.notifications?.warn("Only the GM can manage global logs.");
     return;
   }
 
   const context = buildOperationsContext();
-  const logs = Array.isArray(context?.environment?.logs) ? context.environment.logs : [];
+  const logs = Array.isArray(context?.globalLogs?.entries) ? context.globalLogs.entries : [];
   const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
 
   const rows = logs
     .map((entry) => {
       const noteLabel = entry.hasNote ? `<div class="po-op-summary">Note: ${escape(entry.note)}</div>` : "";
       return `
-      <div class="po-log-manager-row" data-log-id="${escape(entry.id)}" data-search="${escape(`${entry.presetLabel} ${entry.checkLabel} ${entry.actorNamesText} ${entry.note} ${entry.createdBy}`.toLowerCase())}">
-        <div><strong>${escape(entry.presetLabel)}</strong> · DC ${escape(entry.movementDc)}</div>
-        <div class="po-op-summary">${escape(entry.checkLabel)} · ${escape(entry.actorNamesText)}</div>
+      <div class="po-log-manager-row" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}" data-search="${escape(`${entry.logTypeLabel} ${entry.title} ${entry.summary} ${entry.details} ${entry.note} ${entry.createdBy}`.toLowerCase())}">
+        <div><strong>${escape(entry.logTypeLabel)}</strong> · ${escape(entry.title)}</div>
+        <div class="po-op-summary">${escape(entry.summary)}${entry.details ? ` · ${escape(entry.details)}` : ""}</div>
         ${noteLabel}
         <div class="po-op-summary">${escape(entry.createdAtLabel)} by ${escape(entry.createdBy)}</div>
         <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-log-action="load" data-log-id="${escape(entry.id)}">Load</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-log-action="remove" data-log-id="${escape(entry.id)}">Remove</button>
+          <button type="button" class="po-btn po-btn-sm" data-log-action="load" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}">Load</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-log-action="remove" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}">Remove</button>
         </div>
       </div>`;
     })
@@ -5665,17 +5774,17 @@ async function showOperationalLogsManager() {
     <div class="po-help po-log-manager">
       <label class="po-resource-row">
         <span>Filter logs</span>
-        <input type="text" class="po-input" data-log-filter placeholder="Search preset, check, actor, note" />
+        <input type="text" class="po-input" data-log-filter placeholder="Search type, title, summary, note" />
       </label>
-      <div class="po-op-summary">${logs.length} total log entries.</div>
+      <div class="po-op-summary">${logs.length} total global log entries.</div>
       <div class="po-log-manager-list" data-log-list>
-        ${rows || '<div class="po-op-summary">No environment logs available.</div>'}
+        ${rows || '<div class="po-op-summary">No global logs available.</div>'}
       </div>
     </div>
   `;
 
   const dialog = new Dialog({
-    title: "Environment Logs Manager",
+    title: "Global Logs Manager",
     content,
     buttons: {
       close: {
@@ -5702,19 +5811,24 @@ async function showOperationalLogsManager() {
         if (!button) return;
         const action = String(button.dataset.logAction ?? "").trim();
         const logId = String(button.dataset.logId ?? "").trim();
-        if (!logId) return;
+        const logType = String(button.dataset.logType ?? "").trim();
+        if (!logId || !logType) return;
         if (action === "load") {
-          const loaded = await editOperationalEnvironmentLogById(logId);
+          let loaded = false;
+          if (logType === "environment") loaded = await editOperationalEnvironmentLogById(logId);
+          if (logType === "weather") loaded = await loadWeatherLogToQuickPanel(logId);
           if (loaded) {
-            ui.notifications?.info("Loaded environment log into current controls.");
+            ui.notifications?.info(`Loaded ${logType} log into controls.`);
             dialog.close();
           }
           return;
         }
         if (action === "remove") {
-          const removed = await removeOperationalEnvironmentLogById(logId);
+          let removed = false;
+          if (logType === "environment") removed = await removeOperationalEnvironmentLogById(logId);
+          if (logType === "weather") removed = await removeWeatherLogById(logId);
           if (!removed) return;
-          const row = list.querySelector(`.po-log-manager-row[data-log-id=\"${CSS.escape(logId)}\"]`);
+          const row = list.querySelector(`.po-log-manager-row[data-log-id=\"${CSS.escape(logId)}\"][data-log-type=\"${CSS.escape(logType)}\"]`);
           row?.remove();
         }
       });
@@ -5846,124 +5960,158 @@ async function gmQuickLogCurrentWeather() {
   }
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
   const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
-  if (!weatherOptions.length) {
-    ui.notifications?.warn("No weather options available to log.");
-    return;
-  }
-
-  const formatSigned = (value) => {
-    const numeric = Math.max(-5, Math.min(5, Math.floor(Number(value) || 0)));
-    return numeric > 0 ? `+${numeric}` : String(numeric);
+  const defaultOption = weatherOptions[0] ?? {
+    key: "manual",
+    label: sceneSnapshot.label,
+    weatherId: sceneSnapshot.weatherId,
+    darkness: sceneSnapshot.darkness,
+    visibilityModifier: sceneSnapshot.visibilityModifier
   };
 
-  const defaultOption = weatherOptions[0];
-  const content = `
-    <div class="po-help po-weather-log-dialog">
-      <div class="po-section-title">Current Scene Weather</div>
-      <div class="po-op-summary">${foundry.utils.escapeHTML(sceneSnapshot.label)} · Darkness ${sceneSnapshot.darkness.toFixed(2)} · Visibility ${formatSigned(sceneSnapshot.visibilityModifier)}</div>
-      <div class="po-op-summary">${foundry.utils.escapeHTML(getWeatherEffectSummary(sceneSnapshot.visibilityModifier))}</div>
+  setGmQuickWeatherDraft({
+    selectedKey: String(defaultOption.key ?? ""),
+    darkness: Number(defaultOption.darkness ?? sceneSnapshot.darkness ?? 0),
+    visibilityModifier: Number(defaultOption.visibilityModifier ?? sceneSnapshot.visibilityModifier ?? 0),
+    note: String(sceneSnapshot.note ?? "")
+  });
+  const current = getActiveGmQuickPanel();
+  setActiveGmQuickPanel(current === "weather" ? "none" : "weather");
+}
 
-      <div class="po-op-divider"></div>
-      <label class="po-resource-row">
-        <span>Weather Profile</span>
-        <select class="po-select" name="weatherProfile">
-          ${weatherOptions.map((option, index) => `<option value="${foundry.utils.escapeHTML(option.key)}" ${index === 0 ? "selected" : ""}>${foundry.utils.escapeHTML(option.label)} (${formatSigned(option.visibilityModifier)})</option>`).join("")}
-        </select>
-      </label>
-      <div class="po-op-summary" data-weather-profile-effect>${foundry.utils.escapeHTML(getWeatherEffectSummary(defaultOption.visibilityModifier))}</div>
-      <label class="po-resource-row">
-        <span>Darkness (0 to 1)</span>
-        <input type="number" class="po-input" name="weatherDarkness" min="0" max="1" step="0.05" value="${Math.max(0, Math.min(1, Number(defaultOption.darkness ?? sceneSnapshot.darkness))).toFixed(2)}" />
-      </label>
-      <label class="po-resource-row">
-        <span>Visibility Modifier</span>
-        <input type="number" class="po-input" name="weatherVisibility" min="-5" max="5" step="1" value="${Math.max(-5, Math.min(5, Math.floor(Number(defaultOption.visibilityModifier ?? 0) || 0)))}" />
-      </label>
-      <label class="po-resource-row po-notes-row-lg">
-        <span>Log Note</span>
-        <textarea class="po-input" rows="3" name="weatherNote" placeholder="Optional note for this weather log">${foundry.utils.escapeHTML(String(defaultOption.source === "scene" ? sceneSnapshot.note : ""))}</textarea>
-      </label>
-    </div>
-  `;
+async function gmQuickSubmitWeather(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can log weather.");
+    return;
+  }
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
+  const selectedKey = String(root?.querySelector("select[name='quickWeatherProfile']")?.value ?? "").trim();
+  const selected = weatherOptions.find((entry) => entry.key === selectedKey) ?? weatherOptions[0] ?? {
+    key: "manual",
+    label: sceneSnapshot.label,
+    weatherId: sceneSnapshot.weatherId,
+    darkness: sceneSnapshot.darkness,
+    visibilityModifier: sceneSnapshot.visibilityModifier
+  };
+  const rawDarkness = Number(root?.querySelector("input[name='quickWeatherDarkness']")?.value ?? selected.darkness ?? sceneSnapshot.darkness ?? 0);
+  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
+  const rawVisibility = Number(root?.querySelector("input[name='quickWeatherVisibility']")?.value ?? selected.visibilityModifier ?? 0);
+  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
+  const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? "").trim();
 
-  const dialog = new Dialog({
-    title: "Log Current Weather",
-    content,
-    buttons: {
-      log: {
-        label: "Log Weather",
-        callback: async (html) => {
-          const root = html?.[0] ?? html;
-          const selectedKey = String(root?.querySelector("[name='weatherProfile']")?.value ?? "").trim();
-          const selected = weatherOptions.find((entry) => entry.key === selectedKey) ?? weatherOptions[0];
-          const rawDarkness = Number(root?.querySelector("[name='weatherDarkness']")?.value ?? selected.darkness ?? sceneSnapshot.darkness ?? 0);
-          const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
-          const rawVisibility = Number(root?.querySelector("[name='weatherVisibility']")?.value ?? selected.visibilityModifier ?? 0);
-          const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
-          const userNote = String(root?.querySelector("[name='weatherNote']")?.value ?? "").trim();
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label: String(selected?.label ?? sceneSnapshot.label ?? "Weather").trim() || "Weather",
+    weatherId: String(selected?.weatherId ?? sceneSnapshot.weatherId ?? "").trim(),
+    darkness,
+    visibilityModifier,
+    note: note || `Weather profile logged · darkness ${darkness.toFixed(2)}`,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
 
-          const snapshot = {
-            id: foundry.utils.randomID(),
-            label: String(selected?.label ?? sceneSnapshot.label ?? "Weather").trim() || "Weather",
-            weatherId: String(selected?.weatherId ?? sceneSnapshot.weatherId ?? "").trim(),
-            darkness,
-            visibilityModifier,
-            note: userNote || `Weather profile logged · darkness ${darkness.toFixed(2)}`,
-            loggedAt: Date.now(),
-            loggedBy: String(game.user?.name ?? "GM")
-          };
-
-          await updateOperationsLedger((ledger) => {
-            const weather = ensureWeatherState(ledger);
-            weather.current = snapshot;
-            weather.logs.unshift(snapshot);
-            if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
-          });
-
-          const signedModifier = formatSigned(snapshot.visibilityModifier);
-          ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
-          await ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-            content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
-          });
-        }
-      },
-      cancel: {
-        label: "Cancel"
-      }
-    },
-    render: (html) => {
-      const root = html?.[0] ?? html;
-      if (!root) return;
-      const profileEl = root.querySelector("[name='weatherProfile']");
-      const darknessEl = root.querySelector("[name='weatherDarkness']");
-      const visibilityEl = root.querySelector("[name='weatherVisibility']");
-      const noteEl = root.querySelector("[name='weatherNote']");
-      const effectEl = root.querySelector("[data-weather-profile-effect]");
-
-      const refreshProfile = () => {
-        const selectedKey = String(profileEl?.value ?? "").trim();
-        const selected = weatherOptions.find((entry) => entry.key === selectedKey) ?? weatherOptions[0];
-        if (darknessEl) darknessEl.value = Number(selected?.darkness ?? sceneSnapshot.darkness ?? 0).toFixed(2);
-        if (visibilityEl) visibilityEl.value = String(Math.max(-5, Math.min(5, Math.floor(Number(selected?.visibilityModifier ?? 0) || 0))));
-        if (noteEl && !String(noteEl.value ?? "").trim()) {
-          noteEl.value = selected?.source === "scene"
-            ? String(sceneSnapshot.note ?? "")
-            : `Weather profile: ${selected?.label ?? "Weather"}`;
-        }
-        if (effectEl) effectEl.textContent = getWeatherEffectSummary(Number(selected?.visibilityModifier ?? 0));
-      };
-
-      profileEl?.addEventListener("change", refreshProfile);
-      visibilityEl?.addEventListener("input", () => {
-        if (!effectEl) return;
-        const value = Number(visibilityEl?.value ?? 0);
-        effectEl.textContent = getWeatherEffectSummary(value);
-      });
-    }
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    weather.current = snapshot;
+    weather.logs.unshift(snapshot);
+    if (weather.logs.length > 100) weather.logs = weather.logs.slice(0, 100);
   });
 
-  dialog.render(true);
+  const signedModifier = snapshot.visibilityModifier > 0
+    ? `+${snapshot.visibilityModifier}`
+    : String(snapshot.visibilityModifier);
+  ui.notifications?.info(`Weather logged: ${snapshot.label} (visibility modifier ${signedModifier}).`);
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+  });
+
+  setGmQuickWeatherDraft({
+    selectedKey,
+    darkness,
+    visibilityModifier,
+    note
+  });
+  setActiveGmQuickPanel("none");
+}
+
+async function loadWeatherLogToQuickPanel(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  const ledger = getOperationsLedger();
+  const weather = ensureWeatherState(ledger);
+  const entry = weather.logs.find((row) => String(row?.id ?? "") === id);
+  if (!entry) return false;
+
+  const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+  const weatherOptions = buildWeatherSelectionCatalog(sceneSnapshot);
+  const selectedOption = weatherOptions.find((option) => String(option.weatherId ?? "") === String(entry.weatherId ?? ""))
+    ?? weatherOptions.find((option) => String(option.label ?? "") === String(entry.label ?? ""))
+    ?? weatherOptions[0];
+
+  setGmQuickWeatherDraft({
+    selectedKey: String(selectedOption?.key ?? ""),
+    darkness: Number(entry.darkness ?? 0),
+    visibilityModifier: Number(entry.visibilityModifier ?? 0),
+    note: String(entry.note ?? "")
+  });
+  setActiveGmQuickPanel("weather");
+  return true;
+}
+
+async function removeWeatherLogById(logId) {
+  const id = String(logId ?? "").trim();
+  if (!id) return false;
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const weather = ensureWeatherState(ledger);
+    const before = weather.logs.length;
+    weather.logs = weather.logs.filter((entry) => String(entry?.id ?? "") !== id);
+    if (weather.current && String(weather.current.id ?? "") === id) {
+      weather.current = weather.logs[0] ?? null;
+    }
+    removed = weather.logs.length < before;
+  });
+  return removed;
+}
+
+async function editGlobalLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can edit global logs.");
+    return;
+  }
+  const logType = String(element?.dataset?.logType ?? "").trim();
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logType || !logId) return;
+
+  if (logType === "environment") {
+    const loaded = await editOperationalEnvironmentLogById(logId);
+    if (loaded) ui.notifications?.info("Loaded environment log into current controls.");
+    return;
+  }
+  if (logType === "weather") {
+    const loaded = await loadWeatherLogToQuickPanel(logId);
+    if (loaded) ui.notifications?.info("Loaded weather log into quick weather panel.");
+  }
+}
+
+async function removeGlobalLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can remove global logs.");
+    return;
+  }
+  const logType = String(element?.dataset?.logType ?? "").trim();
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logType || !logId) return;
+
+  if (logType === "environment") {
+    await removeOperationalEnvironmentLogById(logId);
+    return;
+  }
+  if (logType === "weather") {
+    await removeWeatherLogById(logId);
+  }
 }
 
 async function setBaseOperationsConfig(element) {
