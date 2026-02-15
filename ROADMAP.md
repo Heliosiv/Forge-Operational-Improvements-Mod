@@ -1,180 +1,75 @@
 # Party Operations Roadmap
 
-Designed for survivalist, high-pressure play.
+Designed for survivalist, high-pressure play with strong GM tooling and party-facing transparency.
 
-## Phase 1 — Operational Foundation (Immediate)
+## Current Status (February 15, 2026)
+- Complete: Roles assignment, SOP tracking, resource ledger, and configurable upkeep drain.
+- Complete: Operational readiness output, marching doctrine presets, and communication discipline support.
+- Complete: Injury and recovery core with GM controls and automation sync hooks.
+- Complete: Environment hazard controls and GM-only operational inputs.
+- In progress: Base of Operations depth.
+- Deferred: Operational Strain Meter.
 
-### Status (February 14, 2026)
-- ✅ Roles assignment implemented (Quartermaster, Cartographer, Marshal, Chronicler, Steward)
-- ✅ SOP toggle tracking implemented
-- ✅ Resource ledger implemented (food, water, torches, ammunition, encumbrance, field supplies)
-- ✅ Configurable long-rest upkeep drain implemented
-- ✅ Operational readiness + brief output implemented (prep edge, risk tier, bonuses, risks)
-- ✅ Phase 2 start: Marching Doctrine presets implemented (Default, Combat-Ready, Tight Corridor, Low-Visibility)
-- ✅ Doctrine consequences support added (surprise/ambush guidance + doctrine check prompt)
-- ✅ Injury & Recovery scaffold added (field kits, rest tiers, environment modifiers, recovery cycles)
-- ✅ Communication discipline scaffold added (signals, code phrases, alert channels, pre-combat briefing)
-- ✅ Reputation & Faction ledger scaffold added (standing bands, access pressure, faction notes)
-- ✅ Supply line mechanics scaffold added (caches, safehouses, resupply risk, logistics pressure)
-- ✅ Base of Operations scaffold added (safehouse/chapel/watchtower/cell with maintenance pressure)
-- ✅ Optional automation integration added (Auto/Flags/DAE sync to actor flags and Active Effects)
-- ✅ SOP notes added (player-editable per SOP)
-- ✅ Environment hazard controls added (GM preset/DC/actor assignment + movement-trigger checks)
-- ✅ Upkeep Inputs + Gather/Weather DC edits restricted to GM
-- ✅ Water Stores input removed from planning UI
-- ⏸️ Operational Strain Meter deferred for now
+## Active Roadmap (GM + Party Focus)
 
-### 1) Defined Party Roles (Table Infrastructure)
-Create fixed operational roles:
-- Quartermaster → Tracks rations, ammo, supplies
-- Cartographer → Updates map and route history
-- Marshal → Tracks marching order and readiness
-- Chronicler → Session log
-- Steward → Coin, contracts, debts
+### 1) Base of Operations Depth
+Build out the existing base framework into an actionable play loop:
+- Site maintenance tasks and upkeep consequences.
+- Readiness state changes tied to player actions and neglect.
+- Party-facing summaries that explain what changed and why.
 
-Mechanics:
-- Role bonuses (small mechanical edge)
-- Neglect penalties (disorganization consequences)
+### 2) GM Loot Roller
+Add a dedicated GM loot workflow with three modes:
+- Horde Loot: Generate treasure bundles for vaults, hoards, and major caches.
+- Defeated Enemy Loot: Roll drops per defeated actor.
+- Encounter Assignment Loot: Assign loot to enemy actors already placed in the scene.
 
-This builds player accountability.
+Core behavior:
+- Equipment profile selector (poor, standard, well-equipped).
+- Challenge/CR bracket selector for scaling currency and item quality.
+- Preview before apply, with reroll controls.
+- Apply result directly to actor inventory, loot actor, or chat/journal output.
 
-### 2) Standard Operating Procedures (SOPs)
-Create written procedures for:
-- Camp setup
-- Watch rotation
-- Dungeon breach protocol
-- Urban entry protocol
-- Prisoner handling
-- Retreat protocol
+### 3) Loot Source Registry (Compendiums + Tables)
+Create a configurable source layer so each world can tune available loot:
+- Select item compendiums as roll sources.
+- Select roll tables for currency, gems, art objects, and special drops.
+- Optional category filters (weapon, armor, consumable, ammo, trade goods).
+- Fallback behavior when a source has no matching entries.
 
-Chaos control:
-- If SOP followed → Advantage on specific checks
-- If not → Risk rolls increase
+### 4) Operations Records Repository (Journals + Compendiums)
+Use journals as persistent records for module systems, not just UI state:
+- Standard journal tree created/managed by the module.
+- Active and archived sections for injuries.
+- Loot generation and assignment logs with timestamps.
+- Permission presets (GM-only vs party-readable logs).
 
-### 3) Resource Tracking System
-Implement:
-- Food (daily consumption)
-- Water
-- Torches
-- Ammunition
-- Encumbrance tiers
+Use compendiums as reusable data repositories:
+- Loot profile presets.
+- Optional exported log snapshots for campaign continuity.
 
-Tie scarcity to tension.
+### 5) Injury Log Journal Sync and Archive Flow
+Extend current injury tracking with readable records for players:
+- New/updated injury writes to Active Injuries journal pages.
+- Recovered/cleared injury moves to Archived Injuries.
+- Player-readable permissions configurable per journal section.
 
-## Phase 2 — Tactical Depth Expansion
+## Deferred
 
-### 4) Marching Doctrine System
-Define:
-- Default marching order
-- Combat-ready formation
-- Low-visibility formation
-- Urban tight corridor formation
-
-Allow tactical repositioning at cost of time.
-
-### 5) Injury & Recovery Protocol
-Expand existing injury play with operational structure:
-- Field stabilization kit tracking
-- Rest tier system (short, protected, fortified)
-- Environmental recovery modifiers
-
-Make recovery strategic, not automatic.
-
-### 6) Communication Discipline
-Add:
-- Silent signals
-- Code phrases
-- Signal flares / bells
-- Pre-combat plans
-
-Reward preparation.
-
-## Phase 3 — Strategic Campaign Layer
-
-### 7) Reputation & Faction Ledger
-Track:
-- Religious standing (Last Light)
-- Nobility alignment
-- Criminal reputation
-- Peasant sentiment
-
-Let operations impact faction access.
-
-### 8) Supply Line Mechanics
-Introduce:
-- Remote caches
-- Friendly safehouses
-- Risk of resupply missions
-- Caravan escort jobs
-
-Nordhofne becomes logistically alive.
-
-### 9) Base of Operations
-Eventually allow:
-- Safehouse
-- Chapel
-- Watchtower
-- Underground cell
-
-Add maintenance costs and risk of discovery.
-
-## Phase 4 — Advanced Systems
-
-### 10) Operational Strain Meter (Deferred)
-Track:
+### 6) Operational Strain Meter (Deferred)
+Track long-term pressure and cohesion signals:
 - Fatigue
 - Paranoia
 - Moral fracture
 - Cohesion
 
-Trigger events when thresholds hit.
-
 Status:
-- Deferred pending further playtest signal; environment hazard system is active in its place.
-
-### 11) Intelligence & Recon Layer
-Before major missions:
-- Recon checks
-- Rumor gathering
-- Bribery networks
-- Spy placement
-
-Success reduces unknowns.
-
-### 12) War-Scale Engagement Framework
-For House conflicts:
-- Unit abstraction system
-- Influence points
-- Resource drain over time
-- Territory control map
-
-Keep war manageable without wargame bloat.
-
-## Foundry Implementation Suggestions
-
-Create:
-- Journal template: Operational Log
-- Actor sheet: Party Ledger
-- Roll table: Operational Mishaps
-- Custom clock tracker: Strain Meter (optional, deferred)
-- Scene flags: Supply drain per long rest
-
-Keep UI minimal and systemic.
-
-## Design Philosophy for This Campaign
-
-Given the Dark Host arc, brewing political war, survivalist tone, and low-magic pressure, Party Operations should:
-- Increase tension
-- Reward preparation
-- Punish arrogance
-- Avoid micromanagement fatigue
-
-Operational depth should support narrative weight, not replace it.
+- Deferred pending additional playtest signal; hazard and recovery systems remain primary.
 
 ## Next Up (Immediate Priority)
+1. GM Loot Roller MVP (horde, defeated-enemy, and encounter-assignment workflows).
+2. Loot Source Registry MVP (compendium and roll-table selectors with validation).
+3. Journal repository skeleton (Active Injuries, Archived Injuries, Loot Log, permissions).
+4. Base of Operations maintenance loop pass.
 
-1. Base of Operations scaffold (safehouse / chapel / watchtower / underground cell + maintenance pressure)
-2. Intelligence & Recon Layer (recon checks, rumor network, bribes, spy placement)
-3. Supply line mechanics extension (cache risk profiles, escort contracts, scarcity events)
-
-These three systems extend the now-established baseline into strategic persistence and mission prep depth.
+This roadmap keeps focus on practical GM workflows and party-facing operations support.

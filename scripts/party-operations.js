@@ -14,6 +14,7 @@ export const SETTINGS = {
   GATHER_ROLL_MODE: "gatherRollMode",
   INJURY_RECOVERY: "injuryRecoveryState",
   INJURY_REMINDER_DAY: "injuryReminderDay",
+  LOOT_SOURCE_CONFIG: "lootSourceConfig",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
@@ -63,6 +64,39 @@ const SCROLL_STATE_SELECTORS = [
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
+const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
+const LOOT_ITEM_TYPE_LABELS = {
+  weapon: "Weapons",
+  equipment: "Equipment",
+  consumable: "Consumables",
+  loot: "Treasure/Loot",
+  tool: "Tools",
+  backpack: "Containers",
+  armor: "Armor",
+  ammunition: "Ammunition",
+  trinket: "Trinkets",
+  spell: "Spell Items",
+  feat: "Feat-like Items",
+  class: "Class Features",
+  race: "Race Features"
+};
+const LOOT_TABLE_TYPE_OPTIONS = [
+  { value: "currency", label: "Currency" },
+  { value: "gems", label: "Gems" },
+  { value: "art", label: "Art Objects" },
+  { value: "equipment", label: "Equipment" },
+  { value: "consumables", label: "Consumables" },
+  { value: "special", label: "Special Drops" }
+];
+const LOOT_RARITY_OPTIONS = [
+  { value: "", label: "No Floor/Ceiling" },
+  { value: "common", label: "Common" },
+  { value: "uncommon", label: "Uncommon" },
+  { value: "rare", label: "Rare" },
+  { value: "very-rare", label: "Very Rare" },
+  { value: "legendary", label: "Legendary" }
+];
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -96,6 +130,14 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-party-health-sync-non-party",
   "add-party-health-custom",
   "remove-party-health-custom",
+  "toggle-loot-pack-source",
+  "set-loot-pack-weight",
+  "toggle-loot-table-source",
+  "set-loot-table-type",
+  "toggle-loot-item-type",
+  "set-loot-rarity-floor",
+  "set-loot-rarity-ceiling",
+  "reset-loot-source-config",
   "remove-active-sync-effect",
   "archive-active-sync-effect",
   "restore-archived-sync-effect",
@@ -1694,13 +1736,13 @@ function getGmOperationsTabStorageKey() {
 
 function getActiveGmOperationsTab() {
   const stored = String(sessionStorage.getItem(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom"]);
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom", "loot-sources"]);
   return allowed.has(stored) ? stored : "environment";
 }
 
 function setActiveGmOperationsTab(tab) {
   const value = String(tab ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom"]);
+  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom", "loot-sources"]);
   sessionStorage.setItem(getGmOperationsTabStorageKey(), allowed.has(value) ? value : "environment");
 }
 
@@ -2013,6 +2055,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       gmOpsTabActiveSync: gmOperationsTab === "active-sync",
       gmOpsTabNonParty: gmOperationsTab === "non-party",
       gmOpsTabCustom: gmOperationsTab === "custom",
+      gmOpsTabLootSources: gmOperationsTab === "loot-sources",
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
       operationsPlanningResources: operationsPlanningTab === "resources",
@@ -2370,6 +2413,30 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "remove-party-health-custom":
         await removePartyHealthCustomModifier(element);
+        break;
+      case "toggle-loot-pack-source":
+        await toggleLootPackSource(element);
+        break;
+      case "set-loot-pack-weight":
+        await setLootPackWeight(element);
+        break;
+      case "toggle-loot-table-source":
+        await toggleLootTableSource(element);
+        break;
+      case "set-loot-table-type":
+        await setLootTableType(element);
+        break;
+      case "toggle-loot-item-type":
+        await toggleLootItemType(element);
+        break;
+      case "set-loot-rarity-floor":
+        await setLootRarityFloor(element);
+        break;
+      case "set-loot-rarity-ceiling":
+        await setLootRarityCeiling(element);
+        break;
+      case "reset-loot-source-config":
+        await resetLootSourceConfig();
         break;
       case "remove-active-sync-effect":
         await removeActiveSyncEffect(element);
@@ -3018,6 +3085,327 @@ function buildDefaultActivityState() {
   };
 }
 
+function buildDefaultLootSourceConfig() {
+  return {
+    packs: [
+      {
+        id: LOOT_WORLD_ITEMS_SOURCE_ID,
+        label: "World Item Directory",
+        sourceKind: "world-items",
+        enabled: true,
+        weight: 1
+      }
+    ],
+    tables: [],
+    filters: {
+      allowedTypes: [...LOOT_DEFAULT_ITEM_TYPES],
+      rarityFloor: "",
+      rarityCeiling: ""
+    },
+    updatedAt: 0,
+    updatedBy: ""
+  };
+}
+
+function normalizeLootRarityValue(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(LOOT_RARITY_OPTIONS.map((entry) => String(entry.value ?? "").trim().toLowerCase()));
+  return allowed.has(raw) ? raw : "";
+}
+
+function buildLootItemTypeCatalog() {
+  const labels = CONFIG?.Item?.typeLabels && typeof CONFIG.Item.typeLabels === "object"
+    ? CONFIG.Item.typeLabels
+    : {};
+  const merged = new Map();
+  for (const [key, label] of Object.entries(LOOT_ITEM_TYPE_LABELS)) {
+    merged.set(String(key).trim(), String(label).trim() || String(key).trim());
+  }
+  for (const [key, label] of Object.entries(labels)) {
+    const id = String(key ?? "").trim();
+    if (!id) continue;
+    if (!merged.has(id)) merged.set(id, String(label ?? id).trim() || id);
+  }
+  return Array.from(merged.entries())
+    .map(([value, label]) => ({ value, label }))
+    .filter((entry) => entry.value)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function normalizeLootSourcePackEntry(entry = {}) {
+  const id = String(entry?.id ?? entry?.pack ?? "").trim();
+  if (!id) return null;
+  const weightRaw = Number(entry?.weight ?? 1);
+  const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1;
+  const sourceKindRaw = String(entry?.sourceKind ?? (id === LOOT_WORLD_ITEMS_SOURCE_ID ? "world-items" : "compendium-pack")).trim().toLowerCase();
+  const sourceKind = sourceKindRaw === "world-items" ? "world-items" : "compendium-pack";
+  return {
+    id,
+    label: String(entry?.label ?? "").trim(),
+    sourceKind,
+    enabled: entry?.enabled !== false,
+    weight
+  };
+}
+
+function normalizeLootSourceTableEntry(entry = {}) {
+  const id = String(entry?.id ?? entry?.tableRef ?? entry?.tableUuid ?? "").trim();
+  if (!id) return null;
+  const typeRaw = String(entry?.tableType ?? entry?.type ?? "currency").trim().toLowerCase();
+  const validTypes = new Set(LOOT_TABLE_TYPE_OPTIONS.map((option) => option.value));
+  const tableType = validTypes.has(typeRaw) ? typeRaw : "currency";
+  const sourceKindRaw = String(entry?.sourceKind ?? (id.startsWith("world-table:") ? "world-table" : "table-pack")).trim().toLowerCase();
+  const sourceKind = sourceKindRaw === "world-table" ? "world-table" : "table-pack";
+  return {
+    id,
+    label: String(entry?.label ?? "").trim(),
+    sourceKind,
+    enabled: entry?.enabled !== false,
+    tableType
+  };
+}
+
+function normalizeLootSourceConfig(config = {}) {
+  const fallback = buildDefaultLootSourceConfig();
+  const rawPacks = Array.isArray(config?.packs) ? config.packs : fallback.packs;
+  const rawTables = Array.isArray(config?.tables) ? config.tables : fallback.tables;
+  const packs = rawPacks
+    .map((entry) => normalizeLootSourcePackEntry(entry))
+    .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
+  const tables = rawTables
+    .map((entry) => normalizeLootSourceTableEntry(entry))
+    .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
+
+  const itemTypeCatalog = new Set(buildLootItemTypeCatalog().map((entry) => entry.value));
+  const rawAllowedTypes = Array.isArray(config?.filters?.allowedTypes)
+    ? config.filters.allowedTypes
+    : fallback.filters.allowedTypes;
+  const allowedTypes = rawAllowedTypes
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, rows) => entry && itemTypeCatalog.has(entry) && rows.indexOf(entry) === index);
+
+  const updatedAtRaw = Number(config?.updatedAt ?? 0);
+  return {
+    packs,
+    tables,
+    filters: {
+      allowedTypes: allowedTypes.length > 0 ? allowedTypes : [...LOOT_DEFAULT_ITEM_TYPES],
+      rarityFloor: normalizeLootRarityValue(config?.filters?.rarityFloor),
+      rarityCeiling: normalizeLootRarityValue(config?.filters?.rarityCeiling)
+    },
+    updatedAt: Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0,
+    updatedBy: String(config?.updatedBy ?? "")
+  };
+}
+
+function getLootSourceConfig() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG);
+  return normalizeLootSourceConfig(stored ?? buildDefaultLootSourceConfig());
+}
+
+async function updateLootSourceConfig(mutator, options = {}) {
+  if (typeof mutator !== "function") return;
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const config = getLootSourceConfig();
+  mutator(config);
+  const next = normalizeLootSourceConfig(config);
+  next.updatedAt = Date.now();
+  next.updatedBy = String(game.user?.name ?? "GM");
+  if (options.skipLocalRefresh) suppressNextSettingRefresh(`${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`);
+  await game.settings.set(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG, next);
+  if (!options.skipLocalRefresh) refreshOpenApps();
+  emitSocketRefresh();
+}
+
+function getAllCompendiumPacks() {
+  if (!game?.packs) return [];
+  if (typeof game.packs.values === "function") return Array.from(game.packs.values());
+  const rows = [];
+  for (const entry of game.packs) {
+    if (Array.isArray(entry) && entry.length > 1) rows.push(entry[1]);
+    else rows.push(entry);
+  }
+  return rows;
+}
+
+function getAvailableLootItemPackSources() {
+  const rows = [{
+    id: LOOT_WORLD_ITEMS_SOURCE_ID,
+    label: "World Item Directory",
+    sourceKind: "world-items"
+  }];
+  for (const pack of getAllCompendiumPacks()) {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") continue;
+    const id = String(pack?.collection ?? "").trim();
+    if (!id) continue;
+    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
+    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
+    rows.push({
+      id,
+      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
+      sourceKind: "compendium-pack"
+    });
+  }
+  return rows
+    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function getAvailableLootTableSources() {
+  const rows = [];
+
+  for (const table of game.tables?.contents ?? []) {
+    const uuid = String(table?.uuid ?? "").trim();
+    if (!uuid) continue;
+    const name = String(table?.name ?? "World Roll Table").trim() || "World Roll Table";
+    rows.push({
+      id: `world-table:${uuid}`,
+      label: `${name} (World Table)`,
+      sourceKind: "world-table"
+    });
+  }
+
+  for (const pack of getAllCompendiumPacks()) {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "rolltable") continue;
+    const id = String(pack?.collection ?? "").trim();
+    if (!id) continue;
+    const packageLabel = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim();
+    const baseLabel = String(pack?.metadata?.label ?? pack?.title ?? id).trim() || id;
+    rows.push({
+      id: `table-pack:${id}`,
+      label: packageLabel ? `${baseLabel} (${packageLabel})` : baseLabel,
+      sourceKind: "table-pack"
+    });
+  }
+
+  return rows
+    .filter((entry, index, list) => entry.id && list.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function buildLootSourceRegistryContext() {
+  const config = getLootSourceConfig();
+  const availablePacks = getAvailableLootItemPackSources();
+  const availableTables = getAvailableLootTableSources();
+  const packLookup = new Map((config.packs ?? []).map((entry) => [entry.id, entry]));
+  const tableLookup = new Map((config.tables ?? []).map((entry) => [entry.id, entry]));
+
+  const itemPackOptions = availablePacks.map((source) => {
+    const stored = packLookup.get(source.id);
+    const weightRaw = Number(stored?.weight ?? 1);
+    return {
+      id: source.id,
+      label: source.label,
+      sourceKind: source.sourceKind,
+      available: true,
+      enabled: Boolean(stored?.enabled),
+      weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+    };
+  });
+
+  for (const stored of config.packs ?? []) {
+    if (itemPackOptions.some((entry) => entry.id === stored.id)) continue;
+    const weightRaw = Number(stored?.weight ?? 1);
+    itemPackOptions.push({
+      id: stored.id,
+      label: stored.label || `${stored.id} (Unavailable)`,
+      sourceKind: stored.sourceKind,
+      available: false,
+      enabled: Boolean(stored.enabled),
+      weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+    });
+  }
+
+  const tableOptions = availableTables.map((source) => {
+    const stored = tableLookup.get(source.id);
+    const currentType = String(stored?.tableType ?? "currency");
+    return {
+      id: source.id,
+      label: source.label,
+      sourceKind: source.sourceKind,
+      available: true,
+      enabled: Boolean(stored?.enabled),
+      tableType: currentType,
+      typeOptions: LOOT_TABLE_TYPE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        selected: option.value === currentType
+      }))
+    };
+  });
+
+  for (const stored of config.tables ?? []) {
+    if (tableOptions.some((entry) => entry.id === stored.id)) continue;
+    const currentType = String(stored?.tableType ?? "currency");
+    tableOptions.push({
+      id: stored.id,
+      label: stored.label || `${stored.id} (Unavailable)`,
+      sourceKind: stored.sourceKind,
+      available: false,
+      enabled: Boolean(stored.enabled),
+      tableType: currentType,
+      typeOptions: LOOT_TABLE_TYPE_OPTIONS.map((option) => ({
+        value: option.value,
+        label: option.label,
+        selected: option.value === currentType
+      }))
+    });
+  }
+
+  itemPackOptions.sort((a, b) => {
+    const enabledDelta = Number(Boolean(b.enabled)) - Number(Boolean(a.enabled));
+    if (enabledDelta !== 0) return enabledDelta;
+    return a.label.localeCompare(b.label);
+  });
+  tableOptions.sort((a, b) => {
+    const enabledDelta = Number(Boolean(b.enabled)) - Number(Boolean(a.enabled));
+    if (enabledDelta !== 0) return enabledDelta;
+    return a.label.localeCompare(b.label);
+  });
+
+  const selectedTypes = new Set(config.filters?.allowedTypes ?? []);
+  const itemTypeOptions = buildLootItemTypeCatalog().map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: selectedTypes.has(entry.value)
+  }));
+
+  const rarityFloor = normalizeLootRarityValue(config.filters?.rarityFloor);
+  const rarityCeiling = normalizeLootRarityValue(config.filters?.rarityCeiling);
+  const updatedAt = Number(config.updatedAt ?? 0);
+  const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "Not set";
+  return {
+    itemPackOptions,
+    tableOptions,
+    itemTypeOptions,
+    rarityFloorOptions: LOOT_RARITY_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: entry.value === rarityFloor
+    })),
+    rarityCeilingOptions: LOOT_RARITY_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: entry.value === rarityCeiling
+    })),
+    summary: {
+      enabledItemPacks: itemPackOptions.filter((entry) => entry.enabled).length,
+      totalItemPacks: itemPackOptions.length,
+      enabledTables: tableOptions.filter((entry) => entry.enabled).length,
+      totalTables: tableOptions.length,
+      enabledItemTypes: itemTypeOptions.filter((entry) => entry.selected).length,
+      totalItemTypes: itemTypeOptions.length,
+      updatedAtLabel,
+      updatedBy: String(config.updatedBy ?? "").trim() || "GM"
+    }
+  };
+}
+
 function buildDefaultOperationsLedger() {
   return {
     roles: {
@@ -3416,6 +3804,7 @@ function buildOperationsContext() {
   const reputationFilters = getReputationFilterState();
   const reputation = buildReputationContext(reputationState, reputationFilters);
   const partyHealthState = ensurePartyHealthState(ledger);
+  const lootSources = buildLootSourceRegistryContext();
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const environmentState = ensureEnvironmentState(ledger);
   const weatherState = ensureWeatherState(ledger);
@@ -3777,6 +4166,7 @@ function buildOperationsContext() {
       daeAvailable,
       syncToSceneNonParty: Boolean(partyHealthState.syncToSceneNonParty)
     },
+    lootSources,
     nonPartySync: {
       sceneName: String(game.scenes?.current?.name ?? "No Active Scene"),
       integrationMode: resolvedIntegrationMode,
@@ -7013,6 +7403,201 @@ async function removePartyHealthCustomModifier(element) {
     const partyHealth = ensurePartyHealthState(ledger);
     partyHealth.customModifiers = partyHealth.customModifiers.filter((row) => row.id !== modifierId);
   });
+}
+
+function getLootPackSourceMetaById(packId) {
+  const id = String(packId ?? "").trim();
+  if (!id) return null;
+  return getAvailableLootItemPackSources().find((entry) => entry.id === id) ?? null;
+}
+
+function getLootTableSourceMetaById(tableId) {
+  const id = String(tableId ?? "").trim();
+  if (!id) return null;
+  return getAvailableLootTableSources().find((entry) => entry.id === id) ?? null;
+}
+
+async function toggleLootPackSource(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const packId = String(element?.dataset?.packId ?? "").trim();
+  if (!packId) return;
+  const enabled = Boolean(element?.checked);
+  const meta = getLootPackSourceMetaById(packId);
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.packs)) config.packs = [];
+    let row = config.packs.find((entry) => String(entry?.id ?? "") === packId);
+    if (!row) {
+      row = normalizeLootSourcePackEntry({
+        id: packId,
+        label: String(meta?.label ?? packId),
+        sourceKind: String(meta?.sourceKind ?? "compendium-pack"),
+        enabled,
+        weight: 1
+      });
+      if (row) config.packs.push(row);
+      return;
+    }
+    row.enabled = enabled;
+    row.label = String(meta?.label ?? row.label ?? packId);
+    row.sourceKind = String(meta?.sourceKind ?? row.sourceKind ?? "compendium-pack");
+    row.weight = Math.max(1, Math.floor(Number(row.weight ?? 1) || 1));
+  });
+}
+
+async function setLootPackWeight(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const packId = String(element?.dataset?.packId ?? "").trim();
+  if (!packId) return;
+  const weightRaw = Number(element?.value ?? 1);
+  const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1;
+  const meta = getLootPackSourceMetaById(packId);
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.packs)) config.packs = [];
+    let row = config.packs.find((entry) => String(entry?.id ?? "") === packId);
+    if (!row) {
+      row = normalizeLootSourcePackEntry({
+        id: packId,
+        label: String(meta?.label ?? packId),
+        sourceKind: String(meta?.sourceKind ?? "compendium-pack"),
+        enabled: false,
+        weight
+      });
+      if (row) config.packs.push(row);
+      return;
+    }
+    row.weight = weight;
+    row.label = String(meta?.label ?? row.label ?? packId);
+    row.sourceKind = String(meta?.sourceKind ?? row.sourceKind ?? "compendium-pack");
+  });
+}
+
+async function toggleLootTableSource(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const tableId = String(element?.dataset?.tableId ?? "").trim();
+  if (!tableId) return;
+  const enabled = Boolean(element?.checked);
+  const meta = getLootTableSourceMetaById(tableId);
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.tables)) config.tables = [];
+    let row = config.tables.find((entry) => String(entry?.id ?? "") === tableId);
+    if (!row) {
+      row = normalizeLootSourceTableEntry({
+        id: tableId,
+        label: String(meta?.label ?? tableId),
+        sourceKind: String(meta?.sourceKind ?? "table-pack"),
+        enabled,
+        tableType: "currency"
+      });
+      if (row) config.tables.push(row);
+      return;
+    }
+    row.enabled = enabled;
+    row.label = String(meta?.label ?? row.label ?? tableId);
+    row.sourceKind = String(meta?.sourceKind ?? row.sourceKind ?? "table-pack");
+    if (!row.tableType) row.tableType = "currency";
+  });
+}
+
+async function setLootTableType(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const tableId = String(element?.dataset?.tableId ?? "").trim();
+  if (!tableId) return;
+  const tableType = String(element?.value ?? "currency").trim().toLowerCase();
+  const validTypes = new Set(LOOT_TABLE_TYPE_OPTIONS.map((entry) => entry.value));
+  const nextType = validTypes.has(tableType) ? tableType : "currency";
+  const meta = getLootTableSourceMetaById(tableId);
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.tables)) config.tables = [];
+    let row = config.tables.find((entry) => String(entry?.id ?? "") === tableId);
+    if (!row) {
+      row = normalizeLootSourceTableEntry({
+        id: tableId,
+        label: String(meta?.label ?? tableId),
+        sourceKind: String(meta?.sourceKind ?? "table-pack"),
+        enabled: false,
+        tableType: nextType
+      });
+      if (row) config.tables.push(row);
+      return;
+    }
+    row.tableType = nextType;
+    row.label = String(meta?.label ?? row.label ?? tableId);
+    row.sourceKind = String(meta?.sourceKind ?? row.sourceKind ?? "table-pack");
+  });
+}
+
+async function toggleLootItemType(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const itemType = String(element?.dataset?.itemType ?? "").trim();
+  if (!itemType) return;
+  const enabled = Boolean(element?.checked);
+  const validTypes = new Set(buildLootItemTypeCatalog().map((entry) => entry.value));
+  if (!validTypes.has(itemType)) return;
+
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    const current = new Set(Array.isArray(config.filters.allowedTypes) ? config.filters.allowedTypes.map((entry) => String(entry ?? "").trim()) : []);
+    if (enabled) current.add(itemType);
+    else current.delete(itemType);
+    config.filters.allowedTypes = Array.from(current).filter((entry) => validTypes.has(entry));
+  });
+}
+
+async function setLootRarityFloor(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const rarityFloor = normalizeLootRarityValue(element?.value);
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.rarityFloor = rarityFloor;
+  });
+}
+
+async function setLootRarityCeiling(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const rarityCeiling = normalizeLootRarityValue(element?.value);
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.rarityCeiling = rarityCeiling;
+  });
+}
+
+async function resetLootSourceConfig() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const defaults = buildDefaultLootSourceConfig();
+  await updateLootSourceConfig((config) => {
+    config.packs = foundry.utils.deepClone(defaults.packs);
+    config.tables = foundry.utils.deepClone(defaults.tables);
+    config.filters = foundry.utils.deepClone(defaults.filters);
+  });
+  ui.notifications?.info("Loot source configuration reset to defaults.");
 }
 
 async function gmQuickAddFaction() {
@@ -11400,6 +11985,13 @@ Hooks.once("init", () => {
     default: ""
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultLootSourceConfig()
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.INTEGRATION_MODE, {
     name: "Integration Mode",
     hint: "Choose how Party Operations syncs state for DAE/automation modules.",
@@ -11629,8 +12221,9 @@ Hooks.once("ready", () => {
     const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
     const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
     const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
+    const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
     const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey) {
+    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey) {
       refreshOpenApps();
     }
     if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
