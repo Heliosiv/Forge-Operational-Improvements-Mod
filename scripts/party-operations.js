@@ -14832,9 +14832,24 @@ function openGmUi() {
 }
 
 function ensureLauncherUi() {
-  ensureClickOpener();
-  ensureFloatingLauncher();
-  scheduleLauncherRecoveryPass();
+  let error = null;
+  try {
+    ensureClickOpener();
+    ensureFloatingLauncher();
+    scheduleLauncherRecoveryPass();
+  } catch (caught) {
+    error = caught;
+    console.error(`${MODULE_ID}: ensureLauncherUi failed`, caught);
+  }
+
+  const clickOpener = document.getElementById("po-click-opener");
+  const floatingLauncher = document.getElementById("po-floating-launcher");
+  return {
+    ok: Boolean(clickOpener || floatingLauncher) && !error,
+    clickOpener: Boolean(clickOpener),
+    floatingLauncher: Boolean(floatingLauncher),
+    error: error ? String(error?.message ?? error) : null
+  };
 }
 
 function buildPartyOperationsApi() {
@@ -14867,7 +14882,14 @@ function buildPartyOperationsApi() {
     repairWorldData: () => diagnoseWorldData({ repair: true }),
     resetLauncherPosition: () => resetFloatingLauncherPosition(),
     ensureLauncher: () => ensureLauncherUi(),
-    showLauncher: () => ensureLauncherUi()
+    showLauncher: () => ensureLauncherUi(),
+    apiStatus: () => ({
+      moduleActive: Boolean(game.modules?.get?.(MODULE_ID)?.active),
+      hasGameApi: Boolean(game.partyOperations),
+      hasModuleApi: Boolean(game.modules?.get?.(MODULE_ID)?.api),
+      hasGlobalApi: Boolean(globalThis.partyOperations || globalThis.PartyOperations),
+      launcher: ensureLauncherUi()
+    })
   };
 
   // Backward-compatible aliases for older macro snippets.
