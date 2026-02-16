@@ -1877,7 +1877,6 @@ function syncApplicationWindowTitle(app, title) {
   const label = String(title ?? "").trim();
   if (!app || !label) return;
   if (app.options?.window) app.options.window.title = label;
-  if ("title" in app) app.title = label;
   const root = getAppRootElement(app);
   const frame = root?.closest?.(".application, .app") ?? null;
   const titleNode = frame?.querySelector?.(".window-title, .window-header .title") ?? null;
