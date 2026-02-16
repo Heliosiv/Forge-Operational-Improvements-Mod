@@ -36,6 +36,8 @@ const pendingWindowRestore = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
+let launcherRecoveryScheduled = false;
+const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
 
 const INTEGRATION_MODES = {
   AUTO: "auto",
@@ -14734,12 +14736,8 @@ async function resetFloatingLauncherPosition() {
     launcher = document.getElementById("po-floating-launcher");
   }
   if (launcher) {
-    launcher.style.display = "flex";
-    launcher.style.visibility = "visible";
-    launcher.style.opacity = "1";
     const pos = clampFloatingLauncherPosition(resetPos);
-    launcher.style.left = `${pos.left}px`;
-    launcher.style.top = `${pos.top}px`;
+    applyFloatingLauncherInlineStyles(launcher, pos);
   }
 }
 
@@ -14763,6 +14761,58 @@ async function saveFloatingLauncherPosition(pos) {
   await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, clamped);
 }
 
+function applyClickOpenerInlineStyles(opener) {
+  if (!opener) return;
+  opener.style.position = "fixed";
+  opener.style.left = "58px";
+  opener.style.bottom = "84px";
+  opener.style.zIndex = "10050";
+  opener.style.display = "flex";
+  opener.style.visibility = "visible";
+  opener.style.opacity = "1";
+  opener.style.alignItems = "center";
+  opener.style.justifyContent = "center";
+  opener.style.width = "40px";
+  opener.style.height = "40px";
+  opener.style.pointerEvents = "auto";
+}
+
+function applyFloatingLauncherInlineStyles(launcher, position = null) {
+  if (!launcher) return;
+  launcher.style.position = "fixed";
+  launcher.style.zIndex = "10050";
+  launcher.style.display = "flex";
+  launcher.style.visibility = "visible";
+  launcher.style.opacity = "1";
+  launcher.style.pointerEvents = "auto";
+  launcher.style.flexDirection = "column";
+  launcher.style.gap = "6px";
+  const pos = position ?? clampFloatingLauncherPosition(getFloatingLauncherPosition());
+  launcher.style.left = `${pos.left}px`;
+  launcher.style.top = `${pos.top}px`;
+}
+
+function scheduleLauncherRecoveryPass() {
+  if (launcherRecoveryScheduled) return;
+  launcherRecoveryScheduled = true;
+  const finalDelay = LAUNCHER_RECOVERY_DELAYS_MS[LAUNCHER_RECOVERY_DELAYS_MS.length - 1];
+
+  for (const delay of LAUNCHER_RECOVERY_DELAYS_MS) {
+    window.setTimeout(() => {
+      try {
+        ensureClickOpener();
+        ensureFloatingLauncher();
+      } catch (error) {
+        console.warn(`${MODULE_ID}: launcher recovery pass failed`, error);
+      } finally {
+        if (delay === finalDelay) {
+          launcherRecoveryScheduled = false;
+        }
+      }
+    }, delay);
+  }
+}
+
 function ensureClickOpener() {
   let opener = document.getElementById("po-click-opener");
   if (!opener) {
@@ -14783,9 +14833,7 @@ function ensureClickOpener() {
     document.body.appendChild(opener);
   }
 
-  opener.style.display = "flex";
-  opener.style.visibility = "visible";
-  opener.style.opacity = "1";
+  applyClickOpenerInlineStyles(opener);
 }
 
 function ensureFloatingLauncher() {
@@ -14929,11 +14977,7 @@ function ensureFloatingLauncher() {
   if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
-  launcher.style.display = "flex";
-  launcher.style.visibility = "visible";
-  launcher.style.opacity = "1";
-  launcher.style.left = `${pos.left}px`;
-  launcher.style.top = `${pos.top}px`;
+  applyFloatingLauncherInlineStyles(launcher, pos);
   applyFloatingLauncherLockUi(launcher, isFloatingLauncherLocked());
 }
 
@@ -15093,6 +15137,13 @@ function setupPartyOperationsUI() {
     root.querySelector("[data-control='party-operations']")?.remove();
     ensureClickOpener();
     ensureFloatingLauncher();
+    scheduleLauncherRecoveryPass();
+  });
+
+  Hooks.on("canvasReady", () => {
+    ensureClickOpener();
+    ensureFloatingLauncher();
+    scheduleLauncherRecoveryPass();
   });
 }
 
@@ -15284,6 +15335,7 @@ Hooks.once("ready", () => {
   setupPartyOperationsUI();
   ensureClickOpener();
   ensureFloatingLauncher();
+  scheduleLauncherRecoveryPass();
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players
