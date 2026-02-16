@@ -34,6 +34,7 @@ const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
 let sceneControlHookRegistered = false;
+let openerRecoveryIntervalId = null;
 const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
@@ -14913,6 +14914,37 @@ function ensureFloatingLauncher() {
   applyFloatingLauncherLockUi(launcher, isFloatingLauncherLocked());
 }
 
+function openPartyOperationsUi() {
+  setActiveRestMainTab("rest-watch");
+  new RestWatchApp().render({ force: true });
+}
+
+function ensureDomControlOpener() {
+  const controlsRoot = document.querySelector("#controls");
+  if (!controlsRoot) return;
+
+  const existing = controlsRoot.querySelector('.control-tool[data-tool="party-operations-open"]');
+  if (existing) return;
+
+  const tokenTools =
+    controlsRoot.querySelector('.scene-control[data-control="token"] ol.control-tools') ||
+    controlsRoot.querySelector('.scene-control[data-control="token"] .control-tools') ||
+    controlsRoot.querySelector(".control-tools");
+  if (!tokenTools) return;
+
+  const tool = document.createElement("li");
+  tool.className = "control-tool";
+  tool.dataset.tool = "party-operations-open";
+  tool.title = "Party Operations";
+  tool.setAttribute("aria-label", "Party Operations");
+  tool.innerHTML = '<i class="fas fa-compass"></i>';
+  tool.addEventListener("click", (event) => {
+    event.preventDefault();
+    openPartyOperationsUi();
+  });
+  tokenTools.appendChild(tool);
+}
+
 function ensureClickOpener() {
   let opener = document.getElementById("po-click-opener");
   if (!opener) {
@@ -14924,14 +14956,32 @@ function ensureClickOpener() {
     opener.setAttribute("aria-label", "Open Party Operations");
     opener.innerHTML = '<i class="fas fa-compass"></i>';
     opener.addEventListener("click", () => {
-      setActiveRestMainTab("rest-watch");
-      new RestWatchApp().render({ force: true });
+      openPartyOperationsUi();
     });
     document.body.appendChild(opener);
   }
   opener.style.display = "flex";
   opener.style.visibility = "visible";
   opener.style.opacity = "1";
+}
+
+function ensureAllOpeners() {
+  ensureFloatingLauncher();
+  ensureClickOpener();
+  ensureDomControlOpener();
+}
+
+function scheduleOpenerRecoveryPass() {
+  if (openerRecoveryIntervalId) return;
+  let attempts = 0;
+  openerRecoveryIntervalId = window.setInterval(() => {
+    ensureAllOpeners();
+    attempts += 1;
+    if (attempts >= 24) {
+      window.clearInterval(openerRecoveryIntervalId);
+      openerRecoveryIntervalId = null;
+    }
+  }, 2500);
 }
 
 function getRollValidator() {
@@ -15099,8 +15149,7 @@ function setupPartyOperationsUI() {
         button: true,
         visible: true,
         onClick: () => {
-          setActiveRestMainTab("rest-watch");
-          new RestWatchApp().render({ force: true });
+          openPartyOperationsUi();
         }
       };
       if (existing) Object.assign(existing, toolData);
@@ -15108,8 +15157,11 @@ function setupPartyOperationsUI() {
     });
 
     Hooks.on("renderSceneControls", () => {
-      ensureFloatingLauncher();
-      ensureClickOpener();
+      ensureAllOpeners();
+    });
+
+    Hooks.on("canvasReady", () => {
+      ensureAllOpeners();
     });
   }
 
@@ -15120,8 +15172,8 @@ function setupPartyOperationsUI() {
     // Best effort only.
   }
 
-  ensureFloatingLauncher();
-  ensureClickOpener();
+  ensureAllOpeners();
+  scheduleOpenerRecoveryPass();
 }
 
 Hooks.once("init", () => {
@@ -15310,8 +15362,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   // Setup UI controls for sidebar
   setupPartyOperationsUI();
-  ensureFloatingLauncher();
-  ensureClickOpener();
+  ensureAllOpeners();
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players

@@ -1316,9 +1316,9 @@
 
 #po-click-opener {
   position: fixed;
-  left: 10px;
-  bottom: 76px;
-  z-index: 110;
+  left: 58px;
+  bottom: 84px;
+  z-index: 10050;
   width: 40px;
   height: 40px;
   display: flex;
