@@ -14912,6 +14912,27 @@ function ensureFloatingLauncher() {
   applyFloatingLauncherLockUi(launcher, isFloatingLauncherLocked());
 }
 
+function ensureClickOpener() {
+  let opener = document.getElementById("po-click-opener");
+  if (!opener) {
+    opener = document.createElement("button");
+    opener.id = "po-click-opener";
+    opener.type = "button";
+    opener.className = "po-click-opener";
+    opener.title = "Open Party Operations";
+    opener.setAttribute("aria-label", "Open Party Operations");
+    opener.innerHTML = '<i class="fas fa-compass"></i>';
+    opener.addEventListener("click", () => {
+      setActiveRestMainTab("rest-watch");
+      new RestWatchApp().render({ force: true });
+    });
+    document.body.appendChild(opener);
+  }
+  opener.style.display = "flex";
+  opener.style.visibility = "visible";
+  opener.style.opacity = "1";
+}
+
 function getRollValidator() {
   if (globalThis?.Roll?.validate) return globalThis.Roll;
   if (foundry?.dice?.Roll?.validate) return foundry.dice.Roll;
@@ -15067,6 +15088,7 @@ function setupPartyOperationsUI() {
     if (!root?.querySelector) return;
     root.querySelector("[data-control='party-operations']")?.remove();
     ensureFloatingLauncher();
+    ensureClickOpener();
   });
 }
 
@@ -15257,6 +15279,7 @@ Hooks.once("ready", () => {
   // Setup UI controls for sidebar
   setupPartyOperationsUI();
   ensureFloatingLauncher();
+  ensureClickOpener();
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players
