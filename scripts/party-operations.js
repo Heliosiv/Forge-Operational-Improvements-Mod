@@ -1,4 +1,4 @@
-const DEBUG_LOG = false;
+﻿const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
 const MODULE_ID = "party-operations";
@@ -264,6 +264,11 @@ const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
 const environmentMovePromptByActor = new Map();
 const environmentMoveOriginByToken = new Map();
+const SOCKET_NOTE_MAX_LENGTH = 4000;
+const SOCKET_ACTIVITY_TYPES = new Set(["rested", "light", "heavy", "strenuous"]);
+const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes"]);
+const SOCKET_MARCH_OPS = new Set(["joinRank", "setNote"]);
+const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
 
 const ENVIRONMENT_PRESETS = [
   {
@@ -431,6 +436,133 @@ function getAppRootElement(appOrElement) {
   if (candidate?.querySelector) return candidate;
   if (candidate?.[0]?.querySelector) return candidate[0];
   return null;
+}
+
+function refreshTabAccessibility(root) {
+  if (!root?.querySelectorAll) return;
+  const tablists = Array.from(root.querySelectorAll("[role='tablist']"));
+  for (const tablist of tablists) {
+    const tabs = Array.from(tablist.querySelectorAll(".po-tab"));
+    if (tabs.length === 0) continue;
+
+    const activeTab = tabs.find((tab) => tab.classList.contains("is-active")) ?? tabs[0];
+    for (const tab of tabs) {
+      const isActive = tab === activeTab;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", isActive ? "true" : "false");
+      tab.setAttribute("tabindex", isActive ? "0" : "-1");
+    }
+
+    if (tablist.dataset.poTabA11yBound === "1") continue;
+    tablist.dataset.poTabA11yBound = "1";
+    tablist.addEventListener("keydown", (event) => {
+      const key = String(event.key ?? "");
+      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(key)) return;
+      const currentTabs = Array.from(tablist.querySelectorAll(".po-tab"));
+      if (currentTabs.length === 0) return;
+      const current = event.target?.closest?.(".po-tab");
+      const currentIndex = Math.max(0, currentTabs.indexOf(current));
+      let targetIndex = currentIndex;
+      if (key === "ArrowRight") targetIndex = (currentIndex + 1) % currentTabs.length;
+      if (key === "ArrowLeft") targetIndex = (currentIndex - 1 + currentTabs.length) % currentTabs.length;
+      if (key === "Home") targetIndex = 0;
+      if (key === "End") targetIndex = currentTabs.length - 1;
+      const target = currentTabs[targetIndex];
+      if (!target) return;
+      event.preventDefault();
+      target.focus();
+      target.click();
+    });
+  }
+}
+
+function syncNotesDisclosureState(root) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll(".po-watch-entry").forEach((entry, index) => {
+    const notes = entry.querySelector(".po-notes");
+    const toggleButton = entry.querySelector("[data-action='toggle-notes']");
+    if (!notes || !toggleButton) return;
+    if (!notes.id) notes.id = `po-notes-auto-${index}-${foundry.utils.randomID()}`;
+    const noteValue = String(notes.querySelector("textarea")?.value ?? "").trim();
+    if (noteValue) notes.classList.add("is-active");
+    const expanded = notes.classList.contains("is-active");
+    toggleButton.setAttribute("aria-controls", notes.id);
+    toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
+    notes.setAttribute("aria-hidden", expanded ? "false" : "true");
+  });
+}
+
+function sanitizeSocketIdentifier(value, options = {}) {
+  const maxLength = Number.isFinite(Number(options.maxLength)) ? Math.max(1, Math.floor(Number(options.maxLength))) : 128;
+  const normalized = String(value ?? "").trim();
+  if (!normalized || normalized.length > maxLength) return "";
+  if (!/^[A-Za-z0-9._:-]+$/.test(normalized)) return "";
+  return normalized;
+}
+
+function clampSocketText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
+  const cap = Number.isFinite(Number(maxLength)) ? Math.max(0, Math.floor(Number(maxLength))) : SOCKET_NOTE_MAX_LENGTH;
+  return String(value ?? "").slice(0, cap);
+}
+
+function resolveRequester(userOrId, options = {}) {
+  const allowGM = options.allowGM !== false;
+  const requireActive = options.requireActive === true;
+  const requester = typeof userOrId === "string" ? game.users.get(userOrId) : userOrId;
+  if (!requester) return null;
+  if (!allowGM && requester.isGM) return null;
+  if (requireActive && !requester.active) return null;
+  return requester;
+}
+
+function getSocketRequester(message, options = {}) {
+  const userId = sanitizeSocketIdentifier(message?.userId, { maxLength: 64 });
+  if (!userId) return null;
+  return resolveRequester(userId, options);
+}
+
+function normalizeSocketActivityType(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return SOCKET_ACTIVITY_TYPES.has(normalized) ? normalized : "";
+}
+
+function normalizeSocketRestRequest(request) {
+  if (!request || typeof request !== "object") return null;
+  const op = String(request.op ?? "").trim();
+  if (!SOCKET_REST_OPS.has(op)) return null;
+  const slotId = sanitizeSocketIdentifier(request.slotId, { maxLength: 64 });
+  const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
+  if (!slotId || !actorId) return null;
+
+  if (op === "setEntryNotes") {
+    return {
+      op,
+      slotId,
+      actorId,
+      text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH)
+    };
+  }
+  return { op, slotId, actorId };
+}
+
+function normalizeSocketMarchRequest(request) {
+  if (!request || typeof request !== "object") return null;
+  const op = String(request.op ?? "").trim();
+  if (!SOCKET_MARCH_OPS.has(op)) return null;
+  const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
+  if (!actorId) return null;
+
+  if (op === "joinRank") {
+    const rankId = String(request.rankId ?? "").trim();
+    if (!SOCKET_MARCH_RANKS.has(rankId)) return null;
+    return { op, actorId, rankId };
+  }
+
+  return {
+    op,
+    actorId,
+    text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH)
+  };
 }
 
 function ensureOperationalResourceConfig(resources) {
@@ -2309,7 +2441,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const gmOperationsTab = getActiveGmOperationsTab();
     const miniViz = buildMiniVisualizationContext({ visibility });
     const miniVizUi = buildMiniVizUiContext();
-    
+    const totalSlots = slots.length;
+    const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+    const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+    const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+    const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
+    const campfireState = state.campfire ? "Lit" : "Out";
+
     return {
       isGM,
       locked: state.locked,
@@ -2356,7 +2494,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
       operationsPlanningResources: operationsPlanningTab === "resources",
-      operationsPlanningBonuses: operationsPlanningTab === "bonuses"
+      operationsPlanningBonuses: operationsPlanningTab === "bonuses",
+      overview: {
+        totalSlots,
+        occupiedSlots,
+        assignedEntries,
+        lowDarkvisionSlots,
+        hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+        lockState,
+        campfireState
+      }
     };
   }
 
@@ -2412,6 +2559,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#updateActivityUI();
     this.#applyOperationsHoverHints();
     applyNonGmOperationsReadonly(this);
+    refreshTabAccessibility(this.element);
 
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDrop(this.element);
@@ -2423,6 +2571,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
     restorePendingWindowState(this);
     restorePendingUiState(this);
+    syncNotesDisclosureState(this.element);
     restorePendingScrollState(this);
 
     if (DEBUG_LOG) console.log("RestWatchApp: event delegation attached", this.element);
@@ -2511,7 +2660,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await assignSlotByPicker(element);
         break;
       case "assign-me":
-        await assignSlotToMe(element);
+        await assignSlotToUser(element);
         break;
       case "clear":
         await clearSlotEntry(element);
@@ -2994,6 +3143,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     const lockBannerTooltip = state.locked ? "Edits are disabled while the GM lock is active." : "";
     const miniViz = buildMiniVisualizationContext({ visibility });
     const miniVizUi = buildMiniVizUiContext();
+    const totalSlots = slots.length;
+    const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+    const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+    const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
     return {
       isGM: false,
       locked: state.locked,
@@ -3005,7 +3158,15 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
       slots,
       miniViz,
-      ...miniVizUi
+      ...miniVizUi,
+      overview: {
+        totalSlots,
+        occupiedSlots,
+        assignedEntries,
+        lowDarkvisionSlots,
+        hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+        lockState: state.locked ? "Locked by GM" : "Open"
+      }
     };
   }
 
@@ -3046,6 +3207,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     this.#updateActivityUI();
     restorePendingWindowState(this);
     restorePendingUiState(this);
+    syncNotesDisclosureState(this.element);
     restorePendingScrollState(this);
   }
 
@@ -3090,7 +3252,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         await updateActivity(element, { skipLocalRefresh: true });
         break;
       case "clear":
-        await clearSlotAssignment(element);
+        await clearSlotEntry(element);
         break;
       case "toggle-notes":
         toggleCardNotes(element);
@@ -3159,6 +3321,12 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const tracker = ensureDoctrineTracker(state);
     const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
     const miniVizUi = buildMiniVizUiContext();
+    const frontCount = (ranks.find((rank) => rank.id === "front")?.entries?.length ?? 0);
+    const middleCount = (ranks.find((rank) => rank.id === "middle")?.entries?.length ?? 0);
+    const rearCount = (ranks.find((rank) => rank.id === "rear")?.entries?.length ?? 0);
+    const totalAssigned = frontCount + middleCount + rearCount;
+    const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
+    const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
     return {
       isGM,
       locked: state.locked,
@@ -3217,6 +3385,15 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         combatReady: formation === "combat-ready",
         tightCorridor: formation === "tight-corridor",
         lowVisibility: formation === "low-visibility"
+      },
+      overview: {
+        totalAssigned,
+        frontCount,
+        middleCount,
+        rearCount,
+        formationLabel: formationLabels[formation] ?? formationLabels.default,
+        lightSources,
+        lockState
       }
     };
   }
@@ -3264,6 +3441,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     
     setupMarchingDragAndDrop(this.element);
+    refreshTabAccessibility(this.element);
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
@@ -5135,7 +5313,7 @@ function buildOperationsContext() {
   const totalWaterReserve = Math.max(0, resourcesNumeric.partyWaterRations);
 
   const formatCyclesLeft = (stock, drain) => {
-    if (drain <= 0) return "∞";
+    if (drain <= 0) return "infinite";
     return (Math.max(0, stock) / drain).toFixed(1);
   };
 
@@ -5206,8 +5384,8 @@ function buildOperationsContext() {
           logType,
           logTypeLabel: "Weather",
           title: String(entry.label ?? "Weather").trim() || "Weather",
-          summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} · Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
-          details: `${getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0))} · ${describeWeatherDaeChanges(entry.daeChanges ?? [])}`,
+          summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} - Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
+          details: `${getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0))} - ${describeWeatherDaeChanges(entry.daeChanges ?? [])}`,
           note: String(entry.note ?? ""),
           hasNote: String(entry.note ?? "").trim().length > 0,
           createdBy: String(entry.createdBy ?? "GM"),
@@ -5224,8 +5402,8 @@ function buildOperationsContext() {
         logType,
         logTypeLabel: "Environment",
         title: preset.label,
-        summary: `${check.checkLabel} · DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
-        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}${entry.syncToSceneNonParty !== false ? " · + non-party scene actors" : ""}`,
+        summary: `${check.checkLabel} - DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
+        details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}${entry.syncToSceneNonParty !== false ? " - + non-party scene actors" : ""}`,
         note: String(entry.note ?? ""),
         hasNote: String(entry.note ?? "").trim().length > 0,
         createdBy: String(entry.createdBy ?? "GM"),
@@ -5861,7 +6039,7 @@ function buildReputationContext(reputationState, filters = {}) {
       const summary = row.note.length > 64 ? `${row.note.slice(0, 61)}...` : row.note;
       return {
         value: row.id,
-        label: `${stamp} · Rep ${signedScore} · ${summary}`,
+        label: `${stamp} - Rep ${signedScore} - ${summary}`,
         note: row.note
       };
     });
@@ -6036,8 +6214,8 @@ function buildBaseOperationsContext(baseState) {
         storageSpaceUsed: storageItemCount,
         storageItemCount,
         hasStorageCapacity: maxWeight > 0 || maxSpace > 0,
-        storageWeightSummary: maxWeight > 0 ? `${storageWeightUsed.toFixed(1)} / ${maxWeight.toFixed(1)}` : `${storageWeightUsed.toFixed(1)} / ∞`,
-        storageSpaceSummary: maxSpace > 0 ? `${storageItemCount} / ${maxSpace}` : `${storageItemCount} / ∞`
+        storageWeightSummary: maxWeight > 0 ? `${storageWeightUsed.toFixed(1)} / ${maxWeight.toFixed(1)}` : `${storageWeightUsed.toFixed(1)} / infinite`,
+        storageSpaceSummary: maxSpace > 0 ? `${storageItemCount} / ${maxSpace}` : `${storageItemCount} / infinite`
       };
     })
     : [];
@@ -6564,8 +6742,8 @@ function buildReconContext(reconState = {}) {
       10
       + (heatLevel === "high" ? 4 : heatLevel === "moderate" ? 2 : 0)
       + (network === "limited" ? 2 : 0)
-      - (network === "deep" ? 1 : 0)
-      - (rumorReliability >= 70 ? 1 : 0)
+     - (network === "deep" ? 1 : 0)
+     - (rumorReliability >= 70 ? 1 : 0)
     )
   );
 
@@ -7301,7 +7479,7 @@ async function setPartyHealthSyncScope(element) {
 async function setOperationalSopNote(element) {
   const sopKey = String(element?.dataset?.sop ?? "").trim();
   if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
-  const note = String(element?.value ?? "");
+  const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
   if (!game.user.isGM) {
     game.socket.emit(SOCKET_CHANNEL, {
       type: "ops:setSopNote",
@@ -7768,7 +7946,7 @@ async function consumeSelectedInventoryItem(selection, amount) {
     needed,
     consumed,
     missing: Math.max(0, needed - consumed),
-    source: `${actor.name} · ${item.name}`
+    source: `${actor.name} - ${item.name}`
   };
 }
 
@@ -7789,7 +7967,7 @@ async function addToSelectedInventoryItem(selection, amount) {
   return {
     gained,
     added: gained,
-    source: `${actor.name} · ${item.name}`
+    source: `${actor.name} - ${item.name}`
   };
 }
 
@@ -8255,7 +8433,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     summaryParts.push(`Damage ${damageResult.amount}${damageResult.damageType ? ` ${damageResult.damageType}` : ""}`);
   }
 
-  return { summary: summaryParts.join(" · ") };
+  return { summary: summaryParts.join(" - ") };
 }
 
 async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
@@ -8327,8 +8505,8 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
   const resultText = failed ? "Fail" : "Success";
   const totalText = Number.isFinite(total) ? ` (${total})` : "";
   const streakText = failed
-    ? ` · Fail Streak ${streakState.next}`
-    : (streakState.previous > 0 ? " · Fail Streak Reset" : "");
+    ? ` - Fail Streak ${streakState.next}`
+    : (streakState.previous > 0 ? " - Fail Streak Reset" : "");
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     whisper: gmIds,
@@ -8822,7 +9000,7 @@ async function logReputationNote(element) {
   const signedScore = Number(createdLog.score ?? 0) > 0 ? `+${Number(createdLog.score)}` : String(Number(createdLog.score ?? 0));
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Reputation Log:</strong> ${foundry.utils.escapeHTML(factionLabel)} · ${signedScore}</p><p>${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p><p>${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>`
+    content: `<p><strong>Reputation Log:</strong> ${foundry.utils.escapeHTML(factionLabel)} - ${signedScore}</p><p>${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p><p>${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>`
   });
 }
 
@@ -8906,7 +9084,7 @@ async function removeReputationFaction(element) {
 async function showReputationBrief() {
   const reputation = buildOperationsContext().reputation;
   const rows = reputation.factions
-    .map((faction) => `<li>${faction.label}: ${faction.score} (${faction.band}) · Access ${faction.access}${faction.note ? ` · ${faction.note}` : ""}</li>`)
+    .map((faction) => `<li>${faction.label}: ${faction.score} (${faction.band}) - Access ${faction.access}${faction.note ? ` - ${faction.note}` : ""}</li>`)
     .join("");
 
   const content = `
@@ -9218,8 +9396,8 @@ async function showOperationalLogsManager() {
       const noteLabel = entry.hasNote ? `<div class="po-op-summary">Note: ${escape(entry.note)}</div>` : "";
       return `
       <div class="po-log-manager-row" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}" data-search="${escape(`${entry.logTypeLabel} ${entry.title} ${entry.summary} ${entry.details} ${entry.note} ${entry.createdBy}`.toLowerCase())}">
-        <div><strong>${escape(entry.logTypeLabel)}</strong> · ${escape(entry.title)}</div>
-        <div class="po-op-summary">${escape(entry.summary)}${entry.details ? ` · ${escape(entry.details)}` : ""}</div>
+        <div><strong>${escape(entry.logTypeLabel)}</strong> - ${escape(entry.title)}</div>
+        <div class="po-op-summary">${escape(entry.summary)}${entry.details ? ` - ${escape(entry.details)}` : ""}</div>
         ${noteLabel}
         <div class="po-op-summary">${escape(entry.createdAtLabel)} by ${escape(entry.createdBy)}</div>
         <div class="po-op-action-row">
@@ -9884,7 +10062,7 @@ async function gmQuickSubmitWeather(element) {
     weatherId: String(selectedPreset.weatherId ?? selectedPreset.key ?? "").trim(),
     darkness,
     visibilityModifier,
-    note: note || `Weather profile logged · darkness ${darkness.toFixed(2)}`,
+    note: note || `Weather profile logged - darkness ${darkness.toFixed(2)}`,
     daeChanges,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
@@ -10095,7 +10273,7 @@ function buildBaseSiteStorageDialogContent(site) {
       <div class="po-op-role-row" data-storage-item-id="${foundry.utils.escapeHTML(entry.id)}">
         <div class="po-op-role-head">
           <div class="po-op-role-name"><img src="${icon}" width="18" height="18" /> ${name}</div>
-          <div class="po-op-role-status">Qty ${qty} · ${weight.toFixed(1)} wt each</div>
+          <div class="po-op-role-status">Qty ${qty} - ${weight.toFixed(1)} wt each</div>
         </div>
         ${note ? `<div class="po-op-summary">${note}</div>` : ""}
         <div class="po-op-action-row">
@@ -10109,8 +10287,8 @@ function buildBaseSiteStorageDialogContent(site) {
 
   return `
     <div class="po-help po-base-storage-dialog">
-      <div class="po-op-summary"><strong>${foundry.utils.escapeHTML(String(site.name ?? "Storage Site"))}</strong> · ${foundry.utils.escapeHTML(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
-      <div class="po-op-summary">Weight: ${weightUsed.toFixed(1)} / ${Math.max(0, Number(storage.maxWeight ?? 0) || 0).toFixed(1)} · Space: ${spaceUsed} / ${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}</div>
+      <div class="po-op-summary"><strong>${foundry.utils.escapeHTML(String(site.name ?? "Storage Site"))}</strong> - ${foundry.utils.escapeHTML(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
+      <div class="po-op-summary">Weight: ${weightUsed.toFixed(1)} / ${Math.max(0, Number(storage.maxWeight ?? 0) || 0).toFixed(1)} - Space: ${spaceUsed} / ${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}</div>
 
       <label class="po-resource-row">
         <span>Max Weight Capacity</span>
@@ -10191,7 +10369,7 @@ async function showBaseSiteStorageManager(element) {
   }
 
   const dialog = new Dialog({
-    title: `Storage Inventory · ${String(site.name ?? "Site")}`,
+    title: `Storage Inventory - ${String(site.name ?? "Site")}`,
     content: buildBaseSiteStorageDialogContent(site),
     buttons: {
       close: {
@@ -10331,7 +10509,7 @@ async function showBaseSiteStorageManager(element) {
 async function showBaseOperationsBrief() {
   const baseOperations = buildOperationsContext().baseOperations;
   const sites = baseOperations.sites
-    .map((site) => `<li>${site.typeLabel}: ${site.name} · ${site.statusLabel} · Pressure ${site.pressure} · Risk ${site.risk} · Storage ${site.storageItemCount} items (${site.storageWeightSummary} wt, ${site.storageSpaceSummary} space)${site.note ? ` · ${site.note}` : ""}</li>`)
+    .map((site) => `<li>${site.typeLabel}: ${site.name} - ${site.statusLabel} - Pressure ${site.pressure} - Risk ${site.risk} - Storage ${site.storageItemCount} items (${site.storageWeightSummary} wt, ${site.storageSpaceSummary} space)${site.note ? ` - ${site.note}` : ""}</li>`)
     .join("");
 
   const content = `
@@ -10647,7 +10825,7 @@ async function showOperationalBrief() {
   const bonusItems = context.summary.effects.bonuses.map((item) => `<li>${item}</li>`).join("");
   const globalMinorBonusItems = context.summary.effects.globalMinorBonuses.map((item) => `<li>${item}</li>`).join("");
   const globalModifierItems = (context.summary.effects.globalModifierRows ?? [])
-    .map((item) => `<li>${item.label}: ${item.formatted} · applies to ${item.appliesTo}${item.enabled ? "" : " · OFF"}</li>`)
+    .map((item) => `<li>${item.label}: ${item.formatted} - applies to ${item.appliesTo}${item.enabled ? "" : " - OFF"}</li>`)
     .join("");
   const riskItems = context.summary.effects.risks.map((item) => `<li>${item}</li>`).join("");
   const missingRoles = context.diagnostics.missingRoles.length
@@ -10957,7 +11135,7 @@ function buildHealersKitSelectionContext(state) {
     hasItem: Boolean(selectedItem),
     selectedCharges: Math.max(0, Number(selectedItem?.charges ?? 0)),
     selectedLabel: selectedItem
-      ? `${String(activeActorRow?.actor?.name ?? "")} · ${selectedItem.name}`
+      ? `${String(activeActorRow?.actor?.name ?? "")} - ${selectedItem.name}`
       : "None",
     totalCharges
   };
@@ -11645,7 +11823,7 @@ async function applyRecoveryCycle(options = {}) {
       const after = Math.max(0, before - progress);
       entry.recoveryDays = after;
       const actorName = game.actors.get(actorId)?.name ?? "Unknown";
-      lines.push(`${actorName}: ${before}→${after} days (progress ${progress})`);
+      lines.push(`${actorName}: ${before}->${after} days (progress ${progress})`);
 
       if (after === 0 && entry.canBecomePermanent && !entry.stabilized) {
         entry.permanent = true;
@@ -11696,7 +11874,7 @@ async function applyRecoveryCycle(options = {}) {
 async function showRecoveryBrief() {
   const context = buildInjuryRecoveryContext();
   const entryLines = context.entries
-    .map((entry) => `<li>${entry.actorName}: ${entry.injuryName}${entry.injuryRoll ? ` (d100 ${entry.injuryRoll})` : ""} · ${entry.permanent ? "permanent" : `${entry.recoveryDays} day(s)`} · ${entry.stabilized ? "stabilized" : "unstable"}${entry.treatmentDc ? ` · DC ${entry.treatmentDc} ${entry.treatmentSkill === "ins" ? "Insight" : entry.treatmentSkill === "con" ? "CON" : "Medicine"}` : ""} · due ${entry.recoveryDueLabel}</li>`)
+    .map((entry) => `<li>${entry.actorName}: ${entry.injuryName}${entry.injuryRoll ? ` (d100 ${entry.injuryRoll})` : ""} - ${entry.permanent ? "permanent" : `${entry.recoveryDays} day(s)`} - ${entry.stabilized ? "stabilized" : "unstable"}${entry.treatmentDc ? ` - DC ${entry.treatmentDc} ${entry.treatmentSkill === "ins" ? "Insight" : entry.treatmentSkill === "con" ? "CON" : "Medicine"}` : ""} - due ${entry.recoveryDueLabel}</li>`)
     .join("");
   const content = `
     <div class="po-help">
@@ -11912,10 +12090,12 @@ async function applyMarchingFormation({ front, middle, type }) {
 
 async function updateRestWatchState(mutatorOrRequest, options = {}) {
   if (!game.user.isGM) {
+    const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest);
+    if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
       type: "rest:mutate",
       userId: game.user.id,
-      request: mutatorOrRequest
+      request: normalizedRequest
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps();
@@ -11937,10 +12117,12 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!game.user.isGM) {
+    const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest);
+    if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
       type: "march:mutate",
       userId: game.user.id,
-      request: mutatorOrRequest
+      request: normalizedRequest
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps();
@@ -12716,8 +12898,8 @@ async function updateExhaustion(element) {
 }
 
 async function updateActivity(element, options = {}) {
-  const actorId = element?.dataset?.actorId;
-  const activityType = element?.value ?? element?.dataset?.activity;
+  const actorId = sanitizeSocketIdentifier(element?.dataset?.actorId, { maxLength: 64 });
+  const activityType = normalizeSocketActivityType(element?.value ?? element?.dataset?.activity);
   if (!actorId || !activityType) return;
 
   if (game.user.isGM) {
@@ -14401,42 +14583,57 @@ Hooks.once("ready", () => {
       return;
     }
 
+    if (!game.user.isGM) return; // only GM applies mutations
+
     if (message.type === "activity:update") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      const actorId = sanitizeSocketIdentifier(message.actorId, { maxLength: 64 });
+      const activityType = normalizeSocketActivityType(message.activity);
+      if (!requester || !actorId || !activityType) return;
+
       // Players can update their own activity
-      const requester = game.users.get(message.userId);
-      if (!requester) return;
       const requesterActor = requester.character;
-      if (!requesterActor || requesterActor.id !== message.actorId) return; // security check
-      
+      if (!requesterActor || requesterActor.id !== actorId) return; // security check
+
       const activities = getRestActivities();
-      if (!activities.activities[message.actorId]) activities.activities[message.actorId] = {};
-      activities.activities[message.actorId].activity = message.activity;
+      if (!activities.activities[actorId]) activities.activities[actorId] = {};
+      activities.activities[actorId].activity = activityType;
       await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
       refreshOpenApps();
       emitSocketRefresh();
       return;
     }
 
-    if (!game.user.isGM) return; // only GM applies mutations
-
     if (message.type === "rest:mutate") {
-      await applyRestRequest(message.request, message.userId);
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      const request = normalizeSocketRestRequest(message.request);
+      if (!requester || !request) return;
+      await applyRestRequest(request, requester);
       return;
     }
     if (message.type === "march:mutate") {
-      await applyMarchRequest(message.request, message.userId);
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      const request = normalizeSocketMarchRequest(message.request);
+      if (!requester || !request) return;
+      await applyMarchRequest(request, requester);
       return;
     }
     if (message.type === "ops:setSopNote") {
-      await applyPlayerSopNoteRequest(message);
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerSopNoteRequest(message, requester);
       return;
     }
     if (message.type === "ops:downtime-submit") {
-      await applyPlayerDowntimeSubmitRequest(message);
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerDowntimeSubmitRequest(message, requester);
       return;
     }
     if (message.type === "ops:downtime-clear") {
-      await applyPlayerDowntimeClearRequest(message);
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerDowntimeClearRequest(message, requester);
       return;
     }
   });
@@ -14486,32 +14683,36 @@ Hooks.once("ready", () => {
   });
 });
 
-async function applyPlayerSopNoteRequest(message) {
-  const requester = game.users.get(message?.userId);
-  if (!requester || requester.isGM) return;
+async function applyPlayerSopNoteRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
 
   const sopKey = String(message?.sopKey ?? "").trim();
   if (!SOP_KEYS.includes(sopKey)) return;
-  const note = String(message?.note ?? "");
+  const note = clampSocketText(message?.note, SOCKET_NOTE_MAX_LENGTH);
 
   await updateOperationsLedger((ledger) => {
     const sopNotes = ensureSopNotesState(ledger);
-    sopNotes[sopKey] = note.slice(0, 4000);
+    sopNotes[sopKey] = note;
   });
 }
 
-async function applyPlayerDowntimeSubmitRequest(message) {
-  const requester = game.users.get(message?.userId);
+async function applyPlayerDowntimeSubmitRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
   const entry = message?.entry && typeof message.entry === "object" ? message.entry : null;
   if (!entry) return;
-  await applyDowntimeSubmissionForUser(requester, entry);
+  const previewLedger = getOperationsLedger();
+  const previewDowntime = ensureDowntimeState(previewLedger);
+  const normalizedEntry = normalizeDowntimeSubmission(entry, previewDowntime);
+  if (!sanitizeSocketIdentifier(normalizedEntry.actorId, { maxLength: 64 })) return;
+  await applyDowntimeSubmissionForUser(requester, normalizedEntry);
 }
 
-async function applyPlayerDowntimeClearRequest(message) {
-  const requester = game.users.get(message?.userId);
+async function applyPlayerDowntimeClearRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
-  const actorId = String(message?.actorId ?? "").trim();
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
   if (!actorId) return;
   const actor = game.actors.get(actorId);
   if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
@@ -14522,10 +14723,10 @@ async function applyPlayerDowntimeClearRequest(message) {
   });
 }
 
-async function applyRestRequest(request, userId) {
+async function applyRestRequest(request, requesterRef) {
   if (!request || typeof request !== "object") return;
   const state = getRestWatchState();
-  const requester = game.users.get(userId);
+  const requester = resolveRequester(requesterRef, { allowGM: true });
   if (!requester) return;
 
   if (state.locked) return;
@@ -14602,10 +14803,10 @@ async function applyRestRequest(request, userId) {
   }
 }
 
-async function applyMarchRequest(request, userId) {
+async function applyMarchRequest(request, requesterRef) {
   if (!request || typeof request !== "object") return;
   const state = getMarchingOrderState();
-  const requester = game.users.get(userId);
+  const requester = resolveRequester(requesterRef, { allowGM: true });
   if (!requester) return;
   const requesterActor = requester.character;
 
@@ -14645,7 +14846,13 @@ function toggleCardNotes(element) {
   const entry = element?.closest(".po-watch-entry");
   const notes = entry?.querySelector(".po-notes");
   if (!notes) return;
-  notes.classList.toggle("is-active");
+  const isActive = notes.classList.toggle("is-active");
+  notes.setAttribute("aria-hidden", isActive ? "false" : "true");
+  if (element?.setAttribute) element.setAttribute("aria-expanded", isActive ? "true" : "false");
+  if (isActive) {
+    const input = notes.querySelector("textarea");
+    input?.focus?.({ preventScroll: true });
+  }
 }
 
 async function toggleCampfire(element) {
@@ -14785,4 +14992,6 @@ export function emitSocketRefresh() {
 function emitOpenRestPlayers() {
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
 }
+
+
 

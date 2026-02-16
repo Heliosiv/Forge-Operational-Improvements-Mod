@@ -1,9 +1,10 @@
-<div class="po-window" data-tool="marching-order">
+﻿<div class="po-window po-window-marching" data-tool="marching-order" role="region" aria-label="Party Operations Marching Order">
   <header class="po-header">
-    <div>
+    <div class="po-header-main">
       <h1 class="po-title">Party Operations</h1>
-      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">Marching Order - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
+    <div class="po-context-pill" aria-hidden="true">Marching</div>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -22,11 +23,33 @@
 
   <div class="po-body">
 
-  <nav class="po-tabs" role="tablist">
+  <nav class="po-tabs" role="tablist" aria-label="Party Operations views">
     <button type="button" class="po-tab" data-tab="rest-watch" role="tab" aria-selected="false">Rest Watch</button>
     <button type="button" class="po-tab is-active" data-tab="marching-order" role="tab" aria-selected="true">Marching Order</button>
     <button type="button" class="po-tab" data-tab="operations" role="tab" aria-selected="false">Operations</button>
   </nav>
+  <section class="po-overview" aria-label="Marching status">
+    <article class="po-overview-card">
+      <span>Assigned Actors</span>
+      <strong>{{overview.totalAssigned}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Front / Middle / Rear</span>
+      <strong>{{overview.frontCount}} / {{overview.middleCount}} / {{overview.rearCount}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Formation</span>
+      <strong>{{overview.formationLabel}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Light Sources</span>
+      <strong>{{overview.lightSources}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Lock Status</span>
+      <strong>{{overview.lockState}}</strong>
+    </article>
+  </section>
 
   <section class="po-content">
     <section class="po-usage-panel po-collapsible {{#if usageCollapsed}}is-collapsed{{/if}}" data-section-id="usage">
@@ -121,7 +144,8 @@
                 </div>
                 <div class="po-entry-notes" data-actor-id="{{actorId}}">
                   <div class="po-note-label">Notes</div>
-                  <textarea class="po-notes-input po-entry-notes-input" rows="2" placeholder="Notes" {{#unless canEditNote}}disabled{{/unless}}>{{notes}}</textarea>
+                  <label class="po-sr-only" for="po-march-note-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+                  <textarea id="po-march-note-{{../id}}-{{actorId}}" class="po-notes-input po-entry-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNote}}disabled{{/unless}}>{{notes}}</textarea>
                 </div>
               </div>
               <div class="po-entry-actions-inline">
@@ -291,7 +315,8 @@
           </header>
           {{#unless gmSections.gmNotesCollapsed}}
           <div class="po-collapsible-body">
-            <textarea class="po-gm-notes" rows="4" placeholder="Global notes">{{gmNotes}}</textarea>
+            <label class="po-sr-only" for="po-gm-march-notes">Global marching notes</label>
+            <textarea id="po-gm-march-notes" class="po-gm-notes" rows="4" placeholder="Global notes" aria-label="Global marching notes">{{gmNotes}}</textarea>
           </div>
           {{/unless}}
         </div>
@@ -306,3 +331,5 @@
     <div class="po-footer-text">Drag and drop to reorder ranks</div>
   </footer>
 </div>
+
+

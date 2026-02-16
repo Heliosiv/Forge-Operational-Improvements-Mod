@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
+
 /* =========================================================
    Root + Variables
    ========================================================= */
@@ -39,13 +41,22 @@
   color: var(--po-text);
   border: 1px solid var(--po-border);
   border-radius: var(--po-radius);
-  font-family: var(--font-primary, "Segoe UI", Roboto, Arial, sans-serif);
+  font-family: "Montserrat", var(--font-primary, "Segoe UI", Roboto, Arial, sans-serif);
   font-size: 13px;
   line-height: 1.3;
 }
 
 .party-operations .po-window * {
   box-sizing: border-box;
+}
+
+.party-operations .po-window button,
+.party-operations .po-window input,
+.party-operations .po-window select,
+.party-operations .po-window textarea,
+.party-operations .po-window .po-btn,
+.party-operations .po-window .po-tab {
+  font-family: inherit;
 }
 
 /* =========================================================
@@ -1259,6 +1270,283 @@
 }
 
 /* =========================================================
+   UX Refresh: Readability + Accessibility
+   ========================================================= */
+.party-operations .po-window {
+  --po-bg: #141b24;
+  --po-bg-alt: #1f2a37;
+  --po-surface: #253344;
+  --po-border: #42566d;
+  --po-border-strong: #6884a3;
+  --po-text: #f2f6fb;
+  --po-muted: #bcc8d7;
+  --po-accent: #7ec8ff;
+  --po-accent-contrast: #ffffff;
+  --po-success: #78d8b1;
+  --po-warn: #efc872;
+  --po-danger: #ef9c9c;
+  --po-radius: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  background:
+    radial-gradient(1100px 420px at 92% -16%, color-mix(in srgb, var(--po-accent) 13%, transparent), transparent 55%),
+    linear-gradient(165deg, color-mix(in srgb, var(--po-bg-alt) 92%, transparent), var(--po-bg));
+}
+
+.party-operations .po-header {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  gap: var(--po-space-3);
+  padding: 12px 14px;
+  border-bottom-color: color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
+  backdrop-filter: blur(4px);
+}
+
+.party-operations .po-header-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.party-operations .po-title {
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+}
+
+.party-operations .po-subtitle {
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--po-muted) 90%, var(--po-text));
+}
+
+.party-operations .po-context-pill {
+  border: 1px solid color-mix(in srgb, var(--po-accent) 72%, var(--po-border));
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: color-mix(in srgb, var(--po-accent) 24%, var(--po-bg-alt));
+  color: var(--po-accent-contrast);
+}
+
+.party-operations .po-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--po-space-2);
+  padding: var(--po-space-2);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-bg-alt) 84%, transparent);
+}
+
+.party-operations .po-overview-card {
+  border: 1px solid var(--po-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--po-surface) 80%, transparent);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-operations .po-overview-card span {
+  color: var(--po-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.party-operations .po-overview-card strong {
+  color: var(--po-accent-contrast);
+  font-size: 0.96rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-operations .po-overview-card.is-alert {
+  border-color: color-mix(in srgb, var(--po-warn) 75%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 18%, var(--po-bg-alt));
+}
+
+.party-operations .po-tabs {
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-tab {
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 6px 12px;
+  letter-spacing: 0.01em;
+  font-size: 0.84rem;
+}
+
+.party-operations .po-tabs-main .po-tab,
+.party-operations .po-tabs-ops .po-tab {
+  border-color: color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
+}
+
+.party-operations .po-tabs-main .po-tab.is-active,
+.party-operations .po-tabs-ops .po-tab.is-active,
+.party-operations .po-tabs-sub .po-tab.is-active {
+  border-color: color-mix(in srgb, var(--po-accent) 90%, var(--po-border));
+  background: color-mix(in srgb, var(--po-accent) 30%, var(--po-bg-alt));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 42%, transparent), 0 4px 14px color-mix(in srgb, var(--po-accent) 26%, transparent);
+}
+
+.party-operations .po-gm-panel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(100vh - 240px);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.party-operations .po-card,
+.party-operations .po-rank-col,
+.party-operations .po-gm-section,
+.party-operations .po-watch-entry,
+.party-operations .po-op-role-row,
+.party-operations .po-mini-viz,
+.party-operations .po-empty,
+.party-operations .po-rank-empty {
+  border-color: color-mix(in srgb, var(--po-border-strong) 32%, var(--po-border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 80%, transparent), color-mix(in srgb, var(--po-bg-alt) 78%, transparent));
+  box-shadow: 0 6px 18px color-mix(in srgb, black 20%, transparent);
+}
+
+.party-operations .po-card {
+  grid-template-columns: 108px minmax(0, 1fr) 40px;
+  gap: var(--po-space-3);
+  padding: var(--po-space-3);
+}
+
+.party-operations .po-card-left {
+  border-right: 1px solid color-mix(in srgb, var(--po-border) 72%, transparent);
+  padding-right: var(--po-space-2);
+}
+
+.party-operations .po-slot-badge {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--po-accent-contrast) 92%, var(--po-text));
+}
+
+.party-operations .po-watch-entry {
+  padding: var(--po-space-3);
+}
+
+.party-operations .po-entry-actions {
+  top: var(--po-space-1);
+  right: var(--po-space-1);
+}
+
+.party-operations .po-notes {
+  display: none;
+  margin-top: var(--po-space-2);
+}
+
+.party-operations .po-notes.is-active {
+  display: block;
+}
+
+.party-operations [data-action="toggle-notes"][aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--po-accent) 80%, var(--po-border));
+  background: color-mix(in srgb, var(--po-accent) 22%, var(--po-bg-alt));
+}
+
+.party-operations .po-hint {
+  line-height: 1.5;
+}
+
+.party-operations .po-empty,
+.party-operations .po-rank-empty {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
+}
+
+.party-operations .po-btn,
+.party-operations .po-icon-btn,
+.party-operations .po-tab,
+.party-operations .po-select,
+.party-operations .po-input,
+.party-operations .po-time-range-input,
+.party-operations .po-notes-input,
+.party-operations .po-activity-select,
+.party-operations .po-char-btn,
+.party-operations .po-exh-btn,
+.party-operations .po-entry-handle,
+.party-operations .po-campfire-toggle,
+.party-operations .po-campfire-status {
+  min-height: 34px;
+}
+
+.party-operations .po-btn,
+.party-operations .po-icon-btn,
+.party-operations .po-tab {
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.party-operations .po-btn:focus-visible,
+.party-operations .po-icon-btn:focus-visible,
+.party-operations .po-tab:focus-visible,
+.party-operations .po-select:focus-visible,
+.party-operations .po-input:focus-visible,
+.party-operations .po-time-range-input:focus-visible,
+.party-operations .po-notes-input:focus-visible,
+.party-operations .po-activity-select:focus-visible,
+.party-operations .po-char-btn:focus-visible,
+.party-operations .po-exh-btn:focus-visible,
+.party-operations .po-entry-handle:focus-visible,
+.party-operations .po-switch input:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--po-accent) 82%, white 10%);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 36%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-rank-header {
+  align-items: flex-start;
+}
+
+.party-operations [data-tool="marching-order"] .po-rank-entries {
+  gap: var(--po-space-3);
+}
+
+.party-operations [data-tool="marching-order"] .po-entry {
+  grid-template-columns: 32px 64px minmax(0, 1fr);
+  gap: var(--po-space-3);
+  min-height: 98px;
+  padding: var(--po-space-3);
+}
+
+.party-operations [data-tool="marching-order"] .po-entry-main {
+  gap: var(--po-space-2);
+}
+
+.party-operations [data-tool="rest-watch-player"] .po-cards {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.party-operations .po-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* =========================================================
    Utilities
    ========================================================= */
 .party-operations .u-truncate {
@@ -1316,6 +1604,10 @@
     flex-wrap: wrap;
   }
 
+  .party-operations .po-context-pill {
+    order: 3;
+  }
+
   .party-operations .po-grid,
   .party-operations [data-tool="marching-order"] .po-grid {
     grid-template-columns: 1fr;
@@ -1329,8 +1621,21 @@
     grid-template-columns: 1fr;
   }
 
+  .party-operations .po-card-left {
+    border-right: 0;
+    padding-right: 0;
+    padding-bottom: var(--po-space-1);
+    border-bottom: 1px solid color-mix(in srgb, var(--po-border) 72%, transparent);
+  }
+
   .party-operations .po-card-right {
     justify-content: flex-start;
+  }
+
+  .party-operations .po-gm-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
   }
 
   .party-operations .po-resource-row,
@@ -1369,6 +1674,10 @@
 }
 
 @media (max-width: 620px) {
+  .party-operations .po-overview {
+    grid-template-columns: 1fr;
+  }
+
   .party-operations .po-resource-config-panel {
     grid-template-columns: 1fr;
   }

@@ -1,9 +1,10 @@
-<div class="po-window" data-tool="rest-watch-player">
+﻿<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Rest Watch Player View">
   <header class="po-header">
-    <div>
+    <div class="po-header-main">
       <h1 class="po-title">Party Operations</h1>
-      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">Rest Watch (Player) - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
+    <div class="po-context-pill" aria-hidden="true">Player View</div>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -16,8 +17,27 @@
   {{/if}}
 
   <div class="po-body">
+  <section class="po-overview" aria-label="Rest watch status">
+    <article class="po-overview-card">
+      <span>Slots Filled</span>
+      <strong>{{overview.occupiedSlots}} / {{overview.totalSlots}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Assigned Entries</span>
+      <strong>{{overview.assignedEntries}}</strong>
+    </article>
+    <article class="po-overview-card {{#if overview.hasLowDarkvisionCoverage}}is-alert{{/if}}">
+      <span>Low Darkvision Slots</span>
+      <strong>{{overview.lowDarkvisionSlots}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Lock Status</span>
+      <strong>{{overview.lockState}}</strong>
+    </article>
+  </section>
 
   <section class="po-content">
+    <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor.</div>
     <div class="po-cards">
       {{#each slots}}
       <article class="po-card" data-slot-id="{{id}}">
@@ -64,7 +84,8 @@
                   {{/if}}
                 </div>
 
-                <select class="po-activity-select" data-action="set-activity" data-actor-id="{{actorId}}" aria-label="Activity">
+                <label class="po-sr-only" for="po-player-activity-{{../id}}-{{actorId}}">Activity for {{actor.name}}</label>
+                <select id="po-player-activity-{{../id}}-{{actorId}}" class="po-activity-select" data-action="set-activity" data-actor-id="{{actorId}}" aria-label="Activity for {{actor.name}}">
                   {{#each activity.activityOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
@@ -74,7 +95,7 @@
             {{/if}}
 
             <div class="po-entry-actions">
-              <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-label="Notes">
+              <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-controls="po-player-notes-{{../id}}-{{actorId}}" aria-expanded="{{#if notes}}true{{else}}false{{/if}}" aria-label="Toggle notes for {{actor.name}}">
                 <i class="fa-solid fa-note-sticky"></i>
               </button>
               {{#if canClear}}
@@ -84,8 +105,9 @@
               {{/if}}
             </div>
 
-            <div class="po-notes">
-              <textarea class="po-notes-input" rows="2" placeholder="Notes" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+            <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
+              <label class="po-sr-only" for="po-player-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+              <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
             </div>
           </div>
           {{/each}}
@@ -114,3 +136,5 @@
     <div class="po-footer-text">Player view</div>
   </footer>
 </div>
+
+

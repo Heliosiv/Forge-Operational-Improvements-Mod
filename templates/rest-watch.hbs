@@ -1,9 +1,10 @@
-<div class="po-window" data-tool="rest-watch" data-main-tab="{{mainTab}}">
+﻿<div class="po-window po-window-rest" data-tool="rest-watch" data-main-tab="{{mainTab}}" role="region" aria-label="Party Operations Rest Watch">
   <header class="po-header">
-    <div>
+    <div class="po-header-main">
       <h1 class="po-title">Party Operations</h1>
-      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">Rest Watch - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
+    <div class="po-context-pill" aria-hidden="true">Rest Watch</div>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -22,13 +23,35 @@
 
   <div class="po-body">
 
-  <nav class="po-tabs po-tabs-main" role="tablist">
-    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" role="tab" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}">Rest Watch</button>
+  <nav class="po-tabs po-tabs-main" role="tablist" aria-label="Party Operations views">
+    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" role="tab" aria-controls="po-panel-rest-watch" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}">Rest Watch</button>
     <button type="button" class="po-tab" data-tab="marching-order" role="tab" aria-selected="false">Marching Order</button>
-    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" role="tab" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}">Operations</button>
+    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" role="tab" aria-controls="po-panel-operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}">Operations</button>
   </nav>
 
   {{#if mainTabRestWatch}}
+  <section class="po-overview" aria-label="Rest watch status">
+    <article class="po-overview-card">
+      <span>Slots Filled</span>
+      <strong>{{overview.occupiedSlots}} / {{overview.totalSlots}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Assigned Entries</span>
+      <strong>{{overview.assignedEntries}}</strong>
+    </article>
+    <article class="po-overview-card {{#if overview.hasLowDarkvisionCoverage}}is-alert{{/if}}">
+      <span>Low Darkvision Slots</span>
+      <strong>{{overview.lowDarkvisionSlots}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Lock Status</span>
+      <strong>{{overview.lockState}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Campfire</span>
+      <strong>{{overview.campfireState}}</strong>
+    </article>
+  </section>
 
   {{#if playerCharacters}}
   <div class="po-character-selector">
@@ -80,7 +103,7 @@
 
   {{/if}}
 
-  <section class="po-content">
+  <section class="po-content" id="{{#if mainTabRestWatch}}po-panel-rest-watch{{else}}po-panel-operations{{/if}}">
     <div class="po-grid">
       <div class="po-cards">
         {{#each slots}}
@@ -91,7 +114,8 @@
               {{#if entries}}<span class="po-entry-count">{{entries.length}}</span>{{/if}}
             </div>
             {{#if isGM}}
-            <input type="text" class="po-time-range-input" data-action="time-range" data-slot-id="{{id}}" value="{{timeRange}}" placeholder="e.g., 8-10 PM" />
+            <label class="po-sr-only" for="po-time-range-{{id}}">Time range for {{label}}</label>
+            <input id="po-time-range-{{id}}" type="text" class="po-time-range-input" data-action="time-range" data-slot-id="{{id}}" value="{{timeRange}}" placeholder="e.g., 8-10 PM" aria-label="Time range for {{label}}" />
             {{else}}
             {{#if timeRange}}
             <div class="po-time-range">{{timeRange}}</div>
@@ -182,7 +206,8 @@
                     {{/if}}
                   </div>
 
-                  <select class="po-activity-select" data-action="set-activity" data-actor-id="{{actorId}}" aria-label="Activity">
+                  <label class="po-sr-only" for="po-rest-activity-{{../id}}-{{actorId}}">Activity for {{actor.name}}</label>
+                  <select id="po-rest-activity-{{../id}}-{{actorId}}" class="po-activity-select" data-action="set-activity" data-actor-id="{{actorId}}" aria-label="Activity for {{actor.name}}">
                     {{#each activity.activityOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                     {{/each}}
@@ -203,7 +228,7 @@
               {{/if}}
 
               <div class="po-entry-actions">
-                <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-label="Notes">
+                <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-controls="po-notes-{{../id}}-{{actorId}}" aria-expanded="{{#if notes}}true{{else}}false{{/if}}" aria-label="Toggle notes for {{actor.name}}">
                   <i class="fa-solid fa-note-sticky"></i>
                 </button>
                 {{#if canClear}}
@@ -213,8 +238,9 @@
                 {{/if}}
               </div>
 
-              <div class="po-notes">
-                <textarea class="po-notes-input" rows="2" placeholder="Notes" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+              <div id="po-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
+                <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+                <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
               </div>
             </div>
             {{/each}}
@@ -347,7 +373,7 @@
               {{/each}}
             </select>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-role" data-role="{{key}}" title="Clear {{label}} assignment">Clear</button>
-            <div class="po-op-role-meta">Bonus: {{bonus}} · Neglect: {{penalty}}</div>
+            <div class="po-op-role-meta">Bonus: {{bonus}} - Neglect: {{penalty}}</div>
           </div>
           {{/each}}
         </div>
@@ -391,7 +417,7 @@
             <div class="po-info-chip" title="Water expected to be deducted when daily upkeep is applied"><span>Pending Water</span><strong>{{operations.resources.summary.waterDrainPending}}</strong></div>
           </div>
           <div class="po-op-summary {{#if operations.resources.gatherFoodCoveredNextUpkeep}}is-good{{else}}is-warn{{/if}}" title="Successful gather checks can reduce next upkeep consumption by target type.">
-            Next Upkeep Coverage · Food: {{#if operations.resources.gatherFoodCoveredNextUpkeep}}Active{{else}}Inactive{{/if}} · Water: {{#if operations.resources.gatherWaterCoveredNextUpkeep}}Active{{else}}Inactive{{/if}}
+            Next Upkeep Coverage - Food: {{#if operations.resources.gatherFoodCoveredNextUpkeep}}Active{{else}}Inactive{{/if}} - Water: {{#if operations.resources.gatherWaterCoveredNextUpkeep}}Active{{else}}Inactive{{/if}}
           </div>
           <div class="po-hint">Steward flow: keep <strong>Food Rations</strong>, <strong>Water Rations</strong>, and linked food/water inventory updated; food deductions use rations plus the targeted food item only.</div>
           <label class="po-resource-row">
@@ -525,7 +551,7 @@
           <div class="po-hint">Read-only party modifier summary. Use the GM page to enable/disable and add custom DAE modifiers.</div>
           {{#if operations.summary.effects.hasGlobalModifiers}}
           {{#each operations.summary.effects.globalModifierRows}}
-          <div class="po-op-summary {{#if isPositive}}is-good{{/if}} {{#if isNegative}}is-warn{{/if}} {{#unless enabled}}is-disabled{{/unless}}" title="Applies to {{appliesTo}}; synced to player actor effects when enabled.">{{label}}: {{formatted}} · {{#if source}}{{source}}{{else}}derived{{/if}} · Applies to: {{appliesTo}}{{#unless enabled}} · Off{{/unless}}</div>
+          <div class="po-op-summary {{#if isPositive}}is-good{{/if}} {{#if isNegative}}is-warn{{/if}} {{#unless enabled}}is-disabled{{/unless}}" title="Applies to {{appliesTo}}; synced to player actor effects when enabled.">{{label}}: {{formatted}} - {{#if source}}{{source}}{{else}}derived{{/if}} - Applies to: {{appliesTo}}{{#unless enabled}} - Off{{/unless}}</div>
           {{#if note}}
           <div class="po-op-summary">Note: {{note}}</div>
           {{/if}}
@@ -635,7 +661,7 @@
               <div class="po-op-role-row" data-faction="{{id}}">
                 <div class="po-op-role-head">
                   <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-op-role-status">Standing {{score}} · {{access}}</div>
+                  <div class="po-op-role-status">Standing {{score}} - {{access}}</div>
                 </div>
                 {{#if @root.isGM}}
                 {{#unless isCore}}
@@ -683,7 +709,7 @@
               <div class="po-op-role-row" data-faction="{{id}}">
                 <div class="po-op-role-head">
                   <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-op-role-status">Standing {{score}} · {{access}}</div>
+                  <div class="po-op-role-status">Standing {{score}} - {{access}}</div>
                 </div>
                 {{#if @root.isGM}}
                 {{#unless isCore}}
@@ -1075,7 +1101,7 @@
               <div class="po-op-summary">Effect: {{effect}}</div>
               <div class="po-op-summary">Recovery: {{#if permanent}}Permanent{{else}}{{recoveryDays}} day(s){{/if}}</div>
               <div class="po-op-summary">Actor Effect: {{effectSummary}}</div>
-              <div class="po-op-summary">Treatment: {{#if treatmentDc}}DC {{treatmentDc}} {{treatmentSkillLabel}}{{else}}None{{/if}} · Kit {{kitCharges}}</div>
+              <div class="po-op-summary">Treatment: {{#if treatmentDc}}DC {{treatmentDc}} {{treatmentSkillLabel}}{{else}}None{{/if}} - Kit {{kitCharges}}</div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm" data-action="stabilize-injury" data-actor-id="{{actorId}}"><i class="fa-solid fa-kit-medical"></i> Stabilize</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="clear-injury" data-actor-id="{{actorId}}"><i class="fa-solid fa-xmark"></i> Remove</button>
@@ -1155,7 +1181,7 @@
               <select name="quickGlobalModifierKey" class="po-select">
                 <option value="">Select key preset</option>
                 {{#each operations.gmQuickTools.modifierKeyOptions}}
-                <option value="{{value}}">{{label}} — {{value}}</option>
+                <option value="{{value}}">{{label}} - {{value}}</option>
                 {{/each}}
               </select>
             </label>
@@ -1187,12 +1213,12 @@
               <div class="po-op-role-name">Quick Weather Presets</div>
               <div class="po-op-role-status">Current: {{operations.gmQuickTools.weatherSceneSnapshot.label}}</div>
             </div>
-            <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} · Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
+            <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} - Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
             <label class="po-resource-row">
               <span>Weather Preset</span>
               <select name="quickWeatherProfile" class="po-select" data-action="gm-quick-weather-select">
                 {{#each operations.gmQuickTools.weatherOptions}}
-                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} · {{visibilityLabel}} ({{effectSummary}})</option>
+                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} - {{visibilityLabel}} ({{effectSummary}})</option>
                 {{/each}}
               </select>
             </label>
@@ -1234,7 +1260,7 @@
               <select name="quickWeatherDaeKey" class="po-select">
                 <option value="">Select key preset</option>
                 {{#each operations.gmQuickTools.modifierKeyOptions}}
-                <option value="{{value}}">{{label}} — {{value}}</option>
+                <option value="{{value}}">{{label}} - {{value}}</option>
                 {{/each}}
               </select>
             </label>
@@ -1271,7 +1297,7 @@
             </div>
           </div>
           {{/if}}
-          <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} · Visibility Modifier {{operations.weather.currentVisibilityModifier}} · Darkness {{operations.weather.currentDarkness}}</div>
+          <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} - Visibility Modifier {{operations.weather.currentVisibilityModifier}} - Darkness {{operations.weather.currentDarkness}}</div>
         </div>
 
         <div class="po-gm-section">
@@ -1436,7 +1462,7 @@
             <select class="po-select" data-action="set-environment-successive" data-field="daeChangeKey">
               <option value="">Select key preset</option>
               {{#each operations.environment.successiveConfig.daeKeyOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} — {{value}}</option>
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
               {{/each}}
             </select>
           </label>
@@ -1470,7 +1496,7 @@
           {{#each operations.environment.targets}}
           <div class="po-checkbox-target">
             <input id="po-env-target-{{actorId}}" type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
-            <label class="po-checkbox-target-label" for="po-env-target-{{actorId}}">{{actorName}}{{#if failureStreak}} · Streak {{failureStreak}}{{/if}}</label>
+            <label class="po-checkbox-target-label" for="po-env-target-{{actorId}}">{{actorName}}{{#if failureStreak}} - Streak {{failureStreak}}{{/if}}</label>
           </div>
           {{/each}}
           {{else}}
@@ -1494,7 +1520,7 @@
           <div class="po-op-role-row">
             <div class="po-op-role-head">
               <div class="po-op-role-name">{{actorName}}</div>
-              <div class="po-op-role-status">{{resultLabel}} · {{rollVsDc}}</div>
+              <div class="po-op-role-status">{{resultLabel}} - {{rollVsDc}}</div>
             </div>
             <div class="po-op-summary">Preset: {{presetLabel}}</div>
             <div class="po-op-summary">Fail Streak: {{streak}}</div>
@@ -1514,7 +1540,7 @@
           {{#each operations.globalLogs.entries}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
-              <div class="po-op-role-name">{{logTypeLabel}} · {{title}}</div>
+              <div class="po-op-role-name">{{logTypeLabel}} - {{title}}</div>
               <div class="po-op-role-status">{{createdAtLabel}}</div>
             </div>
             <div class="po-op-summary">{{summary}}</div>
@@ -1618,9 +1644,9 @@
 
           {{#if operations.lootSources.preview.hasResult}}
           <div class="po-op-summary">Generated: {{operations.lootSources.preview.generatedAtLabel}} by {{operations.lootSources.preview.generatedBy}}</div>
-          <div class="po-op-summary">Currency: {{operations.lootSources.preview.currency.pp}} pp · {{operations.lootSources.preview.currency.gp}} gp · {{operations.lootSources.preview.currency.sp}} sp · {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
+          <div class="po-op-summary">Currency: {{operations.lootSources.preview.currency.pp}} pp - {{operations.lootSources.preview.currency.gp}} gp - {{operations.lootSources.preview.currency.sp}} sp - {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
           <div class="po-op-summary">Currency Roll: {{operations.lootSources.preview.currency.formula}}</div>
-          <div class="po-op-summary">Candidates: {{operations.lootSources.preview.stats.candidateCount}} · Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} · Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
+          <div class="po-op-summary">Candidates: {{operations.lootSources.preview.stats.candidateCount}} - Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} - Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
 
           <div class="po-op-divider"></div>
           <div class="po-section-title">Preview Items</div>
@@ -1815,7 +1841,7 @@
           <div class="po-op-role-row">
             <div class="po-op-role-head">
               <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status">{{formatted}} · {{appliesTo}}</div>
+              <div class="po-op-role-status">{{formatted}} - {{appliesTo}}</div>
             </div>
             <label class="po-switch">
               <input type="checkbox" data-action="set-party-health-modifier" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
@@ -1846,7 +1872,7 @@
               <select class="po-select" data-action="set-party-health-custom-field" data-modifier-id="{{id}}" data-field="key">
                 <option value="">Select key preset</option>
                 {{#each keyOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} — {{value}}</option>
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
                 {{/each}}
               </select>
             </label>
@@ -2008,7 +2034,7 @@
               <select name="customModifierKeySelect" class="po-select">
                 <option value="">Select key preset</option>
                 {{#each operations.partyHealth.modifierKeyOptions}}
-                <option value="{{value}}">{{label}} — {{value}}</option>
+                <option value="{{value}}">{{label}} - {{value}}</option>
                 {{/each}}
               </select>
             </label>
@@ -2056,3 +2082,5 @@
     <div class="po-footer-text">State synchronized per party</div>
   </footer>
 </div>
+
+
