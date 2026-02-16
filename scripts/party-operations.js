@@ -15082,11 +15082,29 @@ async function diagnoseWorldData(options = {}) {
 }
 
 function setupPartyOperationsUI() {
-  // Keep UI launcher independent from scene controls; remove any legacy injected control.
-  Hooks.on("renderSceneControls", (controls, html) => {
-    const root = html?.querySelector ? html : html?.[0];
-    if (!root?.querySelector) return;
-    root.querySelector("[data-control='party-operations']")?.remove();
+  Hooks.on("getSceneControlButtons", (controls) => {
+    if (!Array.isArray(controls)) return;
+    const tokenControl = controls.find((entry) => entry?.name === "token") ?? controls[0];
+    if (!tokenControl) return;
+    if (!Array.isArray(tokenControl.tools)) tokenControl.tools = [];
+    const toolName = "party-operations-open";
+    const existing = tokenControl.tools.find((tool) => tool?.name === toolName);
+    const toolData = {
+      name: toolName,
+      title: "Party Operations",
+      icon: "fas fa-compass",
+      button: true,
+      visible: true,
+      onClick: () => {
+        setActiveRestMainTab("rest-watch");
+        new RestWatchApp().render({ force: true });
+      }
+    };
+    if (existing) Object.assign(existing, toolData);
+    else tokenControl.tools.push(toolData);
+  });
+
+  Hooks.on("renderSceneControls", () => {
     ensureFloatingLauncher();
     ensureClickOpener();
   });
