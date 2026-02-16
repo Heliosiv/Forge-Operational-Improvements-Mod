@@ -69,6 +69,8 @@ const SCROLL_STATE_SELECTORS = [
 ];
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
+const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
+const DEFAULT_MARCH_LIGHT_DIM = 40;
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
 const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
 const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
@@ -1350,6 +1352,11 @@ function getEffectOriginForActor(actor) {
   return uuid && isParsableUuid(uuid) ? uuid : "";
 }
 
+function isMissingActiveEffectError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  return message.includes("activeeffect") && message.includes("does not exist");
+}
+
 async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
   if (!actor || !effect?.id) return false;
   const currentOrigin = String(effect.origin ?? "").trim();
@@ -1372,6 +1379,21 @@ async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
       console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effect.id}`, error);
       return false;
     }
+  }
+}
+
+async function upsertManagedEffect(actor, existing, data, contextLabel = "sync") {
+  if (!actor || !data) return;
+  if (!existing) {
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
+    return;
+  }
+  try {
+    await existing.update(data);
+  } catch (error) {
+    if (!isMissingActiveEffectError(error)) throw error;
+    console.warn(`${MODULE_ID}: stale ${contextLabel} effect reference ${existing.id}; recreating.`);
+    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
   }
 }
 
@@ -1606,11 +1628,7 @@ function buildEnvironmentStatusEffectData(payload, actor = null) {
 async function upsertIntegrationEffect(actor, payload) {
   const existing = getIntegrationEffect(actor);
   const data = buildIntegrationEffectData(payload, actor);
-  if (!existing) {
-    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
-    return;
-  }
-  await existing.update(data);
+  await upsertManagedEffect(actor, existing, data, "integration");
 }
 
 async function removeIntegrationEffect(actor) {
@@ -1627,11 +1645,7 @@ async function upsertInjuryStatusEffect(actor, payload) {
     return;
   }
   const data = buildInjuryStatusEffectData(payload, actor);
-  if (!existing) {
-    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
-    return;
-  }
-  await existing.update(data);
+  await upsertManagedEffect(actor, existing, data, "injury");
 }
 
 async function removeInjuryStatusEffect(actor) {
@@ -1648,11 +1662,7 @@ async function upsertEnvironmentStatusEffect(actor, payload) {
     return;
   }
   const data = buildEnvironmentStatusEffectData(payload, actor);
-  if (!existing) {
-    await actor.createEmbeddedDocuments("ActiveEffect", [data]);
-    return;
-  }
-  await existing.update(data);
+  await upsertManagedEffect(actor, existing, data, "environment");
 }
 
 async function removeEnvironmentStatusEffect(actor) {
@@ -2439,6 +2449,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const operationsPage = getActiveOperationsPage();
     const operationsPlanningTab = getActiveOperationsPlanningTab();
     const gmOperationsTab = getActiveGmOperationsTab();
+    const gmOperationsTabLabelMap = {
+      environment: "Environment",
+      logs: "Logs",
+      derived: "Derived",
+      "active-sync": "Sync Effects",
+      "non-party": "Non-Party",
+      custom: "Custom Mods",
+      "loot-sources": "Loot Sources"
+    };
+    const gmOperationsTabLabel = gmOperationsTabLabelMap[gmOperationsTab] ?? "Environment";
     const miniViz = buildMiniVisualizationContext({ visibility });
     const miniVizUi = buildMiniVizUiContext();
     const totalSlots = slots.length;
@@ -2491,6 +2511,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       gmOpsTabNonParty: gmOperationsTab === "non-party",
       gmOpsTabCustom: gmOperationsTab === "custom",
       gmOpsTabLootSources: gmOperationsTab === "loot-sources",
+      gmOpsTabLabel: gmOperationsTabLabel,
       operationsPlanningRoles: operationsPlanningTab === "roles",
       operationsPlanningSops: operationsPlanningTab === "sops",
       operationsPlanningResources: operationsPlanningTab === "resources",
@@ -2768,6 +2789,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "clear-downtime-results":
         await clearDowntimeResults();
+        break;
+      case "post-downtime-log":
+        await postDowntimeLogOutcome(element);
         break;
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
@@ -3420,7 +3444,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
       
       this.element.addEventListener("change", (event) => {
-        if (event.target?.matches("textarea.po-notes-input")) {
+        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
+          this.#onAction(event);
+        } else if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
         } else if (event.target?.matches("textarea.po-gm-notes")) {
           this.#onGMNotesChange(event);
@@ -3478,6 +3504,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const action = element?.dataset?.action;
     if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
     if (!action) return;
+    if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
     switch (action) {
       case "refresh":
@@ -3514,6 +3541,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         break;
       case "toggle-light":
         await toggleLight(element);
+        break;
+      case "set-light-range":
+        await setLightRange(element);
         break;
       case "copy-text":
         await copyMarchingText(false);
@@ -6483,10 +6513,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         const resolvedAtValue = Number(normalized.resolvedAt);
         const resolvedAtDate = new Date(resolvedAtValue);
         return {
+          logId: String(normalized.id ?? "").trim() || foundry.utils.randomID(),
+          actorId: String(entry?.actorId ?? "").trim(),
           actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
           actionLabel: normalized.actionLabel,
           hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4)),
           summary: normalized.summary,
+          details: Array.isArray(normalized.details) ? normalized.details : [],
+          hasDetails: Array.isArray(normalized.details) && normalized.details.length > 0,
           resolvedAtLabel: Number.isFinite(resolvedAtDate.getTime()) ? resolvedAtDate.toLocaleString() : "Unknown",
           resolvedBy: normalized.resolvedBy,
           gpDelta,
@@ -7437,6 +7471,48 @@ async function clearDowntimeResults() {
     downtime.logs = [];
   });
   ui.notifications?.info("Downtime results cleared.");
+}
+
+async function postDowntimeLogOutcome(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can post downtime outcomes.");
+    return;
+  }
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) return;
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const source = Array.isArray(downtime.logs)
+    ? downtime.logs.find((entry) => String(entry?.id ?? "").trim() === logId)
+    : null;
+  if (!source) {
+    ui.notifications?.warn("Downtime log entry not found.");
+    return;
+  }
+
+  const result = normalizeDowntimeResult(source);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const actorName = String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+  const actionLabel = String(result.actionLabel ?? getDowntimeActionDefinition(source.actionKey).label ?? "Downtime");
+  const hours = Math.max(1, Math.floor(Number(source.hours ?? 4) || 4));
+  const detailsHtml = (Array.isArray(result.details) ? result.details : [])
+    .map((entry) => `<li>${escape(entry)}</li>`)
+    .join("");
+  const complication = String(result.complication ?? "").trim();
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Downtime Outcome</strong></p>
+      <p><strong>${escape(actorName)}</strong> - ${escape(actionLabel)} (${hours} hour(s))</p>
+      <p>${escape(result.summary || "No summary provided.")}</p>
+      ${detailsHtml ? `<ul>${detailsHtml}</ul>` : ""}
+      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      ${complication ? `<p><strong>Complication:</strong> ${escape(complication)}</p>` : ""}
+      <p><em>Resolved by ${escape(result.resolvedBy)} at ${escape(new Date(Number(result.resolvedAt)).toLocaleString())}</em></p>
+    `
+  });
+  ui.notifications?.info(`Posted downtime outcome for ${actorName}.`);
 }
 
 async function setPartyHealthModifier(element) {
@@ -9733,8 +9809,43 @@ async function gmQuickAddFaction() {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
-  const current = getActiveGmQuickPanel();
-  setActiveGmQuickPanel(current === "faction" ? "none" : "faction");
+  const content = `
+    <div class="form-group">
+      <label>Faction Name</label>
+      <input type="text" name="quickFactionName" placeholder="e.g., Black Salt Consortium" />
+    </div>
+  `;
+  const dialog = new Dialog({
+    title: "Quick Add Faction",
+    content,
+    buttons: {
+      add: {
+        label: "Add Faction",
+        callback: async (html) => {
+          const label = String(html.find("input[name='quickFactionName']").val() ?? "").trim();
+          if (!label) {
+            ui.notifications?.warn("Faction name is required.");
+            return;
+          }
+          await updateOperationsLedger((ledger) => {
+            const reputation = ensureReputationState(ledger);
+            reputation.factions.push(normalizeReputationFaction({
+              id: foundry.utils.randomID(),
+              label,
+              score: 0,
+              note: "",
+              isCore: false
+            }));
+          });
+          setActiveGmQuickPanel("none");
+          ui.notifications?.info(`Faction added: ${label}.`);
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "add"
+  });
+  dialog.render(true);
 }
 
 async function gmQuickSubmitFaction(element) {
@@ -10727,10 +10838,28 @@ async function logCurrentSceneWeatherSnapshot(options = {}) {
   });
 }
 
-async function runSessionAutopilot() {
+async function runSessionAutopilot(options = {}) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can run session autopilot.");
     return null;
+  }
+  const requireConfirm = options.confirm !== false;
+  if (requireConfirm) {
+    const confirmed = await Dialog.confirm({
+      title: "Run Session Autopilot?",
+      content: `
+        <p>This will run the automated session cycle:</p>
+        <ul>
+          <li>Apply daily upkeep (if due)</li>
+          <li>Run injury recovery cycle</li>
+          <li>Log current scene weather snapshot</li>
+          <li>Run integration sync (effects/flags)</li>
+          <li>Sync injuries to Simple Calendar</li>
+        </ul>
+        <p>A full snapshot is saved first so you can use <strong>Undo Autopilot</strong>.</p>
+      `
+    });
+    if (!confirmed) return null;
   }
 
   const snapshot = buildSessionAutopilotSnapshot();
@@ -10780,7 +10909,7 @@ async function runSessionAutopilot() {
   };
 }
 
-async function undoLastSessionAutopilot() {
+async function undoLastSessionAutopilot(options = {}) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can undo session autopilot.");
     return false;
@@ -10789,6 +10918,19 @@ async function undoLastSessionAutopilot() {
   if (!snapshot || !snapshot.createdAt) {
     ui.notifications?.warn("No saved session autopilot snapshot found.");
     return false;
+  }
+  const requireConfirm = options.confirm !== false;
+  if (requireConfirm) {
+    const createdAt = new Date(Number(snapshot.createdAt)).toLocaleString();
+    const confirmed = await Dialog.confirm({
+      title: "Undo Session Autopilot?",
+      content: `
+        <p>This restores the snapshot saved before the last autopilot run.</p>
+        <p><strong>Snapshot:</strong> ${foundry.utils.escapeHTML(createdAt)} by ${foundry.utils.escapeHTML(String(snapshot.createdBy ?? "GM"))}</p>
+        <p>It will restore Rest Watch, Marching Order, Activities, Operations, and Injury Recovery states.</p>
+      `
+    });
+    if (!confirmed) return false;
   }
 
   const writes = [
@@ -11974,11 +12116,28 @@ function buildDefaultMarchingOrderState() {
     notes: {},
     gmNotes: "",
     light: {},
+    lightRanges: {},
     doctrineTracker: {
       lastCheckAt: "-",
       lastCheckNote: "-"
     }
   };
+}
+
+function normalizeLightDistance(value, fallback) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(0, Math.min(999, Math.floor(raw)));
+}
+
+function getMarchLightRange(state, actorId) {
+  const fallbackBright = DEFAULT_MARCH_LIGHT_BRIGHT;
+  const fallbackDim = DEFAULT_MARCH_LIGHT_DIM;
+  const source = state?.lightRanges?.[actorId] ?? {};
+  const bright = normalizeLightDistance(source.bright, fallbackBright);
+  const dimRaw = normalizeLightDistance(source.dim, fallbackDim);
+  const dim = Math.max(bright, dimRaw);
+  return { bright, dim };
 }
 
 function ensureDoctrineTracker(state) {
@@ -12525,6 +12684,30 @@ async function runDoctrineCheckPrompt() {
   const formation = normalizeMarchingFormation(state.formation ?? "default");
   const effects = getDoctrineEffects(formation);
   const note = getDoctrineCheckPrompt(formation);
+  const rankLabels = {
+    front: "Front",
+    middle: "Middle",
+    rear: "Rear"
+  };
+  const orderedRankIds = ["front", "middle", "rear"];
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const seenActors = new Set();
+  const doctrinePartyRows = [];
+  for (const rankId of orderedRankIds) {
+    for (const actorId of state.ranks?.[rankId] ?? []) {
+      if (!actorId || seenActors.has(actorId)) continue;
+      seenActors.add(actorId);
+      const actor = game.actors.get(actorId);
+      if (!actor) continue;
+      const range = getMarchLightRange(state, actorId);
+      doctrinePartyRows.push(
+        `<li><strong>${escape(actor.name)}</strong> (${escape(rankLabels[rankId] ?? rankId)}) - ${state.light?.[actorId] ? `Torch active (Bright ${range.bright} ft / Dim ${range.dim} ft)` : "No torch"}</li>`
+      );
+    }
+  }
+  const doctrinePartySummary = doctrinePartyRows.length > 0
+    ? `<ul>${doctrinePartyRows.join("")}</ul>`
+    : "<p><em>No actors currently assigned to marching order.</em></p>";
 
   await updateMarchingOrderState((state) => {
     const tracker = ensureDoctrineTracker(state);
@@ -12546,7 +12729,9 @@ async function runDoctrineCheckPrompt() {
       <p><strong>Formation:</strong> ${labelMap[formation] ?? labelMap.default}</p>
       <p><strong>Surprise Posture:</strong> ${effects.surprise}</p>
       <p><strong>Ambush Exposure:</strong> ${effects.ambush}</p>
-      <p><em>${note}</em></p>
+      <p><strong>Marching Panel:</strong></p>
+      ${doctrinePartySummary}
+      <p><em>${escape(note)}</em></p>
     `
   });
 }
@@ -12644,6 +12829,7 @@ async function removeActorFromRanks(element) {
     }
     if (state.notes) delete state.notes[actorId];
     if (state.light) delete state.light[actorId];
+    if (state.lightRanges) delete state.lightRanges[actorId];
   });
 }
 
@@ -12693,14 +12879,49 @@ async function toggleLight(element) {
   if (!actorId) return;
   await updateMarchingOrderState((state) => {
     if (!state.light) state.light = {};
+    if (!state.lightRanges) state.lightRanges = {};
     state.light[actorId] = Boolean(checked);
+    if (checked && !state.lightRanges[actorId]) {
+      state.lightRanges[actorId] = {
+        bright: DEFAULT_MARCH_LIGHT_BRIGHT,
+        dim: DEFAULT_MARCH_LIGHT_DIM
+      };
+    }
+  });
+}
+
+async function setLightRange(element) {
+  if (!game.user.isGM) return;
+  const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
+  const rangeKey = String(element?.dataset?.range ?? "").trim().toLowerCase();
+  if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
+  const fallback = rangeKey === "bright" ? DEFAULT_MARCH_LIGHT_BRIGHT : DEFAULT_MARCH_LIGHT_DIM;
+  const value = normalizeLightDistance(element?.value, fallback);
+  await updateMarchingOrderState((state) => {
+    if (!state.lightRanges) state.lightRanges = {};
+    const current = getMarchLightRange(state, actorId);
+    const next = {
+      bright: rangeKey === "bright" ? value : current.bright,
+      dim: rangeKey === "dim" ? value : current.dim
+    };
+    next.dim = Math.max(next.bright, next.dim);
+    state.lightRanges[actorId] = next;
+    if (!state.light) state.light = {};
+    if (state.light[actorId] && rangeKey === "bright" && next.dim < next.bright) {
+      state.lightRanges[actorId].dim = next.bright;
+    }
   });
 }
 
 async function copyMarchingText(asMarkdown) {
   const state = getMarchingOrderState();
   const lines = Object.entries(state.ranks).map(([rank, actorIds]) => {
-    const names = (actorIds ?? []).map((actorId) => game.actors.get(actorId)?.name ?? "(missing)");
+    const names = (actorIds ?? []).map((actorId) => {
+      const name = game.actors.get(actorId)?.name ?? "(missing)";
+      if (!state.light?.[actorId]) return name;
+      const range = getMarchLightRange(state, actorId);
+      return `${name} [Torch ${range.bright}/${range.dim}ft]`;
+    });
     const label = rank.charAt(0).toUpperCase() + rank.slice(1);
     if (asMarkdown) return `| ${label} | ${names.join(", ") || "-"} |`;
     return `${label}: ${names.join(", ") || "-"}`;
@@ -12732,6 +12953,7 @@ async function clearMarchingAll() {
     state.ranks = { front: [], middle: [], rear: [] };
     state.notes = {};
     state.light = {};
+    state.lightRanges = {};
     state.gmNotes = "";
   });
 }
@@ -13021,7 +13243,6 @@ function buildWatchSlotsView(state, isGM, visibility) {
 function buildRanksView(state, isGM) {
   const lockedForUser = isLockedForUser(state, isGM);
   const formation = normalizeMarchingFormation(state.formation ?? "default");
-  const defaultLightSpec = "Torch/Light active: Bright 20 ft, Dim 40 ft.";
   
   // Get formation-based capacity
   const getFormationCapacity = (rankId) => {
@@ -13053,14 +13274,17 @@ function buildRanksView(state, isGM) {
         const actor = game.actors.get(actorId);
         if (!actor) return null;
         const hasLight = Boolean(state.light?.[actorId]);
+        const lightRange = getMarchLightRange(state, actorId);
         const lightTooltip = hasLight
-          ? String(state.lightSpec?.[actorId] ?? "").trim() || defaultLightSpec
+          ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.`
           : "";
         const canEditNote = (isGM || userOwnsActor(actor)) && !lockedForUser;
         return {
           actorId,
           actor: buildActorView(actor, isGM, "names-passives"),
           hasLight,
+          lightBright: lightRange.bright,
+          lightDim: lightRange.dim,
           lightTooltip,
           notes: state.notes?.[actorId] ?? "",
           canEditNote
@@ -13114,10 +13338,13 @@ function buildLightToggles(state, ranks, isGM) {
     .map((actorId) => {
       const actor = game.actors.get(actorId);
       if (!actor) return null;
+      const range = getMarchLightRange(state, actorId);
       return {
         actorId,
         actorName: actor.name,
-        hasLight: Boolean(state.light?.[actorId])
+        hasLight: Boolean(state.light?.[actorId]),
+        bright: range.bright,
+        dim: range.dim
       };
     })
     .filter(Boolean);

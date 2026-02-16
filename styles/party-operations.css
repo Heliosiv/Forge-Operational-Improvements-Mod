@@ -154,6 +154,17 @@
   margin: 0;
 }
 
+.party-operations .po-tabs-main {
+  align-items: center;
+}
+
+.party-operations .po-tabs-main .po-tab {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  padding-inline: 14px;
+}
+
 .party-operations .po-tabs-sub {
   margin: 0;
   padding: var(--po-space-2);
@@ -190,6 +201,10 @@
   min-height: 0;
 }
 
+.party-operations .po-grid.is-operations-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .party-operations .po-cards,
 .party-operations .po-ranks,
 .party-operations .po-gm-panel,
@@ -202,6 +217,13 @@
 
 .party-operations .po-gm-panel {
   gap: var(--po-space-2);
+}
+
+.party-operations .po-gm-panel.is-operations-full {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
 }
 
 .party-operations .po-card,
@@ -418,6 +440,17 @@
   opacity: 0.65;
 }
 
+.party-operations .po-pill.po-pill-torch {
+  color: color-mix(in srgb, var(--po-warn) 82%, var(--po-text));
+  border-color: color-mix(in srgb, var(--po-warn) 42%, var(--po-border-strong));
+  background: color-mix(in srgb, var(--po-warn) 16%, var(--po-bg-alt));
+  font-weight: 600;
+}
+
+.party-operations .po-pill.po-pill-torch i {
+  margin-right: 4px;
+}
+
 .party-operations .po-op-role-status.is-missing {
   color: var(--po-danger);
 }
@@ -586,9 +619,10 @@
 .party-operations .po-checkbox-target,
 .party-operations .po-environment-target {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--po-space-2);
-  width: max-content;
+  width: 100%;
   margin-bottom: var(--po-space-1);
 }
 
@@ -596,6 +630,17 @@
 .party-operations .po-environment-target-label {
   cursor: pointer;
   user-select: none;
+}
+
+.party-operations .po-light-range-input {
+  width: 74px;
+  min-height: 28px;
+}
+
+.party-operations .po-light-range-label {
+  font-size: 0.72rem;
+  color: var(--po-muted);
+  min-width: 34px;
 }
 
 .party-operations .po-reputation-filters {

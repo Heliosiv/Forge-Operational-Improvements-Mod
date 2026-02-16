@@ -141,6 +141,12 @@
                   <span class="po-pill">PIv {{actor.passiveInvestigation}}</span>
                   {{/if}}
                   {{/if}}
+                  {{#if hasLight}}
+                  <span class="po-pill po-pill-torch" title="{{lightTooltip}}">
+                    <i class="fa-solid fa-fire" aria-hidden="true"></i>
+                    Torch
+                  </span>
+                  {{/if}}
                 </div>
                 <div class="po-entry-notes" data-actor-id="{{actorId}}">
                   <div class="po-note-label">Notes</div>
@@ -149,11 +155,6 @@
                 </div>
               </div>
               <div class="po-entry-actions-inline">
-                {{#if hasLight}}
-                <div class="po-light-indicator {{#if hasLight}}is-active{{/if}}" title="{{lightTooltip}}">
-                  <i class="fa-solid fa-fire"></i>
-                </div>
-                {{/if}}
                 {{#if ../../isGM}}
                 <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{actorId}}" aria-label="Remove">
                   <i class="fa-solid fa-xmark"></i>
@@ -257,6 +258,12 @@
             <div class="po-checkbox-target" data-actor-id="{{actorId}}">
               <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
               <label class="po-checkbox-target-label" for="po-light-target-{{actorId}}">{{actorName}}</label>
+              <label class="po-sr-only" for="po-light-bright-{{actorId}}">Bright light distance for {{actorName}}</label>
+              <input id="po-light-bright-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="bright" value="{{bright}}" {{#unless hasLight}}disabled{{/unless}} />
+              <span class="po-light-range-label">Bright</span>
+              <label class="po-sr-only" for="po-light-dim-{{actorId}}">Dim light distance for {{actorName}}</label>
+              <input id="po-light-dim-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="dim" value="{{dim}}" {{#unless hasLight}}disabled{{/unless}} />
+              <span class="po-light-range-label">Dim</span>
             </div>
             {{/each}}
           </div>

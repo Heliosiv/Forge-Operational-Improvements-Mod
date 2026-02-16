@@ -104,7 +104,8 @@
   {{/if}}
 
   <section class="po-content" id="{{#if mainTabRestWatch}}po-panel-rest-watch{{else}}po-panel-operations{{/if}}">
-    <div class="po-grid">
+    <div class="po-grid {{#if mainTabOperations}}is-operations-layout{{/if}}">
+      {{#if mainTabRestWatch}}
       <div class="po-cards">
         {{#each slots}}
         <article class="po-card" data-slot-id="{{id}}">
@@ -270,8 +271,9 @@
         </article>
         {{/each}}
       </div>
+      {{/if}}
 
-      <aside class="po-gm-panel">
+      <aside class="po-gm-panel {{#if mainTabOperations}}is-operations-full{{/if}}">
         {{#if gmPanelTabCore}}
         <div class="po-gm-section">
           <button type="button" class="po-btn" data-action="open-for-players"><i class="fa-solid fa-share-from-square"></i> Share with Players</button>
@@ -995,17 +997,25 @@
             <div class="po-panel-disclosure-body">
               {{#if operations.downtime.hasLogs}}
               {{#each operations.downtime.logs}}
-              <div class="po-op-role-row">
+              <div class="po-op-role-row" data-log-id="{{logId}}">
                 <div class="po-op-role-head">
                   <div class="po-op-role-name">{{actorName}} - {{actionLabel}}</div>
                   <div class="po-op-role-status">{{hours}} hour(s)</div>
                 </div>
                 <div class="po-op-summary">{{summary}}</div>
+                {{#if hasDetails}}
+                {{#each details}}
+                <div class="po-op-summary">{{this}}</div>
+                {{/each}}
+                {{/if}}
                 <div class="po-op-summary">GP {{gpDeltaLabel}}</div>
                 {{#if hasComplication}}
                 <div class="po-op-summary is-warn">Complication: {{complication}}</div>
                 {{/if}}
                 <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
+                {{#if @root.isGM}}
+                <button type="button" class="po-btn po-btn-sm" data-action="post-downtime-log" data-log-id="{{logId}}">Post Outcome</button>
+                {{/if}}
               </div>
               {{/each}}
               {{else}}
@@ -1379,6 +1389,7 @@
             <span class="po-gm-tab-sub">Sources &amp; preview</span>
           </button>
         </nav>
+        <div class="po-op-summary"><strong>Active GM Section:</strong> {{gmOpsTabLabel}}</div>
 
         <div class="po-gm-section">
           <details class="po-panel-disclosure po-panel-disclosure-lg" open>
