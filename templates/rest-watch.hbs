@@ -2,9 +2,9 @@
   <header class="po-header">
     <div class="po-header-main">
       <h1 class="po-title">Party Operations</h1>
-      <div class="po-subtitle" aria-live="polite">Rest Watch - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">{{mainSubtitleLabel}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
-    <div class="po-context-pill" aria-hidden="true">Rest Watch</div>
+    <div class="po-context-pill" aria-hidden="true">{{mainContextLabel}}</div>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -27,6 +27,9 @@
     <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
     <button type="button" class="po-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
     <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
+    {{#if isGM}}
+    <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-tab="gm" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
+    {{/if}}
   </nav>
 
   {{#if mainTabRestWatch}}
@@ -104,7 +107,7 @@
   {{/if}}
 
   <section class="po-content" id="{{#if mainTabRestWatch}}po-panel-rest-watch{{else}}po-panel-operations{{/if}}">
-    <div class="po-grid {{#if mainTabOperations}}is-operations-layout{{/if}}">
+    <div class="po-grid {{#if mainTabOperationsOrGm}}is-operations-layout{{/if}}">
       {{#if mainTabRestWatch}}
       <div class="po-cards">
         {{#each slots}}
@@ -273,7 +276,7 @@
       </div>
       {{/if}}
 
-      <aside class="po-gm-panel {{#if mainTabOperations}}is-operations-full{{/if}}">
+      <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if gmPanelTabCore}}
         <div class="po-gm-section">
           <button type="button" class="po-btn" data-action="open-for-players"><i class="fa-solid fa-share-from-square"></i> Share with Players</button>
@@ -332,9 +335,6 @@
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
           <button type="button" class="po-tab {{#if operationsPageDowntime}}is-active{{/if}}" data-action="operations-page" data-page="downtime" title="Track player downtime actions and GM-resolved outcomes">Downtime</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
-          {{#if @root.isGM}}
-          <button type="button" class="po-tab {{#if operationsPageGm}}is-active{{/if}}" data-action="operations-page" data-page="gm" title="GM-only environment controls and logs">GM</button>
-          {{/if}}
         </nav>
 
         <div class="po-gm-section po-gm-section-compact">

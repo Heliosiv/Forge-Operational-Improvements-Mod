@@ -620,7 +620,7 @@ function applyNonGmOperationsReadonly(appOrElement) {
   if (game.user?.isGM) return;
   const root = getAppRootElement(appOrElement);
   if (!root) return;
-  const operationsWindow = root.querySelector(".po-window[data-main-tab='operations']");
+  const operationsWindow = root.querySelector(".po-window[data-main-tab='operations'], .po-window[data-main-tab='gm']");
   if (!operationsWindow) return;
 
   operationsWindow.querySelectorAll("[data-action]").forEach((element) => {
@@ -1849,13 +1849,39 @@ function getRestMainTabStorageKey() {
 }
 
 function getActiveRestMainTab() {
-  const stored = sessionStorage.getItem(getRestMainTabStorageKey());
-  return stored === "operations" ? "operations" : "rest-watch";
+  const stored = String(sessionStorage.getItem(getRestMainTabStorageKey()) ?? "rest-watch").trim().toLowerCase();
+  if (stored === "gm" && game.user?.isGM) return "gm";
+  if (stored === "operations") return "operations";
+  return "rest-watch";
 }
 
 function setActiveRestMainTab(tab) {
-  const value = tab === "operations" ? "operations" : "rest-watch";
+  const value = tab === "gm" && game.user?.isGM
+    ? "gm"
+    : (tab === "operations" ? "operations" : "rest-watch");
   sessionStorage.setItem(getRestMainTabStorageKey(), value);
+}
+
+function getRestMainTabLabel(tab = getActiveRestMainTab()) {
+  const value = String(tab ?? "").trim().toLowerCase();
+  if (value === "gm") return "GM";
+  if (value === "operations") return "Operations";
+  return "Rest Watch";
+}
+
+function getRestMainWindowTitle(tab = getActiveRestMainTab()) {
+  return `Party Operations - ${getRestMainTabLabel(tab)}`;
+}
+
+function syncApplicationWindowTitle(app, title) {
+  const label = String(title ?? "").trim();
+  if (!app || !label) return;
+  if (app.options?.window) app.options.window.title = label;
+  if ("title" in app) app.title = label;
+  const root = getAppRootElement(app);
+  const frame = root?.closest?.(".application, .app") ?? null;
+  const titleNode = frame?.querySelector?.(".window-title, .window-header .title") ?? null;
+  if (titleNode) titleNode.textContent = label;
 }
 
 function getOperationsPageStorageKey() {
@@ -2449,7 +2475,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const operations = buildOperationsContext();
     const injuryRecovery = buildInjuryRecoveryContext();
     const mainTab = getActiveRestMainTab();
-    const operationsPage = getActiveOperationsPage();
+    const operationsTabActive = mainTab === "operations" || mainTab === "gm";
+    const operationsPageValue = mainTab === "gm"
+      ? "gm"
+      : (() => {
+        const active = getActiveOperationsPage();
+        return active === "gm" ? "planning" : active;
+      })();
     const operationsPlanningTab = getActiveOperationsPlanningTab();
     const gmOperationsTab = getActiveGmOperationsTab();
     const gmOperationsTabLabelMap = {
@@ -2480,6 +2512,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       showPopout: false,
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      mainContextLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
+      mainSubtitleLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
       visibilityOptions: buildVisibilityOptions(visibility),
       highestPP: isGM ? computeHighestPP(slots) : "-",
       noDarkvision: isGM ? computeNoDarkvision(slots) : "",
@@ -2496,17 +2530,19 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       mainTab,
       mainTabRestWatch: mainTab === "rest-watch",
       mainTabOperations: mainTab === "operations",
+      mainTabGm: mainTab === "gm",
+      mainTabOperationsOrGm: operationsTabActive,
       gmPanelTabCore: mainTab === "rest-watch",
-      gmPanelTabOperations: mainTab === "operations",
-      operationsPagePlanning: operationsPage === "planning",
-      operationsPageReadiness: operationsPage === "readiness",
-      operationsPageComms: operationsPage === "comms",
-      operationsPageReputation: operationsPage === "reputation",
+      gmPanelTabOperations: operationsTabActive,
+      operationsPagePlanning: operationsPageValue === "planning",
+      operationsPageReadiness: operationsPageValue === "readiness",
+      operationsPageComms: operationsPageValue === "comms",
+      operationsPageReputation: operationsPageValue === "reputation",
       operationsPageSupply: false,
-      operationsPageBase: operationsPage === "base",
-      operationsPageDowntime: operationsPage === "downtime",
-      operationsPageRecovery: operationsPage === "recovery",
-      operationsPageGm: operationsPage === "gm",
+      operationsPageBase: operationsPageValue === "base",
+      operationsPageDowntime: operationsPageValue === "downtime",
+      operationsPageRecovery: operationsPageValue === "recovery",
+      operationsPageGm: operationsPageValue === "gm",
       gmOpsTabEnvironment: gmOperationsTab === "environment",
       gmOpsTabLogs: gmOperationsTab === "logs",
       gmOpsTabDerived: gmOperationsTab === "derived",
@@ -2536,6 +2572,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
     restWatchAppInstance = this;
     ensurePartyOperationsClass(this);
+    syncApplicationWindowTitle(this, getRestMainWindowTitle(getActiveRestMainTab()));
     
     if (this.element && !this.element.dataset.poBoundRest) {
       this.element.dataset.poBoundRest = "1";
@@ -2615,7 +2652,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   #applyOperationsHoverHints() {
     const root = getAppRootElement(this);
-    if (!root || root.dataset.mainTab !== "operations") return;
+    if (!root || (root.dataset.mainTab !== "operations" && root.dataset.mainTab !== "gm")) return;
 
     root.querySelectorAll(".po-gm-panel label.po-resource-row").forEach((label) => {
       const hintText = label.querySelector("span")?.textContent?.trim();
@@ -2654,6 +2691,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
     if (tabName === "operations") {
       setActiveRestMainTab("operations");
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      return;
+    }
+    if (tabName === "gm") {
+      if (!game.user?.isGM) {
+        ui.notifications?.warn("GM permissions are required for the GM section.");
+        return;
+      }
+      setActiveRestMainTab("gm");
       this.#renderWithPreservedState({ force: true, parts: ["main"] });
       return;
     }
@@ -2750,6 +2796,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "operations-page":
         setActiveOperationsPage(element?.dataset?.page);
+        if (String(element?.dataset?.page ?? "").trim() === "gm" && game.user?.isGM) setActiveRestMainTab("gm");
+        else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "operations-planning-tab":
@@ -3491,6 +3539,16 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     if (tabName === "operations") {
       setActiveRestMainTab("operations");
+      new RestWatchApp().render({ force: true });
+      this.close();
+      return;
+    }
+    if (tabName === "gm") {
+      if (!game.user?.isGM) {
+        ui.notifications?.warn("GM permissions are required for the GM section.");
+        return;
+      }
+      setActiveRestMainTab("gm");
       new RestWatchApp().render({ force: true });
       this.close();
     }
@@ -14747,8 +14805,7 @@ function ensureFloatingLauncher() {
           ui.notifications?.warn("GM permissions are required for the GM section.");
           return;
         }
-        setActiveRestMainTab("operations");
-        setActiveOperationsPage("gm");
+        setActiveRestMainTab("gm");
         new RestWatchApp().render({ force: true });
       }
       if (action === "lock") {

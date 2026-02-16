@@ -939,11 +939,11 @@
   opacity: 0.7;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-grid {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
 }
 
-.party-operations .po-window[data-main-tab="operations"] {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) {
   --po-space-1: 4px;
   --po-space-2: 8px;
   --po-space-3: 12px;
@@ -952,7 +952,7 @@
   --po-ops-muted: color-mix(in srgb, var(--po-muted) 86%, var(--po-text) 14%);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-tabs-ops {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--po-space-1);
@@ -965,7 +965,7 @@
   background: color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-tabs-ops .po-tab {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops .po-tab {
   width: 100%;
   min-height: 34px;
   font-size: 0.8rem;
@@ -973,175 +973,175 @@
   letter-spacing: 0.01em;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-tabs-ops .po-tab:not(.is-active) {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops .po-tab:not(.is-active) {
   color: var(--po-ops-body);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-cards {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-cards {
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-card {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-card {
   padding: var(--po-space-3);
   grid-template-columns: 104px minmax(0, 1fr) 32px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-card-left {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-card-left {
   display: flex;
   flex-direction: column;
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-watch-entry {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-watch-entry {
   padding: var(--po-space-3);
   background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-entry-actions {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-entry-actions {
   top: var(--po-space-1);
   right: var(--po-space-1);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-actor {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-actor {
   grid-template-columns: 38px minmax(0, 1fr);
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-portrait {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-portrait {
   width: 38px;
   height: 38px;
   border-radius: 8px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-actor-name {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-actor-name {
   font-size: 0.9rem;
   font-weight: 650;
   color: var(--po-ops-title);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-slot-badge,
-.party-operations .po-window[data-main-tab="operations"] .po-pill,
-.party-operations .po-window[data-main-tab="operations"] .po-stat {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-slot-badge,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-pill,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-stat {
   font-size: 0.76rem;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-notes-input {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-notes-input {
   min-height: 62px;
   line-height: 1.4;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-notes-input::placeholder,
-.party-operations .po-window[data-main-tab="operations"] .po-input::placeholder {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-notes-input::placeholder,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-input::placeholder {
   color: color-mix(in srgb, var(--po-muted) 78%, var(--po-text) 22%);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-recovery-grid {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-recovery-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-gm-panel {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-panel {
   max-height: 100%;
   overflow: auto;
   scrollbar-gutter: stable;
   padding-right: 2px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-gm-section {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-section {
   padding: var(--po-space-3);
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-section-title {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-section-title {
   font-size: 0.76rem;
   letter-spacing: 0.07em;
   color: var(--po-ops-title);
   font-weight: 750;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-hint {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-hint {
   font-size: 0.82rem;
   line-height: 1.45;
   max-width: 92ch;
   color: var(--po-ops-muted);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-summary {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary {
   font-size: 0.82rem;
   line-height: 1.45;
   color: var(--po-ops-body);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-summary + .po-op-summary {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary + .po-op-summary {
   margin-top: 2px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-summary strong,
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-name,
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-status {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary strong,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-name,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status {
   color: var(--po-ops-title);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-summary.is-warn,
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-status.is-warn {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary.is-warn,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-warn {
   color: var(--po-warn);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-summary.is-good,
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-status.is-ready {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary.is-good,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-ready {
   color: var(--po-success);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-status.is-missing {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-missing {
   color: var(--po-danger);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-divider {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-divider {
   border-top-color: color-mix(in srgb, var(--po-border-strong) 44%, var(--po-border));
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-resource-row,
-.party-operations .po-window[data-main-tab="operations"] .po-switch {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-resource-row,
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-switch {
   grid-template-columns: minmax(150px, 1fr) minmax(0, 1.45fr);
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-resource-row > span {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-resource-row > span {
   font-size: 0.74rem;
   font-weight: 600;
   color: color-mix(in srgb, var(--po-accent-contrast) 78%, var(--po-muted));
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-action-row {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-action-row {
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-op-action-row .po-btn {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-action-row .po-btn {
   min-height: 32px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-info-strip {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-info-strip {
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-info-chip {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-info-chip {
   padding: 6px 10px;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-gm-quick-actions .po-op-action-row {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-op-action-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--po-space-2);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-gm-quick-actions .po-op-action-row .po-btn {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-op-action-row .po-btn {
   width: 100%;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-info-chip[title],
-.party-operations .po-window[data-main-tab="operations"] .po-tab[title],
-.party-operations .po-window[data-main-tab="operations"] .po-op-role-row[title] {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-info-chip[title],
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tab[title],
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-row[title] {
   cursor: help;
 }
 
@@ -1601,7 +1601,7 @@
 
 .party-operations .po-tabs-main .po-tab,
 .party-operations .po-tabs-ops .po-tab,
-.party-operations .po-window[data-main-tab="operations"] .po-tabs-ops .po-tab {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops .po-tab {
   width: auto;
   max-width: 100%;
 }
@@ -1620,11 +1620,11 @@
   flex: 0 1 auto;
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-grid {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.party-operations .po-window[data-main-tab="operations"] .po-gm-panel {
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-panel {
   position: static;
   max-height: none;
   overflow: visible;
@@ -1645,7 +1645,7 @@
 }
 
 @media (max-width: 1280px) {
-  .party-operations .po-window[data-main-tab="operations"] .po-grid {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
     grid-template-columns: minmax(0, 1fr) minmax(320px, 1.4fr);
   }
 
@@ -1703,16 +1703,16 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-main-tab="operations"] .po-card {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-card {
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-main-tab="operations"] .po-card-right {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-card-right {
     justify-content: flex-start;
   }
 
-  .party-operations .po-window[data-main-tab="operations"] .po-resource-row,
-  .party-operations .po-window[data-main-tab="operations"] .po-switch {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-resource-row,
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-switch {
     grid-template-columns: 1fr;
   }
 
@@ -1742,11 +1742,11 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-main-tab="operations"] .po-tabs-ops {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops {
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-main-tab="operations"] .po-recovery-grid {
+  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-recovery-grid {
     grid-template-columns: 1fr;
   }
 

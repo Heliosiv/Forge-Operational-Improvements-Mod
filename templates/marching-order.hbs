@@ -27,6 +27,9 @@
     <button type="button" class="po-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
     <button type="button" class="po-tab is-active" data-tab="marching-order" aria-current="page">Marching Order</button>
     <button type="button" class="po-tab" data-tab="operations" aria-current="false">Operations</button>
+    {{#if isGM}}
+    <button type="button" class="po-tab" data-tab="gm" aria-current="false">GM</button>
+    {{/if}}
   </nav>
   <section class="po-overview" aria-label="Marching status">
     <article class="po-overview-card">
