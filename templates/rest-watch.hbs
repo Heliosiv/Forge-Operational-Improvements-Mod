@@ -24,11 +24,11 @@
   <div class="po-body">
 
   <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
-    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
-    <button type="button" class="po-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
-    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
+    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="main-tab" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
+    <button type="button" class="po-tab" data-action="main-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
+    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="main-tab" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
     {{#if isGM}}
-    <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-tab="gm" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
+    <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="main-tab" data-tab="gm" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
     {{/if}}
   </nav>
 
