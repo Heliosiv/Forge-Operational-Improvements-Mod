@@ -1420,31 +1420,6 @@
   background: color-mix(in srgb, var(--po-warn) 18%, var(--po-bg-alt));
 }
 
-.party-operations .po-tabs {
-  gap: var(--po-space-2);
-}
-
-.party-operations .po-tab {
-  border-radius: 999px;
-  min-height: 36px;
-  padding: 6px 12px;
-  letter-spacing: 0.01em;
-  font-size: 0.84rem;
-}
-
-.party-operations .po-tabs-main .po-tab,
-.party-operations .po-tabs-ops .po-tab {
-  border-color: color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
-}
-
-.party-operations .po-tabs-main .po-tab.is-active,
-.party-operations .po-tabs-ops .po-tab.is-active,
-.party-operations .po-tabs-sub .po-tab.is-active {
-  border-color: color-mix(in srgb, var(--po-accent) 90%, var(--po-border));
-  background: color-mix(in srgb, var(--po-accent) 30%, var(--po-bg-alt));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 42%, transparent), 0 4px 14px color-mix(in srgb, var(--po-accent) 26%, transparent);
-}
-
 .party-operations .po-gm-panel {
   position: sticky;
   top: 0;
@@ -1615,6 +1590,40 @@
 .party-operations .u-mb-1 { margin-bottom: var(--po-space-1); }
 .party-operations .u-mb-2 { margin-bottom: var(--po-space-2); }
 .party-operations .u-mb-3 { margin-bottom: var(--po-space-3); }
+
+/* =========================================================
+   Navigation Consistency Overrides
+   ========================================================= */
+.party-operations .po-tabs-main,
+.party-operations .po-tabs-ops {
+  align-items: center;
+}
+
+.party-operations .po-tabs-main .po-tab,
+.party-operations .po-tabs-ops .po-tab,
+.party-operations .po-window[data-main-tab="operations"] .po-tabs-ops .po-tab {
+  width: auto;
+  max-width: 100%;
+}
+
+.party-operations .po-tabs-main .po-tab {
+  flex: 0 0 auto;
+}
+
+.party-operations .po-tabs-ops .po-tab {
+  flex: 0 1 auto;
+}
+
+.party-operations .po-window[data-main-tab="operations"] .po-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.party-operations .po-window[data-main-tab="operations"] .po-gm-panel {
+  position: static;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
 
 /* =========================================================
    Media Queries

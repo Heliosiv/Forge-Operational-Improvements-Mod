@@ -218,13 +218,13 @@ Release flow:
 
 1. Bump `version` in `module.json`
 2. Push commit to GitHub
-3. Create and push a matching tag: `vX.Y.Z` (example: `v2.0.2`)
+3. Create and push a matching tag: `vX.Y.Z` (example: `v2.0.34`)
 4. GitHub Actions builds and publishes `module.zip` + `module.json` to Releases
 5. Forge detects the new version via manifest and offers update
 
 One-command option from this repo:
 
-`./scripts/release.ps1 -Version 2.0.2 -Message "Release"`
+`./scripts/release.ps1 -Version 2.0.34 -Message "Release"`
 
 That script updates `module.json`, commits, tags, and pushes `main` + tag.
 
@@ -255,7 +255,7 @@ The workflow at `.github/workflows/release.yml` runs this numbered sequence:
 6. Upload workflow artifact
 7. Create GitHub Release and attach `module.zip` + `module.json`
 
-To run automatically, push a tag like `v2.0.1`.
+To run automatically, push a tag like `v2.0.34`.
 
 ## Troubleshooting
 

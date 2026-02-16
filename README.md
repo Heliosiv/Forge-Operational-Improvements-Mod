@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.25 -Message "Release"
+./scripts/release.ps1 -Version 2.0.34 -Message "Release"
 ```
 
 What it does:
@@ -28,11 +28,11 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### 2.0.25 highlights
+### Current Release Highlights (2.0.34)
 
-- Added a GM Non-Party Sync panel with scene actor preview, stale detection, and per-actor clear/reapply controls.
-- Added one-click scene-wide non-party cleanup/reapply actions for faster recovery when effects drift.
-- Extended GM Operations tabs and sync tooling to make non-party automation state visible at a glance.
+- Integration sync now recovers from stale/missing ActiveEffect references instead of failing.
+- Operations view uses consistent pill-style navigation and expanded single-column layout.
+- Marching torchlight now supports per-actor Bright/Dim ranges with persistence and chat/export visibility.
 
 ### After pushing
 

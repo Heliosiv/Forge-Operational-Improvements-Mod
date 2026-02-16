@@ -23,10 +23,10 @@
 
   <div class="po-body">
 
-  <nav class="po-tabs po-tabs-main" role="tablist" aria-label="Party Operations views">
-    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" role="tab" aria-controls="po-panel-rest-watch" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}">Rest Watch</button>
-    <button type="button" class="po-tab" data-tab="marching-order" role="tab" aria-selected="false">Marching Order</button>
-    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" role="tab" aria-controls="po-panel-operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}">Operations</button>
+  <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
+    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
+    <button type="button" class="po-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
+    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
   </nav>
 
   {{#if mainTabRestWatch}}
