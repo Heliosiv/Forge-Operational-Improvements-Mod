@@ -14763,6 +14763,27 @@ async function saveFloatingLauncherPosition(pos) {
   await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, clamped);
 }
 
+function ensureClickOpener() {
+  let opener = document.getElementById("po-click-opener");
+  if (!opener) {
+    opener = document.createElement("button");
+    opener.id = "po-click-opener";
+    opener.type = "button";
+    opener.setAttribute("title", "Open Party Operations");
+    opener.setAttribute("aria-label", "Open Party Operations");
+    opener.innerHTML = '<i class="fas fa-compass"></i>';
+    opener.addEventListener("click", () => {
+      ensureFloatingLauncher();
+      new RestWatchApp().render({ force: true });
+    });
+    document.body.appendChild(opener);
+  }
+
+  opener.style.display = "flex";
+  opener.style.visibility = "visible";
+  opener.style.opacity = "1";
+}
+
 function ensureFloatingLauncher() {
   let launcher = document.getElementById("po-floating-launcher");
 
@@ -15066,6 +15087,7 @@ function setupPartyOperationsUI() {
     const root = html?.querySelector ? html : html?.[0];
     if (!root?.querySelector) return;
     root.querySelector("[data-control='party-operations']")?.remove();
+    ensureClickOpener();
     ensureFloatingLauncher();
   });
 }
@@ -15256,6 +15278,7 @@ Hooks.once("init", () => {
 Hooks.once("ready", () => {
   // Setup UI controls for sidebar
   setupPartyOperationsUI();
+  ensureClickOpener();
   ensureFloatingLauncher();
   notifyDailyInjuryReminders();
 
