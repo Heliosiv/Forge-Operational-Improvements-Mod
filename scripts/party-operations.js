@@ -14774,7 +14774,11 @@ function ensureClickOpener() {
     opener.innerHTML = '<i class="fas fa-compass"></i>';
     opener.addEventListener("click", () => {
       ensureFloatingLauncher();
-      new RestWatchApp().render({ force: true });
+      if (game.user?.isGM) {
+        new RestWatchApp().render({ force: true });
+      } else {
+        new RestWatchPlayerApp().render({ force: true });
+      }
     });
     document.body.appendChild(opener);
   }
