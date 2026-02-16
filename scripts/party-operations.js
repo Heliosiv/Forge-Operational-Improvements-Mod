@@ -14813,6 +14813,77 @@ function scheduleLauncherRecoveryPass() {
   }
 }
 
+function openOperationsUi() {
+  setActiveRestMainTab("operations");
+  return new RestWatchApp().render({ force: true });
+}
+
+function openGmUi() {
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("GM permissions are required for the GM section.");
+    return null;
+  }
+  setActiveRestMainTab("gm");
+  return new RestWatchApp().render({ force: true });
+}
+
+function ensureLauncherUi() {
+  ensureClickOpener();
+  ensureFloatingLauncher();
+  scheduleLauncherRecoveryPass();
+}
+
+function buildPartyOperationsApi() {
+  const api = {
+    restWatch: () => new RestWatchApp().render({ force: true }),
+    marchingOrder: () => new MarchingOrderApp().render({ force: true }),
+    operations: () => openOperationsUi(),
+    gm: () => openGmUi(),
+    refreshAll: () => refreshOpenApps(),
+    getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
+    applyUpkeep: () => applyOperationalUpkeep(),
+    getInjuryRecovery: () => foundry.utils.deepClone(getInjuryRecoveryState()),
+    applyRecoveryCycle: () => applyRecoveryCycle(),
+    runSessionAutopilot: () => runSessionAutopilot(),
+    undoSessionAutopilot: () => undoLastSessionAutopilot(),
+    syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
+    syncIntegrations: () => scheduleIntegrationSync("api"),
+    getLootSourceConfig: () => foundry.utils.deepClone(getLootSourceConfig()),
+    previewLoot: (draft) => generateLootPreviewPayload(draft),
+    getLootPreviewResult: () => foundry.utils.deepClone(getLootPreviewResult()),
+    diagnoseWorldData: (options) => diagnoseWorldData(options),
+    repairWorldData: () => diagnoseWorldData({ repair: true }),
+    resetLauncherPosition: () => resetFloatingLauncherPosition(),
+    ensureLauncher: () => ensureLauncherUi(),
+    showLauncher: () => ensureLauncherUi()
+  };
+
+  // Backward-compatible aliases for older macro snippets.
+  api.openRestWatch = api.restWatch;
+  api.openMarchingOrder = api.marchingOrder;
+  api.openOperations = api.operations;
+  api.openGM = api.gm;
+  api.launcher = api.ensureLauncher;
+
+  return api;
+}
+
+function registerPartyOperationsApi() {
+  const api = buildPartyOperationsApi();
+  game.partyOperations = api;
+
+  const moduleRef = game.modules?.get?.(MODULE_ID);
+  if (moduleRef) {
+    try {
+      moduleRef.api = api;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: unable to attach api on module reference`, error);
+    }
+  }
+
+  return api;
+}
+
 function ensureClickOpener() {
   let opener = document.getElementById("po-click-opener");
   if (!opener) {
@@ -15135,15 +15206,11 @@ function setupPartyOperationsUI() {
     const root = html?.querySelector ? html : html?.[0];
     if (!root?.querySelector) return;
     root.querySelector("[data-control='party-operations']")?.remove();
-    ensureClickOpener();
-    ensureFloatingLauncher();
-    scheduleLauncherRecoveryPass();
+    ensureLauncherUi();
   });
 
   Hooks.on("canvasReady", () => {
-    ensureClickOpener();
-    ensureFloatingLauncher();
-    scheduleLauncherRecoveryPass();
+    ensureLauncherUi();
   });
 }
 
@@ -15291,25 +15358,7 @@ Hooks.once("init", () => {
     default: true
   });
 
-  game.partyOperations = {
-    restWatch: () => new RestWatchApp().render({ force: true }),
-    marchingOrder: () => new MarchingOrderApp().render({ force: true }),
-    refreshAll: () => refreshOpenApps(),
-    getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
-    applyUpkeep: () => applyOperationalUpkeep(),
-    getInjuryRecovery: () => foundry.utils.deepClone(getInjuryRecoveryState()),
-    applyRecoveryCycle: () => applyRecoveryCycle(),
-    runSessionAutopilot: () => runSessionAutopilot(),
-    undoSessionAutopilot: () => undoLastSessionAutopilot(),
-    syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
-    syncIntegrations: () => scheduleIntegrationSync("api"),
-    getLootSourceConfig: () => foundry.utils.deepClone(getLootSourceConfig()),
-    previewLoot: (draft) => generateLootPreviewPayload(draft),
-    getLootPreviewResult: () => foundry.utils.deepClone(getLootPreviewResult()),
-    diagnoseWorldData: (options) => diagnoseWorldData(options),
-    repairWorldData: () => diagnoseWorldData({ repair: true }),
-    resetLauncherPosition: () => resetFloatingLauncherPosition()
-  };
+  registerPartyOperationsApi();
 
   game.keybindings.register(MODULE_ID, "openRestWatch", {
     name: "Open Rest Watch",
@@ -15330,12 +15379,15 @@ Hooks.once("init", () => {
   });
 });
 
+Hooks.once("setup", () => {
+  registerPartyOperationsApi();
+});
+
 Hooks.once("ready", () => {
+  registerPartyOperationsApi();
   // Setup UI controls for sidebar
   setupPartyOperationsUI();
-  ensureClickOpener();
-  ensureFloatingLauncher();
-  scheduleLauncherRecoveryPass();
+  ensureLauncherUi();
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players
