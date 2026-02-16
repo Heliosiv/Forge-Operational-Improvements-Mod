@@ -1877,7 +1877,6 @@ function syncApplicationWindowTitle(app, title) {
   const label = String(title ?? "").trim();
   if (!app || !label) return;
   if (app.options?.window) app.options.window.title = label;
-  if ("title" in app) app.title = label;
   const root = getAppRootElement(app);
   const frame = root?.closest?.(".application, .app") ?? null;
   const titleNode = frame?.querySelector?.(".window-title, .window-header .title") ?? null;
@@ -2579,7 +2578,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       // Use event delegation on the app element
       this.element.addEventListener("click", (event) => {
-        const tab = event.target?.closest(".po-tabs-main .po-tab");
+        const tab = event.target?.closest(".po-tabs-main .po-tab[data-tab]");
         if (tab) return this.#onTabClick(tab, this.element);
 
         const actionElement = event.target?.closest("[data-action]");
@@ -3328,6 +3327,9 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       case "refresh":
         emitSocketRefresh();
         break;
+      case "main-tab":
+        this.#onTabClick(element, this.element);
+        break;
       case "toggle-mini-viz":
         setMiniVizCollapsed(!isMiniVizCollapsed());
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -3487,7 +3489,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
       // Use event delegation on the app element
       this.element.addEventListener("click", (event) => {
-        const tab = event.target?.closest(".po-tab");
+        const tab = event.target?.closest(".po-tabs-main .po-tab[data-tab]");
         if (tab) return this.#onTabClick(tab, this.element);
 
         const actionElement = event.target?.closest("[data-action]");
@@ -3572,6 +3574,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     switch (action) {
       case "refresh":
         emitSocketRefresh();
+        break;
+      case "main-tab":
+        this.#onTabClick(element, this.element);
         break;
       case "open-for-players":
         emitOpenForPlayers("march");

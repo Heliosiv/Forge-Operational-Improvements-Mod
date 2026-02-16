@@ -24,11 +24,11 @@
   <div class="po-body">
 
   <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
-    <button type="button" class="po-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
-    <button type="button" class="po-tab is-active" data-tab="marching-order" aria-current="page">Marching Order</button>
-    <button type="button" class="po-tab" data-tab="operations" aria-current="false">Operations</button>
+    <button type="button" class="po-tab" data-action="main-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
+    <button type="button" class="po-tab is-active" data-action="main-tab" data-tab="marching-order" aria-current="page">Marching Order</button>
+    <button type="button" class="po-tab" data-action="main-tab" data-tab="operations" aria-current="false">Operations</button>
     {{#if isGM}}
-    <button type="button" class="po-tab" data-tab="gm" aria-current="false">GM</button>
+    <button type="button" class="po-tab" data-action="main-tab" data-tab="gm" aria-current="false">GM</button>
     {{/if}}
   </nav>
   <section class="po-overview" aria-label="Marching status">
