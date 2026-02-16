@@ -3319,6 +3319,36 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render(renderOptions);
   }
 
+  #onTabClick(tabElement, html) {
+    const tabName = tabElement?.dataset?.tab;
+    if (tabName === "marching-order") {
+      new MarchingOrderApp().render({ force: true });
+      this.close();
+      return;
+    }
+    if (tabName === "operations") {
+      setActiveRestMainTab("operations");
+      new RestWatchApp().render({ force: true });
+      this.close();
+      return;
+    }
+    if (tabName === "gm") {
+      if (!game.user?.isGM) {
+        ui.notifications?.warn("GM permissions are required for the GM section.");
+        return;
+      }
+      setActiveRestMainTab("gm");
+      new RestWatchApp().render({ force: true });
+      this.close();
+      return;
+    }
+    if (tabName === "rest-watch") {
+      setActiveRestMainTab("rest-watch");
+      new RestWatchApp().render({ force: true });
+      this.close();
+    }
+  }
+
   async #onAction(event) {
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
