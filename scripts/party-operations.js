@@ -203,6 +203,9 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "apply-recovery-cycle",
   "set-downtime-hours",
   "set-downtime-tuning",
+  "set-downtime-resolve-target",
+  "prefill-downtime-resolution",
+  "resolve-selected-downtime-entry",
   "resolve-downtime-actions",
   "clear-downtime-results",
   "set-party-health-modifier",
@@ -2778,11 +2781,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-downtime-tuning":
         await setDowntimeTuningField(element);
         break;
+      case "set-downtime-resolve-target":
+        applyDowntimeResolverBaseToUi(element, { force: true });
+        break;
+      case "prefill-downtime-resolution":
+        applyDowntimeResolverBaseToUi(element, { force: true });
+        break;
       case "submit-downtime-action":
         await submitDowntimeAction(element);
         break;
       case "clear-downtime-entry":
         await clearDowntimeEntry(element);
+        break;
+      case "resolve-selected-downtime-entry":
+        await resolveSelectedDowntimeEntry(element);
         break;
       case "resolve-downtime-actions":
         await resolveDowntimeActions();
@@ -2792,6 +2804,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "post-downtime-log":
         await postDowntimeLogOutcome(element);
+        break;
+      case "collect-downtime-result":
+        await collectDowntimeResult(element);
         break;
       case "set-party-health-modifier":
         await setPartyHealthModifier(element);
@@ -3322,16 +3337,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const isGM = game.user.isGM;
     const state = getMarchingOrderState();
     const ranks = buildRanksView(state, isGM);
-    const usageUi = buildMarchSectionUi("usage");
-    const gmShareUi = buildMarchSectionUi("gm-share");
-    const gmHelpUi = buildMarchSectionUi("gm-help");
-    const gmLockUi = buildMarchSectionUi("gm-lock");
-    const gmFormationsUi = buildMarchSectionUi("gm-formations");
-    const gmLightUi = buildMarchSectionUi("gm-light");
-    const gmExportUi = buildMarchSectionUi("gm-export");
-    const gmSnapshotUi = buildMarchSectionUi("gm-snapshot");
-    const gmClearUi = buildMarchSectionUi("gm-clear");
-    const gmNotesUi = buildMarchSectionUi("gm-notes");
     const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
     const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
     const formation = normalizeMarchingFormation(state.formation ?? "default");
@@ -3361,40 +3366,40 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       showPopout: false,
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
-      usageCollapsed: usageUi.collapsed,
-      usageToggleLabel: usageUi.toggleLabel,
-      usageToggleIcon: usageUi.toggleIcon,
+      usageCollapsed: false,
+      usageToggleLabel: "Collapse",
+      usageToggleIcon: "fa-chevron-up",
       ranks,
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
-        shareCollapsed: gmShareUi.collapsed,
-        shareToggleLabel: gmShareUi.toggleLabel,
-        shareToggleIcon: gmShareUi.toggleIcon,
-        helpCollapsed: gmHelpUi.collapsed,
-        helpToggleLabel: gmHelpUi.toggleLabel,
-        helpToggleIcon: gmHelpUi.toggleIcon,
-        lockCollapsed: gmLockUi.collapsed,
-        lockToggleLabel: gmLockUi.toggleLabel,
-        lockToggleIcon: gmLockUi.toggleIcon,
-        formationsCollapsed: gmFormationsUi.collapsed,
-        formationsToggleLabel: gmFormationsUi.toggleLabel,
-        formationsToggleIcon: gmFormationsUi.toggleIcon,
-        lightCollapsed: gmLightUi.collapsed,
-        lightToggleLabel: gmLightUi.toggleLabel,
-        lightToggleIcon: gmLightUi.toggleIcon,
-        exportCollapsed: gmExportUi.collapsed,
-        exportToggleLabel: gmExportUi.toggleLabel,
-        exportToggleIcon: gmExportUi.toggleIcon,
-        snapshotCollapsed: gmSnapshotUi.collapsed,
-        snapshotToggleLabel: gmSnapshotUi.toggleLabel,
-        snapshotToggleIcon: gmSnapshotUi.toggleIcon,
-        clearCollapsed: gmClearUi.collapsed,
-        clearToggleLabel: gmClearUi.toggleLabel,
-        clearToggleIcon: gmClearUi.toggleIcon,
-        gmNotesCollapsed: gmNotesUi.collapsed,
-        gmNotesToggleLabel: gmNotesUi.toggleLabel,
-        gmNotesToggleIcon: gmNotesUi.toggleIcon
+        shareCollapsed: false,
+        shareToggleLabel: "Collapse",
+        shareToggleIcon: "fa-chevron-up",
+        helpCollapsed: false,
+        helpToggleLabel: "Collapse",
+        helpToggleIcon: "fa-chevron-up",
+        lockCollapsed: false,
+        lockToggleLabel: "Collapse",
+        lockToggleIcon: "fa-chevron-up",
+        formationsCollapsed: false,
+        formationsToggleLabel: "Collapse",
+        formationsToggleIcon: "fa-chevron-up",
+        lightCollapsed: false,
+        lightToggleLabel: "Collapse",
+        lightToggleIcon: "fa-chevron-up",
+        exportCollapsed: false,
+        exportToggleLabel: "Collapse",
+        exportToggleIcon: "fa-chevron-up",
+        snapshotCollapsed: false,
+        snapshotToggleLabel: "Collapse",
+        snapshotToggleIcon: "fa-chevron-up",
+        clearCollapsed: false,
+        clearToggleLabel: "Collapse",
+        clearToggleIcon: "fa-chevron-up",
+        gmNotesCollapsed: false,
+        gmNotesToggleLabel: "Collapse",
+        gmNotesToggleIcon: "fa-chevron-up"
       },
       formation,
       formationLabel: formationLabels[formation] ?? formationLabels.default,
@@ -5789,7 +5794,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (hasChronicler) bonuses.push("Operational recall active: clarify one unknown clue or timeline detail once per session.");
   if (hasSteward) bonuses.push("Stewardship active: reduce one lifestyle/logistics cost friction once per session.");
   if (comms.ready) bonuses.push("Communication discipline active: improve one coordinated response roll by a minor margin.");
-  if (recon.tier === "ready") bonuses.push("Recon posture ready: reveal one mission unknown before first contact.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
 
@@ -5804,14 +5808,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (comms.ready) {
     const modifier = addGlobalModifier("signal-discipline", "perceptionChecks", 1, "Signal discipline (comms ready)", "Perception checks");
     if (modifier.enabled) globalMinorBonuses.push("Signal discipline: all player actors gain +1 to Perception checks while communication readiness is active.");
-  }
-  if (recon.initiativeEdge !== 0) {
-    const modifier = addGlobalModifier("recon-briefing", "initiative", recon.initiativeEdge, "Recon briefing posture", "Initiative rolls", {
-      note: `Recon tier: ${recon.readinessLabel}`
-    });
-    if (modifier.enabled && recon.initiativeEdge > 0) {
-      globalMinorBonuses.push("Recon briefing: all player actors gain +1 initiative while recon posture is ready.");
-    }
   }
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
@@ -6321,6 +6317,21 @@ function normalizeDowntimeResult(result = {}) {
   const rollTotalRaw = Number(result?.rollTotal ?? 0);
   const gpDeltaRaw = Number(result?.gpDelta ?? 0);
   const progressRaw = Number(result?.progress ?? 0);
+  const rumorCountRaw = Number(result?.rumorCount ?? 0);
+  const itemRewards = Array.isArray(result?.itemRewards)
+    ? result.itemRewards
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean)
+      .slice(0, 10)
+    : [];
+  const gmNotes = String(result?.gmNotes ?? "").trim();
+  const collected = result?.collected === true;
+  const collectedAtRaw = Number(result?.collectedAt ?? 0);
+  const collectedAt = Number.isFinite(collectedAtRaw) && collectedAtRaw > 0 ? collectedAtRaw : 0;
+  const collectedBy = String(result?.collectedBy ?? "").trim();
+  const gpDelta = Number.isFinite(gpDeltaRaw) ? Math.floor(gpDeltaRaw) : 0;
+  const rumorCount = Number.isFinite(rumorCountRaw) ? Math.max(0, Math.floor(rumorCountRaw)) : 0;
+  const hasClaimableRewards = gpDelta > 0 || rumorCount > 0 || itemRewards.length > 0 || gmNotes.length > 0;
   return {
     id: String(result?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     actionKey: actionDef.key,
@@ -6328,11 +6339,18 @@ function normalizeDowntimeResult(result = {}) {
     summary: String(result?.summary ?? "").trim(),
     details,
     rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : 0,
-    gpDelta: Number.isFinite(gpDeltaRaw) ? Math.floor(gpDeltaRaw) : 0,
+    gpDelta,
     progress: Number.isFinite(progressRaw) ? Math.max(0, Math.floor(progressRaw)) : 0,
     complication: String(result?.complication ?? "").trim(),
     resolvedAt,
-    resolvedBy: String(result?.resolvedBy ?? "GM").trim() || "GM"
+    resolvedBy: String(result?.resolvedBy ?? "GM").trim() || "GM",
+    rumorCount,
+    itemRewards,
+    gmNotes,
+    hasClaimableRewards,
+    collected,
+    collectedAt,
+    collectedBy
   };
 }
 
@@ -6434,6 +6452,74 @@ function canUserManageDowntimeActor(user, actor) {
   return Boolean(actor.testUserPermission?.(user, "OWNER"));
 }
 
+function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
+  const actionDef = getDowntimeActionDefinition(entry?.actionKey);
+  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+  const hours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
+  const blocks = Math.max(1, Math.ceil(hours / 4));
+  const tuning = downtimeState?.tuning ?? {};
+  const economy = String(tuning.economy ?? "standard");
+  const discovery = String(tuning.discovery ?? "standard");
+  const economyMultiplier = economy === "stingy" ? 0.8 : economy === "generous" ? 1.3 : 1;
+  const discoveryBonus = discovery === "low" ? 0 : discovery === "high" ? 1 : 0;
+
+  let gpAward = 0;
+  let rumorCount = 0;
+  let itemRewards = [];
+  let summary = `${actionDef.label} resolved.`;
+  let hint = "Set payouts and notes, then resolve.";
+
+  switch (actionDef.key) {
+    case "carousing":
+      rumorCount = Math.max(1, blocks + discoveryBonus);
+      gpAward = Math.max(0, Math.floor(blocks * economyMultiplier));
+      summary = `Carousing established ${rumorCount} rumor/contact lead(s).`;
+      hint = "Carousing defaults to rumors/contacts with optional small coin favors.";
+      break;
+    case "crafting":
+      itemRewards = ["Crafting materials package"];
+      gpAward = Math.max(0, Math.floor((2 * blocks) * economyMultiplier));
+      summary = "Crafting yielded usable materials or a completed mundane item.";
+      hint = "Crafting defaults to item/material rewards plus optional reimbursement.";
+      break;
+    case "profession":
+      gpAward = Math.max(1, Math.floor((3 * blocks) * economyMultiplier));
+      summary = `Professional work earned ${gpAward} gp.`;
+      hint = "Profession defaults to direct coin payout.";
+      break;
+    case "recuperating":
+      summary = "Recuperation granted recovery progress and treatment stabilization.";
+      hint = "Recuperating usually grants notes/progress; coin and items are optional.";
+      break;
+    case "research":
+      rumorCount = Math.max(1, blocks + discoveryBonus);
+      summary = `Research uncovered ${rumorCount} actionable lead(s).`;
+      hint = "Research defaults to rumors/leads and reference notes.";
+      break;
+    case "training":
+      itemRewards = ["Training milestone credit"];
+      summary = `Training logged ${hours} hour(s) of progress.`;
+      hint = "Training defaults to milestone notes and optional certification reward.";
+      break;
+    default:
+      summary = `${actionDef.label} resolved for ${hours} hour(s).`;
+      hint = "Set any payout and notes, then resolve.";
+      break;
+  }
+
+  return {
+    actionKey: actionDef.key,
+    actionLabel: actionDef.label,
+    gpAward: Math.max(0, Math.floor(gpAward)),
+    rumorCount: Math.max(0, Math.floor(rumorCount)),
+    itemRewards,
+    itemRewardsText: itemRewards.join("\n"),
+    summary,
+    gmNotes: "",
+    hint
+  };
+}
+
 function buildDowntimeContext(downtimeState = {}, options = {}) {
   const user = options.user ?? game.user;
   const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
@@ -6463,6 +6549,21 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const updatedAtLabel = updatedAtDate && Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Not set";
     const result = entry?.lastResult ? normalizeDowntimeResult(entry.lastResult) : null;
     const gpDelta = Number(result?.gpDelta ?? 0);
+    const rumorCount = Math.max(0, Number(result?.rumorCount ?? 0) || 0);
+    const itemRewards = Array.isArray(result?.itemRewards) ? result.itemRewards : [];
+    const gmNotes = String(result?.gmNotes ?? "");
+    const isCollected = result?.collected === true;
+    const collectedAt = Number(result?.collectedAt ?? 0);
+    const collectedAtLabel = collectedAt > 0 ? new Date(collectedAt).toLocaleString() : "";
+    const canCollect = Boolean(result)
+      && result.hasClaimableRewards === true
+      && !isCollected
+      && canUserManageDowntimeActor(user, actor);
+    const rewardParts = [];
+    if (gpDelta > 0) rewardParts.push(`${gpDelta} gp`);
+    if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
+    if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
+    if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
     return {
       actorId: String(entry?.actorId ?? "").trim(),
       actorName: String(entry?.actorName ?? actor?.name ?? "Unknown Actor").trim() || "Unknown Actor",
@@ -6488,7 +6589,19 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasComplication: String(result?.complication ?? "").trim().length > 0,
       complication: String(result?.complication ?? ""),
       resolvedAtLabel: result?.resolvedAt ? new Date(Number(result.resolvedAt)).toLocaleString() : "",
-      resolvedBy: String(result?.resolvedBy ?? "")
+      resolvedBy: String(result?.resolvedBy ?? ""),
+      rumorCount,
+      hasRumorCount: rumorCount > 0,
+      itemRewards,
+      hasItemRewards: itemRewards.length > 0,
+      gmNotes,
+      hasGmNotes: gmNotes.trim().length > 0,
+      isCollected,
+      canCollect,
+      hasClaimableRewards: Boolean(result?.hasClaimableRewards),
+      rewardSummary: rewardParts.length > 0 ? rewardParts.join(" | ") : "No claimable rewards",
+      collectedAtLabel,
+      collectedBy: String(result?.collectedBy ?? "")
     };
   }).sort((a, b) => {
     const pendingA = a.pending ? 0 : 1;
@@ -6512,6 +6625,15 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         const gpDelta = Number(normalized.gpDelta ?? 0);
         const resolvedAtValue = Number(normalized.resolvedAt);
         const resolvedAtDate = new Date(resolvedAtValue);
+        const rumorCount = Math.max(0, Number(normalized.rumorCount ?? 0) || 0);
+        const itemRewards = Array.isArray(normalized.itemRewards) ? normalized.itemRewards : [];
+        const gmNotes = String(normalized.gmNotes ?? "");
+        const collectedAt = Number(normalized.collectedAt ?? 0);
+        const rewardParts = [];
+        if (gpDelta > 0) rewardParts.push(`${gpDelta} gp`);
+        if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
+        if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
+        if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
         return {
           logId: String(normalized.id ?? "").trim() || foundry.utils.randomID(),
           actorId: String(entry?.actorId ?? "").trim(),
@@ -6526,11 +6648,39 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           gpDelta,
           gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
           hasComplication: normalized.complication.length > 0,
-          complication: normalized.complication
+          complication: normalized.complication,
+          rumorCount,
+          hasRumorCount: rumorCount > 0,
+          itemRewards,
+          hasItemRewards: itemRewards.length > 0,
+          gmNotes,
+          hasGmNotes: gmNotes.trim().length > 0,
+          isCollected: normalized.collected === true,
+          hasClaimableRewards: normalized.hasClaimableRewards === true,
+          rewardSummary: rewardParts.length > 0 ? rewardParts.join(" | ") : "No claimable rewards",
+          collectedAtLabel: collectedAt > 0 ? new Date(collectedAt).toLocaleString() : "",
+          collectedBy: String(normalized.collectedBy ?? "")
         };
       })
       .slice(0, 20)
     : [];
+
+  const pendingEntries = actorEntries.filter((entry) => entry.pending);
+  const pendingOptions = pendingEntries.map((entry, index) => {
+    const base = getDowntimeResolutionBase(entry, downtimeState);
+    return {
+      actorId: entry.actorId,
+      label: `${entry.actorName} - ${entry.actionLabel} (${entry.hours}h)`,
+      selected: index === 0,
+      baseSummary: base.summary,
+      baseGpAward: base.gpAward,
+      baseRumorCount: base.rumorCount,
+      baseItemRewardsText: base.itemRewardsText,
+      baseNotes: base.gmNotes,
+      baseHint: base.hint
+    };
+  });
+  const selectedPending = pendingOptions.find((entry) => entry.selected) ?? null;
 
   return {
     hoursGranted,
@@ -6563,7 +6713,18 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     resolvedCount: actorEntries.filter((entry) => entry.hasResult).length,
     logs,
     logCount: logs.length,
-    hasLogs: logs.length > 0
+    hasLogs: logs.length > 0,
+    gmResolve: {
+      hasPending: pendingOptions.length > 0,
+      pendingOptions,
+      selectedActorId: String(selectedPending?.actorId ?? ""),
+      summary: String(selectedPending?.baseSummary ?? ""),
+      gpAward: Number(selectedPending?.baseGpAward ?? 0),
+      rumorCount: Number(selectedPending?.baseRumorCount ?? 0),
+      itemRewardsText: String(selectedPending?.baseItemRewardsText ?? ""),
+      gmNotes: String(selectedPending?.baseNotes ?? ""),
+      hint: String(selectedPending?.baseHint ?? "Set payouts and notes, then resolve.")
+    }
   };
 }
 
@@ -6769,7 +6930,6 @@ function buildReconContext(reconState = {}) {
   const readinessScore = intelCoverage + networkScore + reliabilityScore + budgetScore + spyScore - heatPenalty;
   const tier = readinessScore >= 6 ? "ready" : readinessScore >= 3 ? "contested" : "blind";
   const readinessLabel = tier === "ready" ? "Ready" : tier === "contested" ? "Contested" : "Blind";
-  const initiativeEdge = tier === "ready" ? 1 : tier === "blind" ? -1 : 0;
   const suggestedDc = Math.max(
     8,
     Math.min(
@@ -6789,7 +6949,7 @@ function buildReconContext(reconState = {}) {
   if (network === "limited") recommendations.push("Expand local network contacts to reduce blind approaches.");
   if (spySlots <= 0) recommendations.push("Allocate at least one spy slot for forward observation.");
   if (heatLevel === "high") recommendations.push("High heat: expect counter-surveillance and misinformation.");
-  if (recommendations.length === 0) recommendations.push("Recon posture is stable. Maintain cadence and refresh leads after major events.");
+  if (recommendations.length === 0) recommendations.push("Recon plan is stable. Maintain cadence and refresh leads after major events.");
 
   return {
     objective,
@@ -6805,7 +6965,6 @@ function buildReconContext(reconState = {}) {
     readinessScore,
     tier,
     readinessLabel,
-    initiativeEdge,
     suggestedDc,
     recommendations,
     hasRecentFindings: recentFindings.length > 0,
@@ -7385,6 +7544,274 @@ async function setDowntimeTuningField(element) {
   });
 }
 
+function parseDowntimeItemRewardsText(value) {
+  return String(value ?? "")
+    .split(/\r?\n|,/)
+    .map((entry) => String(entry ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function getDowntimeResolverRoot(element) {
+  return element?.closest(".po-downtime-resolver") ?? null;
+}
+
+function readDowntimeResolverSelection(root) {
+  const select = root?.querySelector("select[name='resolveDowntimeActorId']");
+  const actorId = String(select?.value ?? "").trim();
+  const selectedOption = select?.selectedOptions?.[0] ?? null;
+  return {
+    actorId,
+    selectedOption
+  };
+}
+
+function applyDowntimeResolverBaseToUi(element, options = {}) {
+  if (!game.user.isGM) return;
+  const root = getDowntimeResolverRoot(element);
+  if (!root) return;
+  const { selectedOption } = readDowntimeResolverSelection(root);
+  if (!selectedOption) return;
+  const force = options?.force === true;
+
+  const summaryInput = root.querySelector("input[name='resolveDowntimeSummary']");
+  const gpInput = root.querySelector("input[name='resolveDowntimeGp']");
+  const rumorInput = root.querySelector("input[name='resolveDowntimeRumors']");
+  const itemTextarea = root.querySelector("textarea[name='resolveDowntimeItems']");
+  const notesTextarea = root.querySelector("textarea[name='resolveDowntimeNotes']");
+  const hintNode = root.querySelector("[data-downtime-resolve-hint]");
+
+  if (summaryInput && (force || !String(summaryInput.value ?? "").trim())) summaryInput.value = String(selectedOption.dataset.baseSummary ?? "");
+  if (gpInput && (force || !String(gpInput.value ?? "").trim())) gpInput.value = String(selectedOption.dataset.baseGp ?? "0");
+  if (rumorInput && (force || !String(rumorInput.value ?? "").trim())) rumorInput.value = String(selectedOption.dataset.baseRumors ?? "0");
+  if (itemTextarea && (force || !String(itemTextarea.value ?? "").trim())) itemTextarea.value = String(selectedOption.dataset.baseItems ?? "");
+  if (notesTextarea && (force || !String(notesTextarea.value ?? "").trim())) notesTextarea.value = String(selectedOption.dataset.baseNotes ?? "");
+  if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? "Set payouts and notes, then resolve.");
+}
+
+function readDowntimeResolutionFromUi(element) {
+  const root = getDowntimeResolverRoot(element);
+  if (!root) return null;
+  const { actorId } = readDowntimeResolverSelection(root);
+  const summary = String(root.querySelector("input[name='resolveDowntimeSummary']")?.value ?? "").trim();
+  const gpAwardRaw = Number(root.querySelector("input[name='resolveDowntimeGp']")?.value ?? 0);
+  const rumorRaw = Number(root.querySelector("input[name='resolveDowntimeRumors']")?.value ?? 0);
+  const itemRewards = parseDowntimeItemRewardsText(root.querySelector("textarea[name='resolveDowntimeItems']")?.value ?? "");
+  const gmNotes = String(root.querySelector("textarea[name='resolveDowntimeNotes']")?.value ?? "").trim();
+  return {
+    actorId,
+    summary,
+    gpAward: Number.isFinite(gpAwardRaw) ? Math.max(0, Math.floor(gpAwardRaw)) : 0,
+    rumorCount: Number.isFinite(rumorRaw) ? Math.max(0, Math.floor(rumorRaw)) : 0,
+    itemRewards,
+    gmNotes
+  };
+}
+
+async function resolveSelectedDowntimeEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can resolve downtime.");
+    return;
+  }
+  const resolution = readDowntimeResolutionFromUi(element);
+  if (!resolution?.actorId) {
+    ui.notifications?.warn("Select a pending downtime entry.");
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const entry = downtime.entries?.[resolution.actorId];
+  if (!entry || entry.pending === false) {
+    ui.notifications?.warn("Selected downtime entry is no longer pending.");
+    return;
+  }
+
+  const actionDef = getDowntimeActionDefinition(entry.actionKey);
+  const actorName = String(game.actors.get(resolution.actorId)?.name ?? entry.actorName ?? `Actor ${resolution.actorId}`);
+  const details = [];
+  if (resolution.gpAward > 0) details.push(`Awarded ${resolution.gpAward} gp.`);
+  if (resolution.rumorCount > 0) details.push(`Rumor leads awarded: ${resolution.rumorCount}.`);
+  if (resolution.itemRewards.length > 0) details.push(`Item rewards: ${resolution.itemRewards.join("; ")}.`);
+  if (resolution.gmNotes) details.push(`GM Notes: ${resolution.gmNotes}`);
+
+  const summary = resolution.summary
+    || `${actionDef.label} resolved for ${actorName}.`;
+  const result = normalizeDowntimeResult({
+    id: foundry.utils.randomID(),
+    actionKey: actionDef.key,
+    actionLabel: actionDef.label,
+    summary,
+    details,
+    rollTotal: 0,
+    gpDelta: resolution.gpAward,
+    progress: 0,
+    complication: "",
+    rumorCount: resolution.rumorCount,
+    itemRewards: resolution.itemRewards,
+    gmNotes: resolution.gmNotes,
+    collected: false,
+    resolvedAt: Date.now(),
+    resolvedBy: String(game.user?.name ?? "GM")
+  });
+
+  await updateOperationsLedger((nextLedger) => {
+    const state = ensureDowntimeState(nextLedger);
+    if (!state.entries || typeof state.entries !== "object") state.entries = {};
+    if (!Array.isArray(state.logs)) state.logs = [];
+
+    const current = state.entries[resolution.actorId] ?? {};
+    state.entries[resolution.actorId] = {
+      ...current,
+      actorId: resolution.actorId,
+      actorName,
+      actionKey: actionDef.key,
+      hours: Math.max(1, Math.min(state.hoursGranted, Math.floor(Number(current.hours ?? entry.hours ?? state.hoursGranted) || state.hoursGranted))),
+      pending: false,
+      updatedAt: Date.now(),
+      updatedBy: String(game.user?.name ?? "GM"),
+      updatedByUserId: String(game.user?.id ?? ""),
+      lastResult: result
+    };
+
+    state.logs.unshift({
+      ...result,
+      actorId: resolution.actorId,
+      actorName,
+      hours: Math.max(1, Math.min(state.hoursGranted, Math.floor(Number(current.hours ?? entry.hours ?? state.hoursGranted) || state.hoursGranted)))
+    });
+    state.logs = state.logs
+      .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
+      .slice(0, 80);
+  });
+
+  ui.notifications?.info(`Resolved downtime for ${actorName}.`);
+}
+
+function getActorCurrentGp(actor) {
+  if (!actor) return 0;
+  const gpNode = actor.system?.currency?.gp;
+  const raw = typeof gpNode === "object" ? Number(gpNode?.value) : Number(gpNode);
+  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+}
+
+async function awardGpToActor(actor, amount) {
+  const gp = Number(amount ?? 0);
+  if (!actor || !Number.isFinite(gp) || gp <= 0) return 0;
+  const gain = Math.max(0, Math.floor(gp));
+  if (gain <= 0) return 0;
+  const next = getActorCurrentGp(actor) + gain;
+  if (typeof actor.system?.currency?.gp === "object") {
+    await actor.update({ "system.currency.gp.value": next });
+  } else {
+    await actor.update({ "system.currency.gp": next });
+  }
+  return gain;
+}
+
+async function applyDowntimeCollectionForUser(user, actorId) {
+  const actor = game.actors.get(String(actorId ?? "").trim());
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own this actor." };
+
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const entry = downtime.entries?.[actor.id];
+  const result = entry?.lastResult ? normalizeDowntimeResult(entry.lastResult) : null;
+  if (!result) return { ok: false, message: "No resolved downtime result found." };
+  if (entry?.pending !== false) return { ok: false, message: "This downtime result is still pending." };
+  if (!result.hasClaimableRewards) return { ok: false, message: "No claimable rewards are attached to this result." };
+  if (result.collected) return { ok: false, message: "This downtime reward was already collected." };
+
+  let gpApplied = 0;
+  const gpToAward = Math.max(0, Math.floor(Number(result.gpDelta ?? 0) || 0));
+  if (gpToAward > 0) {
+    try {
+      gpApplied = await awardGpToActor(actor, gpToAward);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to apply downtime GP reward`, error);
+      return { ok: false, message: "Failed to apply GP to actor currency." };
+    }
+  }
+
+  const now = Date.now();
+  const collectorName = String(user?.name ?? "Player");
+  await updateOperationsLedger((nextLedger) => {
+    const state = ensureDowntimeState(nextLedger);
+    const currentEntry = state.entries?.[actor.id];
+    if (!currentEntry || !currentEntry.lastResult) return;
+    const normalizedResult = normalizeDowntimeResult({
+      ...currentEntry.lastResult,
+      collected: true,
+      collectedAt: now,
+      collectedBy: collectorName
+    });
+    currentEntry.lastResult = normalizedResult;
+    if (Array.isArray(state.logs)) {
+      state.logs = state.logs.map((row) => {
+        if (String(row?.id ?? "") !== String(normalizedResult.id ?? "")) return row;
+        if (String(row?.actorId ?? "") !== String(actor.id)) return row;
+        return normalizeDowntimeResult({
+          ...row,
+          collected: true,
+          collectedAt: now,
+          collectedBy: collectorName
+        });
+      });
+    }
+  });
+
+  return {
+    ok: true,
+    actorName: String(actor.name ?? "Actor"),
+    gpApplied,
+    rumorCount: Number(result.rumorCount ?? 0) || 0,
+    itemRewards: Array.isArray(result.itemRewards) ? result.itemRewards : [],
+    gmNotes: String(result.gmNotes ?? "").trim()
+  };
+}
+
+function getDowntimeCollectionSummary(outcome = {}) {
+  const parts = [];
+  const gp = Math.max(0, Number(outcome?.gpApplied ?? 0) || 0);
+  const rumors = Math.max(0, Number(outcome?.rumorCount ?? 0) || 0);
+  const items = Array.isArray(outcome?.itemRewards) ? outcome.itemRewards.filter(Boolean) : [];
+  const hasNotes = String(outcome?.gmNotes ?? "").trim().length > 0;
+  if (gp > 0) parts.push(`${gp} gp added`);
+  if (rumors > 0) parts.push(`${rumors} rumor/lead`);
+  if (items.length > 0) parts.push(`${items.length} item reward(s)`);
+  if (hasNotes) parts.push("GM notes reviewed");
+  if (parts.length === 0) return "Rewards marked as collected.";
+  return parts.join(" | ");
+}
+
+async function collectDowntimeResult(element) {
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  if (!actorId) return;
+
+  if (game.user.isGM) {
+    const outcome = await applyDowntimeCollectionForUser(game.user, actorId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Failed to collect downtime rewards.");
+      return;
+    }
+    ui.notifications?.info(`Collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`);
+    return;
+  }
+
+  const actor = game.actors.get(actorId);
+  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only collect downtime rewards for actors you own.");
+    return;
+  }
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtime-collect",
+    userId: game.user.id,
+    actorId
+  });
+  ui.notifications?.info("Downtime collection request sent to GM.");
+}
+
 async function resolveDowntimeActions() {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can resolve downtime.");
@@ -7499,6 +7926,9 @@ async function postDowntimeLogOutcome(element) {
     .map((entry) => `<li>${escape(entry)}</li>`)
     .join("");
   const complication = String(result.complication ?? "").trim();
+  const rumorCount = Math.max(0, Number(result.rumorCount ?? 0) || 0);
+  const itemRewards = Array.isArray(result.itemRewards) ? result.itemRewards : [];
+  const gmNotes = String(result.gmNotes ?? "").trim();
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
@@ -7508,6 +7938,9 @@ async function postDowntimeLogOutcome(element) {
       <p>${escape(result.summary || "No summary provided.")}</p>
       ${detailsHtml ? `<ul>${detailsHtml}</ul>` : ""}
       <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
+      ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      ${gmNotes ? `<p><strong>GM Notes:</strong> ${escape(gmNotes)}</p>` : ""}
       ${complication ? `<p><strong>Complication:</strong> ${escape(complication)}</p>` : ""}
       <p><em>Resolved by ${escape(result.resolvedBy)} at ${escape(new Date(Number(result.resolvedAt)).toLocaleString())}</em></p>
     `
@@ -8844,7 +9277,7 @@ async function runReconCheck() {
   const passed = Number.isFinite(total) && total >= dc;
   const summary = `${reconActor.name}: ${passed ? "Success" : "Fail"} (${Math.floor(Number(total) || 0)} vs DC ${dc})`;
   const insight = passed
-    ? "Recon success: lower entry uncertainty and improve first-contact posture."
+    ? "Recon success: lower entry uncertainty before first contact."
     : "Recon miss: proceed with increased unknowns and tighter fallback planning.";
   const stamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -9027,7 +9460,7 @@ async function logReputationNote(element) {
   }
   const factionId = String(element?.dataset?.faction ?? "").trim();
   if (!factionId) return;
-  const root = element?.closest("[data-faction]") ?? element?.closest(".po-op-role-row");
+  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
   const note = String(root?.querySelector("textarea[data-action='set-reputation-note']")?.value ?? "").trim();
   if (!note) {
     ui.notifications?.warn("Add a note before logging reputation history.");
@@ -13294,7 +13727,6 @@ function buildRanksView(state, isGM) {
 
     const capacity = config?.capacity;
     const capacityPercent = capacity ? Math.min(100, (entries.length / capacity) * 100) : 0;
-    const rankSectionUi = buildMarchSectionUi(`rank-${rank.id}`);
 
     return {
       ...rank,
@@ -13302,9 +13734,9 @@ function buildRanksView(state, isGM) {
       entries,
       capacity,
       capacityPercent,
-      collapsed: rankSectionUi.collapsed,
-      toggleLabel: rankSectionUi.toggleLabel,
-      toggleIcon: rankSectionUi.toggleIcon
+      collapsed: false,
+      toggleLabel: "Collapse",
+      toggleIcon: "fa-chevron-up"
     };
   });
 
@@ -14864,6 +15296,12 @@ Hooks.once("ready", () => {
       await applyPlayerDowntimeClearRequest(message, requester);
       return;
     }
+    if (message.type === "ops:downtime-collect") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerDowntimeCollectRequest(message, requester);
+      return;
+    }
   });
 
   Hooks.on("updateWorldTime", async () => {
@@ -14949,6 +15387,19 @@ async function applyPlayerDowntimeClearRequest(message, requesterRef = null) {
     if (!downtime.entries) return;
     delete downtime.entries[actorId];
   });
+}
+
+async function applyPlayerDowntimeCollectRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  if (!actorId) return;
+  const outcome = await applyDowntimeCollectionForUser(requester, actorId);
+  if (!outcome.ok) {
+    ui.notifications?.warn(`Downtime collect failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+    return;
+  }
+  ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}.`);
 }
 
 async function applyRestRequest(request, requesterRef) {

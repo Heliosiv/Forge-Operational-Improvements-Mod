@@ -1,4 +1,4 @@
-﻿<div class="po-window po-window-marching" data-tool="marching-order" role="region" aria-label="Party Operations Marching Order">
+﻿<div class="po-window po-window-marching" data-tool="marching-order" data-main-tab="marching-order" role="region" aria-label="Party Operations Marching Order">
   <header class="po-header">
     <div class="po-header-main">
       <h1 class="po-title">Party Operations</h1>
@@ -23,7 +23,7 @@
 
   <div class="po-body">
 
-  <nav class="po-tabs" role="navigation" aria-label="Party Operations views">
+  <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
     <button type="button" class="po-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
     <button type="button" class="po-tab is-active" data-tab="marching-order" aria-current="page">Marching Order</button>
     <button type="button" class="po-tab" data-tab="operations" aria-current="false">Operations</button>
@@ -55,9 +55,6 @@
     <section class="po-usage-panel po-collapsible {{#if usageCollapsed}}is-collapsed{{/if}}" data-section-id="usage">
       <header class="po-collapsible-head">
         <div class="po-section-title">How to Use</div>
-        <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="usage" aria-label="{{usageToggleLabel}} Help" title="{{usageToggleLabel}} Help">
-          <i class="fa-solid {{usageToggleIcon}}"></i>
-        </button>
       </header>
       {{#unless usageCollapsed}}
       <div class="po-collapsible-body">
@@ -97,9 +94,6 @@
             {{#if ../isGM}}
             <button type="button" class="po-btn po-btn-sm" data-action="assign-rank" data-rank-id="{{id}}"><i class="fa-solid fa-user-plus"></i> Add Actor</button>
             {{/if}}
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="rank-{{id}}" aria-label="{{toggleLabel}} {{label}}" title="{{toggleLabel}} {{label}}">
-              <i class="fa-solid {{toggleIcon}}"></i>
-            </button>
           </header>
 
           {{#unless collapsed}}
@@ -181,9 +175,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.shareCollapsed}}is-collapsed{{/if}}" data-section-id="gm-share">
           <header class="po-collapsible-head">
             <div class="po-section-title">Share</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-share" aria-label="{{gmSections.shareToggleLabel}} Share" title="{{gmSections.shareToggleLabel}} Share">
-              <i class="fa-solid {{gmSections.shareToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.shareCollapsed}}
           <div class="po-collapsible-body">
@@ -195,9 +186,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.helpCollapsed}}is-collapsed{{/if}}" data-section-id="gm-help">
           <header class="po-collapsible-head">
             <div class="po-section-title">Help</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-help" aria-label="{{gmSections.helpToggleLabel}} Help" title="{{gmSections.helpToggleLabel}} Help">
-              <i class="fa-solid {{gmSections.helpToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.helpCollapsed}}
           <div class="po-collapsible-body">
@@ -209,9 +197,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.lockCollapsed}}is-collapsed{{/if}}" data-section-id="gm-lock">
           <header class="po-collapsible-head">
             <div class="po-section-title">Lock</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-lock" aria-label="{{gmSections.lockToggleLabel}} Lock" title="{{gmSections.lockToggleLabel}} Lock">
-              <i class="fa-solid {{gmSections.lockToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.lockCollapsed}}
           <div class="po-collapsible-body">
@@ -226,9 +211,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.formationsCollapsed}}is-collapsed{{/if}}" data-section-id="gm-formations">
           <header class="po-collapsible-head">
             <div class="po-section-title">Formations</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-formations" aria-label="{{gmSections.formationsToggleLabel}} Formations" title="{{gmSections.formationsToggleLabel}} Formations">
-              <i class="fa-solid {{gmSections.formationsToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.formationsCollapsed}}
           <div class="po-collapsible-body">
@@ -248,9 +230,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
           <header class="po-collapsible-head">
             <div class="po-section-title">Torch / Light</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-light" aria-label="{{gmSections.lightToggleLabel}} Torch and Light" title="{{gmSections.lightToggleLabel}} Torch and Light">
-              <i class="fa-solid {{gmSections.lightToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.lightCollapsed}}
           <div class="po-collapsible-body">
@@ -273,9 +252,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.exportCollapsed}}is-collapsed{{/if}}" data-section-id="gm-export">
           <header class="po-collapsible-head">
             <div class="po-section-title">Export</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-export" aria-label="{{gmSections.exportToggleLabel}} Export" title="{{gmSections.exportToggleLabel}} Export">
-              <i class="fa-solid {{gmSections.exportToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.exportCollapsed}}
           <div class="po-collapsible-body">
@@ -288,9 +264,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.snapshotCollapsed}}is-collapsed{{/if}}" data-section-id="gm-snapshot">
           <header class="po-collapsible-head">
             <div class="po-section-title">Snapshot</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-snapshot" aria-label="{{gmSections.snapshotToggleLabel}} Snapshot" title="{{gmSections.snapshotToggleLabel}} Snapshot">
-              <i class="fa-solid {{gmSections.snapshotToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.snapshotCollapsed}}
           <div class="po-collapsible-body">
@@ -302,9 +275,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.clearCollapsed}}is-collapsed{{/if}}" data-section-id="gm-clear">
           <header class="po-collapsible-head">
             <div class="po-section-title">Clear</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-clear" aria-label="{{gmSections.clearToggleLabel}} Clear" title="{{gmSections.clearToggleLabel}} Clear">
-              <i class="fa-solid {{gmSections.clearToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.clearCollapsed}}
           <div class="po-collapsible-body">
@@ -316,9 +286,6 @@
         <div class="po-gm-section po-collapsible {{#if gmSections.gmNotesCollapsed}}is-collapsed{{/if}}" data-section-id="gm-notes">
           <header class="po-collapsible-head">
             <div class="po-section-title">GM Marching Notes</div>
-            <button type="button" class="po-icon-btn" data-action="toggle-section" data-section-id="gm-notes" aria-label="{{gmSections.gmNotesToggleLabel}} GM Notes" title="{{gmSections.gmNotesToggleLabel}} GM Notes">
-              <i class="fa-solid {{gmSections.gmNotesToggleIcon}}"></i>
-            </button>
           </header>
           {{#unless gmSections.gmNotesCollapsed}}
           <div class="po-collapsible-body">

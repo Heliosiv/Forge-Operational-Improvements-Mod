@@ -884,6 +884,61 @@
             <div class="po-info-chip"><span>Recent Logs</span><strong>{{operations.downtime.logCount}}</strong></div>
           </div>
 
+          {{#if @root.isGM}}
+          <div class="po-op-role-row po-downtime-resolver">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Resolve Downtime (GM)</div>
+              <div class="po-op-role-status">{{operations.downtime.pendingCount}} pending</div>
+            </div>
+            {{#if operations.downtime.gmResolve.hasPending}}
+            <label class="po-resource-row">
+              <span>Pending Entry</span>
+              <select name="resolveDowntimeActorId" class="po-select" data-action="set-downtime-resolve-target">
+                {{#each operations.downtime.gmResolve.pendingOptions}}
+                <option
+                  value="{{actorId}}"
+                  {{#if selected}}selected{{/if}}
+                  data-base-summary="{{baseSummary}}"
+                  data-base-gp="{{baseGpAward}}"
+                  data-base-rumors="{{baseRumorCount}}"
+                  data-base-items="{{baseItemRewardsText}}"
+                  data-base-notes="{{baseNotes}}"
+                  data-base-hint="{{baseHint}}"
+                >{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Outcome Summary</span>
+              <input type="text" name="resolveDowntimeSummary" class="po-input" value="{{operations.downtime.gmResolve.summary}}" placeholder="Short player-facing result summary" />
+            </label>
+            <label class="po-resource-row">
+              <span>Money Award (gp)</span>
+              <input type="number" min="0" step="1" name="resolveDowntimeGp" class="po-input" value="{{operations.downtime.gmResolve.gpAward}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Rumor / Lead Count</span>
+              <input type="number" min="0" step="1" name="resolveDowntimeRumors" class="po-input" value="{{operations.downtime.gmResolve.rumorCount}}" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Item Rewards (one per line)</span>
+              <textarea name="resolveDowntimeItems" rows="3" class="po-input" placeholder="e.g., Potion of Healing">{{operations.downtime.gmResolve.itemRewardsText}}</textarea>
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>GM Notes (shown in result)</span>
+              <textarea name="resolveDowntimeNotes" rows="3" class="po-input" placeholder="Narrative notes, contacts, or conditions">{{operations.downtime.gmResolve.gmNotes}}</textarea>
+            </label>
+            <div class="po-hint" data-downtime-resolve-hint>{{operations.downtime.gmResolve.hint}}</div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="prefill-downtime-resolution">Load Activity Base</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="resolve-selected-downtime-entry">Resolve Selected</button>
+            </div>
+            {{else}}
+            <div class="po-op-summary">No pending downtime entries to resolve.</div>
+            {{/if}}
+          </div>
+          {{/if}}
+
           <details class="po-panel-disclosure">
             <summary class="po-panel-disclosure-summary">
               <span class="po-section-title">Downtime Guide</span>
@@ -892,7 +947,7 @@
             <div class="po-panel-disclosure-body">
               <div class="po-op-summary"><strong>Step 1:</strong> Pick an actor you own, choose an action, and enter hours up to the granted limit.</div>
               <div class="po-op-summary"><strong>Step 2:</strong> Add an optional note (goal, item, location, contact, etc.) and submit.</div>
-              <div class="po-op-summary"><strong>Step 3:</strong> GM clicks <em>Resolve Pending</em> in the GM page to roll results and post a chat summary.</div>
+              <div class="po-op-summary"><strong>Step 3:</strong> GM uses <em>Resolve Downtime (GM)</em> here to select pending entries, add rewards/notes, and resolve.</div>
               <div class="po-op-summary"><strong>Step 4:</strong> Review outcomes here, including gp delta, progress, and complications.</div>
               <div class="po-hint">This workflow uses short downtime blocks (default 4 hours) so outcomes are intentionally smaller than a full downtime day.</div>
             </div>
@@ -965,8 +1020,23 @@
                   {{#if hasResult}}
                   <div class="po-op-summary">Result: {{resultSummary}}</div>
                   <div class="po-op-summary">Roll {{rollTotal}} - GP {{gpDeltaLabel}} - Progress {{progress}}</div>
+                  {{#if hasRumorCount}}
+                  <div class="po-op-summary">Rumors/Leads: {{rumorCount}}</div>
+                  {{/if}}
+                  {{#if hasItemRewards}}
+                  <div class="po-op-summary">Item Rewards:</div>
+                  {{#each itemRewards}}
+                  <div class="po-op-summary">{{this}}</div>
+                  {{/each}}
+                  {{/if}}
+                  {{#if hasGmNotes}}
+                  <div class="po-op-summary">GM Notes: {{gmNotes}}</div>
+                  {{/if}}
                   {{#if hasComplication}}
                   <div class="po-op-summary is-warn">Complication: {{complication}}</div>
+                  {{/if}}
+                  {{#if hasClaimableRewards}}
+                  <div class="po-op-summary">Claimable: {{rewardSummary}}</div>
                   {{/if}}
                   {{#if hasResultDetails}}
                   {{#each resultDetails}}
@@ -975,6 +1045,13 @@
                   {{/if}}
                   {{#if resolvedAtLabel}}
                   <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
+                  {{/if}}
+                  {{#if isCollected}}
+                  <div class="po-op-summary is-good">Collected: {{collectedAtLabel}} by {{collectedBy}}</div>
+                  {{else}}
+                  {{#if canCollect}}
+                  <button type="button" class="po-btn po-btn-sm" data-action="collect-downtime-result" data-actor-id="{{actorId}}">Collect Result</button>
+                  {{/if}}
                   {{/if}}
                   {{/if}}
                   {{#if canClear}}
@@ -1009,10 +1086,25 @@
                 {{/each}}
                 {{/if}}
                 <div class="po-op-summary">GP {{gpDeltaLabel}}</div>
+                {{#if hasRumorCount}}
+                <div class="po-op-summary">Rumors/Leads: {{rumorCount}}</div>
+                {{/if}}
+                {{#if hasItemRewards}}
+                <div class="po-op-summary">Item Rewards: {{#each itemRewards}}{{this}}{{#unless @last}}; {{/unless}}{{/each}}</div>
+                {{/if}}
+                {{#if hasGmNotes}}
+                <div class="po-op-summary">GM Notes: {{gmNotes}}</div>
+                {{/if}}
                 {{#if hasComplication}}
                 <div class="po-op-summary is-warn">Complication: {{complication}}</div>
                 {{/if}}
+                {{#if hasClaimableRewards}}
+                <div class="po-op-summary">Claimable: {{rewardSummary}}</div>
+                {{/if}}
                 <div class="po-op-summary">Resolved: {{resolvedAtLabel}} by {{resolvedBy}}</div>
+                {{#if isCollected}}
+                <div class="po-op-summary is-good">Collected: {{collectedAtLabel}} by {{collectedBy}}</div>
+                {{/if}}
                 {{#if @root.isGM}}
                 <button type="button" class="po-btn po-btn-sm" data-action="post-downtime-log" data-log-id="{{logId}}">Post Outcome</button>
                 {{/if}}

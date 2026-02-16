@@ -1610,6 +1610,12 @@
   flex: 0 0 auto;
 }
 
+.party-operations [data-tool="marching-order"] .po-tabs-main .po-tab {
+  width: auto;
+  min-width: 0;
+  padding-inline: 14px;
+}
+
 .party-operations .po-tabs-ops .po-tab {
   flex: 0 1 auto;
 }
