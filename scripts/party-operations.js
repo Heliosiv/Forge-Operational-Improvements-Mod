@@ -14815,7 +14815,9 @@ function scheduleLauncherRecoveryPass() {
 
 function openOperationsUi() {
   setActiveRestMainTab("operations");
-  return new RestWatchApp().render({ force: true });
+  const app = new RestWatchApp();
+  app.render({ force: true });
+  return app;
 }
 
 function openGmUi() {
@@ -14824,7 +14826,9 @@ function openGmUi() {
     return null;
   }
   setActiveRestMainTab("gm");
-  return new RestWatchApp().render({ force: true });
+  const app = new RestWatchApp();
+  app.render({ force: true });
+  return app;
 }
 
 function ensureLauncherUi() {
@@ -14835,8 +14839,16 @@ function ensureLauncherUi() {
 
 function buildPartyOperationsApi() {
   const api = {
-    restWatch: () => new RestWatchApp().render({ force: true }),
-    marchingOrder: () => new MarchingOrderApp().render({ force: true }),
+    restWatch: () => {
+      const app = new RestWatchApp();
+      app.render({ force: true });
+      return app;
+    },
+    marchingOrder: () => {
+      const app = new MarchingOrderApp();
+      app.render({ force: true });
+      return app;
+    },
     operations: () => openOperationsUi(),
     gm: () => openGmUi(),
     refreshAll: () => refreshOpenApps(),
@@ -14871,13 +14883,23 @@ function buildPartyOperationsApi() {
 function registerPartyOperationsApi() {
   const api = buildPartyOperationsApi();
   game.partyOperations = api;
+  globalThis.partyOperations = api;
+  globalThis.PartyOperations = api;
 
   const moduleRef = game.modules?.get?.(MODULE_ID);
   if (moduleRef) {
     try {
       moduleRef.api = api;
     } catch (error) {
-      console.warn(`${MODULE_ID}: unable to attach api on module reference`, error);
+      try {
+        Object.defineProperty(moduleRef, "api", {
+          value: api,
+          configurable: true,
+          writable: true
+        });
+      } catch (defineError) {
+        console.warn(`${MODULE_ID}: unable to attach api on module reference`, error, defineError);
+      }
     }
   }
 
@@ -15215,6 +15237,7 @@ function setupPartyOperationsUI() {
 }
 
 Hooks.once("init", () => {
+  registerPartyOperationsApi();
   game.settings.register(MODULE_ID, SETTINGS.REST_STATE, {
     scope: "world",
     config: false,
