@@ -3321,6 +3321,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const tracker = ensureDoctrineTracker(state);
     const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
     const miniVizUi = buildMiniVizUiContext();
+    const lightToggles = buildLightToggles(state, ranks, isGM);
     const frontCount = (ranks.find((rank) => rank.id === "front")?.entries?.length ?? 0);
     const middleCount = (ranks.find((rank) => rank.id === "middle")?.entries?.length ?? 0);
     const rearCount = (ranks.find((rank) => rank.id === "rear")?.entries?.length ?? 0);
@@ -3341,7 +3342,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       usageToggleIcon: usageUi.toggleIcon,
       ranks,
       gmNotes: state.gmNotes ?? "",
-      lightToggles: buildLightToggles(state, ranks, isGM),
+      lightToggles,
       gmSections: {
         shareCollapsed: gmShareUi.collapsed,
         shareToggleLabel: gmShareUi.toggleLabel,
