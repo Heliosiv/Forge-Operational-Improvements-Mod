@@ -1,10 +1,17 @@
 ﻿<div class="po-window po-window-rest" data-tool="rest-watch" data-main-tab="{{mainTab}}" role="region" aria-label="Party Operations Rest Watch">
   <header class="po-header">
     <div class="po-header-main">
-      <h1 class="po-title">Party Operations</h1>
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
       <div class="po-subtitle" aria-live="polite">{{mainSubtitleLabel}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
-    <div class="po-context-pill" aria-hidden="true">{{mainContextLabel}}</div>
+    <nav class="po-tabs po-tabs-main po-tabs-main-header" role="navigation" aria-label="Party Operations views">
+      <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="main-tab" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
+      <button type="button" class="po-tab" data-action="main-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
+      <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="main-tab" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
+      {{#if isGM}}
+      <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="main-tab" data-tab="gm" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
+      {{/if}}
+    </nav>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -22,15 +29,6 @@
   {{/if}}
 
   <div class="po-body">
-
-  <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
-    <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="main-tab" data-tab="rest-watch" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
-    <button type="button" class="po-tab" data-action="main-tab" data-tab="marching-order" aria-current="false">Marching Order</button>
-    <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="main-tab" data-tab="operations" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
-    {{#if isGM}}
-    <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="main-tab" data-tab="gm" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
-    {{/if}}
-  </nav>
 
   {{#if mainTabRestWatch}}
   <section class="po-overview" aria-label="Rest watch status">
@@ -327,6 +325,7 @@
 
         {{#if gmPanelTabOperations}}
 
+        {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReadiness}}is-active{{/if}}" data-action="operations-page" data-page="readiness" title="Review risk tier, readiness level, and current edges">Readiness</button>
@@ -336,6 +335,7 @@
           <button type="button" class="po-tab {{#if operationsPageDowntime}}is-active{{/if}}" data-action="operations-page" data-page="downtime" title="Track player downtime actions and GM-resolved outcomes">Downtime</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
         </nav>
+        {{/if}}
 
         <div class="po-gm-section po-gm-section-compact">
           <div class="po-info-strip">
@@ -1243,9 +1243,9 @@
             </div>
           </details>
           <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-faction">+ Faction</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">+ Global Modifier</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Log Weather</button>
+            <button type="button" class="po-btn po-btn-sm po-btn-expands {{#if operations.gmQuickTools.showFactionPanel}}is-open{{/if}}" data-action="gm-quick-add-faction">+ Faction</button>
+            <button type="button" class="po-btn po-btn-sm po-btn-expands {{#if operations.gmQuickTools.showModifierPanel}}is-open{{/if}}" data-action="gm-quick-add-modifier">+ Global Modifier</button>
+            <button type="button" class="po-btn po-btn-sm po-btn-expands {{#if operations.gmQuickTools.showWeatherPanel}}is-open{{/if}}" data-action="gm-quick-log-weather">Log Weather</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
@@ -1481,8 +1481,7 @@
             <span class="po-gm-tab-sub">Sources &amp; preview</span>
           </button>
         </nav>
-        <div class="po-op-summary"><strong>Active GM Section:</strong> {{gmOpsTabLabel}}</div>
-
+        {{#if gmOpsTabEnvironment}}
         <div class="po-gm-section">
           <details class="po-panel-disclosure po-panel-disclosure-lg" open>
             <summary class="po-panel-disclosure-summary">
@@ -1491,7 +1490,6 @@
             </summary>
             <div class="po-panel-disclosure-body">
           <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
-          {{#if gmOpsTabEnvironment}}
           <div class="po-op-summary">Current: {{operations.environment.preset.label}}</div>
           <div class="po-op-summary">Assigned Actors: {{operations.environment.targetCount}}</div>
           {{#if operations.environment.movementCheckActive}}
@@ -1613,9 +1611,19 @@
             <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
           </div>
-          {{/if}}
+            </div>
+          </details>
+        </div>
+        {{/if}}
 
-          {{#if gmOpsTabLogs}}
+        {{#if gmOpsTabLogs}}
+        <div class="po-gm-section">
+          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">GM Logs</span>
+              <span class="po-op-summary">Recent checks and global history</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
           <div class="po-op-divider"></div>
           <div class="po-section-title">Recent Movement Checks</div>
           {{#if operations.environment.hasCheckResults}}
@@ -1665,11 +1673,54 @@
           {{/if}}
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="create-session-summary-journal">Create Session Summary Journal</button>
           </div>
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Operations Journal (Shared)</div>
+          <div class="po-op-role-row">
+            <label class="po-resource-row">
+              <span>Category</span>
+              <select class="po-select" data-action="set-journal-category">
+                {{#each operations.operationsJournal.categoryOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Sort</span>
+              <select class="po-select" data-action="set-journal-sort">
+                {{#each operations.operationsJournal.sortOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Filter</span>
+              <input type="search" class="po-input" data-action="set-journal-filter" value="{{operations.operationsJournal.filter}}" placeholder="Search title or folder" />
+            </label>
+          </div>
+          <div class="po-op-summary">Visible: {{operations.operationsJournal.visibleEntries}} / {{operations.operationsJournal.totalEntries}}</div>
+          {{#if operations.operationsJournal.hasEntries}}
+          {{#each operations.operationsJournal.entries}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{name}}</div>
+              <div class="po-op-role-status">{{sortTimestampLabel}}</div>
+            </div>
+            <div class="po-op-summary">Folder: {{folderPath}}</div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{id}}">Open Journal</button>
+            </div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No shared operations journal entries found yet.</div>
           {{/if}}
             </div>
           </details>
         </div>
+        {{/if}}
 
         {{#if gmOpsTabLootSources}}
         <div class="po-gm-section">
@@ -1739,9 +1790,23 @@
               <span>Actor Count</span>
               <input name="lootPreviewActorCount" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="actorCount" value="{{operations.lootSources.preview.draft.actorCount}}" />
             </label>
+            <label class="po-resource-row">
+              <span>Currency Scale ({{operations.lootSources.preview.draft.currencyScalar}}%)</span>
+              <input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{operations.lootSources.preview.draft.currencyScalar}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Item Count Scale ({{operations.lootSources.preview.draft.itemScalar}}%)</span>
+              <input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{operations.lootSources.preview.draft.itemScalar}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Table Roll Scale ({{operations.lootSources.preview.draft.tableScalar}}%)</span>
+              <input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{operations.lootSources.preview.draft.tableScalar}}" />
+            </label>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="roll-loot-preview">Run Dry-Run</button>
               <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear</button>
+              <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims">Clear Claim Board</button>
             </div>
           </div>
 
@@ -1757,7 +1822,12 @@
           {{#each operations.lootSources.preview.items}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
-              <div class="po-op-role-name">{{name}}</div>
+              <div class="po-op-role-name">
+                {{name}}
+                {{#if canOpen}}
+                <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
+                {{/if}}
+              </div>
               <div class="po-op-role-status">{{itemType}}</div>
             </div>
             {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
@@ -1793,6 +1863,26 @@
           <div class="po-op-summary is-warn">{{this}}</div>
           {{/each}}
           {{/if}}
+          {{/if}}
+
+          <div class="po-op-divider"></div>
+          <div class="po-section-title">Published Claim Board</div>
+          <div class="po-op-summary">Published: {{operations.lootClaims.publishedAtLabel}} by {{operations.lootClaims.publishedBy}}</div>
+          <div class="po-op-summary">Claimable Items: {{operations.lootClaims.itemCount}} | Logged Claims: {{operations.lootClaims.claimsLogCount}}</div>
+          <div class="po-op-summary">Currency Remaining: {{operations.lootClaims.currencyRemaining.pp}} pp - {{operations.lootClaims.currencyRemaining.gp}} gp - {{operations.lootClaims.currencyRemaining.sp}} sp - {{operations.lootClaims.currencyRemaining.cp}} cp | Currency Claims: {{operations.lootClaims.currencyClaimedCount}}</div>
+          {{#if operations.lootClaims.hasItems}}
+          {{#each operations.lootClaims.items}}
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">{{name}}</div>
+              <div class="po-op-role-status">{{itemType}}</div>
+            </div>
+            {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
+            <div class="po-op-summary">Source: {{sourceLabel}}</div>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No active player claim items.</div>
           {{/if}}
             </div>
           </details>
@@ -1884,6 +1974,24 @@
             </summary>
             <div class="po-panel-disclosure-body">
           <div class="po-hint">Use these filters as defaults for upcoming loot generation rules.</div>
+          <label class="po-resource-row">
+            <span>Authoritative Manifest Pack</span>
+            <select class="po-select" data-action="set-loot-manifest-pack">
+              {{#each operations.lootSources.manifestPackOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <div class="po-hint">When set, dry-run item candidates are drawn only from this item source.</div>
+          <label class="po-resource-row">
+            <span>Required Keywords (all)</span>
+            <input type="text" class="po-input" data-action="set-loot-keyword-include-tags" value="{{operations.lootSources.keywordIncludeTagsInput}}" placeholder="loot.potion, tier.t2, ctx.dungeon" />
+          </label>
+          <label class="po-resource-row">
+            <span>Excluded Keywords (any)</span>
+            <input type="text" class="po-input" data-action="set-loot-keyword-exclude-tags" value="{{operations.lootSources.keywordExcludeTagsInput}}" placeholder="ctx.urban, loot.artifact" />
+          </label>
+          <div class="po-op-summary">Keyword Filters: include {{operations.lootSources.keywordIncludeTagCount}}, exclude {{operations.lootSources.keywordExcludeTagCount}}</div>
           {{#each operations.lootSources.itemTypeOptions}}
           <div class="po-checkbox-target">
             <input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} />

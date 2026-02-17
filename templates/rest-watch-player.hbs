@@ -1,7 +1,7 @@
 ﻿<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Rest Watch Player View">
   <header class="po-header">
     <div class="po-header-main">
-      <h1 class="po-title">Party Operations</h1>
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
       <div class="po-subtitle" aria-live="polite">Rest Watch (Player) - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
     <div class="po-context-pill" aria-hidden="true">Player View</div>
@@ -38,6 +38,91 @@
 
   <section class="po-content">
     <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor.</div>
+    <div class="po-op-divider"></div>
+    <section class="po-loot-claims-panel" aria-label="Loot claims">
+      <div class="po-section-title">Loot Claims</div>
+      <div class="po-op-summary">Published: {{lootClaims.publishedAtLabel}} by {{lootClaims.publishedBy}}</div>
+      <div class="po-op-summary">Pool: {{lootClaims.itemCount}} item(s)</div>
+      <div class="po-op-summary">Currency Remaining: {{lootClaims.currencyRemaining.pp}} pp - {{lootClaims.currencyRemaining.gp}} gp - {{lootClaims.currencyRemaining.sp}} sp - {{lootClaims.currencyRemaining.cp}} cp</div>
+      {{#if lootClaims.selectedActorClaimedCurrency}}
+      <div class="po-op-summary">Selected actor already claimed a currency share.</div>
+      {{/if}}
+      {{#if lootClaims.hasItems}}
+      <label class="po-resource-row">
+        <span>Claim As</span>
+        <select name="lootClaimActorId" class="po-select">
+          {{#each lootClaims.actorOptions}}
+          <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+          {{/each}}
+        </select>
+      </label>
+      {{#each lootClaims.items}}
+      <div class="po-op-role-row">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name">{{name}}</div>
+          <div class="po-op-role-status">{{itemType}}</div>
+        </div>
+        {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
+        <div class="po-op-summary">Source: {{sourceLabel}}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-item" data-item-id="{{id}}">Claim</button>
+          {{#if canOpen}}
+          <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
+          {{/if}}
+        </div>
+      </div>
+      {{/each}}
+      {{else}}
+      <div class="po-op-summary">No claimable items are currently published.</div>
+      {{/if}}
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Claim Currency Share</button>
+      </div>
+    </section>
+    <div class="po-op-divider"></div>
+    <section class="po-loot-claims-panel" aria-label="Operations journal">
+      <div class="po-section-title">Operations Journal</div>
+      <div class="po-op-role-row">
+        <label class="po-resource-row">
+          <span>Category</span>
+          <select class="po-select" data-action="set-journal-category">
+            {{#each operationsJournal.categoryOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="po-resource-row">
+          <span>Sort</span>
+          <select class="po-select" data-action="set-journal-sort">
+            {{#each operationsJournal.sortOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <label class="po-resource-row">
+          <span>Filter</span>
+          <input type="search" class="po-input" data-action="set-journal-filter" value="{{operationsJournal.filter}}" placeholder="Search title or folder" />
+        </label>
+      </div>
+      <div class="po-op-summary">Visible: {{operationsJournal.visibleEntries}} / {{operationsJournal.totalEntries}}</div>
+      {{#if operationsJournal.hasEntries}}
+      {{#each operationsJournal.entries}}
+      <div class="po-op-role-row">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name">{{name}}</div>
+          <div class="po-op-role-status">{{sortTimestampLabel}}</div>
+        </div>
+        <div class="po-op-summary">Folder: {{folderPath}}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{id}}">Open Journal</button>
+        </div>
+      </div>
+      {{/each}}
+      {{else}}
+      <div class="po-op-summary">No shared operations journal entries yet.</div>
+      {{/if}}
+    </section>
+    <div class="po-op-divider"></div>
     <div class="po-cards">
       {{#each slots}}
       <article class="po-card" data-slot-id="{{id}}">

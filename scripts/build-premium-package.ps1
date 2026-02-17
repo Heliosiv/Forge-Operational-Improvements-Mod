@@ -32,12 +32,29 @@ $manifest | ConvertTo-Json -Depth 20 | Set-Content -NoNewline (Join-Path $stagin
 Copy-Item -Path "scripts" -Destination $staging -Recurse -Force
 Copy-Item -Path "styles" -Destination $staging -Recurse -Force
 Copy-Item -Path "templates" -Destination $staging -Recurse -Force
+if (Test-Path "packs") {
+  Copy-Item -Path "packs" -Destination $staging -Recurse -Force
+}
 
 if (Test-Path $zipPath) {
   Remove-Item $zipPath -Force
 }
 
-Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zipPath -Force
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$stagingRoot = (Resolve-Path $staging).Path
+$files = Get-ChildItem -Path $staging -Recurse -File
+$stream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::CreateNew)
+try {
+  $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
+  foreach ($file in $files) {
+    $relative = $file.FullName.Substring($stagingRoot.Length).TrimStart('\\', '/')
+    $entryName = $relative.Replace('\\', '/')
+    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
+  }
+  $archive.Dispose()
+} finally {
+  $stream.Dispose()
+}
 
 $hash = Get-FileHash -Path $zipPath -Algorithm SHA256
 $hash | Out-File (Join-Path $premiumRoot "party-operations-premium-v$Version.sha256.txt") -Encoding utf8

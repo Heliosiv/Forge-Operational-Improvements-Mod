@@ -20,7 +20,11 @@ export const SETTINGS = {
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
-  PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest"
+  PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
+  JOURNAL_ENTRY_VISIBILITY: "journalEntryVisibility",
+  JOURNAL_FILTER_DEBOUNCE_MS: "journalFilterDebounceMs",
+  SESSION_SUMMARY_RANGE: "sessionSummaryRange",
+  JOURNAL_FOLDER_CACHE: "journalFolderCache"
 };
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
@@ -33,6 +37,7 @@ let restWatchPlayerAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
+const journalFilterDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
@@ -128,6 +133,30 @@ const LOOT_PREVIEW_SCALE_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "major", label: "Major" }
 ];
+const JOURNAL_VISIBILITY_MODES = {
+  PUBLIC: "public",
+  REDACTED: "redacted",
+  GM_PRIVATE: "gm-private"
+};
+const SESSION_SUMMARY_RANGE_OPTIONS = {
+  "last-24h": "Last 24 Hours",
+  today: "Today",
+  "last-7d": "Last 7 Days"
+};
+const OPERATIONS_JOURNAL_ROOT_NAME = "Party Operations Logs";
+const OPERATIONS_JOURNAL_CATEGORIES = {
+  downtime: "Downtime",
+  reputation: "Reputation",
+  environment: "Environment",
+  "loot-claims": "Loot Claims",
+  session: "Session"
+};
+const journalFolderEnsurePromises = new Map();
+
+function getCurrentModuleVersion() {
+  const module = game.modules?.get(MODULE_ID);
+  return String(module?.version ?? module?.data?.version ?? "dev");
+}
 const DOWNTIME_ACTION_OPTIONS = [
   {
     key: "carousing",
@@ -227,6 +256,8 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-loot-preview-field",
   "roll-loot-preview",
   "clear-loot-preview",
+  "publish-loot-claims",
+  "clear-loot-claims",
   "remove-active-sync-effect",
   "archive-active-sync-effect",
   "restore-archived-sync-effect",
@@ -245,6 +276,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "remove-environment-log",
   "clear-environment-effects",
   "show-gm-logs-manager",
+  "create-session-summary-journal",
   "edit-global-log",
   "remove-global-log",
   "gm-quick-add-faction",
@@ -807,7 +839,7 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
 
   return {
     syncedAt: globalContext.syncedAt,
-    moduleVersion: game.modules.get(MODULE_ID)?.version ?? "unknown",
+    moduleVersion: getCurrentModuleVersion(),
     operations: {
       prepEdge: Boolean(globalContext.operations.summary?.effects?.prepEdge),
       riskTier: globalContext.operations.summary?.effects?.riskTier ?? "moderate",
@@ -1364,6 +1396,8 @@ function isMissingActiveEffectError(error) {
 
 async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
   if (!actor || !effect?.id) return false;
+  const liveEffect = actor.effects?.get(effect.id);
+  if (!liveEffect) return true;
   const currentOrigin = String(effect.origin ?? "").trim();
   const actorOrigin = getEffectOriginForActor(actor);
   if (actorOrigin && currentOrigin && !isParsableUuid(currentOrigin)) {
@@ -1377,10 +1411,12 @@ async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
     await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
     return true;
   } catch (error) {
+    if (isMissingActiveEffectError(error)) return true;
     try {
       await effect.delete();
       return true;
-    } catch {
+    } catch (fallbackError) {
+      if (isMissingActiveEffectError(fallbackError)) return true;
       console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effect.id}`, error);
       return false;
     }
@@ -2034,6 +2070,94 @@ function getLootPreviewResultStorageKey() {
   return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
 }
 
+function getOperationsJournalViewStorageKey() {
+  return `po-operations-journal-view-${game.user?.id ?? "anon"}`;
+}
+
+function getOperationsJournalViewState() {
+  const fallback = { filter: "", sort: "newest", category: "all" };
+  const raw = sessionStorage.getItem(getOperationsJournalViewStorageKey());
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    const filter = String(parsed?.filter ?? "").trim();
+    const sortRaw = String(parsed?.sort ?? "newest").trim().toLowerCase();
+    const categoryRaw = String(parsed?.category ?? "all").trim().toLowerCase();
+    const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
+    const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
+    return {
+      filter,
+      sort: sortAllowed.has(sortRaw) ? sortRaw : "newest",
+      category: categoryAllowed.has(categoryRaw) ? categoryRaw : "all"
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function setOperationsJournalViewState(patch = {}) {
+  const prev = getOperationsJournalViewState();
+  const next = {
+    ...prev,
+    ...patch
+  };
+  const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
+  const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
+  next.filter = String(next.filter ?? "").trim();
+  next.sort = sortAllowed.has(String(next.sort ?? "").trim().toLowerCase()) ? String(next.sort).trim().toLowerCase() : "newest";
+  next.category = categoryAllowed.has(String(next.category ?? "").trim().toLowerCase()) ? String(next.category).trim().toLowerCase() : "all";
+  sessionStorage.setItem(getOperationsJournalViewStorageKey(), JSON.stringify(next));
+}
+
+function getJournalVisibilityMode() {
+  const raw = String(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY) ?? JOURNAL_VISIBILITY_MODES.PUBLIC)
+    .trim()
+    .toLowerCase();
+  if (raw === JOURNAL_VISIBILITY_MODES.GM_PRIVATE) return JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
+  if (raw === JOURNAL_VISIBILITY_MODES.REDACTED) return JOURNAL_VISIBILITY_MODES.REDACTED;
+  return JOURNAL_VISIBILITY_MODES.PUBLIC;
+}
+
+function getJournalFilterDebounceMs() {
+  const raw = Number(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FILTER_DEBOUNCE_MS) ?? 180);
+  if (!Number.isFinite(raw)) return 180;
+  return Math.max(0, Math.min(1000, Math.floor(raw)));
+}
+
+function getSessionSummaryRangeSetting() {
+  const raw = String(game.settings.get(MODULE_ID, SETTINGS.SESSION_SUMMARY_RANGE) ?? "last-24h").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(SESSION_SUMMARY_RANGE_OPTIONS, raw) ? raw : "last-24h";
+}
+
+function getSessionSummaryWindowBounds() {
+  const mode = getSessionSummaryRangeSetting();
+  const now = Date.now();
+  if (mode === "last-7d") {
+    return { mode, start: now - (7 * 86400000), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
+  }
+  if (mode === "today") {
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    return { mode, start: Number(startDate.getTime()), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
+  }
+  return { mode: "last-24h", start: now - 86400000, end: now, label: SESSION_SUMMARY_RANGE_OPTIONS["last-24h"] };
+}
+
+function scheduleOperationsJournalFilterUpdate(app, value, rerender) {
+  const existing = journalFilterDebounceTimers.get(app);
+  if (existing) window.clearTimeout(existing);
+  const delay = getJournalFilterDebounceMs();
+  const timer = window.setTimeout(() => {
+    setOperationsJournalViewState({ filter: String(value ?? "") });
+    try {
+      rerender?.();
+    } finally {
+      journalFilterDebounceTimers.delete(app);
+    }
+  }, delay);
+  journalFilterDebounceTimers.set(app, timer);
+}
+
 function normalizeLootPreviewDraft(input = {}) {
   const mode = String(input?.mode ?? "horde").trim().toLowerCase();
   const profile = String(input?.profile ?? "standard").trim().toLowerCase();
@@ -2041,6 +2165,12 @@ function normalizeLootPreviewDraft(input = {}) {
   const scale = String(input?.scale ?? "medium").trim().toLowerCase();
   const actorCountRaw = Number(input?.actorCount ?? 1);
   const actorCount = Number.isFinite(actorCountRaw) ? Math.max(1, Math.min(100, Math.floor(actorCountRaw))) : 1;
+  const currencyScalarRaw = Number(input?.currencyScalar ?? 100);
+  const itemScalarRaw = Number(input?.itemScalar ?? 100);
+  const tableScalarRaw = Number(input?.tableScalar ?? 100);
+  const currencyScalar = Number.isFinite(currencyScalarRaw) ? Math.max(25, Math.min(300, Math.floor(currencyScalarRaw))) : 100;
+  const itemScalar = Number.isFinite(itemScalarRaw) ? Math.max(25, Math.min(300, Math.floor(itemScalarRaw))) : 100;
+  const tableScalar = Number.isFinite(tableScalarRaw) ? Math.max(25, Math.min(300, Math.floor(tableScalarRaw))) : 100;
   const modeAllowed = new Set(LOOT_PREVIEW_MODE_OPTIONS.map((entry) => entry.value));
   const profileAllowed = new Set(LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => entry.value));
   const challengeAllowed = new Set(LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => entry.value));
@@ -2050,7 +2180,10 @@ function normalizeLootPreviewDraft(input = {}) {
     profile: profileAllowed.has(profile) ? profile : "standard",
     challenge: challengeAllowed.has(challenge) ? challenge : "mid",
     scale: scaleAllowed.has(scale) ? scale : "medium",
-    actorCount
+    actorCount,
+    currencyScalar,
+    itemScalar,
+    tableScalar
   };
 }
 
@@ -2495,6 +2628,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       "loot-sources": "Loot Sources"
     };
     const gmOperationsTabLabel = gmOperationsTabLabelMap[gmOperationsTab] ?? "Environment";
+    const moduleVersion = getCurrentModuleVersion();
     const miniViz = buildMiniVisualizationContext({ visibility });
     const miniVizUi = buildMiniVizUiContext();
     const totalSlots = slots.length;
@@ -2513,6 +2647,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       showPopout: false,
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      moduleVersion,
       mainContextLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
       mainSubtitleLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
       visibilityOptions: buildVisibilityOptions(visibility),
@@ -2598,8 +2733,18 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
 
       this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("input[data-action='set-loot-preview-field']")) {
+          this.#onAction(event);
+          return;
+        }
         if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
           this.#onAction(event);
+          return;
+        }
+        if (event.target?.matches("input[data-action='set-journal-filter']")) {
+          scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          });
           return;
         }
         if (event.target?.matches("input[data-action='set-non-party-sync-filter-keyword']")) {
@@ -2962,6 +3107,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         setReputationFilterState({ keyword: "", standing: "all" });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
+      case "set-journal-filter":
+        setOperationsJournalViewState({ filter: String(element?.value ?? "") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-journal-sort":
+        setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-journal-category":
+        setOperationsJournalViewState({ category: String(element?.value ?? "all") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "open-journal-entry":
+        await openJournalEntryFromElement(element);
+        break;
       case "show-reputation-brief":
         await showReputationBrief();
         break;
@@ -3016,11 +3176,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "set-loot-rarity-ceiling":
         await setLootRarityCeiling(element);
         break;
+      case "set-loot-manifest-pack":
+        await setLootManifestPack(element);
+        break;
+      case "set-loot-keyword-include-tags":
+        await setLootKeywordIncludeTags(element);
+        break;
+      case "set-loot-keyword-exclude-tags":
+        await setLootKeywordExcludeTags(element);
+        break;
       case "reset-loot-source-config":
         await resetLootSourceConfig();
         break;
       case "set-loot-preview-field":
         setLootPreviewField(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "roll-loot-preview":
         await rollLootPreview(element);
@@ -3029,6 +3199,17 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "clear-loot-preview":
         clearLootPreviewResult();
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "publish-loot-claims":
+        await publishLootPreviewToClaims();
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "clear-loot-claims":
+        await clearLootClaimsPool();
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "open-loot-item":
+        await openLootItemFromElement(element);
         break;
       case "remove-active-sync-effect":
         await removeActiveSyncEffect(element);
@@ -3130,6 +3311,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "show-gm-logs-manager":
         await showOperationalLogsManager();
+        break;
+      case "create-session-summary-journal":
+        await createSessionSummaryJournal();
         break;
       case "edit-global-log":
         await editGlobalLog(element);
@@ -3235,6 +3419,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
     const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
     const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+    const lootClaims = buildLootClaimsContext(game.user);
+    const operationsJournal = buildOperationsJournalContext();
     return {
       isGM: false,
       locked: state.locked,
@@ -3244,8 +3430,11 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       showPopout: false,
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      moduleVersion: getCurrentModuleVersion(),
       slots,
       miniViz,
+      lootClaims,
+      operationsJournal,
       ...miniVizUi,
       overview: {
         totalSlots,
@@ -3281,6 +3470,12 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       });
 
       this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("input[data-action='set-journal-filter']")) {
+          scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          });
+          return;
+        }
         if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
         }
@@ -3381,6 +3576,30 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       case "ping":
         await pingActorFromElement(element);
         break;
+      case "claim-loot-item":
+        await claimLootItemForPlayer(element);
+        break;
+      case "claim-loot-currency":
+        await claimLootCurrencyForPlayer(element);
+        break;
+      case "open-loot-item":
+        await openLootItemFromElement(element);
+        break;
+      case "set-journal-filter":
+        setOperationsJournalViewState({ filter: String(element?.value ?? "") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-journal-sort":
+        setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "set-journal-category":
+        setOperationsJournalViewState({ category: String(element?.value ?? "all") });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      case "open-journal-entry":
+        await openJournalEntryFromElement(element);
+        break;
       default:
         break;
     }
@@ -3448,6 +3667,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       showPopout: false,
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      moduleVersion: getCurrentModuleVersion(),
       usageCollapsed: false,
       usageToggleLabel: "Collapse",
       usageToggleIcon: "fa-chevron-up",
@@ -3455,9 +3675,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
-        shareCollapsed: false,
-        shareToggleLabel: "Collapse",
-        shareToggleIcon: "fa-chevron-up",
         helpCollapsed: false,
         helpToggleLabel: "Collapse",
         helpToggleIcon: "fa-chevron-up",
@@ -3788,11 +4005,36 @@ function buildDefaultLootSourceConfig() {
     filters: {
       allowedTypes: [...LOOT_DEFAULT_ITEM_TYPES],
       rarityFloor: "",
-      rarityCeiling: ""
+      rarityCeiling: "",
+      manifestPackId: "",
+      keywordIncludeTags: [],
+      keywordExcludeTags: []
     },
     updatedAt: 0,
     updatedBy: ""
   };
+}
+
+function normalizeLootKeywordTag(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeLootKeywordTagList(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return source
+    .flatMap((entry) => String(entry ?? "").split(/[\n,;]+/))
+    .map((entry) => normalizeLootKeywordTag(entry))
+    .filter((entry, index, rows) => entry.length > 0 && rows.indexOf(entry) === index);
+}
+
+function parseLootKeywordTagListFromInput(value) {
+  return normalizeLootKeywordTagList(String(value ?? "").split(/[\s,;\n]+/));
+}
+
+function formatLootKeywordTagListForInput(values = []) {
+  return normalizeLootKeywordTagList(values).join(", ");
 }
 
 function normalizeLootRarityValue(value) {
@@ -3865,6 +4107,7 @@ function normalizeLootSourceConfig(config = {}) {
     .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
 
   const itemTypeCatalog = new Set(buildLootItemTypeCatalog().map((entry) => entry.value));
+  const validPackIds = new Set(getAvailableLootItemPackSources().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
   const rawAllowedTypes = Array.isArray(config?.filters?.allowedTypes)
     ? config.filters.allowedTypes
     : fallback.filters.allowedTypes;
@@ -3879,7 +4122,14 @@ function normalizeLootSourceConfig(config = {}) {
     filters: {
       allowedTypes: allowedTypes.length > 0 ? allowedTypes : [...LOOT_DEFAULT_ITEM_TYPES],
       rarityFloor: normalizeLootRarityValue(config?.filters?.rarityFloor),
-      rarityCeiling: normalizeLootRarityValue(config?.filters?.rarityCeiling)
+      rarityCeiling: normalizeLootRarityValue(config?.filters?.rarityCeiling),
+      manifestPackId: (() => {
+        const id = String(config?.filters?.manifestPackId ?? "").trim();
+        if (!id) return "";
+        return validPackIds.has(id) ? id : "";
+      })(),
+      keywordIncludeTags: normalizeLootKeywordTagList(config?.filters?.keywordIncludeTags ?? []),
+      keywordExcludeTags: normalizeLootKeywordTagList(config?.filters?.keywordExcludeTags ?? [])
     },
     updatedAt: Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0,
     updatedBy: String(config?.updatedBy ?? "")
@@ -4152,6 +4402,15 @@ function buildLootSourceRegistryContext() {
 
   const rarityFloor = normalizeLootRarityValue(config.filters?.rarityFloor);
   const rarityCeiling = normalizeLootRarityValue(config.filters?.rarityCeiling);
+  const manifestPackId = String(config.filters?.manifestPackId ?? "").trim();
+  const manifestPackOptions = [{ value: "", label: "Any enabled item source", selected: !manifestPackId }]
+    .concat(itemPackOptions.map((entry) => ({
+      value: entry.id,
+      label: entry.label,
+      selected: entry.id === manifestPackId
+    })));
+  const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
+  const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
   const updatedAt = Number(config.updatedAt ?? 0);
   const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "Not set";
   return {
@@ -4175,6 +4434,12 @@ function buildLootSourceRegistryContext() {
       label: entry.label,
       selected: entry.value === rarityCeiling
     })),
+    manifestPackOptions,
+    manifestPackId,
+    keywordIncludeTagsInput,
+    keywordExcludeTagsInput,
+    keywordIncludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordIncludeTags ?? []).length,
+    keywordExcludeTagCount: normalizeLootKeywordTagList(config.filters?.keywordExcludeTags ?? []).length,
     summary: {
       enabledItemPacks: itemPackOptions.filter((entry) => entry.enabled).length,
       totalItemPacks: itemPackOptions.length,
@@ -4226,6 +4491,27 @@ function getLootRarityFromData(data = {}) {
     if (normalized) return normalized;
   }
   return "";
+}
+
+function getLootKeywordsFromData(data = {}) {
+  const keywordCandidates = [
+    data?.flags?.[MODULE_ID]?.keywords,
+    data?.flags?.["party-operations"]?.keywords
+  ];
+  for (const candidate of keywordCandidates) {
+    const normalized = normalizeLootKeywordTagList(candidate ?? []);
+    if (normalized.length > 0) return normalized;
+  }
+  return [];
+}
+
+function isLootKeywordMatch(itemKeywords = [], includeTags = [], excludeTags = []) {
+  const keywords = new Set(normalizeLootKeywordTagList(itemKeywords));
+  const include = normalizeLootKeywordTagList(includeTags);
+  const exclude = normalizeLootKeywordTagList(excludeTags);
+  if (include.some((tag) => !keywords.has(tag))) return false;
+  if (exclude.some((tag) => keywords.has(tag))) return false;
+  return true;
 }
 
 function isLootRarityAllowed(rarity, floor, ceiling) {
@@ -4461,7 +4747,8 @@ async function rollLootCurrency(draft = {}) {
     * getLootScaleMultiplier(String(draft.scale ?? "medium"))
     * getLootProfileMultiplier(String(draft.profile ?? "standard"))
     * modeFactor;
-  const gpEquivalent = Math.max(0, Math.round(scaled));
+  const currencyScale = Math.max(0.25, Math.min(3, Number(draft.currencyScalar ?? 100) / 100));
+  const gpEquivalent = Math.max(0, Math.round(scaled * currencyScale));
   return {
     formula: `${profile.dice} + ${profile.bonus}`,
     rolled: Math.max(0, Math.floor(rollTotal)),
@@ -4480,6 +4767,7 @@ function getLootItemCount(draft = {}) {
   const scaleFactor = getLootScaleMultiplier(String(draft.scale ?? "medium"));
   const profileFactor = profile === "poor" ? 0.8 : profile === "well" ? 1.2 : 1;
 
+  const itemScale = Math.max(0.25, Math.min(3, Number(draft.itemScalar ?? 100) / 100));
   if (mode === "defeated") {
     const perActorChance = {
       low: 0.08,
@@ -4489,7 +4777,7 @@ function getLootItemCount(draft = {}) {
     };
     const expected = actorCount * Number(perActorChance[challenge] ?? perActorChance.mid) * profileFactor * scaleFactor;
     const challengeBonus = challenge === "high" ? 0.5 : challenge === "epic" ? 1 : 0;
-    return Math.min(24, Math.max(0, Math.round(expected + challengeBonus)));
+    return Math.min(24, Math.max(0, Math.round((expected + challengeBonus) * itemScale)));
   }
 
   if (mode === "encounter") {
@@ -4501,14 +4789,14 @@ function getLootItemCount(draft = {}) {
     };
     const baseline = challenge === "low" ? 1 : 2;
     const expected = actorCount * Number(perActorRate[challenge] ?? perActorRate.mid) * profileFactor * scaleFactor;
-    return Math.min(40, Math.max(0, baseline + Math.round(expected)));
+    return Math.min(40, Math.max(0, baseline + Math.round(expected * itemScale)));
   }
 
   const hordeBase = { low: 3, mid: 5, high: 8, epic: 12 };
   const hordeProfileMod = { poor: -1, standard: 0, well: 2 };
   const base = Number(hordeBase[challenge] ?? hordeBase.mid);
   const delta = Number(hordeProfileMod[profile] ?? 0);
-  const total = Math.max(0, Math.round((base + delta) * scaleFactor));
+  const total = Math.max(0, Math.round((base + delta) * scaleFactor * itemScale));
   return Math.min(60, total);
 }
 
@@ -4516,7 +4804,15 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const allowedTypes = new Set(sourceConfig?.filters?.allowedTypes ?? []);
   const floor = String(sourceConfig?.filters?.rarityFloor ?? "");
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
-  const enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
+  const manifestPackId = String(sourceConfig?.filters?.manifestPackId ?? "").trim();
+  const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
+  const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
+  let enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
+  if (manifestPackId) {
+    const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === manifestPackId)
+      ?? normalizeLootSourcePackEntry({ id: manifestPackId, label: manifestPackId, sourceKind: "compendium-pack", enabled: true, weight: 1 });
+    enabledSources = source ? [source] : [];
+  }
   const candidates = [];
   for (const source of enabledSources) {
     const sourceId = String(source?.id ?? "").trim();
@@ -4528,6 +4824,8 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         if (!item) continue;
         const itemType = String(item.type ?? "").trim();
         if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
+        const keywords = getLootKeywordsFromData(item);
+        if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) continue;
         const rarity = getLootRarityFromData(item);
         const rarityBucket = getLootRarityBucket(rarity);
         if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
@@ -4542,6 +4840,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
           sourceId,
           sourceLabel,
           sourceWeight,
+          keywords,
           profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
           rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
         });
@@ -4556,13 +4855,15 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     }
     try {
       const index = await pack.getIndex({
-        fields: ["type", "img", "system.rarity", "system.details.rarity", "system.traits.rarity", "rarity"]
+        fields: ["type", "img", "system.rarity", "system.details.rarity", "system.traits.rarity", "rarity", "flags.party-operations.keywords", "flags"]
       });
       for (const row of getCollectionValues(index)) {
         const entry = Array.isArray(row) ? row[1] : row;
         if (!entry) continue;
         const itemType = String(entry.type ?? "").trim();
         if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
+        const keywords = getLootKeywordsFromData(entry);
+        if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) continue;
         const rarity = getLootRarityFromData(entry);
         const rarityBucket = getLootRarityBucket(rarity);
         if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
@@ -4579,6 +4880,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
           sourceId,
           sourceLabel,
           sourceWeight,
+          keywords,
           profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
           rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
         });
@@ -4633,17 +4935,18 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}) {
 async function resolveUuidDocument(uuid) {
   const ref = String(uuid ?? "").trim();
   if (!ref) return null;
+  if (typeof fromUuid === "function") {
+    try {
+      const asyncDoc = await fromUuid(ref);
+      if (asyncDoc) return asyncDoc;
+    } catch {
+      // Fall back to sync lookup.
+    }
+  }
   if (typeof fromUuidSync === "function") {
     try {
       const syncDoc = fromUuidSync(ref);
       if (syncDoc) return syncDoc;
-    } catch {
-      // Fall back to async lookup.
-    }
-  }
-  if (typeof fromUuid === "function") {
-    try {
-      return await fromUuid(ref);
     } catch {
       return null;
     }
@@ -4658,7 +4961,9 @@ function getLootTableRollBudget(draft = {}) {
   const modeBase = mode === "horde" ? 2 : 1;
   const challengeBonus = challenge === "high" ? 1 : challenge === "epic" ? 2 : 0;
   const scaleBonus = scale === "major" ? 1 : 0;
-  return Math.max(0, Math.min(6, modeBase + challengeBonus + scaleBonus));
+  const baseBudget = modeBase + challengeBonus + scaleBonus;
+  const tableScale = Math.max(0.25, Math.min(3, Number(draft.tableScalar ?? 100) / 100));
+  return Math.max(0, Math.min(6, Math.round(baseBudget * tableScale)));
 }
 
 async function resolveLootTableFromSource(source = {}) {
@@ -4817,11 +5122,14 @@ function buildLootPreviewContext() {
     },
     items: Array.isArray(result?.items)
       ? result.items.map((entry) => ({
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item"),
         itemType: String(entry?.itemType ?? ""),
         rarity: String(entry?.rarity ?? ""),
         sourceLabel: String(entry?.sourceLabel ?? ""),
-        hasRarity: String(entry?.rarity ?? "").trim().length > 0
+        hasRarity: String(entry?.rarity ?? "").trim().length > 0,
+        canOpen: String(entry?.uuid ?? "").trim().length > 0
       }))
       : [],
     tableRolls: Array.isArray(result?.tableRolls)
@@ -4837,6 +5145,56 @@ function buildLootPreviewContext() {
     warnings: Array.isArray(result?.warnings)
       ? result.warnings.map((entry) => String(entry ?? "").trim()).filter(Boolean)
       : []
+  };
+}
+
+function buildLootClaimsContext(user = game.user) {
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const publishedAt = Number(claims.publishedAt ?? 0);
+  const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
+  const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const actorOptions = selectableActors.map((actor) => ({
+    id: String(actor.id),
+    name: String(actor.name ?? `Actor ${actor.id}`),
+    selected: false
+  }));
+  const preferredActorId = String(user?.character?.id ?? "").trim();
+  const fallbackActorId = actorOptions[0]?.id ?? "";
+  const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
+  for (const option of actorOptions) option.selected = option.id === selectedActorId;
+  const eligibleActorIds = new Set(getOwnedPcActors().map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const claimedActorIds = new Set((claims.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
+  const selectedActorClaimedCurrency = claimedActorIds.has(selectedActorId);
+  const currencyRemaining = {
+    pp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.pp ?? claims.currency?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.gp ?? claims.currency?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.sp ?? claims.currency?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.cp ?? claims.currency?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(claims.currencyRemaining?.gpEquivalent ?? claims.currency?.gpEquivalent ?? 0) || 0)
+  };
+  const hasCurrencyRemaining = currencyRemaining.pp > 0 || currencyRemaining.gp > 0 || currencyRemaining.sp > 0 || currencyRemaining.cp > 0;
+  return {
+    publishedAtLabel,
+    publishedBy: String(claims.publishedBy ?? "").trim() || "GM",
+    hasPublished: publishedAt > 0,
+    hasItems: claims.items.length > 0,
+    itemCount: claims.items.length,
+    claimsLogCount: claims.claimsLog.length,
+    currency: foundry.utils.deepClone(claims.currency),
+    currencyRemaining,
+    hasCurrencyRemaining,
+    selectedActorClaimedCurrency,
+    canClaimCurrency: Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId) && hasCurrencyRemaining && !selectedActorClaimedCurrency,
+    currencyClaimedCount: claimedActorIds.size,
+    tableRolls: foundry.utils.deepClone(claims.tableRolls),
+    actorOptions,
+    selectedActorId,
+    items: claims.items.map((entry) => ({
+      ...entry,
+      hasRarity: entry.rarity.length > 0,
+      canOpen: entry.uuid.length > 0
+    }))
   };
 }
 
@@ -4906,6 +5264,28 @@ function buildDefaultOperationsLedger() {
       },
       entries: {},
       logs: []
+    },
+    lootClaims: {
+      publishedAt: 0,
+      publishedBy: "",
+      currency: {
+        pp: 0,
+        gp: 0,
+        sp: 0,
+        cp: 0,
+        gpEquivalent: 0
+      },
+      currencyRemaining: {
+        pp: 0,
+        gp: 0,
+        sp: 0,
+        cp: 0,
+        gpEquivalent: 0
+      },
+      currencyClaimedActorIds: [],
+      items: [],
+      tableRolls: [],
+      claimsLog: []
     },
     environment: {
       presetKey: "none",
@@ -5306,6 +5686,8 @@ function buildOperationsContext() {
   const downtimeState = ensureDowntimeState(ledger);
   const downtime = buildDowntimeContext(downtimeState);
   const lootSources = buildLootSourceRegistryContext();
+  const lootClaims = buildLootClaimsContext(game.user);
+  const operationsJournal = buildOperationsJournalContext();
   const lootRegistryTab = getActiveLootRegistryTab();
   lootSources.registryTab = lootRegistryTab;
   lootSources.registryTabPreview = lootRegistryTab === "preview";
@@ -5700,6 +6082,7 @@ function buildOperationsContext() {
       nonPartySyncScope: nonPartySyncScope
     },
     lootSources,
+    lootClaims,
     nonPartySync: {
       sceneName: String(game.scenes?.current?.name ?? "No Active Scene"),
       scope: nonPartySyncScope,
@@ -5790,6 +6173,7 @@ function buildOperationsContext() {
       weatherDraft: weatherQuickDraft
     },
     downtime,
+    operationsJournal,
     globalLogs: {
       entries: globalLogs,
       hasEntries: globalLogs.length > 0
@@ -6517,6 +6901,75 @@ function ensureDowntimeState(ledger) {
     .slice(0, 80);
 
   return downtime;
+}
+
+function ensureLootClaimsState(ledger) {
+  if (!ledger.lootClaims || typeof ledger.lootClaims !== "object") {
+    ledger.lootClaims = {};
+  }
+  const claims = ledger.lootClaims;
+  const publishedAtRaw = Number(claims.publishedAt ?? 0);
+  claims.publishedAt = Number.isFinite(publishedAtRaw) && publishedAtRaw > 0 ? publishedAtRaw : 0;
+  claims.publishedBy = String(claims.publishedBy ?? "").trim();
+  if (!claims.currency || typeof claims.currency !== "object") claims.currency = {};
+  claims.currency = {
+    pp: Math.max(0, Math.floor(Number(claims.currency.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(claims.currency.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(claims.currency.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(claims.currency.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(claims.currency.gpEquivalent ?? 0) || 0)
+  };
+  if (!claims.currencyRemaining || typeof claims.currencyRemaining !== "object") claims.currencyRemaining = {};
+  claims.currencyRemaining = {
+    pp: Math.max(0, Math.floor(Number(claims.currencyRemaining.pp ?? claims.currency.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(claims.currencyRemaining.gp ?? claims.currency.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(claims.currencyRemaining.sp ?? claims.currency.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(claims.currencyRemaining.cp ?? claims.currency.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(claims.currencyRemaining.gpEquivalent ?? claims.currency.gpEquivalent ?? 0) || 0)
+  };
+  if (!Array.isArray(claims.currencyClaimedActorIds)) claims.currencyClaimedActorIds = [];
+  claims.currencyClaimedActorIds = claims.currencyClaimedActorIds
+    .map((entry) => String(entry ?? "").trim())
+    .filter((entry, index, arr) => entry.length > 0 && arr.indexOf(entry) === index);
+  if (!Array.isArray(claims.items)) claims.items = [];
+  claims.items = claims.items
+    .map((entry) => ({
+      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      uuid: String(entry?.uuid ?? "").trim(),
+      name: String(entry?.name ?? "Item").trim() || "Item",
+      img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+      itemType: String(entry?.itemType ?? "").trim(),
+      rarity: String(entry?.rarity ?? "").trim(),
+      sourceLabel: String(entry?.sourceLabel ?? "").trim()
+    }))
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  if (!Array.isArray(claims.tableRolls)) claims.tableRolls = [];
+  claims.tableRolls = claims.tableRolls
+    .map((entry) => ({
+      sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
+      sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
+      tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
+      formula: String(entry?.formula ?? "").trim(),
+      total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
+      result: String(entry?.result ?? "No result").trim() || "No result"
+    }))
+    .slice(0, 40);
+  if (!Array.isArray(claims.claimsLog)) claims.claimsLog = [];
+  claims.claimsLog = claims.claimsLog
+    .map((entry) => ({
+      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      itemId: String(entry?.itemId ?? "").trim(),
+      itemName: String(entry?.itemName ?? "Item").trim() || "Item",
+      actorId: String(entry?.actorId ?? "").trim(),
+      actorName: String(entry?.actorName ?? "Actor").trim() || "Actor",
+      claimedByUserId: String(entry?.claimedByUserId ?? "").trim(),
+      claimedByName: String(entry?.claimedByName ?? "Player").trim() || "Player",
+      claimedAt: Math.max(0, Number(entry?.claimedAt ?? 0) || 0)
+    }))
+    .filter((entry) => entry.itemId && entry.actorId)
+    .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+    .slice(0, 120);
+  return claims;
 }
 
 function getDowntimeSelectableActorsForUser(user = game.user) {
@@ -8040,6 +8493,31 @@ async function postDowntimeLogOutcome(element) {
       <p><em>Resolved by ${escape(result.resolvedBy)} at ${escape(new Date(Number(result.resolvedAt)).toLocaleString())}</em></p>
     `
   });
+  await createOperationsJournalEntry({
+    category: "downtime",
+    sensitivity: "gm",
+    title: `Downtime Outcome - ${actorName}`,
+    summary: `${actionLabel} (${hours} hour(s))`,
+    redactedSummary: `${actionLabel} outcome logged.`,
+    body: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(game.actors.get(String(source.actorId ?? "").trim())?.uuid ?? "", actorName)}</p>
+      <p><strong>Summary:</strong> ${escape(result.summary || "No summary provided.")}</p>
+      ${detailsHtml ? `<ul>${detailsHtml}</ul>` : ""}
+      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
+      ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      ${gmNotes ? `<p><strong>GM Notes:</strong> ${escape(gmNotes)}</p>` : ""}
+      ${complication ? `<p><strong>Complication:</strong> ${escape(complication)}</p>` : ""}
+    `,
+    redactedBody: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(game.actors.get(String(source.actorId ?? "").trim())?.uuid ?? "", actorName)}</p>
+      <p><strong>Summary:</strong> ${escape(result.summary || "No summary provided.")}</p>
+      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
+      ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      <p><em>Some GM details are redacted.</em></p>
+    `
+  });
   ui.notifications?.info(`Posted downtime outcome for ${actorName}.`);
 }
 
@@ -8268,6 +8746,31 @@ async function addOperationalEnvironmentLog() {
     if (environment.logs.length > 100) environment.logs = environment.logs.slice(0, 100);
   });
 
+  const actorNames = Array.isArray(current.targets)
+    ? current.targets.filter((row) => row?.selected).map((row) => String(row.name ?? "").trim()).filter(Boolean)
+    : [];
+  await createOperationsJournalEntry({
+    category: "environment",
+    sensitivity: "gm",
+    title: `Environment - ${String(current.preset?.label ?? "Preset")}`,
+    summary: `${String(current.checkLabel ?? "Check")} DC ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}`,
+    redactedSummary: `${String(current.preset?.label ?? "Environment")} update logged.`,
+    body: `
+      <p><strong>Preset:</strong> ${foundry.utils.escapeHTML(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Check:</strong> ${foundry.utils.escapeHTML(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
+      <p><strong>Targets:</strong> ${foundry.utils.escapeHTML(actorNames.length > 0 ? actorNames.join(", ") : "No assigned actors")}</p>
+      <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
+      ${String(current.note ?? "").trim() ? `<p><strong>GM Note:</strong> ${foundry.utils.escapeHTML(String(current.note ?? ""))}</p>` : ""}
+    `,
+    redactedBody: `
+      <p><strong>Preset:</strong> ${foundry.utils.escapeHTML(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Check:</strong> ${foundry.utils.escapeHTML(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
+      <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
+      <p><em>Some GM details are redacted.</em></p>
+    `
+  });
   ui.notifications?.info("Environment preset logged.");
 }
 
@@ -9607,6 +10110,25 @@ async function logReputationNote(element) {
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `<p><strong>Reputation Log:</strong> ${foundry.utils.escapeHTML(factionLabel)} - ${signedScore}</p><p>${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p><p>${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>`
   });
+  await createOperationsJournalEntry({
+    category: "reputation",
+    sensitivity: "gm",
+    title: `Reputation - ${factionLabel}`,
+    summary: `Score ${signedScore} (${String(createdLog.dayLabel ?? "").trim() || "No date"})`,
+    redactedSummary: `Reputation update logged for ${factionLabel}.`,
+    body: `
+      <p><strong>Faction:</strong> ${foundry.utils.escapeHTML(factionLabel)}</p>
+      <p><strong>Score:</strong> ${foundry.utils.escapeHTML(signedScore)}</p>
+      <p><strong>Day:</strong> ${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p>
+      <p><strong>Note:</strong> ${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>
+    `,
+    redactedBody: `
+      <p><strong>Faction:</strong> ${foundry.utils.escapeHTML(factionLabel)}</p>
+      <p><strong>Score:</strong> ${foundry.utils.escapeHTML(signedScore)}</p>
+      <p><strong>Day:</strong> ${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p>
+      <p><em>Detailed notes are redacted.</em></p>
+    `
+  });
 }
 
 async function loadReputationNoteLog(element) {
@@ -10106,6 +10628,44 @@ function getLootTableSourceMetaById(tableId) {
   return getAvailableLootTableSources().find((entry) => entry.id === id) ?? null;
 }
 
+async function setLootManifestPack(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const packId = String(element?.value ?? "").trim();
+  const validPackIds = new Set(getAvailableLootItemPackSources().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
+  const nextPackId = packId && validPackIds.has(packId) ? packId : "";
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.manifestPackId = nextPackId;
+  });
+}
+
+async function setLootKeywordIncludeTags(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const next = parseLootKeywordTagListFromInput(element?.value ?? "");
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.keywordIncludeTags = next;
+  });
+}
+
+async function setLootKeywordExcludeTags(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const next = parseLootKeywordTagListFromInput(element?.value ?? "");
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.keywordExcludeTags = next;
+  });
+}
+
 async function toggleLootPackSource(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
@@ -10294,13 +10854,46 @@ function setLootPreviewField(element) {
   const field = String(element?.dataset?.field ?? "").trim();
   if (!field) return;
   const current = getLootPreviewDraft();
+  const numericFields = new Set(["actorCount", "currencyScalar", "itemScalar", "tableScalar"]);
   const next = {
     ...current,
-    [field]: (field === "actorCount")
+    [field]: (numericFields.has(field))
       ? Number(element?.value ?? current.actorCount ?? 1)
       : String(element?.value ?? current[field] ?? "")
   };
   setLootPreviewDraft(next);
+}
+
+function getActorCurrentCurrencyValue(actor, denom) {
+  const key = String(denom ?? "").trim().toLowerCase();
+  if (!actor || !["pp", "gp", "sp", "cp"].includes(key)) return 0;
+  const node = actor.system?.currency?.[key];
+  const raw = typeof node === "object" ? Number(node?.value) : Number(node);
+  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+}
+
+async function awardCurrencyBundleToActor(actor, bundle = {}) {
+  if (!actor) return { pp: 0, gp: 0, sp: 0, cp: 0 };
+  const awarded = {
+    pp: Math.max(0, Math.floor(Number(bundle?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(bundle?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(bundle?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(bundle?.cp ?? 0) || 0))
+  };
+  if (awarded.pp <= 0 && awarded.gp <= 0 && awarded.sp <= 0 && awarded.cp <= 0) return awarded;
+  const next = {
+    pp: getActorCurrentCurrencyValue(actor, "pp") + awarded.pp,
+    gp: getActorCurrentCurrencyValue(actor, "gp") + awarded.gp,
+    sp: getActorCurrentCurrencyValue(actor, "sp") + awarded.sp,
+    cp: getActorCurrentCurrencyValue(actor, "cp") + awarded.cp
+  };
+  const updates = {};
+  for (const denom of ["pp", "gp", "sp", "cp"]) {
+    if (typeof actor.system?.currency?.[denom] === "object") updates[`system.currency.${denom}.value`] = next[denom];
+    else updates[`system.currency.${denom}`] = next[denom];
+  }
+  await actor.update(updates);
+  return awarded;
 }
 
 function readLootPreviewDraftFromUi(element) {
@@ -10311,7 +10904,10 @@ function readLootPreviewDraftFromUi(element) {
     profile: root.querySelector("select[name='lootPreviewProfile']")?.value ?? "",
     challenge: root.querySelector("select[name='lootPreviewChallenge']")?.value ?? "",
     scale: root.querySelector("select[name='lootPreviewScale']")?.value ?? "",
-    actorCount: root.querySelector("input[name='lootPreviewActorCount']")?.value ?? 1
+    actorCount: root.querySelector("input[name='lootPreviewActorCount']")?.value ?? 1,
+    currencyScalar: root.querySelector("input[name='lootPreviewCurrencyScalar']")?.value ?? 100,
+    itemScalar: root.querySelector("input[name='lootPreviewItemScalar']")?.value ?? 100,
+    tableScalar: root.querySelector("input[name='lootPreviewTableScalar']")?.value ?? 100
   });
 }
 
@@ -10330,6 +10926,781 @@ async function rollLootPreview(element) {
 function clearLootPreviewResult() {
   if (!game.user.isGM) return;
   setLootPreviewResult(null);
+}
+
+async function openLootItemFromElement(element) {
+  const uuid = String(element?.dataset?.uuid ?? "").trim();
+  if (!uuid) return;
+  const document = await resolveUuidDocument(uuid);
+  if (!document) {
+    ui.notifications?.warn("That item source could not be found.");
+    return;
+  }
+  const sheet = document.sheet ?? document._sheet ?? null;
+  if (sheet?.render) {
+    sheet.render(true);
+    return;
+  }
+  ui.notifications?.warn("No sheet is available for that item.");
+}
+
+async function publishLootPreviewToClaims() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can publish loot claims.");
+    return;
+  }
+  const result = getLootPreviewResult();
+  if (!result || typeof result !== "object") {
+    ui.notifications?.warn("Run a loot preview first.");
+    return;
+  }
+  const items = Array.isArray(result.items) ? result.items : [];
+  if (items.length === 0) {
+    ui.notifications?.warn("The preview has no items to publish.");
+    return;
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const claims = ensureLootClaimsState(ledger);
+    claims.publishedAt = Date.now();
+    claims.publishedBy = String(game.user?.name ?? "GM");
+    claims.currency = {
+      pp: Math.max(0, Math.floor(Number(result?.currency?.pp ?? 0) || 0)),
+      gp: Math.max(0, Math.floor(Number(result?.currency?.gp ?? 0) || 0)),
+      sp: Math.max(0, Math.floor(Number(result?.currency?.sp ?? 0) || 0)),
+      cp: Math.max(0, Math.floor(Number(result?.currency?.cp ?? 0) || 0)),
+      gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0)
+    };
+    claims.currencyRemaining = foundry.utils.deepClone(claims.currency);
+    claims.currencyClaimedActorIds = [];
+    claims.items = items.map((entry) => ({
+      id: foundry.utils.randomID(),
+      uuid: String(entry?.uuid ?? "").trim(),
+      name: String(entry?.name ?? "Item").trim() || "Item",
+      img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+      itemType: String(entry?.itemType ?? "").trim(),
+      rarity: String(entry?.rarity ?? "").trim(),
+      sourceLabel: String(entry?.sourceLabel ?? "").trim()
+    }));
+    claims.tableRolls = Array.isArray(result?.tableRolls)
+      ? result.tableRolls.map((entry) => ({
+        sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
+        sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
+        tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
+        formula: String(entry?.formula ?? "").trim(),
+        total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
+        result: String(entry?.result ?? "No result").trim() || "No result"
+      }))
+      : [];
+    claims.claimsLog = [];
+  });
+  game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
+  ui.notifications?.info(`Published ${items.length} loot item(s) to player claims.`);
+}
+
+async function clearLootClaimsPool() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear loot claims.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const claims = ensureLootClaimsState(ledger);
+    claims.publishedAt = 0;
+    claims.publishedBy = "";
+    claims.currency = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+    claims.currencyRemaining = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+    claims.currencyClaimedActorIds = [];
+    claims.items = [];
+    claims.tableRolls = [];
+    claims.claimsLog = [];
+  });
+  ui.notifications?.info("Cleared the player loot claim board.");
+}
+
+function getLootClaimActorIdFromElement(element) {
+  const root = element?.closest(".po-loot-claims-panel");
+  const actorId = String(root?.querySelector("select[name='lootClaimActorId']")?.value ?? "").trim();
+  return actorId;
+}
+
+function getJournalFolderParentId(folder) {
+  return String(folder?.folder?.id ?? folder?.folder ?? folder?.parent?.id ?? "").trim();
+}
+
+function findJournalFolderByName(name, parentId = "") {
+  const targetName = String(name ?? "").trim().toLowerCase();
+  const targetParentId = String(parentId ?? "").trim();
+  return (game.folders?.contents ?? []).find((folder) => {
+    if (!folder || String(folder.type ?? "") !== "JournalEntry") return false;
+    if (String(folder.name ?? "").trim().toLowerCase() !== targetName) return false;
+    return getJournalFolderParentId(folder) === targetParentId;
+  }) ?? null;
+}
+
+function getJournalFolderCacheState() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE);
+  if (!raw || typeof raw !== "object") return {};
+  return raw;
+}
+
+async function setJournalFolderCacheState(patch = {}) {
+  const current = getJournalFolderCacheState();
+  const next = foundry.utils.mergeObject(current, patch, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+  await game.settings.set(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE, next);
+}
+
+async function ensureJournalFolderByName(name, parentId = "") {
+  const normalizedName = String(name ?? "").trim();
+  const normalizedParentId = String(parentId ?? "").trim();
+  const key = `${normalizedParentId}::${normalizedName.toLowerCase()}`;
+
+  const cache = getJournalFolderCacheState();
+  const cachedId = String(cache?.folders?.[key] ?? "").trim();
+  if (cachedId) {
+    const cachedFolder = game.folders?.get(cachedId) ?? null;
+    if (cachedFolder && String(cachedFolder.type ?? "") === "JournalEntry") return cachedFolder;
+  }
+
+  const existing = findJournalFolderByName(normalizedName, normalizedParentId);
+  if (existing) {
+    if (game.user?.isGM) {
+      await setJournalFolderCacheState({ folders: { [key]: String(existing.id ?? "") } });
+    }
+    return existing;
+  }
+
+  const activePromise = journalFolderEnsurePromises.get(key);
+  if (activePromise) return activePromise;
+
+  const createPromise = (async () => {
+    const created = await Folder.create({
+      name: normalizedName || "Folder",
+      type: "JournalEntry",
+      folder: normalizedParentId || null
+    });
+    if (game.user?.isGM && created?.id) {
+      await setJournalFolderCacheState({ folders: { [key]: String(created.id) } });
+    }
+    return created;
+  })();
+
+  journalFolderEnsurePromises.set(key, createPromise);
+  try {
+    return await createPromise;
+  } finally {
+    journalFolderEnsurePromises.delete(key);
+  }
+}
+
+async function ensureOperationsJournalFolder(categoryKey = "session") {
+  const normalized = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryKey)
+    ? categoryKey
+    : "session";
+  const root = await ensureJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+  const categoryLabel = OPERATIONS_JOURNAL_CATEGORIES[normalized];
+  const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
+  return { root, categoryFolder, categoryKey: normalized, categoryLabel };
+}
+
+function journalFolderIsUnderRoot(folderId, rootId) {
+  const start = String(folderId ?? "").trim();
+  const root = String(rootId ?? "").trim();
+  if (!start || !root) return false;
+  let currentId = start;
+  let guard = 0;
+  while (currentId && guard < 40) {
+    if (currentId === root) return true;
+    const folder = game.folders?.get(currentId);
+    currentId = getJournalFolderParentId(folder);
+    guard += 1;
+  }
+  return false;
+}
+
+function getJournalFolderPath(folderId, rootId) {
+  const parts = [];
+  let currentId = String(folderId ?? "").trim();
+  const root = String(rootId ?? "").trim();
+  let guard = 0;
+  while (currentId && guard < 40) {
+    const folder = game.folders?.get(currentId);
+    if (!folder) break;
+    parts.unshift(String(folder.name ?? "Folder"));
+    const parentId = getJournalFolderParentId(folder);
+    if (!parentId || currentId === root) break;
+    currentId = parentId;
+    guard += 1;
+  }
+  return parts.join(" / ");
+}
+
+function getJournalEntryTimestamp(entry) {
+  const sourceStats = entry?._source?._stats ?? {};
+  const created = Number(sourceStats.createdTime ?? 0);
+  const modified = Number(sourceStats.modifiedTime ?? 0);
+  if (Number.isFinite(modified) && modified > 0) return modified;
+  if (Number.isFinite(created) && created > 0) return created;
+  return Date.now();
+}
+
+function buildUuidJournalLink(uuid, label) {
+  const ref = String(uuid ?? "").trim();
+  const text = String(label ?? "").trim() || "Link";
+  if (!ref) return foundry.utils.escapeHTML(text);
+  return `@UUID[${ref}]{${foundry.utils.escapeHTML(text)}}`;
+}
+
+function buildOperationsJournalContext() {
+  const view = getOperationsJournalViewState();
+  const rootFolder = findJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+  const rootId = String(rootFolder?.id ?? "").trim();
+  const filterQuery = String(view.filter ?? "").trim().toLowerCase();
+  const category = String(view.category ?? "all").trim().toLowerCase();
+  const sort = String(view.sort ?? "newest").trim().toLowerCase();
+  const entriesRaw = (game.journal?.contents ?? [])
+    .filter((entry) => entry?.testUserPermission?.(game.user, "OBSERVER"))
+    .filter((entry) => {
+      if (!rootId) return false;
+      const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
+      return journalFolderIsUnderRoot(folderId, rootId);
+    })
+    .map((entry) => {
+      const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
+      const folderPath = getJournalFolderPath(folderId, rootId);
+      const categoryLabel = folderPath.split(" / ")[1] ?? "";
+      const categoryKey = Object.entries(OPERATIONS_JOURNAL_CATEGORIES)
+        .find(([, label]) => String(label).toLowerCase() === String(categoryLabel).toLowerCase())?.[0] ?? "session";
+      const timestamp = getJournalEntryTimestamp(entry);
+      return {
+        id: String(entry.id ?? ""),
+        name: String(entry.name ?? "Journal Entry"),
+        folderPath,
+        categoryKey,
+        categoryLabel: OPERATIONS_JOURNAL_CATEGORIES[categoryKey] ?? "Session",
+        sortTimestamp: timestamp,
+        sortTimestampLabel: new Date(timestamp).toLocaleString()
+      };
+    });
+  const entriesFiltered = entriesRaw.filter((entry) => {
+    if (category !== "all" && entry.categoryKey !== category) return false;
+    if (!filterQuery) return true;
+    const haystack = `${entry.name} ${entry.folderPath} ${entry.categoryLabel}`.toLowerCase();
+    return haystack.includes(filterQuery);
+  });
+  entriesFiltered.sort((a, b) => {
+    if (sort === "oldest") return Number(a.sortTimestamp ?? 0) - Number(b.sortTimestamp ?? 0);
+    if (sort === "title") return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    if (sort === "folder") {
+      const folderCmp = String(a.folderPath ?? "").localeCompare(String(b.folderPath ?? ""));
+      if (folderCmp !== 0) return folderCmp;
+      return Number(b.sortTimestamp ?? 0) - Number(a.sortTimestamp ?? 0);
+    }
+    return Number(b.sortTimestamp ?? 0) - Number(a.sortTimestamp ?? 0);
+  });
+
+  return {
+    hasRootFolder: Boolean(rootId),
+    rootFolderName: OPERATIONS_JOURNAL_ROOT_NAME,
+    filter: String(view.filter ?? ""),
+    entries: entriesFiltered,
+    hasEntries: entriesFiltered.length > 0,
+    totalEntries: entriesRaw.length,
+    visibleEntries: entriesFiltered.length,
+    sortOptions: [
+      { value: "newest", label: "Newest", selected: sort === "newest" },
+      { value: "oldest", label: "Oldest", selected: sort === "oldest" },
+      { value: "title", label: "Title", selected: sort === "title" },
+      { value: "folder", label: "Folder", selected: sort === "folder" }
+    ],
+    categoryOptions: [
+      { value: "all", label: "All Categories", selected: category === "all" },
+      ...Object.entries(OPERATIONS_JOURNAL_CATEGORIES).map(([value, label]) => ({
+        value,
+        label,
+        selected: category === value
+      }))
+    ]
+  };
+}
+
+async function createOperationsJournalEntry(payload = {}) {
+  if (!game.user?.isGM) return null;
+  const categoryRaw = String(payload?.category ?? "session").trim().toLowerCase();
+  const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw) ? categoryRaw : "session";
+  const sensitivity = String(payload?.sensitivity ?? "public").trim().toLowerCase();
+  const visibilityMode = getJournalVisibilityMode();
+  const now = Date.now();
+  const stamp = new Date(now).toLocaleString();
+  const title = String(payload?.title ?? "Operations Log").trim() || "Operations Log";
+  const summary = String(payload?.summary ?? "").trim();
+  const body = String(payload?.body ?? "").trim();
+  const redactedBody = String(payload?.redactedBody ?? "").trim();
+  const safeSummary = foundry.utils.escapeHTML(summary);
+  const safeStamp = foundry.utils.escapeHTML(stamp);
+  const isSensitive = sensitivity === "gm" || sensitivity === "sensitive";
+  const useGmOnly = isSensitive && visibilityMode === JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
+  const useRedacted = isSensitive && visibilityMode === JOURNAL_VISIBILITY_MODES.REDACTED;
+  const effectiveSummary = useRedacted
+    ? String(payload?.redactedSummary ?? "Details restricted to GM view.").trim()
+    : summary;
+  const safeEffectiveSummary = foundry.utils.escapeHTML(effectiveSummary);
+  const effectiveBody = useRedacted
+    ? (redactedBody || "<p>Details redacted by Party Operations journal visibility settings.</p>")
+    : (body || "<p>No additional details.</p>");
+  const ownership = useGmOnly
+    ? (() => {
+      const next = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
+      for (const user of game.users?.contents ?? []) {
+        if (!user) continue;
+        if (user.isGM) next[String(user.id)] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
+      }
+      return next;
+    })()
+    : { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
+  const finalBody = `
+    <p><em>${safeStamp}</em></p>
+    ${safeEffectiveSummary ? `<p>${safeEffectiveSummary}</p>` : ""}
+    ${effectiveBody}
+  `;
+  try {
+    const { categoryFolder } = await ensureOperationsJournalFolder(categoryKey);
+    const htmlFormat = Number(CONST?.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1);
+    const entry = await JournalEntry.create({
+      name: `${title} - ${stamp}`,
+      folder: categoryFolder?.id ?? null,
+      ownership,
+      pages: [{
+        name: "Log",
+        type: "text",
+        text: {
+          format: htmlFormat,
+          content: finalBody
+        }
+      }]
+    });
+    return entry ?? null;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed creating operations journal entry`, error);
+    ui.notifications?.warn(`Party Operations journal write failed: ${title}`);
+    return null;
+  }
+}
+
+async function createSessionSummaryJournal() {
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Only the GM can create session summary journals.");
+    return;
+  }
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const window = getSessionSummaryWindowBounds();
+  const since = Number(window.start ?? (Date.now() - 86400000));
+  const now = Number(window.end ?? Date.now());
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const reputation = ensureReputationState(ledger);
+  const environment = ensureEnvironmentState(ledger);
+  const weather = ensureWeatherState(ledger);
+  const lootClaims = ensureLootClaimsState(ledger);
+  const context = buildOperationsContext();
+
+  const downtimePending = Object.values(downtime.entries ?? {}).filter((entry) => entry?.pending !== false).length;
+  const downtimeResolvedRecent = (downtime.logs ?? []).filter((entry) => Number(entry?.resolvedAt ?? 0) >= since);
+  const downtimeRecentRows = downtimeResolvedRecent
+    .slice(0, 8)
+    .map((entry) => {
+      const actorName = String(entry?.actorName ?? "Actor");
+      const actorUuid = String(game.actors.get(String(entry?.actorId ?? ""))?.uuid ?? "");
+      const actionLabel = String(entry?.actionLabel ?? getDowntimeActionDefinition(entry?.actionKey).label ?? "Downtime");
+      const summary = String(entry?.summary ?? "").trim() || "Resolved.";
+      return `<li>${buildUuidJournalLink(actorUuid, actorName)} - ${escape(actionLabel)}: ${escape(summary)}</li>`;
+    })
+    .join("");
+
+  const reputationRecent = [];
+  for (const faction of reputation.factions ?? []) {
+    for (const row of faction.noteLogs ?? []) {
+      if (Number(row?.loggedAt ?? 0) < since) continue;
+      reputationRecent.push({
+        factionLabel: String(faction.label ?? "Faction"),
+        score: Number(row?.score ?? faction.score ?? 0),
+        note: String(row?.note ?? "").trim(),
+        loggedAt: Number(row?.loggedAt ?? 0)
+      });
+    }
+  }
+  reputationRecent.sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0));
+  const reputationRows = reputationRecent
+    .slice(0, 8)
+    .map((row) => {
+      const signed = row.score > 0 ? `+${row.score}` : String(row.score);
+      return `<li>${escape(row.factionLabel)} (${escape(signed)}): ${escape(row.note || "Logged change.")}</li>`;
+    })
+    .join("");
+
+  const environmentRecent = (environment.logs ?? []).filter((entry) => Number(entry?.createdAt ?? 0) >= since);
+  const environmentRows = environmentRecent
+    .slice(0, 8)
+    .map((entry) => {
+      const preset = getEnvironmentPresetByKey(entry?.presetKey).label;
+      const dc = Math.max(1, Math.floor(Number(entry?.movementDc ?? 12) || 12));
+      const note = String(entry?.note ?? "").trim();
+      return `<li>${escape(preset)} (DC ${dc})${note ? ` - ${escape(note)}` : ""}</li>`;
+    })
+    .join("");
+
+  const weatherRecent = (weather.logs ?? []).filter((entry) => Number(entry?.loggedAt ?? 0) >= since);
+  const weatherRows = weatherRecent
+    .slice(0, 8)
+    .map((entry) => {
+      const label = String(entry?.label ?? "Weather").trim() || "Weather";
+      const vis = Number(entry?.visibilityModifier ?? 0);
+      const darkness = Number(entry?.darkness ?? 0);
+      return `<li>${escape(label)} - visibility ${escape(formatSignedModifier(vis) || "0")}, darkness ${darkness.toFixed(2)}</li>`;
+    })
+    .join("");
+
+  const lootRecent = (lootClaims.claimsLog ?? []).filter((entry) => Number(entry?.claimedAt ?? 0) >= since);
+  const lootRows = lootRecent
+    .slice(0, 12)
+    .map((entry) => {
+      const actorName = String(entry?.actorName ?? "Actor");
+      const actorUuid = String(game.actors.get(String(entry?.actorId ?? ""))?.uuid ?? "");
+      const itemName = String(entry?.itemName ?? "Item");
+      const by = String(entry?.claimedByName ?? "Player");
+      return `<li>${buildUuidJournalLink(actorUuid, actorName)} received ${escape(itemName)} (claimed by ${escape(by)})</li>`;
+    })
+    .join("");
+
+  const title = "Session Summary";
+  const summary = `${window.label}: ${new Date(since).toLocaleString()} to ${new Date(now).toLocaleString()}`;
+  const body = `
+    <p><strong>Window:</strong> ${escape(summary)}</p>
+    <p><strong>Operations Snapshot:</strong> Role Coverage ${context.summary?.roleCoverage ?? 0}/${context.summary?.roleTotal ?? 0}, Active SOPs ${context.summary?.activeSops ?? 0}/${context.summary?.sopTotal ?? 0}, Risk Tier ${escape(String(context.summary?.effects?.riskTier ?? "moderate"))}</p>
+    <p><strong>Downtime:</strong> ${downtimeResolvedRecent.length} resolved in window, ${downtimePending} pending.</p>
+    ${downtimeRows ? `<ul>${downtimeRows}</ul>` : "<p>No resolved downtime entries in this window.</p>"}
+    <p><strong>Reputation Notes:</strong> ${reputationRecent.length} logged.</p>
+    ${reputationRows ? `<ul>${reputationRows}</ul>` : "<p>No reputation notes logged in this window.</p>"}
+    <p><strong>Environment Logs:</strong> ${environmentRecent.length} entries.</p>
+    ${environmentRows ? `<ul>${environmentRows}</ul>` : "<p>No environment logs in this window.</p>"}
+    <p><strong>Weather Logs:</strong> ${weatherRecent.length} entries.</p>
+    ${weatherRows ? `<ul>${weatherRows}</ul>` : "<p>No weather logs in this window.</p>"}
+    <p><strong>Loot Claims:</strong> ${lootRecent.length} claims in window.</p>
+    ${lootRows ? `<ul>${lootRows}</ul>` : "<p>No loot claims in this window.</p>"}
+  `;
+
+  const entry = await createOperationsJournalEntry({
+    category: "session",
+    sensitivity: "gm",
+    title,
+    summary,
+    redactedSummary: `${window.label} operations summary.`,
+    body,
+    redactedBody: `
+      <p><strong>Window:</strong> ${escape(window.label)}</p>
+      <p><strong>Downtime:</strong> ${downtimeResolvedRecent.length} resolved, ${downtimePending} pending.</p>
+      <p><strong>Reputation Notes:</strong> ${reputationRecent.length} logged.</p>
+      <p><strong>Environment Logs:</strong> ${environmentRecent.length} entries.</p>
+      <p><strong>Weather Logs:</strong> ${weatherRecent.length} entries.</p>
+      <p><strong>Loot Claims:</strong> ${lootRecent.length} claims.</p>
+      <p><em>Detailed summary content is redacted.</em></p>
+    `
+  });
+  if (!entry) {
+    ui.notifications?.warn("Failed to create session summary journal.");
+    return;
+  }
+  entry.sheet?.render(true);
+  ui.notifications?.info("Session summary journal created.");
+}
+
+async function openJournalEntryFromElement(element) {
+  const entryId = String(element?.dataset?.journalId ?? "").trim();
+  if (!entryId) return;
+  const entry = game.journal?.get(entryId);
+  if (!entry) {
+    ui.notifications?.warn("Journal entry not found.");
+    return;
+  }
+  entry.sheet?.render(true);
+}
+
+async function buildLootClaimItemDocumentData(itemEntry = {}) {
+  const uuid = String(itemEntry?.uuid ?? "").trim();
+  if (!uuid) return null;
+  const source = await resolveUuidDocument(uuid);
+  if (!source || source.documentName !== "Item") return null;
+  const data = source.toObject();
+  if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
+  return data;
+}
+
+async function applyLootClaimForUser(user, actorIdInput, itemIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const itemId = String(itemIdInput ?? "").trim();
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const claimItem = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
+  const itemData = await buildLootClaimItemDocumentData(claimItem);
+  if (!itemData) return { ok: false, message: "The source item could not be resolved. Ask GM to reroll/publish again." };
+
+  try {
+    await actor.createEmbeddedDocuments("Item", [itemData]);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to grant claimed loot`, error);
+    return { ok: false, message: "Failed to add the item to actor inventory." };
+  }
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextClaims = ensureLootClaimsState(nextLedger);
+    const index = nextClaims.items.findIndex((entry) => String(entry?.id ?? "") === itemId);
+    if (index >= 0) nextClaims.items.splice(index, 1);
+    nextClaims.claimsLog.unshift({
+      id: foundry.utils.randomID(),
+      itemId,
+      itemName: String(claimItem.name ?? "Item"),
+      actorId: String(actor.id),
+      actorName: String(actor.name ?? "Actor"),
+      claimedByUserId: String(user?.id ?? ""),
+      claimedByName: String(user?.name ?? "Player"),
+      claimedAt: Date.now()
+    });
+    nextClaims.claimsLog = nextClaims.claimsLog
+      .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+      .slice(0, 120);
+  });
+
+  return {
+    ok: true,
+    actorName: String(actor.name ?? "Actor"),
+    itemName: String(claimItem.name ?? "Item"),
+    actorId: String(actor.id ?? ""),
+    actorUuid: String(actor.uuid ?? ""),
+    itemUuid: String(claimItem.uuid ?? ""),
+    claimedByName: String(user?.name ?? "Player"),
+    claimedByUserId: String(user?.id ?? "")
+  };
+}
+
+function computeCurrencyShareForActor(remaining = {}, actorId = "", unclaimedActorIds = []) {
+  const ids = Array.isArray(unclaimedActorIds)
+    ? unclaimedActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+    : [];
+  const targetId = String(actorId ?? "").trim();
+  if (!targetId || ids.length === 0 || !ids.includes(targetId)) {
+    return { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+  }
+  const index = ids.indexOf(targetId);
+  const share = {};
+  for (const denom of ["pp", "gp", "sp", "cp"]) {
+    const total = Math.max(0, Math.floor(Number(remaining?.[denom] ?? 0) || 0));
+    const base = Math.floor(total / ids.length);
+    const remainder = total % ids.length;
+    share[denom] = base + (index < remainder ? 1 : 0);
+  }
+  const gpEquivalent = (share.pp * 10) + share.gp + (share.sp * 0.1) + (share.cp * 0.01);
+  return { ...share, gpEquivalent };
+}
+
+async function applyLootCurrencyClaimForUser(user, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+  const eligibleActorIds = getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean);
+  if (!eligibleActorIds.includes(actorId)) return { ok: false, message: "Actor is not in the player-character claim pool." };
+
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const claimedSet = new Set((claims.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
+  if (claimedSet.has(actorId)) return { ok: false, message: "This actor already claimed a currency share from this board." };
+  const remaining = claims.currencyRemaining ?? claims.currency ?? {};
+  const hasRemaining = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Math.floor(Number(remaining?.[denom] ?? 0) || 0)) > 0);
+  if (!hasRemaining) return { ok: false, message: "No currency remains to claim." };
+  const unclaimed = eligibleActorIds.filter((id) => !claimedSet.has(id));
+  if (unclaimed.length <= 0) return { ok: false, message: "No claim slots remain." };
+  if (!unclaimed.includes(actorId)) return { ok: false, message: "Actor cannot claim from remaining slots." };
+  const share = computeCurrencyShareForActor(remaining, actorId, unclaimed);
+  if (share.pp <= 0 && share.gp <= 0 && share.sp <= 0 && share.cp <= 0) {
+    return { ok: false, message: "No currency share is available for this actor." };
+  }
+
+  try {
+    await awardCurrencyBundleToActor(actor, share);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to grant claimed loot currency`, error);
+    return { ok: false, message: "Failed to add currency to actor." };
+  }
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextClaims = ensureLootClaimsState(nextLedger);
+    const currentRemaining = nextClaims.currencyRemaining ?? nextClaims.currency ?? {};
+    const nextRemaining = {
+      pp: Math.max(0, Math.floor(Number(currentRemaining.pp ?? 0) || 0) - share.pp),
+      gp: Math.max(0, Math.floor(Number(currentRemaining.gp ?? 0) || 0) - share.gp),
+      sp: Math.max(0, Math.floor(Number(currentRemaining.sp ?? 0) || 0) - share.sp),
+      cp: Math.max(0, Math.floor(Number(currentRemaining.cp ?? 0) || 0) - share.cp),
+      gpEquivalent: Math.max(0, Number(currentRemaining.gpEquivalent ?? 0) - Number(share.gpEquivalent ?? 0))
+    };
+    nextClaims.currencyRemaining = nextRemaining;
+    if (!Array.isArray(nextClaims.currencyClaimedActorIds)) nextClaims.currencyClaimedActorIds = [];
+    if (!nextClaims.currencyClaimedActorIds.includes(actorId)) nextClaims.currencyClaimedActorIds.push(actorId);
+    if (!Array.isArray(nextClaims.claimsLog)) nextClaims.claimsLog = [];
+    nextClaims.claimsLog.unshift({
+      id: foundry.utils.randomID(),
+      itemId: `currency:${Date.now()}`,
+      itemName: `Currency Share (${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp)`,
+      actorId: String(actor.id),
+      actorName: String(actor.name ?? "Actor"),
+      claimedByUserId: String(user?.id ?? ""),
+      claimedByName: String(user?.name ?? "Player"),
+      claimedAt: Date.now()
+    });
+    nextClaims.claimsLog = nextClaims.claimsLog
+      .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+      .slice(0, 120);
+  });
+
+  return {
+    ok: true,
+    actorName: String(actor.name ?? "Actor"),
+    actorId: String(actor.id ?? ""),
+    actorUuid: String(actor.uuid ?? ""),
+    claimedByName: String(user?.name ?? "Player"),
+    claimedByUserId: String(user?.id ?? ""),
+    share
+  };
+}
+
+async function claimLootItemForPlayer(element) {
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  if (!itemId) return;
+  const actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    ui.notifications?.warn("Select a character to receive the claimed item.");
+    return;
+  }
+
+  if (game.user.isGM) {
+    const outcome = await applyLootClaimForUser(game.user, actorId, itemId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Loot claim failed.");
+      return;
+    }
+    await postLootItemClaimToChat(outcome);
+    ui.notifications?.info(`${outcome.itemName} added to ${outcome.actorName}.`);
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-claim",
+    userId: game.user.id,
+    actorId,
+    itemId
+  });
+  ui.notifications?.info("Loot claim request sent to GM.");
+}
+
+async function claimLootCurrencyForPlayer(element) {
+  const actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    ui.notifications?.warn("Select a character to receive currency.");
+    return;
+  }
+  if (game.user.isGM) {
+    const outcome = await applyLootCurrencyClaimForUser(game.user, actorId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Currency claim failed.");
+      return;
+    }
+    await postLootCurrencyClaimToChat(outcome);
+    const s = outcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
+    ui.notifications?.info(`${outcome.actorName} claimed ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
+    return;
+  }
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-claim-currency",
+    userId: game.user.id,
+    actorId
+  });
+  ui.notifications?.info("Currency claim request sent to GM.");
+}
+
+function formatLootCurrencyBundleLabel(bundle = {}) {
+  const pp = Math.max(0, Math.floor(Number(bundle?.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(bundle?.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(bundle?.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(bundle?.cp ?? 0) || 0));
+  return `${pp}pp ${gp}gp ${sp}sp ${cp}cp`;
+}
+
+async function postLootItemClaimToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const actorId = String(outcome?.actorId ?? "").trim();
+  const actorUuid = String(outcome?.actorUuid ?? "").trim();
+  const itemName = String(outcome?.itemName ?? "Item").trim() || "Item";
+  const itemUuid = String(outcome?.itemUuid ?? "").trim();
+  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const actorImg = String(actor?.img ?? "icons/svg/item-bag.svg");
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Loot Claimed</strong></p>
+        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${foundry.utils.escapeHTML(actorName)} received <strong>${foundry.utils.escapeHTML(itemName)}</strong>.</p>
+        <p><em>Claimed by ${foundry.utils.escapeHTML(claimedBy)}</em></p>
+      </div>
+    `
+  });
+  await createOperationsJournalEntry({
+    category: "loot-claims",
+    title: `Loot Claimed - ${actorName}`,
+    summary: `${actorName} received ${itemName}`,
+    body: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
+      <p><strong>Item:</strong> ${buildUuidJournalLink(itemUuid, itemName)}</p>
+      <p><strong>Claimed By:</strong> ${foundry.utils.escapeHTML(claimedBy)}</p>
+    `
+  });
+}
+
+async function postLootCurrencyClaimToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const actorId = String(outcome?.actorId ?? "").trim();
+  const actorUuid = String(outcome?.actorUuid ?? "").trim();
+  const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
+  const shareLabel = formatLootCurrencyBundleLabel(outcome?.share ?? {});
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const actorImg = String(actor?.img ?? "icons/svg/coins.svg");
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Currency Claimed</strong></p>
+        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${foundry.utils.escapeHTML(actorName)} received <strong>${foundry.utils.escapeHTML(shareLabel)}</strong>.</p>
+        <p><em>Claimed by ${foundry.utils.escapeHTML(claimedBy)}</em></p>
+      </div>
+    `
+  });
+  await createOperationsJournalEntry({
+    category: "loot-claims",
+    title: `Currency Claimed - ${actorName}`,
+    summary: `${actorName} received ${shareLabel}`,
+    body: `
+      <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
+      <p><strong>Currency:</strong> ${foundry.utils.escapeHTML(shareLabel)}</p>
+      <p><strong>Claimed By:</strong> ${foundry.utils.escapeHTML(claimedBy)}</p>
+    `
+  });
 }
 
 async function gmQuickAddFaction() {
@@ -14850,6 +16221,12 @@ function openOperationsUi() {
   return app;
 }
 
+function openRestWatchUiForCurrentUser(renderOptions = { force: true }) {
+  const app = game.user?.isGM ? new RestWatchApp() : new RestWatchPlayerApp();
+  app.render(renderOptions);
+  return app;
+}
+
 function openGmUi() {
   if (!game.user?.isGM) {
     ui.notifications?.warn("GM permissions are required for the GM section.");
@@ -14884,11 +16261,7 @@ function ensureLauncherUi() {
 
 function buildPartyOperationsApi() {
   const api = {
-    restWatch: () => {
-      const app = new RestWatchApp();
-      app.render({ force: true });
-      return app;
-    },
+    restWatch: () => openRestWatchUiForCurrentUser({ force: true }),
     marchingOrder: () => {
       const app = new MarchingOrderApp();
       app.render({ force: true });
@@ -14969,11 +16342,7 @@ function ensureClickOpener() {
     opener.innerHTML = '<i class="fas fa-compass"></i>';
     opener.addEventListener("click", () => {
       ensureFloatingLauncher();
-      if (game.user?.isGM) {
-        new RestWatchApp().render({ force: true });
-      } else {
-        new RestWatchPlayerApp().render({ force: true });
-      }
+      openRestWatchUiForCurrentUser({ force: true });
     });
     document.body.appendChild(opener);
   }
@@ -15277,9 +16646,8 @@ async function diagnoseWorldData(options = {}) {
 function setupPartyOperationsUI() {
   // Keep UI launcher independent from scene controls; remove any legacy injected control.
   Hooks.on("renderSceneControls", (controls, html) => {
-    const root = html?.querySelector ? html : html?.[0];
-    if (!root?.querySelector) return;
-    root.querySelector("[data-control='party-operations']")?.remove();
+    const root = html?.querySelector ? html : html?.[0] ?? null;
+    root?.querySelector?.("[data-control='party-operations']")?.remove();
     ensureLauncherUi();
   });
 
@@ -15433,13 +16801,52 @@ Hooks.once("init", () => {
     default: true
   });
 
-  registerPartyOperationsApi();
+  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY, {
+    name: "Operations Journal Visibility",
+    hint: "Control how sensitive operation logs are exposed in shared journals.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [JOURNAL_VISIBILITY_MODES.PUBLIC]: "Public (full details to observers)",
+      [JOURNAL_VISIBILITY_MODES.REDACTED]: "Redacted (sensitive details hidden)",
+      [JOURNAL_VISIBILITY_MODES.GM_PRIVATE]: "GM Only (sensitive entries private)"
+    },
+    default: JOURNAL_VISIBILITY_MODES.REDACTED
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.SESSION_SUMMARY_RANGE, {
+    name: "Session Summary Default Window",
+    hint: "Default lookback window when creating a session summary journal.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: SESSION_SUMMARY_RANGE_OPTIONS,
+    default: "last-24h"
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_FILTER_DEBOUNCE_MS, {
+    name: "Journal Filter Debounce (ms)",
+    hint: "Delay before applying journal search input, to reduce UI re-renders.",
+    scope: "client",
+    config: true,
+    type: Number,
+    range: { min: 0, max: 1000, step: 10 },
+    default: 180
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { folders: {} }
+  });
 
   game.keybindings.register(MODULE_ID, "openRestWatch", {
     name: "Open Rest Watch",
     editable: [],
     onDown: () => {
-      new RestWatchApp().render({ force: true });
+      openRestWatchUiForCurrentUser({ force: true });
       return true;
     }
   });
@@ -15454,10 +16861,6 @@ Hooks.once("init", () => {
   });
 });
 
-Hooks.once("setup", () => {
-  registerPartyOperationsApi();
-});
-
 Hooks.once("ready", () => {
   registerPartyOperationsApi();
   // Setup UI controls for sidebar
@@ -15469,7 +16872,7 @@ Hooks.once("ready", () => {
   if (!game.user.isGM) {
     const autoOpenPlayerUi = game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST) ?? true;
     if (autoOpenPlayerUi) {
-      new RestWatchApp().render({ force: true });
+      openRestWatchUiForCurrentUser({ force: true });
     }
   } else {
     scheduleIntegrationSync("ready");
@@ -15480,8 +16883,8 @@ Hooks.once("ready", () => {
 
     if (message.type === "open") {
       if (!game.user.isGM) {
-        if (message.app === "rest") new RestWatchApp().render(true);
-        if (message.app === "march") new MarchingOrderApp().render(true);
+        if (message.app === "rest") openRestWatchUiForCurrentUser({ force: true });
+        if (message.app === "march") new MarchingOrderApp().render({ force: true });
         if (message.requestId) {
           game.socket.emit(SOCKET_CHANNEL, {
             type: "open:ack",
@@ -15500,7 +16903,7 @@ Hooks.once("ready", () => {
     }
 
     if (message.type === "players:openRest" && !game.user.isGM) {
-      new RestWatchApp().render({ force: true });
+      openRestWatchUiForCurrentUser({ force: true });
       return;
     }
 
@@ -15570,6 +16973,18 @@ Hooks.once("ready", () => {
       await applyPlayerDowntimeCollectRequest(message, requester);
       return;
     }
+    if (message.type === "ops:loot-claim") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerLootClaimRequest(message, requester);
+      return;
+    }
+    if (message.type === "ops:loot-claim-currency") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerLootCurrencyClaimRequest(message, requester);
+      return;
+    }
   });
 
   Hooks.on("updateWorldTime", async () => {
@@ -15603,7 +17018,9 @@ Hooks.once("ready", () => {
     const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
     const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
     const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey) {
+    const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
+    const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
+    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey || settingKey === journalVisibilityKey || settingKey === sessionSummaryRangeKey) {
       refreshOpenApps();
     }
     if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
@@ -15668,6 +17085,36 @@ async function applyPlayerDowntimeCollectRequest(message, requesterRef = null) {
     return;
   }
   ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}.`);
+}
+
+async function applyPlayerLootClaimRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
+  if (!actorId || !itemId) return;
+  const outcome = await applyLootClaimForUser(requester, actorId, itemId);
+  if (!outcome.ok) {
+    ui.notifications?.warn(`Loot claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+    return;
+  }
+  await postLootItemClaimToChat(outcome);
+  ui.notifications?.info(`${requester.name} claimed ${outcome.itemName} for ${outcome.actorName}.`);
+}
+
+async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  if (!actorId) return;
+  const outcome = await applyLootCurrencyClaimForUser(requester, actorId);
+  if (!outcome.ok) {
+    ui.notifications?.warn(`Currency claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+    return;
+  }
+  await postLootCurrencyClaimToChat(outcome);
+  const s = outcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
+  ui.notifications?.info(`${requester.name} claimed currency for ${outcome.actorName}: ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
 }
 
 async function applyRestRequest(request, requesterRef) {
@@ -15927,9 +17374,11 @@ function openRestWatchPlayerApp() {
   const existing = Object.values(ui.windows).find((app) => app instanceof RestWatchPlayerApp);
   if (existing) {
     existing.bringToTop?.();
-    return;
+    return existing;
   }
-  new RestWatchPlayerApp().render(true);
+  const app = new RestWatchPlayerApp();
+  app.render({ force: true });
+  return app;
 }
 
 export function emitSocketRefresh() {

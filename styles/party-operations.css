@@ -158,6 +158,18 @@
   align-items: center;
 }
 
+.party-operations .po-tabs-main-header {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+  gap: var(--po-space-1);
+}
+
+.party-operations .po-header .po-tabs-main-header .po-tab {
+  min-height: 28px;
+  padding-inline: 12px;
+}
+
 .party-operations .po-tabs-main .po-tab {
   flex: 0 0 auto;
   width: auto;
@@ -281,6 +293,10 @@
   display: none;
 }
 
+.party-operations .po-panel-disclosure > summary::marker {
+  content: "";
+}
+
 .party-operations .po-panel-disclosure-summary {
   display: flex;
   align-items: center;
@@ -290,15 +306,23 @@
 }
 
 .party-operations .po-panel-disclosure-summary::after {
-  content: "\f078";
-  font-family: "Font Awesome 6 Free";
-  font-weight: 900;
-  color: var(--po-muted);
-  transition: transform 120ms ease;
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--po-muted);
+  border-bottom: 2px solid var(--po-muted);
+  transform: rotate(45deg);
+  transition: transform 120ms ease, border-color 120ms ease;
+  margin-left: 8px;
+  flex: 0 0 auto;
+}
+
+.party-operations .po-panel-disclosure > summary:hover .po-panel-disclosure-summary::after {
+  border-color: var(--po-accent);
 }
 
 .party-operations .po-panel-disclosure[open] .po-panel-disclosure-summary::after {
-  transform: rotate(180deg);
+  transform: rotate(-135deg);
 }
 
 .party-operations .po-panel-disclosure-body {
@@ -677,6 +701,13 @@
   overflow-x: visible;
   white-space: normal;
   gap: var(--po-space-1);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: var(--po-space-1);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
 }
 
 .party-operations .po-gm-ops-tabs .po-tab {
@@ -724,6 +755,29 @@
   min-height: 28px;
   padding: 2px 6px;
   font-size: 0.74rem;
+}
+
+.party-operations .po-gm-quick-actions .po-op-action-row .po-btn-expands {
+  position: relative;
+  padding-right: 18px;
+}
+
+.party-operations .po-gm-quick-actions .po-op-action-row .po-btn-expands::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-58%) rotate(45deg);
+  opacity: 0.86;
+  transition: transform 120ms ease;
+}
+
+.party-operations .po-gm-quick-actions .po-op-action-row .po-btn-expands.is-open::after {
+  transform: translateY(-32%) rotate(-135deg);
 }
 
 .party-operations .po-btn,
@@ -1642,6 +1696,30 @@
   flex: 0 1 auto;
 }
 
+/* =========================================================
+   Arrow Theme Overrides
+   ========================================================= */
+.party-operations .po-tabs .po-tab {
+  border-radius: 0;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 10px 50%);
+  padding-left: 18px;
+  padding-right: 22px;
+}
+
+.party-operations .po-tabs .po-tab:first-child {
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%);
+  padding-left: 14px;
+}
+
+.party-operations .po-tabs .po-tab:last-child {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 10px 50%);
+  padding-right: 14px;
+}
+
+.party-operations .po-tabs .po-tab.is-active {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 52%, transparent), 0 0 10px color-mix(in srgb, var(--po-neon-green) 32%, transparent);
+}
+
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1686,8 +1764,10 @@
     flex-wrap: wrap;
   }
 
-  .party-operations .po-context-pill {
+  .party-operations .po-tabs-main-header {
     order: 3;
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .party-operations .po-grid,

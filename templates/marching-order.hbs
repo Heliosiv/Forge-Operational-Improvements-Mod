@@ -1,10 +1,17 @@
 ﻿<div class="po-window po-window-marching" data-tool="marching-order" data-main-tab="marching-order" role="region" aria-label="Party Operations Marching Order">
   <header class="po-header">
     <div class="po-header-main">
-      <h1 class="po-title">Party Operations</h1>
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
       <div class="po-subtitle" aria-live="polite">Marching Order - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
-    <div class="po-context-pill" aria-hidden="true">Marching</div>
+    <nav class="po-tabs po-tabs-main po-tabs-main-header" role="navigation" aria-label="Party Operations views">
+      <button type="button" class="po-tab" data-action="main-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
+      <button type="button" class="po-tab is-active" data-action="main-tab" data-tab="marching-order" aria-current="page">Marching Order</button>
+      <button type="button" class="po-tab" data-action="main-tab" data-tab="operations" aria-current="false">Operations</button>
+      {{#if isGM}}
+      <button type="button" class="po-tab" data-action="main-tab" data-tab="gm" aria-current="false">GM</button>
+      {{/if}}
+    </nav>
     <div class="po-controls">
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
@@ -22,15 +29,6 @@
   {{/if}}
 
   <div class="po-body">
-
-  <nav class="po-tabs po-tabs-main" role="navigation" aria-label="Party Operations views">
-    <button type="button" class="po-tab" data-action="main-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
-    <button type="button" class="po-tab is-active" data-action="main-tab" data-tab="marching-order" aria-current="page">Marching Order</button>
-    <button type="button" class="po-tab" data-action="main-tab" data-tab="operations" aria-current="false">Operations</button>
-    {{#if isGM}}
-    <button type="button" class="po-tab" data-action="main-tab" data-tab="gm" aria-current="false">GM</button>
-    {{/if}}
-  </nav>
   <section class="po-overview" aria-label="Marching status">
     <article class="po-overview-card">
       <span>Assigned Actors</span>
@@ -66,7 +64,6 @@
           <li>Drag actor cards by the grip handle to reorder within a rank.</li>
           <li>Edit each actor's <strong>Notes</strong> directly inside their card.</li>
           <li>Use <strong>Lock Marching Order</strong> to freeze player edits during planning.</li>
-          <li>Use <strong>Share with Players</strong> after confirming the current formation.</li>
         </ul>
       </div>
       {{/unless}}
@@ -175,17 +172,6 @@
 
       {{#if isGM}}
       <aside class="po-gm-panel">
-        <div class="po-gm-section po-collapsible {{#if gmSections.shareCollapsed}}is-collapsed{{/if}}" data-section-id="gm-share">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Share</div>
-          </header>
-          {{#unless gmSections.shareCollapsed}}
-          <div class="po-collapsible-body">
-            <button type="button" class="po-btn" data-action="open-for-players"><i class="fa-solid fa-share-from-square"></i> Share with Players</button>
-          </div>
-          {{/unless}}
-        </div>
-
         <div class="po-gm-section po-collapsible {{#if gmSections.helpCollapsed}}is-collapsed{{/if}}" data-section-id="gm-help">
           <header class="po-collapsible-head">
             <div class="po-section-title">Help</div>

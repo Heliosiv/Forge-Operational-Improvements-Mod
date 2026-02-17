@@ -38,6 +38,7 @@ jobs:
           cp -r scripts release/
           cp -r styles release/
           cp -r templates release/
+          if [ -d packs ]; then cp -r packs release/; fi
 
       - name: 5) Build module.zip artifact
         run: |
