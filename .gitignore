@@ -1,2 +1,5 @@
 dist/
+dist/**
 *.zip
+*.sha256.txt
+.staging-local-test/

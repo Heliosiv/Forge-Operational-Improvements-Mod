@@ -28,6 +28,28 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
+### Export procedure (local DIST only)
+
+Use this when you want a local test/export package without publishing to GitHub:
+
+1. Build/export into `dist/` (or `dist/premium/`) locally.
+2. Do **not** run `git add -A` for export-only steps.
+3. Stage only intended source/manifest/docs files with explicit paths.
+
+Recommended safe staging command:
+
+```powershell
+git add module.json README.md scripts/ styles/ templates/ packs/
+```
+
+Before committing, verify no build artifacts are staged:
+
+```powershell
+git status --short
+```
+
+Expected: no `dist/`, `.zip`, `.sha256.txt`, or `.staging-local-test/` entries in staged changes.
+
 ### Current Release Highlights (2.1.0)
 
 - Integration sync now recovers from stale/missing ActiveEffect references instead of failing.
