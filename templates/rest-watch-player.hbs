@@ -80,49 +80,6 @@
       </div>
     </section>
     <div class="po-op-divider"></div>
-    <section class="po-loot-claims-panel" aria-label="Operations journal">
-      <div class="po-section-title">Operations Journal</div>
-      <div class="po-op-role-row">
-        <label class="po-resource-row">
-          <span>Category</span>
-          <select class="po-select" data-action="set-journal-category">
-            {{#each operationsJournal.categoryOptions}}
-            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-            {{/each}}
-          </select>
-        </label>
-        <label class="po-resource-row">
-          <span>Sort</span>
-          <select class="po-select" data-action="set-journal-sort">
-            {{#each operationsJournal.sortOptions}}
-            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-            {{/each}}
-          </select>
-        </label>
-        <label class="po-resource-row">
-          <span>Filter</span>
-          <input type="search" class="po-input" data-action="set-journal-filter" value="{{operationsJournal.filter}}" placeholder="Search title or folder" />
-        </label>
-      </div>
-      <div class="po-op-summary">Visible: {{operationsJournal.visibleEntries}} / {{operationsJournal.totalEntries}}</div>
-      {{#if operationsJournal.hasEntries}}
-      {{#each operationsJournal.entries}}
-      <div class="po-op-role-row">
-        <div class="po-op-role-head">
-          <div class="po-op-role-name">{{name}}</div>
-          <div class="po-op-role-status">{{sortTimestampLabel}}</div>
-        </div>
-        <div class="po-op-summary">Folder: {{folderPath}}</div>
-        <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{id}}">Open Journal</button>
-        </div>
-      </div>
-      {{/each}}
-      {{else}}
-      <div class="po-op-summary">No shared operations journal entries yet.</div>
-      {{/if}}
-    </section>
-    <div class="po-op-divider"></div>
     <div class="po-cards">
       {{#each slots}}
       <article class="po-card" data-slot-id="{{id}}">

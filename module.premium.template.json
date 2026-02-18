@@ -23,5 +23,15 @@
     "templates/rest-watch.hbs",
     "templates/marching-order.hbs",
     "templates/rest-watch-player.hbs"
+  ],
+  "packs": [
+    {
+      "name": "party-operations-loot-manifest",
+      "label": "Party Operations Built Items",
+      "path": "packs/party-operations-loot-manifest.db",
+      "type": "Item",
+      "system": "dnd5e",
+      "private": false
+    }
   ]
 }

@@ -222,6 +222,7 @@
           </header>
           {{#unless gmSections.lightCollapsed}}
           <div class="po-collapsible-body">
+            <div class="po-march-light-grid">
             {{#each lightToggles}}
             <div class="po-checkbox-target" data-actor-id="{{actorId}}">
               <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
@@ -234,6 +235,7 @@
               <span class="po-light-range-label">Dim</span>
             </div>
             {{/each}}
+            </div>
           </div>
           {{/unless}}
         </div>

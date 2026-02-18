@@ -1,7 +1,22 @@
 ﻿const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
-const MODULE_ID = "party-operations";
+const PRIMARY_MODULE_ID = "party-operations";
+const PREMIUM_MODULE_ID = "party-operations-premium";
+const MODULE_ID = (() => {
+  try {
+    const candidates = [PRIMARY_MODULE_ID, PREMIUM_MODULE_ID];
+    for (const id of candidates) {
+      if (globalThis.game?.modules?.get(id)?.active) return id;
+    }
+    for (const id of candidates) {
+      if (globalThis.game?.modules?.has?.(id) || globalThis.game?.modules?.get(id)) return id;
+    }
+  } catch {
+    // Ignore and fall back to the primary channel id.
+  }
+  return PRIMARY_MODULE_ID;
+})();
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 export const SETTINGS = {
@@ -28,9 +43,6 @@ export const SETTINGS = {
 };
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
-
-const OPEN_SHARE_TIMEOUT_MS = 5000;
-const openShareState = new Map();
 let restWatchAppInstance = null;
 let marchingOrderAppInstance = null;
 let restWatchPlayerAppInstance = null;
@@ -143,7 +155,14 @@ const SESSION_SUMMARY_RANGE_OPTIONS = {
   today: "Today",
   "last-7d": "Last 7 Days"
 };
+const JOURNAL_SORT_OPTIONS = [
+  { value: "newest", label: "Newest" },
+  { value: "oldest", label: "Oldest" },
+  { value: "title", label: "Title" },
+  { value: "folder", label: "Folder" }
+];
 const OPERATIONS_JOURNAL_ROOT_NAME = "Party Operations Logs";
+const OPERATIONS_JOURNAL_ROOT_NAME_LEGACY = ["GM Folder"];
 const OPERATIONS_JOURNAL_CATEGORIES = {
   downtime: "Downtime",
   reputation: "Reputation",
@@ -290,6 +309,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-submit-weather",
   "gm-quick-weather-select",
   "gm-quick-weather-set",
+  "gm-quick-weather-dae-key-preset",
   "gm-quick-weather-add-dae",
   "gm-quick-weather-remove-dae",
   "gm-quick-weather-save-preset",
@@ -1002,10 +1022,78 @@ function collectObjectPaths(source, prefix = "", output = new Set(), depth = 0) 
     const key = String(rawKey ?? "").trim();
     if (!key) continue;
     const path = prefix ? `${prefix}.${key}` : key;
-    if (path.startsWith("system.")) output.add(path);
+    if (path.startsWith("system.") || path.startsWith("flags.") || path.startsWith("prototypeToken.")) output.add(path);
     if (value && typeof value === "object") collectObjectPaths(value, path, output, depth + 1);
   }
   return output;
+}
+
+function extractDaeSpecKeys(rawSpecs) {
+  const keys = new Set();
+  if (!rawSpecs) return keys;
+
+  const pushIfKey = (candidate) => {
+    if (typeof candidate === "string") {
+      const key = candidate.trim();
+      if (key && key.includes(".")) keys.add(key);
+      return;
+    }
+    if (!candidate || typeof candidate !== "object") return;
+    const candidateKeys = [
+      candidate.key,
+      candidate.path,
+      candidate.fieldSpec,
+      candidate.spec,
+      candidate.attr,
+      candidate.value
+    ];
+    for (const raw of candidateKeys) {
+      if (typeof raw !== "string") continue;
+      const key = raw.trim();
+      if (key && key.includes(".")) keys.add(key);
+    }
+  };
+
+  if (Array.isArray(rawSpecs)) {
+    for (const entry of rawSpecs) pushIfKey(entry);
+    return keys;
+  }
+
+  if (rawSpecs instanceof Map) {
+    for (const [mapKey, mapValue] of rawSpecs.entries()) {
+      pushIfKey(mapKey);
+      pushIfKey(mapValue);
+    }
+    return keys;
+  }
+
+  if (typeof rawSpecs === "object") {
+    for (const [objectKey, objectValue] of Object.entries(rawSpecs)) {
+      pushIfKey(objectKey);
+      pushIfKey(objectValue);
+    }
+  }
+
+  return keys;
+}
+
+function collectDaeCatalogSpecKeys() {
+  const keys = new Set();
+  const daeModuleApi = game.modules?.get("dae")?.api ?? null;
+  const daeGlobal = globalThis.DAE ?? null;
+  const specCandidates = [
+    daeModuleApi?.ValidSpec?.allSpecsObj,
+    daeModuleApi?.ValidSpec?.allSpecs,
+    daeModuleApi?.validSpec,
+    daeGlobal?.ValidSpec?.allSpecsObj,
+    daeGlobal?.ValidSpec?.allSpecs,
+    daeGlobal?.validSpec
+  ];
+  for (const candidate of specCandidates) {
+    const extracted = extractDaeSpecKeys(candidate);
+    for (const key of extracted) keys.add(key);
+  }
+  return keys;
 }
 
 function buildDaeModifierCatalog() {
@@ -1014,12 +1102,20 @@ function buildDaeModifierCatalog() {
     map.set(entry.key, { key: entry.key, label: entry.label, hint: entry.hint });
   }
 
+  const addCatalogKey = (rawKey, hintPrefix = "Effect field") => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || map.has(key)) return;
+    map.set(key, { key, label: humanizeDaeKey(key), hint: `${hintPrefix}: ${key}` });
+  };
+
   for (const preset of ENVIRONMENT_PRESETS) {
     for (const change of preset.effectChanges ?? []) {
-      const key = String(change?.key ?? "").trim();
-      if (!key || map.has(key)) continue;
-      map.set(key, { key, label: humanizeDaeKey(key), hint: `System field: ${key}` });
+      addCatalogKey(change?.key, "System field");
     }
+  }
+
+  for (const specKey of collectDaeCatalogSpecKeys()) {
+    addCatalogKey(specKey, "DAE spec");
   }
 
   const model = game.system?.model?.Actor ?? {};
@@ -1028,8 +1124,16 @@ function buildDaeModifierCatalog() {
     collectObjectPaths(value, "system", discovered);
   }
   for (const key of discovered) {
-    if (map.has(key)) continue;
-    map.set(key, { key, label: humanizeDaeKey(key), hint: `System field: ${key}` });
+    addCatalogKey(key, "System field");
+  }
+
+  for (const actor of game.actors?.contents ?? []) {
+    const actorData = actor?.toObject?.();
+    if (!actorData || typeof actorData !== "object") continue;
+    const actorDiscovered = collectObjectPaths(actorData);
+    for (const key of actorDiscovered) {
+      addCatalogKey(key, "Actor field");
+    }
   }
 
   return Array.from(map.values()).sort((a, b) => {
@@ -2024,7 +2128,7 @@ function getNonPartySyncFilterStorageKey() {
 }
 
 function normalizeNonPartySyncFilterKeyword(value) {
-  return normalizeLootPackSourcesFilter(value);
+  return String(value ?? "").slice(0, 120);
 }
 
 function getNonPartySyncFilterKeyword() {
@@ -2156,6 +2260,52 @@ function scheduleOperationsJournalFilterUpdate(app, value, rerender) {
     }
   }, delay);
   journalFilterDebounceTimers.set(app, timer);
+}
+
+function buildJournalSortOptions(selectedSort = "newest") {
+  const selected = String(selectedSort ?? "newest").trim().toLowerCase();
+  return JOURNAL_SORT_OPTIONS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === selected
+  }));
+}
+
+function buildJournalCategoryOptions(selectedCategory = "all") {
+  const selected = String(selectedCategory ?? "all").trim().toLowerCase();
+  return [
+    { value: "all", label: "All Categories", selected: selected === "all" },
+    ...Object.entries(OPERATIONS_JOURNAL_CATEGORIES).map(([value, label]) => ({
+      value,
+      label,
+      selected: selected === value
+    }))
+  ];
+}
+
+async function handleOperationsJournalAction(action, element, rerender) {
+  const actionKey = String(action ?? "").trim();
+  if (!actionKey) return false;
+  if (actionKey === "set-journal-filter") {
+    setOperationsJournalViewState({ filter: String(element?.value ?? "") });
+    rerender?.();
+    return true;
+  }
+  if (actionKey === "set-journal-sort") {
+    setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
+    rerender?.();
+    return true;
+  }
+  if (actionKey === "set-journal-category") {
+    setOperationsJournalViewState({ category: String(element?.value ?? "all") });
+    rerender?.();
+    return true;
+  }
+  if (actionKey === "open-journal-entry") {
+    await openJournalEntryFromElement(element);
+    return true;
+  }
+  return false;
 }
 
 function normalizeLootPreviewDraft(input = {}) {
@@ -2422,6 +2572,21 @@ function captureUiState(app) {
   const root = getAppRootElement(app);
   if (!root) return null;
 
+  const captureFocusedInputState = () => {
+    const active = document?.activeElement;
+    if (!active || !(active instanceof HTMLElement)) return null;
+    if (!root.contains(active)) return null;
+    const tag = String(active.tagName ?? "").toUpperCase();
+    if (!(["INPUT", "TEXTAREA", "SELECT"].includes(tag))) return null;
+    const action = String(active.dataset?.action ?? "").trim();
+    const name = String(active.getAttribute?.("name") ?? "").trim();
+    if (!action && !name) return null;
+    const value = "value" in active ? String(active.value ?? "") : "";
+    const selectionStart = typeof active.selectionStart === "number" ? active.selectionStart : null;
+    const selectionEnd = typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+    return { action, name, value, selectionStart, selectionEnd };
+  };
+
   if (app instanceof RestWatchApp || app instanceof RestWatchPlayerApp) {
     const openNotes = Array.from(root.querySelectorAll(".po-watch-entry .po-notes.is-active"))
       .map((notes) => getWatchEntryStateKey(notes.closest(".po-watch-entry")))
@@ -2429,14 +2594,16 @@ function captureUiState(app) {
     return {
       type: "rest",
       openNotes,
-      disclosures: captureDisclosureState(root)
+      disclosures: captureDisclosureState(root),
+      focusedInput: captureFocusedInputState()
     };
   }
 
   if (app instanceof MarchingOrderApp) {
     return {
       type: "march",
-      disclosures: captureDisclosureState(root)
+      disclosures: captureDisclosureState(root),
+      focusedInput: captureFocusedInputState()
     };
   }
 
@@ -2447,6 +2614,25 @@ function applyUiState(app, state) {
   if (!state) return;
   const root = getAppRootElement(app);
   if (!root) return;
+
+  const restoreFocusedInputState = (focusedInput) => {
+    if (!focusedInput || typeof focusedInput !== "object") return;
+    const action = String(focusedInput.action ?? "").trim();
+    const name = String(focusedInput.name ?? "").trim();
+    const selectors = [];
+    if (action) selectors.push(`[data-action='${CSS.escape(action)}']`);
+    if (name) selectors.push(`[name='${CSS.escape(name)}']`);
+    if (!selectors.length) return;
+    const target = root.querySelector(selectors.join(", "));
+    if (!(target instanceof HTMLElement)) return;
+    target.focus({ preventScroll: true });
+    const start = Number.isFinite(Number(focusedInput.selectionStart)) ? Number(focusedInput.selectionStart) : null;
+    const end = Number.isFinite(Number(focusedInput.selectionEnd)) ? Number(focusedInput.selectionEnd) : null;
+    if (typeof target.setSelectionRange === "function" && start !== null) {
+      target.setSelectionRange(start, end ?? start);
+    }
+  };
+
   applyDisclosureState(root, state.disclosures);
 
   if (state.type === "rest") {
@@ -2457,10 +2643,12 @@ function applyUiState(app, state) {
       if (!notes) return;
       notes.classList.toggle("is-active", Boolean(key && openSet.has(key)));
     });
+    restoreFocusedInputState(state.focusedInput);
     return;
   }
 
   if (state.type === "march") {
+    restoreFocusedInputState(state.focusedInput);
     return;
   }
 }
@@ -2542,43 +2730,20 @@ function restorePendingWindowState(app) {
   const state = pendingWindowRestore.get(app);
   if (!state) return;
   pendingWindowRestore.delete(app);
-  app.setPosition({
+  const position = {
     left: Number.isFinite(state.left) ? state.left : undefined,
     top: Number.isFinite(state.top) ? state.top : undefined,
     width: Number.isFinite(state.width) && state.width > 100 ? state.width : undefined,
     height: Number.isFinite(state.height) && state.height > 100 ? state.height : undefined
+  };
+  const apply = () => app.setPosition(position);
+  apply();
+  requestAnimationFrame(() => {
+    apply();
+    requestAnimationFrame(apply);
   });
-}
-
-function emitOpenForPlayers(app) {
-  if (!game.user.isGM) return;
-  const requestId = foundry.utils.randomID();
-  const label = app === "march" ? "Marching Order" : "Rest Watch";
-  const timeoutId = setTimeout(() => {
-    if (!openShareState.has(requestId)) return;
-    openShareState.delete(requestId);
-    ui.notifications?.warn(`${label} share failed: no player acknowledged.`);
-  }, OPEN_SHARE_TIMEOUT_MS);
-
-  openShareState.set(requestId, { app, timeoutId });
-  ui.notifications?.info(`Sharing ${label} with players...`);
-  game.socket.emit(SOCKET_CHANNEL, {
-    type: "open",
-    app,
-    requestId,
-    fromUserId: game.user.id
-  });
-}
-
-function handleOpenAck(message) {
-  if (!game.user.isGM) return;
-  const entry = openShareState.get(message.requestId);
-  if (!entry) return;
-  clearTimeout(entry.timeoutId);
-  openShareState.delete(message.requestId);
-  const label = entry.app === "march" ? "Marching Order" : "Rest Watch";
-  const userName = game.users.get(message.userId)?.name ?? "Player";
-  ui.notifications?.info(`${label} shared with ${userName}.`);
+  setTimeout(apply, 60);
+  setTimeout(apply, 200);
 }
 
 export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -2685,6 +2850,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       gmOpsTabActiveSync: gmOperationsTab === "active-sync",
       gmOpsTabNonParty: gmOperationsTab === "non-party",
       gmOpsTabCustom: gmOperationsTab === "custom",
+      gmOpsTabModifiers: ["derived", "active-sync", "custom"].includes(gmOperationsTab),
       gmOpsTabLootSources: gmOperationsTab === "loot-sources",
       gmOpsTabLabel: gmOperationsTabLabel,
       operationsPlanningRoles: operationsPlanningTab === "roles",
@@ -2733,10 +2899,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       });
 
       this.element.addEventListener("input", (event) => {
-        if (event.target?.matches("input[data-action='set-loot-preview-field']")) {
-          this.#onAction(event);
-          return;
-        }
         if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
           this.#onAction(event);
           return;
@@ -2862,18 +3024,27 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!action) return;
     if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
+    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+    });
+    if (handledJournalAction) return;
+
     switch (action) {
       case "refresh":
         emitSocketRefresh();
-        break;
-      case "open-for-players":
-        emitOpenForPlayers("rest");
         break;
       case "popout":
         this.render({ force: true, popOut: true });
         break;
       case "assign":
-        await assignSlotByPicker(element);
+      case "assign-character":
+        await assignSlotByPicker(element, { source: "pc" });
+        break;
+      case "assign-actor":
+        await assignSlotByPicker(element, { source: "neutral-friendly" });
+        break;
+      case "assign-actor-global":
+        await assignSlotByPicker(element, { source: "all" });
         break;
       case "assign-me":
         await assignSlotToUser(element);
@@ -3086,6 +3257,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "load-reputation-note-log":
         await loadReputationNoteLog(element);
         break;
+      case "clear-reputation-note":
+        await clearReputationNote(element);
+        break;
+      case "remove-reputation-note-log":
+        await removeReputationNoteLog(element);
+        break;
       case "set-reputation-label":
         await setReputationLabel(element);
         break;
@@ -3107,26 +3284,17 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         setReputationFilterState({ keyword: "", standing: "all" });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
-      case "set-journal-filter":
-        setOperationsJournalViewState({ filter: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-journal-sort":
-        setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-journal-category":
-        setOperationsJournalViewState({ category: String(element?.value ?? "all") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-journal-entry":
-        await openJournalEntryFromElement(element);
-        break;
       case "show-reputation-brief":
         await showReputationBrief();
         break;
       case "set-party-health-custom-field":
         await setPartyHealthCustomField(element);
+        break;
+      case "party-health-custom-key-preset":
+        applyPartyHealthCustomKeyPreset(element);
+        break;
+      case "party-health-custom-key-filter":
+        filterModifierPresetSelect(element, "customModifierKeySelect");
         break;
       case "set-party-health-sync-non-party":
         await setPartyHealthSyncNonParty(element);
@@ -3293,6 +3461,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "gm-quick-weather-set":
         gmQuickUpdateWeatherDraftField(element);
         break;
+      case "gm-quick-modifier-key-preset":
+        gmQuickApplyModifierKeyPreset(element);
+        break;
+      case "gm-quick-modifier-key-filter":
+        filterModifierPresetSelect(element, "quickGlobalModifierKey");
+        break;
+      case "gm-quick-weather-dae-key-preset":
+        gmQuickApplyWeatherDaeKeyPreset(element);
+        break;
       case "gm-quick-weather-add-dae":
         await gmQuickAddWeatherDaeChange(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -3314,6 +3491,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "create-session-summary-journal":
         await createSessionSummaryJournal();
+        break;
+      case "open-journal-repository":
+        await openOperationsJournalRepository();
         break;
       case "edit-global-log":
         await editGlobalLog(element);
@@ -3550,6 +3730,11 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     if (!action) return;
     if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
+    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+    });
+    if (handledJournalAction) return;
+
     switch (action) {
       case "refresh":
         emitSocketRefresh();
@@ -3584,21 +3769,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         break;
       case "open-loot-item":
         await openLootItemFromElement(element);
-        break;
-      case "set-journal-filter":
-        setOperationsJournalViewState({ filter: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-journal-sort":
-        setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-journal-category":
-        setOperationsJournalViewState({ category: String(element?.value ?? "all") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-journal-entry":
-        await openJournalEntryFromElement(element);
         break;
       default:
         break;
@@ -3826,9 +3996,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         break;
       case "main-tab":
         this.#onTabClick(element, this.element);
-        break;
-      case "open-for-players":
-        emitOpenForPlayers("march");
         break;
       case "help":
         showMarchingHelp();
@@ -4748,7 +4915,7 @@ async function rollLootCurrency(draft = {}) {
     * getLootProfileMultiplier(String(draft.profile ?? "standard"))
     * modeFactor;
   const currencyScale = Math.max(0.25, Math.min(3, Number(draft.currencyScalar ?? 100) / 100));
-  const gpEquivalent = Math.max(0, Math.round(scaled * currencyScale));
+  const gpEquivalent = Math.max(0, Number((scaled * currencyScale).toFixed(2)));
   return {
     formula: `${profile.dice} + ${profile.bonus}`,
     rolled: Math.max(0, Math.floor(rollTotal)),
@@ -5413,6 +5580,19 @@ function getOwnedPcActors() {
   return Array.from(unique.values());
 }
 
+function getNeutralFriendlyActors() {
+  const dispositions = CONST?.TOKEN_DISPOSITIONS ?? { HOSTILE: -1, NEUTRAL: 0, FRIENDLY: 1 };
+  const allowed = new Set([dispositions.NEUTRAL, dispositions.FRIENDLY]);
+  const unique = new Map();
+  for (const actor of game.actors.contents) {
+    if (!actor || actor.type === "character" || actor.hasPlayerOwner) continue;
+    const disposition = Number(actor.prototypeToken?.disposition ?? dispositions.NEUTRAL);
+    if (!allowed.has(disposition)) continue;
+    unique.set(actor.id, actor);
+  }
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
 function getPartyMemberActorIds() {
   const ids = new Set();
   for (const actor of Array.isArray(game.party?.members) ? game.party.members : []) {
@@ -5942,6 +6122,29 @@ function buildOperationsContext() {
       };
     })
     .sort((a, b) => Number(b.archivedAt ?? 0) - Number(a.archivedAt ?? 0));
+  const modifierAddLog = (partyHealthState.modifierAddLog ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now()) || Date.now();
+      const createdAtDate = new Date(createdAt);
+      const origin = String(entry?.origin ?? "custom").trim() || "custom";
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        origin,
+        originLabel: origin === "quick" ? "Quick Panel" : "Custom Panel",
+        label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+        key: String(entry?.key ?? "").trim(),
+        modeLabel: getActiveEffectModeLabel(entry?.mode),
+        value: String(entry?.value ?? "").trim(),
+        note: String(entry?.note ?? ""),
+        hasNote: String(entry?.note ?? "").trim().length > 0,
+        createdBy: String(entry?.createdBy ?? "GM").trim() || "GM",
+        createdAt,
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .filter((entry) => entry.key && entry.value)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 8);
   const resolvedIntegrationMode = resolveIntegrationMode();
   const integrationModeLabel = getIntegrationModeLabel(resolvedIntegrationMode);
   const nonPartySyncScope = getNonPartySyncScope(partyHealthState.nonPartySyncScope);
@@ -5994,9 +6197,10 @@ function buildOperationsContext() {
     };
   });
   const nonPartyFilterKeyword = getNonPartySyncFilterKeyword();
-  const nonPartyFilterActive = nonPartyFilterKeyword.length > 0;
+  const nonPartyFilterQuery = normalizeLootPackSourcesFilter(nonPartyFilterKeyword);
+  const nonPartyFilterActive = nonPartyFilterQuery.length > 0;
   const nonPartyRows = nonPartyFilterActive
-    ? nonPartyRowsAll.filter((entry) => matchesLootSourceSearchQuery(nonPartyFilterKeyword, {
+    ? nonPartyRowsAll.filter((entry) => matchesLootSourceSearchQuery(nonPartyFilterQuery, {
       label: entry.actorName,
       id: entry.actorRef,
       sourceKind: `${entry.locationLabel} ${entry.effectsSummary} ${entry.statusLabel}`,
@@ -6068,6 +6272,8 @@ function buildOperationsContext() {
       })),
       modifierModeOptions: partyModifierModeOptions,
       modifierKeyOptions: partyModifierKeyOptions,
+      modifierAddLog,
+      hasModifierAddLog: modifierAddLog.length > 0,
       activeSyncEffects,
       hasActiveSyncEffects: activeSyncEffects.length > 0,
       activeSyncEffectsTab,
@@ -6155,6 +6361,8 @@ function buildOperationsContext() {
       showWeatherPanel: gmQuickPanel === "weather",
       modifierModeOptions: partyModifierModeOptions,
       modifierKeyOptions: partyModifierKeyOptions,
+      modifierAddLog,
+      hasModifierAddLog: modifierAddLog.length > 0,
       weatherSceneSnapshot,
       weatherOptions: weatherQuickOptions.map((option) => ({
         key: option.key,
@@ -6576,15 +6784,16 @@ function buildReputationContext(reputationState, filters = {}) {
     return haystack.includes(filterKeyword);
   });
 
-  const columns = [[], []];
+  const columns = [[], [], []];
   for (let index = 0; index < filteredFactions.length; index += 1) {
-    columns[index % 2].push(filteredFactions[index]);
+    columns[index % 3].push(filteredFactions[index]);
   }
   return {
     factions,
     filteredFactions,
     leftColumn: columns[0],
-    rightColumn: columns[1],
+    middleColumn: columns[1],
+    rightColumn: columns[2],
     coreCount: factions.filter((faction) => faction.isCore).length,
     customCount: factions.filter((faction) => !faction.isCore).length,
     totalCount: factions.length,
@@ -7772,6 +7981,7 @@ function ensurePartyHealthState(ledger) {
     ledger.partyHealth = {
       modifierEnabled: {},
       customModifiers: [],
+      modifierAddLog: [],
       archivedSyncEffects: [],
       syncToSceneNonParty: true,
       nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
@@ -7781,6 +7991,7 @@ function ensurePartyHealthState(ledger) {
     ledger.partyHealth.modifierEnabled = {};
   }
   if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
+  if (!Array.isArray(ledger.partyHealth.modifierAddLog)) ledger.partyHealth.modifierAddLog = [];
   if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
   ledger.partyHealth.syncToSceneNonParty = ledger.partyHealth.syncToSceneNonParty !== false;
   ledger.partyHealth.nonPartySyncScope = getNonPartySyncScope(ledger.partyHealth.nonPartySyncScope);
@@ -7799,6 +8010,21 @@ function ensurePartyHealthState(ledger) {
       };
     })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  ledger.partyHealth.modifierAddLog = ledger.partyHealth.modifierAddLog
+    .map((entry) => ({
+      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      origin: String(entry?.origin ?? "custom").trim() || "custom",
+      label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+      key: String(entry?.key ?? "").trim(),
+      mode: Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
+      value: String(entry?.value ?? "").trim(),
+      note: String(entry?.note ?? ""),
+      createdAt: Number(entry?.createdAt ?? Date.now()) || Date.now(),
+      createdBy: String(entry?.createdBy ?? game.user?.name ?? "GM").trim() || "GM"
+    }))
+    .filter((entry) => entry.key && entry.value)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 12);
   ledger.partyHealth.archivedSyncEffects = ledger.partyHealth.archivedSyncEffects
     .map((entry) => {
       const effectData = entry?.effectData && typeof entry.effectData === "object"
@@ -7819,6 +8045,86 @@ function ensurePartyHealthState(ledger) {
     })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
   return ledger.partyHealth;
+}
+
+function logAddedPartyHealthModifier(partyHealth, payload = {}) {
+  if (!partyHealth || typeof partyHealth !== "object") return;
+  if (!Array.isArray(partyHealth.modifierAddLog)) partyHealth.modifierAddLog = [];
+  partyHealth.modifierAddLog.unshift({
+    id: foundry.utils.randomID(),
+    origin: String(payload.origin ?? "custom").trim() || "custom",
+    label: String(payload.label ?? "Custom Modifier").trim() || "Custom Modifier",
+    key: String(payload.key ?? "").trim(),
+    mode: Math.floor(Number(payload.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
+    value: String(payload.value ?? "").trim(),
+    note: String(payload.note ?? ""),
+    createdAt: Date.now(),
+    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
+  });
+  partyHealth.modifierAddLog = partyHealth.modifierAddLog.slice(0, 12);
+}
+
+function filterModifierPresetSelect(element, selectName) {
+  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
+  if (!root) return;
+  const select = root.querySelector(`select[name='${selectName}']`);
+  if (!(select instanceof HTMLSelectElement)) return;
+  const query = String(element?.value ?? "").trim().toLowerCase();
+  const options = Array.from(select.options ?? []);
+  for (const option of options) {
+    const value = String(option?.value ?? "").trim();
+    if (!value) {
+      option.hidden = false;
+      option.disabled = false;
+      continue;
+    }
+    if (!query) {
+      option.hidden = false;
+      option.disabled = false;
+      continue;
+    }
+    const label = String(option?.textContent ?? "").toLowerCase();
+    const visible = label.includes(query) || value.toLowerCase().includes(query);
+    option.hidden = !visible;
+    option.disabled = !visible;
+  }
+  const selectedValue = String(select.value ?? "").trim();
+  if (selectedValue) {
+    const selectedOption = options.find((option) => String(option.value ?? "").trim() === selectedValue);
+    if (selectedOption?.hidden || selectedOption?.disabled) select.value = "";
+  }
+}
+
+function resetQuickModifierForm(root) {
+  if (!root) return;
+  const label = root.querySelector("input[name='quickGlobalModifierLabel']");
+  const filter = root.querySelector("input[name='quickGlobalModifierKeyFilter']");
+  const mode = root.querySelector("select[name='quickGlobalModifierMode']");
+  const value = root.querySelector("input[name='quickGlobalModifierValue']");
+  const note = root.querySelector("textarea[name='quickGlobalModifierNote']");
+  const preset = root.querySelector("select[name='quickGlobalModifierKey']");
+  if (label) label.value = "Custom Modifier";
+  if (filter) filter.value = "";
+  if (mode) mode.value = String(Number(CONST.ACTIVE_EFFECT_MODES.ADD));
+  if (value) value.value = "1";
+  if (note) note.value = "";
+  if (preset) preset.value = "";
+}
+
+function resetCustomModifierForm(root) {
+  if (!root) return;
+  const label = root.querySelector("input[name='customModifierLabel']");
+  const filter = root.querySelector("input[name='customModifierKeyFilter']");
+  const mode = root.querySelector("select[name='customModifierMode']");
+  const value = root.querySelector("input[name='customModifierValue']");
+  const note = root.querySelector("textarea[name='customModifierNote']");
+  const preset = root.querySelector("select[name='customModifierKeySelect']");
+  if (label) label.value = "";
+  if (filter) filter.value = "";
+  if (mode) mode.value = String(Number(CONST.ACTIVE_EFFECT_MODES.ADD));
+  if (value) value.value = "";
+  if (note) note.value = "";
+  if (preset) preset.value = "";
 }
 
 function ensureSopNotesState(ledger) {
@@ -10153,6 +10459,63 @@ async function loadReputationNoteLog(element) {
   if (loaded) ui.notifications?.info("Loaded historical reputation note into editor.");
 }
 
+async function clearReputationNote(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  if (!factionId) return;
+  let cleared = false;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === factionId);
+    if (!entry) return;
+    if (!String(entry.note ?? "").length) return;
+    entry.note = "";
+    cleared = true;
+  });
+  if (cleared) ui.notifications?.info("Current faction note cleared.");
+}
+
+async function removeReputationNoteLog(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  if (!factionId) return;
+  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
+  const logSelect = root?.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${factionId}']`)
+    ?? root?.querySelector("select[data-action='load-reputation-note-log']");
+  const logId = String(logSelect?.value ?? "").trim();
+  if (!logId) {
+    ui.notifications?.warn("Select a logged note to delete.");
+    return;
+  }
+
+  let removed = false;
+  let removedCalendarEntryId = "";
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === factionId);
+    if (!entry || !Array.isArray(entry.noteLogs)) return;
+    const target = entry.noteLogs.find((row) => String(row.id ?? "") === logId);
+    if (!target) return;
+    removedCalendarEntryId = String(target.calendarEntryId ?? "").trim();
+    entry.noteLogs = entry.noteLogs.filter((row) => String(row.id ?? "") !== logId);
+    removed = true;
+  });
+
+  if (removed && removedCalendarEntryId && isSimpleCalendarActive()) {
+    const api = getSimpleCalendarMutationApi();
+    if (api) {
+      await removeSimpleCalendarEntry(api, removedCalendarEntryId);
+    }
+  }
+  if (removed) ui.notifications?.info("Logged reputation note deleted.");
+}
+
 async function setReputationLabel(element) {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can update reputation.");
@@ -10261,16 +10624,15 @@ async function addPartyHealthCustomModifier(element) {
   }
   const root = element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
   const label = String(root?.querySelector("input[name='customModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const inputKey = String(root?.querySelector("input[name='customModifierKey']")?.value ?? "").trim();
   const selectedKey = String(root?.querySelector("select[name='customModifierKeySelect']")?.value ?? "").trim();
-  const key = inputKey || selectedKey;
+  const key = selectedKey;
   const value = String(root?.querySelector("input[name='customModifierValue']")?.value ?? "").trim();
   const note = String(root?.querySelector("textarea[name='customModifierNote']")?.value ?? "");
   const rawMode = Math.floor(Number(root?.querySelector("select[name='customModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
   const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
   const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
   if (!key || !value) {
-    ui.notifications?.warn("Custom modifier requires both a key and value.");
+    ui.notifications?.warn("Select a key preset and provide a value to add a custom modifier.");
     return;
   }
 
@@ -10285,7 +10647,25 @@ async function addPartyHealthCustomModifier(element) {
       note,
       enabled: true
     });
+    logAddedPartyHealthModifier(partyHealth, {
+      origin: "custom",
+      label,
+      key,
+      mode,
+      value,
+      note
+    });
   });
+  resetCustomModifierForm(root);
+}
+
+function applyPartyHealthCustomKeyPreset(element) {
+  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
+  if (!root) return;
+  const selectedKey = String(element?.value ?? "").trim();
+  const input = root.querySelector("input[name='customModifierKeyFilter']");
+  if (!input) return;
+  input.value = selectedKey;
 }
 
 async function applyNonPartySyncActor(element) {
@@ -11037,6 +11417,32 @@ function findJournalFolderByName(name, parentId = "") {
   }) ?? null;
 }
 
+function findOperationsJournalRootFolder() {
+  const preferred = findJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+  if (preferred) return preferred;
+  for (const legacyName of OPERATIONS_JOURNAL_ROOT_NAME_LEGACY) {
+    const legacy = findJournalFolderByName(legacyName, "");
+    if (legacy) return legacy;
+  }
+  return null;
+}
+
+async function ensureOperationsJournalRootFolder() {
+  const existing = findOperationsJournalRootFolder();
+  if (existing) {
+    const existingName = String(existing.name ?? "").trim();
+    if (existingName !== OPERATIONS_JOURNAL_ROOT_NAME && game.user?.isGM) {
+      try {
+        await existing.update({ name: OPERATIONS_JOURNAL_ROOT_NAME });
+      } catch {
+        // Non-fatal; continue using existing folder.
+      }
+    }
+    return existing;
+  }
+  return ensureJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+}
+
 function getJournalFolderCacheState() {
   const raw = game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE);
   if (!raw || typeof raw !== "object") return {};
@@ -11062,7 +11468,14 @@ async function ensureJournalFolderByName(name, parentId = "") {
   const cachedId = String(cache?.folders?.[key] ?? "").trim();
   if (cachedId) {
     const cachedFolder = game.folders?.get(cachedId) ?? null;
-    if (cachedFolder && String(cachedFolder.type ?? "") === "JournalEntry") return cachedFolder;
+    if (cachedFolder && String(cachedFolder.type ?? "") === "JournalEntry") {
+      const cachedName = String(cachedFolder.name ?? "").trim().toLowerCase();
+      const cachedParentId = getJournalFolderParentId(cachedFolder);
+      if (cachedName === normalizedName.toLowerCase() && cachedParentId === normalizedParentId) return cachedFolder;
+    }
+    if (game.user?.isGM) {
+      await setJournalFolderCacheState({ folders: { [key]: "" } });
+    }
   }
 
   const existing = findJournalFolderByName(normalizedName, normalizedParentId);
@@ -11100,10 +11513,35 @@ async function ensureOperationsJournalFolder(categoryKey = "session") {
   const normalized = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryKey)
     ? categoryKey
     : "session";
-  const root = await ensureJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+  const root = await ensureOperationsJournalRootFolder();
   const categoryLabel = OPERATIONS_JOURNAL_CATEGORIES[normalized];
   const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
   return { root, categoryFolder, categoryKey: normalized, categoryLabel };
+}
+
+async function ensureOperationsJournalFolderTree() {
+  if (!game.user?.isGM) return null;
+  const root = await ensureOperationsJournalRootFolder();
+  const categories = [];
+  for (const [categoryKey, categoryLabel] of Object.entries(OPERATIONS_JOURNAL_CATEGORIES)) {
+    const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
+    categories.push({ categoryKey, categoryLabel, categoryFolder });
+  }
+  return { root, categories };
+}
+
+async function openOperationsJournalRepository() {
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Only the GM can open the operations journal repository.");
+    return;
+  }
+  const tree = await ensureOperationsJournalFolderTree();
+  if (!tree?.root) {
+    ui.notifications?.warn("Unable to initialize the operations journal repository.");
+    return;
+  }
+  ui.sidebar?.activateTab?.("journal");
+  ui.notifications?.info(`Journal repository ready under '${tree.root.name}'.`);
 }
 
 function journalFolderIsUnderRoot(folderId, rootId) {
@@ -11156,7 +11594,7 @@ function buildUuidJournalLink(uuid, label) {
 
 function buildOperationsJournalContext() {
   const view = getOperationsJournalViewState();
-  const rootFolder = findJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
+  const rootFolder = findOperationsJournalRootFolder();
   const rootId = String(rootFolder?.id ?? "").trim();
   const filterQuery = String(view.filter ?? "").trim().toLowerCase();
   const category = String(view.category ?? "all").trim().toLowerCase();
@@ -11210,20 +11648,8 @@ function buildOperationsJournalContext() {
     hasEntries: entriesFiltered.length > 0,
     totalEntries: entriesRaw.length,
     visibleEntries: entriesFiltered.length,
-    sortOptions: [
-      { value: "newest", label: "Newest", selected: sort === "newest" },
-      { value: "oldest", label: "Oldest", selected: sort === "oldest" },
-      { value: "title", label: "Title", selected: sort === "title" },
-      { value: "folder", label: "Folder", selected: sort === "folder" }
-    ],
-    categoryOptions: [
-      { value: "all", label: "All Categories", selected: category === "all" },
-      ...Object.entries(OPERATIONS_JOURNAL_CATEGORIES).map(([value, label]) => ({
-        value,
-        label,
-        selected: category === value
-      }))
-    ]
+    sortOptions: buildJournalSortOptions(sort),
+    categoryOptions: buildJournalCategoryOptions(category)
   };
 }
 
@@ -11381,7 +11807,7 @@ async function createSessionSummaryJournal() {
     <p><strong>Window:</strong> ${escape(summary)}</p>
     <p><strong>Operations Snapshot:</strong> Role Coverage ${context.summary?.roleCoverage ?? 0}/${context.summary?.roleTotal ?? 0}, Active SOPs ${context.summary?.activeSops ?? 0}/${context.summary?.sopTotal ?? 0}, Risk Tier ${escape(String(context.summary?.effects?.riskTier ?? "moderate"))}</p>
     <p><strong>Downtime:</strong> ${downtimeResolvedRecent.length} resolved in window, ${downtimePending} pending.</p>
-    ${downtimeRows ? `<ul>${downtimeRows}</ul>` : "<p>No resolved downtime entries in this window.</p>"}
+    ${downtimeRecentRows ? `<ul>${downtimeRecentRows}</ul>` : "<p>No resolved downtime entries in this window.</p>"}
     <p><strong>Reputation Notes:</strong> ${reputationRecent.length} logged.</p>
     ${reputationRows ? `<ul>${reputationRows}</ul>` : "<p>No reputation notes logged in this window.</p>"}
     <p><strong>Environment Logs:</strong> ${environmentRecent.length} entries.</p>
@@ -11811,9 +12237,8 @@ async function gmQuickSubmitModifier(element) {
   }
   const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
   const label = String(root?.querySelector("input[name='quickGlobalModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const keyInput = String(root?.querySelector("input[name='quickGlobalModifierKeyInput']")?.value ?? "").trim();
   const keySelect = String(root?.querySelector("select[name='quickGlobalModifierKey']")?.value ?? "").trim();
-  const key = keyInput || keySelect;
+  const key = keySelect;
   const value = String(root?.querySelector("input[name='quickGlobalModifierValue']")?.value ?? "").trim();
   const note = String(root?.querySelector("textarea[name='quickGlobalModifierNote']")?.value ?? "");
   const rawMode = Math.floor(Number(root?.querySelector("select[name='quickGlobalModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
@@ -11821,7 +12246,7 @@ async function gmQuickSubmitModifier(element) {
   const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
 
   if (!key || !value) {
-    ui.notifications?.warn("Global modifier requires both a key and value.");
+    ui.notifications?.warn("Select a key preset and provide a value to add a global modifier.");
     return;
   }
 
@@ -11836,8 +12261,26 @@ async function gmQuickSubmitModifier(element) {
       note,
       enabled: true
     });
+    logAddedPartyHealthModifier(partyHealth, {
+      origin: "quick",
+      label,
+      key,
+      mode,
+      value,
+      note
+    });
   });
+  resetQuickModifierForm(root);
   setActiveGmQuickPanel("none");
+}
+
+function gmQuickApplyModifierKeyPreset(element) {
+  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  if (!root) return;
+  const selectedKey = String(element?.value ?? "").trim();
+  const input = root.querySelector("input[name='quickGlobalModifierKeyFilter']");
+  if (!input) return;
+  input.value = selectedKey;
 }
 
 function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {
@@ -11909,6 +12352,16 @@ function gmQuickUpdateWeatherDraftField(element) {
     draft.presetName = String(element?.value ?? "");
   }
   setGmQuickWeatherDraft(draft);
+}
+
+function gmQuickApplyWeatherDaeKeyPreset(element) {
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  if (!root) return;
+  const selectedKey = String(element?.value ?? "").trim();
+  if (!selectedKey) return;
+  const input = root.querySelector("input[name='quickWeatherDaeKeyInput']");
+  if (!input) return;
+  input.value = selectedKey;
 }
 
 async function gmQuickAddWeatherDaeChange(element) {
@@ -13075,8 +13528,7 @@ async function setHealersKitTrackedCharges(item, value) {
 }
 
 function getHealersKitOwnerActors() {
-  return game.actors.contents
-    .filter((actor) => actor && actor.isOwner)
+  return getOwnedPcActors()
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
@@ -13167,6 +13619,38 @@ function buildHealersKitSelectionContext(state) {
   const selectedItem = activeItems.find((item) => item.id === selectedItemId) ?? null;
   const allEntries = getAllHealersKitEntries({ includeDepleted: false });
   const totalCharges = allEntries.reduce((sum, entry) => sum + Math.max(0, Number(entry.charges ?? 0)), 0);
+  const chargeSourceMap = new Map();
+  for (const entry of allEntries) {
+    const actorId = String(entry.actorId ?? "").trim();
+    if (!actorId) continue;
+    if (!chargeSourceMap.has(actorId)) {
+      chargeSourceMap.set(actorId, {
+        actorId,
+        actorName: String(entry.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        totalCharges: 0,
+        itemRows: []
+      });
+    }
+    const row = chargeSourceMap.get(actorId);
+    const charges = Math.max(0, Number(entry.charges ?? 0));
+    row.totalCharges += charges;
+    row.itemRows.push(`${String(entry.itemName ?? "Healer's Kit").trim() || "Healer's Kit"} (${charges})`);
+  }
+  const actorChargeSources = Array.from(chargeSourceMap.values())
+    .sort((a, b) => {
+      const delta = Number(b.totalCharges ?? 0) - Number(a.totalCharges ?? 0);
+      if (delta !== 0) return delta;
+      return String(a.actorName ?? "").localeCompare(String(b.actorName ?? ""));
+    })
+    .map((row) => ({
+      actorId: row.actorId,
+      actorName: row.actorName,
+      totalCharges: row.totalCharges,
+      itemSummary: row.itemRows.join(", ")
+    }));
+  const chargeSourcesTooltip = actorChargeSources.length > 0
+    ? actorChargeSources.map((row) => `${row.actorName}: ${row.totalCharges} (${row.itemSummary})`).join("\n")
+    : "No active Healer's Kit charges found on player character actors.";
 
   return {
     actorOptions,
@@ -13179,7 +13663,10 @@ function buildHealersKitSelectionContext(state) {
     selectedLabel: selectedItem
       ? `${String(activeActorRow?.actor?.name ?? "")} - ${selectedItem.name}`
       : "None",
-    totalCharges
+    totalCharges,
+    chargeSourcesTooltip,
+    actorChargeSources,
+    hasChargeSources: actorChargeSources.length > 0
   };
 }
 
@@ -14183,8 +14670,10 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       userId: game.user.id,
       request: normalizedRequest
     });
-    // Refresh immediately for player to avoid stale lag
-    refreshOpenApps();
+    if (!options.skipLocalRefresh) {
+      // Refresh immediately for player to avoid stale lag
+      refreshOpenApps();
+    }
     return;
   }
   const state = getMarchingOrderState();
@@ -14252,36 +14741,52 @@ async function assignSlotToUser(element) {
   });
 }
 
-async function assignSlotByPicker(element) {
-  const slotId = element?.closest(".po-card")?.dataset?.slotId;
-  if (!slotId) return;
-  const actors = game.actors.contents.slice().sort((a, b) => {
-    // Priority 1: Character type (PCs)
-    const aIsPC = a.type === "character" ? 0 : 1;
-    const bIsPC = b.type === "character" ? 0 : 1;
-    if (aIsPC !== bIsPC) return aIsPC - bIsPC;
-    // Priority 2: Player owner
-    const aOwned = a.hasPlayerOwner ? 0 : 1;
-    const bOwned = b.hasPlayerOwner ? 0 : 1;
-    if (aOwned !== bOwned) return aOwned - bOwned;
-    // Priority 3: Name
-    return (a.name ?? "").localeCompare(b.name ?? "");
+async function assignSlotByPicker(element, config = {}) {
+  const slotIdFromCard = element?.closest(".po-card")?.dataset?.slotId;
+  const source = config?.source === "all"
+    ? "all"
+    : (config?.source === "neutral-friendly" ? "neutral-friendly" : "pc");
+  const actors = source === "pc"
+    ? getOwnedPcActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    : source === "all"
+      ? game.actors.contents.slice().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+      : getNeutralFriendlyActors();
+  if (!actors.length) {
+    const message = source === "pc"
+      ? "No player characters are available to assign."
+      : source === "all"
+        ? "No actors are available to assign."
+        : "No neutral or friendly actors are available to assign.";
+    ui.notifications?.warn(message);
+    return;
+  }
+  const state = getRestWatchState();
+  const slotOptions = (state.slots ?? []).map((slot) => {
+    const suffix = String(slot?.timeRange ?? "").trim();
+    const label = `Watch ${String(slot?.id ?? "").replace("watch-", "")}${suffix ? ` (${suffix})` : ""}`;
+    return `<option value="${slot.id}" ${slot.id === slotIdFromCard ? "selected" : ""}>${label}</option>`;
   });
-  const options = actors.map((actor) =>
+  const actorOptions = actors.map((actor) =>
     `<option value="${actor.id}">${actor.name}</option>`
   );
-  const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
+  const actorLabel = source === "pc" ? "Character" : "Actor";
+  const needsSlotSelection = !slotIdFromCard;
+  const slotField = needsSlotSelection
+    ? `<div class="form-group"><label>Watch</label><select name="slotId">${slotOptions.join("")}</select></div>`
+    : "";
+  const content = `${slotField}<div class="form-group"><label>${actorLabel}</label><select name="actorId">${actorOptions.join("")}</select></div>`;
   const dialog = new Dialog({
-    title: "Assign Actor",
+    title: source === "pc" ? "Assign Character" : "Assign Actor",
     content,
     buttons: {
       assign: {
         label: "Assign",
         callback: async (html) => {
+          const targetSlotId = String(slotIdFromCard ?? html.find("select[name=slotId]").val() ?? "").trim();
           const actorId = html.find("select[name=actorId]").val();
-          if (!actorId) return;
+          if (!targetSlotId || !actorId) return;
           await updateRestWatchState((state) => {
-            const slot = state.slots.find((entry) => entry.id === slotId);
+            const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
             // Migrate old format
             if (!slot.entries && slot.actorId) {
@@ -14643,7 +15148,7 @@ function refreshSingleAppPreservingView(app) {
   if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
   const windowState = captureWindowState(app);
   if (windowState) pendingWindowRestore.set(app, windowState);
-  app.render({ force: true, parts: ["main"] });
+  app.render({ force: true, parts: ["main"], focus: false });
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
@@ -14786,7 +15291,10 @@ async function toggleLight(element) {
         dim: DEFAULT_MARCH_LIGHT_DIM
       };
     }
-  });
+  }, { skipLocalRefresh: true });
+  if (marchingOrderAppInstance?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderAppInstance);
+  }
 }
 
 async function setLightRange(element) {
@@ -14809,7 +15317,10 @@ async function setLightRange(element) {
     if (state.light[actorId] && rangeKey === "bright" && next.dim < next.bright) {
       state.lightRanges[actorId].dim = next.bright;
     }
-  });
+  }, { skipLocalRefresh: true });
+  if (marchingOrderAppInstance?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderAppInstance);
+  }
 }
 
 async function copyMarchingText(asMarkdown) {
@@ -15123,6 +15634,8 @@ function buildWatchSlotsView(state, isGM, visibility) {
     }).filter(Boolean);
 
     const slotHighestPP = computeHighestPPForEntries(entriesView);
+    const slotPpRange = computePassiveRangeForEntries(entriesView, "passivePerception");
+    const slotPivRange = computePassiveRangeForEntries(entriesView, "passiveInvestigation");
     const slotNoDarkvision = computeNoDarkvisionForEntries(entriesView);
 
     return {
@@ -15132,6 +15645,10 @@ function buildWatchSlotsView(state, isGM, visibility) {
       entries: entriesView,
       hasEntries: entriesView.length > 0,
       slotHighestPP,
+      slotPpHighLabel: slotPpRange.highLabel,
+      slotPpLowLabel: slotPpRange.lowLabel,
+      slotPivHighLabel: slotPivRange.highLabel,
+      slotPivLowLabel: slotPivRange.lowLabel,
       slotNoDarkvision,
       canAssign: isGM,
       canAssignMe: !isGM && !lockedForUser
@@ -15967,6 +16484,28 @@ function computeHighestPPForEntries(entries) {
   return Math.max(...values);
 }
 
+function computePassiveRangeForEntries(entries, key) {
+  const values = (entries ?? [])
+    .map((entry) => entry?.actor?.[key])
+    .filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (values.length === 0) {
+    return {
+      high: null,
+      low: null,
+      highLabel: "-",
+      lowLabel: "-"
+    };
+  }
+  const high = Math.max(...values);
+  const low = Math.min(...values);
+  return {
+    high,
+    low,
+    highLabel: String(high),
+    lowLabel: String(low)
+  };
+}
+
 function computeNoDarkvision(slots) {
   for (const slot of slots) {
     const entries = slot.entries ?? [];
@@ -16386,7 +16925,7 @@ function ensureFloatingLauncher() {
       const button = event.target?.closest(".po-floating-btn");
       if (!button) return;
       const action = button.dataset.action;
-      if (action === "rest") new RestWatchApp().render({ force: true });
+      if (action === "rest") openRestWatchUiForCurrentUser({ force: true });
       if (action === "operations") {
         setActiveRestMainTab("operations");
         new RestWatchApp().render({ force: true });
@@ -16876,31 +17415,13 @@ Hooks.once("ready", () => {
     }
   } else {
     scheduleIntegrationSync("ready");
+    ensureOperationsJournalFolderTree().catch((error) => {
+      console.warn(`${MODULE_ID}: failed to initialize operations journal folder tree`, error);
+    });
   }
 
   game.socket.on(SOCKET_CHANNEL, async (message) => {
     if (!message || typeof message !== "object") return;
-
-    if (message.type === "open") {
-      if (!game.user.isGM) {
-        if (message.app === "rest") openRestWatchUiForCurrentUser({ force: true });
-        if (message.app === "march") new MarchingOrderApp().render({ force: true });
-        if (message.requestId) {
-          game.socket.emit(SOCKET_CHANNEL, {
-            type: "open:ack",
-            requestId: message.requestId,
-            app: message.app,
-            userId: game.user.id
-          });
-        }
-      }
-      return;
-    }
-
-    if (message.type === "open:ack") {
-      handleOpenAck(message);
-      return;
-    }
 
     if (message.type === "players:openRest" && !game.user.isGM) {
       openRestWatchUiForCurrentUser({ force: true });
@@ -17291,7 +17812,7 @@ function refreshOpenApps() {
     if (windowState) {
       pendingWindowRestore.set(app, windowState);
     }
-    app.render({ force: true, parts: ["main"] });
+    app.render({ force: true, parts: ["main"], focus: false });
   }
   });
 }

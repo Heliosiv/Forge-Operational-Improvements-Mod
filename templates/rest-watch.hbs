@@ -45,61 +45,13 @@
       <strong>{{overview.lowDarkvisionSlots}}</strong>
     </article>
     <article class="po-overview-card">
-      <span>Lock Status</span>
-      <strong>{{overview.lockState}}</strong>
-    </article>
-    <article class="po-overview-card">
       <span>Campfire</span>
       <strong>{{overview.campfireState}}</strong>
     </article>
-  </section>
-
-  {{#if playerCharacters}}
-  <div class="po-character-selector">
-    <div class="po-selector-label">Switch Character</div>
-    <div class="po-character-buttons">
-      {{#each playerCharacters}}
-      <button type="button" class="po-char-btn {{#if isActive}}is-active{{/if}}" data-action="switch-character" data-actor-id="{{id}}" title="Switch to {{name}}">
-        <img src="{{img}}" alt="{{name}}" />
-        <span class="po-char-name">{{name}}</span>
-      </button>
-      {{/each}}
-    </div>
-  </div>
-  {{/if}}
-
-  <section class="po-campfire-section">
-    <div class="po-campfire-header">
-      <div class="po-light-info">
-        {{#if isGM}}
-        <button type="button" class="po-campfire-toggle {{#if campfire}}is-active{{/if}}" data-action="toggle-campfire" title="Toggle campfire" aria-label="Toggle campfire on or off">
-          <i class="fa-solid fa-fire"></i>
-        </button>
-        {{else}}
-        <div class="po-campfire-status {{#if campfire}}is-active{{/if}}" title="{{#if campfire}}Campfire is active{{else}}No campfire{{/if}}">
-          <i class="fa-solid fa-fire"></i>
-        </div>
-        {{/if}}
-        {{#if light}}
-        <div class="po-visibility-info">
-          {{#if light.brightDistance}}
-          <div class="po-visibility-range">
-            <span class="po-light-icon"><i class="fa-solid fa-sun"></i></span>
-            <span class="po-range-label">Bright:</span>
-            <span class="po-range-value">{{light.brightDistance}} ft</span>
-          </div>
-          <div class="po-visibility-range">
-            <span class="po-light-icon"><i class="fa-solid fa-moon"></i></span>
-            <span class="po-range-label">Dim:</span>
-            <span class="po-range-value">{{light.dimDistance}} ft</span>
-          </div>
-          {{else}}
-          <div class="po-no-light">No light sources</div>
-          {{/if}}
-        </div>
-        {{/if}}
-      </div>
-    </div>
+    <article class="po-overview-card">
+      <span>Lock Status</span>
+      <strong>{{overview.lockState}}</strong>
+    </article>
   </section>
 
   {{/if}}
@@ -111,10 +63,10 @@
         {{#each slots}}
         <article class="po-card" data-slot-id="{{id}}">
           <div class="po-card-left">
-            <div class="po-slot-badge">
+            <button type="button" class="po-btn po-btn-sm po-slot-header-btn" aria-label="{{label}}">
               {{label}}
               {{#if entries}}<span class="po-entry-count">{{entries.length}}</span>{{/if}}
-            </div>
+            </button>
             {{#if isGM}}
             <label class="po-sr-only" for="po-time-range-{{id}}">Time range for {{label}}</label>
             <input id="po-time-range-{{id}}" type="text" class="po-time-range-input" data-action="time-range" data-slot-id="{{id}}" value="{{timeRange}}" placeholder="e.g., 8-10 PM" aria-label="Time range for {{label}}" />
@@ -123,20 +75,20 @@
             <div class="po-time-range">{{timeRange}}</div>
             {{/if}}
             {{/if}}
-            {{#if isGM}}
             <div class="po-slot-insights">
-              {{#if slotHighestPP}}
-              <div class="po-slot-chip">PP {{slotHighestPP}}</div>
-              {{/if}}
+              <div class="po-slot-chip" title="Highest and lowest passive Perception among actors on this watch.">PP H {{slotPpHighLabel}} / L {{slotPpLowLabel}}</div>
+              <div class="po-slot-chip" title="Highest and lowest passive Investigation among actors on this watch.">PIv H {{slotPivHighLabel}} / L {{slotPivLowLabel}}</div>
+              {{#if isGM}}
               {{#if slotNoDarkvision}}
               <div class="po-slot-chip is-warn">No DV</div>
               {{/if}}
+              {{/if}}
             </div>
-            {{/if}}
           </div>
 
           <div class="po-card-center">
             {{#if hasEntries}}
+            <div class="po-watch-entry-grid">
             {{#each entries}}
             <div class="po-watch-entry {{#if isActiveCharacter}}is-active{{/if}}" data-actor-id="{{actorId}}">
               <div class="po-actor">
@@ -246,6 +198,7 @@
               </div>
             </div>
             {{/each}}
+            </div>
             {{/if}}
 
             {{#unless hasEntries}}
@@ -256,7 +209,7 @@
 
             <div class="po-assign-actions">
               {{#if canAssign}}
-              <button type="button" class="po-btn" data-action="assign">+ Add Character</button>
+              <button type="button" class="po-btn" data-action="assign-character">+ Add Character</button>
               {{/if}}
               {{#if canAssignMe}}
               <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
@@ -265,9 +218,22 @@
           </div>
 
           <div class="po-card-right">
-            <button type="button" class="po-icon-btn" data-action="swap" aria-label="Swap">
-              <i class="fa-solid fa-grip-lines"></i>
+            {{#if @root.isGM}}
+            <button
+              type="button"
+              class="po-campfire-toggle {{#if @root.campfire}}is-active{{/if}}"
+              data-action="toggle-campfire"
+              title="Toggle campfire on or off for rest watch visibility."
+            >
+              <i class="fa-solid fa-fire"></i>
+              <span>{{@root.overview.campfireState}}</span>
             </button>
+            {{else}}
+            <div class="po-campfire-status" title="Campfire status for this rest watch plan.">
+              <i class="fa-solid fa-fire"></i>
+              <span>{{@root.overview.campfireState}}</span>
+            </div>
+            {{/if}}
           </div>
         </article>
         {{/each}}
@@ -276,10 +242,6 @@
 
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if gmPanelTabCore}}
-        <div class="po-gm-section">
-          <button type="button" class="po-btn" data-action="open-for-players"><i class="fa-solid fa-share-from-square"></i> Share with Players</button>
-        </div>
-
         <div class="po-gm-section">
           <label class="po-switch">
             <input type="checkbox" data-action="toggle-lock" {{#if locked}}checked{{/if}} />
@@ -291,6 +253,11 @@
           <div class="po-section-title">Auto-Fill</div>
           <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
           <button type="button" class="po-btn" data-action="autofill-last"><i class="fa-solid fa-clock-rotate-left"></i> Fill from Last Session</button>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Actors</div>
+          <button type="button" class="po-btn" data-action="assign-actor-global"><i class="fa-solid fa-user-plus"></i> Add Actor</button>
         </div>
 
         <div class="po-gm-section">
@@ -362,6 +329,7 @@
         <div class="po-gm-section">
           <div class="po-section-title">Operations Roles</div>
           <div class="po-hint">Assign leads for logistics, readiness, and accountability.</div>
+          <div class="po-roles-grid">
           {{#each operations.roles}}
           <div class="po-op-role-row" data-role="{{key}}" title="{{hint}}">
             <div class="po-op-role-head">
@@ -378,6 +346,7 @@
             <div class="po-op-role-meta">Bonus: {{bonus}} - Neglect: {{penalty}}</div>
           </div>
           {{/each}}
+          </div>
         </div>
         {{/if}}
 
@@ -402,7 +371,10 @@
 
         {{#if operationsPlanningResources}}
         <div class="po-gm-section">
-          <div class="po-section-title">Resources</div>
+          <div class="po-section-head-row">
+            <div class="po-section-title">Resources</div>
+            <button type="button" class="po-btn po-btn-sm" data-action="gather-resource-check" title="Run the hidden resource gathering Wisdom check">Gather Resources (Wisdom Check)</button>
+          </div>
           <div class="po-hint">Track supplies and configure per-day drain multipliers using calendar day progression.</div>
           <div class="po-info-strip">
             <div class="po-info-chip" title="Projected food consumed per day"><span>Per Day Food</span><strong>{{operations.resources.summary.foodDrainPerDay}}</strong></div>
@@ -494,55 +466,57 @@
             </label>
 
             <div class="po-op-divider"></div>
-            <div class="po-section-title">Upkeep Inputs</div>
-            {{#if @root.isGM}}
-            <label class="po-resource-row">
-              <span>Party Size</span>
-              <input type="number" min="0" step="1" class="po-input" data-action="set-resource" data-resource="partySize" value="{{operations.resources.upkeep.partySize}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Food per Member / Day</span>
-              <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="foodPerMember" value="{{operations.resources.upkeep.foodPerMember}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Water per Member / Day</span>
-              <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="waterPerMember" value="{{operations.resources.upkeep.waterPerMember}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Food Environment Multiplier</span>
-              <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="foodMultiplier" value="{{operations.resources.upkeep.foodMultiplier}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Water Environment Multiplier</span>
-              <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="waterMultiplier" value="{{operations.resources.upkeep.waterMultiplier}}" />
-            </label>
-            {{else}}
-            <div class="po-op-summary">Party Size: {{operations.resources.upkeep.partySize}}</div>
-            <div class="po-op-summary">Food per Member / Day: {{operations.resources.upkeep.foodPerMember}}</div>
-            <div class="po-op-summary">Water per Member / Day: {{operations.resources.upkeep.waterPerMember}}</div>
-            <div class="po-op-summary">Food Environment Multiplier: {{operations.resources.upkeep.foodMultiplier}}</div>
-            <div class="po-op-summary">Water Environment Multiplier: {{operations.resources.upkeep.waterMultiplier}}</div>
-            {{/if}}
+            <div class="po-resource-config-split">
+              <div class="po-resource-config-col">
+                <div class="po-section-title">Upkeep Inputs</div>
+                {{#if @root.isGM}}
+                <label class="po-resource-row">
+                  <span>Party Size</span>
+                  <input type="number" min="0" step="1" class="po-input" data-action="set-resource" data-resource="partySize" value="{{operations.resources.upkeep.partySize}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Food / Member</span>
+                  <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="foodPerMember" value="{{operations.resources.upkeep.foodPerMember}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Water / Member</span>
+                  <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="waterPerMember" value="{{operations.resources.upkeep.waterPerMember}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Food Multiplier</span>
+                  <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="foodMultiplier" value="{{operations.resources.upkeep.foodMultiplier}}" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Water Multiplier</span>
+                  <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="waterMultiplier" value="{{operations.resources.upkeep.waterMultiplier}}" />
+                </label>
+                <button type="button" class="po-btn" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>
+                {{else}}
+                <div class="po-op-summary">Party Size: {{operations.resources.upkeep.partySize}}</div>
+                <div class="po-op-summary">Food / Member: {{operations.resources.upkeep.foodPerMember}}</div>
+                <div class="po-op-summary">Water / Member: {{operations.resources.upkeep.waterPerMember}}</div>
+                <div class="po-op-summary">Food Multiplier: {{operations.resources.upkeep.foodMultiplier}}</div>
+                <div class="po-op-summary">Water Multiplier: {{operations.resources.upkeep.waterMultiplier}}</div>
+                {{/if}}
+              </div>
 
-            <div class="po-op-divider"></div>
-            <div class="po-section-title">Gather & Weather DC</div>
-            <div class="po-hint">Applied to hidden DC before the Wisdom (Survival) gather roll.</div>
-            {{#if @root.isGM}}
-            {{#each operations.resources.gatherWeatherOptions}}
-            <label class="po-resource-row">
-              <span>{{label}}</span>
-              <input type="number" min="-10" max="20" step="1" class="po-input" data-action="set-resource" data-resource="weatherMod:{{value}}" value="{{dcMod}}" />
-            </label>
-            {{/each}}
-            {{else}}
-            {{#each operations.resources.gatherWeatherOptions}}
-            <div class="po-op-summary">{{label}}: {{dcMod}}</div>
-            {{/each}}
-            {{/if}}
-            <button type="button" class="po-btn" data-action="gather-resource-check" title="Run the hidden resource gathering Wisdom check">Gather Resources (Wisdom Check)</button>
-            {{#if @root.isGM}}
-            <button type="button" class="po-btn" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>
-            {{/if}}
+              <div class="po-resource-config-col">
+                <div class="po-section-title">Gather & Weather DC</div>
+                <div class="po-hint">Applied to hidden DC before the Wisdom (Survival) gather roll.</div>
+                {{#if @root.isGM}}
+                {{#each operations.resources.gatherWeatherOptions}}
+                <label class="po-resource-row">
+                  <span>{{label}}</span>
+                  <input type="number" min="-10" max="20" step="1" class="po-input" data-action="set-resource" data-resource="weatherMod:{{value}}" value="{{dcMod}}" />
+                </label>
+                {{/each}}
+                {{else}}
+                {{#each operations.resources.gatherWeatherOptions}}
+                <div class="po-op-summary">{{label}}: {{dcMod}}</div>
+                {{/each}}
+                {{/if}}
+              </div>
+            </div>
           </div>
         </div>
         {{/if}}
@@ -640,7 +614,8 @@
 
         <div class="po-gm-section">
           <div class="po-section-title">Reputation & Factions</div>
-          <div class="po-hint">Two-column faction tracker. Players see read-only values; GM can manage and add custom factions.</div>
+          <div class="po-hint">Three-column faction tracker. Players see read-only values; GM can manage and add custom factions.</div>
+          <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
           <div class="po-op-role-row po-reputation-filters">
             <label class="po-resource-row">
               <span>Filter</span>
@@ -657,7 +632,7 @@
             <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-filters">Clear Filters</button>
             <div class="po-op-summary">Showing {{operations.reputation.visibleCount}} of {{operations.reputation.totalCount}} factions</div>
           </div>
-          <div class="po-two-col">
+          <div class="po-two-col po-reputation-columns">
             <div class="po-col">
               {{#each operations.reputation.leftColumn}}
               <div class="po-op-role-row" data-faction="{{id}}">
@@ -686,16 +661,72 @@
                 </label>
                 <div class="po-op-action-row">
                   <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Delete Current Note</button>
+                </div>
+                <div class="po-reputation-log-row">
+                  <label class="po-resource-row">
+                    <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                    <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
+                      <option value="">Select date/reputation note...</option>
+                      {{#each noteLogOptions}}
+                      <option value="{{value}}">{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}">Delete Logged Note</button>
+                </div>
+                {{#unless isCore}}
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
+                {{/unless}}
+                {{else}}
+                <div class="po-op-summary">Standing: {{score}}</div>
+                <div class="po-op-summary">Notes: {{#if note}}{{note}}{{else}}-{{/if}}</div>
+                {{/if}}
+              </div>
+              {{/each}}
+            </div>
+            <div class="po-col">
+              {{#each operations.reputation.middleColumn}}
+              <div class="po-op-role-row" data-faction="{{id}}">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{label}}</div>
+                  <div class="po-op-role-status">Standing {{score}} - {{access}}</div>
+                </div>
+                {{#if @root.isGM}}
+                {{#unless isCore}}
+                <label class="po-resource-row">
+                  <span>Faction Name</span>
+                  <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
+                </label>
+                {{/unless}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">-1</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">+1</button>
                 </div>
                 <label class="po-resource-row">
-                  <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
-                  <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
-                    <option value="">Select date/reputation note...</option>
-                    {{#each noteLogOptions}}
-                    <option value="{{value}}">{{label}}</option>
-                    {{/each}}
-                  </select>
+                  <span>Standing (-5 to +5)</span>
+                  <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
                 </label>
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Notes / Outcome Impact</span>
+                  <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
+                </label>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Delete Current Note</button>
+                </div>
+                <div class="po-reputation-log-row">
+                  <label class="po-resource-row">
+                    <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                    <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
+                      <option value="">Select date/reputation note...</option>
+                      {{#each noteLogOptions}}
+                      <option value="{{value}}">{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}">Delete Logged Note</button>
+                </div>
                 {{#unless isCore}}
                 <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
                 {{/unless}}
@@ -734,16 +765,20 @@
                 </label>
                 <div class="po-op-action-row">
                   <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Delete Current Note</button>
                 </div>
-                <label class="po-resource-row">
-                  <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
-                  <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
-                    <option value="">Select date/reputation note...</option>
-                    {{#each noteLogOptions}}
-                    <option value="{{value}}">{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
+                <div class="po-reputation-log-row">
+                  <label class="po-resource-row">
+                    <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                    <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
+                      <option value="">Select date/reputation note...</option>
+                      {{#each noteLogOptions}}
+                      <option value="{{value}}">{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}">Delete Logged Note</button>
+                </div>
                 {{#unless isCore}}
                 <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
                 {{/unless}}
@@ -771,7 +806,6 @@
           <div class="po-op-summary">High standing factions: {{operations.reputation.highStandingCount}}</div>
           <div class="po-op-summary">Hostile factions: {{operations.reputation.hostileCount}}</div>
           <div class="po-op-summary">Custom factions: {{operations.reputation.customCount}}</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
         </div>
 
         {{/if}}
@@ -1121,35 +1155,36 @@
 
         {{#if operationsPageRecovery}}
 
-        <div class="po-gm-section">
+        <div class="po-gm-section po-injury-recovery-panel">
           <div class="po-section-title">Injury & Recovery</div>
           <div class="po-hint">Track injuries using the d100 table and treatment rules.</div>
-          <label class="po-resource-row">
-            <span>Healer's Kit Actor</span>
-            <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitActorId">
-              {{#each injuryRecovery.supplies.kitSelection.actorOptions}}
-              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Healer's Kit Item</span>
-            <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitItemId" {{#unless injuryRecovery.supplies.kitSelection.hasActor}}disabled{{/unless}}>
-              {{#each injuryRecovery.supplies.kitSelection.itemOptions}}
-              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <div class="po-op-summary">Selected Kit: {{injuryRecovery.supplies.kitSelection.selectedLabel}} ({{injuryRecovery.supplies.kitSelection.selectedCharges}})</div>
-          <div class="po-op-summary">Total Healer's Kit Charges Available: {{injuryRecovery.supplies.kitSelection.totalCharges}}</div>
-          <label class="po-resource-row">
-            <span>Base Recovery Days</span>
-            <input type="number" min="1" step="1" class="po-input" data-action="set-injury-config" data-injury-config="baseRecoveryDays" value="{{injuryRecovery.config.baseRecoveryDays}}" />
-          </label>
+          <div class="po-injury-layout">
+            <div class="po-injury-config-col">
+              <label class="po-resource-row">
+                <span>Healer's Kit Actor</span>
+                <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitActorId">
+                  {{#each injuryRecovery.supplies.kitSelection.actorOptions}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Healer's Kit Item</span>
+                <select class="po-select" data-action="set-injury-config" data-injury-config="healersKitItemId" {{#unless injuryRecovery.supplies.kitSelection.hasActor}}disabled{{/unless}}>
+                  {{#each injuryRecovery.supplies.kitSelection.itemOptions}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="po-op-summary">Selected Kit: {{injuryRecovery.supplies.kitSelection.selectedLabel}} ({{injuryRecovery.supplies.kitSelection.selectedCharges}})</div>
+              <div class="po-op-summary" title="{{injuryRecovery.supplies.kitSelection.chargeSourcesTooltip}}">Total Healer's Kit Charges Available: {{injuryRecovery.supplies.kitSelection.totalCharges}}</div>
+              <label class="po-resource-row">
+                <span>Base Recovery Days</span>
+                <input type="number" min="1" step="1" class="po-input" data-action="set-injury-config" data-injury-config="baseRecoveryDays" value="{{injuryRecovery.config.baseRecoveryDays}}" />
+              </label>
+            </div>
 
-          <div class="po-op-divider"></div>
-
-          <div class="po-injury-editor po-op-role-row">
+            <div class="po-injury-editor po-op-role-row">
             <div class="po-op-role-head">
               <div class="po-op-role-name">Track Injury</div>
               <div class="po-op-role-status">d100 table entry</div>
@@ -1190,7 +1225,10 @@
               <button type="button" class="po-btn po-btn-sm" data-action="show-injury-table"><i class="fa-solid fa-table-list"></i> View Table</button>
             </div>
             <button type="button" class="po-btn" data-action="upsert-injury"><i class="fa-solid fa-heart-pulse"></i> Save Injury</button>
+            </div>
           </div>
+
+          <div class="po-op-divider"></div>
 
           <div class="po-recovery-grid">
             {{#each injuryRecovery.entries}}
@@ -1250,37 +1288,25 @@
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
           </div>
-          {{#if operations.gmQuickTools.showFactionPanel}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Quick Add Faction</div>
-            </div>
-            <label class="po-resource-row">
-              <span>Faction Name</span>
-              <input type="text" name="quickFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
-            </label>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-faction">Add Faction</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
-            </div>
-          </div>
-          {{/if}}
-          {{#if operations.gmQuickTools.showModifierPanel}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Quick Add Global Modifier</div>
-            </div>
+          <div class="po-two-col po-gm-quick-panels">
+          <div class="po-col">
+          <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showModifierPanel}}open{{/if}}>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Quick Add Global Modifier</span>
+              <span class="po-op-summary">Create party-wide modifier entries</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
             <label class="po-resource-row">
               <span>Label</span>
               <input type="text" name="quickGlobalModifierLabel" class="po-input" value="Custom Modifier" />
             </label>
             <label class="po-resource-row">
-              <span>Key (Search/Input)</span>
-              <input type="text" name="quickGlobalModifierKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.init.bonus" />
+              <span>Key Preset Filter</span>
+              <input type="text" name="quickGlobalModifierKeyFilter" class="po-input" data-action="gm-quick-modifier-key-filter" placeholder="Filter key presets" />
             </label>
             <label class="po-resource-row">
               <span>Key Presets</span>
-              <select name="quickGlobalModifierKey" class="po-select">
+              <select name="quickGlobalModifierKey" class="po-select" data-action="gm-quick-modifier-key-preset">
                 <option value="">Select key preset</option>
                 {{#each operations.gmQuickTools.modifierKeyOptions}}
                 <option value="{{value}}">{{label}} - {{value}}</option>
@@ -1307,9 +1333,91 @@
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-modifier">Add Modifier</button>
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
             </div>
+            <details class="po-panel-disclosure">
+              <summary class="po-panel-disclosure-summary">
+                <span class="po-section-title">Recent Added Modifiers</span>
+                <span class="po-op-summary">Modifier add history</span>
+              </summary>
+              <div class="po-panel-disclosure-body">
+                {{#if operations.gmQuickTools.hasModifierAddLog}}
+                {{#each operations.gmQuickTools.modifierAddLog}}
+                <div class="po-op-summary">{{originLabel}}: {{label}} | {{key}} | {{modeLabel}} {{value}} | {{createdAtLabel}} by {{createdBy}}</div>
+                {{/each}}
+                {{else}}
+                <div class="po-op-summary">No modifiers added yet.</div>
+                {{/if}}
+              </div>
+            </details>
+            </div>
+          </details>
+          </div>
+          <div class="po-col">
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Downtime Tuning</span>
+              <span class="po-op-summary">Grant hours, set bias, resolve pending actions</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-hint">Players submit actions in the Downtime page. Configure bias here, then resolve pending entries to roll outcomes and publish chat results.</div>
+              <div class="po-info-strip">
+                <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
+                <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
+                <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
+              </div>
+              <label class="po-resource-row">
+                <span>Granted Hours</span>
+                <input type="number" min="1" max="24" step="1" class="po-input" value="{{operations.downtime.hoursGranted}}" data-action="set-downtime-hours" />
+              </label>
+              <label class="po-resource-row">
+                <span>Economy</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="economy">
+                  {{#each operations.downtime.tuning.economyOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Complication Risk</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="risk">
+                  {{#each operations.downtime.tuning.riskOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Discovery Density</span>
+                <select class="po-select" data-action="set-downtime-tuning" data-tuning="discovery">
+                  {{#each operations.downtime.tuning.discoveryOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="resolve-downtime-actions">Resolve Pending</button>
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-results">Clear Resolved Results</button>
+              </div>
+            </div>
+          </details>
+          </div>
+          {{#if operations.gmQuickTools.showFactionPanel}}
+          <div class="po-col">
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Quick Add Faction</div>
+            </div>
+            <label class="po-resource-row">
+              <span>Faction Name</span>
+              <input type="text" name="quickFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-faction">Add Faction</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
+            </div>
+          </div>
           </div>
           {{/if}}
           {{#if operations.gmQuickTools.showWeatherPanel}}
+          <div class="po-col">
           <div class="po-op-role-row">
             <div class="po-op-role-head">
               <div class="po-op-role-name">Quick Weather Presets</div>
@@ -1359,7 +1467,7 @@
             </label>
             <label class="po-resource-row">
               <span>Key Presets</span>
-              <select name="quickWeatherDaeKey" class="po-select">
+              <select name="quickWeatherDaeKey" class="po-select" data-action="gm-quick-weather-dae-key-preset">
                 <option value="">Select key preset</option>
                 {{#each operations.gmQuickTools.modifierKeyOptions}}
                 <option value="{{value}}">{{label}} - {{value}}</option>
@@ -1398,57 +1506,10 @@
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
             </div>
           </div>
+          </div>
           {{/if}}
+          </div>
           <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} - Visibility Modifier {{operations.weather.currentVisibilityModifier}} - Darkness {{operations.weather.currentDarkness}}</div>
-        </div>
-
-        <div class="po-gm-section">
-          <details class="po-panel-disclosure">
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Downtime Tuning</span>
-              <span class="po-op-summary">Grant hours, set bias, resolve pending actions</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <div class="po-hint">Players submit actions in the Downtime page. Configure bias here, then resolve pending entries to roll outcomes and publish chat results.</div>
-              <div class="po-info-strip">
-                <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
-                <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
-                <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
-              </div>
-              <label class="po-resource-row">
-                <span>Granted Hours</span>
-                <input type="number" min="1" max="24" step="1" class="po-input" value="{{operations.downtime.hoursGranted}}" data-action="set-downtime-hours" />
-              </label>
-              <label class="po-resource-row">
-                <span>Economy</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="economy">
-                  {{#each operations.downtime.tuning.economyOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Complication Risk</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="risk">
-                  {{#each operations.downtime.tuning.riskOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Discovery Density</span>
-                <select class="po-select" data-action="set-downtime-tuning" data-tuning="discovery">
-                  {{#each operations.downtime.tuning.discoveryOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="resolve-downtime-actions">Resolve Pending</button>
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-downtime-results">Clear Resolved Results</button>
-              </div>
-            </div>
-          </details>
         </div>
 
         <nav class="po-tabs po-tabs-sub po-gm-ops-tabs" role="tablist" aria-label="GM Operations Sections">
@@ -1461,20 +1522,12 @@
             <span class="po-gm-tab-sub">Global history</span>
           </button>
           <button type="button" class="po-tab {{#if gmOpsTabDerived}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="derived">
-            <span class="po-gm-tab-title">Derived</span>
-            <span class="po-gm-tab-sub">Auto modifiers</span>
-          </button>
-          <button type="button" class="po-tab {{#if gmOpsTabActiveSync}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="active-sync">
-            <span class="po-gm-tab-title">Sync Effects</span>
-            <span class="po-gm-tab-sub">Active &amp; archived</span>
+            <span class="po-gm-tab-title">Derived + Sync</span>
+            <span class="po-gm-tab-sub">Modifiers &amp; rollups</span>
           </button>
           <button type="button" class="po-tab {{#if gmOpsTabNonParty}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="non-party">
             <span class="po-gm-tab-title">Non-Party</span>
             <span class="po-gm-tab-sub">Scene/world targets</span>
-          </button>
-          <button type="button" class="po-tab {{#if gmOpsTabCustom}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="custom">
-            <span class="po-gm-tab-title">Custom Mods</span>
-            <span class="po-gm-tab-sub">Manual effects</span>
           </button>
           <button type="button" class="po-tab {{#if gmOpsTabLootSources}}is-active{{/if}}" data-action="gm-ops-tab" data-gm-tab="loot-sources">
             <span class="po-gm-tab-title">Loot</span>
@@ -1621,102 +1674,23 @@
           <details class="po-panel-disclosure po-panel-disclosure-lg" open>
             <summary class="po-panel-disclosure-summary">
               <span class="po-section-title">GM Logs</span>
-              <span class="po-op-summary">Recent checks and global history</span>
+              <span class="po-op-summary">Journal repository controls</span>
             </summary>
             <div class="po-panel-disclosure-body">
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Recent Movement Checks</div>
-          {{#if operations.environment.hasCheckResults}}
-          {{#each operations.environment.checkResults}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{actorName}}</div>
-              <div class="po-op-role-status">{{resultLabel}} - {{rollVsDc}}</div>
+          <div class="po-two-col">
+            <div class="po-col">
+              <div class="po-hint">Logs are written to the Journal repository only. Use Journal tab to browse categories and entries.</div>
+              <div class="po-op-summary">Repository Root: {{operations.operationsJournal.rootFolderName}}</div>
+              <div class="po-op-summary">Categories: Downtime, Reputation, Environment, Loot Claims, Session</div>
             </div>
-            <div class="po-op-summary">Preset: {{presetLabel}}</div>
-            <div class="po-op-summary">Fail Streak: {{streak}}</div>
-            {{#if hasOutcomeSummary}}
-            <div class="po-op-summary">Outcome: {{outcomeSummary}}</div>
-            {{/if}}
-            <div class="po-op-summary">Logged: {{createdAtLabel}} by {{createdBy}}</div>
-          </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No movement checks logged yet.</div>
-          {{/if}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Global Logs</div>
-          {{#if operations.globalLogs.hasEntries}}
-          {{#each operations.globalLogs.entries}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{logTypeLabel}} - {{title}}</div>
-              <div class="po-op-role-status">{{createdAtLabel}}</div>
-            </div>
-            <div class="po-op-summary">{{summary}}</div>
-            {{#if details}}
-            <div class="po-op-summary">{{details}}</div>
-            {{/if}}
-            {{#if hasNote}}
-            <div class="po-op-summary">Notes: {{note}}</div>
-            {{/if}}
-            <div class="po-op-summary">Logged by {{createdBy}}</div>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="edit-global-log" data-log-type="{{logType}}" data-log-id="{{sourceId}}">Edit</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="remove-global-log" data-log-type="{{logType}}" data-log-id="{{sourceId}}">Remove</button>
+            <div class="po-col">
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="open-journal-repository">Open Journal Repository</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="create-session-summary-journal">Create Session Summary Journal</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
+              </div>
             </div>
           </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No global logs yet.</div>
-          {{/if}}
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="show-gm-logs-manager">Manage Logs</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="create-session-summary-journal">Create Session Summary Journal</button>
-          </div>
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Operations Journal (Shared)</div>
-          <div class="po-op-role-row">
-            <label class="po-resource-row">
-              <span>Category</span>
-              <select class="po-select" data-action="set-journal-category">
-                {{#each operations.operationsJournal.categoryOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Sort</span>
-              <select class="po-select" data-action="set-journal-sort">
-                {{#each operations.operationsJournal.sortOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Filter</span>
-              <input type="search" class="po-input" data-action="set-journal-filter" value="{{operations.operationsJournal.filter}}" placeholder="Search title or folder" />
-            </label>
-          </div>
-          <div class="po-op-summary">Visible: {{operations.operationsJournal.visibleEntries}} / {{operations.operationsJournal.totalEntries}}</div>
-          {{#if operations.operationsJournal.hasEntries}}
-          {{#each operations.operationsJournal.entries}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{name}}</div>
-              <div class="po-op-role-status">{{sortTimestampLabel}}</div>
-            </div>
-            <div class="po-op-summary">Folder: {{folderPath}}</div>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{id}}">Open Journal</button>
-            </div>
-          </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No shared operations journal entries found yet.</div>
-          {{/if}}
             </div>
           </details>
         </div>
@@ -1754,7 +1728,7 @@
             </summary>
             <div class="po-panel-disclosure-body">
           <div class="po-op-role-row po-loot-preview-panel">
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Mode changes which generation path is used. Horde favors broader loot pools, while tighter modes bias toward curated outputs.">
               <span>Mode</span>
               <select name="lootPreviewMode" class="po-select" data-action="set-loot-preview-field" data-field="mode">
                 {{#each operations.lootSources.preview.modeOptions}}
@@ -1762,7 +1736,7 @@
                 {{/each}}
               </select>
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Equipment Profile sets which item families are considered first (for example standard gear vs. richer equipment weighting).">
               <span>Equipment Profile</span>
               <select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">
                 {{#each operations.lootSources.preview.profileOptions}}
@@ -1770,7 +1744,7 @@
                 {{/each}}
               </select>
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Challenge Tier shifts the loot budget and rarity expectations used by the generator before item rolls are made.">
               <span>Challenge Tier</span>
               <select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">
                 {{#each operations.lootSources.preview.challengeOptions}}
@@ -1778,7 +1752,7 @@
                 {{/each}}
               </select>
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Scale applies a base multiplier preset to the overall loot plan before individual scalar sliders are applied.">
               <span>Scale</span>
               <select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">
                 {{#each operations.lootSources.preview.scaleOptions}}
@@ -1786,39 +1760,40 @@
                 {{/each}}
               </select>
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Actor Count increases or reduces the per-party budget inputs. More actors raises generated totals.">
               <span>Actor Count</span>
               <input name="lootPreviewActorCount" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="actorCount" value="{{operations.lootSources.preview.draft.actorCount}}" />
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Currency Scale multiplies the money result after the base currency formula is rolled. 100% keeps the roll unchanged.">
               <span>Currency Scale ({{operations.lootSources.preview.draft.currencyScalar}}%)</span>
               <input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{operations.lootSources.preview.draft.currencyScalar}}" />
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Item Count Scale multiplies the target item count used by generation. Higher values request more item picks.">
               <span>Item Count Scale ({{operations.lootSources.preview.draft.itemScalar}}%)</span>
               <input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{operations.lootSources.preview.draft.itemScalar}}" />
             </label>
-            <label class="po-resource-row">
+            <label class="po-resource-row" title="Table Roll Scale multiplies how many roll-table pulls are attempted. Higher values produce more table results.">
               <span>Table Roll Scale ({{operations.lootSources.preview.draft.tableScalar}}%)</span>
               <input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{operations.lootSources.preview.draft.tableScalar}}" />
             </label>
             <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="roll-loot-preview">Run Dry-Run</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear</button>
-              <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims">Clear Claim Board</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="roll-loot-preview" title="Runs the preview formulas with current settings and shows the generated payload only.">Run Dry-Run</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview" title="Clears only the current dry-run output so you can run a fresh preview.">Clear</button>
+              <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims" title="Publishes the current preview output to the player claim board.">Give to Players</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" title="Removes the published claim board items and currency pool.">Clear Claim Board</button>
             </div>
           </div>
 
           {{#if operations.lootSources.preview.hasResult}}
-          <div class="po-op-summary">Generated: {{operations.lootSources.preview.generatedAtLabel}} by {{operations.lootSources.preview.generatedBy}}</div>
-          <div class="po-op-summary">Currency: {{operations.lootSources.preview.currency.pp}} pp - {{operations.lootSources.preview.currency.gp}} gp - {{operations.lootSources.preview.currency.sp}} sp - {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
-          <div class="po-op-summary">Currency Roll: {{operations.lootSources.preview.currency.formula}}</div>
-          <div class="po-op-summary">Candidates: {{operations.lootSources.preview.stats.candidateCount}} - Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} - Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
+          <div class="po-op-summary" title="Timestamp and user of the most recent dry-run calculation.">Generated: {{operations.lootSources.preview.generatedAtLabel}} by {{operations.lootSources.preview.generatedBy}}</div>
+          <div class="po-op-summary" title="Final currency output after applying base roll plus Currency Scale multiplier.">Currency: {{operations.lootSources.preview.currency.pp}} pp - {{operations.lootSources.preview.currency.gp}} gp - {{operations.lootSources.preview.currency.sp}} sp - {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
+          <div class="po-op-summary" title="The raw money formula that was rolled before scaling.">Currency Roll: {{operations.lootSources.preview.currency.formula}}</div>
+          <div class="po-op-summary" title="Candidate count is the source pool size. Item target uses Item Count Scale, and Table Rolls uses Table Roll Scale.">Candidates: {{operations.lootSources.preview.stats.candidateCount}} - Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} - Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
 
           <div class="po-op-divider"></div>
           <div class="po-section-title">Preview Items</div>
           {{#if operations.lootSources.preview.items.length}}
+          <div class="po-loot-preview-items-grid">
           {{#each operations.lootSources.preview.items}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
@@ -1834,6 +1809,7 @@
             <div class="po-op-summary">Source: {{sourceLabel}}</div>
           </div>
           {{/each}}
+          </div>
           {{else}}
           <div class="po-op-summary">No items generated for current settings.</div>
           {{/if}}
@@ -1908,6 +1884,7 @@
             Filter supports approximate matches (for example: "equip", "equipment", or minor typos like "eqiup").
           </div>
           {{#if operations.lootSources.itemPackVisibleOptions.length}}
+          <div class="po-loot-pack-grid">
           {{#each operations.lootSources.itemPackVisibleOptions}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
@@ -1924,6 +1901,7 @@
             </label>
           </div>
           {{/each}}
+          </div>
           {{else}}
           {{#if operations.lootSources.itemPackOptions.length}}
           <div class="po-op-summary">No item-pack sources matched the current filter.</div>
@@ -1941,6 +1919,7 @@
             </summary>
             <div class="po-panel-disclosure-body">
           {{#if operations.lootSources.tableOptions.length}}
+          <div class="po-roll-table-grid">
           {{#each operations.lootSources.tableOptions}}
           <div class="po-op-role-row">
             <div class="po-op-role-head">
@@ -1961,6 +1940,7 @@
             </label>
           </div>
           {{/each}}
+          </div>
           {{else}}
           <div class="po-op-summary">No roll-table sources detected.</div>
           {{/if}}
@@ -1992,12 +1972,14 @@
             <input type="text" class="po-input" data-action="set-loot-keyword-exclude-tags" value="{{operations.lootSources.keywordExcludeTagsInput}}" placeholder="ctx.urban, loot.artifact" />
           </label>
           <div class="po-op-summary">Keyword Filters: include {{operations.lootSources.keywordIncludeTagCount}}, exclude {{operations.lootSources.keywordExcludeTagCount}}</div>
+          <div class="po-item-filter-grid">
           {{#each operations.lootSources.itemTypeOptions}}
           <div class="po-checkbox-target">
             <input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} />
             <label class="po-checkbox-target-label" for="po-loot-item-type-{{value}}">{{label}}</label>
           </div>
           {{/each}}
+          </div>
           <label class="po-resource-row">
             <span>Rarity Floor</span>
             <select class="po-select" data-action="set-loot-rarity-floor">
@@ -2045,29 +2027,41 @@
               {{/each}}
             </select>
           </label>
-          {{#if gmOpsTabDerived}}
+          {{#if gmOpsTabModifiers}}
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Derived Modifiers</div>
-          {{#each operations.summary.effects.derivedModifierRows}}
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status">{{formatted}} - {{appliesTo}}</div>
+          <details class="po-panel-disclosure" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Derived Modifiers</span>
+              <span class="po-op-summary">Toggle derived party modifiers</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-modifier-grid po-modifier-grid-3col">
+              {{#each operations.summary.effects.derivedModifierRows}}
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{label}}</div>
+                  <div class="po-op-role-status">{{formatted}} - {{appliesTo}}</div>
+                </div>
+                <label class="po-switch">
+                  <input type="checkbox" data-action="set-party-health-modifier" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
+                  <span>Enabled</span>
+                </label>
+                {{#if note}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
+              </div>
+              {{/each}}
+              </div>
             </div>
-            <label class="po-switch">
-              <input type="checkbox" data-action="set-party-health-modifier" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
-              <span>Enabled</span>
-            </label>
-            {{#if note}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
-          </div>
-          {{/each}}
-          {{/if}}
-
-          {{#if gmOpsTabCustom}}
+          </details>
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Custom Global Modifiers (DAE Simple)</div>
+          <details class="po-panel-disclosure" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">GM Party Modifiers (Custom)</span>
+              <span class="po-op-summary">Manage custom modifier entries</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
           <div class="po-hint">Set key, mode, and value. Example: key `system.attributes.init.bonus`, mode `ADD`, value `1`.</div>
           {{#if operations.partyHealth.customModifiers.length}}
+          <div class="po-modifier-grid po-modifier-grid-3col">
           {{#each operations.partyHealth.customModifiers}}
           <div class="po-op-role-row">
             <label class="po-resource-row">
@@ -2111,20 +2105,20 @@
             <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-party-health-custom" data-modifier-id="{{id}}">Remove</button>
           </div>
           {{/each}}
+          </div>
           {{else}}
           <div class="po-op-summary">No custom global modifiers yet.</div>
           {{/if}}
-          {{/if}}
-
-          {{#if gmOpsTabActiveSync}}
+            </div>
+          </details>
           <div class="po-op-divider"></div>
-          <div class="po-section-title">Active Synced Effects</div>
-          <nav class="po-tabs po-tabs-sub" role="tablist" aria-label="Active Sync Effects">
-            <button type="button" class="po-tab {{#if operations.partyHealth.activeSyncEffectsTabActive}}is-active{{/if}}" data-action="set-active-sync-effects-tab" data-tab="active">Active ({{operations.partyHealth.activeSyncEffectsCount}})</button>
-            <button type="button" class="po-tab {{#if operations.partyHealth.activeSyncEffectsTabArchived}}is-active{{/if}}" data-action="set-active-sync-effects-tab" data-tab="archived">Archived ({{operations.partyHealth.archivedSyncEffectsCount}})</button>
-          </nav>
-
-          {{#if operations.partyHealth.activeSyncEffectsTabActive}}
+          <div class="po-section-title">Synced Effects Rollup</div>
+          <details class="po-panel-disclosure" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Active Synced Effects</span>
+              <span class="po-op-summary">{{operations.partyHealth.activeSyncEffectsCount}} active</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
             {{#if operations.partyHealth.hasActiveSyncEffects}}
             {{#each operations.partyHealth.activeSyncEffects}}
             <div class="po-op-role-row">
@@ -2141,9 +2135,15 @@
             {{else}}
             <div class="po-op-summary">No active synced global effects currently on tracked actors.</div>
             {{/if}}
-          {{/if}}
+            </div>
+          </details>
 
-          {{#if operations.partyHealth.activeSyncEffectsTabArchived}}
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Archived Synced Effects</span>
+              <span class="po-op-summary">{{operations.partyHealth.archivedSyncEffectsCount}} archived</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
             {{#if operations.partyHealth.hasArchivedSyncEffects}}
             {{#each operations.partyHealth.archivedSyncEffects}}
             <div class="po-op-role-row">
@@ -2170,7 +2170,8 @@
             {{else}}
             <div class="po-op-summary">No archived synced effects.</div>
             {{/if}}
-          {{/if}}
+            </div>
+          </details>
           {{/if}}
 
           {{#if gmOpsTabNonParty}}
@@ -2202,21 +2203,21 @@
 
           {{#if operations.nonPartySync.filter.active}}
           {{#if operations.nonPartySync.hasTargets}}
+          <div class="po-non-party-grid">
           {{#each operations.nonPartySync.rows}}
-          <div class="po-op-role-row">
+          <div class="po-op-role-row po-non-party-row-compact" title="{{locationLabel}} | Sync Flag: {{#if hasSyncFlag}}Yes{{else}}No{{/if}} | Integration: {{#if hasIntegrationEffect}}Yes{{else}}No{{/if}} | Injury: {{#if hasInjuryEffect}}Yes{{else}}No{{/if}} | Environment: {{#if hasEnvironmentEffect}}Yes{{else}}No{{/if}} | Effects: {{effectsSummary}}">
             <div class="po-op-role-head">
               <div class="po-op-role-name">{{actorName}}</div>
               <div class="po-op-role-status {{#if shouldBeCleared}}is-warn{{/if}}">{{statusLabel}}</div>
             </div>
-            <div class="po-op-summary">{{locationLabel}}</div>
-            <div class="po-op-summary">Sync Flag: {{#if hasSyncFlag}}Yes{{else}}No{{/if}} | Integration: {{#if hasIntegrationEffect}}Yes{{else}}No{{/if}} | Injury: {{#if hasInjuryEffect}}Yes{{else}}No{{/if}} | Environment: {{#if hasEnvironmentEffect}}Yes{{else}}No{{/if}}</div>
-            <div class="po-op-summary">Effects: {{effectsSummary}}</div>
+            <div class="po-op-summary po-non-party-row-meta">{{#if isSceneTarget}}Scene{{else}}World{{/if}} • Tokens: {{tokenCount}} • Effects: {{effectsSummary}}</div>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="apply-non-party-sync-actor" data-actor-ref="{{actorRef}}" data-scene-target="{{#if isSceneTarget}}true{{else}}false{{/if}}">Reapply</button>
               <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-non-party-sync-actor" data-actor-ref="{{actorRef}}">Clear</button>
             </div>
           </div>
           {{/each}}
+          </div>
           {{else}}
           {{#if operations.nonPartySync.hasAnyTargets}}
           <div class="po-op-summary">No non-party sync targets matched the keyword filter.</div>
@@ -2229,7 +2230,7 @@
           {{/if}}
           {{/if}}
 
-          {{#if gmOpsTabCustom}}
+          {{#if gmOpsTabModifiers}}
           <div class="po-op-role-row">
             <div class="po-op-role-head"><div class="po-op-role-name">Add Custom Modifier</div></div>
             <label class="po-resource-row">
@@ -2237,12 +2238,12 @@
               <input type="text" name="customModifierLabel" class="po-input" placeholder="e.g. War Drums Morale" />
             </label>
             <label class="po-resource-row">
-              <span>Key</span>
-              <input type="text" list="po-party-mod-key-options" name="customModifierKey" class="po-input" placeholder="system.attributes.init.bonus" />
+              <span>Key Preset Filter</span>
+              <input type="text" name="customModifierKeyFilter" class="po-input" data-action="party-health-custom-key-filter" placeholder="Filter key presets" />
             </label>
             <label class="po-resource-row">
               <span>Key Presets</span>
-              <select name="customModifierKeySelect" class="po-select">
+              <select name="customModifierKeySelect" class="po-select" data-action="party-health-custom-key-preset">
                 <option value="">Select key preset</option>
                 {{#each operations.partyHealth.modifierKeyOptions}}
                 <option value="{{value}}">{{label}} - {{value}}</option>
@@ -2266,6 +2267,15 @@
               <textarea name="customModifierNote" class="po-input" rows="4" placeholder="What this change represents and when it applies"></textarea>
             </label>
             <button type="button" class="po-btn" data-action="add-party-health-custom">Add Custom Modifier</button>
+            <div class="po-op-divider"></div>
+            <div class="po-section-title">Recent Added Modifiers</div>
+            {{#if operations.partyHealth.hasModifierAddLog}}
+            {{#each operations.partyHealth.modifierAddLog}}
+            <div class="po-op-summary">{{originLabel}}: {{label}} | {{key}} | {{modeLabel}} {{value}} | {{createdAtLabel}} by {{createdBy}}</div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No modifiers added yet.</div>
+            {{/if}}
           </div>
           <datalist id="po-party-mod-key-options">
             {{#each operations.partyHealth.modifierKeyOptions}}
