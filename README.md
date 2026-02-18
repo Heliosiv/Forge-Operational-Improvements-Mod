@@ -19,7 +19,7 @@ git push origin main
 Use the release script to bump version, commit, tag, and push in one step:
 
 ```powershell
-./scripts/release.ps1 -Version 2.0.34 -Message "Release"
+./scripts/release.ps1 -Version 2.1.0 -Message "Release"
 ```
 
 What it does:
@@ -28,7 +28,7 @@ What it does:
 - Creates tag `vX.Y.Z`
 - Pushes `main` and tag to GitHub
 
-### Current Release Highlights (2.0.34)
+### Current Release Highlights (2.1.0)
 
 - Integration sync now recovers from stale/missing ActiveEffect references instead of failing.
 - Operations view uses consistent pill-style navigation and expanded single-column layout.
