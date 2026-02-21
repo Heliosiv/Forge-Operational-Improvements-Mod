@@ -1060,6 +1060,28 @@
   gap: var(--po-space-2);
 }
 
+.party-operations .po-reputation-faction-card {
+  --po-rep-accent: color-mix(in srgb, var(--po-border-strong) 50%, var(--po-border));
+  --po-rep-bg: color-mix(in srgb, var(--po-surface) 80%, transparent);
+  --po-rep-pill-bg: color-mix(in srgb, var(--po-bg-alt) 78%, transparent);
+  --po-rep-pill-text: var(--po-text);
+  border-color: var(--po-rep-accent);
+  background: linear-gradient(140deg, var(--po-rep-bg), color-mix(in srgb, var(--po-bg-alt) 78%, transparent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-rep-accent) 18%, transparent);
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.party-operations .po-reputation-standing-pill {
+  border: 1px solid color-mix(in srgb, var(--po-rep-accent) 54%, var(--po-border));
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--po-rep-pill-text);
+  background: var(--po-rep-pill-bg);
+  white-space: nowrap;
+}
+
 .party-operations .po-two-col .po-col {
   display: flex;
   flex-direction: column;

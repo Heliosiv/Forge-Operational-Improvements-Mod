@@ -613,10 +613,10 @@
           </div>
           <div class="po-reputation-grid">
             {{#each operations.reputation.filteredFactions}}
-            <div class="po-op-role-row" data-faction="{{id}}">
+            <div class="po-op-role-row po-reputation-faction-card {{standingClass}}" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
               <div class="po-op-role-head">
                 <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status">Standing {{score}} - {{access}}</div>
+                <div class="po-op-role-status po-reputation-standing-pill">Standing {{score}} - {{access}}</div>
               </div>
               {{#if @root.isGM}}
               {{#unless isCore}}
@@ -1098,10 +1098,8 @@
               <div class="po-op-summary"><strong>Global Modifiers:</strong> Opens a read-only page showing currently applied global and party modifiers.</div>
               <div class="po-op-summary"><strong>Environment:</strong> Opens a dedicated GM Environment page.</div>
               <div class="po-op-summary"><strong>Loot:</strong> Opens a dedicated GM Loot page.</div>
-              <div class="po-op-summary"><strong>Log Weather:</strong> Opens weather controls to record scene weather, visibility, darkness, and optional DAE effects.</div>
-              <div class="po-op-summary"><strong>Sync Effects:</strong> Re-runs integration sync so actor effects/flags match current operations state.</div>
-              <div class="po-op-summary"><strong>Run Autopilot:</strong> Runs the session automation cycle (upkeep, recovery/sync flows, and related logs).</div>
-              <div class="po-op-summary"><strong>Undo Autopilot:</strong> Reverts the most recent autopilot run snapshot when available.</div>
+              <div class="po-op-summary"><strong>Quick Weather Presets:</strong> Expand the weather disclosure below to record scene weather, visibility, darkness, and optional DAE effects.</div>
+              <div class="po-op-summary"><strong>Automation & Sync Settings:</strong> Contains Sync Effects, Run Autopilot, and Undo Autopilot.</div>
               <div class="po-op-summary"><strong>Tip:</strong> Use <em>Cancel</em> inside any quick panel to close it without saving.</div>
             </div>
           </details>
@@ -1110,10 +1108,6 @@
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">Global Modifiers</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-environment">Environment</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-loot">Loot</button>
-            <button type="button" class="po-btn po-btn-sm po-btn-expands {{#if operations.gmQuickTools.showWeatherPanel}}is-open{{/if}}" data-action="gm-quick-log-weather">Log Weather</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
           </div>
           <div class="po-two-col po-gm-quick-panels">
           <div class="po-col">
@@ -1282,6 +1276,24 @@
             </div>
           </details>
           </div>
+          <div class="po-col">
+          <details class="po-panel-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Automation & Sync Settings</span>
+              <span class="po-op-summary">Session automation and integration controls</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-op-summary"><strong>Integration Mode:</strong> {{operations.nonPartySync.integrationModeLabel}}</div>
+              <div class="po-op-summary"><strong>Non-Party Sync Scope:</strong> {{operations.nonPartySync.scopeLabel}}</div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
+              </div>
+              <div class="po-hint">Use these from settings when you want a manual sync or full session-cycle automation with undo support.</div>
+            </div>
+          </details>
+          </div>
           {{#if operations.gmQuickTools.showFactionPanel}}
           <div class="po-col">
           <div class="po-op-role-row">
@@ -1299,13 +1311,13 @@
           </div>
           </div>
           {{/if}}
-          {{#if operations.gmQuickTools.showWeatherPanel}}
           <div class="po-col">
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Quick Weather Presets</div>
-              <div class="po-op-role-status">Current: {{operations.gmQuickTools.weatherSceneSnapshot.label}}</div>
-            </div>
+          <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showWeatherPanel}}open{{/if}}>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Quick Weather Presets</span>
+              <span class="po-op-summary">Current: {{operations.gmQuickTools.weatherSceneSnapshot.label}}</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
             <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} - Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
             <label class="po-resource-row">
               <span>Weather Preset</span>
@@ -1388,9 +1400,9 @@
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
               <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
             </div>
+            </div>
+          </details>
           </div>
-          </div>
-          {{/if}}
           </div>
           <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} - Visibility Modifier {{operations.weather.currentVisibilityModifier}} - Darkness {{operations.weather.currentDarkness}}</div>
         </div>

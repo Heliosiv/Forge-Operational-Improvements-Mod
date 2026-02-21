@@ -99,6 +99,11 @@ const journalFilterDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
+let integrationSyncInFlight = false;
+let integrationSyncQueued = false;
+let integrationSyncQueuedReason = "";
+const integrationSyncWaiters = [];
+const activeEffectDeleteLocks = new Set();
 let launcherRecoveryScheduled = false;
 let partyOpsHooksRegistered = false;
 const pendingInventoryRefreshByActor = new Map();
@@ -1381,7 +1386,6 @@ function buildIntegrationGlobalContext() {
   }
 
   return {
-    syncedAt: Date.now(),
     restState,
     marchState,
     ledger,
@@ -1420,7 +1424,6 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
     : (Array.isArray(summaryEffects.customDaeChanges) ? summaryEffects.customDaeChanges : []);
 
   return {
-    syncedAt: globalContext.syncedAt,
     moduleVersion: getCurrentModuleVersion(),
     operations: {
       prepEdge: Boolean(globalContext.operations.summary?.effects?.prepEdge),
@@ -2060,45 +2063,107 @@ function isMissingActiveEffectError(error) {
   return message.includes("activeeffect") && message.includes("does not exist");
 }
 
+function logIntegrationEffectDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][integration-effects] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][integration-effects] ${message}`, details);
+}
+
 async function safeDeleteActiveEffect(actor, effect, contextLabel = "sync") {
   if (!actor || !effect?.id) return false;
-  const liveEffect = actor.effects?.get(effect.id);
-  if (!liveEffect) return true;
-  const currentOrigin = String(effect.origin ?? "").trim();
-  const actorOrigin = getEffectOriginForActor(actor);
-  if (actorOrigin && currentOrigin && !isParsableUuid(currentOrigin)) {
-    try {
-      await effect.update({ origin: actorOrigin });
-    } catch {
-      // Continue with best-effort deletion.
-    }
-  }
-  try {
-    await actor.deleteEmbeddedDocuments("ActiveEffect", [effect.id]);
+  const actorId = String(actor.id ?? "");
+  const effectId = String(effect.id ?? "");
+  const lockKey = `${actorId}:${effectId}`;
+  if (activeEffectDeleteLocks.has(lockKey)) {
+    logIntegrationEffectDebug("Skipping duplicate ActiveEffect delete request.", { contextLabel, actorId, effectId });
     return true;
-  } catch (error) {
-    if (isMissingActiveEffectError(error)) return true;
-    try {
-      await effect.delete();
+  }
+  activeEffectDeleteLocks.add(lockKey);
+  try {
+    const liveEffect = actor.effects?.get(effectId);
+    if (!liveEffect) {
+      logIntegrationEffectDebug("ActiveEffect already missing before delete.", { contextLabel, actorId, effectId });
       return true;
-    } catch (fallbackError) {
-      if (isMissingActiveEffectError(fallbackError)) return true;
-      console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effect.id}`, error);
-      return false;
     }
+    const currentOrigin = String(liveEffect.origin ?? effect.origin ?? "").trim();
+    const actorOrigin = getEffectOriginForActor(actor);
+    if (actorOrigin && currentOrigin && !isParsableUuid(currentOrigin)) {
+      try {
+        await liveEffect.update({ origin: actorOrigin });
+      } catch {
+        // Continue with best-effort deletion.
+      }
+    }
+    try {
+      await actor.deleteEmbeddedDocuments("ActiveEffect", [liveEffect.id]);
+      return true;
+    } catch (error) {
+      if (isMissingActiveEffectError(error)) {
+        logIntegrationEffectDebug("ActiveEffect missing during primary delete call.", { contextLabel, actorId, effectId });
+        return true;
+      }
+      try {
+        await liveEffect.delete();
+        return true;
+      } catch (fallbackError) {
+        if (isMissingActiveEffectError(fallbackError)) {
+          logIntegrationEffectDebug("ActiveEffect missing during fallback delete call.", { contextLabel, actorId, effectId });
+          return true;
+        }
+        console.warn(`${MODULE_ID}: failed to delete ${contextLabel} effect ${effectId}`, error);
+        return false;
+      }
+    }
+  } finally {
+    activeEffectDeleteLocks.delete(lockKey);
   }
 }
 
 async function upsertManagedEffect(actor, existing, data, contextLabel = "sync") {
   if (!actor || !data) return;
   if (!existing) {
+    logIntegrationEffectDebug("Creating managed ActiveEffect.", {
+      contextLabel,
+      actorId: String(actor.id ?? ""),
+      name: String(data?.name ?? "")
+    });
     await actor.createEmbeddedDocuments("ActiveEffect", [data]);
     return;
   }
+
+  const normalizeManagedEffectData = (source) => {
+    const moduleFlags = foundry.utils.deepClone(source?.flags?.[MODULE_ID] ?? {});
+    if (moduleFlags && typeof moduleFlags === "object") delete moduleFlags.syncedAt;
+    return {
+      name: String(source?.name ?? ""),
+      img: String(source?.img ?? ""),
+      origin: String(source?.origin ?? ""),
+      disabled: Boolean(source?.disabled),
+      transfer: Boolean(source?.transfer),
+      description: String(source?.description ?? ""),
+      statuses: Array.isArray(source?.statuses) ? [...source.statuses] : [],
+      changes: Array.isArray(source?.changes) ? foundry.utils.deepClone(source.changes) : [],
+      flags: moduleFlags
+    };
+  };
+
+  const existingComparable = normalizeManagedEffectData(existing?.toObject?.() ?? existing);
+  const nextComparable = normalizeManagedEffectData(data);
+  if (JSON.stringify(existingComparable) === JSON.stringify(nextComparable)) return;
+
   try {
     await existing.update(data);
   } catch (error) {
     if (!isMissingActiveEffectError(error)) throw error;
+    logIntegrationEffectDebug("Stale ActiveEffect reference encountered during update; recreating.", {
+      contextLabel,
+      actorId: String(actor.id ?? ""),
+      effectId: String(existing.id ?? ""),
+      name: String(data?.name ?? "")
+    });
     console.warn(`${MODULE_ID}: stale ${contextLabel} effect reference ${existing.id}; recreating.`);
     await actor.createEmbeddedDocuments("ActiveEffect", [data]);
   }
@@ -2183,8 +2248,7 @@ function buildIntegrationEffectData(payload, actor = null) {
     changes,
     flags: {
       [MODULE_ID]: {
-        integration: true,
-        syncedAt: payload.syncedAt
+        integration: true
       }
     }
   };
@@ -2242,7 +2306,6 @@ function buildInjuryStatusEffectData(payload, actor = null) {
     flags: {
       [MODULE_ID]: {
         injuryStatus: true,
-        syncedAt: payload.syncedAt,
         injury: {
           name: injuryName,
           effect: effectText,
@@ -2313,7 +2376,6 @@ function buildEnvironmentStatusEffectData(payload, actor = null) {
     flags: {
       [MODULE_ID]: {
         environmentStatus: true,
-        syncedAt: payload.syncedAt,
         environment: {
           presetKey: String(environment.presetKey ?? "none"),
           label,
@@ -2379,10 +2441,18 @@ async function removeEnvironmentStatusEffect(actor) {
 }
 
 async function applyActorIntegrationPayload(actor, payload, resolvedMode) {
-  await actor.update({
-    [`flags.${MODULE_ID}.sync`]: payload,
-    [`flags.${MODULE_ID}.syncMode`]: resolvedMode
-  });
+  const currentPayload = actor.getFlag(MODULE_ID, "sync") ?? null;
+  const currentMode = String(actor.getFlag(MODULE_ID, "syncMode") ?? "");
+  const nextMode = String(resolvedMode ?? "");
+  const payloadChanged = JSON.stringify(currentPayload ?? null) !== JSON.stringify(payload ?? null);
+  const modeChanged = currentMode !== nextMode;
+
+  if (payloadChanged || modeChanged) {
+    await actor.update({
+      [`flags.${MODULE_ID}.sync`]: payload,
+      [`flags.${MODULE_ID}.syncMode`]: resolvedMode
+    });
+  }
 
   await upsertIntegrationEffect(actor, payload);
   await upsertInjuryStatusEffect(actor, payload);
@@ -2523,15 +2593,60 @@ async function syncIntegrationState() {
 
 function scheduleIntegrationSync(reason = "") {
   if (!game.user.isGM) return;
+  integrationSyncQueuedReason = String(reason ?? "").trim();
+  integrationSyncQueued = true;
+  if (integrationSyncInFlight) return;
   if (integrationSyncTimeoutId) clearTimeout(integrationSyncTimeoutId);
-  integrationSyncTimeoutId = setTimeout(async () => {
+  integrationSyncTimeoutId = setTimeout(() => {
     integrationSyncTimeoutId = null;
-    try {
-      await syncIntegrationState();
-    } catch (error) {
-      console.warn(`${MODULE_ID}: integration sync failed (${reason})`, error);
-    }
+    void flushIntegrationSyncQueue(reason);
   }, 100);
+}
+
+function resolveIntegrationSyncWaiters() {
+  if (!integrationSyncWaiters.length) return;
+  const waiters = integrationSyncWaiters.splice(0, integrationSyncWaiters.length);
+  for (const resolve of waiters) {
+    try {
+      resolve();
+    } catch {
+      // Ignore waiter resolution failures.
+    }
+  }
+}
+
+async function flushIntegrationSyncQueue(reason = "") {
+  if (!game.user.isGM) return;
+  const requestedReason = String(reason ?? "").trim();
+  if (requestedReason) integrationSyncQueuedReason = requestedReason;
+  integrationSyncQueued = true;
+  if (integrationSyncTimeoutId) {
+    clearTimeout(integrationSyncTimeoutId);
+    integrationSyncTimeoutId = null;
+  }
+  if (integrationSyncInFlight) {
+    await new Promise((resolve) => integrationSyncWaiters.push(resolve));
+    return;
+  }
+
+  integrationSyncInFlight = true;
+  try {
+    do {
+      const runReason = integrationSyncQueuedReason || requestedReason;
+      integrationSyncQueuedReason = "";
+      integrationSyncQueued = false;
+      logIntegrationEffectDebug("Running integration sync pass.", { reason: runReason || "unspecified" });
+      try {
+        await syncIntegrationState();
+      } catch (error) {
+        console.warn(`${MODULE_ID}: integration sync failed (${runReason})`, error);
+      }
+    } while (integrationSyncQueued);
+  } finally {
+    integrationSyncInFlight = false;
+    logIntegrationEffectDebug("Integration sync queue drained.");
+    resolveIntegrationSyncWaiters();
+  }
 }
 
 function getGmPanelTabStorageKey() {
@@ -5308,76 +5423,131 @@ export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(Application
     this.render(renderOptions);
   }
 
+  async #onAction(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const actionElement = event?.target?.closest?.("[data-action]");
+    const action = String(actionElement?.dataset?.action ?? "").trim();
+    if (!action) return;
+    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+
+    try {
+      switch (action) {
+        case "gm-environment-page-back":
+          this.close();
+          openMainTab("gm", { force: true });
+          return;
+        case "gm-environment-page-refresh":
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "set-environment-sync-non-party":
+          await setOperationalEnvironmentSyncNonParty(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "set-environment-preset":
+          await setOperationalEnvironmentPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "set-environment-dc":
+          await setOperationalEnvironmentDc(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "set-environment-successive":
+          await setOperationalEnvironmentSuccessive(actionElement);
+          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "set-environment-note":
+          await setOperationalEnvironmentNote(actionElement);
+          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "toggle-environment-actor":
+          await toggleOperationalEnvironmentActor(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "reset-environment-successive-defaults":
+          await resetOperationalEnvironmentSuccessiveDefaults();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "add-environment-log":
+          await addOperationalEnvironmentLog();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "clear-environment-effects":
+          await clearOperationalEnvironmentEffects();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "show-environment-brief":
+          await showOperationalEnvironmentBrief();
+          return;
+        case "gm-quick-log-weather":
+          await gmQuickLogCurrentWeather();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-add-dae":
+          await gmQuickAddWeatherDaeChange(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-remove-dae":
+          await gmQuickRemoveWeatherDaeChange(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-save-preset":
+          await gmQuickSaveWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-delete-preset":
+          await gmQuickDeleteWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-submit-weather":
+          await gmQuickSubmitWeather(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-select":
+          await gmQuickSelectWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        case "gm-quick-weather-set":
+          gmQuickUpdateWeatherDraftField(actionElement);
+          return;
+        case "gm-quick-weather-dae-key-preset":
+          gmQuickApplyWeatherDaeKeyPreset(actionElement);
+          return;
+      }
+    } catch (error) {
+      logUiFailure("gm-environment-page", `action failed: ${action}`, error, {
+        target: summarizeClickTarget(event?.target)
+      });
+      ui.notifications?.warn("Environment action failed. Check console for details.");
+    }
+  }
+
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
     if (this.element && !this.element.dataset.poBoundGmEnvironmentPage) {
       this.element.dataset.poBoundGmEnvironmentPage = "1";
-      this.element.addEventListener("click", async (event) => {
+      this.element.addEventListener("click", (event) => {
         const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "gm-environment-page-back") {
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        }
-        if (action === "gm-environment-page-refresh") {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-log-weather") {
-          await gmQuickLogCurrentWeather();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-weather-add-dae") {
-          await gmQuickAddWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-weather-remove-dae") {
-          await gmQuickRemoveWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-weather-save-preset") {
-          await gmQuickSaveWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-weather-delete-preset") {
-          await gmQuickDeleteWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-submit-weather") {
-          await gmQuickSubmitWeather(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
+        if (isFormActionElement(actionElement)) return;
+        if (!actionElement) return;
+        this.#onAction(event);
       });
-      this.element.addEventListener("change", async (event) => {
+      this.element.addEventListener("change", (event) => {
         const actionElement = event.target?.closest?.("[data-action]");
         const action = String(actionElement?.dataset?.action ?? "").trim();
         if (!action) return;
-        if (action === "gm-quick-weather-select") {
-          await gmQuickSelectWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "gm-quick-weather-set") {
-          gmQuickUpdateWeatherDraftField(actionElement);
-          return;
-        }
-        if (action === "gm-quick-weather-dae-key-preset") {
-          gmQuickApplyWeatherDaeKeyPreset(actionElement);
-        }
+        this.#onAction(event);
       });
       this.element.addEventListener("input", (event) => {
         const actionElement = event.target?.closest?.("[data-action]");
         const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (action !== "gm-quick-weather-set") return;
-        gmQuickUpdateWeatherDraftField(actionElement);
+        if (!action) return;
+        if (action === "gm-quick-weather-set" || action === "set-environment-note" || action === "set-environment-successive") {
+          this.#onAction(event);
+        }
       });
     }
     restorePendingWindowState(this);
@@ -11162,6 +11332,38 @@ function getReputationBand(score) {
   return "neutral";
 }
 
+function getReputationStandingClass(score) {
+  const value = Math.max(-5, Math.min(5, Math.floor(Number(score ?? 0) || 0)));
+  if (value >= 0) return `po-reputation-standing-p${value}`;
+  return `po-reputation-standing-n${Math.abs(value)}`;
+}
+
+function getReputationStandingStyle(score) {
+  const numeric = Number(score ?? 0);
+  const value = Math.max(-5, Math.min(5, Number.isFinite(numeric) ? numeric : 0));
+  const isPositive = value >= 0;
+  const intensity = isPositive ? (value / 5) : (Math.abs(value) / 5);
+
+  const hue = isPositive
+    ? (212 + ((148 - 212) * intensity))
+    : (34 + ((2 - 34) * intensity));
+  const saturation = isPositive
+    ? (30 + ((58 - 30) * intensity))
+    : (48 + ((76 - 48) * intensity));
+  const lightness = isPositive
+    ? (54 + ((46 - 54) * intensity))
+    : (54 + ((44 - 54) * intensity));
+
+  const accent = `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
+  const bgMix = Math.round((isPositive ? 10 : 12) + ((isPositive ? 16 : 24) * intensity));
+  const pillMix = Math.round((isPositive ? 16 : 20) + ((isPositive ? 22 : 28) * intensity));
+  const pillText = (isPositive && intensity >= 0.82) || (!isPositive && intensity >= 0.56)
+    ? "var(--po-accent-contrast)"
+    : "var(--po-text)";
+
+  return `--po-rep-accent:${accent};--po-rep-bg:color-mix(in srgb, ${accent} ${bgMix}%, var(--po-bg-alt));--po-rep-pill-bg:color-mix(in srgb, ${accent} ${pillMix}%, var(--po-bg-alt));--po-rep-pill-text:${pillText};`;
+}
+
 function getReputationAccessLabel(score) {
   const value = Math.max(-5, Math.min(5, Math.floor(Number(score ?? 0) || 0)));
   const map = {
@@ -11203,6 +11405,8 @@ function buildReputationContext(reputationState, filters = {}) {
       ...faction,
       key: faction.id,
       band,
+      standingClass: getReputationStandingClass(faction.score),
+      standingStyle: getReputationStandingStyle(faction.score),
       access: getReputationAccessLabel(faction.score),
       noteLogs,
       noteLogOptions,
@@ -13541,7 +13745,10 @@ async function addOperationalEnvironmentLog() {
   });
 
   const actorNames = Array.isArray(current.targets)
-    ? current.targets.filter((row) => row?.selected).map((row) => String(row.name ?? "").trim()).filter(Boolean)
+    ? current.targets
+      .filter((row) => row?.selected)
+      .map((row) => String(row.actorName ?? row.name ?? "").trim())
+      .filter(Boolean)
     : [];
   await createOperationsJournalEntry({
     category: "environment",
@@ -13550,16 +13757,16 @@ async function addOperationalEnvironmentLog() {
     summary: `${String(current.checkLabel ?? "Check")} DC ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}`,
     redactedSummary: `${String(current.preset?.label ?? "Environment")} update logged.`,
     body: `
-      <p><strong>Preset:</strong> ${foundry.utils.escapeHTML(String(current.preset?.label ?? "Unknown"))}</p>
-      <p><strong>Check:</strong> ${foundry.utils.escapeHTML(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
-      <p><strong>Targets:</strong> ${foundry.utils.escapeHTML(actorNames.length > 0 ? actorNames.join(", ") : "No assigned actors")}</p>
+      <p><strong>Targets:</strong> ${poEscapeHtml(actorNames.length > 0 ? actorNames.join(", ") : "No assigned actors")}</p>
       <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
-      ${String(current.note ?? "").trim() ? `<p><strong>GM Note:</strong> ${foundry.utils.escapeHTML(String(current.note ?? ""))}</p>` : ""}
+      ${String(current.note ?? "").trim() ? `<p><strong>GM Note:</strong> ${poEscapeHtml(String(current.note ?? ""))}</p>` : ""}
     `,
     redactedBody: `
-      <p><strong>Preset:</strong> ${foundry.utils.escapeHTML(String(current.preset?.label ?? "Unknown"))}</p>
-      <p><strong>Check:</strong> ${foundry.utils.escapeHTML(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
       <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
       <p><em>Some GM details are redacted.</em></p>
@@ -17556,7 +17763,7 @@ async function runSessionAutopilot(options = {}) {
     notes.push(`Weather logged (${weatherResult.label}, visibility ${formatSignedModifier(weatherResult.visibilityModifier)}).`);
   }
 
-  await syncIntegrationState();
+  await flushIntegrationSyncQueue("session-autopilot");
   notes.push("Integration sync completed.");
 
   const calendarResult = await syncAllInjuriesToSimpleCalendar();
