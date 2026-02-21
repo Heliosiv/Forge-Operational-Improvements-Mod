@@ -47,7 +47,7 @@ if (Test-Path "packs") {
 }
 
 foreach ($pack in @($manifest.packs)) {
-  $packPath = String($pack.path)
+  $packPath = [string]$pack.path
   if (-not $packPath) { continue }
   $resolved = Join-Path $staging $packPath
   if (-not (Test-Path $resolved)) {
@@ -59,21 +59,7 @@ if (Test-Path $zipPath) {
   Remove-Item $zipPath -Force
 }
 
-Add-Type -AssemblyName System.IO.Compression.FileSystem
-$stagingRoot = (Resolve-Path $staging).Path
-$files = Get-ChildItem -Path $staging -Recurse -File
-$stream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::CreateNew)
-try {
-  $archive = New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Create, $false)
-  foreach ($file in $files) {
-    $relative = $file.FullName.Substring($stagingRoot.Length).TrimStart('\\', '/')
-    $entryName = $relative.Replace('\\', '/')
-    [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file.FullName, $entryName, [System.IO.Compression.CompressionLevel]::Optimal) | Out-Null
-  }
-  $archive.Dispose()
-} finally {
-  $stream.Dispose()
-}
+Compress-Archive -Path (Join-Path $staging "*") -DestinationPath $zipPath -CompressionLevel Optimal
 
 $hash = Get-FileHash -Path $zipPath -Algorithm SHA256
 $hash | Out-File (Join-Path $premiumRoot "party-operations-premium-v$Version.sha256.txt") -Encoding utf8

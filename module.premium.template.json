@@ -2,7 +2,10 @@
   "id": "party-operations-premium",
   "title": "Party Operations Premium",
   "description": "Premium release channel for Party Operations.",
-  "version": "2.0.3",
+  "url": "https://github.com/YOUR_ORG_OR_USER/party-operations-founders",
+  "manifest": "https://github.com/YOUR_ORG_OR_USER/party-operations-founders/releases/latest/download/module.json",
+  "download": "https://github.com/YOUR_ORG_OR_USER/party-operations-founders/releases/latest/download/module.zip",
+  "version": "2.0.2",
   "authors": [
     {
       "name": "Foundry Operations Module"

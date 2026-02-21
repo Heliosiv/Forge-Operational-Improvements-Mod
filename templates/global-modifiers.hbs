@@ -1,0 +1,71 @@
+<div class="po-window po-window-rest" data-tool="global-modifiers" role="region" aria-label="Party Operations Global Modifiers">
+  <header class="po-header">
+    <div class="po-header-main">
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+      <div class="po-subtitle" aria-live="polite">Global Modifiers - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-btn po-btn-sm" data-action="global-modifiers-back">Back</button>
+      <button type="button" class="po-icon-btn" data-action="global-modifiers-refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="po-body">
+    <section class="po-content" id="po-panel-global-modifiers">
+      <div class="po-grid is-operations-layout">
+        <div class="po-gm-section">
+          <div class="po-section-title">Global Modifiers</div>
+          <div class="po-hint">Applied derived modifiers from current operations, weather, and readiness state.</div>
+          {{#if hasGlobalRows}}
+          {{#each globalRows}}
+          <div class="po-op-summary">
+            <strong>{{label}}</strong>: {{value}} - Applies to: {{appliesTo}} - {{key}}
+          </div>
+          {{#if note}}
+          <div class="po-op-summary">Note: {{note}}</div>
+          {{/if}}
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No applied global modifiers.</div>
+          {{/if}}
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Party Modifiers</div>
+          <div class="po-hint">Applied custom party modifiers currently enabled in Party Operations.</div>
+          {{#if hasPartyRows}}
+          {{#each partyRows}}
+          <div class="po-op-summary">
+            <strong>{{label}}</strong>: {{modeLabel}} {{value}} - Applies to: {{appliesTo}} - {{key}}
+          </div>
+          {{#if note}}
+          <div class="po-op-summary">Note: {{note}}</div>
+          {{/if}}
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No applied party modifiers.</div>
+          {{/if}}
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Modifier Exclusions (GM)</div>
+          <div class="po-hint">Exclude individual modifiers from applying. Uncheck to re-enable.</div>
+          {{#if hasExclusionRows}}
+          {{#each exclusionRows}}
+          <div class="po-op-role-row">
+            <label class="po-switch" title="Exclude or include this modifier">
+              <input type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if excluded}}checked{{/if}} />
+              <span>{{label}} ({{valueLabel}}) - {{scopeLabel}} - {{source}}</span>
+            </label>
+          </div>
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No modifiers available for exclusion.</div>
+          {{/if}}
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

@@ -21,8 +21,33 @@ Use this launch plan to start selling access at `$3.50` while continuing develop
 Files added in this repo:
 - `module.premium.template.json` (premium module manifest template)
 - `scripts/build-premium-package.ps1` (builds premium ZIP artifact)
+- `scripts/build-founders-release.ps1` (builds founders `module.json` + `module.zip` for private GitHub Releases)
 
-## 3) Launch Checklist
+## 3) Private GitHub Founders Channel (Different Manifest URL)
+
+Use a private GitHub repo for founder-first updates and keep public releases in the current repo.
+
+1. Create private repository (example):
+   - `party-operations-founders`
+2. In that private repo, create releases tagged as `vX.Y.Z`
+3. Upload two assets each release:
+   - `module.json`
+   - `module.zip`
+4. Share this manifest URL only with founders:
+   - `https://github.com/<owner>/party-operations-founders/releases/latest/download/module.json`
+
+Build those assets from this repo:
+
+```powershell
+./scripts/build-founders-release.ps1 -Version 2.1.0 -PrivateRepo <owner>/party-operations-founders
+```
+
+Output files:
+- `dist/founders/module.json`
+- `dist/founders/module.zip`
+- `dist/founders/module.zip.sha256.txt`
+
+## 4) Launch Checklist
 
 1. Copy `module.premium.template.json` to `module.premium.json`
 2. Set:
@@ -38,7 +63,7 @@ Files added in this repo:
    - install steps
    - update notes
 
-## 4) Patreon Post Template
+## 5) Patreon Post Template
 
 Title:
 - `Party Operations Premium vX.Y.Z`
@@ -49,7 +74,7 @@ Body:
 - Install steps (Foundry/Forge manual package upload)
 - Notes on update compatibility
 
-## 5) Important Notes
+## 6) Important Notes
 
 - A public manifest URL cannot enforce Patreon access control.
 - If the goal is truly paid-only distribution, premium files/links must be private.

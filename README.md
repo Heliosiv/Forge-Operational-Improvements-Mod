@@ -50,6 +50,16 @@ git status --short
 
 Expected: no `dist/`, `.zip`, `.sha256.txt`, or `.staging-local-test/` entries in staged changes.
 
+### Founder-first private manifest release
+
+Build founders release assets (for a private GitHub repo release):
+
+```powershell
+./scripts/build-founders-release.ps1 -Version 2.1.0 -PrivateRepo <owner>/party-operations-founders
+```
+
+Then upload `dist/founders/module.json` and `dist/founders/module.zip` to the private repo release.
+
 ### Current Release Highlights (2.1.0)
 
 - Integration sync now recovers from stale/missing ActiveEffect references instead of failing.

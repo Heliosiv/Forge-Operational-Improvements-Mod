@@ -1,0 +1,272 @@
+<div class="po-window po-window-rest" data-tool="gm-environment" role="region" aria-label="Party Operations GM Environment">
+  <header class="po-header">
+    <div class="po-header-main">
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+      <div class="po-subtitle" aria-live="polite">GM Environment - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-environment-page-back">Back</button>
+      <button type="button" class="po-icon-btn" data-action="gm-environment-page-refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="po-body">
+    <section class="po-content" id="po-panel-gm-environment-page">
+      <div class="po-grid is-operations-layout">
+        <div id="po-gm-environment" class="po-gm-section">
+          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">GM Environment Controls</span>
+              <span class="po-op-summary">Presets, assignments, movement checks, and logs</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
+              <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
+              <div class="po-environment-hazards-grid">
+                <div class="po-op-summary">Current: {{environment.preset.label}}</div>
+                <div class="po-op-summary">Assigned Actors: {{environment.targetCount}}</div>
+                {{#if environment.movementCheckActive}}
+                <div class="po-op-summary">Movement Check: {{environment.checkLabel}} vs hidden DC {{environment.movementDc}}</div>
+                {{else}}
+                <div class="po-op-summary">Movement Check: Off</div>
+                {{/if}}
+                <div class="po-op-summary">On Success: {{environment.outcomes.onSuccess}}</div>
+                <div class="po-op-summary">On Fail: {{environment.outcomes.onFail}}</div>
+                <div class="po-op-summary">On Fail by 5+: {{environment.outcomes.onFailBy5}}</div>
+                <div class="po-op-summary">On Successive Fail: {{environment.outcomes.onSuccessiveFail}}</div>
+                <div class="po-op-summary">Always-On Status: {{environment.outcomes.alwaysOn}}</div>
+              </div>
+              <label class="po-switch">
+                <input type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
+                <span>Also apply environment preset effects to non-party scene actors</span>
+              </label>
+
+              <label class="po-resource-row">
+                <span>Environment Preset</span>
+                <select class="po-select" data-action="set-environment-preset">
+                  {{#each environment.presetOptions}}
+                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Movement DC</span>
+                <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{environment.movementDc}}" />
+              </label>
+              <div class="po-op-divider"></div>
+              <div class="po-section-title">Successive Failure Override (Per Preset)</div>
+              <div class="po-hint">These values apply on 2+ consecutive movement-check failures for the selected preset.</div>
+              <label class="po-resource-row">
+                <span>Status</span>
+                <select class="po-select" data-action="set-environment-successive" data-field="statusId">
+                  {{#each environment.successiveConfig.statusOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Slide (ft)</span>
+                <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-successive" data-field="slideFeet" value="{{environment.successiveConfig.slideFeet}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Exhaustion</span>
+                <input type="number" min="0" max="6" step="1" class="po-input" data-action="set-environment-successive" data-field="exhaustion" value="{{environment.successiveConfig.exhaustion}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Damage Formula</span>
+                <input type="text" class="po-input" data-action="set-environment-successive" data-field="damageFormula" placeholder="e.g. 1d6" value="{{environment.successiveConfig.damageFormula}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Damage Type</span>
+                <select class="po-select" data-action="set-environment-successive" data-field="damageType">
+                  {{#each environment.successiveConfig.damageTypeOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Max HP Reduction</span>
+                <input type="text" class="po-input" data-action="set-environment-successive" data-field="maxHpReductionFormula" placeholder="e.g. 1d4" value="{{environment.successiveConfig.maxHpReductionFormula}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>DAE Change Key</span>
+                <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-successive" data-field="daeChangeKey" placeholder="Search key (e.g. system.attributes.movement.walk)" value="{{environment.successiveConfig.daeChangeKey}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Key Presets</span>
+                <select class="po-select" data-action="set-environment-successive" data-field="daeChangeKey">
+                  <option value="">Select key preset</option>
+                  {{#each environment.successiveConfig.daeKeyOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="po-op-summary">Selected Key Hint: {{environment.successiveConfig.daeKeyHint}}</div>
+              <datalist id="po-env-dae-key-options">
+                {{#each environment.successiveConfig.daeKeyOptions}}
+                <option value="{{value}}" label="{{label}}"></option>
+                {{/each}}
+              </datalist>
+              <label class="po-resource-row">
+                <span>DAE Change Mode</span>
+                <select class="po-select" data-action="set-environment-successive" data-field="daeChangeMode">
+                  {{#each environment.successiveConfig.daeModeOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>DAE Change Value</span>
+                <input type="text" class="po-input" data-action="set-environment-successive" data-field="daeChangeValue" placeholder="e.g. -10" value="{{environment.successiveConfig.daeChangeValue}}" />
+              </label>
+              {{#unless environment.successiveConfig.daeAvailable}}
+              <div class="po-op-summary is-warn">DAE module not active. Change fields still save and apply as Active Effect changes.</div>
+              {{/unless}}
+              <label class="po-resource-row">
+                <span>Notes</span>
+                <textarea class="po-input" rows="4" data-action="set-environment-note" placeholder="Add GM notes for this preset application">{{environment.note}}</textarea>
+              </label>
+
+              {{#if environment.targets.length}}
+              {{#each environment.targets}}
+              <div class="po-checkbox-target">
+                <input id="po-env-target-{{actorId}}" type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
+                <label class="po-checkbox-target-label" for="po-env-target-{{actorId}}">{{actorName}}{{#if failureStreak}} - Streak {{failureStreak}}{{/if}}</label>
+              </div>
+              {{/each}}
+              {{else}}
+              <div class="po-op-summary is-warn">No player actors available for assignment.</div>
+              {{/if}}
+
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="reset-environment-successive-defaults">Reset to Preset Defaults</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="po-gm-section po-gm-quick-actions">
+          <div class="po-op-role-row">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Quick Weather Presets</div>
+              <div class="po-op-role-status">Current: {{gmQuickTools.weatherSceneSnapshot.label}}</div>
+            </div>
+            <div class="po-op-summary">Weather: {{weather.currentLabel}} | Visibility {{weather.currentVisibilityModifier}} | Darkness {{weather.currentDarkness}}</div>
+            <label class="po-resource-row">
+              <span>Weather Preset</span>
+              <select name="quickWeatherProfile" class="po-select" data-action="gm-quick-weather-select">
+                {{#each gmQuickTools.weatherOptions}}
+                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} - {{visibilityLabel}} ({{effectSummary}})</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Darkness (0-1)</span>
+              <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" data-action="gm-quick-weather-set" data-field="darkness" value="{{gmQuickTools.weatherDraft.darkness}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Perception Modifier</span>
+              <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" data-action="gm-quick-weather-set" data-field="visibilityModifier" value="{{gmQuickTools.weatherDraft.visibilityModifier}}" />
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Log Note</span>
+              <textarea name="quickWeatherNote" rows="3" class="po-input" data-action="gm-quick-weather-set" data-field="note" placeholder="Optional global weather note">{{gmQuickTools.weatherDraft.note}}</textarea>
+            </label>
+            <div class="po-op-divider"></div>
+            <div class="po-section-title">Global DAE Effects</div>
+            {{#if gmQuickTools.weatherDraft.daeChanges.length}}
+            {{#each gmQuickTools.weatherDraft.daeChanges}}
+            <div class="po-op-role-row">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">{{label}}</div>
+                <div class="po-op-role-status">{{value}} ({{mode}})</div>
+              </div>
+              {{#if note}}<div class="po-op-summary">{{note}}</div>{{/if}}
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-remove-dae" data-change-id="{{id}}">Remove Effect</button>
+            </div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No global DAE effects on this weather draft yet.</div>
+            {{/if}}
+            <label class="po-resource-row">
+              <span>DAE Key</span>
+              <input type="text" name="quickWeatherDaeKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.movement.walk" />
+            </label>
+            <label class="po-resource-row">
+              <span>Key Presets</span>
+              <select name="quickWeatherDaeKey" class="po-select" data-action="gm-quick-weather-dae-key-preset">
+                <option value="">Select key preset</option>
+                {{#each gmQuickTools.modifierKeyOptions}}
+                <option value="{{value}}">{{label}} - {{value}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Mode</span>
+              <select name="quickWeatherDaeMode" class="po-select">
+                {{#each gmQuickTools.weatherDaeModeOptions}}
+                <option value="{{value}}">{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Value</span>
+              <input type="text" name="quickWeatherDaeValue" class="po-input" value="-1" />
+            </label>
+            <label class="po-resource-row">
+              <span>Effect Note</span>
+              <input type="text" name="quickWeatherDaeNote" class="po-input" placeholder="Optional effect note" />
+            </label>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-add-dae">Add DAE Effect</button>
+            <div class="po-op-divider"></div>
+            <div class="po-section-title">Custom Preset</div>
+            <label class="po-resource-row">
+              <span>Preset Name</span>
+              <input type="text" name="quickWeatherPresetName" class="po-input" data-action="gm-quick-weather-set" data-field="presetName" value="{{gmQuickTools.weatherDraft.presetName}}" placeholder="e.g., Dust Storm" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Custom</button>
+            </div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-log-weather">Load Scene Weather</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Environment Logs</div>
+          {{#if hasLogs}}
+          {{#each logs}}
+          <div class="po-op-summary">{{presetLabel}} | {{checkLabel}} DC {{movementDc}} | {{createdAtLabel}} by {{createdBy}}</div>
+          {{#if hasNote}}
+          <div class="po-op-summary">Note: {{note}}</div>
+          {{/if}}
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No environment logs.</div>
+          {{/if}}
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Movement Check Results</div>
+          {{#if hasCheckResults}}
+          {{#each checkResults}}
+          <div class="po-op-summary {{#if isFail}}is-warn{{else}}is-good{{/if}}">{{actorName}} | {{presetLabel}} | {{rollVsDc}} | {{resultLabel}} | {{createdAtLabel}}</div>
+          {{#if hasOutcomeSummary}}
+          <div class="po-op-summary">Outcome: {{outcomeSummary}}</div>
+          {{/if}}
+          {{/each}}
+          {{else}}
+          <div class="po-op-summary">No movement check results recorded.</div>
+          {{/if}}
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

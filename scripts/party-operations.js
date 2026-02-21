@@ -19,6 +19,31 @@ const MODULE_ID = (() => {
 })();
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
+const PO_ESCAPE_HTML_FALLBACK = (value) => String(value ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;")
+  .replace(/\"/g, "&quot;")
+  .replace(/'/g, "&#39;");
+
+const poEscapeHtml = (value) => {
+  try {
+    const escapeFn = foundry?.utils?.escapeHTML;
+    if (typeof escapeFn === "function") return escapeFn(String(value ?? ""));
+  } catch {
+    // Fall through to fallback encoder.
+  }
+  return PO_ESCAPE_HTML_FALLBACK(value);
+};
+
+try {
+  if (typeof foundry?.utils?.escapeHTML !== "function" && foundry?.utils && typeof foundry.utils === "object") {
+    foundry.utils.escapeHTML = PO_ESCAPE_HTML_FALLBACK;
+  }
+} catch {
+  // Ignore shim failures; local fallbacks exist in some call-sites.
+}
+
 export const SETTINGS = {
   REST_STATE: "restWatchState",
   REST_COMMITTED: "restWatchStateLastCommitted",
@@ -32,20 +57,41 @@ export const SETTINGS = {
   LOOT_SOURCE_CONFIG: "lootSourceConfig",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
+  LAUNCHER_PLACEMENT: "launcherPlacement",
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
+  DEBUG_ENABLED: "debugEnabled",
+  LOOT_SCARCITY: "lootScarcity",
+  REST_AUTOMATION_ENABLED: "restAutomationEnabled",
+  MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
+  PARTY_OPS_CONFIG: "partyOpsConfig",
   JOURNAL_ENTRY_VISIBILITY: "journalEntryVisibility",
   JOURNAL_FILTER_DEBOUNCE_MS: "journalFilterDebounceMs",
   SESSION_SUMMARY_RANGE: "sessionSummaryRange",
-  JOURNAL_FOLDER_CACHE: "journalFolderCache"
+  JOURNAL_FOLDER_CACHE: "journalFolderCache",
+  INVENTORY_HOOK_MODE: "inventoryHookMode",
+  AUTO_INV_ENABLED: "autoInventoryEnabled",
+  AUTO_INV_WEAPON_PACK: "autoInventoryWeaponPackId",
+  AUTO_INV_ARMOR_PACK: "autoInventoryArmorPackId",
+  AUTO_INV_GEAR_PACK: "autoInventoryGearPackId",
+  AUTO_INV_CONSUMABLES_PACK: "autoInventoryConsumablesPackId",
+  AUTO_INV_CURRENCY_ENABLED: "autoInventoryCurrencyEnabled",
+  AUTO_INV_ITEM_CHANCE_SCALAR: "autoInventoryItemChanceScalar",
+  AUTO_INV_CONSUMABLE_CHANCE_SCALAR: "autoInventoryConsumableChanceScalar",
+  AUTO_INV_CURRENCY_SCALAR: "autoInventoryCurrencyScalar",
+  AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift"
 };
 
 const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 let restWatchAppInstance = null;
 let marchingOrderAppInstance = null;
 let restWatchPlayerAppInstance = null;
+let globalModifierSummaryAppInstance = null;
+let gmEnvironmentPageAppInstance = null;
+let gmLootPageAppInstance = null;
+let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
@@ -54,7 +100,169 @@ const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
 let launcherRecoveryScheduled = false;
+let partyOpsHooksRegistered = false;
+const pendingInventoryRefreshByActor = new Map();
+const autoInventoryPackIndexCache = new Map();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
+const LAUNCHER_PLACEMENTS = {
+  FLOATING: "floating",
+  SIDEBAR: "sidebar",
+  BOTH: "both"
+};
+
+const PO_TEMPLATE_MAP = Object.freeze({
+  "rest-watch": "modules/party-operations/templates/rest-watch.hbs",
+  "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",
+  "marching-order": "modules/party-operations/templates/marching-order.hbs",
+  "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",
+  "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
+  "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
+  "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
+});
+
+const PO_MAIN_TAB_IDS = new Set(["rest-watch", "marching-order", "operations", "gm"]);
+
+const PO_SIDEBAR_VIEW_ITEMS = Object.freeze([
+  { id: "rest-watch", action: "rest", label: "Rest", icon: "fas fa-moon", title: "Open Rest Watch", target: "po-panel-rest-watch" },
+  { id: "operations", action: "operations", label: "Ops", icon: "fas fa-clipboard-list", title: "Open Operations", target: "po-panel-operations" },
+  { id: "marching-order", action: "march", label: "March", icon: "fas fa-arrow-up", title: "Open Marching Order", target: "po-march-overview" },
+  { id: "gm", action: "gm", label: "GM", icon: "fas fa-user-shield", title: "Open GM Section", target: "po-panel-operations", gmOnly: true }
+]);
+
+const PO_MAIN_TAB_ACTIONS = Object.freeze({
+  "rest-watch": "rest",
+  operations: "operations",
+  "marching-order": "march",
+  gm: "gm"
+});
+
+const PO_SWITCH_TAB_IDS = new Set(["rest", "march", "operations", "gm"]);
+
+const PO_SWITCH_TO_MAIN_TAB = Object.freeze({
+  rest: "rest-watch",
+  march: "marching-order",
+  operations: "operations",
+  gm: "gm"
+});
+
+const PO_MAIN_TO_SWITCH_TAB = Object.freeze({
+  "rest-watch": "rest",
+  "marching-order": "march",
+  operations: "operations",
+  gm: "gm"
+});
+
+function writePoBrowserHistoryEntry(_destination, _options = {}) {
+  // Browser history integration intentionally disabled.
+}
+
+function bindPoBrowserBackNavigation() {
+  // Browser back/forward handling intentionally disabled.
+}
+
+function getTemplateForMainTab(tabId) {
+  const normalized = String(tabId ?? "").trim().toLowerCase();
+  if (normalized === "marching-order") return PO_TEMPLATE_MAP["marching-order"];
+  if (normalized === "rest-watch") return PO_TEMPLATE_MAP["rest-watch"];
+  if (normalized === "operations" || normalized === "gm") return PO_TEMPLATE_MAP["rest-watch"];
+  return PO_TEMPLATE_MAP["rest-watch"];
+}
+
+function normalizeMainTabId(value, fallback = "rest-watch") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (PO_SWITCH_TAB_IDS.has(normalized)) return PO_SWITCH_TO_MAIN_TAB[normalized] ?? fallback;
+  if (normalized === "rest") return "rest-watch";
+  if (normalized === "march") return "marching-order";
+  if (!PO_MAIN_TAB_IDS.has(normalized)) return fallback;
+  return normalized;
+}
+
+function normalizeSwitchTabId(value, fallback = "rest") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (PO_SWITCH_TAB_IDS.has(normalized)) return normalized;
+  const mainTab = normalizeMainTabId(normalized, PO_SWITCH_TO_MAIN_TAB[fallback] ?? "rest-watch");
+  return PO_MAIN_TO_SWITCH_TAB[mainTab] ?? fallback;
+}
+
+function getSwitchTabIdFromMainTabId(mainTabId) {
+  const normalized = normalizeMainTabId(mainTabId, "rest-watch");
+  return PO_MAIN_TO_SWITCH_TAB[normalized] ?? "rest";
+}
+
+function logUiDebug(scope, message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][${scope}] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][${scope}] ${message}`, details);
+}
+
+function logUiFailure(scope, message, error, details = null) {
+  const payload = details && typeof details === "object" ? { ...details } : {};
+  payload.error = String(error?.message ?? error ?? "Unknown error");
+  console.error(`[${MODULE_ID}][${scope}] ${message}`, payload, error);
+}
+
+function summarizeClickTarget(target) {
+  const element = target instanceof Element ? target : null;
+  if (!element) return "unknown";
+  const tag = String(element.tagName ?? "").toLowerCase();
+  const action = element.closest?.("[data-action]")?.dataset?.action ?? "";
+  const panel = element.closest?.("[data-panel]")?.dataset?.panel ?? "";
+  const tab = element.closest?.("[data-tab]")?.dataset?.tab ?? "";
+  const id = element.id ? `#${element.id}` : "";
+  const classes = typeof element.className === "string"
+    ? element.className.trim().split(/\s+/).filter(Boolean).slice(0, 3).join(".")
+    : "";
+  const classSuffix = classes ? `.${classes}` : "";
+  return `${tag}${id}${classSuffix}${action ? ` [action=${action}]` : ""}${panel ? ` [panel=${panel}]` : ""}${tab ? ` [tab=${tab}]` : ""}`;
+}
+
+function getRequestedPanelIdFromElement(element) {
+  if (!element) return "rest-watch";
+  const panel = String(element?.dataset?.panel ?? "").trim();
+  if (panel) return panel;
+  const tab = String(element?.dataset?.tab ?? "").trim();
+  if (tab) return tab;
+  return "rest-watch";
+}
+
+function getMainTabIdFromAction(action) {
+  const normalizedAction = String(action ?? "").trim().toLowerCase();
+  for (const [tabId, tabAction] of Object.entries(PO_MAIN_TAB_ACTIONS)) {
+    if (tabAction === normalizedAction) return tabId;
+  }
+  return null;
+}
+
+function getActionFromMainTabId(tabId) {
+  const normalized = normalizeMainTabId(tabId, "rest-watch");
+  return PO_MAIN_TAB_ACTIONS[normalized] ?? "rest";
+}
+
+function diagnoseRenderedMainTabs(root, scope = "ui") {
+  if (!root || !isModuleDebugEnabled()) return;
+  const renderedTabs = Array.from(root.querySelectorAll(".po-tabs-main .po-tab[data-panel], .po-tabs-main .po-tab[data-tab]"))
+    .map((node) => normalizeMainTabId(node?.dataset?.panel ?? node?.dataset?.tab, "rest-watch"))
+    .filter(Boolean);
+  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || game.user?.isGM);
+  const missing = expected.filter((id) => !renderedTabs.includes(id));
+  const unknown = renderedTabs.filter((id) => !PO_MAIN_TAB_IDS.has(id));
+  logUiDebug(scope, "rendered main-tab diagnostics", { expected, renderedTabs, missing, unknown });
+}
+
+async function validatePartyOperationsTemplates() {
+  const templates = [...new Set(Object.values(PO_TEMPLATE_MAP))];
+  for (const templatePath of templates) {
+    try {
+      await getTemplate(templatePath);
+      logUiDebug("templates", "template resolved", { templatePath });
+    } catch (error) {
+      console.error(`${MODULE_ID}: failed to load template`, { templatePath, error });
+    }
+  }
+}
 
 const INTEGRATION_MODES = {
   AUTO: "auto",
@@ -62,6 +270,40 @@ const INTEGRATION_MODES = {
   FLAGS: "flags",
   DAE: "dae"
 };
+
+const LOOT_SCARCITY_LEVELS = {
+  ABUNDANT: "abundant",
+  NORMAL: "normal",
+  SCARCE: "scarce"
+};
+
+const PARTY_OPS_LOOT_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
+const DEFAULT_PARTY_OPS_CONFIG = Object.freeze({
+  debugEnabled: false,
+  lootScarcity: LOOT_SCARCITY_LEVELS.NORMAL,
+  rarityWeights: {
+    common: 50,
+    uncommon: 30,
+    rare: 12,
+    veryRare: 6,
+    legendary: 2
+  },
+  crGoldMultiplier: 1
+});
+
+const INVENTORY_HOOK_MODES = {
+  OFF: "off",
+  REFRESH: "refresh",
+  SYNC: "sync"
+};
+
+let partyOpsConfigNormalizationInProgress = false;
+
+const CONFIG_SCHEMA = Object.freeze({
+  launcherPlacement: [LAUNCHER_PLACEMENTS.FLOATING, LAUNCHER_PLACEMENTS.SIDEBAR, LAUNCHER_PLACEMENTS.BOTH],
+  integrationMode: [INTEGRATION_MODES.AUTO, INTEGRATION_MODES.OFF, INTEGRATION_MODES.FLAGS, INTEGRATION_MODES.DAE],
+  inventoryHookMode: [INVENTORY_HOOK_MODES.OFF, INVENTORY_HOOK_MODES.REFRESH, INVENTORY_HOOK_MODES.SYNC]
+});
 
 const NON_PARTY_SYNC_SCOPES = {
   SCENE: "scene",
@@ -145,6 +387,151 @@ const LOOT_PREVIEW_SCALE_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "major", label: "Major" }
 ];
+const LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR = 100;
+const LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS = 180;
+const LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT = 100000;
+const LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT = 1000000;
+const LOOT_PREVIEW_STRICTNESS_BANDS = Object.freeze([
+  Object.freeze({ key: "very-strict", label: "Very Strict", min: 240, ratio: 0.05 }),
+  Object.freeze({ key: "strict", label: "Strict", min: 180, ratio: 0.1 }),
+  Object.freeze({ key: "normal", label: "Normal", min: 120, ratio: 0.2 }),
+  Object.freeze({ key: "loose", label: "Loose", min: 0, ratio: 0.35 })
+]);
+const AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR = 100;
+const AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR = 100;
+const AUTO_INV_DEFAULT_CURRENCY_SCALAR = 100;
+const AUTO_INV_DEFAULT_QUALITY_SHIFT = 0;
+const UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES = new Set([
+  "weapon",
+  "equipment",
+  "consumable",
+  "loot",
+  "tool",
+  "armor",
+  "ammunition",
+  "trinket",
+  "backpack"
+]);
+const UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS = Object.freeze({
+  default: { weapon: 1.1, equipment: 1.1, consumable: 1, loot: 1, tool: 0.9, armor: 1, ammunition: 0.9, trinket: 0.9, backpack: 0.7 },
+  humanoid: { weapon: 1.9, equipment: 1.5, consumable: 1.1, loot: 0.85, tool: 1.15, armor: 1.55, ammunition: 1.35, trinket: 0.8, backpack: 0.95 },
+  beast: { weapon: 0.12, equipment: 0.22, consumable: 1.5, loot: 1.2, tool: 0.08, armor: 0.06, ammunition: 0.08, trinket: 0.55, backpack: 0.08 },
+  monstrosity: { weapon: 0.8, equipment: 0.7, consumable: 0.85, loot: 1.4, tool: 0.45, armor: 0.45, ammunition: 0.35, trinket: 1.1, backpack: 0.35 },
+  undead: { weapon: 1.25, equipment: 0.95, consumable: 0.18, loot: 1.35, tool: 0.25, armor: 1.05, ammunition: 0.55, trinket: 1.25, backpack: 0.18 },
+  fiend: { weapon: 1.45, equipment: 1.2, consumable: 0.55, loot: 1.8, tool: 0.55, armor: 1.25, ammunition: 0.85, trinket: 1.45, backpack: 0.3 },
+  celestial: { weapon: 1.3, equipment: 1.1, consumable: 0.75, loot: 1.55, tool: 0.65, armor: 1.15, ammunition: 0.75, trinket: 1.35, backpack: 0.35 },
+  construct: { weapon: 1.35, equipment: 1.2, consumable: 0.12, loot: 1.05, tool: 0.95, armor: 1.5, ammunition: 0.65, trinket: 1.1, backpack: 0.2 },
+  dragon: { weapon: 0.55, equipment: 0.6, consumable: 0.45, loot: 2.1, tool: 0.35, armor: 0.4, ammunition: 0.25, trinket: 1.8, backpack: 0.2 },
+  aberration: { weapon: 0.72, equipment: 0.65, consumable: 0.52, loot: 1.55, tool: 0.4, armor: 0.38, ammunition: 0.28, trinket: 1.5, backpack: 0.2 },
+  elemental: { weapon: 0.65, equipment: 0.52, consumable: 0.2, loot: 1.3, tool: 0.2, armor: 0.32, ammunition: 0.18, trinket: 1.1, backpack: 0.1 },
+  fey: { weapon: 1.15, equipment: 1.15, consumable: 1.2, loot: 1.25, tool: 0.9, armor: 0.9, ammunition: 0.95, trinket: 1.5, backpack: 0.4 },
+  giant: { weapon: 1.5, equipment: 1.25, consumable: 0.8, loot: 1.05, tool: 0.7, armor: 1.2, ammunition: 0.7, trinket: 0.75, backpack: 0.45 },
+  ooze: { weapon: 0.06, equipment: 0.1, consumable: 0.1, loot: 1.1, tool: 0.05, armor: 0.05, ammunition: 0.05, trinket: 0.8, backpack: 0.05 },
+  plant: { weapon: 0.32, equipment: 0.32, consumable: 1.15, loot: 1.2, tool: 0.15, armor: 0.12, ammunition: 0.1, trinket: 0.92, backpack: 0.08 },
+  swarm: { weapon: 0.08, equipment: 0.12, consumable: 1.05, loot: 1.1, tool: 0.05, armor: 0.05, ammunition: 0.05, trinket: 0.7, backpack: 0.05 }
+});
+const UNLINKED_TOKEN_AUTO_INV_CURATED = Object.freeze({
+  weapon: Object.freeze({
+    "cr-0-1": Object.freeze([
+      { name: "Club", weight: 12 },
+      { name: "Dagger", weight: 22 },
+      { name: "Spear", weight: 14 },
+      { name: "Mace", weight: 10 },
+      { name: "Shortsword", weight: 6 },
+      { name: "Quarterstaff", weight: 8 }
+    ]),
+    "cr-2-4": Object.freeze([
+      { name: "Dagger", weight: 14 },
+      { name: "Spear", weight: 10 },
+      { name: "Shortsword", weight: 14 },
+      { name: "Longsword", weight: 10 },
+      { name: "Handaxe", weight: 9 },
+      { name: "Scimitar", weight: 8 },
+      { name: "Light Crossbow", weight: 8 }
+    ]),
+    "cr-5-8": Object.freeze([
+      { name: "Longsword", weight: 14 },
+      { name: "Battleaxe", weight: 10 },
+      { name: "Warhammer", weight: 9 },
+      { name: "Scimitar", weight: 8 },
+      { name: "Rapier", weight: 8 },
+      { name: "Longbow", weight: 7 },
+      { name: "Heavy Crossbow", weight: 6 }
+    ]),
+    "cr-9-12": Object.freeze([
+      { name: "Longsword", weight: 10 },
+      { name: "Greatsword", weight: 8 },
+      { name: "Glaive", weight: 7 },
+      { name: "Rapier", weight: 7 },
+      { name: "Longbow", weight: 7 },
+      { name: "Heavy Crossbow", weight: 6 }
+    ]),
+    "cr-13+": Object.freeze([
+      { name: "Longsword", weight: 9 },
+      { name: "Greatsword", weight: 8 },
+      { name: "Halberd", weight: 7 },
+      { name: "Glaive", weight: 7 },
+      { name: "Longbow", weight: 6 }
+    ])
+  }),
+  armor: Object.freeze({
+    "cr-0-1": Object.freeze([
+      { name: "Leather Armor", weight: 16 },
+      { name: "Padded Armor", weight: 9 }
+    ]),
+    "cr-2-4": Object.freeze([
+      { name: "Leather Armor", weight: 8 },
+      { name: "Chain Shirt", weight: 13 },
+      { name: "Scale Mail", weight: 7 }
+    ]),
+    "cr-5-8": Object.freeze([
+      { name: "Chain Shirt", weight: 6 },
+      { name: "Scale Mail", weight: 8 },
+      { name: "Chain Mail", weight: 10 },
+      { name: "Breastplate", weight: 6 }
+    ]),
+    "cr-9-12": Object.freeze([
+      { name: "Chain Mail", weight: 10 },
+      { name: "Breastplate", weight: 8 },
+      { name: "Half Plate Armor", weight: 7 },
+      { name: "Splint Armor", weight: 5 }
+    ]),
+    "cr-13+": Object.freeze([
+      { name: "Chain Mail", weight: 6 },
+      { name: "Half Plate Armor", weight: 8 },
+      { name: "Splint Armor", weight: 6 },
+      { name: "Plate Armor", weight: 2 }
+    ])
+  }),
+  gear: Object.freeze([
+    { name: "Rations", weight: 18 },
+    { name: "Waterskin", weight: 16 },
+    { name: "Torch", weight: 18 },
+    { name: "Rope, Hempen (50 feet)", weight: 9 },
+    { name: "Lantern, Hooded", weight: 6 },
+    { name: "Bedroll", weight: 6 }
+  ]),
+  utilityConsumables: Object.freeze([
+    { name: "Antitoxin", weight: 7 },
+    { name: "Alchemist's Fire", weight: 5 },
+    { name: "Acid (vial)", weight: 4 }
+  ]),
+  healingByBand: Object.freeze({
+    "cr-0-1": Object.freeze([{ name: "Potion of Healing", weight: 100 }]),
+    "cr-2-4": Object.freeze([{ name: "Potion of Healing", weight: 100 }]),
+    "cr-5-8": Object.freeze([{ name: "Potion of Healing", weight: 86 }, { name: "Potion of Greater Healing", weight: 14 }]),
+    "cr-9-12": Object.freeze([{ name: "Potion of Greater Healing", weight: 78 }, { name: "Potion of Superior Healing", weight: 22 }]),
+    "cr-13+": Object.freeze([{ name: "Potion of Greater Healing", weight: 48 }, { name: "Potion of Superior Healing", weight: 42 }, { name: "Potion of Supreme Healing", weight: 10 }])
+  })
+});
+const UNLINKED_TOKEN_AUTO_INV_HEALING_CHANCE_BY_BAND = Object.freeze({
+  "cr-0-1": 0.05,
+  "cr-2-4": 0.1,
+  "cr-5-8": 0.2,
+  "cr-9-12": 0.3,
+  "cr-13+": 0.4
+});
+const UNLINKED_TOKEN_AUTO_INV_BAND_ORDER = Object.freeze(["cr-0-1", "cr-2-4", "cr-5-8", "cr-9-12", "cr-13+"]);
 const JOURNAL_VISIBILITY_MODES = {
   PUBLIC: "public",
   REDACTED: "redacted",
@@ -223,6 +610,11 @@ const DOWNTIME_TUNING_DISCOVERY_OPTIONS = [
   { value: "standard", label: "Standard Discovery" },
   { value: "high", label: "Rich Discovery" }
 ];
+const DOWNTIME_RESOLVE_DEFAULT_HINT = "Set payouts and notes, then resolve.";
+const DOWNTIME_SELECT_PENDING_WARNING = "Select a pending downtime entry.";
+const DOWNTIME_STALE_PENDING_WARNING = "Selected downtime entry is no longer pending.";
+const DOWNTIME_GM_ONLY_PRERESOLVE_WARNING = "Only the GM can pre-resolve downtime.";
+const DOWNTIME_GM_ONLY_RESOLVE_WARNING = "Only the GM can resolve downtime.";
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -255,15 +647,9 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-downtime-tuning",
   "set-downtime-resolve-target",
   "prefill-downtime-resolution",
+  "pre-resolve-selected-downtime-entry",
   "resolve-selected-downtime-entry",
-  "resolve-downtime-actions",
   "clear-downtime-results",
-  "set-party-health-modifier",
-  "set-party-health-sync-scope",
-  "set-party-health-custom-field",
-  "set-party-health-sync-non-party",
-  "add-party-health-custom",
-  "remove-party-health-custom",
   "toggle-loot-pack-source",
   "set-loot-pack-weight",
   "toggle-loot-table-source",
@@ -274,15 +660,12 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "reset-loot-source-config",
   "set-loot-preview-field",
   "roll-loot-preview",
+  "add-loot-preview-item",
+  "remove-loot-preview-item",
+  "adjust-loot-preview-currency",
   "clear-loot-preview",
   "publish-loot-claims",
   "clear-loot-claims",
-  "remove-active-sync-effect",
-  "archive-active-sync-effect",
-  "restore-archived-sync-effect",
-  "remove-archived-sync-effect",
-  "set-archived-sync-field",
-  "set-active-sync-effects-tab",
   "set-environment-preset",
   "set-environment-dc",
   "set-environment-note",
@@ -294,10 +677,6 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "edit-environment-log",
   "remove-environment-log",
   "clear-environment-effects",
-  "show-gm-logs-manager",
-  "create-session-summary-journal",
-  "edit-global-log",
-  "remove-global-log",
   "gm-quick-add-faction",
   "gm-quick-add-modifier",
   "gm-quick-submit-faction",
@@ -313,11 +692,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-weather-add-dae",
   "gm-quick-weather-remove-dae",
   "gm-quick-weather-save-preset",
-  "gm-quick-weather-delete-preset",
-  "apply-non-party-sync-actor",
-  "clear-non-party-sync-actor",
-  "reapply-all-non-party-sync",
-  "clear-all-non-party-sync"
+  "gm-quick-weather-delete-preset"
 ]);
 const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
@@ -645,6 +1020,7 @@ function ensureOperationalResourceConfig(resources) {
   if (!resources.gather) resources.gather = {};
   if (!resources.gather.weatherMods) resources.gather.weatherMods = {};
   if (typeof resources.gather.foodCoveredNextUpkeep !== "boolean") resources.gather.foodCoveredNextUpkeep = false;
+  if (typeof resources.gather.waterCoveredNextUpkeep !== "boolean") resources.gather.waterCoveredNextUpkeep = false;
   const foodCoverageDueKey = Number(resources.gather.foodCoverageDueKey);
   resources.gather.foodCoverageDueKey = Number.isFinite(foodCoverageDueKey) ? foodCoverageDueKey : null;
   const waterCoverageDueKey = Number(resources.gather.waterCoverageDueKey);
@@ -727,6 +1103,192 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
 
 function getIntegrationModeSetting() {
   return game.settings.get(MODULE_ID, SETTINGS.INTEGRATION_MODE) ?? INTEGRATION_MODES.AUTO;
+}
+
+function validatePartyOpsConfig(input) {
+  const source = (input && typeof input === "object" && !Array.isArray(input)) ? input : {};
+  const rarityRaw = (source.rarityWeights && typeof source.rarityWeights === "object" && !Array.isArray(source.rarityWeights))
+    ? source.rarityWeights
+    : {};
+
+  const lootScarcityRaw = String(source.lootScarcity ?? DEFAULT_PARTY_OPS_CONFIG.lootScarcity).trim().toLowerCase();
+  const lootScarcity = lootScarcityRaw === LOOT_SCARCITY_LEVELS.ABUNDANT || lootScarcityRaw === LOOT_SCARCITY_LEVELS.SCARCE
+    ? lootScarcityRaw
+    : LOOT_SCARCITY_LEVELS.NORMAL;
+
+  const rarityWeights = {};
+  for (const rarity of PARTY_OPS_LOOT_RARITIES) {
+    const rawWeight = Number(rarityRaw[rarity]);
+    rarityWeights[rarity] = Number.isFinite(rawWeight)
+      ? Math.max(0, rawWeight)
+      : DEFAULT_PARTY_OPS_CONFIG.rarityWeights[rarity];
+  }
+
+  const multiplierRaw = Number(source.crGoldMultiplier);
+  const crGoldMultiplier = Number.isFinite(multiplierRaw) && multiplierRaw > 0
+    ? multiplierRaw
+    : DEFAULT_PARTY_OPS_CONFIG.crGoldMultiplier;
+
+  return {
+    debugEnabled: Boolean(source.debugEnabled),
+    lootScarcity,
+    rarityWeights,
+    crGoldMultiplier
+  };
+}
+
+function getPartyOpsConfigSetting() {
+  const raw = game.settings.get(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG);
+  const normalized = validatePartyOpsConfig(raw);
+  const rawSerialized = JSON.stringify(raw ?? null);
+  const normalizedSerialized = JSON.stringify(normalized);
+  if (!partyOpsConfigNormalizationInProgress && rawSerialized !== normalizedSerialized) {
+    partyOpsConfigNormalizationInProgress = true;
+    void setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized)
+      .catch((error) => {
+        console.warn(`${MODULE_ID}: failed to normalize partyOpsConfig on load`, error);
+      })
+      .finally(() => {
+        partyOpsConfigNormalizationInProgress = false;
+      });
+  }
+  return normalized;
+}
+
+async function savePartyOpsConfigSetting(input) {
+  const normalized = validatePartyOpsConfig(input);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized);
+  return normalized;
+}
+
+function registerPartyOpsSettings(onSettingsChanged = () => {}) {
+  const notifySettingChanged = (key, value) => {
+    try {
+      onSettingsChanged(key, value);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: settings onChange callback failed`, { key, value, error });
+    }
+  };
+
+  game.settings.register(MODULE_ID, SETTINGS.DEBUG_ENABLED, {
+    name: "Enable Debug Logging",
+    hint: "Turn on verbose Party Operations debug output for troubleshooting.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: (value) => notifySettingChanged(SETTINGS.DEBUG_ENABLED, Boolean(value))
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.LOOT_SCARCITY, {
+    name: "Loot Scarcity",
+    hint: "Set overall loot availability used by Party Operations loot systems.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [LOOT_SCARCITY_LEVELS.ABUNDANT]: "Abundant",
+      [LOOT_SCARCITY_LEVELS.NORMAL]: "Normal",
+      [LOOT_SCARCITY_LEVELS.SCARCE]: "Scarce"
+    },
+    default: LOOT_SCARCITY_LEVELS.NORMAL,
+    onChange: (value) => {
+      const raw = String(value ?? LOOT_SCARCITY_LEVELS.NORMAL).trim().toLowerCase();
+      const normalized = raw === LOOT_SCARCITY_LEVELS.ABUNDANT || raw === LOOT_SCARCITY_LEVELS.SCARCE
+        ? raw
+        : LOOT_SCARCITY_LEVELS.NORMAL;
+      notifySettingChanged(SETTINGS.LOOT_SCARCITY, normalized);
+    }
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.REST_AUTOMATION_ENABLED, {
+    name: "Enable Rest Automation",
+    hint: "Allow Party Operations to automate supported rest workflows.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: (value) => notifySettingChanged(SETTINGS.REST_AUTOMATION_ENABLED, Boolean(value))
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MARCHING_ORDER_LOCK_PLAYERS, {
+    name: "Lock Marching Order For Players",
+    hint: "Prevent non-GM players from changing marching order positions.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: (value) => notifySettingChanged(SETTINGS.MARCHING_ORDER_LOCK_PLAYERS, Boolean(value))
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG, {
+    name: "Party Operations Config",
+    hint: "Validated module config payload for loot/scarcity tuning and debug wiring.",
+    scope: "world",
+    config: false,
+    type: Object,
+    default: foundry.utils.deepClone(DEFAULT_PARTY_OPS_CONFIG),
+    onChange: (value) => {
+      const normalized = validatePartyOpsConfig(value);
+      notifySettingChanged(SETTINGS.PARTY_OPS_CONFIG, normalized);
+      const incomingSerialized = JSON.stringify(value ?? null);
+      const normalizedSerialized = JSON.stringify(normalized);
+      if (partyOpsConfigNormalizationInProgress) return;
+      if (incomingSerialized === normalizedSerialized) return;
+      partyOpsConfigNormalizationInProgress = true;
+      void setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized)
+        .catch((error) => {
+          console.warn(`${MODULE_ID}: failed to normalize partyOpsConfig on save`, error);
+        })
+        .finally(() => {
+          partyOpsConfigNormalizationInProgress = false;
+        });
+    }
+  });
+}
+
+function normalizeInventoryHookMode(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === INVENTORY_HOOK_MODES.OFF) return INVENTORY_HOOK_MODES.OFF;
+  if (raw === INVENTORY_HOOK_MODES.REFRESH) return INVENTORY_HOOK_MODES.REFRESH;
+  return INVENTORY_HOOK_MODES.SYNC;
+}
+
+function getInventoryHookModeSetting() {
+  const configured = game.settings.get(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE);
+  return normalizeInventoryHookMode(configured);
+}
+
+async function setInventoryHookMode(mode) {
+  const normalized = normalizeInventoryHookMode(mode);
+  await game.settings.set(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE, normalized);
+  return normalized;
+}
+
+function getModuleConfigSnapshot() {
+  return {
+    schema: CONFIG_SCHEMA,
+    launcher: {
+      placement: getLauncherPlacement(),
+      floatingLocked: isFloatingLauncherLocked()
+    },
+    integration: {
+      configuredMode: getIntegrationModeSetting(),
+      resolvedMode: resolveIntegrationMode(),
+      daeAvailable: isDaeAvailable()
+    },
+    journal: {
+      visibility: getJournalVisibilityMode(),
+      filterDebounceMs: getJournalFilterDebounceMs(),
+      sessionSummaryRange: getSessionSummaryRangeSetting()
+    },
+    inventory: {
+      hookMode: getInventoryHookModeSetting()
+    },
+    typedConfig: {
+      value: getPartyOpsConfigSetting()
+    }
+  };
 }
 
 function getGatherRollModeSetting() {
@@ -1991,16 +2553,17 @@ function getRestMainTabStorageKey() {
 }
 
 function getActiveRestMainTab() {
-  const stored = String(sessionStorage.getItem(getRestMainTabStorageKey()) ?? "rest-watch").trim().toLowerCase();
+  const stored = normalizeMainTabId(sessionStorage.getItem(getRestMainTabStorageKey()), "rest-watch");
   if (stored === "gm" && game.user?.isGM) return "gm";
   if (stored === "operations") return "operations";
   return "rest-watch";
 }
 
 function setActiveRestMainTab(tab) {
-  const value = tab === "gm" && game.user?.isGM
+  const normalized = normalizeMainTabId(tab, "rest-watch");
+  const value = normalized === "gm" && game.user?.isGM
     ? "gm"
-    : (tab === "operations" ? "operations" : "rest-watch");
+    : (normalized === "operations" ? "operations" : "rest-watch");
   sessionStorage.setItem(getRestMainTabStorageKey(), value);
 }
 
@@ -2109,6 +2672,36 @@ function setLootPackSourcesUiState(patch = {}) {
   sessionStorage.setItem(getLootPackSourcesUiStorageKey(), JSON.stringify(next));
 }
 
+function getLootClaimActorStorageKey() {
+  return `po-loot-claim-actor-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeLootClaimActorId(value) {
+  return String(value ?? "").trim();
+}
+
+function getLootClaimActorSelection() {
+  return normalizeLootClaimActorId(sessionStorage.getItem(getLootClaimActorStorageKey()));
+}
+
+function setLootClaimActorSelection(actorIdInput) {
+  const actorId = normalizeLootClaimActorId(actorIdInput);
+  if (!actorId) {
+    sessionStorage.removeItem(getLootClaimActorStorageKey());
+    return "";
+  }
+  sessionStorage.setItem(getLootClaimActorStorageKey(), actorId);
+  return actorId;
+}
+
+function setLootClaimActorSelectionFromElement(element) {
+  const nextActorId = normalizeLootClaimActorId(element?.value);
+  const currentActorId = getLootClaimActorSelection();
+  if (nextActorId === currentActorId) return false;
+  setLootClaimActorSelection(nextActorId);
+  return true;
+}
+
 function getLootRegistryTabStorageKey() {
   return `po-loot-registry-tab-${game.user?.id ?? "anon"}`;
 }
@@ -2135,15 +2728,6 @@ function getNonPartySyncFilterKeyword() {
   return normalizeNonPartySyncFilterKeyword(sessionStorage.getItem(getNonPartySyncFilterStorageKey()));
 }
 
-function setNonPartySyncFilterKeyword(value) {
-  const normalized = normalizeNonPartySyncFilterKeyword(value);
-  if (!normalized) {
-    sessionStorage.removeItem(getNonPartySyncFilterStorageKey());
-    return;
-  }
-  sessionStorage.setItem(getNonPartySyncFilterStorageKey(), normalized);
-}
-
 function getActiveSyncEffectsTabStorageKey() {
   return `po-active-sync-effects-tab-${game.user?.id ?? "anon"}`;
 }
@@ -2151,11 +2735,6 @@ function getActiveSyncEffectsTabStorageKey() {
 function getActiveSyncEffectsTab() {
   const stored = String(sessionStorage.getItem(getActiveSyncEffectsTabStorageKey()) ?? "active").trim().toLowerCase();
   return stored === "archived" ? "archived" : "active";
-}
-
-function setActiveSyncEffectsTab(tab) {
-  const value = String(tab ?? "active").trim().toLowerCase() === "archived" ? "archived" : "active";
-  sessionStorage.setItem(getActiveSyncEffectsTabStorageKey(), value);
 }
 
 function getGmQuickPanelStorageKey() {
@@ -2308,19 +2887,133 @@ async function handleOperationsJournalAction(action, element, rerender) {
   return false;
 }
 
+function buildOperationsJournalContext() {
+  const view = getOperationsJournalViewState();
+  const root = findOperationsJournalRootFolder();
+  const rootFolderId = String(root?.id ?? "").trim();
+  const rootFolderName = String(root?.name ?? OPERATIONS_JOURNAL_ROOT_NAME).trim() || OPERATIONS_JOURNAL_ROOT_NAME;
+  const selectedCategory = String(view?.category ?? "all").trim().toLowerCase() || "all";
+  const filterNeedle = String(view?.filter ?? "").trim().toLowerCase();
+  const selectedSort = String(view?.sort ?? "newest").trim().toLowerCase() || "newest";
+
+  const resolveEntryFolder = (entry) => {
+    const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
+    return folderId ? game.folders?.get(folderId) ?? null : null;
+  };
+
+  const resolveCategoryForEntry = (entryFolder) => {
+    const folder = entryFolder;
+    if (!folder) return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
+
+    let current = folder;
+    let guard = 0;
+    while (current && guard < 40) {
+      const parentId = getJournalFolderParentId(current);
+      if (parentId === rootFolderId) {
+        const label = String(current.name ?? "").trim();
+        const key = Object.entries(OPERATIONS_JOURNAL_CATEGORIES).find(([, value]) => String(value ?? "").trim().toLowerCase() === label.toLowerCase())?.[0] ?? "session";
+        return { key, label: label || OPERATIONS_JOURNAL_CATEGORIES[key] || OPERATIONS_JOURNAL_CATEGORIES.session };
+      }
+      current = parentId ? game.folders?.get(parentId) ?? null : null;
+      guard += 1;
+    }
+
+    return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
+  };
+
+  const rows = (game.journal?.contents ?? [])
+    .filter((entry) => {
+      if (!entry) return false;
+      if (!rootFolderId) return false;
+      const entryFolder = resolveEntryFolder(entry);
+      const entryFolderId = String(entryFolder?.id ?? "").trim();
+      return journalFolderIsUnderRoot(entryFolderId, rootFolderId);
+    })
+    .map((entry) => {
+      const name = String(entry?.name ?? "Untitled").trim() || "Untitled";
+      const entryFolder = resolveEntryFolder(entry);
+      const folderLabel = String(entryFolder?.name ?? "Unfiled").trim() || "Unfiled";
+      const category = resolveCategoryForEntry(entryFolder);
+      const updatedAtRaw = Number(entry?._stats?.modifiedTime ?? entry?._stats?.createdTime ?? Date.now());
+      const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : Date.now();
+      const updatedAtDate = new Date(updatedAt);
+      const searchBlob = [name, folderLabel, category.label, category.key].join(" ").toLowerCase();
+      return {
+        id: String(entry?.id ?? "").trim(),
+        name,
+        folderLabel,
+        categoryKey: category.key,
+        categoryLabel: category.label,
+        updatedAt,
+        updatedAtLabel: Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Unknown",
+        searchBlob
+      };
+    })
+    .filter((row) => {
+      if (selectedCategory !== "all" && row.categoryKey !== selectedCategory) return false;
+      if (filterNeedle && !row.searchBlob.includes(filterNeedle)) return false;
+      return true;
+    });
+
+  const sortedRows = [...rows].sort((a, b) => {
+    if (selectedSort === "oldest") return Number(a.updatedAt) - Number(b.updatedAt);
+    if (selectedSort === "title") return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    if (selectedSort === "folder") {
+      const folderCompare = String(a.folderLabel ?? "").localeCompare(String(b.folderLabel ?? ""));
+      if (folderCompare !== 0) return folderCompare;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    }
+    return Number(b.updatedAt) - Number(a.updatedAt);
+  });
+
+  return {
+    rootFolderName,
+    hasRootFolder: Boolean(rootFolderId),
+    selectedFilter: String(view?.filter ?? ""),
+    selectedSort,
+    selectedCategory,
+    sortOptions: buildJournalSortOptions(selectedSort),
+    categoryOptions: buildJournalCategoryOptions(selectedCategory),
+    rows: sortedRows,
+    visibleCount: sortedRows.length,
+    totalCount: rows.length,
+    hasRows: sortedRows.length > 0,
+    hasFilter: Boolean(filterNeedle)
+  };
+}
+
 function normalizeLootPreviewDraft(input = {}) {
   const mode = String(input?.mode ?? "horde").trim().toLowerCase();
   const profile = String(input?.profile ?? "standard").trim().toLowerCase();
   const challenge = String(input?.challenge ?? "mid").trim().toLowerCase();
   const scale = String(input?.scale ?? "medium").trim().toLowerCase();
-  const actorCountRaw = Number(input?.actorCount ?? 1);
-  const actorCount = Number.isFinite(actorCountRaw) ? Math.max(1, Math.min(100, Math.floor(actorCountRaw))) : 1;
+  const creaturesRaw = Number(input?.creatures ?? input?.actorCount ?? 1);
+  const creatures = Number.isFinite(creaturesRaw) ? Math.max(1, Math.min(100, Math.floor(creaturesRaw))) : 1;
   const currencyScalarRaw = Number(input?.currencyScalar ?? 100);
   const itemScalarRaw = Number(input?.itemScalar ?? 100);
   const tableScalarRaw = Number(input?.tableScalar ?? 100);
+  const valueBudgetScalarRaw = Number(input?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
+  const valueStrictnessRaw = Number(input?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+  const maxItemValueGpRaw = Number(input?.maxItemValueGp ?? 0);
+  const targetItemsValueGpRaw = Number(input?.targetItemsValueGp ?? 0);
+  const deterministic = shouldUseDeterministicLootRng(input);
+  const seed = String(input?.seed ?? "").trim();
+  const dateBucket = String(input?.dateBucket ?? "").trim();
   const currencyScalar = Number.isFinite(currencyScalarRaw) ? Math.max(25, Math.min(300, Math.floor(currencyScalarRaw))) : 100;
   const itemScalar = Number.isFinite(itemScalarRaw) ? Math.max(25, Math.min(300, Math.floor(itemScalarRaw))) : 100;
   const tableScalar = Number.isFinite(tableScalarRaw) ? Math.max(25, Math.min(300, Math.floor(tableScalarRaw))) : 100;
+  const valueBudgetScalar = Number.isFinite(valueBudgetScalarRaw)
+    ? Math.max(25, Math.min(300, Math.floor(valueBudgetScalarRaw)))
+    : LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR;
+  const valueStrictness = Number.isFinite(valueStrictnessRaw)
+    ? Math.max(50, Math.min(300, Math.floor(valueStrictnessRaw)))
+    : LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS;
+  const maxItemValueGp = Number.isFinite(maxItemValueGpRaw)
+    ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Math.floor(maxItemValueGpRaw)))
+    : 0;
+  const targetItemsValueGp = Number.isFinite(targetItemsValueGpRaw)
+    ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT, Math.floor(targetItemsValueGpRaw)))
+    : 0;
   const modeAllowed = new Set(LOOT_PREVIEW_MODE_OPTIONS.map((entry) => entry.value));
   const profileAllowed = new Set(LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => entry.value));
   const challengeAllowed = new Set(LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => entry.value));
@@ -2330,10 +3023,18 @@ function normalizeLootPreviewDraft(input = {}) {
     profile: profileAllowed.has(profile) ? profile : "standard",
     challenge: challengeAllowed.has(challenge) ? challenge : "mid",
     scale: scaleAllowed.has(scale) ? scale : "medium",
-    actorCount,
+    creatures,
+    actorCount: creatures,
     currencyScalar,
     itemScalar,
-    tableScalar
+    tableScalar,
+    valueBudgetScalar,
+    valueStrictness,
+    maxItemValueGp,
+    targetItemsValueGp,
+    deterministic,
+    seed,
+    dateBucket
   };
 }
 
@@ -2424,14 +3125,25 @@ function getGmOperationsTabStorageKey() {
 
 function getActiveGmOperationsTab() {
   const stored = String(sessionStorage.getItem(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom", "loot-sources"]);
+  const allowed = new Set(["environment", "loot-sources"]);
   return allowed.has(stored) ? stored : "environment";
 }
 
 function setActiveGmOperationsTab(tab) {
   const value = String(tab ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "logs", "derived", "active-sync", "non-party", "custom", "loot-sources"]);
+  const allowed = new Set(["environment", "loot-sources"]);
   sessionStorage.setItem(getGmOperationsTabStorageKey(), allowed.has(value) ? value : "environment");
+}
+
+function normalizeGmOperationsTab(tab, fallback = "environment") {
+  const value = String(tab ?? fallback).trim().toLowerCase();
+  const allowed = new Set(["environment", "loot-sources"]);
+  return allowed.has(value) ? value : fallback;
+}
+
+function normalizeLootRegistryTab(tab, fallback = "preview") {
+  const value = String(tab ?? fallback).trim().toLowerCase();
+  return value === "settings" ? "settings" : "preview";
 }
 
 function getActiveOperationsPlanningTab() {
@@ -2581,10 +3293,11 @@ function captureUiState(app) {
     const action = String(active.dataset?.action ?? "").trim();
     const name = String(active.getAttribute?.("name") ?? "").trim();
     if (!action && !name) return null;
+    const statePath = getElementStatePath(active, root);
     const value = "value" in active ? String(active.value ?? "") : "";
     const selectionStart = typeof active.selectionStart === "number" ? active.selectionStart : null;
     const selectionEnd = typeof active.selectionEnd === "number" ? active.selectionEnd : null;
-    return { action, name, value, selectionStart, selectionEnd };
+    return { action, name, statePath, value, selectionStart, selectionEnd };
   };
 
   if (app instanceof RestWatchApp || app instanceof RestWatchPlayerApp) {
@@ -2607,7 +3320,11 @@ function captureUiState(app) {
     };
   }
 
-  return null;
+  return {
+    type: "generic",
+    disclosures: captureDisclosureState(root),
+    focusedInput: captureFocusedInputState()
+  };
 }
 
 function applyUiState(app, state) {
@@ -2615,17 +3332,39 @@ function applyUiState(app, state) {
   const root = getAppRootElement(app);
   if (!root) return;
 
+  const escapeCssValue = (value) => {
+    const text = String(value ?? "");
+    if (globalThis.CSS?.escape) return CSS.escape(text);
+    return text.replace(/[^A-Za-z0-9_-]/g, "");
+  };
+
+  const findElementByStatePath = (statePath) => {
+    const key = String(statePath ?? "").trim();
+    if (!key) return null;
+    const inputs = Array.from(root.querySelectorAll("input, textarea, select"));
+    return inputs.find((element) => getElementStatePath(element, root) === key) ?? null;
+  };
+
   const restoreFocusedInputState = (focusedInput) => {
     if (!focusedInput || typeof focusedInput !== "object") return;
     const action = String(focusedInput.action ?? "").trim();
     const name = String(focusedInput.name ?? "").trim();
-    const selectors = [];
-    if (action) selectors.push(`[data-action='${CSS.escape(action)}']`);
-    if (name) selectors.push(`[name='${CSS.escape(name)}']`);
-    if (!selectors.length) return;
-    const target = root.querySelector(selectors.join(", "));
+    let target = findElementByStatePath(focusedInput.statePath);
+    if (!(target instanceof HTMLElement)) {
+      const selectors = [];
+      if (action) selectors.push(`[data-action='${escapeCssValue(action)}']`);
+      if (name) selectors.push(`[name='${escapeCssValue(name)}']`);
+      if (!selectors.length) return;
+      const matches = root.querySelectorAll(selectors.join(", "));
+      if (matches.length !== 1) return;
+      target = matches[0];
+    }
     if (!(target instanceof HTMLElement)) return;
-    target.focus({ preventScroll: true });
+    try {
+      target.focus({ preventScroll: true });
+    } catch {
+      target.focus();
+    }
     const start = Number.isFinite(Number(focusedInput.selectionStart)) ? Number(focusedInput.selectionStart) : null;
     const end = Number.isFinite(Number(focusedInput.selectionEnd)) ? Number(focusedInput.selectionEnd) : null;
     if (typeof target.setSelectionRange === "function" && start !== null) {
@@ -2651,6 +3390,11 @@ function applyUiState(app, state) {
     restoreFocusedInputState(state.focusedInput);
     return;
   }
+
+  if (state.type === "generic") {
+    restoreFocusedInputState(state.focusedInput);
+    return;
+  }
 }
 
 function restorePendingUiState(app) {
@@ -2665,35 +3409,63 @@ function captureScrollState(app) {
   if (!root) return [];
   const states = [];
 
-  const collectNodes = (selector) => {
-    const matched = Array.from(root.querySelectorAll(selector));
-    if (root.matches?.(selector)) matched.unshift(root);
-    return matched;
+  const getNodeStateKey = (node) => {
+    if (node === root) return "root";
+    const key = getElementStatePath(node, root);
+    return key || "";
   };
 
-  for (const selector of SCROLL_STATE_SELECTORS) {
-    const nodes = collectNodes(selector);
-    nodes.forEach((node, index) => {
-      const canScrollY = node.scrollHeight > node.clientHeight;
-      const canScrollX = node.scrollWidth > node.clientWidth;
-      if (!canScrollY && !canScrollX) return;
-      states.push({ selector, index, top: node.scrollTop, left: node.scrollLeft });
-    });
+  const collectNodes = () => {
+    const nodes = [];
+    const seen = new Set();
+    for (const selector of SCROLL_STATE_SELECTORS) {
+      const matched = Array.from(root.querySelectorAll(selector));
+      if (root.matches?.(selector)) matched.unshift(root);
+      for (const node of matched) {
+        if (!(node instanceof HTMLElement) || seen.has(node)) continue;
+        seen.add(node);
+        nodes.push(node);
+      }
+    }
+    return nodes;
+  };
+
+  for (const node of collectNodes()) {
+    const canScrollY = node.scrollHeight > node.clientHeight;
+    const canScrollX = node.scrollWidth > node.clientWidth;
+    if (!canScrollY && !canScrollX) continue;
+    const key = getNodeStateKey(node);
+    if (!key) continue;
+    states.push({ key, top: node.scrollTop, left: node.scrollLeft });
   }
   return states;
 }
 
 function applyScrollState(root, states) {
   if (!root || !Array.isArray(states)) return;
-  const collectNodes = (selector) => {
-    const matched = Array.from(root.querySelectorAll(selector));
-    if (root.matches?.(selector)) matched.unshift(root);
-    return matched;
+
+  const getNodeStateKey = (node) => {
+    if (node === root) return "root";
+    const key = getElementStatePath(node, root);
+    return key || "";
   };
 
+  const lookup = new Map();
+  for (const selector of SCROLL_STATE_SELECTORS) {
+    const matched = Array.from(root.querySelectorAll(selector));
+    if (root.matches?.(selector)) matched.unshift(root);
+    for (const node of matched) {
+      if (!(node instanceof HTMLElement)) continue;
+      const key = getNodeStateKey(node);
+      if (!key || lookup.has(key)) continue;
+      lookup.set(key, node);
+    }
+  }
+
   for (const state of states) {
-    const nodes = collectNodes(state.selector);
-    const node = nodes?.[state.index];
+    const key = String(state?.key ?? "").trim();
+    if (!key) continue;
+    const node = lookup.get(key);
     if (!node) continue;
     node.scrollTop = state.top ?? 0;
     node.scrollLeft = state.left ?? 0;
@@ -2707,12 +3479,8 @@ function restorePendingScrollState(app) {
   const root = getAppRootElement(app);
   if (!root) return;
   const apply = () => applyScrollState(root, states);
-  requestAnimationFrame(() => {
-    apply();
-    requestAnimationFrame(apply);
-  });
-  setTimeout(apply, 50);
-  setTimeout(apply, 180);
+  apply();
+  requestAnimationFrame(apply);
 }
 
 function captureWindowState(app) {
@@ -2738,12 +3506,399 @@ function restorePendingWindowState(app) {
   };
   const apply = () => app.setPosition(position);
   apply();
-  requestAnimationFrame(() => {
-    apply();
-    requestAnimationFrame(apply);
+  requestAnimationFrame(apply);
+}
+
+function buildOperationsContextFallback() {
+  const ledger = getOperationsLedger();
+  const lootRegistryTab = getActiveLootRegistryTab();
+  const gmQuickPanel = getActiveGmQuickPanel();
+  let fallbackModifierKeyOptions = [];
+  let fallbackModifierModeOptions = [];
+  try {
+    fallbackModifierKeyOptions = buildPartyHealthModifierKeyCatalog().map((entry) => ({
+      value: entry.key,
+      label: entry.label,
+      hint: entry.hint
+    }));
+    fallbackModifierModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+      .map(([label, value]) => ({ label, value: Number(value) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  } catch (_error) {
+    fallbackModifierKeyOptions = [];
+    fallbackModifierModeOptions = [];
+  }
+  const fallbackPreviewDraft = normalizeLootPreviewDraft(getLootPreviewDraft());
+  const fallbackMode = String(fallbackPreviewDraft.mode ?? "horde");
+  const fallbackProfile = String(fallbackPreviewDraft.profile ?? "standard");
+  const fallbackChallenge = String(fallbackPreviewDraft.challenge ?? "mid");
+  const fallbackScale = String(fallbackPreviewDraft.scale ?? "medium");
+  let fallbackWeather = {
+    currentLabel: "-",
+    currentVisibilityModifier: "0",
+    currentDarkness: "0.00"
+  };
+  let fallbackWeatherSceneSnapshot = {
+    label: "-",
+    darkness: "0.00",
+    visibilityModifier: "0"
+  };
+  let fallbackWeatherOptions = [];
+  let fallbackWeatherDraft = {
+    selectedKey: "",
+    darkness: 0,
+    visibilityModifier: 0,
+    note: "",
+    presetName: "",
+    daeChanges: []
+  };
+  let fallbackWeatherDaeModeOptions = [];
+  try {
+    const weatherState = ensureWeatherState(ledger);
+    const currentWeather = weatherState.current ?? null;
+    fallbackWeather = {
+      currentLabel: String(currentWeather?.label ?? "-"),
+      currentVisibilityModifier: Number(currentWeather?.visibilityModifier ?? 0),
+      currentDarkness: Number(currentWeather?.darkness ?? 0)
+    };
+    const weatherSceneSnapshot = resolveCurrentSceneWeatherSnapshot();
+    fallbackWeatherSceneSnapshot = {
+      label: String(weatherSceneSnapshot?.label ?? "-") || "-",
+      darkness: Number.isFinite(Number(weatherSceneSnapshot?.darkness))
+        ? Number(weatherSceneSnapshot.darkness)
+        : 0,
+      visibilityModifier: Number.isFinite(Number(weatherSceneSnapshot?.visibilityModifier))
+        ? Number(weatherSceneSnapshot.visibilityModifier)
+        : 0
+    };
+    const weatherQuickOptions = buildWeatherSelectionCatalog(weatherState, weatherSceneSnapshot);
+    const storedWeatherDraft = getGmQuickWeatherDraft();
+    const fallbackWeatherOption = weatherQuickOptions[0] ?? null;
+    const selectedWeatherKey = String(storedWeatherDraft?.selectedKey ?? fallbackWeatherOption?.key ?? "").trim();
+    const selectedWeatherOption = weatherQuickOptions.find((entry) => entry.key === selectedWeatherKey) ?? fallbackWeatherOption;
+    fallbackWeatherDraft = {
+      selectedKey: String(selectedWeatherOption?.key ?? ""),
+      darkness: Number.isFinite(Number(storedWeatherDraft?.darkness))
+        ? Math.max(0, Math.min(1, Number(storedWeatherDraft.darkness)))
+        : Math.max(0, Math.min(1, Number(selectedWeatherOption?.darkness ?? weatherSceneSnapshot?.darkness ?? 0))),
+      visibilityModifier: Number.isFinite(Number(storedWeatherDraft?.visibilityModifier))
+        ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
+        : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
+      note: String(storedWeatherDraft?.note ?? ""),
+      presetName: String(storedWeatherDraft?.presetName ?? ""),
+      daeChanges: Array.isArray(storedWeatherDraft?.daeChanges)
+        ? storedWeatherDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+        : (Array.isArray(selectedWeatherOption?.daeChanges)
+          ? selectedWeatherOption.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
+          : [])
+    };
+    fallbackWeatherOptions = weatherQuickOptions.map((option) => ({
+      key: option.key,
+      label: option.label,
+      weatherId: option.weatherId,
+      isBuiltIn: Boolean(option.isBuiltIn),
+      visibilityModifier: Number(option.visibilityModifier ?? 0),
+      visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
+      effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
+      daeSummary: describeWeatherDaeChanges(option.daeChanges ?? []),
+      selected: option.key === fallbackWeatherDraft.selectedKey
+    }));
+    fallbackWeatherDaeModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+      .map(([label, value]) => ({ label, value: Number(value) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  } catch (_error) {
+    fallbackWeatherDaeModeOptions = [];
+  }
+  let fallbackLootSources;
+  try {
+    fallbackLootSources = buildLootSourceRegistryContext();
+    fallbackLootSources.preview = buildLootPreviewContext();
+  } catch (_error) {
+    fallbackLootSources = {
+      itemPackOptions: [],
+      itemPackVisibleOptions: [],
+      itemPackCollapsed: false,
+      itemPackToggleLabel: "Collapse",
+      itemPackToggleIcon: "fa-chevron-up",
+      itemPackFilter: "",
+      itemPackFilterActive: false,
+      itemPackVisibleCount: 0,
+      tableOptions: [],
+      itemTypeOptions: [],
+      rarityFloorOptions: [],
+      rarityCeilingOptions: [],
+      manifestPackOptions: [],
+      manifestPackId: "",
+      keywordIncludeTagsInput: "",
+      keywordExcludeTagsInput: "",
+      keywordIncludeTagCount: 0,
+      keywordExcludeTagCount: 0,
+      summary: {
+        enabledItemPacks: 0,
+        totalItemPacks: 0,
+        enabledTables: 0,
+        totalTables: 0,
+        enabledItemTypes: 0,
+        totalItemTypes: 0,
+        updatedAtLabel: "-",
+        updatedBy: "-"
+      },
+      preview: {
+        modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackMode })),
+        profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackProfile })),
+        challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackChallenge })),
+        scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackScale })),
+        draft: fallbackPreviewDraft,
+        hasResult: false,
+        generatedAtLabel: "-",
+        generatedBy: "-",
+        currency: {
+          pp: 0,
+          gp: 0,
+          sp: 0,
+          cp: 0,
+          gpEquivalent: 0,
+          formula: "-"
+        },
+        stats: {
+          candidateCount: 0,
+          itemCountGenerated: 0,
+          itemCountTarget: 0,
+          tableRollCount: 0
+        },
+        items: [],
+        tableRolls: [],
+        warnings: []
+      }
+    };
+  }
+  fallbackLootSources.registryTab = lootRegistryTab;
+  fallbackLootSources.registryTabPreview = lootRegistryTab === "preview";
+  fallbackLootSources.registryTabSettings = lootRegistryTab === "settings";
+  let fallbackLootClaims;
+  try {
+    fallbackLootClaims = buildLootClaimsContext(game.user);
+  } catch (_error) {
+    fallbackLootClaims = {
+      publishedAtLabel: "-",
+      publishedBy: "-",
+      itemCount: 0,
+      claimsLogCount: 0,
+      currencyRemaining: { pp: 0, gp: 0, sp: 0, cp: 0 },
+      currencyClaimedCount: 0,
+      hasItems: false,
+      items: []
+    };
+  }
+  const roleMeta = [
+    { key: "quartermaster", label: "Quartermaster", bonus: "+Supply discipline", penalty: "Missed ration/ammo tracking", hint: "Assign this role to keep supply usage, load tracking, and upkeep consistent." },
+    { key: "cartographer", label: "Cartographer", bonus: "+Route clarity", penalty: "Navigation uncertainty", hint: "Assign this role to maintain route notes, landmarks, and navigation prep." },
+    { key: "chronicler", label: "Chronicler", bonus: "+Operational recall", penalty: "Lost session intel", hint: "Assign this role to track key discoveries, risks, and mission outcomes." },
+    { key: "steward", label: "Steward", bonus: "+Financial control", penalty: "Debt/coin drift", hint: "Assign this role to manage coin flow, contracts, and downtime costs." }
+  ];
+  const roles = roleMeta.map((role) => {
+    const actorId = String(ledger.roles?.[role.key] ?? "");
+    const actor = actorId ? game.actors.get(actorId) : null;
+    return {
+      key: role.key,
+      label: role.label,
+      actorId,
+      actorName: actor?.name ?? "Unassigned",
+      hasActor: Boolean(actor),
+      bonus: role.bonus,
+      penalty: role.penalty,
+      hint: role.hint,
+      actorOptions: buildRoleActorOptions(actorId)
+    };
   });
-  setTimeout(apply, 60);
-  setTimeout(apply, 200);
+  const sops = [
+    { key: "campSetup", label: "Camp setup", active: Boolean(ledger.sops?.campSetup), note: String(ledger.sopNotes?.campSetup ?? "") },
+    { key: "watchRotation", label: "Watch rotation", active: Boolean(ledger.sops?.watchRotation), note: String(ledger.sopNotes?.watchRotation ?? "") },
+    { key: "dungeonBreach", label: "Dungeon breach protocol", active: Boolean(ledger.sops?.dungeonBreach), note: String(ledger.sopNotes?.dungeonBreach ?? "") },
+    { key: "urbanEntry", label: "Urban entry protocol", active: Boolean(ledger.sops?.urbanEntry), note: String(ledger.sopNotes?.urbanEntry ?? "") },
+    { key: "prisonerHandling", label: "Prisoner handling", active: Boolean(ledger.sops?.prisonerHandling), note: String(ledger.sopNotes?.prisonerHandling ?? "") },
+    { key: "retreatProtocol", label: "Retreat protocol", active: Boolean(ledger.sops?.retreatProtocol), note: String(ledger.sopNotes?.retreatProtocol ?? "") }
+  ];
+  const roleCoverage = roles.filter((role) => role.hasActor).length;
+  const activeSops = sops.filter((sop) => sop.active).length;
+  const fallbackEffects = (() => {
+    try {
+      return getOperationalEffects(ledger, roles, sops);
+    } catch {
+      return {
+        riskTier: "unknown",
+        bonuses: [],
+        globalMinorBonuses: [],
+        globalModifiers: {
+          initiative: 0,
+          abilityChecks: 0,
+          perceptionChecks: 0,
+          savingThrows: 0
+        },
+        worldGlobalModifiers: {
+          initiative: 0,
+          abilityChecks: 0,
+          perceptionChecks: 0,
+          savingThrows: 0
+        },
+        globalModifierRows: [],
+        derivedModifierRows: [],
+        customModifierRows: [],
+        hasGlobalModifiers: false,
+        hasCustomModifiers: false,
+        customDaeChanges: [],
+        worldDaeChanges: [],
+        hasGlobalMinorBonuses: false,
+        hasRisks: false,
+        risks: []
+      };
+    }
+  })();
+  const fallbackResourcesState = foundry.utils.deepClone(ledger.resources ?? {});
+  ensureOperationalResourceConfig(fallbackResourcesState);
+  const fallbackUpkeep = {
+    partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
+    foodPerMember: Number(ledger.resources?.upkeep?.foodPerMember ?? 1),
+    waterPerMember: Number(ledger.resources?.upkeep?.waterPerMember ?? 1),
+    foodMultiplier: Number(ledger.resources?.upkeep?.foodMultiplier ?? 1),
+    waterMultiplier: Number(ledger.resources?.upkeep?.waterMultiplier ?? 1),
+    torchPerRest: Number(ledger.resources?.upkeep?.torchPerRest ?? 0)
+  };
+  const fallbackFoodDrainPerDay = Math.max(0, Math.ceil(fallbackUpkeep.partySize * fallbackUpkeep.foodPerMember * fallbackUpkeep.foodMultiplier));
+  const fallbackWaterDrainPerDay = Math.max(0, Math.ceil(fallbackUpkeep.partySize * fallbackUpkeep.waterPerMember * fallbackUpkeep.waterMultiplier));
+  const fallbackTorchDrainPerDay = Math.max(0, Math.ceil(fallbackUpkeep.torchPerRest));
+  const fallbackUpkeepDaysPending = getUpkeepDaysFromCalendar(fallbackResourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
+  const fallbackResourcesNumeric = {
+    food: Number(fallbackResourcesState.food ?? 0),
+    partyFoodRations: Number(fallbackResourcesState.partyFoodRations ?? 0),
+    partyWaterRations: Number(fallbackResourcesState.partyWaterRations ?? 0),
+    water: Number(fallbackResourcesState.water ?? 0),
+    torches: Number(fallbackResourcesState.torches ?? 0)
+  };
+  const fallbackLinkedFoodStock = getSelectedResourceItemQuantity(fallbackResourcesState, "food");
+  const fallbackTotalFoodReserve = Math.max(0, fallbackResourcesNumeric.partyFoodRations) + fallbackLinkedFoodStock;
+  const fallbackTotalWaterReserve = Math.max(0, fallbackResourcesNumeric.partyWaterRations);
+  const fallbackFormatCyclesLeft = (stock, drain) => {
+    if (drain <= 0) return "infinite";
+    return (Math.max(0, stock) / drain).toFixed(1);
+  };
+  const fallbackSelectedBindingCount = RESOURCE_TRACK_KEYS.filter((key) => {
+    const selected = fallbackResourcesState.itemSelections?.[key] ?? {};
+    return Boolean(String(selected.actorId ?? "").trim() && String(selected.itemId ?? "").trim());
+  }).length;
+  const fallbackNextDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
+  const fallbackGatherFoodCoveredNextUpkeep = Number(fallbackResourcesState.gather?.foodCoverageDueKey) === fallbackNextDueKey;
+  const fallbackGatherWaterCoveredNextUpkeep = Number(fallbackResourcesState.gather?.waterCoverageDueKey) === fallbackNextDueKey;
+  let fallbackGatherWeatherOptions = [];
+  try {
+    fallbackGatherWeatherOptions = getGatherWeatherOptions(fallbackResourcesState);
+  } catch {
+    fallbackGatherWeatherOptions = [];
+  }
+  const fallbackEnvironmentPreset = getEnvironmentPresetByKey(String(ledger.environment?.presetKey ?? "none"));
+  const fallbackEnvironmentCheck = getEnvironmentCheckMeta(fallbackEnvironmentPreset);
+  return {
+    summary: {
+      roleCoverage,
+      roleTotal: roles.length,
+      activeSops,
+      sopTotal: sops.length,
+      effects: fallbackEffects
+    },
+    roles,
+    sops,
+    resources: {
+      food: fallbackResourcesNumeric.food,
+      linkedFoodStock: fallbackLinkedFoodStock,
+      partyFoodRations: fallbackResourcesNumeric.partyFoodRations,
+      partyWaterRations: fallbackResourcesNumeric.partyWaterRations,
+      water: fallbackResourcesNumeric.water,
+      torches: fallbackResourcesNumeric.torches,
+      itemSelections: {
+        food: buildResourceSelectionContext(fallbackResourcesState, "food"),
+        water: buildResourceSelectionContext(fallbackResourcesState, "water"),
+        torches: buildResourceSelectionContext(fallbackResourcesState, "torches")
+      },
+      gatherWeatherOptions: fallbackGatherWeatherOptions,
+      gatherFoodCoveredNextUpkeep: fallbackGatherFoodCoveredNextUpkeep,
+      gatherWaterCoveredNextUpkeep: fallbackGatherWaterCoveredNextUpkeep,
+      summary: {
+        foodDrainPerDay: fallbackFoodDrainPerDay,
+        waterDrainPerDay: fallbackWaterDrainPerDay,
+        torchDrainPerDay: fallbackTorchDrainPerDay,
+        upkeepDaysPending: fallbackUpkeepDaysPending,
+        foodDrainPending: fallbackFoodDrainPerDay * fallbackUpkeepDaysPending,
+        waterDrainPending: fallbackWaterDrainPerDay * fallbackUpkeepDaysPending,
+        foodCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalFoodReserve, fallbackFoodDrainPerDay),
+        foodRationCyclesLeft: fallbackFormatCyclesLeft(fallbackResourcesNumeric.partyFoodRations, fallbackFoodDrainPerDay),
+        waterCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay),
+        waterRationCyclesLeft: fallbackFormatCyclesLeft(fallbackResourcesNumeric.partyWaterRations, fallbackWaterDrainPerDay),
+        selectedBindingCount: fallbackSelectedBindingCount
+      },
+      upkeep: fallbackUpkeep,
+      encumbranceOptions: [
+        { value: "light", label: "Light", selected: (fallbackResourcesState.encumbrance ?? "light") === "light" },
+        { value: "moderate", label: "Moderate", selected: (fallbackResourcesState.encumbrance ?? "light") === "moderate" },
+        { value: "heavy", label: "Heavy", selected: (fallbackResourcesState.encumbrance ?? "light") === "heavy" },
+        { value: "overloaded", label: "Overloaded", selected: (fallbackResourcesState.encumbrance ?? "light") === "overloaded" }
+      ]
+    },
+    weather: fallbackWeather,
+    gmQuickTools: {
+      activePanel: gmQuickPanel,
+      showFactionPanel: gmQuickPanel === "faction",
+      showModifierPanel: gmQuickPanel === "modifier",
+      showWeatherPanel: gmQuickPanel === "weather",
+      modifierKeyOptions: fallbackModifierKeyOptions,
+      modifierModeOptions: fallbackModifierModeOptions,
+      hasModifierAddLog: false,
+      modifierAddLog: [],
+      weatherSceneSnapshot: fallbackWeatherSceneSnapshot,
+      weatherOptions: fallbackWeatherOptions,
+      weatherDaeModeOptions: fallbackWeatherDaeModeOptions,
+      weatherDraft: fallbackWeatherDraft
+    },
+    lootSources: fallbackLootSources,
+    lootClaims: fallbackLootClaims,
+    environment: {
+      preset: fallbackEnvironmentPreset,
+      targetCount: 0,
+      movementCheckActive: Boolean(fallbackEnvironmentPreset?.movementCheck),
+      checkLabel: String(fallbackEnvironmentCheck?.checkLabel ?? "").trim() || "-",
+      movementDc: Math.max(1, Number(ledger.environment?.movementDc ?? 12) || 12),
+      outcomes: {
+        onSuccess: "-",
+        onFail: "-",
+        onFailBy5: "-",
+        onSuccessiveFail: "-",
+        alwaysOn: "-"
+      },
+      syncToSceneNonParty: Boolean(ledger.environment?.syncToSceneNonParty ?? true),
+      note: String(ledger.environment?.note ?? ""),
+      presetOptions: ENVIRONMENT_PRESETS.map((preset) => ({
+        key: preset.key,
+        label: preset.label,
+        selected: preset.key === fallbackEnvironmentPreset.key
+      })),
+      successiveConfig: {
+        statusOptions: [],
+        slideFeet: 0,
+        exhaustion: 0,
+        damageFormula: "",
+        damageTypeOptions: [],
+        damageType: "",
+        maxHpReductionFormula: "",
+        daeChangeKey: "",
+        daeKeyOptions: [],
+        daeKeyHint: "-",
+        daeModeOptions: [],
+        daeChangeMode: 0,
+        daeChangeValue: "",
+        daeAvailable: true
+      },
+      targets: []
+    }
+  };
 }
 
 export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -2760,113 +3915,209 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   };
 
   async _prepareContext() {
-    const isGM = game.user.isGM;
-    const state = getRestWatchState();
-    const visibility = state.visibility ?? "names-passives";
-    const slots = buildWatchSlotsView(state, isGM, visibility);
-    const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
-    const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
-    
-    // Get player character selector (non-GM only)
-    const playerCharacters = isGM ? [] : buildPlayerCharacterSelector(slots);
-    const quickNotes = isGM ? buildQuickNotes(state) : [];
-    const light = calculateLightSources(state.slots, state.campfire);
-    const operations = buildOperationsContext();
-    const injuryRecovery = buildInjuryRecoveryContext();
-    const mainTab = getActiveRestMainTab();
-    const operationsTabActive = mainTab === "operations" || mainTab === "gm";
-    const operationsPageValue = mainTab === "gm"
-      ? "gm"
-      : (() => {
-        const active = getActiveOperationsPage();
-        return active === "gm" ? "planning" : active;
-      })();
-    const operationsPlanningTab = getActiveOperationsPlanningTab();
-    const gmOperationsTab = getActiveGmOperationsTab();
-    const gmOperationsTabLabelMap = {
-      environment: "Environment",
-      logs: "Logs",
-      derived: "Derived",
-      "active-sync": "Sync Effects",
-      "non-party": "Non-Party",
-      custom: "Custom Mods",
-      "loot-sources": "Loot Sources"
-    };
-    const gmOperationsTabLabel = gmOperationsTabLabelMap[gmOperationsTab] ?? "Environment";
-    const moduleVersion = getCurrentModuleVersion();
-    const miniViz = buildMiniVisualizationContext({ visibility });
-    const miniVizUi = buildMiniVizUiContext();
-    const totalSlots = slots.length;
-    const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
-    const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
-    const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
-    const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
-    const campfireState = state.campfire ? "Lit" : "Out";
-
-    return {
-      isGM,
-      locked: state.locked,
-      lockBannerText,
-      lockBannerTooltip,
-      lockBannerClass: isGM ? "is-gm" : "",
-      showPopout: false,
-      lastUpdatedAt: state.lastUpdatedAt ?? "-",
-      lastUpdatedBy: state.lastUpdatedBy ?? "-",
-      moduleVersion,
-      mainContextLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
-      mainSubtitleLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
-      visibilityOptions: buildVisibilityOptions(visibility),
-      highestPP: isGM ? computeHighestPP(slots) : "-",
-      noDarkvision: isGM ? computeNoDarkvision(slots) : "",
-      quickNotes,
-      hasQuickNotes: quickNotes.length > 0,
-      playerCharacters,
-      slots,
-      campfire: state.campfire ?? false,
-      light,
-      operations,
-      injuryRecovery,
-      miniViz,
-      ...miniVizUi,
-      mainTab,
-      mainTabRestWatch: mainTab === "rest-watch",
-      mainTabOperations: mainTab === "operations",
-      mainTabGm: mainTab === "gm",
-      mainTabOperationsOrGm: operationsTabActive,
-      gmPanelTabCore: mainTab === "rest-watch",
-      gmPanelTabOperations: operationsTabActive,
-      operationsPagePlanning: operationsPageValue === "planning",
-      operationsPageReadiness: operationsPageValue === "readiness",
-      operationsPageComms: operationsPageValue === "comms",
-      operationsPageReputation: operationsPageValue === "reputation",
-      operationsPageSupply: false,
-      operationsPageBase: operationsPageValue === "base",
-      operationsPageDowntime: operationsPageValue === "downtime",
-      operationsPageRecovery: operationsPageValue === "recovery",
-      operationsPageGm: operationsPageValue === "gm",
-      gmOpsTabEnvironment: gmOperationsTab === "environment",
-      gmOpsTabLogs: gmOperationsTab === "logs",
-      gmOpsTabDerived: gmOperationsTab === "derived",
-      gmOpsTabActiveSync: gmOperationsTab === "active-sync",
-      gmOpsTabNonParty: gmOperationsTab === "non-party",
-      gmOpsTabCustom: gmOperationsTab === "custom",
-      gmOpsTabModifiers: ["derived", "active-sync", "custom"].includes(gmOperationsTab),
-      gmOpsTabLootSources: gmOperationsTab === "loot-sources",
-      gmOpsTabLabel: gmOperationsTabLabel,
-      operationsPlanningRoles: operationsPlanningTab === "roles",
-      operationsPlanningSops: operationsPlanningTab === "sops",
-      operationsPlanningResources: operationsPlanningTab === "resources",
-      operationsPlanningBonuses: operationsPlanningTab === "bonuses",
-      overview: {
-        totalSlots,
-        occupiedSlots,
-        assignedEntries,
-        lowDarkvisionSlots,
-        hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
-        lockState,
-        campfireState
+    try {
+      const isGM = game.user.isGM;
+      const state = getRestWatchState();
+      const visibility = state.visibility ?? "names-passives";
+      const slots = buildWatchSlotsView(state, isGM, visibility);
+      const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+      const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
+      const playerCharacters = isGM ? [] : buildPlayerCharacterSelector(slots);
+      const quickNotes = isGM ? buildQuickNotes(state) : [];
+      const light = calculateLightSources(state.slots, state.campfire);
+      let operations;
+      try {
+        operations = buildOperationsContext();
+        this._lastGoodOperationsContext = operations;
+      } catch (operationsError) {
+        console.error(`${MODULE_ID}: buildOperationsContext failed`, operationsError);
+        operations = this._lastGoodOperationsContext ?? buildOperationsContextFallback();
       }
-    };
+      let injuryRecovery;
+      try {
+        injuryRecovery = buildInjuryRecoveryContext();
+        this._lastGoodInjuryRecoveryContext = injuryRecovery;
+      } catch (injuryRecoveryError) {
+        console.error(`${MODULE_ID}: buildInjuryRecoveryContext failed`, injuryRecoveryError);
+        injuryRecovery = this._lastGoodInjuryRecoveryContext ?? {};
+      }
+      const mainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+      const operationsTabActive = mainTab === "operations" || mainTab === "gm";
+      const operationsPageValue = mainTab === "gm"
+        ? "gm"
+        : (() => {
+          const active = getActiveOperationsPage();
+          return active === "gm" ? "planning" : active;
+        })();
+      const operationsPlanningTab = getActiveOperationsPlanningTab();
+      const gmOperationsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
+      this._gmOperationsTab = gmOperationsTab;
+      const lootRegistryTab = normalizeLootRegistryTab(this._lootRegistryTab ?? operations?.lootSources?.registryTab ?? getActiveLootRegistryTab());
+      this._lootRegistryTab = lootRegistryTab;
+      if (operations?.lootSources) {
+        operations.lootSources.registryTab = lootRegistryTab;
+        operations.lootSources.registryTabPreview = lootRegistryTab === "preview";
+        operations.lootSources.registryTabSettings = lootRegistryTab === "settings";
+      }
+      const moduleVersion = getCurrentModuleVersion();
+      const miniViz = buildMiniVisualizationContext({ visibility });
+      const miniVizUi = buildMiniVizUiContext();
+      const totalSlots = slots.length;
+      const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+      const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+      const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
+      const campfireState = state.campfire ? "Lit" : "Out";
+
+      const context = {
+        isGM,
+        locked: state.locked,
+        lockBannerText,
+        lockBannerTooltip,
+        lockBannerClass: isGM ? "is-gm" : "",
+        showPopout: false,
+        lastUpdatedAt: state.lastUpdatedAt ?? "-",
+        lastUpdatedBy: state.lastUpdatedBy ?? "-",
+        moduleVersion,
+        mainContextLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
+        mainSubtitleLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
+        visibilityOptions: buildVisibilityOptions(visibility),
+        highestPP: isGM ? computeHighestPP(slots) : "-",
+        noDarkvision: isGM ? computeNoDarkvision(slots) : "",
+        quickNotes,
+        hasQuickNotes: quickNotes.length > 0,
+        playerCharacters,
+        slots,
+        campfire: state.campfire ?? false,
+        light,
+        operations,
+        injuryRecovery,
+        miniViz,
+        ...miniVizUi,
+        mainTab,
+        activeTab: getSwitchTabIdFromMainTabId(mainTab),
+        mainTabRestWatch: mainTab === "rest-watch",
+        mainTabOperations: mainTab === "operations",
+        mainTabGm: mainTab === "gm",
+        mainTabOperationsOrGm: operationsTabActive,
+        gmPanelTabCore: mainTab === "rest-watch",
+        gmPanelTabOperations: operationsTabActive,
+        operationsPagePlanning: operationsPageValue === "planning",
+        operationsPageReadiness: operationsPageValue === "readiness",
+        operationsPageComms: operationsPageValue === "comms",
+        operationsPageReputation: operationsPageValue === "reputation",
+        operationsPageSupply: false,
+        operationsPageBase: operationsPageValue === "base",
+        operationsPageDowntime: operationsPageValue === "downtime",
+        operationsPageRecovery: operationsPageValue === "recovery",
+        operationsPageGm: operationsPageValue === "gm",
+        gmOpsTabEnvironment: gmOperationsTab === "environment",
+        gmOpsTabLootSources: gmOperationsTab === "loot-sources",
+        operationsPlanningRoles: operationsPlanningTab === "roles",
+        operationsPlanningSops: operationsPlanningTab === "sops",
+        operationsPlanningResources: operationsPlanningTab === "resources",
+        operationsPlanningBonuses: operationsPlanningTab === "bonuses",
+        overview: {
+          totalSlots,
+          occupiedSlots,
+          assignedEntries,
+          lowDarkvisionSlots,
+          hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+          lockState,
+          campfireState
+        }
+      };
+
+      logUiDebug("rest-watch", "prepared rest context", {
+        mainTab,
+        gmOperationsTab,
+        lootRegistryTab,
+        template: getTemplateForMainTab(mainTab),
+        slots: slots.length,
+        isGM
+      });
+      return context;
+    } catch (error) {
+      console.error(`${MODULE_ID}: RestWatchApp _prepareContext failed`, error);
+      const mainTab = normalizeMainTabId(getActiveRestMainTab(), "rest-watch");
+      const operationsTabActive = mainTab === "operations" || mainTab === "gm";
+      const isGM = Boolean(game.user?.isGM);
+      const fallbackState = getRestWatchState();
+      const fallbackVisibility = fallbackState.visibility ?? "names-passives";
+      const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
+      const fallbackTotalSlots = fallbackSlots.length;
+      const fallbackOccupiedSlots = fallbackSlots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+      const fallbackAssignedEntries = fallbackSlots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+      const fallbackLowDarkvisionSlots = fallbackSlots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const fallbackCampfire = Boolean(fallbackState.campfire);
+      const fallbackGmOpsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
+      const fallbackOpsPage = mainTab === "gm"
+        ? "gm"
+        : (() => {
+          const active = getActiveOperationsPage();
+          return active === "gm" ? "planning" : active;
+        })();
+      const fallbackPlanningTab = getActiveOperationsPlanningTab();
+      logUiDebug("rest-watch", "falling back to safe context", { mainTab, error: String(error?.message ?? error) });
+      return {
+        isGM,
+        locked: Boolean(fallbackState.locked),
+        lockBannerText: fallbackState.locked ? (isGM ? "Players locked" : "Locked by GM") : "",
+        lockBannerTooltip: fallbackState.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "",
+        lockBannerClass: isGM ? "is-gm" : "",
+        showPopout: false,
+        lastUpdatedAt: fallbackState.lastUpdatedAt ?? "-",
+        lastUpdatedBy: fallbackState.lastUpdatedBy ?? "-",
+        moduleVersion: getCurrentModuleVersion(),
+        mainContextLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
+        mainSubtitleLabel: mainTab === "gm" ? "GM" : (mainTab === "operations" ? "Operations" : "Rest Watch"),
+        visibilityOptions: buildVisibilityOptions(fallbackVisibility),
+        highestPP: isGM ? computeHighestPP(fallbackSlots) : "-",
+        noDarkvision: isGM ? computeNoDarkvision(fallbackSlots) : "",
+        quickNotes: [],
+        hasQuickNotes: false,
+        playerCharacters: [],
+        slots: fallbackSlots,
+        campfire: fallbackCampfire,
+        light: calculateLightSources(fallbackState.slots, fallbackCampfire),
+        operations: this._lastGoodOperationsContext ?? buildOperationsContextFallback(),
+        injuryRecovery: this._lastGoodInjuryRecoveryContext ?? {},
+        miniViz: {},
+        ...buildMiniVizUiContext(),
+        mainTab,
+        activeTab: getSwitchTabIdFromMainTabId(mainTab),
+        mainTabRestWatch: mainTab === "rest-watch",
+        mainTabOperations: mainTab === "operations",
+        mainTabGm: mainTab === "gm",
+        mainTabOperationsOrGm: operationsTabActive,
+        gmPanelTabCore: mainTab === "rest-watch",
+        gmPanelTabOperations: operationsTabActive,
+        operationsPagePlanning: fallbackOpsPage === "planning",
+        operationsPageReadiness: fallbackOpsPage === "readiness",
+        operationsPageComms: fallbackOpsPage === "comms",
+        operationsPageReputation: fallbackOpsPage === "reputation",
+        operationsPageSupply: false,
+        operationsPageBase: fallbackOpsPage === "base",
+        operationsPageDowntime: fallbackOpsPage === "downtime",
+        operationsPageRecovery: fallbackOpsPage === "recovery",
+        operationsPageGm: fallbackOpsPage === "gm",
+        gmOpsTabEnvironment: fallbackGmOpsTab === "environment",
+        gmOpsTabLootSources: fallbackGmOpsTab === "loot-sources",
+        operationsPlanningRoles: fallbackPlanningTab === "roles",
+        operationsPlanningSops: fallbackPlanningTab === "sops",
+        operationsPlanningResources: fallbackPlanningTab === "resources",
+        operationsPlanningBonuses: fallbackPlanningTab === "bonuses",
+        overview: {
+          totalSlots: fallbackTotalSlots,
+          occupiedSlots: fallbackOccupiedSlots,
+          assignedEntries: fallbackAssignedEntries,
+          lowDarkvisionSlots: fallbackLowDarkvisionSlots,
+          hasLowDarkvisionCoverage: fallbackLowDarkvisionSlots > 0,
+          lockState: fallbackState.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open",
+          campfireState: fallbackCampfire ? "Lit" : "Out"
+        }
+      };
+    }
   }
 
   async _onRender(context, options) {
@@ -2881,14 +4132,38 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       // Use event delegation on the app element
       this.element.addEventListener("click", (event) => {
-        const tab = event.target?.closest(".po-tabs-main .po-tab[data-tab]");
-        if (tab) return this.#onTabClick(tab, this.element);
+        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
 
         const actionElement = event.target?.closest("[data-action]");
         if (isFormActionElement(actionElement)) return;
         const action = actionElement?.dataset?.action;
+        if (action) {
+          logUiDebug("rest-watch", "click action", {
+            action,
+            target: summarizeClickTarget(event.target)
+          });
+        }
         if (action) this.#onAction(event);
       });
+
+      if (isModuleDebugEnabled()) {
+        this.element.addEventListener("click", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) return;
+          if (target.closest('[data-action="switch-tab"]')) return;
+          const computed = getComputedStyle(target);
+          const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+          const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
+          if (!suspicious) return;
+          logUiDebug("rest-watch", "capture-click suspicious overlay", {
+            target: summarizeClickTarget(target),
+            zIndex: computed.zIndex,
+            position: computed.position,
+            pointerEvents: computed.pointerEvents
+          });
+        }, true);
+      }
       
       this.element.addEventListener("change", (event) => {
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
@@ -2909,10 +4184,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           });
           return;
         }
-        if (event.target?.matches("input[data-action='set-non-party-sync-filter-keyword']")) {
-          this.#onAction(event);
-          return;
-        }
         if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
         }
@@ -2922,6 +4193,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const portrait = event.target?.closest(".po-portrait");
         if (portrait) openActorSheetFromElement(portrait);
       });
+
+      this.element.addEventListener("dragover", (event) => {
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+      });
+
+      this.element.addEventListener("drop", async (event) => {
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+        const added = await addLootPreviewItemFromDropEvent(event);
+        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
     }
 
     // Update activity UI state
@@ -2929,6 +4214,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#applyOperationsHoverHints();
     applyNonGmOperationsReadonly(this);
     refreshTabAccessibility(this.element);
+    diagnoseRenderedMainTabs(this.element, "rest-watch");
+    this._activePanel = normalizeMainTabId(this.element?.dataset?.mainTab ?? this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+    if (isModuleDebugEnabled()) {
+      const activeTab = getSwitchTabIdFromMainTabId(this._activePanel);
+      const activeButton = this.element?.querySelector?.(`.po-tabs-main [data-action="switch-tab"][data-tab="${activeTab}"]`);
+      const panelTarget = this._activePanel === "rest-watch" ? "#po-panel-rest-watch" : "#po-panel-operations";
+      const panelExists = Boolean(this.element?.querySelector?.(panelTarget));
+      logUiDebug("rest-watch", "after render active tab", {
+        activeTab,
+        activePanel: this._activePanel,
+        activeButtonFound: Boolean(activeButton),
+        panelTarget,
+        panelExists
+      });
+    }
 
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDrop(this.element);
@@ -2981,7 +4281,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"] }) {
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
     const uiState = captureUiState(this);
     if (uiState) pendingUiRestore.set(this, uiState);
     const scrollState = captureScrollState(this);
@@ -2989,35 +4289,83 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.render(renderOptions);
   }
 
-
-  #onTabClick(tabElement, html) {
-    const tabName = tabElement?.dataset?.tab;
-    if (tabName === "marching-order") {
-      new MarchingOrderApp().render({ force: true });
-      this.close();
+  setActivePanel(panelId, options = {}) {
+    const normalized = normalizeMainTabId(panelId, "rest-watch");
+    if (normalized === "gm" && !game.user?.isGM) {
+      ui.notifications?.warn("GM permissions are required for the GM section.");
       return;
     }
-    if (tabName === "operations") {
-      setActiveRestMainTab("operations");
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      return;
-    }
-    if (tabName === "gm") {
-      if (!game.user?.isGM) {
-        ui.notifications?.warn("GM permissions are required for the GM section.");
-        return;
-      }
-      setActiveRestMainTab("gm");
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      return;
-    }
-    if (tabName === "rest-watch") {
-      setActiveRestMainTab("rest-watch");
+    this._activePanel = normalized;
+    setActiveRestMainTab(normalized);
+    if (options?.rerender !== false) {
       this.#renderWithPreservedState({ force: true, parts: ["main"] });
     }
   }
 
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "").trim().toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("rest-watch", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+    const normalizedSwitchTab = normalizeSwitchTabId(requested, "rest");
+    const normalizedMainTab = normalizeMainTabId(normalizedSwitchTab, "rest-watch");
+    const previousMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "rest-watch");
+    if (normalizedMainTab === previousMainTab) return;
+
+    const windowContent = this.element?.closest?.(".window-content") ?? this.element?.querySelector?.(".window-content") ?? null;
+    const previousScrollTop = windowContent?.scrollTop ?? 0;
+
+    this._activePanel = normalizedMainTab;
+    setActiveRestMainTab(normalizedMainTab);
+
+    if (normalizedMainTab === "marching-order") {
+      openMainTab("marching-order", { force: true });
+    } else {
+      this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      requestAnimationFrame(() => {
+        const nextWindowContent = this.element?.closest?.(".window-content") ?? this.element?.querySelector?.(".window-content") ?? null;
+        if (nextWindowContent) nextWindowContent.scrollTop = previousScrollTop;
+      });
+    }
+  }
+
+  #onSwitchTabClick(event, tabButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tabId = String(tabButton?.dataset?.tab ?? "").trim().toLowerCase();
+    logUiDebug("rest-watch", "switch-tab click", {
+      tabId,
+      target: summarizeClickTarget(event.target)
+    });
+    this.setActiveTab(tabId);
+  }
+
+
+  #onTabClick(tabElement, html, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
+    logUiDebug("rest-watch", "main tab click", {
+      tabName,
+      target: summarizeClickTarget(event?.target ?? tabElement)
+    });
+    if (tabName === "rest-watch" || tabName === "operations" || tabName === "gm") {
+      this.setActivePanel(tabName);
+      return;
+    }
+    if (tabName === "marching-order") {
+      this.setActiveTab("march");
+    }
+  }
+
   async #onAction(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
     if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
@@ -3029,7 +4377,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     });
     if (handledJournalAction) return;
 
-    switch (action) {
+    try {
+      switch (action) {
+      case "switch-tab":
+        this.#onSwitchTabClick(event, element);
+        break;
       case "refresh":
         emitSocketRefresh();
         break;
@@ -3054,9 +4406,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "swap":
         await swapSlots(element);
-        break;
-      case "toggle-lock":
-        await toggleRestLock(element);
         break;
       case "toggle-notes":
         toggleCardNotes(element);
@@ -3122,7 +4471,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "gm-ops-tab":
-        setActiveGmOperationsTab(element?.dataset?.gmTab);
+        if (isModuleDebugEnabled()) {
+          logUiDebug("loot", "gm ops tab click", {
+            requestedTab: String(element?.dataset?.gmTab ?? ""),
+            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+          });
+        }
+        this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
+        setActiveGmOperationsTab(this._gmOperationsTab);
+        if (isModuleDebugEnabled()) {
+          logUiDebug("loot", "gm ops tab applied", {
+            afterGmOpsTab: this._gmOperationsTab,
+            storedGmOpsTab: getActiveGmOperationsTab()
+          });
+        }
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "set-role":
@@ -3152,6 +4515,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "prefill-downtime-resolution":
         applyDowntimeResolverBaseToUi(element, { force: true });
         break;
+      case "pre-resolve-selected-downtime-entry":
+        await preResolveSelectedDowntimeEntry(element);
+        break;
       case "submit-downtime-action":
         await submitDowntimeAction(element);
         break;
@@ -3161,9 +4527,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "resolve-selected-downtime-entry":
         await resolveSelectedDowntimeEntry(element);
         break;
-      case "resolve-downtime-actions":
-        await resolveDowntimeActions();
-        break;
       case "clear-downtime-results":
         await clearDowntimeResults();
         break;
@@ -3172,12 +4535,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       case "collect-downtime-result":
         await collectDowntimeResult(element);
-        break;
-      case "set-party-health-modifier":
-        await setPartyHealthModifier(element);
-        break;
-      case "set-party-health-sync-scope":
-        await setPartyHealthSyncScope(element);
         break;
       case "set-environment-preset":
         await setOperationalEnvironmentPreset(element);
@@ -3287,24 +4644,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "show-reputation-brief":
         await showReputationBrief();
         break;
-      case "set-party-health-custom-field":
-        await setPartyHealthCustomField(element);
-        break;
-      case "party-health-custom-key-preset":
-        applyPartyHealthCustomKeyPreset(element);
-        break;
-      case "party-health-custom-key-filter":
-        filterModifierPresetSelect(element, "customModifierKeySelect");
-        break;
-      case "set-party-health-sync-non-party":
-        await setPartyHealthSyncNonParty(element);
-        break;
-      case "add-party-health-custom":
-        await addPartyHealthCustomModifier(element);
-        break;
-      case "remove-party-health-custom":
-        await removePartyHealthCustomModifier(element);
-        break;
       case "toggle-loot-pack-sources-collapsed": {
         const current = getLootPackSourcesUiState();
         setLootPackSourcesUiState({ collapsed: !current.collapsed });
@@ -3312,7 +4651,19 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         break;
       }
       case "set-loot-registry-tab":
-        setActiveLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+        if (isModuleDebugEnabled()) {
+          logUiDebug("loot", "loot registry tab click", {
+            requestedTab: String(element?.dataset?.tab ?? ""),
+            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+          });
+        }
+        this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+        setActiveLootRegistryTab(this._lootRegistryTab);
+        logUiDebug("loot", "set loot registry tab", {
+          tab: this._lootRegistryTab,
+          storedLootRegistryTab: getActiveLootRegistryTab()
+        });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "set-loot-pack-filter":
@@ -3364,6 +4715,21 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await rollLootPreview(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
+      case "add-loot-preview-item": {
+        const added = await addLootPreviewItemByPicker();
+        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      }
+      case "remove-loot-preview-item": {
+        const removed = await removeLootPreviewItem(element);
+        if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      }
+      case "adjust-loot-preview-currency": {
+        const adjusted = adjustLootPreviewCurrency(element);
+        if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        break;
+      }
       case "clear-loot-preview":
         clearLootPreviewResult();
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -3379,52 +4745,33 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "open-loot-item":
         await openLootItemFromElement(element);
         break;
-      case "remove-active-sync-effect":
-        await removeActiveSyncEffect(element);
-        break;
-      case "archive-active-sync-effect":
-        await archiveActiveSyncEffect(element);
-        break;
-      case "restore-archived-sync-effect":
-        await restoreArchivedSyncEffect(element);
-        break;
-      case "remove-archived-sync-effect":
-        await removeArchivedSyncEffect(element);
-        break;
-      case "set-archived-sync-field":
-        await setArchivedSyncField(element);
-        break;
-      case "set-active-sync-effects-tab":
-        setActiveSyncEffectsTab(String(element?.dataset?.tab ?? "active"));
+      case "toggle-loot-vouch":
+        await toggleLootItemVouchForPlayer(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
-      case "set-non-party-sync-filter-keyword":
-        setNonPartySyncFilterKeyword(String(element?.value ?? ""));
+      case "set-loot-major-item":
+        await setLootItemMajorFromElement(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
-      case "clear-non-party-sync-filter-keyword":
-        setNonPartySyncFilterKeyword("");
+      case "run-loot-rolloff":
+        await runLootRollOffFromElement(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
-      case "apply-non-party-sync-actor":
-        await applyNonPartySyncActor(element);
-        break;
-      case "clear-non-party-sync-actor":
-        await clearNonPartySyncActor(element);
-        break;
-      case "reapply-all-non-party-sync":
-        await reapplyAllNonPartySync();
-        break;
-      case "clear-all-non-party-sync":
-        await clearAllNonPartySync();
+      case "open-gm-loot-claims-board":
+        openGmLootClaimsBoard({ force: true });
         break;
       case "gm-quick-add-faction":
         await gmQuickAddFaction();
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
       case "gm-quick-add-modifier":
-        await gmQuickAddModifier();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        openGlobalModifierSummaryPage({ force: true });
+        break;
+      case "gm-quick-open-environment":
+        openGmEnvironmentPage({ force: true });
+        break;
+      case "gm-quick-open-loot":
+        openGmLootPage({ force: true });
         break;
       case "gm-quick-cancel-panel":
         setActiveGmQuickPanel("none");
@@ -3486,23 +4833,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         await gmQuickDeleteWeatherPreset(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
         break;
-      case "show-gm-logs-manager":
-        await showOperationalLogsManager();
-        break;
-      case "create-session-summary-journal":
-        await createSessionSummaryJournal();
-        break;
-      case "open-journal-repository":
-        await openOperationsJournalRepository();
-        break;
-      case "edit-global-log":
-        await editGlobalLog(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "remove-global-log":
-        await removeGlobalLog(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
       case "set-base-ops-config":
         await setBaseOperationsConfig(element);
         break;
@@ -3545,8 +4875,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       case "show-recovery-brief":
         await showRecoveryBrief();
         break;
-      default:
-        break;
+        default:
+          break;
+      }
+    } catch (error) {
+      logUiFailure("rest-watch", "action handler failed", error, {
+        action,
+        eventType: String(event?.type ?? ""),
+        target: summarizeClickTarget(event?.target)
+      });
+      ui.notifications?.error("Party Operations action failed. Check the console for details.");
     }
   }
 
@@ -3572,6 +4910,843 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       if (slot) slot.notes = text;
     });
   }
+
+  async close(options = {}) {
+    if (isModuleDebugEnabled()) {
+      console.trace(`[${MODULE_ID}] RestWatchApp.close`, {
+        options,
+        activePanel: this._activePanel ?? getActiveRestMainTab()
+      });
+    }
+    return super.close(options);
+  }
+}
+
+function buildGlobalModifierSummaryContext() {
+  const ledger = getOperationsLedger();
+  const roleKeys = ["quartermaster", "cartographer", "chronicler", "steward"];
+  const sopKeys = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+  const roles = roleKeys.map((key) => {
+    const actorId = String(ledger.roles?.[key] ?? "").trim();
+    return {
+      hasActor: Boolean(actorId && game.actors?.get(actorId))
+    };
+  });
+  const sops = sopKeys.map((key) => ({
+    active: Boolean(ledger.sops?.[key])
+  }));
+  const effects = getOperationalEffects(ledger, roles, sops);
+  const partyHealth = ensurePartyHealthState(ledger);
+  const customModifierById = new Map((partyHealth.customModifiers ?? []).map((entry) => [String(entry?.id ?? ""), entry]));
+
+  const globalRows = (effects.derivedModifierRows ?? [])
+    .filter((row) => row?.enabled)
+    .map((row) => ({
+      label: String(row?.label ?? "Modifier").trim() || "Modifier",
+      appliesTo: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
+      key: String(row?.key ?? "").trim() || "-",
+      value: String(row?.effectiveFormatted ?? row?.formatted ?? row?.value ?? "-").trim() || "-",
+      note: String(row?.note ?? "").trim()
+    }));
+
+  const partyRows = (effects.customModifierRows ?? [])
+    .filter((row) => row?.enabled)
+    .map((row) => {
+      const modifierId = String(row?.modifierId ?? "");
+      const customId = modifierId.startsWith("custom:") ? modifierId.slice("custom:".length) : "";
+      const customEntry = customModifierById.get(customId);
+      const modeLabel = String(row?.modeLabel ?? "").trim() || (customEntry ? getActiveEffectModeLabel(customEntry.mode) : "-");
+      return {
+        label: String(row?.label ?? "Modifier").trim() || "Modifier",
+        modeLabel,
+        key: String(row?.key ?? "").trim() || "-",
+        value: String(row?.effectiveFormatted ?? row?.formatted ?? row?.value ?? "-").trim() || "-",
+        appliesTo: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
+        note: String(row?.note ?? "").trim()
+      };
+    });
+
+  const exclusionRows = (effects.globalModifierRows ?? []).map((row) => {
+    const modifierId = String(row?.modifierId ?? "").trim();
+    const source = String(row?.source ?? "derived").trim() || "derived";
+    const customId = modifierId.startsWith("custom:") ? modifierId.slice("custom:".length) : "";
+    const customEntry = customModifierById.get(customId);
+    const excluded = source === "custom"
+      ? !(customEntry?.enabled !== false)
+      : row?.enabled === false;
+    return {
+      modifierId,
+      label: String(row?.label ?? "Modifier").trim() || "Modifier",
+      source,
+      scopeLabel: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
+      valueLabel: String(row?.formatted ?? row?.value ?? "-").trim() || "-",
+      excluded
+    };
+  });
+
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    globalRows,
+    partyRows,
+    exclusionRows,
+    hasGlobalRows: globalRows.length > 0,
+    hasPartyRows: partyRows.length > 0,
+    hasExclusionRows: exclusionRows.length > 0,
+    hasAnyRows: globalRows.length > 0 || partyRows.length > 0
+  };
+}
+
+async function setGlobalModifierExcluded(modifierId, excluded) {
+  const normalizedId = String(modifierId ?? "").trim();
+  if (!normalizedId) return false;
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("Only the GM can update modifier exclusions.");
+    return false;
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    if (normalizedId.startsWith("custom:")) {
+      const customId = normalizedId.slice("custom:".length);
+      const entry = (partyHealth.customModifiers ?? []).find((row) => String(row?.id ?? "") === customId);
+      if (entry) entry.enabled = !excluded;
+      return;
+    }
+    if (!partyHealth.modifierEnabled || typeof partyHealth.modifierEnabled !== "object") {
+      partyHealth.modifierEnabled = {};
+    }
+    partyHealth.modifierEnabled[normalizedId] = !excluded;
+  });
+
+  return true;
+}
+
+function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("GM permissions are required to view global modifiers.");
+    return null;
+  }
+  const app = globalModifierSummaryAppInstance?.element?.isConnected
+    ? globalModifierSummaryAppInstance
+    : new GlobalModifierSummaryApp();
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "global-modifiers" });
+  return app;
+}
+
+export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-global-modifier-summary",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Global Modifiers" },
+    position: { width: 900, height: 720 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/global-modifiers.hbs" }
+  };
+
+  constructor(options = {}) {
+    super(options);
+    globalModifierSummaryAppInstance = this;
+  }
+
+  async _prepareContext() {
+    try {
+      return buildGlobalModifierSummaryContext();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to build global modifier summary context`, error);
+      return {
+        moduleVersion: getCurrentModuleVersion(),
+        generatedAtLabel: new Date().toLocaleString(),
+        generatedBy: String(game.user?.name ?? "GM"),
+        globalRows: [],
+        partyRows: [],
+        hasGlobalRows: false,
+        hasPartyRows: false,
+        hasAnyRows: false
+      };
+    }
+  }
+
+  async close(options = {}) {
+    if (globalModifierSummaryAppInstance === this) globalModifierSummaryAppInstance = null;
+    return super.close(options);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    if (this.element && !this.element.dataset.poBoundGlobalModifiers) {
+      this.element.dataset.poBoundGlobalModifiers = "1";
+      this.element.addEventListener("click", (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "global-modifiers-back") {
+          this.close();
+          openMainTab("gm", { force: true });
+          return;
+        }
+        if (action === "global-modifiers-refresh") {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        }
+      });
+      this.element.addEventListener("change", async (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (action !== "global-modifier-set-excluded") return;
+        const modifierId = String(actionElement?.dataset?.modifierId ?? "").trim();
+        const excluded = Boolean(actionElement?.checked);
+        await setGlobalModifierExcluded(modifierId, excluded);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+    }
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
+}
+
+function getStandaloneOpsContext() {
+  try {
+    return buildOperationsContext();
+  } catch (error) {
+    console.warn(`${MODULE_ID}: buildOperationsContext failed for standalone page`, error);
+    return buildOperationsContextFallback();
+  }
+}
+
+function buildGmEnvironmentPageContext() {
+  const operations = getStandaloneOpsContext();
+  const environment = operations?.environment ?? {};
+  const weather = operations?.weather ?? {
+    currentLabel: "Not logged",
+    currentVisibilityModifier: 0,
+    currentDarkness: 0
+  };
+  const gmQuickTools = operations?.gmQuickTools ?? {
+    weatherSceneSnapshot: {
+      label: "-",
+      darkness: 0,
+      visibilityModifier: 0
+    },
+    weatherOptions: [],
+    weatherDaeModeOptions: [],
+    modifierKeyOptions: [],
+    weatherDraft: {
+      selectedKey: "",
+      darkness: 0,
+      visibilityModifier: 0,
+      note: "",
+      presetName: "",
+      daeChanges: []
+    }
+  };
+  const logs = Array.isArray(environment.logs) ? environment.logs : [];
+  const checkResults = Array.isArray(environment.checkResults) ? environment.checkResults : [];
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    environment,
+    weather,
+    gmQuickTools,
+    logs,
+    checkResults,
+    hasLogs: logs.length > 0,
+    hasCheckResults: checkResults.length > 0,
+    hasWeatherOptions: Array.isArray(gmQuickTools?.weatherOptions) && gmQuickTools.weatherOptions.length > 0
+  };
+}
+
+function buildGmLootPageContext() {
+  const operations = getStandaloneOpsContext();
+  const lootSources = operations?.lootSources ?? {};
+  const preview = lootSources.preview ?? {
+    hasResult: false,
+    generatedAtLabel: "-",
+    generatedBy: "-",
+    currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0, formula: "-" },
+    stats: { candidateCount: 0, itemCountGenerated: 0, itemCountTarget: 0, tableRollCount: 0 },
+    items: [],
+    tableRolls: [],
+    warnings: []
+  };
+  const lootClaims = operations?.lootClaims ?? {
+    publishedAtLabel: "-",
+    publishedBy: "-",
+    itemCount: 0,
+    claimsLogCount: 0,
+    currencyRemaining: { pp: 0, gp: 0, sp: 0, cp: 0 },
+    currencyClaimedCount: 0,
+    hasItems: false,
+    items: []
+  };
+  const sourceSummary = lootSources.summary ?? {
+    enabledItemPacks: 0,
+    totalItemPacks: 0,
+    enabledTables: 0,
+    totalTables: 0,
+    enabledItemTypes: 0,
+    totalItemTypes: 0,
+    updatedAtLabel: "-",
+    updatedBy: "-"
+  };
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    operations,
+    sourceSummary,
+    preview,
+    lootClaims,
+    hasPreviewResult: Boolean(preview?.hasResult),
+    hasPreviewItems: Array.isArray(preview?.items) && preview.items.length > 0,
+    hasPreviewWarnings: Array.isArray(preview?.warnings) && preview.warnings.length > 0,
+    hasClaimsItems: Boolean(lootClaims?.hasItems),
+    hasContestedItems: Number(lootClaims?.contestedItemCount ?? 0) > 0
+  };
+}
+
+function buildGmLootClaimsBoardContext() {
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    lootClaims: buildLootClaimsContext(game.user),
+    isGM: Boolean(game.user?.isGM)
+  };
+}
+
+function openGmEnvironmentPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("GM permissions are required to view environment controls.");
+    return null;
+  }
+  const app = gmEnvironmentPageAppInstance?.element?.isConnected
+    ? gmEnvironmentPageAppInstance
+    : new GmEnvironmentPageApp();
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-environment" });
+  return app;
+}
+
+function openGmLootPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("GM permissions are required to view loot controls.");
+    return null;
+  }
+  const app = gmLootPageAppInstance?.element?.isConnected
+    ? gmLootPageAppInstance
+    : new GmLootPageApp();
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
+  return app;
+}
+
+function openGmLootClaimsBoard(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!game.user?.isGM) {
+    ui.notifications?.warn("GM permissions are required to view the live claims board.");
+    return null;
+  }
+  const app = gmLootClaimsBoardAppInstance?.element?.isConnected
+    ? gmLootClaimsBoardAppInstance
+    : new GmLootClaimsBoardApp();
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot-claims-board" });
+  return app;
+}
+
+export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-gm-environment-page",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - GM Environment" },
+    position: { width: 980, height: 760 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/gm-environment.hbs" }
+  };
+
+  constructor(options = {}) {
+    super(options);
+    gmEnvironmentPageAppInstance = this;
+  }
+
+  async _prepareContext() {
+    return buildGmEnvironmentPageContext();
+  }
+
+  async close(options = {}) {
+    if (gmEnvironmentPageAppInstance === this) gmEnvironmentPageAppInstance = null;
+    return super.close(options);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    if (this.element && !this.element.dataset.poBoundGmEnvironmentPage) {
+      this.element.dataset.poBoundGmEnvironmentPage = "1";
+      this.element.addEventListener("click", async (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "gm-environment-page-back") {
+          this.close();
+          openMainTab("gm", { force: true });
+          return;
+        }
+        if (action === "gm-environment-page-refresh") {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-log-weather") {
+          await gmQuickLogCurrentWeather();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-weather-add-dae") {
+          await gmQuickAddWeatherDaeChange(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-weather-remove-dae") {
+          await gmQuickRemoveWeatherDaeChange(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-weather-save-preset") {
+          await gmQuickSaveWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-weather-delete-preset") {
+          await gmQuickDeleteWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-submit-weather") {
+          await gmQuickSubmitWeather(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        }
+      });
+      this.element.addEventListener("change", async (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "gm-quick-weather-select") {
+          await gmQuickSelectWeatherPreset(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "gm-quick-weather-set") {
+          gmQuickUpdateWeatherDraftField(actionElement);
+          return;
+        }
+        if (action === "gm-quick-weather-dae-key-preset") {
+          gmQuickApplyWeatherDaeKeyPreset(actionElement);
+        }
+      });
+      this.element.addEventListener("input", (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (action !== "gm-quick-weather-set") return;
+        gmQuickUpdateWeatherDraftField(actionElement);
+      });
+    }
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
+}
+
+export class GmLootPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-gm-loot-page",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - GM Loot" },
+    position: { width: 980, height: 760 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/gm-loot.hbs" }
+  };
+
+  constructor(options = {}) {
+    super(options);
+    gmLootPageAppInstance = this;
+  }
+
+  async _prepareContext() {
+    return buildGmLootPageContext();
+  }
+
+  async close(options = {}) {
+    if (gmLootPageAppInstance === this) gmLootPageAppInstance = null;
+    return super.close(options);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    if (this.element && !this.element.dataset.poBoundGmLootPage) {
+      this.element.dataset.poBoundGmLootPage = "1";
+      this.element.addEventListener("click", async (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        if (isFormActionElement(actionElement)) return;
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "gm-loot-page-back") {
+          this.close();
+          openMainTab("gm", { force: true });
+          return;
+        }
+        if (action === "gm-loot-page-refresh") {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "open-gm-loot-claims-board") {
+          openGmLootClaimsBoard({ force: true });
+          return;
+        }
+
+        switch (action) {
+          case "set-loot-registry-tab":
+            setActiveLootRegistryTab(String(actionElement?.dataset?.tab ?? "preview"));
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-pack-filter":
+            setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "clear-loot-pack-filter":
+            setLootPackSourcesUiState({ filter: "" });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "toggle-loot-pack-source":
+            await toggleLootPackSource(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-pack-weight":
+            await setLootPackWeight(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "toggle-loot-table-source":
+            await toggleLootTableSource(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-table-type":
+            await setLootTableType(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "toggle-loot-item-type":
+            await toggleLootItemType(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-rarity-floor":
+            await setLootRarityFloor(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-rarity-ceiling":
+            await setLootRarityCeiling(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-manifest-pack":
+            await setLootManifestPack(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-keyword-include-tags":
+            await setLootKeywordIncludeTags(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-keyword-exclude-tags":
+            await setLootKeywordExcludeTags(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "reset-loot-source-config":
+            await resetLootSourceConfig();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "set-loot-preview-field":
+            setLootPreviewField(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "roll-loot-preview":
+            await rollLootPreview(actionElement);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "add-loot-preview-item": {
+            const added = await addLootPreviewItemByPicker();
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          }
+          case "remove-loot-preview-item": {
+            const removed = await removeLootPreviewItem(actionElement);
+            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          }
+          case "adjust-loot-preview-currency": {
+            const adjusted = adjustLootPreviewCurrency(actionElement);
+            if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          }
+          case "clear-loot-preview":
+            clearLootPreviewResult();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "publish-loot-claims":
+            await publishLootPreviewToClaims();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "clear-loot-claims":
+            await clearLootClaimsPool();
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "open-loot-item":
+            await openLootItemFromElement(actionElement);
+            break;
+          default:
+            break;
+        }
+      });
+
+      this.element.addEventListener("change", async (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "set-loot-preview-field") {
+          setLootPreviewField(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "toggle-loot-pack-source") {
+          await toggleLootPackSource(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "toggle-loot-table-source") {
+          await toggleLootTableSource(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-table-type") {
+          await setLootTableType(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "toggle-loot-item-type") {
+          await toggleLootItemType(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-rarity-floor") {
+          await setLootRarityFloor(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-rarity-ceiling") {
+          await setLootRarityCeiling(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-manifest-pack") {
+          await setLootManifestPack(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-pack-weight") {
+          await setLootPackWeight(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-keyword-include-tags") {
+          await setLootKeywordIncludeTags(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-keyword-exclude-tags") {
+          await setLootKeywordExcludeTags(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        }
+      });
+
+      this.element.addEventListener("input", (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        const action = String(actionElement?.dataset?.action ?? "").trim();
+        if (!action) return;
+        if (action === "set-loot-pack-filter" || action === "set-loot-preview-field") {
+          if (action === "set-loot-pack-filter") setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
+          if (action === "set-loot-preview-field") setLootPreviewField(actionElement);
+        }
+      });
+
+      this.element.addEventListener("dragover", (event) => {
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+      });
+
+      this.element.addEventListener("drop", async (event) => {
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        event.preventDefault();
+        const added = await addLootPreviewItemFromDropEvent(event);
+        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+    }
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
+}
+
+export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "party-operations-gm-loot-claims-board",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Live Loot Claims" },
+    position: { width: 920, height: 760 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/gm-loot-claims-board.hbs" }
+  };
+
+  constructor(options = {}) {
+    super(options);
+    gmLootClaimsBoardAppInstance = this;
+  }
+
+  async _prepareContext() {
+    return buildGmLootClaimsBoardContext();
+  }
+
+  async close(options = {}) {
+    if (gmLootClaimsBoardAppInstance === this) gmLootClaimsBoardAppInstance = null;
+    return super.close(options);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    const uiState = captureUiState(this);
+    if (uiState) pendingUiRestore.set(this, uiState);
+    const scrollState = captureScrollState(this);
+    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
+    this.render(renderOptions);
+  }
+
+  async #onAction(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    const actionElement = event?.target?.closest?.("[data-action]");
+    const action = String(actionElement?.dataset?.action ?? "").trim();
+    if (!action) return;
+    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+
+    try {
+      if (action === "gm-loot-claims-board-back") {
+        this.close();
+        openMainTab("gm", { force: true });
+        return;
+      }
+      if (action === "gm-loot-claims-board-refresh") {
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
+      if (action === "claim-loot-item") {
+        await claimLootItemForPlayer(actionElement);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
+      if (action === "toggle-loot-vouch") {
+        await toggleLootItemVouchForPlayer(actionElement);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
+      if (action === "run-loot-rolloff") {
+        await runLootRollOffFromElement(actionElement);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
+      if (action === "open-loot-item") {
+        await openLootItemFromElement(actionElement);
+        return;
+      }
+      if (action === "set-loot-major-item") {
+        await setLootItemMajorFromElement(actionElement);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
+      if (action === "set-loot-claim-actor") {
+        if (setLootClaimActorSelectionFromElement(actionElement)) {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        }
+      }
+    } catch (error) {
+      logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
+        target: summarizeClickTarget(event?.target)
+      });
+      ui.notifications?.warn("Loot claims action failed. Check console for details.");
+    }
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    if (this.element && !this.element.dataset.poBoundGmLootClaimsBoard) {
+      this.element.dataset.poBoundGmLootClaimsBoard = "1";
+      this.element.addEventListener("click", (event) => {
+        const actionElement = event.target?.closest?.("[data-action]");
+        if (isFormActionElement(actionElement)) return;
+        if (!actionElement) return;
+        this.#onAction(event);
+      });
+      this.element.addEventListener("change", (event) => {
+        if (!event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) return;
+        this.#onAction(event);
+      });
+    }
+    restorePendingWindowState(this);
+    restorePendingUiState(this);
+    restorePendingScrollState(this);
+  }
 }
 
 export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -3588,43 +5763,79 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   };
 
   async _prepareContext() {
-    const state = getRestWatchState();
-    const visibility = state.visibility ?? "names-passives";
-    const slots = buildWatchSlotsView(state, false, visibility);
-    const lockBannerText = state.locked ? "Locked by GM" : "";
-    const lockBannerTooltip = state.locked ? "Edits are disabled while the GM lock is active." : "";
-    const miniViz = buildMiniVisualizationContext({ visibility });
-    const miniVizUi = buildMiniVizUiContext();
-    const totalSlots = slots.length;
-    const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
-    const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
-    const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
-    const lootClaims = buildLootClaimsContext(game.user);
-    const operationsJournal = buildOperationsJournalContext();
-    return {
-      isGM: false,
-      locked: state.locked,
-      lockBannerText,
-      lockBannerTooltip,
-      lockBannerClass: "",
-      showPopout: false,
-      lastUpdatedAt: state.lastUpdatedAt ?? "-",
-      lastUpdatedBy: state.lastUpdatedBy ?? "-",
-      moduleVersion: getCurrentModuleVersion(),
-      slots,
-      miniViz,
-      lootClaims,
-      operationsJournal,
-      ...miniVizUi,
-      overview: {
-        totalSlots,
-        occupiedSlots,
-        assignedEntries,
-        lowDarkvisionSlots,
-        hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
-        lockState: state.locked ? "Locked by GM" : "Open"
-      }
-    };
+    try {
+      const state = getRestWatchState();
+      const visibility = state.visibility ?? "names-passives";
+      const slots = buildWatchSlotsView(state, false, visibility);
+      const lockBannerText = state.locked ? "Locked by GM" : "";
+      const lockBannerTooltip = state.locked ? "Edits are disabled while the GM lock is active." : "";
+      const miniViz = buildMiniVisualizationContext({ visibility });
+      const miniVizUi = buildMiniVizUiContext();
+      const totalSlots = slots.length;
+      const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
+      const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
+      const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const lootClaims = buildLootClaimsContext(game.user);
+      const operationsJournal = buildOperationsJournalContext();
+      const context = {
+        isGM: false,
+        locked: state.locked,
+        lockBannerText,
+        lockBannerTooltip,
+        lockBannerClass: "",
+        showPopout: false,
+        lastUpdatedAt: state.lastUpdatedAt ?? "-",
+        lastUpdatedBy: state.lastUpdatedBy ?? "-",
+        moduleVersion: getCurrentModuleVersion(),
+        activeTab: "rest",
+        slots,
+        miniViz,
+        lootClaims,
+        operationsJournal,
+        ...miniVizUi,
+        overview: {
+          totalSlots,
+          occupiedSlots,
+          assignedEntries,
+          lowDarkvisionSlots,
+          hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
+          lockState: state.locked ? "Locked by GM" : "Open"
+        }
+      };
+      logUiDebug("rest-watch-player", "prepared player context", {
+        template: PO_TEMPLATE_MAP["rest-watch-player"],
+        slots: slots.length
+      });
+      return context;
+    } catch (error) {
+      console.error(`${MODULE_ID}: RestWatchPlayerApp _prepareContext failed`, error);
+      logUiDebug("rest-watch-player", "falling back to safe player context", { error: String(error?.message ?? error) });
+      return {
+        isGM: false,
+        locked: false,
+        lockBannerText: "",
+        lockBannerTooltip: "",
+        lockBannerClass: "",
+        showPopout: false,
+        lastUpdatedAt: "-",
+        lastUpdatedBy: "-",
+        moduleVersion: getCurrentModuleVersion(),
+        activeTab: "rest",
+        slots: [],
+        miniViz: {},
+        lootClaims: {},
+        operationsJournal: {},
+        ...buildMiniVizUiContext(),
+        overview: {
+          totalSlots: 0,
+          occupiedSlots: 0,
+          assignedEntries: 0,
+          lowDarkvisionSlots: 0,
+          hasLowDarkvisionCoverage: false,
+          lockState: "Open"
+        }
+      };
+    }
   }
 
   async _onRender(context, options) {
@@ -3637,14 +5848,42 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       this.element.dataset.poBoundRestPlayer = "1";
 
       this.element.addEventListener("click", (event) => {
+        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
         const actionElement = event.target?.closest("[data-action]");
         if (isFormActionElement(actionElement)) return;
         const action = actionElement?.dataset?.action;
+        if (action) {
+          logUiDebug("rest-watch-player", "click action", {
+            action,
+            target: summarizeClickTarget(event.target)
+          });
+        }
         if (action) this.#onAction(event);
       });
 
+      if (isModuleDebugEnabled()) {
+        this.element.addEventListener("click", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) return;
+          if (target.closest('[data-action="switch-tab"]')) return;
+          const computed = getComputedStyle(target);
+          const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+          const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
+          if (!suspicious) return;
+          logUiDebug("rest-watch-player", "capture-click suspicious overlay", {
+            target: summarizeClickTarget(target),
+            zIndex: computed.zIndex,
+            position: computed.position,
+            pointerEvents: computed.pointerEvents
+          });
+        }, true);
+      }
+
       this.element.addEventListener("change", (event) => {
-        if (event.target?.matches("textarea.po-notes-input")) {
+        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
+          this.#onAction(event);
+        } else if (event.target?.matches("textarea.po-notes-input")) {
           this.#onNotesChange(event);
         }
       });
@@ -3668,6 +5907,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     this.#updateActivityUI();
+    diagnoseRenderedMainTabs(this.element, "rest-watch-player");
     restorePendingWindowState(this);
     restorePendingUiState(this);
     syncNotesDisclosureState(this.element);
@@ -3686,7 +5926,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     });
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"] }) {
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
     const uiState = captureUiState(this);
     if (uiState) pendingUiRestore.set(this, uiState);
     const scrollState = captureScrollState(this);
@@ -3694,37 +5934,35 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     this.render(renderOptions);
   }
 
-  #onTabClick(tabElement, html) {
-    const tabName = tabElement?.dataset?.tab;
-    if (tabName === "marching-order") {
-      new MarchingOrderApp().render({ force: true });
-      this.close();
-      return;
+  #onTabClick(tabElement, html, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
-    if (tabName === "operations") {
-      setActiveRestMainTab("operations");
-      new RestWatchApp().render({ force: true });
-      this.close();
-      return;
-    }
-    if (tabName === "gm") {
-      if (!game.user?.isGM) {
-        ui.notifications?.warn("GM permissions are required for the GM section.");
-        return;
-      }
-      setActiveRestMainTab("gm");
-      new RestWatchApp().render({ force: true });
-      this.close();
-      return;
-    }
-    if (tabName === "rest-watch") {
-      setActiveRestMainTab("rest-watch");
-      new RestWatchApp().render({ force: true });
-      this.close();
-    }
+    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
+    logUiDebug("rest-watch-player", "main tab click", {
+      tabName,
+      target: summarizeClickTarget(event?.target ?? tabElement)
+    });
+    openMainTab(tabName, { force: true });
+  }
+
+  #onSwitchTabClick(event, tabButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tabId = String(tabButton?.dataset?.tab ?? "").trim().toLowerCase();
+    logUiDebug("rest-watch-player", "switch-tab click", {
+      tabId,
+      target: summarizeClickTarget(event.target)
+    });
+    openMainTab(normalizeMainTabId(tabId, "rest-watch"), { force: true });
   }
 
   async #onAction(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
     if (!action) return;
@@ -3739,7 +5977,11 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       case "refresh":
         emitSocketRefresh();
         break;
+      case "switch-tab":
+        this.#onSwitchTabClick(event, element);
+        break;
       case "main-tab":
+      case "set-panel":
         this.#onTabClick(element, this.element);
         break;
       case "toggle-mini-viz":
@@ -3763,6 +6005,14 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         break;
       case "claim-loot-item":
         await claimLootItemForPlayer(element);
+        break;
+      case "toggle-loot-vouch":
+        await toggleLootItemVouchForPlayer(element);
+        break;
+      case "set-loot-claim-actor":
+        if (setLootClaimActorSelectionFromElement(element)) {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        }
         break;
       case "claim-loot-currency":
         await claimLootCurrencyForPlayer(element);
@@ -3788,6 +6038,15 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     if (actor) {
       await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
     }
+  }
+
+  async close(options = {}) {
+    if (isModuleDebugEnabled()) {
+      console.trace(`[${MODULE_ID}] RestWatchPlayerApp.close`, {
+        options
+      });
+    }
+    return super.close(options);
   }
 }
 
@@ -3838,6 +6097,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       lastUpdatedAt: state.lastUpdatedAt ?? "-",
       lastUpdatedBy: state.lastUpdatedBy ?? "-",
       moduleVersion: getCurrentModuleVersion(),
+      activeTab: "march",
       usageCollapsed: false,
       usageToggleLabel: "Collapse",
       usageToggleIcon: "fa-chevron-up",
@@ -3845,12 +6105,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
-        helpCollapsed: false,
-        helpToggleLabel: "Collapse",
-        helpToggleIcon: "fa-chevron-up",
-        lockCollapsed: false,
-        lockToggleLabel: "Collapse",
-        lockToggleIcon: "fa-chevron-up",
         formationsCollapsed: false,
         formationsToggleLabel: "Collapse",
         formationsToggleIcon: "fa-chevron-up",
@@ -3908,14 +6162,38 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
       // Use event delegation on the app element
       this.element.addEventListener("click", (event) => {
-        const tab = event.target?.closest(".po-tabs-main .po-tab[data-tab]");
-        if (tab) return this.#onTabClick(tab, this.element);
+        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
 
         const actionElement = event.target?.closest("[data-action]");
         if (isFormActionElement(actionElement)) return;
         const action = actionElement?.dataset?.action;
+        if (action) {
+          logUiDebug("marching-order", "click action", {
+            action,
+            target: summarizeClickTarget(event.target)
+          });
+        }
         if (action) this.#onAction(event);
       });
+
+      if (isModuleDebugEnabled()) {
+        this.element.addEventListener("click", (event) => {
+          const target = event.target instanceof Element ? event.target : null;
+          if (!target) return;
+          if (target.closest('[data-action="switch-tab"]')) return;
+          const computed = getComputedStyle(target);
+          const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+          const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
+          if (!suspicious) return;
+          logUiDebug("marching-order", "capture-click suspicious overlay", {
+            target: summarizeClickTarget(target),
+            zIndex: computed.zIndex,
+            position: computed.position,
+            pointerEvents: computed.pointerEvents
+          });
+        }, true);
+      }
       
       this.element.addEventListener("change", (event) => {
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
@@ -3943,6 +6221,19 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     
     setupMarchingDragAndDrop(this.element);
     refreshTabAccessibility(this.element);
+    diagnoseRenderedMainTabs(this.element, "marching-order");
+    if (isModuleDebugEnabled()) {
+      const activeTab = "march";
+      const activeButton = this.element?.querySelector?.(`.po-tabs-main [data-action="switch-tab"][data-tab="${activeTab}"]`);
+      const panelExists = Boolean(this.element?.querySelector?.("#po-march-overview"));
+      logUiDebug("marching-order", "after render active tab", {
+        activeTab,
+        activePanel: "marching-order",
+        activeButtonFound: Boolean(activeButton),
+        panelTarget: "#po-march-overview",
+        panelExists
+      });
+    }
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
@@ -3950,32 +6241,42 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     if (DEBUG_LOG) console.log("MarchingOrderApp: event delegation attached", this.element);
   }
 
-  #onTabClick(tabElement, html) {
-    const tabName = tabElement?.dataset?.tab;
-    if (tabName === "rest-watch") {
-      setActiveRestMainTab("rest-watch");
-      new RestWatchApp().render({ force: true });
-      this.close();
-      return;
+  #onTabClick(tabElement, html, event = null) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
     }
-    if (tabName === "operations") {
-      setActiveRestMainTab("operations");
-      new RestWatchApp().render({ force: true });
-      this.close();
-      return;
-    }
-    if (tabName === "gm") {
-      if (!game.user?.isGM) {
-        ui.notifications?.warn("GM permissions are required for the GM section.");
-        return;
-      }
-      setActiveRestMainTab("gm");
-      new RestWatchApp().render({ force: true });
-      this.close();
-    }
+    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
+    logUiDebug("marching-order", "main tab click", {
+      tabName,
+      target: summarizeClickTarget(event?.target ?? tabElement)
+    });
+    openMainTab(tabName, { force: true });
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"] }) {
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "").trim().toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("marching-order", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+    const normalizedSwitchTab = normalizeSwitchTabId(requested, "march");
+    if (normalizedSwitchTab === "march") return;
+    openMainTab(normalizeMainTabId(normalizedSwitchTab, "rest-watch"), { force: true });
+  }
+
+  #onSwitchTabClick(event, tabButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const tabId = String(tabButton?.dataset?.tab ?? "").trim().toLowerCase();
+    logUiDebug("marching-order", "switch-tab click", {
+      tabId,
+      target: summarizeClickTarget(event.target)
+    });
+    this.setActiveTab(tabId);
+  }
+
+  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
     const uiState = captureUiState(this);
     if (uiState) pendingUiRestore.set(this, uiState);
     const scrollState = captureScrollState(this);
@@ -3984,6 +6285,10 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   async #onAction(event) {
+    if (event?.type === "click") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
     if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
@@ -3994,11 +6299,12 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       case "refresh":
         emitSocketRefresh();
         break;
-      case "main-tab":
-        this.#onTabClick(element, this.element);
+      case "switch-tab":
+        this.#onSwitchTabClick(event, element);
         break;
-      case "help":
-        showMarchingHelp();
+      case "main-tab":
+      case "set-panel":
+        this.#onTabClick(element, this.element);
         break;
       case "popout":
         this.render({ force: true, popOut: true });
@@ -4019,9 +6325,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         break;
       case "remove-from-rank":
         await removeActorFromRanks(element);
-        break;
-      case "toggle-lock":
-        await toggleMarchLock(element);
         break;
       case "toggle-light":
         await toggleLight(element);
@@ -4105,6 +6408,15 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     await updateMarchingOrderState((state) => {
       state.gmNotes = text;
     });
+  }
+
+  async close(options = {}) {
+    if (isModuleDebugEnabled()) {
+      console.trace(`[${MODULE_ID}] MarchingOrderApp.close`, {
+        options
+      });
+    }
+    return super.close(options);
   }
 }
 
@@ -4628,9 +6940,717 @@ function getCollectionValues(collectionLike) {
   return [];
 }
 
+function logAutoInventoryDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][auto-inv] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][auto-inv] ${message}`, details);
+}
+
+function normalizeAutoInventoryName(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function parseAutoInventoryCrValue(rawValue) {
+  if (rawValue === null || rawValue === undefined) return 0;
+  if (typeof rawValue === "number") return Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+
+  const raw = String(rawValue).trim().toLowerCase();
+  if (!raw) return 0;
+  if (raw.includes("/")) {
+    const [leftRaw, rightRaw] = raw.split("/", 2);
+    const left = Number(leftRaw);
+    const right = Number(rightRaw);
+    if (Number.isFinite(left) && Number.isFinite(right) && right !== 0) {
+      return Math.max(0, left / right);
+    }
+  }
+
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed)) return Math.max(0, parsed);
+  return 0;
+}
+
+function getActorCrForAutoInventory(actor) {
+  if (!actor) return 0;
+  const details = actor.system?.details ?? {};
+  const candidates = [
+    details?.cr,
+    details?.cr?.value,
+    details?.challengeRating,
+    details?.challenge?.rating
+  ];
+  for (const candidate of candidates) {
+    const parsed = parseAutoInventoryCrValue(candidate);
+    if (parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+function normalizeAutoInventoryCreatureType(rawType) {
+  const normalized = normalizeAutoInventoryName(rawType);
+  if (!normalized) return "unknown";
+  const rules = [
+    ["humanoid", "humanoid"],
+    ["beast", "beast"],
+    ["undead", "undead"],
+    ["construct", "construct"],
+    ["elemental", "elemental"],
+    ["ooze", "ooze"],
+    ["dragon", "dragon"],
+    ["fiend", "fiend"],
+    ["celestial", "celestial"],
+    ["aberration", "aberration"],
+    ["fey", "fey"],
+    ["giant", "giant"],
+    ["monstrosity", "monstrosity"],
+    ["plant", "plant"],
+    ["swarm", "swarm"]
+  ];
+  for (const [needle, value] of rules) {
+    if (normalized.includes(needle)) return value;
+  }
+  return "unknown";
+}
+
+function getActorCreatureTypeForAutoInventory(actor) {
+  if (!actor) return "unknown";
+  const detailsType = actor.system?.details?.type;
+  if (detailsType && typeof detailsType === "object") {
+    const fromObject = normalizeAutoInventoryCreatureType(
+      detailsType?.value
+      ?? detailsType?.subtype
+      ?? detailsType?.custom
+      ?? detailsType?.type
+      ?? detailsType?.label
+      ?? ""
+    );
+    if (fromObject !== "unknown") return fromObject;
+  }
+  const fromDirect = normalizeAutoInventoryCreatureType(detailsType);
+  if (fromDirect !== "unknown") return fromDirect;
+  return normalizeAutoInventoryCreatureType(actor.system?.details?.race ?? "");
+}
+
+function getActorAbilityScore(actor, abilityKey) {
+  const key = String(abilityKey ?? "").trim().toLowerCase();
+  if (!key) return 0;
+  const node = actor?.system?.abilities?.[key];
+  const value = Number(node?.value ?? node?.mod ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function actorHasFeatureName(actor, pattern) {
+  const regex = pattern instanceof RegExp ? pattern : null;
+  if (!regex || !actor?.items) return false;
+  for (const item of actor.items) {
+    const name = String(item?.name ?? "").trim();
+    if (!name) continue;
+    if (regex.test(name)) return true;
+  }
+  return false;
+}
+
+function inferRole(actor) {
+  if (!actor) return "none";
+  const hasSpellItems = actor.items?.some((item) => String(item?.type ?? "").trim().toLowerCase() === "spell") ?? false;
+  const spellSlots = actor.system?.spells ?? {};
+  const hasSpellSlots = Object.values(spellSlots).some((slot) => {
+    const max = Number(slot?.max ?? 0);
+    return Number.isFinite(max) && max > 0;
+  });
+  const hasSpellcastingFeature = actorHasFeatureName(actor, /(spellcasting|innate spellcasting)/i);
+  if (hasSpellItems || hasSpellSlots || hasSpellcastingFeature) return "caster";
+
+  if (actorHasFeatureName(actor, /(sneak|stealth|cunning|scout|skirmish)/i)) return "scout";
+  if (actorHasFeatureName(actor, /(rage|frenzy|brutal|reckless|berserk)/i)) return "brute";
+
+  const str = getActorAbilityScore(actor, "str");
+  const dex = getActorAbilityScore(actor, "dex");
+  const con = getActorAbilityScore(actor, "con");
+  const int = getActorAbilityScore(actor, "int");
+  const wis = getActorAbilityScore(actor, "wis");
+  const cha = getActorAbilityScore(actor, "cha");
+  const martialTop = Math.max(str, dex);
+  const casterTop = Math.max(int, wis, cha);
+
+  if (str >= 16 && con >= 14) return "brute";
+  if (dex >= 15 && dex > str + 1) return "scout";
+  if (martialTop >= casterTop) return "martial";
+  return "none";
+}
+
+function isLikelyIntelligentCreature(actor) {
+  const intScore = getActorAbilityScore(actor, "int");
+  if (intScore >= 8) return true;
+  const languages = actor?.system?.traits?.languages;
+  const languageValue = String(languages?.value ?? "").trim();
+  if (languageValue.length > 0) return true;
+  return actorHasFeatureName(actor, /(speak|spellcasting|command|tactics)/i);
+}
+
+function getAutoInventoryCrBand(crValue = 0) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  if (cr <= 1) return "cr-0-1";
+  if (cr <= 4) return "cr-2-4";
+  if (cr <= 8) return "cr-5-8";
+  if (cr <= 12) return "cr-9-12";
+  return "cr-13+";
+}
+
+function getAutoInventoryChallengeFromCr(crValue = 0) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  if (cr <= 4) return "low";
+  if (cr <= 10) return "mid";
+  if (cr <= 16) return "high";
+  return "epic";
+}
+
+function shiftAutoInventoryCrBand(crBand = "cr-0-1", shift = 0) {
+  const current = String(crBand ?? "cr-0-1").trim();
+  const currentIndex = UNLINKED_TOKEN_AUTO_INV_BAND_ORDER.indexOf(current);
+  const baseIndex = currentIndex >= 0 ? currentIndex : 0;
+  const delta = Math.max(-2, Math.min(2, Math.floor(Number(shift) || 0)));
+  const targetIndex = Math.max(0, Math.min(UNLINKED_TOKEN_AUTO_INV_BAND_ORDER.length - 1, baseIndex + delta));
+  return UNLINKED_TOKEN_AUTO_INV_BAND_ORDER[targetIndex] ?? "cr-0-1";
+}
+
+function rollChance(probability = 0) {
+  const chance = Math.max(0, Math.min(1, Number(probability) || 0));
+  return Math.random() < chance;
+}
+
+function autoInventoryPercentSettingToScale(value, fallback = 100) {
+  const resolved = Number.isFinite(Number(value)) ? Number(value) : Number(fallback);
+  return Math.max(0, Math.min(3, resolved / 100));
+}
+
+function scaleAutoInventoryChance(baseChance, scalarPercent = 100) {
+  const base = Math.max(0, Math.min(1, Number(baseChance) || 0));
+  const scale = autoInventoryPercentSettingToScale(scalarPercent, 100);
+  return Math.max(0, Math.min(1, base * scale));
+}
+
+function rollIntRange(min, max) {
+  const low = Math.ceil(Math.min(min, max));
+  const high = Math.floor(Math.max(min, max));
+  if (low === high) return low;
+  return Math.floor(Math.random() * (high - low + 1)) + low;
+}
+
+function pickWeightedEntryName(entries = []) {
+  if (!Array.isArray(entries) || entries.length === 0) return "";
+  const pool = entries
+    .map((entry) => ({
+      name: String(entry?.name ?? "").trim(),
+      weight: Math.max(0, Number(entry?.weight ?? 0) || 0)
+    }))
+    .filter((entry) => entry.name.length > 0 && entry.weight > 0);
+  if (pool.length === 0) return "";
+  const totalWeight = pool.reduce((sum, entry) => sum + entry.weight, 0);
+  if (totalWeight <= 0) return pool[0].name;
+  let cursor = Math.random() * totalWeight;
+  for (const row of pool) {
+    cursor -= row.weight;
+    if (cursor <= 0) return row.name;
+  }
+  return pool[pool.length - 1]?.name ?? "";
+}
+
+function getDefaultAutoInventoryPackId() {
+  const packs = getAllCompendiumPacks();
+  const dnd5eItems = packs.find((pack) => {
+    const id = String(pack?.collection ?? "").trim();
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    return documentName === "item" && id === "dnd5e.items";
+  });
+  if (dnd5eItems) return "dnd5e.items";
+
+  const fallback = packs.find((pack) => String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase() === "item");
+  return String(fallback?.collection ?? "").trim();
+}
+
+function resolveAutoInventoryPackId(packIdValue) {
+  const requested = String(packIdValue ?? "").trim();
+  if (requested && game.packs?.get(requested)) return requested;
+  const fallback = getDefaultAutoInventoryPackId();
+  return fallback || requested;
+}
+
+function getAutoInventorySettingsSnapshot() {
+  return {
+    enabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ENABLED) ?? true),
+    currencyEnabled: Boolean(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_ENABLED) ?? true),
+    weaponPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_WEAPON_PACK)),
+    armorPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ARMOR_PACK)),
+    gearPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_GEAR_PACK)),
+    consumablesPackId: resolveAutoInventoryPackId(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLES_PACK)),
+    itemChanceScalar: Number(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_ITEM_CHANCE_SCALAR) ?? AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR),
+    consumableChanceScalar: Number(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLE_CHANCE_SCALAR) ?? AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR),
+    currencyScalar: Number(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_SCALAR) ?? AUTO_INV_DEFAULT_CURRENCY_SCALAR),
+    qualityShift: Math.max(-2, Math.min(2, Math.floor(Number(game.settings.get(MODULE_ID, SETTINGS.AUTO_INV_QUALITY_SHIFT) ?? AUTO_INV_DEFAULT_QUALITY_SHIFT) || 0)))
+  };
+}
+
+function isAutoInventoryArmorIndexRow(row) {
+  const type = String(row?.type ?? "").trim().toLowerCase();
+  if (type !== "equipment") return false;
+  const subtype = String(row?.subtype ?? "").trim().toLowerCase();
+  if (["light", "medium", "heavy", "shield"].includes(subtype)) return true;
+  const name = normalizeAutoInventoryName(row?.name ?? "");
+  return name.includes("armor") || name.includes("mail") || name.includes("plate") || name.includes("shield");
+}
+
+function matchesAutoInventoryCategory(row, category = "gear") {
+  const normalizedCategory = String(category ?? "gear").trim().toLowerCase();
+  const type = String(row?.type ?? "").trim().toLowerCase();
+  if (normalizedCategory === "weapon") return type === "weapon";
+  if (normalizedCategory === "armor") return isAutoInventoryArmorIndexRow(row);
+  if (normalizedCategory === "consumable") return type === "consumable";
+  if (normalizedCategory === "gear") {
+    if (type === "weapon" || type === "spell") return false;
+    if (isAutoInventoryArmorIndexRow(row)) return false;
+    return UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES.has(type);
+  }
+  return true;
+}
+
+async function getAutoInventoryPackIndexRows(packId) {
+  const id = String(packId ?? "").trim();
+  if (!id) return [];
+  if (autoInventoryPackIndexCache.has(id)) return autoInventoryPackIndexCache.get(id) ?? [];
+
+  const pack = game.packs?.get(id);
+  if (!pack) return [];
+  try {
+    const index = await pack.getIndex({ fields: ["name", "type", "system.type.value"] });
+    const rows = getCollectionValues(index)
+      .map((entry) => Array.isArray(entry) ? entry[1] : entry)
+      .map((entry) => {
+        const rowId = String(entry?._id ?? entry?.id ?? "").trim();
+        const rowName = String(entry?.name ?? "").trim();
+        if (!rowId || !rowName) return null;
+        return {
+          id: rowId,
+          name: rowName,
+          type: String(entry?.type ?? "").trim().toLowerCase(),
+          subtype: String(foundry.utils.getProperty(entry, "system.type.value") ?? "").trim().toLowerCase(),
+          search: normalizeAutoInventoryName(rowName)
+        };
+      })
+      .filter(Boolean);
+    autoInventoryPackIndexCache.set(id, rows);
+    return rows;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read auto-inventory pack index`, { packId: id, error });
+    return [];
+  }
+}
+
+function findAutoInventoryIndexRowByName(indexRows = [], targetName = "", category = "gear") {
+  const needle = normalizeAutoInventoryName(targetName);
+  if (!needle) return null;
+  const categoryRows = (Array.isArray(indexRows) ? indexRows : []).filter((row) => matchesAutoInventoryCategory(row, category));
+  const needsEnhancedItem = /\+\s*[123]/i.test(String(targetName ?? ""));
+  const nonEnhancedRows = categoryRows.filter((row) => !/\+\s*[123]/i.test(String(row?.name ?? "")));
+  const rows = !needsEnhancedItem && nonEnhancedRows.length > 0 ? nonEnhancedRows : categoryRows;
+  const exact = rows.find((row) => row.search === needle);
+  if (exact) return exact;
+
+  const needleTokens = needle.split(" ").filter(Boolean);
+  const startsWith = rows.find((row) => row.search.startsWith(needle));
+  if (startsWith) return startsWith;
+  const containsTokens = rows.find((row) => needleTokens.every((token) => row.search.includes(token)));
+  if (containsTokens) return containsTokens;
+  return rows.find((row) => row.search.includes(needle)) ?? null;
+}
+
+async function resolveAutoInventoryItemData(packId, itemName, category = "gear") {
+  const id = String(packId ?? "").trim();
+  if (!id) return null;
+  const pack = game.packs?.get(id);
+  if (!pack) return null;
+  const rows = await getAutoInventoryPackIndexRows(id);
+  const match = findAutoInventoryIndexRowByName(rows, itemName, category);
+  if (!match) return null;
+  try {
+    const document = await pack.getDocument(match.id);
+    if (!document || document.documentName !== "Item") return null;
+    const data = document.toObject();
+    if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
+    return data;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed loading auto-inventory item`, { packId: id, itemName, error });
+    return null;
+  }
+}
+
+function setAutoInventoryItemQuantity(itemData, quantity = 1) {
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (!itemData || typeof itemData !== "object") return itemData;
+  if (!itemData.system || typeof itemData.system !== "object") itemData.system = {};
+  const quantityNode = itemData.system.quantity;
+  if (quantityNode && typeof quantityNode === "object") {
+    quantityNode.value = qty;
+  } else {
+    itemData.system.quantity = qty;
+  }
+  return itemData;
+}
+
+async function resolveTokenActorForAutoInventory(tokenDoc) {
+  if (!tokenDoc) return null;
+  const sleep = foundry.utils?.sleep
+    ? (ms) => foundry.utils.sleep(ms)
+    : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const actor = tokenDoc?.actor ?? tokenDoc?.object?.actor ?? tokenDoc?.getActor?.();
+    if (actor?.documentName === "Actor") return actor;
+    if (attempt < 9) await sleep(75);
+  }
+  return null;
+}
+
+function isPrimaryActiveGmForAutoInventory() {
+  const activeGms = (game.users ?? [])
+    .filter((user) => Boolean(user?.active) && Boolean(user?.isGM))
+    .sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
+  if (activeGms.length === 0) return Boolean(game.user?.isGM);
+  return String(activeGms[0]?.id ?? "") === String(game.user?.id ?? "");
+}
+
+function actorHasUsableInventory(actor) {
+  if (!actor?.items) return false;
+  return actor.items.some((item) => UNLINKED_TOKEN_AUTO_LOOT_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()));
+}
+
+function shouldAutoInventoryApplyForCreature(actor, creatureType, role) {
+  const type = String(creatureType ?? "unknown");
+  if (["construct", "elemental", "ooze"].includes(type)) return false;
+  if (type === "beast") return false;
+  if (type === "undead") {
+    if (!isLikelyIntelligentCreature(actor) && role === "none") return false;
+  }
+  return true;
+}
+
+function buildAutoInventoryTypeWeights(creatureType, role) {
+  const type = String(creatureType ?? "unknown").trim().toLowerCase();
+  const roleValue = String(role ?? "none").trim().toLowerCase();
+  const base = {
+    ...(UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS.default ?? {})
+  };
+  const creatureWeights = UNLINKED_TOKEN_AUTO_LOOT_TYPE_WEIGHTS[type] ?? {};
+  const merged = { ...base, ...creatureWeights };
+  if (roleValue === "caster") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 0.72);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 1.35);
+    merged.tool = Math.max(0, Number(merged.tool ?? 1) * 1.2);
+  } else if (roleValue === "scout") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 1.1);
+    merged.armor = Math.max(0, Number(merged.armor ?? 1) * 0.75);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 1.2);
+  } else if (roleValue === "brute") {
+    merged.weapon = Math.max(0, Number(merged.weapon ?? 1) * 1.2);
+    merged.armor = Math.max(0, Number(merged.armor ?? 1) * 1.25);
+    merged.consumable = Math.max(0, Number(merged.consumable ?? 1) * 0.8);
+  }
+  merged.default = Math.max(0.01, Number(merged.default ?? 1) || 1);
+  return merged;
+}
+
+function getLootBuilderItemTypeWeight(draft = {}, itemType = "") {
+  const normalizedType = String(itemType ?? "").trim().toLowerCase();
+  const map = (draft?.itemTypeWeights && typeof draft.itemTypeWeights === "object" && !Array.isArray(draft.itemTypeWeights))
+    ? draft.itemTypeWeights
+    : null;
+  if (!map || !normalizedType) return 1;
+  const raw = Number(map[normalizedType] ?? map.default ?? 1);
+  if (!Number.isFinite(raw)) return 1;
+  return Math.max(0, raw);
+}
+
+function buildAutoInventoryCurrencyBundle(crBand = "cr-0-1", scalarPercent = 100) {
+  const table = {
+    "cr-0-1": () => ({ gp: rollIntRange(0, 4), sp: rollIntRange(1, 10), cp: rollIntRange(0, 20) }),
+    "cr-2-4": () => ({ gp: rollIntRange(2, 12), sp: rollIntRange(2, 18), cp: rollIntRange(0, 15) }),
+    "cr-5-8": () => ({ gp: rollIntRange(8, 35), sp: rollIntRange(0, 20), cp: rollIntRange(0, 10) }),
+    "cr-9-12": () => ({ pp: rollIntRange(0, 4), gp: rollIntRange(18, 65), sp: rollIntRange(0, 12), cp: 0 }),
+    "cr-13+": () => ({ pp: rollIntRange(2, 12), gp: rollIntRange(45, 180), sp: rollIntRange(0, 10), cp: 0 })
+  };
+  const rolled = (table[crBand] ?? table["cr-0-1"])();
+  const scale = autoInventoryPercentSettingToScale(scalarPercent, AUTO_INV_DEFAULT_CURRENCY_SCALAR);
+  const apply = (value) => Math.max(0, Math.floor((Number(value) || 0) * scale));
+  return {
+    pp: apply(rolled.pp),
+    gp: apply(rolled.gp),
+    sp: apply(rolled.sp),
+    cp: apply(rolled.cp)
+  };
+}
+
+function buildAutoInventoryDraftForActor(actor, crValue, creatureType, role) {
+  const cr = Math.max(0, Number(crValue) || 0);
+  const challenge = getAutoInventoryChallengeFromCr(cr);
+  const scale = cr >= 13 ? "major" : cr >= 6 ? "medium" : "small";
+  const type = String(creatureType ?? "unknown").trim().toLowerCase();
+  const roleValue = String(role ?? "none").trim().toLowerCase();
+
+  let profile = "standard";
+  if (["beast", "ooze", "plant", "construct", "elemental"].includes(type)) profile = "poor";
+  if (["dragon", "fiend", "celestial"].includes(type) || roleValue === "caster") profile = "well";
+
+  let itemScalar = cr >= 13 ? 135 : cr >= 9 ? 120 : cr >= 5 ? 105 : 88;
+  let valueBudgetScalar = cr >= 13 ? 145 : cr >= 9 ? 120 : cr >= 5 ? 102 : 78;
+  let valueStrictness = cr <= 1 ? 255 : cr <= 4 ? 235 : cr <= 8 ? 205 : cr <= 12 ? 180 : 150;
+
+  if (roleValue === "caster") {
+    itemScalar += 6;
+    valueBudgetScalar += 8;
+    valueStrictness -= 10;
+  }
+  if (roleValue === "brute") {
+    itemScalar += 6;
+    valueBudgetScalar += 4;
+  }
+  if (["beast", "ooze", "plant", "elemental", "construct"].includes(type)) {
+    itemScalar = Math.max(60, itemScalar - 25);
+    valueBudgetScalar = Math.max(45, valueBudgetScalar - 22);
+    valueStrictness = Math.min(300, valueStrictness + 22);
+  }
+
+  const baseMaxItemValue = (() => {
+    if (cr <= 0.125) return 30;
+    if (cr <= 0.5) return 55;
+    if (cr <= 1) return 90;
+    if (cr <= 2) return 160;
+    if (cr <= 4) return 280;
+    if (cr <= 6) return 500;
+    if (cr <= 8) return 750;
+    if (cr <= 10) return 1000;
+    if (cr <= 12) return 1600;
+    if (cr <= 16) return 3000;
+    return 8500;
+  })();
+
+  const maxItemValueGp = (() => {
+    if (["dragon", "fiend", "celestial"].includes(type)) return Math.floor(baseMaxItemValue * 1.2);
+    if (["beast", "ooze", "plant", "construct", "elemental"].includes(type)) return Math.floor(baseMaxItemValue * 0.65);
+    return baseMaxItemValue;
+  })();
+
+  return {
+    mode: "encounter",
+    profile,
+    challenge,
+    scale,
+    creatures: 1,
+    actorCount: 1,
+    currencyScalar: 100,
+    itemScalar: Math.max(25, Math.min(300, Math.floor(itemScalar))),
+    tableScalar: 25,
+    valueBudgetScalar: Math.max(25, Math.min(300, Math.floor(valueBudgetScalar))),
+    valueStrictness: Math.max(50, Math.min(300, Math.floor(valueStrictness))),
+    maxItemValueGp: Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Math.floor(maxItemValueGp))),
+    itemTypeWeights: buildAutoInventoryTypeWeights(creatureType, role)
+  };
+}
+
+async function buildAutoInventorySelectionPlan(actor, settings, context) {
+  const plan = [];
+  const existingNames = new Set((actor.items ?? []).map((item) => normalizeAutoInventoryName(item?.name ?? "")).filter(Boolean));
+  const selectedNames = new Set();
+  const crBand = context.crBand;
+  const qualityBand = shiftAutoInventoryCrBand(crBand, settings?.qualityShift ?? AUTO_INV_DEFAULT_QUALITY_SHIFT);
+  const creatureType = context.creatureType;
+  const role = context.role;
+  const itemChanceScalar = Number(settings?.itemChanceScalar ?? AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR);
+  const consumableChanceScalar = Number(settings?.consumableChanceScalar ?? AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR);
+  const rollItemChance = (baseChance) => rollChance(scaleAutoInventoryChance(baseChance, itemChanceScalar));
+  const rollConsumableChance = (baseChance) => rollChance(scaleAutoInventoryChance(baseChance, consumableChanceScalar));
+  const isHumanoidLike = ["humanoid", "fey", "giant", "fiend", "celestial", "monstrosity"].includes(creatureType)
+    || (creatureType === "undead" && context.intelligent);
+
+  const addPick = (packId, category, weightedChoices, quantity = 1) => {
+    const targetName = pickWeightedEntryName(weightedChoices);
+    if (!targetName) return;
+    const normalized = normalizeAutoInventoryName(targetName);
+    if (!normalized || existingNames.has(normalized) || selectedNames.has(normalized)) return;
+    selectedNames.add(normalized);
+    plan.push({ packId, category, name: targetName, quantity: Math.max(1, Math.floor(Number(quantity) || 1)) });
+  };
+
+  if (isHumanoidLike) {
+    addPick(settings.weaponPackId, "weapon", UNLINKED_TOKEN_AUTO_INV_CURATED.weapon[qualityBand] ?? []);
+
+    const armorChanceByBand = {
+      "cr-0-1": role === "caster" ? 0.25 : 0.45,
+      "cr-2-4": role === "caster" ? 0.42 : 0.62,
+      "cr-5-8": role === "caster" ? 0.56 : 0.76,
+      "cr-9-12": role === "caster" ? 0.62 : 0.82,
+      "cr-13+": role === "caster" ? 0.68 : 0.86
+    };
+    if (rollItemChance(Number(armorChanceByBand[crBand] ?? 0.6))) {
+      addPick(settings.armorPackId, "armor", UNLINKED_TOKEN_AUTO_INV_CURATED.armor[qualityBand] ?? []);
+    }
+
+    if (["cr-5-8", "cr-9-12", "cr-13+"].includes(crBand) && (role === "martial" || role === "brute") && rollItemChance(0.35)) {
+      addPick(settings.armorPackId, "armor", [{ name: "Shield", weight: 100 }], 1);
+    }
+
+    if (rollItemChance(0.65)) addPick(settings.gearPackId, "gear", [{ name: "Rations", weight: 100 }], rollIntRange(1, 3));
+    if (rollItemChance(0.7)) addPick(settings.gearPackId, "gear", [{ name: "Waterskin", weight: 100 }], 1);
+    if (rollItemChance(0.6)) addPick(settings.gearPackId, "gear", [{ name: "Torch", weight: 100 }], rollIntRange(1, 4));
+    if (rollItemChance(0.35)) addPick(settings.gearPackId, "gear", [{ name: "Lantern, Hooded", weight: 100 }], 1);
+    if (rollItemChance(0.45)) addPick(settings.gearPackId, "gear", [{ name: "Rope, Hempen (50 feet)", weight: 100 }], 1);
+
+    const healChance = Number(UNLINKED_TOKEN_AUTO_INV_HEALING_CHANCE_BY_BAND[crBand] ?? 0.1);
+    if (rollConsumableChance(healChance)) {
+      addPick(settings.consumablesPackId, "consumable", UNLINKED_TOKEN_AUTO_INV_CURATED.healingByBand[qualityBand] ?? [], 1);
+    }
+
+    const utilityChance = crBand === "cr-0-1" ? 0.05 : crBand === "cr-2-4" ? 0.1 : crBand === "cr-5-8" ? 0.18 : 0.24;
+    if (rollConsumableChance(utilityChance)) {
+      addPick(settings.consumablesPackId, "consumable", UNLINKED_TOKEN_AUTO_INV_CURATED.utilityConsumables ?? [], 1);
+    }
+  } else if (creatureType === "undead" && context.intelligent) {
+    if (rollItemChance(0.55)) addPick(settings.weaponPackId, "weapon", UNLINKED_TOKEN_AUTO_INV_CURATED.weapon[qualityBand] ?? []);
+    if (rollItemChance(0.25)) addPick(settings.armorPackId, "armor", UNLINKED_TOKEN_AUTO_INV_CURATED.armor[qualityBand] ?? []);
+  }
+
+  return plan;
+}
+
+async function resolveAutoInventoryPlanToItemData(plan = []) {
+  const merged = new Map();
+  for (const entry of Array.isArray(plan) ? plan : []) {
+    const packId = String(entry?.packId ?? "").trim();
+    const category = String(entry?.category ?? "gear").trim().toLowerCase();
+    const name = String(entry?.name ?? "").trim();
+    const quantity = Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1));
+    if (!packId || !name) continue;
+    const key = `${packId}::${normalizeAutoInventoryName(name)}::${category}`;
+    if (!merged.has(key)) merged.set(key, { packId, category, name, quantity });
+    else merged.get(key).quantity += quantity;
+  }
+
+  const itemDataRows = [];
+  for (const entry of merged.values()) {
+    const itemData = await resolveAutoInventoryItemData(entry.packId, entry.name, entry.category);
+    if (!itemData) continue;
+    setAutoInventoryItemQuantity(itemData, entry.quantity);
+    itemDataRows.push(itemData);
+  }
+  return itemDataRows;
+}
+
+async function applyAutoInventoryToUnlinkedToken(tokenDoc, options = {}, userId = null) {
+  if (!game.user?.isGM) return;
+  if (!isPrimaryActiveGmForAutoInventory()) return;
+  const settings = getAutoInventorySettingsSnapshot();
+  if (!settings.enabled) return;
+
+  const actorLinkState = tokenDoc?.actorLink ?? tokenDoc?.document?.actorLink ?? tokenDoc?._source?.actorLink;
+  const isLinkedToken = actorLinkState === true;
+  if (isLinkedToken) return;
+  const alreadyApplied = Boolean(tokenDoc?.getFlag?.(MODULE_ID, "autoInvApplied"));
+  if (alreadyApplied) return;
+
+  const actor = await resolveTokenActorForAutoInventory(tokenDoc);
+  if (!actor || actor.documentName !== "Actor" || !actor.isToken) {
+    logAutoInventoryDebug("skipped: synthetic token actor not available", {
+      tokenId: tokenDoc?.id,
+      actorId: tokenDoc?.actorId
+    });
+    return;
+  }
+  if (String(actor.type ?? "").trim().toLowerCase() !== "npc") {
+    await tokenDoc.setFlag(MODULE_ID, "autoInvApplied", true);
+    return;
+  }
+
+  if (actorHasUsableInventory(actor)) {
+    logAutoInventoryDebug("skipped: token actor already has usable inventory", { actor: actor.name, tokenId: tokenDoc.id });
+    await tokenDoc.setFlag(MODULE_ID, "autoInvApplied", true);
+    return;
+  }
+
+  const crValue = getActorCrForAutoInventory(actor);
+  const creatureType = getActorCreatureTypeForAutoInventory(actor);
+  const role = inferRole(actor);
+  const intelligent = isLikelyIntelligentCreature(actor);
+  const shouldApply = shouldAutoInventoryApplyForCreature(actor, creatureType, role);
+
+  if (!shouldApply) {
+    logAutoInventoryDebug("skipped: creature type does not receive auto inventory", {
+      actor: actor.name,
+      creatureType,
+      role,
+      crValue
+    });
+    await tokenDoc.setFlag(MODULE_ID, "autoInvApplied", true);
+    return;
+  }
+
+  const crBand = getAutoInventoryCrBand(crValue);
+  const draft = buildAutoInventoryDraftForActor(actor, crValue, creatureType, role);
+  const plan = await buildAutoInventorySelectionPlan(actor, settings, {
+    crValue,
+    crBand,
+    creatureType,
+    role,
+    intelligent,
+    draft
+  });
+  const itemData = await resolveAutoInventoryPlanToItemData(plan);
+
+  if (itemData.length > 0) {
+    try {
+      await actor.createEmbeddedDocuments("Item", itemData);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed applying auto inventory to token actor`, {
+        actor: actor.name,
+        tokenId: tokenDoc.id,
+        error
+      });
+    }
+  }
+
+  if (settings.currencyEnabled && (creatureType === "humanoid" || (creatureType === "undead" && intelligent))) {
+    try {
+      const currency = buildAutoInventoryCurrencyBundle(crBand, settings.currencyScalar);
+      await awardCurrencyBundleToActor(actor, currency);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed applying auto inventory currency`, {
+        actor: actor.name,
+        tokenId: tokenDoc.id,
+        error
+      });
+    }
+  }
+
+  await tokenDoc.setFlag(MODULE_ID, "autoInvApplied", true);
+  logAutoInventoryDebug("auto inventory applied", {
+    actor: actor.name,
+    tokenId: tokenDoc.id,
+    crValue,
+    crBand,
+    creatureType,
+    role,
+    itemsApplied: itemData.map((entry) => entry.name).filter(Boolean)
+  });
+}
+
 function normalizeLootRarity(value) {
   const raw = String(value ?? "").trim().toLowerCase();
   if (!raw) return "";
+  if (["artifact", "artifacts", "artefact", "artefacts", "superrare", "super-rare", "super rare"].includes(raw)) return "very-rare";
   if (["veryrare", "very rare", "very_rare", "very-rare"].includes(raw)) return "very-rare";
   if (["legend", "legendary"].includes(raw)) return "legendary";
   if (["rare"].includes(raw)) return "rare";
@@ -4700,6 +7720,625 @@ function isLootRarityAllowed(rarity, floor, ceiling) {
   return true;
 }
 
+async function loadItemsFromPack(packId, options = {}) {
+  const resolvedPackId = String(packId ?? "").trim();
+  if (!resolvedPackId) return [];
+  const pack = game.packs?.get(resolvedPackId);
+  if (!pack) {
+    if (Array.isArray(options.warnings)) {
+      options.warnings.push(`Item source missing: ${String(options.sourceLabel ?? resolvedPackId)}.`);
+    }
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: loadItemsFromPack missing pack`, { packId: resolvedPackId });
+    }
+    return [];
+  }
+
+  try {
+    if (typeof pack.getDocuments === "function") {
+      const docs = await pack.getDocuments();
+      return Array.isArray(docs) ? docs : [];
+    }
+    const index = await pack.getIndex({
+      fields: ["type", "name", "img", "system.description.value", "system.rarity", "system.details.rarity", "system.traits.rarity", "rarity", "flags.party-operations.keywords", "flags"]
+    });
+    return getCollectionValues(index);
+  } catch (error) {
+    if (Array.isArray(options.warnings)) {
+      options.warnings.push(`Could not read item source: ${String(options.sourceLabel ?? resolvedPackId)}.`);
+    }
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: loadItemsFromPack failed`, { packId: resolvedPackId, error });
+    }
+    return [];
+  }
+}
+
+function filterItems(items, options = {}) {
+  const rows = Array.isArray(items) ? items : [];
+  const typeWhitelist = Array.isArray(options?.typeWhitelist)
+    ? options.typeWhitelist.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  const nameIncludes = Array.isArray(options?.nameIncludes)
+    ? options.nameIncludes.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)
+    : [];
+  const rarityKeywords = Array.isArray(options?.rarityKeywords)
+    ? options.rarityKeywords.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean)
+    : [];
+
+  return rows.filter((item) => {
+    const data = (item && typeof item?.toObject === "function") ? item.toObject() : item;
+    const itemType = String(data?.type ?? "").trim();
+    const itemName = String(data?.name ?? "").trim().toLowerCase();
+    const description = String(data?.system?.description?.value ?? "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+    if (typeWhitelist.length > 0 && !typeWhitelist.includes(itemType)) return false;
+    if (nameIncludes.length > 0 && !nameIncludes.some((term) => itemName.includes(term))) return false;
+    if (rarityKeywords.length > 0 && !rarityKeywords.some((term) => itemName.includes(term) || description.includes(term))) return false;
+    return true;
+  });
+}
+
+function buildWeightedPool(items, weightFn) {
+  const rows = Array.isArray(items) ? items : [];
+  const compute = typeof weightFn === "function" ? weightFn : ((entry) => Number(entry?.weight ?? 1));
+  const pool = [];
+  for (const item of rows) {
+    const raw = Number(compute(item));
+    const weight = Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    if (weight <= 0) continue;
+    pool.push({ item, weight });
+  }
+  return pool;
+}
+
+function getLootItemGpValueFromData(data = {}) {
+  const toNumber = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, parsed);
+  };
+  const priceNode = data?.system?.price;
+  if (priceNode && typeof priceNode === "object") {
+    const amount = toNumber(priceNode.value ?? priceNode.amount ?? 0);
+    const denomRaw = String(priceNode.denomination ?? priceNode.currency ?? "gp").trim().toLowerCase();
+    const denomMap = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
+    const mult = Number(denomMap[denomRaw] ?? 1);
+    return Math.max(0, amount * mult);
+  }
+  if (priceNode !== null && priceNode !== undefined) return toNumber(priceNode);
+  if (data?.price && typeof data.price === "object") {
+    const amount = toNumber(data.price.value ?? data.price.amount ?? 0);
+    const denomRaw = String(data.price.denomination ?? data.price.currency ?? "gp").trim().toLowerCase();
+    const denomMap = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
+    const mult = Number(denomMap[denomRaw] ?? 1);
+    return Math.max(0, amount * mult);
+  }
+  return toNumber(data?.price ?? 0);
+}
+
+function summarizeLootCandidateValueStats(candidates = []) {
+  const values = (Array.isArray(candidates) ? candidates : [])
+    .map((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0))
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (!values.length) {
+    return {
+      hasValues: false,
+      targetValuePerItem: 0,
+      spread: 1
+    };
+  }
+  const middleIndex = Math.floor(values.length / 2);
+  const median = values.length % 2 === 0
+    ? (values[middleIndex - 1] + values[middleIndex]) / 2
+    : values[middleIndex];
+  const minValue = values[0];
+  const maxValue = values[values.length - 1];
+  const spread = Math.max(1, ((maxValue - minValue) * 0.6) + 1);
+  return {
+    hasValues: true,
+    targetValuePerItem: Math.max(0.01, Number(median) || 0.01),
+    spread
+  };
+}
+
+function logLootBuilderDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  if (details === null) {
+    console.debug(`[${MODULE_ID}][loot-builder] ${message}`);
+    return;
+  }
+  console.debug(`[${MODULE_ID}][loot-builder] ${message}`, details);
+}
+
+function getLootBuilderErrorSummary(error) {
+  if (!error) return { message: "Unknown error" };
+  const message = String(error?.message ?? error ?? "Unknown error");
+  const name = String(error?.name ?? "Error");
+  const stack = String(error?.stack ?? "").trim();
+  const stackTop = stack.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 4);
+  return { name, message, stackTop };
+}
+
+function logLootBuilderFailure(functionName = "unknown", error = null, context = null) {
+  const errorSummary = getLootBuilderErrorSummary(error);
+  if (context && typeof context === "object") {
+    console.error(`${MODULE_ID}: loot-builder failure in ${functionName}`, {
+      functionName,
+      ...errorSummary,
+      context
+    });
+  } else {
+    console.error(`${MODULE_ID}: loot-builder failure in ${functionName}`, {
+      functionName,
+      ...errorSummary
+    });
+  }
+}
+
+function normalizeLootSeedInput(value) {
+  return String(value ?? "").trim();
+}
+
+function shouldUseDeterministicLootRng(input = {}) {
+  if (input?.deterministic === true) return true;
+  if (input?.deterministic === false) return false;
+  const explicitSeed = normalizeLootSeedInput(input?.seed ?? "");
+  if (explicitSeed) return true;
+  const explicitDateBucket = normalizeLootSeedInput(input?.dateBucket ?? "");
+  if (explicitDateBucket) return true;
+  return false;
+}
+
+function hashLootSeedToUint32(seedInput = "") {
+  const seed = normalizeLootSeedInput(seedInput);
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function createLootSeededRandom(seedInput = "") {
+  let state = hashLootSeedToUint32(seedInput);
+  if (!state) state = 0x9e3779b9;
+  return () => {
+    state += 0x6d2b79f5;
+    let value = state;
+    value = Math.imul(value ^ (value >>> 15), value | 1);
+    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function resolveTargetGP(draft = {}) {
+  try {
+    const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+    const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+    const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
+    const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+    const budgetScalarRaw = Number(draft?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
+    const manualTotalTargetRaw = Number(draft?.targetItemsValueGp ?? 0);
+    const budgetScalar = Number.isFinite(budgetScalarRaw)
+      ? Math.max(0.25, Math.min(3, budgetScalarRaw / 100))
+      : (LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR / 100);
+    const manualTotalTargetGp = Number.isFinite(manualTotalTargetRaw)
+      ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT, Math.floor(manualTotalTargetRaw)))
+      : 0;
+
+    const baseTargetTable = {
+      defeated: { low: 24, mid: 90, high: 320, epic: 980 },
+      encounter: { low: 45, mid: 180, high: 700, epic: 2200 },
+      horde: { low: 90, mid: 340, high: 1250, epic: 3800 }
+    };
+    const modeKey = (mode === "defeated" || mode === "encounter" || mode === "horde") ? mode : "horde";
+    const byMode = baseTargetTable[modeKey] ?? baseTargetTable.horde;
+    const base = Math.max(1, Number(byMode[challenge] ?? byMode.mid) || byMode.mid);
+    const profileMultiplier = profile === "poor" ? 0.68 : profile === "well" ? 1.32 : 1;
+    const scaleMultiplier = getLootScaleMultiplier(scale);
+    const autoTotalTargetGp = Math.max(
+      1,
+      Number((base * profileMultiplier * scaleMultiplier * budgetScalar).toFixed(2))
+    );
+    const effectiveTotalTargetGp = manualTotalTargetGp > 0 ? manualTotalTargetGp : autoTotalTargetGp;
+    return {
+      mode: modeKey,
+      challenge,
+      profile,
+      scale,
+      budgetScalar,
+      autoTotalTargetGp,
+      manualTotalTargetGp,
+      effectiveTotalTargetGp,
+      usingManualTotalTarget: manualTotalTargetGp > 0
+    };
+  } catch (error) {
+    logLootBuilderFailure("resolveTargetGP", error, {
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      profile: draft?.profile,
+      scale: draft?.scale,
+      valueBudgetScalar: draft?.valueBudgetScalar,
+      targetItemsValueGp: draft?.targetItemsValueGp
+    });
+    return {
+      mode: "horde",
+      challenge: "mid",
+      profile: "standard",
+      scale: "medium",
+      budgetScalar: 1,
+      autoTotalTargetGp: 1,
+      manualTotalTargetGp: 0,
+      effectiveTotalTargetGp: 1,
+      usingManualTotalTarget: false
+    };
+  }
+}
+
+function resolveTolerance(encounterTargetGp = 0, strictnessInput = LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS) {
+  try {
+    const strictnessRaw = Number(strictnessInput);
+    const strictness = Number.isFinite(strictnessRaw)
+      ? Math.max(50, Math.min(300, Math.round(strictnessRaw)))
+      : LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS;
+    const band = LOOT_PREVIEW_STRICTNESS_BANDS.find((row) => strictness >= row.min)
+      ?? LOOT_PREVIEW_STRICTNESS_BANDS[LOOT_PREVIEW_STRICTNESS_BANDS.length - 1];
+    const target = Math.max(1, Number(encounterTargetGp) || 1);
+    const toleranceGp = Math.max(1, Number((target * Number(band.ratio ?? 0.2)).toFixed(2)));
+    const minGp = Math.max(0, Number((target - toleranceGp).toFixed(2)));
+    const maxGp = Math.max(minGp, Number((target + toleranceGp).toFixed(2)));
+    return {
+      strictness,
+      bandKey: String(band?.key ?? "normal"),
+      bandLabel: String(band?.label ?? "Normal"),
+      ratio: Math.max(0.01, Number(band?.ratio ?? 0.2) || 0.2),
+      percent: Math.max(1, Math.round((Number(band?.ratio ?? 0.2) || 0.2) * 100)),
+      toleranceGp,
+      minGp,
+      maxGp
+    };
+  } catch (error) {
+    logLootBuilderFailure("resolveTolerance", error, {
+      encounterTargetGp,
+      strictnessInput
+    });
+    return {
+      strictness: LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS,
+      bandKey: "normal",
+      bandLabel: "Normal",
+      ratio: 0.2,
+      percent: 20,
+      toleranceGp: 1,
+      minGp: 0,
+      maxGp: Math.max(1, Number(encounterTargetGp) || 1)
+    };
+  }
+}
+
+function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountOverride = 0) {
+  try {
+    const manualTargetCount = Math.max(0, Math.floor(Number(targetCountOverride) || 0));
+    if (manualTargetCount > 0) return manualTargetCount;
+
+    const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+    const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+    const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
+    const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+    const creatures = Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1);
+    const itemScale = Math.max(0.5, Math.min(2.5, Number(draft?.itemScalar ?? 100) / 100));
+    const scaleModifier = scale === "small" ? 0.9 : scale === "major" ? 1.2 : 1;
+    const profileModifier = profile === "poor" ? 0.88 : profile === "well" ? 1.12 : 1;
+    const challengeBonus = challenge === "low" ? 0 : challenge === "mid" ? 1 : challenge === "high" ? 2 : 3;
+
+    if (mode === "encounter") {
+      const baseItems = Math.max(1, Math.min(8, Math.round(creatures * 0.6)));
+      const adjusted = Math.round((baseItems + challengeBonus) * scaleModifier * profileModifier * itemScale);
+      const budgetSafetyCap = Math.max(1, Math.round(Math.max(1, Number(encounterTargetGp) || 1) / 15));
+      return Math.max(1, Math.min(24, Math.max(1, Math.min(adjusted, budgetSafetyCap))));
+    }
+
+    if (mode === "defeated") {
+      const base = challenge === "low" ? 0 : challenge === "mid" ? 1 : challenge === "high" ? 2 : 3;
+      return Math.max(0, Math.min(16, Math.round(base * scaleModifier * profileModifier * itemScale)));
+    }
+
+    const base = challenge === "low" ? 3 : challenge === "mid" ? 5 : challenge === "high" ? 8 : 12;
+    const adjusted = Math.round(base * scaleModifier * profileModifier * itemScale);
+    return Math.max(1, Math.min(60, adjusted));
+  } catch (error) {
+    logLootBuilderFailure("resolveDesiredItemCount", error, {
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      profile: draft?.profile,
+      scale: draft?.scale,
+      creatures: draft?.creatures ?? draft?.actorCount,
+      encounterTargetGp,
+      targetCountOverride
+    });
+    return 1;
+  }
+}
+
+function resolveLootSelectionSeed(draft = {}, budgetContext = {}) {
+  const explicitSeed = normalizeLootSeedInput(draft?.seed ?? "");
+  if (explicitSeed) return explicitSeed;
+  const dateBucket = normalizeLootSeedInput(draft?.dateBucket ?? "");
+  const parts = [
+    String(draft?.mode ?? "horde"),
+    String(draft?.profile ?? "standard"),
+    String(draft?.challenge ?? "mid"),
+    String(draft?.scale ?? "medium"),
+    String(draft?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
+    String(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
+    String(draft?.itemScalar ?? 100),
+    String(draft?.tableScalar ?? 100),
+    String(draft?.currencyScalar ?? 100),
+    String(draft?.targetItemsValueGp ?? 0),
+    String(draft?.maxItemValueGp ?? 0),
+    String(draft?.creatures ?? draft?.actorCount ?? 1),
+    String(budgetContext?.effectiveTotalTargetGp ?? 0)
+  ];
+  if (dateBucket) parts.push(dateBucket);
+  return parts.join("|");
+}
+
+function buildLootRandomContext(draft = {}, budgetContext = {}) {
+  try {
+    const deterministic = Boolean(draft?.deterministic);
+    if (!deterministic) return { deterministic: false, seed: "", random: Math.random };
+    const seed = resolveLootSelectionSeed(draft, budgetContext);
+    return {
+      deterministic: true,
+      seed,
+      random: createLootSeededRandom(seed)
+    };
+  } catch (error) {
+    logLootBuilderFailure("buildLootRandomContext", error, {
+      deterministic: draft?.deterministic,
+      seed: draft?.seed,
+      dateBucket: draft?.dateBucket
+    });
+    return { deterministic: false, seed: "", random: Math.random };
+  }
+}
+
+function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
+  try {
+    const target = resolveTargetGP(draft);
+    const tolerance = resolveTolerance(target.effectiveTotalTargetGp, draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+    const desiredItemCount = Math.max(1, resolveDesiredItemCount(draft, target.effectiveTotalTargetGp, targetCount));
+    const challenge = String(target.challenge ?? "mid").trim().toLowerCase();
+    const profile = String(target.profile ?? "standard").trim().toLowerCase();
+    const scale = String(target.scale ?? "medium").trim().toLowerCase();
+    const combatants = getLootCombatantCount(draft, target.mode);
+    const manualCapRaw = Number(draft?.maxItemValueGp ?? 0);
+    const manualMaxItemValueGp = Number.isFinite(manualCapRaw)
+      ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Math.floor(manualCapRaw)))
+      : 0;
+
+    const autoCapBaseTable = { low: 150, mid: 650, high: 2400, epic: 8500 };
+    const autoCapBase = Number(autoCapBaseTable[challenge] ?? autoCapBaseTable.mid);
+    const profileCapMod = profile === "poor" ? 0.75 : profile === "well" ? 1.2 : 1;
+    const scaleCapMod = scale === "small" ? 0.85 : scale === "major" ? 1.3 : 1;
+    const targetCapFloor = Math.max(25, target.effectiveTotalTargetGp * (0.8 + tolerance.ratio));
+    const autoMaxItemValueGp = Math.max(
+      targetCapFloor,
+      Number((autoCapBase * profileCapMod * scaleCapMod * Math.sqrt(Math.max(0.25, target.budgetScalar))).toFixed(2))
+    );
+    const effectiveMaxItemValueGp = manualMaxItemValueGp > 0 ? manualMaxItemValueGp : autoMaxItemValueGp;
+    const targetPerItemGp = Math.max(0.5, Number((target.effectiveTotalTargetGp / Math.max(1, desiredItemCount)).toFixed(2)));
+    const maxItems = Math.max(desiredItemCount, Math.min(80, Math.ceil(desiredItemCount * (1.4 + tolerance.ratio))));
+    const valueStrictnessRaw = Number(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+    const valueStrictness = Number.isFinite(valueStrictnessRaw)
+      ? Math.max(0.5, Math.min(3, valueStrictnessRaw / 100))
+      : (LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS / 100);
+    return {
+      mode: target.mode,
+      challenge,
+      combatants,
+      targetCount: desiredItemCount,
+      desiredItemCount,
+      maxItems,
+      targetPerItemGp,
+      totalBudgetGp: target.effectiveTotalTargetGp,
+      autoTotalTargetGp: target.autoTotalTargetGp,
+      manualTotalTargetGp: target.manualTotalTargetGp,
+      effectiveTotalTargetGp: target.effectiveTotalTargetGp,
+      targetValueRangeMinGp: tolerance.minGp,
+      targetValueRangeMaxGp: tolerance.maxGp,
+      toleranceGp: tolerance.toleranceGp,
+      tolerancePercent: tolerance.percent,
+      strictnessBandKey: tolerance.bandKey,
+      strictnessBandLabel: tolerance.bandLabel,
+      autoMaxItemValueGp,
+      manualMaxItemValueGp,
+      effectiveMaxItemValueGp,
+      overshootAllowanceRatio: tolerance.ratio,
+      valueStrictness
+    };
+  } catch (error) {
+    logLootBuilderFailure("buildLootValueBudgetContext", error, {
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      profile: draft?.profile,
+      scale: draft?.scale,
+      targetCount
+    });
+    return {
+      mode: "horde",
+      challenge: "mid",
+      combatants: 1,
+      targetCount: 1,
+      desiredItemCount: 1,
+      maxItems: 1,
+      targetPerItemGp: 1,
+      totalBudgetGp: 1,
+      autoTotalTargetGp: 1,
+      manualTotalTargetGp: 0,
+      effectiveTotalTargetGp: 1,
+      targetValueRangeMinGp: 0,
+      targetValueRangeMaxGp: 2,
+      toleranceGp: 1,
+      tolerancePercent: 20,
+      strictnessBandKey: "normal",
+      strictnessBandLabel: "Normal",
+      autoMaxItemValueGp: 25,
+      manualMaxItemValueGp: 0,
+      effectiveMaxItemValueGp: 25,
+      overshootAllowanceRatio: 0.2,
+      valueStrictness: 1
+    };
+  }
+}
+
+function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, budgetContext = {}) {
+  const value = Math.max(0, Number(itemValueGp) || 0);
+  if (value <= 0) return 0.9;
+
+  const targetCount = Math.max(1, Math.floor(Number(budgetContext?.targetCount ?? (selectedCount + 1)) || (selectedCount + 1)));
+  const picksUsed = Math.max(0, Math.floor(Number(selectedCount) || 0));
+  const remainingPicks = Math.max(1, targetCount - picksUsed);
+  const totalBudgetGp = Math.max(0.5, Number(budgetContext?.totalBudgetGp ?? budgetContext?.targetPerItemGp ?? 0.5) || 0.5);
+  const consumedBudgetGp = Math.max(0, Number(selectedTotalValueGp) || 0);
+  const remainingBudgetGp = Math.max(0.5, totalBudgetGp - consumedBudgetGp);
+  const mode = String(budgetContext?.mode ?? "horde").trim().toLowerCase();
+  const combatants = Math.max(1, Number(budgetContext?.combatants ?? 1) || 1);
+  const soloEncounter = mode === "encounter" && combatants <= 1;
+  let desiredNextValueGp = Math.max(0.5, remainingBudgetGp / remainingPicks);
+  const strictness = Math.max(0.5, Number(budgetContext?.valueStrictness ?? 1) || 1);
+
+  const manualCapGp = Math.max(0, Number(budgetContext?.manualMaxItemValueGp ?? 0) || 0);
+  if (manualCapGp > 0 && value > manualCapGp) return 0;
+  const effectiveCapGp = Math.max(0, Number(budgetContext?.effectiveMaxItemValueGp ?? 0) || 0);
+  const nearMaxReferenceGp = Math.max(0, manualCapGp > 0 ? manualCapGp : effectiveCapGp);
+  if (soloEncounter && nearMaxReferenceGp > 0) {
+    desiredNextValueGp = Math.max(desiredNextValueGp, nearMaxReferenceGp * 0.9);
+  }
+
+  let weight = 1;
+  if (value <= desiredNextValueGp) {
+    const savingsRatio = Math.max(0, 1 - (value / Math.max(0.01, desiredNextValueGp)));
+    weight *= 1 + Math.min(0.2, savingsRatio * 0.2);
+  } else {
+    const overRatio = value / Math.max(0.01, desiredNextValueGp);
+    weight *= Math.exp(-(overRatio - 1) * (2.2 * strictness));
+  }
+
+  if (effectiveCapGp > 0 && value > effectiveCapGp) {
+    const capOverRatio = value / Math.max(0.01, effectiveCapGp);
+    weight *= Math.exp(-(capOverRatio - 1) * (4.6 * strictness));
+  }
+
+  if (manualCapGp > 0 && value <= manualCapGp) {
+    const capLiftRatio = Math.max(0, Math.min(1, (manualCapGp / Math.max(1, desiredNextValueGp)) - 1));
+    if (capLiftRatio > 0) {
+      const expensiveRatio = Math.max(0, Math.min(1, value / Math.max(0.01, manualCapGp)));
+      const expensiveBias = Math.pow(expensiveRatio, 1.6);
+      weight *= 1 + (capLiftRatio * 0.65 * expensiveBias);
+    }
+  }
+
+  const rangeMinGp = Math.max(0, Number(budgetContext?.targetValueRangeMinGp ?? 0) || 0);
+  const rangeMaxGp = Math.max(rangeMinGp, Number(budgetContext?.targetValueRangeMaxGp ?? 0) || 0);
+  if (rangeMaxGp > 0) {
+    const projectedTotalGp = consumedBudgetGp + value;
+    if (projectedTotalGp < rangeMinGp) {
+      const gapRatio = (rangeMinGp - projectedTotalGp) / Math.max(1, rangeMinGp);
+      weight *= 1 + Math.min(0.45, gapRatio * 0.45);
+    } else if (projectedTotalGp > rangeMaxGp) {
+      const overRatio = (projectedTotalGp - rangeMaxGp) / Math.max(1, rangeMaxGp);
+      weight *= Math.exp(-overRatio * (2.8 * strictness));
+    }
+  }
+
+  if (soloEncounter && nearMaxReferenceGp > 0 && value <= nearMaxReferenceGp) {
+    const normalized = value / Math.max(0.01, nearMaxReferenceGp);
+    const nearCapCloseness = Math.max(0, 1 - (Math.abs(normalized - 0.9) / 0.9));
+    weight *= 1 + (nearCapCloseness * 0.35);
+  }
+
+  return Math.max(0.000001, weight);
+}
+
+function getLootValueBalanceWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, valueStats = {}, draft = {}, budgetContext = null) {
+  const value = Math.max(0, Number(itemValueGp) || 0);
+  const hasLegacyStats = Boolean(valueStats?.hasValues);
+  let legacyWeight = 1;
+  if (hasLegacyStats) {
+    const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+    const encounterCreatures = getLootCombatantCount(draft, mode);
+    let target = Math.max(0.01, Number(valueStats.targetValuePerItem ?? 0.01) || 0.01);
+    if (mode === "encounter") {
+      if (encounterCreatures <= 1) target *= 1.08;
+      else if (encounterCreatures >= 5) target *= 0.9;
+    }
+    const spread = Math.max(1, Number(valueStats.spread ?? 1) || 1);
+    const desiredNextValue = Math.max(0, (target * (Math.max(0, selectedCount) + 1)) - Math.max(0, Number(selectedTotalValueGp) || 0));
+    if (value <= 0) {
+      legacyWeight = 0.95;
+    } else {
+      const delta = Math.abs(value - desiredNextValue);
+      const closeness = Math.max(0, 1 - (delta / spread));
+      legacyWeight = 0.35 + (closeness * 1.25);
+    }
+  }
+
+  if (!budgetContext) return Math.max(0.000001, legacyWeight);
+  const budgetWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext);
+  if (!hasLegacyStats) return budgetWeight;
+  return Math.max(0.000001, (budgetWeight * 0.86) + (legacyWeight * 0.14));
+}
+
+function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filters = {}) {
+  if (!item) return null;
+  const data = (item && typeof item?.toObject === "function") ? item.toObject() : item;
+  const itemType = String(data?.type ?? "").trim();
+  if (!itemType) return null;
+
+  const includeTags = filters.includeTags ?? [];
+  const excludeTags = filters.excludeTags ?? [];
+  const floor = String(filters.floor ?? "");
+  const ceiling = String(filters.ceiling ?? "");
+
+  const keywords = getLootKeywordsFromData(data);
+  if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) return null;
+  const rarity = getLootRarityFromData(data);
+  const rarityBucket = getLootRarityBucket(rarity);
+  const itemValueGp = getLootItemGpValueFromData(data);
+  if (!isLootRarityAllowed(rarity, floor, ceiling)) return null;
+
+  const sourceId = String(context.sourceId ?? "").trim();
+  const sourceLabel = String(context.sourceLabel ?? sourceId).trim() || sourceId;
+  const sourceWeight = Math.max(1, Math.floor(Number(context.sourceWeight ?? 1) || 1));
+  const fallbackKey = String(data?._id ?? data?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID();
+  const rawUuid = String(item?.uuid ?? data?.uuid ?? "").trim();
+  const uuid = rawUuid || (context.fallbackUuidPrefix ? `${context.fallbackUuidPrefix}.${fallbackKey}` : "");
+  const key = uuid || fallbackKey;
+
+  return {
+    key,
+    name: String(data?.name ?? "Item").trim() || "Item",
+    img: String(data?.img ?? "icons/svg/item-bag.svg"),
+    itemType,
+    rarity,
+    rarityBucket,
+    uuid,
+    sourceId,
+    sourceLabel,
+    sourceWeight,
+    itemValueGp,
+    keywords,
+    profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
+    rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
+  };
+}
+
 function getLootProfileRarityWeight(profile, rarity) {
   const normalizedProfile = String(profile ?? "standard").trim().toLowerCase();
   const normalizedRarity = getLootRarityBucket(rarity);
@@ -4757,6 +8396,50 @@ function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   return Number.isFinite(base) ? Math.max(0, base) : 1;
 }
 
+function getLootCombatantCount(draft = {}, mode = "horde") {
+  const normalizedMode = String(mode ?? draft?.mode ?? "horde").trim().toLowerCase();
+  if (normalizedMode !== "encounter") return 1;
+  return Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1);
+}
+
+function getLootCombatantSpreadFactor(draft = {}, mode = "horde") {
+  if (String(mode ?? "horde").trim().toLowerCase() !== "encounter") return 1;
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const combatants = getLootCombatantCount(draft, mode);
+  const baselineByMode = {
+    defeated: { low: 2, mid: 4, high: 6, epic: 8 },
+    encounter: { low: 2, mid: 4, high: 6, epic: 8 },
+    horde: { low: 3, mid: 5, high: 7, epic: 9 }
+  };
+  const modeKey = mode === "defeated" || mode === "encounter" ? mode : "horde";
+  const byChallenge = baselineByMode[modeKey] ?? baselineByMode.horde;
+  const baseline = Math.max(1, Number(byChallenge[challenge] ?? byChallenge.mid) || 1);
+  const raw = combatants / baseline;
+  return Math.max(0.45, Math.min(1.9, raw));
+}
+
+function getLootCombatantLowTierBonusCount(draft = {}, mode = "horde") {
+  if (String(mode ?? "horde").trim().toLowerCase() !== "encounter") return 0;
+  const combatants = getLootCombatantCount(draft, mode);
+  const extra = Math.max(0, combatants - 1);
+  if (extra <= 0) return 0;
+  return Math.min(16, Math.floor(extra * 0.75));
+}
+
+function getLootCombatantRarityWeightModifier(draft = {}, rarity = "") {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  const combatants = getLootCombatantCount(draft, mode);
+  const pressure = Math.max(0, combatants - 1);
+  if (pressure <= 0) return 1;
+  const bucket = getLootRarityBucket(rarity);
+  if (bucket === "common") return Math.min(3.25, 1 + pressure * 0.16);
+  if (bucket === "uncommon") return Math.min(2.2, 1 + pressure * 0.1);
+  if (bucket === "rare") return Math.max(0.28, 1 - pressure * 0.085);
+  if (bucket === "very-rare") return Math.max(0.12, 1 - pressure * 0.11);
+  if (bucket === "legendary") return Math.max(0.06, 1 - pressure * 0.14);
+  return 1;
+}
+
 function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
@@ -4783,11 +8466,16 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   };
   const byMode = ratioTable[mode] ?? ratioTable.horde;
   const byChallenge = byMode[challenge] ?? byMode.mid;
+  const pressure = Math.max(0, getLootCombatantCount(draft, mode) - 1);
+  const uncommonRatioBoost = Math.min(1.8, 1 + pressure * 0.03);
+  const rareRatioPenalty = Math.max(0.35, 1 - pressure * 0.05);
+  const veryRareRatioPenalty = Math.max(0.18, 1 - pressure * 0.07);
+  const legendaryRatioPenalty = Math.max(0.1, 1 - pressure * 0.08);
   const caps = {
-    uncommon: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.uncommon ?? 0)))),
-    rare: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.rare ?? 0)))),
-    "very-rare": Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge["very-rare"] ?? 0)))),
-    legendary: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.legendary ?? 0))))
+    uncommon: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.uncommon ?? 0) * uncommonRatioBoost))),
+    rare: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.rare ?? 0) * rareRatioPenalty))),
+    "very-rare": Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge["very-rare"] ?? 0) * veryRareRatioPenalty))),
+    legendary: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.legendary ?? 0) * legendaryRatioPenalty)))
   };
 
   if (mode === "horde") {
@@ -4811,11 +8499,12 @@ function canSelectLootRarityWithCaps(rarity, selectedCounts = {}, caps = {}) {
   return current < cap;
 }
 
-function chooseWeightedEntry(entries, weightAccessor) {
+function chooseWeightedEntry(entries, weightAccessor, randomFn = Math.random) {
   if (!Array.isArray(entries) || entries.length === 0) return null;
   const getWeight = typeof weightAccessor === "function"
     ? weightAccessor
     : (entry) => Number(entry?.weight ?? 1);
+  const random = typeof randomFn === "function" ? randomFn : Math.random;
   let total = 0;
   const weighted = entries.map((entry) => {
     const raw = Number(getWeight(entry));
@@ -4824,7 +8513,7 @@ function chooseWeightedEntry(entries, weightAccessor) {
     return { entry, weight };
   });
   if (total <= 0) return entries[0] ?? null;
-  let cursor = Math.random() * total;
+  let cursor = random() * total;
   for (const row of weighted) {
     cursor -= row.weight;
     if (cursor <= 0) return row.entry;
@@ -4832,10 +8521,11 @@ function chooseWeightedEntry(entries, weightAccessor) {
   return weighted[weighted.length - 1]?.entry ?? null;
 }
 
-function shuffleArray(input = []) {
+function shuffleArray(input = [], randomFn = Math.random) {
   const rows = [...input];
+  const random = typeof randomFn === "function" ? randomFn : Math.random;
   for (let index = rows.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const swapIndex = Math.floor(random() * (index + 1));
     [rows[index], rows[swapIndex]] = [rows[swapIndex], rows[index]];
   }
   return rows;
@@ -4899,17 +8589,37 @@ function convertGpToCurrency(gpValue = 0) {
   };
 }
 
-async function rollLootCurrency(draft = {}) {
+function rollSimpleDiceFormulaDeterministic(formula = "", randomFn = Math.random) {
+  const text = String(formula ?? "").trim().toLowerCase();
+  const match = /^(\d+)d(\d+)$/.exec(text);
+  if (!match) return null;
+  const count = Math.max(1, Math.min(200, Number(match[1]) || 1));
+  const sides = Math.max(1, Math.min(1000, Number(match[2]) || 1));
+  const random = typeof randomFn === "function" ? randomFn : Math.random;
+  let total = 0;
+  for (let index = 0; index < count; index += 1) {
+    total += 1 + Math.floor(random() * sides);
+  }
+  return total;
+}
+
+async function rollLootCurrency(draft = {}, randomContext = null) {
   const profile = getLootCurrencyProfile(draft);
-  const roll = await (new Roll(String(profile.dice ?? "1d1"))).evaluate();
-  const rollTotal = Number(roll?.total ?? 0);
-  const actorCount = Math.max(1, Number(draft.actorCount ?? 1) || 1);
-  const mode = String(draft.mode ?? "horde");
-  const modeFactor = mode === "defeated"
-    ? actorCount
-    : mode === "encounter"
-      ? Math.max(1, Math.round(actorCount * 0.6))
-      : 1;
+  const random = randomContext?.random ?? Math.random;
+  let rollTotal = 0;
+  if (randomContext?.deterministic) {
+    const deterministicTotal = rollSimpleDiceFormulaDeterministic(String(profile.dice ?? "1d1"), random);
+    if (deterministicTotal !== null) {
+      rollTotal = deterministicTotal;
+    } else {
+      const roll = await (new Roll(String(profile.dice ?? "1d1"))).evaluate();
+      rollTotal = Number(roll?.total ?? 0);
+    }
+  } else {
+    const roll = await (new Roll(String(profile.dice ?? "1d1"))).evaluate();
+    rollTotal = Number(roll?.total ?? 0);
+  }
+  const modeFactor = 1;
   const scaled = (Math.max(0, rollTotal) + Math.max(0, Number(profile.bonus ?? 0)))
     * getLootScaleMultiplier(String(draft.scale ?? "medium"))
     * getLootProfileMultiplier(String(draft.profile ?? "standard"))
@@ -4927,44 +8637,8 @@ async function rollLootCurrency(draft = {}) {
 }
 
 function getLootItemCount(draft = {}) {
-  const mode = String(draft.mode ?? "horde");
-  const challenge = String(draft.challenge ?? "mid");
-  const profile = String(draft.profile ?? "standard");
-  const actorCount = Math.max(1, Number(draft.actorCount ?? 1) || 1);
-  const scaleFactor = getLootScaleMultiplier(String(draft.scale ?? "medium"));
-  const profileFactor = profile === "poor" ? 0.8 : profile === "well" ? 1.2 : 1;
-
-  const itemScale = Math.max(0.25, Math.min(3, Number(draft.itemScalar ?? 100) / 100));
-  if (mode === "defeated") {
-    const perActorChance = {
-      low: 0.08,
-      mid: 0.14,
-      high: 0.22,
-      epic: 0.32
-    };
-    const expected = actorCount * Number(perActorChance[challenge] ?? perActorChance.mid) * profileFactor * scaleFactor;
-    const challengeBonus = challenge === "high" ? 0.5 : challenge === "epic" ? 1 : 0;
-    return Math.min(24, Math.max(0, Math.round((expected + challengeBonus) * itemScale)));
-  }
-
-  if (mode === "encounter") {
-    const perActorRate = {
-      low: 0.18,
-      mid: 0.28,
-      high: 0.4,
-      epic: 0.55
-    };
-    const baseline = challenge === "low" ? 1 : 2;
-    const expected = actorCount * Number(perActorRate[challenge] ?? perActorRate.mid) * profileFactor * scaleFactor;
-    return Math.min(40, Math.max(0, baseline + Math.round(expected * itemScale)));
-  }
-
-  const hordeBase = { low: 3, mid: 5, high: 8, epic: 12 };
-  const hordeProfileMod = { poor: -1, standard: 0, well: 2 };
-  const base = Number(hordeBase[challenge] ?? hordeBase.mid);
-  const delta = Number(hordeProfileMod[profile] ?? 0);
-  const total = Math.max(0, Math.round((base + delta) * scaleFactor * itemScale));
-  return Math.min(60, total);
+  const target = resolveTargetGP(draft);
+  return resolveDesiredItemCount(draft, target.effectiveTotalTargetGp, 0);
 }
 
 async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
@@ -4981,90 +8655,329 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     enabledSources = source ? [source] : [];
   }
   const candidates = [];
+  const baseFilterOptions = {
+    typeWhitelist: [...allowedTypes]
+  };
   for (const source of enabledSources) {
-    const sourceId = String(source?.id ?? "").trim();
-    const sourceLabel = String(source?.label ?? sourceId).trim() || sourceId;
-    const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
-    if (!sourceId) continue;
-    if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) {
-      for (const item of game.items?.contents ?? []) {
-        if (!item) continue;
-        const itemType = String(item.type ?? "").trim();
-        if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
-        const keywords = getLootKeywordsFromData(item);
-        if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) continue;
-        const rarity = getLootRarityFromData(item);
-        const rarityBucket = getLootRarityBucket(rarity);
-        if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
-        candidates.push({
-          key: String(item.uuid ?? item.id ?? foundry.utils.randomID()),
-          name: String(item.name ?? "Item").trim() || "Item",
-          img: String(item.img ?? "icons/svg/item-bag.svg"),
-          itemType,
-          rarity,
-          rarityBucket,
-          uuid: String(item.uuid ?? ""),
-          sourceId,
-          sourceLabel,
-          sourceWeight,
-          keywords,
-          profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
-          rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
-        });
-      }
-      continue;
-    }
-
-    const pack = game.packs?.get(sourceId);
-    if (!pack) {
-      warnings.push(`Item source missing: ${sourceLabel}.`);
-      continue;
-    }
     try {
-      const index = await pack.getIndex({
-        fields: ["type", "img", "system.rarity", "system.details.rarity", "system.traits.rarity", "rarity", "flags.party-operations.keywords", "flags"]
-      });
-      for (const row of getCollectionValues(index)) {
-        const entry = Array.isArray(row) ? row[1] : row;
-        if (!entry) continue;
-        const itemType = String(entry.type ?? "").trim();
-        if (allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
-        const keywords = getLootKeywordsFromData(entry);
-        if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) continue;
-        const rarity = getLootRarityFromData(entry);
-        const rarityBucket = getLootRarityBucket(rarity);
-        if (!isLootRarityAllowed(rarity, floor, ceiling)) continue;
-        const docId = String(entry._id ?? entry.id ?? "").trim();
-        if (!docId) continue;
-        candidates.push({
-          key: `Compendium.${pack.collection}.${docId}`,
-          name: String(entry.name ?? "Item").trim() || "Item",
-          img: String(entry.img ?? "icons/svg/item-bag.svg"),
-          itemType,
-          rarity,
-          rarityBucket,
-          uuid: `Compendium.${pack.collection}.${docId}`,
+      const sourceId = String(source?.id ?? "").trim();
+      const sourceLabel = String(source?.label ?? sourceId).trim() || sourceId;
+      const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
+      if (!sourceId) continue;
+      if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) {
+        const worldItems = filterItems(game.items?.contents ?? [], baseFilterOptions);
+        for (const item of worldItems) {
+          const candidate = buildLootCandidateFromSourceItem(item, {
+            sourceId,
+            sourceLabel,
+            sourceWeight,
+            fallbackUuidPrefix: "World.Item"
+          }, draft, {
+            includeTags,
+            excludeTags,
+            floor,
+            ceiling
+          });
+          if (!candidate) continue;
+          candidates.push(candidate);
+        }
+        continue;
+      }
+
+      const packItems = await loadItemsFromPack(sourceId, { sourceLabel, warnings });
+      const filteredPackItems = filterItems(packItems, baseFilterOptions);
+      for (const item of filteredPackItems) {
+        const candidate = buildLootCandidateFromSourceItem(item, {
           sourceId,
           sourceLabel,
           sourceWeight,
-          keywords,
-          profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
-          rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
+          fallbackUuidPrefix: `Compendium.${sourceId}`
+        }, draft, {
+          includeTags,
+          excludeTags,
+          floor,
+          ceiling
         });
+        if (!candidate) continue;
+        candidates.push(candidate);
       }
     } catch (error) {
-      console.warn(`${MODULE_ID}: failed to read loot source pack`, sourceId, error);
-      warnings.push(`Could not read item source: ${sourceLabel}.`);
+      logLootBuilderFailure("buildLootItemCandidates.source", error, {
+        sourceId: source?.id,
+        sourceLabel: source?.label,
+        mode: draft?.mode,
+        challenge: draft?.challenge
+      });
+      warnings.push(`Failed item source: ${String(source?.label ?? source?.id ?? "Unknown source")}`);
     }
   }
   return candidates;
 }
 
-function pickLootItemsFromCandidates(candidates, count = 0, draft = {}) {
+function getLootRarityKeepPriority(rarity = "") {
+  const bucket = getLootRarityBucket(rarity);
+  if (bucket === "legendary") return 10;
+  if (bucket === "very-rare") return 8;
+  if (bucket === "rare") return 5;
+  if (bucket === "uncommon") return 2.5;
+  return 1;
+}
+
+function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spend") {
+  const budgetContext = state?.budgetContext ?? {};
+  const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
+  const selectedCount = Math.max(0, Number(state?.selected?.length ?? 0) || 0);
+  const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+  const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+  const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
+  const remainingSlots = Math.max(1, Number(budgetContext?.targetCount ?? 1) - selectedCount);
+  const desiredNextValue = Math.max(0.5, remaining / remainingSlots);
+  const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
+  const overshootLimit = Math.max(1, remaining * (1 + overshootAllowanceRatio));
+  if (phase === "spend" && remaining > toleranceGp && value > overshootLimit) return 0;
+  if (phase === "fill" && value > Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)))) return 0;
+
+  const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
+  const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
+  const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
+  const combatantWeight = Math.max(0.01, Number(getLootCombatantRarityWeightModifier(state?.draft ?? {}, entry?.rarity) || 1));
+  const typeWeight = Math.max(0, Number(getLootBuilderItemTypeWeight(state?.draft ?? {}, entry?.itemType) || 0));
+  const distance = Math.abs(value - desiredNextValue) / Math.max(1, desiredNextValue);
+  const closenessWeight = 1 / (1 + (phase === "fill" ? distance * 1.1 : distance * 1.85));
+  const cheapFillBoost = phase === "fill" && value <= remaining
+    ? 1 + Math.min(0.85, (remaining - value) / Math.max(1, remaining))
+    : 1;
+  const budgetWeight = Math.max(0.000001, closenessWeight * cheapFillBoost);
+  return sourceWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight;
+}
+
+function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spend") {
+  const weightedPool = buildWeightedPool(selectionPool, (entry) => getLootBudgetPhaseCandidateWeight(entry, state, phase));
+  const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0), state?.random ?? Math.random);
+  return pickedRow?.item ?? null;
+}
+
+function commitLootBudgetPick(state = {}, picked = null) {
+  if (!picked || !state) return false;
+  const rarityBucket = getLootRarityBucket(picked.rarity);
+  state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
+  state.selected.push({
+    name: picked.name,
+    img: picked.img,
+    itemType: picked.itemType,
+    rarity: picked.rarity || "",
+    sourceLabel: picked.sourceLabel,
+    uuid: picked.uuid,
+    itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0)
+  });
+  state.selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
+  const mode = String(state?.draft?.mode ?? "horde").trim().toLowerCase();
+  const encounterCreatures = Math.max(1, Number(state?.budgetContext?.combatants ?? 1) || 1);
+  const duplicateChance = Math.min(0.75, 0.2 + (Math.max(0, encounterCreatures - 1) * 0.1));
+  const allowEncounterDuplicate = mode === "encounter"
+    && encounterCreatures > 1
+    && (rarityBucket === "common" || rarityBucket === "uncommon")
+    && (state.random?.() ?? Math.random()) < duplicateChance;
+  if (!allowEncounterDuplicate) {
+    const index = state.pool.indexOf(picked);
+    if (index >= 0) state.pool.splice(index, 1);
+  }
+  return true;
+}
+
+function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
+  const budgetContext = state?.budgetContext ?? {};
+  const effectiveCapGp = Math.max(0, Number(budgetContext?.effectiveMaxItemValueGp ?? 0) || 0);
+  const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+  const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+  const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
+  const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
+  const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
+  const overshootLimit = Math.max(1, remaining * (1 + overshootAllowanceRatio));
+  const rawPool = (Array.isArray(state?.pool) ? state.pool : [])
+    .filter((entry) => canSelectLootRarityWithCaps(entry?.rarity, state?.selectedByRarity ?? {}, state?.rarityCaps ?? {}))
+    .filter((entry) => {
+      if (effectiveCapGp <= 0) return true;
+      const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+      return value <= effectiveCapGp;
+    });
+  if (rawPool.length === 0) return [];
+  if (phase === "spend" && remaining > toleranceGp) {
+    const budgetPool = rawPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= overshootLimit);
+    if (budgetPool.length > 0) return budgetPool;
+    return [...rawPool].sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0)).slice(0, 18);
+  }
+  if (phase === "fill") {
+    const fillLimit = Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)));
+    const fillPool = rawPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= fillLimit);
+    if (fillPool.length > 0) return fillPool;
+    return [...rawPool].sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0)).slice(0, 12);
+  }
+  return rawPool;
+}
+
+function spendBudgetLoop(state = {}) {
+  try {
+    const budgetContext = state?.budgetContext ?? {};
+    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
+    let safety = 0;
+    while (safety < 600) {
+      safety += 1;
+      const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
+      if (remaining <= toleranceGp) return;
+      if ((state.selected?.length ?? 0) >= maxItems) return;
+      const selectionPool = buildLootPhaseSelectionPool(state, "spend");
+      if (!selectionPool.length) {
+        state.diagnostics.push("No spend-phase candidates in the current budget range.");
+        logLootBuilderDebug("spendBudgetLoop stopped: no candidates", {
+          remaining,
+          toleranceGp,
+          selectedCount: state.selected?.length ?? 0,
+          maxItems
+        });
+        return;
+      }
+      const picked = chooseLootBudgetCandidate(selectionPool, state, "spend");
+      if (!picked) {
+        state.diagnostics.push("Weighted spend-phase pick returned no candidate.");
+        logLootBuilderDebug("spendBudgetLoop stopped: weighted pick empty", {
+          selectionPoolSize: selectionPool.length
+        });
+        return;
+      }
+      if (!commitLootBudgetPick(state, picked)) return;
+    }
+    state.diagnostics.push("Spend loop hit safety iteration cap.");
+    logLootBuilderDebug("spendBudgetLoop safety cap reached", {
+      selectedCount: state.selected?.length ?? 0,
+      selectedTotalValueGp: state.selectedTotalValueGp
+    });
+  } catch (error) {
+    state?.diagnostics?.push?.("Spend loop failed unexpectedly.");
+    logLootBuilderFailure("spendBudgetLoop", error, {
+      selectedCount: state?.selected?.length ?? 0,
+      selectedTotalValueGp: state?.selectedTotalValueGp ?? 0,
+      target: state?.budgetContext?.effectiveTotalTargetGp ?? 0,
+      tolerance: state?.budgetContext?.toleranceGp ?? 0
+    });
+  }
+}
+
+function fillPass(state = {}) {
+  try {
+    const budgetContext = state?.budgetContext ?? {};
+    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
+    let safety = 0;
+    while (safety < 400) {
+      safety += 1;
+      const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
+      if (remaining <= toleranceGp) return;
+      if ((state.selected?.length ?? 0) >= maxItems) {
+        state.diagnostics.push("Fill pass stopped at max item cap before target tolerance was reached.");
+        logLootBuilderDebug("fillPass stopped at max items", {
+          remaining,
+          toleranceGp,
+          maxItems
+        });
+        return;
+      }
+      const selectionPool = buildLootPhaseSelectionPool(state, "fill");
+      if (!selectionPool.length) {
+        state.diagnostics.push("Fill pass ended: no affordable low-value candidates remained.");
+        logLootBuilderDebug("fillPass ended with no candidates", {
+          remaining,
+          toleranceGp
+        });
+        return;
+      }
+      const picked = chooseLootBudgetCandidate(selectionPool, state, "fill");
+      if (!picked) return;
+      if (!commitLootBudgetPick(state, picked)) return;
+    }
+    state.diagnostics.push("Fill pass hit safety iteration cap.");
+    logLootBuilderDebug("fillPass safety cap reached", {
+      selectedCount: state.selected?.length ?? 0,
+      selectedTotalValueGp: state.selectedTotalValueGp
+    });
+  } catch (error) {
+    state?.diagnostics?.push?.("Fill pass failed unexpectedly.");
+    logLootBuilderFailure("fillPass", error, {
+      selectedCount: state?.selected?.length ?? 0,
+      selectedTotalValueGp: state?.selectedTotalValueGp ?? 0,
+      target: state?.budgetContext?.effectiveTotalTargetGp ?? 0,
+      tolerance: state?.budgetContext?.toleranceGp ?? 0
+    });
+  }
+}
+
+function trimPass(state = {}) {
+  try {
+    const budgetContext = state?.budgetContext ?? {};
+    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    let safety = 0;
+    while (safety < 200) {
+      safety += 1;
+      const overspent = Math.max(0, Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0) - targetTotal);
+      if (overspent <= toleranceGp) return;
+      if (!Array.isArray(state.selected) || state.selected.length === 0) {
+        state.diagnostics.push("Trim pass could not run: no selected items.");
+        logLootBuilderDebug("trimPass stopped: nothing to trim", {
+          overspent,
+          toleranceGp
+        });
+        return;
+      }
+      const scored = state.selected.map((entry, index) => {
+        const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+        const keepPriority = getLootRarityKeepPriority(entry?.rarity);
+        const rarityWeight = Number(1 / Math.max(1, keepPriority));
+        const budgetWeight = Math.min(2, value / Math.max(1, overspent));
+        return {
+          index,
+          score: (budgetWeight * 1.2) + rarityWeight
+        };
+      }).sort((left, right) => right.score - left.score);
+      const pick = scored[0];
+      if (!pick) return;
+      const removed = state.selected[pick.index];
+      const removedValue = Math.max(0, Number(removed?.itemValueGp ?? 0) || 0);
+      const bucket = getLootRarityBucket(removed?.rarity);
+      state.selected.splice(pick.index, 1);
+      state.selectedTotalValueGp = Math.max(0, Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0) - removedValue);
+      state.selectedByRarity[bucket] = Math.max(0, Math.max(0, Number(state.selectedByRarity[bucket] ?? 0) || 0) - 1);
+    }
+    state.diagnostics.push("Trim pass hit safety iteration cap.");
+    logLootBuilderDebug("trimPass safety cap reached", {
+      selectedCount: state.selected?.length ?? 0,
+      selectedTotalValueGp: state.selectedTotalValueGp
+    });
+  } catch (error) {
+    state?.diagnostics?.push?.("Trim pass failed unexpectedly.");
+    logLootBuilderFailure("trimPass", error, {
+      selectedCount: state?.selected?.length ?? 0,
+      selectedTotalValueGp: state?.selectedTotalValueGp ?? 0,
+      target: state?.budgetContext?.effectiveTotalTargetGp ?? 0,
+      tolerance: state?.budgetContext?.toleranceGp ?? 0
+    });
+  }
+}
+
+function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
   const targetCount = Math.max(0, Math.floor(Number(count) || 0));
   if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) return [];
   const pool = [...candidates];
   const selected = [];
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  const encounterCreatures = getLootCombatantCount(draft, mode);
+  const valueStats = summarizeLootCandidateValueStats(pool);
+  const valueBudgetContext = buildLootValueBudgetContext(draft, targetCount);
+  const manualCapGp = Math.max(0, Number(valueBudgetContext?.manualMaxItemValueGp ?? 0) || 0);
   const rarityCaps = getLootRaritySelectionCaps(draft, targetCount);
   const selectedByRarity = {
     common: 0,
@@ -5073,15 +8986,32 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}) {
     "very-rare": 0,
     legendary: 0
   };
+  let selectedTotalValueGp = 0;
   while (pool.length > 0 && selected.length < targetCount) {
     const cappedPool = pool.filter((entry) => canSelectLootRarityWithCaps(entry?.rarity, selectedByRarity, rarityCaps));
-    const selectionPool = cappedPool.length > 0 ? cappedPool : pool;
-    const picked = chooseWeightedEntry(selectionPool, (entry) => {
+    const rarityPool = cappedPool.length > 0 ? cappedPool : pool;
+    const selectionPool = manualCapGp > 0
+      ? rarityPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= manualCapGp)
+      : rarityPool;
+    if (!selectionPool.length) break;
+    const weightedPool = buildWeightedPool(selectionPool, (entry) => {
       const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
       const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
       const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
-      return sourceWeight * profileWeight * rarityWeight;
+      const combatantWeight = Math.max(0.01, Number(getLootCombatantRarityWeightModifier(draft, entry?.rarity) || 1));
+      const typeWeight = Math.max(0, Number(getLootBuilderItemTypeWeight(draft, entry?.itemType) || 0));
+      const valueWeight = Math.max(0, Number(getLootValueBalanceWeight(
+        entry?.itemValueGp,
+        selectedTotalValueGp,
+        selected.length,
+        valueStats,
+        draft,
+        valueBudgetContext
+      ) || 0));
+      return sourceWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight;
     });
+    const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0));
+    const picked = pickedRow?.item ?? null;
     if (!picked) break;
     const rarityBucket = getLootRarityBucket(picked.rarity);
     selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
@@ -5091,12 +9021,107 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}) {
       itemType: picked.itemType,
       rarity: picked.rarity || "",
       sourceLabel: picked.sourceLabel,
-      uuid: picked.uuid
+      uuid: picked.uuid,
+      itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0)
     });
-    const index = pool.indexOf(picked);
-    if (index >= 0) pool.splice(index, 1);
+    selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
+    const allowEncounterDuplicate = mode === "encounter"
+      && encounterCreatures > 1
+      && (rarityBucket === "common" || rarityBucket === "uncommon")
+      && Math.random() < Math.min(0.75, 0.2 + (Math.max(0, encounterCreatures - 1) * 0.1));
+    if (!allowEncounterDuplicate) {
+      const index = pool.indexOf(picked);
+      if (index >= 0) pool.splice(index, 1);
+    }
   }
   return selected;
+}
+
+function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options = {}) {
+  try {
+    const targetCount = Math.max(0, Math.floor(Number(count) || 0));
+    if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) return [];
+    const budgetContext = (options?.budgetContext && typeof options.budgetContext === "object")
+      ? options.budgetContext
+      : buildLootValueBudgetContext(draft, targetCount);
+    const randomContext = (options?.randomContext && typeof options.randomContext === "object")
+      ? options.randomContext
+      : buildLootRandomContext(draft, budgetContext);
+    const initialPool = [...candidates];
+    const state = {
+      pool: initialPool,
+      selected: [],
+      selectedTotalValueGp: 0,
+      selectedByRarity: {
+        common: 0,
+        uncommon: 0,
+        rare: 0,
+        "very-rare": 0,
+        legendary: 0
+      },
+      rarityCaps: getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? targetCount) || targetCount)),
+      budgetContext,
+      targetCount: Math.max(1, Number(budgetContext?.targetCount ?? targetCount) || targetCount),
+      maxItems: Math.max(targetCount, Number(budgetContext?.maxItems ?? targetCount) || targetCount),
+      draft,
+      random: randomContext?.random ?? Math.random,
+      diagnostics: []
+    };
+
+    spendBudgetLoop(state);
+    fillPass(state);
+    trimPass(state);
+    fillPass(state);
+    trimPass(state);
+
+    const finalTotalValueGp = Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0);
+    const targetTotalValueGp = Math.max(0, Number(budgetContext?.effectiveTotalTargetGp ?? 0) || 0);
+    const deltaGp = Number((finalTotalValueGp - targetTotalValueGp).toFixed(2));
+    const meta = {
+      deterministic: Boolean(randomContext?.deterministic),
+      seed: String(randomContext?.seed ?? ""),
+      desiredItemCount: Math.max(0, Number(budgetContext?.targetCount ?? targetCount) || 0),
+      maxItems: Math.max(0, Number(state.maxItems ?? 0) || 0),
+      encounterTargetGp: targetTotalValueGp,
+      finalItemsValueGp: Number(finalTotalValueGp.toFixed(2)),
+      deltaGp,
+      toleranceGp: Math.max(0, Number(budgetContext?.toleranceGp ?? 0) || 0),
+      tolerancePercent: Math.max(0, Number(budgetContext?.tolerancePercent ?? 0) || 0),
+      strictnessBandLabel: String(budgetContext?.strictnessBandLabel ?? "Normal"),
+      strictnessBandKey: String(budgetContext?.strictnessBandKey ?? "normal"),
+      candidateCount: Math.max(0, Number(candidates.length || 0)),
+      diagnostics: state.diagnostics
+    };
+    const selected = state.selected;
+    try {
+      Object.defineProperty(selected, "__meta", {
+        value: meta,
+        enumerable: false,
+        configurable: true,
+        writable: false
+      });
+    } catch {
+      // Non-critical metadata attachment.
+    }
+    return selected;
+  } catch (error) {
+    logLootBuilderFailure("pickLootItemsFromCandidates", error, {
+      count,
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      profile: draft?.profile,
+      scale: draft?.scale,
+      creatures: draft?.creatures ?? draft?.actorCount,
+      candidateCount: Array.isArray(candidates) ? candidates.length : 0,
+      hasBudgetContext: Boolean(options?.budgetContext),
+      hasRandomContext: Boolean(options?.randomContext)
+    });
+    logLootBuilderDebug("falling back to legacy picker after budget-first failure", {
+      count,
+      candidateCount: Array.isArray(candidates) ? candidates.length : 0
+    });
+    return pickLootItemsFromCandidatesLegacy(candidates, count, draft);
+  }
 }
 
 async function resolveUuidDocument(uuid) {
@@ -5133,9 +9158,10 @@ function getLootTableRollBudget(draft = {}) {
   return Math.max(0, Math.min(6, Math.round(baseBudget * tableScale)));
 }
 
-async function resolveLootTableFromSource(source = {}) {
+async function resolveLootTableFromSource(source = {}, randomContext = null) {
   const sourceId = String(source?.id ?? "").trim();
   if (!sourceId) return null;
+  const random = randomContext?.random ?? Math.random;
 
   if (sourceId.startsWith("world-table:")) {
     const uuid = sourceId.slice("world-table:".length);
@@ -5151,7 +9177,7 @@ async function resolveLootTableFromSource(source = {}) {
     const index = await pack.getIndex();
     const rows = getCollectionValues(index);
     if (!rows.length) return null;
-    const row = rows[Math.floor(Math.random() * rows.length)];
+    const row = rows[Math.floor(random() * rows.length)];
     const entry = Array.isArray(row) ? row[1] : row;
     const docId = String(entry?._id ?? entry?.id ?? "").trim();
     if (!docId) return null;
@@ -5170,11 +9196,22 @@ function getRollTableResultLabel(result = {}) {
   return "No result text";
 }
 
-async function rollLootTableDry(tableDoc) {
+async function rollLootTableDry(tableDoc, randomContext = null) {
   if (!tableDoc) return null;
+  const random = randomContext?.random ?? Math.random;
   const formula = String(tableDoc.formula ?? "1d100").trim() || "1d100";
-  const roll = await (new Roll(formula)).evaluate();
-  const total = Number(roll?.total ?? 0);
+  let total = 0;
+  if (randomContext?.deterministic) {
+    const deterministicTotal = rollSimpleDiceFormulaDeterministic(formula, random);
+    if (deterministicTotal !== null) total = deterministicTotal;
+    else {
+      const roll = await (new Roll(formula)).evaluate();
+      total = Number(roll?.total ?? 0);
+    }
+  } else {
+    const roll = await (new Roll(formula)).evaluate();
+    total = Number(roll?.total ?? 0);
+  }
   const results = getCollectionValues(tableDoc.results);
   const matches = results.filter((result) => {
     const range = Array.isArray(result?.range) ? result.range : [1, 1];
@@ -5183,7 +9220,7 @@ async function rollLootTableDry(tableDoc) {
     return total >= min && total <= max;
   });
   const picked = matches.length > 0
-    ? matches[Math.floor(Math.random() * matches.length)]
+    ? matches[Math.floor(random() * matches.length)]
     : (results[0] ?? null);
   return {
     tableName: String(tableDoc.name ?? "Roll Table").trim() || "Roll Table",
@@ -5194,21 +9231,21 @@ async function rollLootTableDry(tableDoc) {
   };
 }
 
-async function buildLootTableRolls(sourceConfig, draft, warnings = []) {
+async function buildLootTableRolls(sourceConfig, draft, warnings = [], randomContext = null) {
   const enabledSources = (sourceConfig?.tables ?? []).filter((entry) => entry?.enabled !== false);
   if (!enabledSources.length) return [];
   const budget = getLootTableRollBudget(draft);
   if (budget <= 0) return [];
-  const sources = shuffleArray(enabledSources).slice(0, budget);
+  const sources = shuffleArray(enabledSources, randomContext?.random ?? Math.random).slice(0, budget);
   const rolls = [];
   for (const source of sources) {
     try {
-      const tableDoc = await resolveLootTableFromSource(source);
+      const tableDoc = await resolveLootTableFromSource(source, randomContext);
       if (!tableDoc) {
         warnings.push(`Table source unavailable: ${source.label || source.id}.`);
         continue;
       }
-      const rolled = await rollLootTableDry(tableDoc);
+      const rolled = await rollLootTableDry(tableDoc, randomContext);
       if (!rolled) continue;
       rolls.push({
         sourceLabel: String(source.label ?? source.id ?? "Roll Table Source"),
@@ -5216,7 +9253,12 @@ async function buildLootTableRolls(sourceConfig, draft, warnings = []) {
         ...rolled
       });
     } catch (error) {
-      console.warn(`${MODULE_ID}: failed loot table roll`, source?.id, error);
+      logLootBuilderFailure("buildLootTableRolls.source", error, {
+        sourceId: source?.id,
+        sourceLabel: source?.label,
+        mode: draft?.mode,
+        challenge: draft?.challenge
+      });
       warnings.push(`Failed to roll table source: ${source?.label || source?.id || "Unknown source"}.`);
     }
   }
@@ -5224,32 +9266,314 @@ async function buildLootTableRolls(sourceConfig, draft, warnings = []) {
 }
 
 async function generateLootPreviewPayload(draftInput = {}) {
-  const draft = normalizeLootPreviewDraft(draftInput);
-  const sourceConfig = getLootSourceConfig();
-  const warnings = [];
-  const currency = await rollLootCurrency(draft);
-  const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
-  const itemCountTarget = getLootItemCount(draft);
-  const items = pickLootItemsFromCandidates(candidates, itemCountTarget, draft);
-  const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings);
-  if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
-  return {
-    generatedAt: Date.now(),
-    generatedBy: String(game.user?.name ?? "GM"),
-    draft,
-    currency,
-    items,
-    tableRolls,
-    stats: {
+  try {
+    const draft = normalizeLootPreviewDraft(draftInput);
+    logLootBuilderDebug("generateLootPreviewPayload start", {
+      mode: draft.mode,
+      challenge: draft.challenge,
+      profile: draft.profile,
+      scale: draft.scale,
+      creatures: draft.creatures,
+      deterministic: draft.deterministic,
+      seed: draft.seed
+    });
+    const sourceConfig = getLootSourceConfig();
+    const warnings = [];
+    const previewBudgetContext = buildLootValueBudgetContext(draft, 0);
+    const randomContext = buildLootRandomContext(draft, previewBudgetContext);
+    const currency = await rollLootCurrency(draft, randomContext);
+    const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
+    const desiredItemCount = previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
+    const itemCountTarget = Math.max(1, Number(desiredItemCount));
+    const selectedItems = pickLootItemsFromCandidates(candidates, itemCountTarget, draft, {
+      budgetContext: previewBudgetContext,
+      randomContext
+    });
+    const selectionMeta = (Array.isArray(selectedItems) && selectedItems.__meta && typeof selectedItems.__meta === "object")
+      ? selectedItems.__meta
+      : null;
+    const items = selectedItems.map((entry) => ({
+      id: foundry.utils.randomID(),
+      ...entry
+    }));
+    const resolvedSelectionMeta = selectionMeta ?? {
+      deterministic: Boolean(randomContext?.deterministic),
+      seed: String(randomContext?.seed ?? ""),
+      desiredItemCount: itemCountTarget,
+      maxItems: Math.max(itemCountTarget, Number(previewBudgetContext?.maxItems ?? itemCountTarget) || itemCountTarget),
+      encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+      finalItemsValueGp: Number(items.reduce((sum, entry) => sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0), 0).toFixed(2)),
+      deltaGp: 0,
+      toleranceGp: Number(previewBudgetContext?.toleranceGp ?? 0),
+      tolerancePercent: Number(previewBudgetContext?.tolerancePercent ?? 0),
+      strictnessBandLabel: String(previewBudgetContext?.strictnessBandLabel ?? "Normal"),
+      strictnessBandKey: String(previewBudgetContext?.strictnessBandKey ?? "normal"),
       candidateCount: candidates.length,
-      itemCountTarget,
-      itemCountGenerated: items.length,
-      tableRollCount: tableRolls.length,
-      enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
-      enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
-    },
-    warnings
+      diagnostics: []
+    };
+    resolvedSelectionMeta.deltaGp = Number((resolvedSelectionMeta.finalItemsValueGp - resolvedSelectionMeta.encounterTargetGp).toFixed(2));
+    const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings, randomContext);
+    if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
+    const seenDiagnostics = new Set();
+    for (const note of (resolvedSelectionMeta.diagnostics ?? [])) {
+      const text = String(note ?? "").trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seenDiagnostics.has(key)) continue;
+      seenDiagnostics.add(key);
+      warnings.push(`Budget note: ${text}`);
+    }
+    logLootBuilderDebug("builder generation summary", {
+      encounterTargetGp: resolvedSelectionMeta.encounterTargetGp,
+      creatureCount: draft.creatures,
+      desiredItemCount: resolvedSelectionMeta.desiredItemCount,
+      maxItems: resolvedSelectionMeta.maxItems,
+      strictnessBand: resolvedSelectionMeta.strictnessBandLabel,
+      strictnessToleranceGp: resolvedSelectionMeta.toleranceGp,
+      candidateCount: candidates.length,
+      finalItemsValueGp: resolvedSelectionMeta.finalItemsValueGp,
+      deltaGp: resolvedSelectionMeta.deltaGp,
+      deterministic: resolvedSelectionMeta.deterministic,
+      seed: resolvedSelectionMeta.seed
+    });
+    return {
+      generatedAt: Date.now(),
+      generatedBy: String(game.user?.name ?? "GM"),
+      draft,
+      currency,
+      items,
+      tableRolls,
+      stats: {
+        candidateCount: candidates.length,
+        itemCountTarget,
+        itemCountGenerated: items.length,
+        tableRollCount: tableRolls.length,
+        creatureCount: Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1),
+        enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+        enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
+        desiredItemCount: Math.max(0, Number(resolvedSelectionMeta.desiredItemCount ?? itemCountTarget) || itemCountTarget),
+        maxItems: Math.max(0, Number(resolvedSelectionMeta.maxItems ?? itemCountTarget) || itemCountTarget),
+        encounterTargetGp: Number(resolvedSelectionMeta.encounterTargetGp ?? 0),
+        finalItemsValueGp: Number(resolvedSelectionMeta.finalItemsValueGp ?? 0),
+        deltaGp: Number(resolvedSelectionMeta.deltaGp ?? 0),
+        strictnessToleranceGp: Number(resolvedSelectionMeta.toleranceGp ?? 0),
+        strictnessTolerancePercent: Number(resolvedSelectionMeta.tolerancePercent ?? 0),
+        strictnessBandLabel: String(resolvedSelectionMeta.strictnessBandLabel ?? "Normal"),
+        deterministic: Boolean(resolvedSelectionMeta.deterministic),
+        seed: String(resolvedSelectionMeta.seed ?? "")
+      },
+      warnings
+    };
+  } catch (error) {
+    logLootBuilderFailure("generateLootPreviewPayload", error, {
+      mode: draftInput?.mode,
+      challenge: draftInput?.challenge,
+      profile: draftInput?.profile,
+      scale: draftInput?.scale,
+      creatures: draftInput?.creatures ?? draftInput?.actorCount,
+      deterministic: draftInput?.deterministic,
+      seed: draftInput?.seed
+    });
+    return {
+      generatedAt: Date.now(),
+      generatedBy: String(game.user?.name ?? "GM"),
+      draft: normalizeLootPreviewDraft(draftInput),
+      currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0, formula: "n/a" },
+      items: [],
+      tableRolls: [],
+      stats: {
+        candidateCount: 0,
+        itemCountTarget: 0,
+        itemCountGenerated: 0,
+        tableRollCount: 0,
+        creatureCount: Math.max(1, Number(draftInput?.creatures ?? draftInput?.actorCount ?? 1) || 1),
+        enabledItemSources: 0,
+        enabledTableSources: 0,
+        desiredItemCount: 0,
+        maxItems: 0,
+        encounterTargetGp: 0,
+        finalItemsValueGp: 0,
+        deltaGp: 0,
+        strictnessToleranceGp: 0,
+        strictnessTolerancePercent: 0,
+        strictnessBandLabel: "Normal",
+        deterministic: true,
+        seed: ""
+      },
+      warnings: ["Loot builder failed to generate. Check browser console for details."]
+    };
+  }
+}
+
+function getLootEngineRarityWeights() {
+  const config = getPartyOpsConfigSetting();
+  const rarityWeights = config?.rarityWeights ?? {};
+  return {
+    common: Math.max(0.01, Number(rarityWeights.common ?? 1) || 1),
+    uncommon: Math.max(0.01, Number(rarityWeights.uncommon ?? 1) || 1),
+    rare: Math.max(0.01, Number(rarityWeights.rare ?? 1) || 1),
+    "very-rare": Math.max(0.01, Number(rarityWeights.veryRare ?? rarityWeights["very-rare"] ?? 1) || 1),
+    legendary: Math.max(0.01, Number(rarityWeights.legendary ?? 1) || 1)
   };
+}
+
+function estimateSuggestedLootGold(cr = 1, target = "pocket", scarcity = LOOT_SCARCITY_LEVELS.NORMAL) {
+  const safeCr = Math.max(0, Math.floor(Number(cr) || 0));
+  const base = target === "horde"
+    ? (35 + (safeCr * 42) + Math.floor((safeCr * safeCr) * 8.5))
+    : (8 + (safeCr * 14) + Math.floor((safeCr * safeCr) * 1.8));
+  const scarcityMultiplier = scarcity === LOOT_SCARCITY_LEVELS.ABUNDANT
+    ? 1.25
+    : scarcity === LOOT_SCARCITY_LEVELS.SCARCE
+      ? 0.75
+      : 1;
+  const config = getPartyOpsConfigSetting();
+  const configMultiplier = Math.max(0.1, Number(config?.crGoldMultiplier ?? 1) || 1);
+  const variance = (target === "horde" ? (80 + Math.floor(Math.random() * 51)) : (85 + Math.floor(Math.random() * 36))) / 100;
+  return Math.max(0, Math.round(base * scarcityMultiplier * configMultiplier * variance));
+}
+
+function estimateSuggestedLootItemCount(cr = 1, target = "pocket", scarcity = LOOT_SCARCITY_LEVELS.NORMAL) {
+  const safeCr = Math.max(0, Math.floor(Number(cr) || 0));
+  const base = target === "horde"
+    ? Math.max(1, Math.floor(safeCr / 5) + 1)
+    : Math.max(0, Math.floor((safeCr - 1) / 8));
+  const variance = target === "horde" ? Math.floor(Math.random() * 3) : Math.floor(Math.random() * 2);
+  const scarcityMultiplier = scarcity === LOOT_SCARCITY_LEVELS.ABUNDANT
+    ? 1.25
+    : scarcity === LOOT_SCARCITY_LEVELS.SCARCE
+      ? 0.75
+      : 1;
+  return Math.max(0, Math.round((base + variance) * scarcityMultiplier));
+}
+
+async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
+  try {
+    const normalizedPackIds = [...new Set(
+      (Array.isArray(packIds) ? packIds : [])
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean)
+    )];
+
+    const target = String(input?.target ?? "pocket").trim().toLowerCase() === "horde" ? "horde" : "pocket";
+    const config = getPartyOpsConfigSetting();
+    const scarcityRaw = String(input?.scarcity ?? config?.lootScarcity ?? LOOT_SCARCITY_LEVELS.NORMAL).trim().toLowerCase();
+    const scarcity = scarcityRaw === LOOT_SCARCITY_LEVELS.ABUNDANT || scarcityRaw === LOOT_SCARCITY_LEVELS.SCARCE
+      ? scarcityRaw
+      : LOOT_SCARCITY_LEVELS.NORMAL;
+    const cr = Math.max(0, Math.floor(Number(input?.cr ?? 1) || 1));
+
+    logLootBuilderDebug("generateLootFromPackIds start", {
+      packCount: normalizedPackIds.length,
+      target,
+      scarcity,
+      cr,
+      deterministic: input?.deterministic !== false,
+      seed: String(input?.seed ?? "").trim()
+    });
+
+    const gold = estimateSuggestedLootGold(cr, target, scarcity);
+    const desiredItemCount = estimateSuggestedLootItemCount(cr, target, scarcity);
+    if (normalizedPackIds.length === 0 || desiredItemCount <= 0) {
+      return { gold, items: [] };
+    }
+
+    const sourceFilter = {
+      typeWhitelist: Array.isArray(options?.typeWhitelist) ? options.typeWhitelist : undefined,
+      nameIncludes: Array.isArray(options?.nameIncludes) ? options.nameIncludes : undefined,
+      rarityKeywords: Array.isArray(options?.rarityKeywords) ? options.rarityKeywords : undefined
+    };
+
+    const candidates = [];
+    for (const packId of normalizedPackIds) {
+      const sourceItems = await loadItemsFromPack(packId, {
+        sourceLabel: packId,
+        warnings: []
+      });
+      const filteredItems = filterItems(sourceItems, sourceFilter);
+      for (const item of filteredItems) {
+        const candidate = buildLootCandidateFromSourceItem(item, {
+          sourceId: packId,
+          sourceLabel: packId,
+          sourceWeight: 1,
+          fallbackUuidPrefix: `Compendium.${packId}`
+        }, {
+          profile: "standard",
+          mode: target,
+          challenge: cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic"
+        }, {
+          includeTags: [],
+          excludeTags: [],
+          floor: "",
+          ceiling: ""
+        });
+        if (!candidate) continue;
+        candidates.push(candidate);
+      }
+    }
+
+    if (candidates.length === 0) return { gold, items: [] };
+
+    const challengeBucket = cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic";
+    const creatures = Math.max(1, Number(input?.creatures ?? input?.actorCount ?? 1) || 1);
+    const selectionDraft = {
+      mode: target === "horde" ? "horde" : "defeated",
+      challenge: challengeBucket,
+      profile: String(input?.profile ?? "standard"),
+      scale: String(input?.scale ?? "medium"),
+      creatures,
+      valueBudgetScalar: Number(input?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
+      valueStrictness: Number(input?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
+      maxItemValueGp: Number(input?.maxItemValueGp ?? 0),
+      targetItemsValueGp: Number(input?.targetItemsValueGp ?? 0),
+      itemScalar: Number(input?.itemScalar ?? 100),
+      deterministic: shouldUseDeterministicLootRng(input),
+      seed: String(input?.seed ?? "").trim(),
+      dateBucket: String(input?.dateBucket ?? "").trim()
+    };
+    const valueBudgetContext = buildLootValueBudgetContext(selectionDraft, desiredItemCount);
+    const randomContext = buildLootRandomContext(selectionDraft, valueBudgetContext);
+    const manualCapGp = Math.max(0, Number(valueBudgetContext?.manualMaxItemValueGp ?? 0) || 0);
+    const selectionCandidates = manualCapGp > 0
+      ? candidates.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= manualCapGp)
+      : candidates;
+    if (!selectionCandidates.length) return { gold, items: [] };
+    const pickedItems = pickLootItemsFromCandidates(selectionCandidates, desiredItemCount, selectionDraft, {
+      budgetContext: valueBudgetContext,
+      randomContext
+    });
+    const selected = new Map();
+    for (const picked of pickedItems) {
+      const uuid = String(picked?.uuid ?? "").trim();
+      const name = String(picked?.name ?? "Item").trim() || "Item";
+      if (!uuid) continue;
+      const current = selected.get(uuid);
+      if (!current) selected.set(uuid, { uuid, name, qty: 1 });
+      else {
+        current.qty += 1;
+        selected.set(uuid, current);
+      }
+    }
+
+    return {
+      gold,
+      items: Array.from(selected.values())
+    };
+  } catch (error) {
+    logLootBuilderFailure("generateLootFromPackIds", error, {
+      packCount: Array.isArray(packIds) ? packIds.length : 0,
+      target: input?.target,
+      scarcity: input?.scarcity,
+      cr: input?.cr,
+      creatures: input?.creatures ?? input?.actorCount,
+      deterministic: input?.deterministic,
+      seed: input?.seed
+    });
+    return {
+      gold: 0,
+      items: []
+    };
+  }
 }
 
 function buildLootPreviewContext() {
@@ -5260,6 +9584,8 @@ function buildLootPreviewContext() {
   const profile = String(draft.profile ?? "standard");
   const challenge = String(draft.challenge ?? "mid");
   const scale = String(draft.scale ?? "medium");
+  const itemCountTarget = getLootItemCount(draft);
+  const valueBudgetContext = buildLootValueBudgetContext(draft, itemCountTarget);
   const generatedAt = Number(result?.generatedAt ?? 0);
   const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
   return {
@@ -5268,6 +9594,25 @@ function buildLootPreviewContext() {
     profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === profile })),
     challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === challenge })),
     scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === scale })),
+    budget: {
+      targetPerItemGp: Number(valueBudgetContext.targetPerItemGp ?? 0),
+      totalBudgetGp: Number(valueBudgetContext.totalBudgetGp ?? 0),
+      autoTotalTargetGp: Number(valueBudgetContext.autoTotalTargetGp ?? 0),
+      manualTotalTargetGp: Number(valueBudgetContext.manualTotalTargetGp ?? 0),
+      effectiveTotalTargetGp: Number(valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      targetValueRangeMinGp: Number(valueBudgetContext.targetValueRangeMinGp ?? 0),
+      targetValueRangeMaxGp: Number(valueBudgetContext.targetValueRangeMaxGp ?? 0),
+      toleranceGp: Number(valueBudgetContext.toleranceGp ?? 0),
+      tolerancePercent: Number(valueBudgetContext.tolerancePercent ?? 0),
+      strictnessBandLabel: String(valueBudgetContext.strictnessBandLabel ?? "Normal"),
+      desiredItemCount: Math.max(0, Number(valueBudgetContext.targetCount ?? 0) || 0),
+      maxItems: Math.max(0, Number(valueBudgetContext.maxItems ?? 0) || 0),
+      usingManualTotalTarget: Number(valueBudgetContext.manualTotalTargetGp ?? 0) > 0,
+      autoMaxItemValueGp: Number(valueBudgetContext.autoMaxItemValueGp ?? 0),
+      manualMaxItemValueGp: Number(valueBudgetContext.manualMaxItemValueGp ?? 0),
+      effectiveMaxItemValueGp: Number(valueBudgetContext.effectiveMaxItemValueGp ?? 0),
+      usingManualCap: Number(valueBudgetContext.manualMaxItemValueGp ?? 0) > 0
+    },
     hasResult,
     generatedAtLabel,
     generatedBy: String(result?.generatedBy ?? "GM"),
@@ -5285,11 +9630,21 @@ function buildLootPreviewContext() {
       itemCountGenerated: Math.max(0, Number(result?.stats?.itemCountGenerated ?? 0) || 0),
       tableRollCount: Math.max(0, Number(result?.stats?.tableRollCount ?? 0) || 0),
       enabledItemSources: Math.max(0, Number(result?.stats?.enabledItemSources ?? 0) || 0),
-      enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0)
+      enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0),
+      desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
+      maxItems: Math.max(0, Number(result?.stats?.maxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? 0),
+      deltaGp: Number(result?.stats?.deltaGp ?? 0),
+      strictnessToleranceGp: Number(result?.stats?.strictnessToleranceGp ?? valueBudgetContext.toleranceGp ?? 0),
+      strictnessTolerancePercent: Number(result?.stats?.strictnessTolerancePercent ?? valueBudgetContext.tolerancePercent ?? 0),
+      strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? valueBudgetContext.strictnessBandLabel ?? "Normal"),
+      deterministic: Boolean(result?.stats?.deterministic ?? draft?.deterministic !== false),
+      seed: String(result?.stats?.seed ?? "")
     },
     items: Array.isArray(result?.items)
-      ? result.items.map((entry) => ({
-        id: String(entry?.id ?? foundry.utils.randomID()),
+      ? result.items.map((entry, index) => ({
+        id: String(entry?.id ?? `${String(entry?.uuid ?? "").trim() || String(entry?.name ?? "item").trim() || "item"}-${index}`),
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item"),
         itemType: String(entry?.itemType ?? ""),
@@ -5326,11 +9681,18 @@ function buildLootClaimsContext(user = game.user) {
     name: String(actor.name ?? `Actor ${actor.id}`),
     selected: false
   }));
-  const preferredActorId = String(user?.character?.id ?? "").trim();
+  const storedActorId = getLootClaimActorSelection();
+  const preferredActorId = storedActorId || String(user?.character?.id ?? "").trim();
   const fallbackActorId = actorOptions[0]?.id ?? "";
   const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
   for (const option of actorOptions) option.selected = option.id === selectedActorId;
-  const eligibleActorIds = new Set(getOwnedPcActors().map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  if (!storedActorId || storedActorId !== selectedActorId) {
+    setLootClaimActorSelection(selectedActorId);
+  }
+  const selectedActorName = actorOptions.find((entry) => entry.id === selectedActorId)?.name ?? "";
+  const ownedPcActors = getOwnedPcActors();
+  const eligibleActorIds = new Set(ownedPcActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const actorNameById = new Map(ownedPcActors.map((actor) => [String(actor?.id ?? "").trim(), String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`]));
   const claimedActorIds = new Set((claims.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
   const selectedActorClaimedCurrency = claimedActorIds.has(selectedActorId);
   const currencyRemaining = {
@@ -5357,11 +9719,30 @@ function buildLootClaimsContext(user = game.user) {
     tableRolls: foundry.utils.deepClone(claims.tableRolls),
     actorOptions,
     selectedActorId,
+    selectedActorName,
     items: claims.items.map((entry) => ({
       ...entry,
       hasRarity: entry.rarity.length > 0,
-      canOpen: entry.uuid.length > 0
-    }))
+      canOpen: entry.uuid.length > 0,
+      isMajorItem: Boolean(entry.majorItem),
+      vouchedByActorIds: Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [],
+      vouchedByNames: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
+        .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
+        .filter(Boolean),
+      voucherCount: Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds.length : 0,
+      hasVouchers: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 0,
+      selectedActorVouched: Boolean(selectedActorId) && Array.isArray(entry.vouchedByActorIds)
+        && entry.vouchedByActorIds.includes(selectedActorId),
+      canVouch: Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId),
+      requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
+      canRunRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
+      canClaimDirect: !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
+      vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
+        .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
+        .filter(Boolean)
+        .join(", ")
+    })),
+    contestedItemCount: claims.items.filter((entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1).length
   };
 }
 
@@ -5508,6 +9889,12 @@ function buildDefaultOperationsLedger() {
   };
 }
 
+function isLootItemLikelyMajor(entry = {}) {
+  const rarity = String(entry?.rarity ?? "").trim().toLowerCase();
+  if (!rarity) return false;
+  return rarity.includes("rare") || rarity.includes("legendary") || rarity.includes("artifact");
+}
+
 function getUpkeepDueCount(timestamp = getCurrentWorldTimestamp()) {
   const worldTs = Number(timestamp);
   if (!Number.isFinite(worldTs)) return 0;
@@ -5531,11 +9918,59 @@ function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getC
 
 function getOperationsLedger() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.OPS_LEDGER);
-  return foundry.utils.mergeObject(buildDefaultOperationsLedger(), stored ?? {}, {
+  const defaults = buildDefaultOperationsLedger();
+  const merged = foundry.utils.mergeObject(defaults, stored ?? {}, {
     inplace: false,
     insertKeys: true,
     insertValues: true
   });
+
+  const ensureObject = (value, fallback) => {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    return foundry.utils.deepClone(fallback);
+  };
+
+  merged.roles = ensureObject(merged.roles, defaults.roles);
+  merged.sops = ensureObject(merged.sops, defaults.sops);
+  merged.sopNotes = ensureObject(merged.sopNotes, defaults.sopNotes);
+  merged.communication = ensureObject(merged.communication, defaults.communication);
+  merged.reputation = ensureObject(merged.reputation, defaults.reputation);
+  merged.supplyLines = ensureObject(merged.supplyLines, defaults.supplyLines);
+  merged.recon = ensureObject(merged.recon, defaults.recon);
+  merged.baseOperations = ensureObject(merged.baseOperations, defaults.baseOperations);
+  merged.downtime = ensureObject(merged.downtime, defaults.downtime);
+  merged.lootClaims = ensureObject(merged.lootClaims, defaults.lootClaims);
+  merged.environment = ensureObject(merged.environment, defaults.environment);
+  merged.weather = ensureObject(merged.weather, defaults.weather);
+  merged.partyHealth = ensureObject(merged.partyHealth, defaults.partyHealth);
+  merged.resources = ensureObject(merged.resources, defaults.resources);
+
+  merged.reputation.factions = Array.isArray(merged.reputation.factions)
+    ? merged.reputation.factions
+    : foundry.utils.deepClone(defaults.reputation.factions);
+  merged.supplyLines.caches = Array.isArray(merged.supplyLines.caches) ? merged.supplyLines.caches : [];
+  merged.supplyLines.safehouses = Array.isArray(merged.supplyLines.safehouses) ? merged.supplyLines.safehouses : [];
+  merged.baseOperations.sites = Array.isArray(merged.baseOperations.sites) ? merged.baseOperations.sites : [];
+  merged.downtime.logs = Array.isArray(merged.downtime.logs) ? merged.downtime.logs : [];
+  merged.lootClaims.items = Array.isArray(merged.lootClaims.items) ? merged.lootClaims.items : [];
+  merged.lootClaims.tableRolls = Array.isArray(merged.lootClaims.tableRolls) ? merged.lootClaims.tableRolls : [];
+  merged.lootClaims.claimsLog = Array.isArray(merged.lootClaims.claimsLog) ? merged.lootClaims.claimsLog : [];
+  merged.lootClaims.currencyClaimedActorIds = Array.isArray(merged.lootClaims.currencyClaimedActorIds)
+    ? merged.lootClaims.currencyClaimedActorIds
+    : [];
+  merged.environment.logs = Array.isArray(merged.environment.logs) ? merged.environment.logs : [];
+  merged.environment.checkResults = Array.isArray(merged.environment.checkResults) ? merged.environment.checkResults : [];
+  merged.weather.logs = Array.isArray(merged.weather.logs) ? merged.weather.logs : [];
+  merged.partyHealth.customModifiers = Array.isArray(merged.partyHealth.customModifiers) ? merged.partyHealth.customModifiers : [];
+  merged.partyHealth.archivedSyncEffects = Array.isArray(merged.partyHealth.archivedSyncEffects)
+    ? merged.partyHealth.archivedSyncEffects
+    : [];
+
+  merged.resources.gather = ensureObject(merged.resources.gather, defaults.resources.gather);
+  merged.resources.gather.weatherMods = ensureObject(merged.resources.gather.weatherMods, defaults.resources.gather.weatherMods);
+  merged.resources.upkeep = ensureObject(merged.resources.upkeep, defaults.resources.upkeep);
+
+  return merged;
 }
 
 async function updateOperationsLedger(mutator, options = {}) {
@@ -5544,13 +9979,20 @@ async function updateOperationsLedger(mutator, options = {}) {
     ui.notifications?.warn("Only the GM can update operations data.");
     return;
   }
-  const ledger = getOperationsLedger();
-  mutator(ledger);
+  try {
+    const ledger = getOperationsLedger();
+    mutator(ledger);
 
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
-  scheduleIntegrationSync("operations-ledger");
-  if (!options.skipLocalRefresh) refreshOpenApps();
-  emitSocketRefresh();
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    scheduleIntegrationSync("operations-ledger");
+    if (!options.skipLocalRefresh) refreshOpenApps();
+    emitSocketRefresh();
+  } catch (error) {
+    logUiFailure("operations-ledger", "update failed", error, {
+      skipLocalRefresh: Boolean(options?.skipLocalRefresh)
+    });
+    throw error;
+  }
 }
 
 function buildRoleActorOptions(selectedActorId) {
@@ -5732,7 +10174,7 @@ function getIntegrationModeLabel(mode) {
 
 function getResourceOwnerActors() {
   return game.actors.contents
-    .filter((actor) => actor && actor.hasPlayerOwner)
+    .filter((actor) => actor && (actor.type === "character" || actor.hasPlayerOwner))
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
@@ -6207,7 +10649,7 @@ function buildOperationsContext() {
       available: entry.hasAnySync,
       enabled: !entry.shouldBeCleared
     }))
-    : [];
+    : nonPartyRowsAll;
   const nonPartySyncedCount = nonPartyRowsAll.filter((entry) => entry.hasAnySync).length;
   const nonPartyStaleCount = nonPartyRowsAll.filter((entry) => entry.shouldBeCleared).length;
 
@@ -6784,16 +11226,9 @@ function buildReputationContext(reputationState, filters = {}) {
     return haystack.includes(filterKeyword);
   });
 
-  const columns = [[], [], []];
-  for (let index = 0; index < filteredFactions.length; index += 1) {
-    columns[index % 3].push(filteredFactions[index]);
-  }
   return {
     factions,
     filteredFactions,
-    leftColumn: columns[0],
-    middleColumn: columns[1],
-    rightColumn: columns[2],
     coreCount: factions.filter((faction) => faction.isCore).length,
     customCount: factions.filter((faction) => !faction.isCore).length,
     totalCount: factions.length,
@@ -7076,20 +11511,30 @@ function ensureDowntimeState(ledger) {
     const hours = Number.isFinite(rawHours) ? Math.max(1, Math.min(downtime.hoursGranted, Math.floor(rawHours))) : downtime.hoursGranted;
     const updatedAtRaw = Number(rawEntry?.updatedAt ?? rawEntry?.submittedAt ?? 0);
     const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0;
+    const pending = rawEntry?.pending !== false;
     const lastResult = rawEntry?.lastResult && typeof rawEntry.lastResult === "object"
       ? normalizeDowntimeResult(rawEntry.lastResult)
       : null;
+    const stagedResult = pending && rawEntry?.stagedResult && typeof rawEntry.stagedResult === "object"
+      ? normalizeDowntimeResult(rawEntry.stagedResult)
+      : null;
+    const stagedAtRaw = Number(rawEntry?.stagedAt ?? 0);
+    const stagedAt = stagedResult && Number.isFinite(stagedAtRaw) && stagedAtRaw > 0 ? stagedAtRaw : 0;
+    const stagedBy = stagedResult ? (String(rawEntry?.stagedBy ?? "").trim() || "GM") : "";
     normalizedEntries[actorId] = {
       actorId,
       actorName: String(rawEntry?.actorName ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`,
       actionKey: actionDef.key,
       hours,
       note: String(rawEntry?.note ?? "").slice(0, 1000),
-      pending: rawEntry?.pending !== false,
+      pending,
       updatedAt,
       updatedBy: String(rawEntry?.updatedBy ?? rawEntry?.submittedBy ?? "").trim() || "Player",
       updatedByUserId: String(rawEntry?.updatedByUserId ?? rawEntry?.submittedByUserId ?? "").trim(),
-      lastResult
+      lastResult,
+      stagedResult,
+      stagedAt,
+      stagedBy
     };
   }
   downtime.entries = normalizedEntries;
@@ -7149,7 +11594,13 @@ function ensureLootClaimsState(ledger) {
       img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       itemType: String(entry?.itemType ?? "").trim(),
       rarity: String(entry?.rarity ?? "").trim(),
-      sourceLabel: String(entry?.sourceLabel ?? "").trim()
+      sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+      majorItem: Boolean(entry?.majorItem),
+      vouchedByActorIds: Array.isArray(entry?.vouchedByActorIds)
+        ? entry.vouchedByActorIds
+          .map((actorId) => String(actorId ?? "").trim())
+          .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
+        : []
     }))
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
   if (!Array.isArray(claims.tableRolls)) claims.tableRolls = [];
@@ -7224,7 +11675,7 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
   let rumorCount = 0;
   let itemRewards = [];
   let summary = `${actionDef.label} resolved.`;
-  let hint = "Set payouts and notes, then resolve.";
+  let hint = DOWNTIME_RESOLVE_DEFAULT_HINT;
 
   switch (actionDef.key) {
     case "carousing":
@@ -7279,6 +11730,7 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
 
 function buildDowntimeContext(downtimeState = {}, options = {}) {
   const user = options.user ?? game.user;
+  const isGMUser = Boolean(user?.isGM);
   const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
   const tuning = downtimeState?.tuning ?? {};
   const economy = String(tuning.economy ?? "standard");
@@ -7305,6 +11757,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const updatedAtDate = updatedAtRaw > 0 ? new Date(updatedAtRaw) : null;
     const updatedAtLabel = updatedAtDate && Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Not set";
     const result = entry?.lastResult ? normalizeDowntimeResult(entry.lastResult) : null;
+    const stagedResult = entry?.pending !== false && entry?.stagedResult ? normalizeDowntimeResult(entry.stagedResult) : null;
+    const stagedAtValue = Number(entry?.stagedAt ?? stagedResult?.resolvedAt ?? 0);
+    const stagedAtLabel = stagedAtValue > 0 ? new Date(stagedAtValue).toLocaleString() : "";
+    const hasPreResolved = Boolean(stagedResult);
     const gpDelta = Number(result?.gpDelta ?? 0);
     const rumorCount = Math.max(0, Number(result?.rumorCount ?? 0) || 0);
     const itemRewards = Array.isArray(result?.itemRewards) ? result.itemRewards : [];
@@ -7331,7 +11787,9 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       note: String(entry?.note ?? ""),
       hasNote: String(entry?.note ?? "").trim().length > 0,
       pending: entry?.pending !== false,
-      statusLabel: entry?.pending !== false ? "Pending Resolution" : "Resolved",
+      statusLabel: entry?.pending !== false
+        ? (isGMUser && hasPreResolved ? "Pre-Resolved (GM Draft)" : "Pending Resolution")
+        : "Resolved",
       updatedAtLabel,
       updatedBy: String(entry?.updatedBy ?? "Player"),
       canClear: canUserManageDowntimeActor(user, actor),
@@ -7358,7 +11816,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasClaimableRewards: Boolean(result?.hasClaimableRewards),
       rewardSummary: rewardParts.length > 0 ? rewardParts.join(" | ") : "No claimable rewards",
       collectedAtLabel,
-      collectedBy: String(result?.collectedBy ?? "")
+      collectedBy: String(result?.collectedBy ?? ""),
+      hasPreResolved: isGMUser && hasPreResolved,
+      preResolvedAtLabel: isGMUser && hasPreResolved ? stagedAtLabel : "",
+      preResolvedBy: isGMUser && hasPreResolved ? String(entry?.stagedBy ?? "GM") : ""
     };
   }).sort((a, b) => {
     const pendingA = a.pending ? 0 : 1;
@@ -7424,11 +11885,29 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
 
   const pendingEntries = actorEntries.filter((entry) => entry.pending);
   const pendingOptions = pendingEntries.map((entry, index) => {
-    const base = getDowntimeResolutionBase(entry, downtimeState);
+    const fallback = getDowntimeResolutionBase(entry, downtimeState);
+    const staged = downtimeState?.entries?.[entry.actorId]?.stagedResult
+      ? normalizeDowntimeResult(downtimeState.entries[entry.actorId].stagedResult)
+      : null;
+    const stagedAtValue = Number(downtimeState?.entries?.[entry.actorId]?.stagedAt ?? staged?.resolvedAt ?? 0);
+    const stagedBy = String(downtimeState?.entries?.[entry.actorId]?.stagedBy ?? "GM").trim() || "GM";
+    const stagedLabel = stagedAtValue > 0 ? new Date(stagedAtValue).toLocaleString() : "just now";
+    const base = staged
+      ? {
+          summary: String(staged.summary ?? fallback.summary),
+          gpAward: Math.max(0, Math.floor(Number(staged.gpDelta ?? 0) || 0)),
+          rumorCount: Math.max(0, Math.floor(Number(staged.rumorCount ?? 0) || 0)),
+          itemRewardsText: Array.isArray(staged.itemRewards) ? staged.itemRewards.join("\n") : "",
+          gmNotes: String(staged.gmNotes ?? ""),
+          hint: `Pre-resolved roll ${Number(staged.rollTotal ?? 0)}. Edit rewards/notes, then Final Resolve to player inbox.`
+        }
+      : fallback;
     return {
       actorId: entry.actorId,
-      label: `${entry.actorName} - ${entry.actionLabel} (${entry.hours}h)`,
+      label: `${entry.actorName} - ${entry.actionLabel} (${entry.hours}h)${staged ? " [Pre-Resolved]" : ""}`,
       selected: index === 0,
+      isPreResolved: Boolean(staged),
+      preResolvedLabel: staged ? `Pre-resolved ${stagedLabel} by ${stagedBy}.` : "",
       baseSummary: base.summary,
       baseGpAward: base.gpAward,
       baseRumorCount: base.rumorCount,
@@ -7475,12 +11954,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasPending: pendingOptions.length > 0,
       pendingOptions,
       selectedActorId: String(selectedPending?.actorId ?? ""),
+      selectedIsPreResolved: selectedPending?.isPreResolved === true,
+      selectedPreResolvedLabel: String(selectedPending?.preResolvedLabel ?? ""),
       summary: String(selectedPending?.baseSummary ?? ""),
       gpAward: Number(selectedPending?.baseGpAward ?? 0),
       rumorCount: Number(selectedPending?.baseRumorCount ?? 0),
       itemRewardsText: String(selectedPending?.baseItemRewardsText ?? ""),
       gmNotes: String(selectedPending?.baseNotes ?? ""),
-      hint: String(selectedPending?.baseHint ?? "Set payouts and notes, then resolve.")
+      hint: String(selectedPending?.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT)
     }
   };
 }
@@ -8291,7 +12772,10 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
       updatedAt: Date.now(),
       updatedBy: String(user.name ?? "Player"),
       updatedByUserId: String(user.id ?? ""),
-      lastResult: null
+      lastResult: null,
+      stagedResult: null,
+      stagedAt: 0,
+      stagedBy: ""
     };
   });
   return true;
@@ -8440,7 +12924,7 @@ function applyDowntimeResolverBaseToUi(element, options = {}) {
   if (rumorInput && (force || !String(rumorInput.value ?? "").trim())) rumorInput.value = String(selectedOption.dataset.baseRumors ?? "0");
   if (itemTextarea && (force || !String(itemTextarea.value ?? "").trim())) itemTextarea.value = String(selectedOption.dataset.baseItems ?? "");
   if (notesTextarea && (force || !String(notesTextarea.value ?? "").trim())) notesTextarea.value = String(selectedOption.dataset.baseNotes ?? "");
-  if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? "Set payouts and notes, then resolve.");
+  if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT);
 }
 
 function readDowntimeResolutionFromUi(element) {
@@ -8462,34 +12946,163 @@ function readDowntimeResolutionFromUi(element) {
   };
 }
 
-async function resolveSelectedDowntimeEntry(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can resolve downtime.");
-    return;
+function getDowntimeActorName(actorId, fallbackName = "") {
+  const id = String(actorId ?? "").trim();
+  const actorName = String(game.actors.get(id)?.name ?? fallbackName ?? `Actor ${id}`).trim();
+  return actorName || `Actor ${id}`;
+}
+
+function getDowntimeEntryResolvedHours(entry = {}, hoursGranted = 4) {
+  return Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
+}
+
+function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {}) {
+  const suggestedGp = Math.max(
+    0,
+    Math.floor(Number(rolledResult?.gpDelta ?? 0) || 0),
+    Math.floor(Number(fallbackBase?.gpAward ?? 0) || 0)
+  );
+  const suggestedRumors = Math.max(
+    0,
+    Math.floor(Number(rolledResult?.rumorCount ?? 0) || 0),
+    Math.floor(Number(fallbackBase?.rumorCount ?? 0) || 0)
+  );
+  return normalizeDowntimeResult({
+    ...rolledResult,
+    summary: String(rolledResult?.summary ?? fallbackBase.summary ?? "").trim() || String(fallbackBase.summary ?? ""),
+    gpDelta: suggestedGp,
+    rumorCount: suggestedRumors,
+    itemRewards: Array.isArray(fallbackBase?.itemRewards) ? fallbackBase.itemRewards : [],
+    gmNotes: ""
+  });
+}
+
+function applyResolvedDowntimeToState(state, {
+  actorId,
+  actorName,
+  actionKey,
+  fallbackEntry = {},
+  result
+} = {}) {
+  if (!state.entries || typeof state.entries !== "object") state.entries = {};
+  if (!Array.isArray(state.logs)) state.logs = [];
+  const current = state.entries[actorId] ?? {};
+  const hours = getDowntimeEntryResolvedHours(
+    { hours: current.hours ?? fallbackEntry?.hours ?? state.hoursGranted },
+    state.hoursGranted
+  );
+  state.entries[actorId] = {
+    ...current,
+    actorId,
+    actorName,
+    actionKey,
+    hours,
+    pending: false,
+    updatedAt: Date.now(),
+    updatedBy: String(game.user?.name ?? "GM"),
+    updatedByUserId: String(game.user?.id ?? ""),
+    lastResult: result,
+    stagedResult: null,
+    stagedAt: 0,
+    stagedBy: ""
+  };
+  state.logs.unshift({
+    ...result,
+    actorId,
+    actorName,
+    hours
+  });
+  state.logs = state.logs
+    .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
+    .slice(0, 80);
+}
+
+function buildDowntimeResolutionDetails({
+  stagedResult = null,
+  gpAward = 0,
+  rumorCount = 0,
+  itemRewards = [],
+  gmNotes = ""
+} = {}) {
+  const details = [];
+  if (Array.isArray(stagedResult?.details) && stagedResult.details.length > 0) {
+    details.push(...stagedResult.details);
   }
+  if (gpAward > 0) details.push(`Awarded ${gpAward} gp.`);
+  if (rumorCount > 0) details.push(`Rumor leads awarded: ${rumorCount}.`);
+  if (itemRewards.length > 0) details.push(`Item rewards: ${itemRewards.join("; ")}.`);
+  if (gmNotes) details.push(`GM Notes: ${gmNotes}`);
+  return details;
+}
+
+function getPendingDowntimeResolutionTarget(element) {
   const resolution = readDowntimeResolutionFromUi(element);
   if (!resolution?.actorId) {
-    ui.notifications?.warn("Select a pending downtime entry.");
-    return;
+    ui.notifications?.warn(DOWNTIME_SELECT_PENDING_WARNING);
+    return null;
   }
-
   const ledger = getOperationsLedger();
   const downtime = ensureDowntimeState(ledger);
   const entry = downtime.entries?.[resolution.actorId];
   if (!entry || entry.pending === false) {
-    ui.notifications?.warn("Selected downtime entry is no longer pending.");
+    ui.notifications?.warn(DOWNTIME_STALE_PENDING_WARNING);
+    return null;
+  }
+  return {
+    resolution,
+    downtime,
+    entry
+  };
+}
+
+async function preResolveSelectedDowntimeEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn(DOWNTIME_GM_ONLY_PRERESOLVE_WARNING);
     return;
   }
+  const target = getPendingDowntimeResolutionTarget(element);
+  if (!target) return;
+  const { resolution, downtime, entry } = target;
 
+  const rolled = await generateDowntimeResult(entry, downtime);
+  const fallback = getDowntimeResolutionBase(entry, downtime);
+  const stagedResult = buildDowntimePreResolvedDraftResult(rolled, fallback);
+
+  await updateOperationsLedger((nextLedger) => {
+    const state = ensureDowntimeState(nextLedger);
+    const current = state.entries?.[resolution.actorId];
+    if (!current || current.pending === false) return;
+    current.stagedResult = stagedResult;
+    current.stagedAt = Date.now();
+    current.stagedBy = String(game.user?.name ?? "GM");
+  });
+
+  const actorName = getDowntimeActorName(resolution.actorId, entry.actorName);
+  ui.notifications?.info(`Pre-resolved downtime for ${actorName}. Edit fields, then Final Resolve.`);
+}
+
+async function resolveSelectedDowntimeEntry(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn(DOWNTIME_GM_ONLY_RESOLVE_WARNING);
+    return;
+  }
+  const target = getPendingDowntimeResolutionTarget(element);
+  if (!target) return;
+  const { resolution, entry } = target;
+
+  const stagedResult = entry?.stagedResult ? normalizeDowntimeResult(entry.stagedResult) : null;
   const actionDef = getDowntimeActionDefinition(entry.actionKey);
-  const actorName = String(game.actors.get(resolution.actorId)?.name ?? entry.actorName ?? `Actor ${resolution.actorId}`);
-  const details = [];
-  if (resolution.gpAward > 0) details.push(`Awarded ${resolution.gpAward} gp.`);
-  if (resolution.rumorCount > 0) details.push(`Rumor leads awarded: ${resolution.rumorCount}.`);
-  if (resolution.itemRewards.length > 0) details.push(`Item rewards: ${resolution.itemRewards.join("; ")}.`);
-  if (resolution.gmNotes) details.push(`GM Notes: ${resolution.gmNotes}`);
+  const actorName = getDowntimeActorName(resolution.actorId, entry.actorName);
+  const details = buildDowntimeResolutionDetails({
+    stagedResult,
+    gpAward: resolution.gpAward,
+    rumorCount: resolution.rumorCount,
+    itemRewards: resolution.itemRewards,
+    gmNotes: resolution.gmNotes
+  });
 
   const summary = resolution.summary
+    || String(stagedResult?.summary ?? "").trim()
     || `${actionDef.label} resolved for ${actorName}.`;
   const result = normalizeDowntimeResult({
     id: foundry.utils.randomID(),
@@ -8497,10 +13110,10 @@ async function resolveSelectedDowntimeEntry(element) {
     actionLabel: actionDef.label,
     summary,
     details,
-    rollTotal: 0,
+    rollTotal: Number(stagedResult?.rollTotal ?? 0) || 0,
     gpDelta: resolution.gpAward,
-    progress: 0,
-    complication: "",
+    progress: Math.max(0, Math.floor(Number(stagedResult?.progress ?? 0) || 0)),
+    complication: String(stagedResult?.complication ?? "").trim(),
     rumorCount: resolution.rumorCount,
     itemRewards: resolution.itemRewards,
     gmNotes: resolution.gmNotes,
@@ -8511,32 +13124,13 @@ async function resolveSelectedDowntimeEntry(element) {
 
   await updateOperationsLedger((nextLedger) => {
     const state = ensureDowntimeState(nextLedger);
-    if (!state.entries || typeof state.entries !== "object") state.entries = {};
-    if (!Array.isArray(state.logs)) state.logs = [];
-
-    const current = state.entries[resolution.actorId] ?? {};
-    state.entries[resolution.actorId] = {
-      ...current,
+    applyResolvedDowntimeToState(state, {
       actorId: resolution.actorId,
       actorName,
       actionKey: actionDef.key,
-      hours: Math.max(1, Math.min(state.hoursGranted, Math.floor(Number(current.hours ?? entry.hours ?? state.hoursGranted) || state.hoursGranted))),
-      pending: false,
-      updatedAt: Date.now(),
-      updatedBy: String(game.user?.name ?? "GM"),
-      updatedByUserId: String(game.user?.id ?? ""),
-      lastResult: result
-    };
-
-    state.logs.unshift({
-      ...result,
-      actorId: resolution.actorId,
-      actorName,
-      hours: Math.max(1, Math.min(state.hoursGranted, Math.floor(Number(current.hours ?? entry.hours ?? state.hoursGranted) || state.hoursGranted)))
+      fallbackEntry: entry,
+      result
     });
-    state.logs = state.logs
-      .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
-      .slice(0, 80);
   });
 
   ui.notifications?.info(`Resolved downtime for ${actorName}.`);
@@ -8666,77 +13260,6 @@ async function collectDowntimeResult(element) {
   ui.notifications?.info("Downtime collection request sent to GM.");
 }
 
-async function resolveDowntimeActions() {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can resolve downtime.");
-    return;
-  }
-  const ledger = getOperationsLedger();
-  const downtime = ensureDowntimeState(ledger);
-  const entries = Object.values(downtime.entries ?? {}).filter((entry) => {
-    const actorId = String(entry?.actorId ?? "").trim();
-    if (!actorId) return false;
-    return entry?.pending !== false || !entry?.lastResult;
-  });
-  if (entries.length === 0) {
-    ui.notifications?.info("No pending downtime entries to resolve.");
-    return;
-  }
-
-  const generated = [];
-  for (const entry of entries) {
-    const result = await generateDowntimeResult(entry, downtime);
-    generated.push({
-      actorId: String(entry.actorId),
-      actorName: String(game.actors.get(entry.actorId)?.name ?? entry.actorName ?? `Actor ${entry.actorId}`),
-      actionKey: getDowntimeActionDefinition(entry.actionKey).key,
-      actionLabel: getDowntimeActionDefinition(entry.actionKey).label,
-      hours: Math.max(1, Math.min(downtime.hoursGranted, Math.floor(Number(entry.hours ?? downtime.hoursGranted) || downtime.hoursGranted))),
-      result
-    });
-  }
-
-  await updateOperationsLedger((ledger) => {
-    const state = ensureDowntimeState(ledger);
-    if (!state.entries || typeof state.entries !== "object") state.entries = {};
-    if (!Array.isArray(state.logs)) state.logs = [];
-
-    for (const row of generated) {
-      const entry = state.entries[row.actorId] ?? {};
-      state.entries[row.actorId] = {
-        ...entry,
-        actorId: row.actorId,
-        actorName: row.actorName,
-        actionKey: row.actionKey,
-        hours: row.hours,
-        pending: false,
-        updatedAt: Date.now(),
-        updatedBy: String(game.user?.name ?? "GM"),
-        updatedByUserId: String(game.user?.id ?? ""),
-        lastResult: normalizeDowntimeResult(row.result)
-      };
-      state.logs.unshift({
-        ...normalizeDowntimeResult(row.result),
-        actorId: row.actorId,
-        actorName: row.actorName,
-        hours: row.hours
-      });
-    }
-    state.logs = state.logs
-      .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
-      .slice(0, 80);
-  });
-
-  const lines = generated
-    .map((row) => `<li><strong>${row.actorName}</strong>: ${row.result.summary}</li>`)
-    .join("");
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Downtime Resolution</strong></p><ul>${lines}</ul>`
-  });
-  ui.notifications?.info(`Resolved downtime for ${generated.length} actor(s).`);
-}
-
 async function clearDowntimeResults() {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can clear downtime results.");
@@ -8748,6 +13271,9 @@ async function clearDowntimeResults() {
       if (!entry || typeof entry !== "object") continue;
       entry.pending = true;
       entry.lastResult = null;
+      entry.stagedResult = null;
+      entry.stagedAt = 0;
+      entry.stagedBy = "";
     }
     downtime.logs = [];
   });
@@ -8825,44 +13351,6 @@ async function postDowntimeLogOutcome(element) {
     `
   });
   ui.notifications?.info(`Posted downtime outcome for ${actorName}.`);
-}
-
-async function setPartyHealthModifier(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can toggle Party Health modifiers.");
-    return;
-  }
-  const modifierId = String(element?.dataset?.modifierId ?? "").trim();
-  if (!modifierId) return;
-  const enabled = Boolean(element?.checked);
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.modifierEnabled[modifierId] = enabled;
-  });
-}
-
-async function setPartyHealthSyncNonParty(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const enabled = Boolean(element?.checked);
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.syncToSceneNonParty = enabled;
-  });
-}
-
-async function setPartyHealthSyncScope(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const scope = getNonPartySyncScope(element?.value);
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.nonPartySyncScope = scope;
-  });
 }
 
 async function setOperationalSopNote(element) {
@@ -10002,98 +14490,106 @@ async function runGatherResourceCheck() {
       roll: {
         label: "Roll Wisdom (Survival)",
         callback: async (html) => {
-          const actorId = String(html.find("select[name=actorId]").val() ?? "");
-          const gatherType = String(html.find("select[name=gatherType]").val() ?? "both");
-          const hiddenDcRaw = Number(html.find("input[name=hiddenDc]").val() ?? 15);
-          const hiddenBaseDc = Number.isFinite(hiddenDcRaw) ? Math.max(1, Math.floor(hiddenDcRaw)) : 15;
-          const weatherKey = String(html.find("select[name=weather]").val() ?? "clear");
-
-          const actor = game.actors.get(actorId);
-          if (!actor) {
-            ui.notifications?.warn("Select a valid actor for the gather check.");
-            return;
-          }
-
-          const weather = weatherOptions.find((entry) => entry.value === weatherKey) ?? weatherOptions[0];
-          const targetDc = hiddenBaseDc + weather.dcMod;
-          let survival;
           try {
-            survival = await rollWisdomSurvival(actor, {
-              dc: targetDc,
-              flavor: "Gathering Check: Wisdom (Survival)",
-              rollMode
+            const actorId = String(html.find("select[name=actorId]").val() ?? "");
+            const gatherType = String(html.find("select[name=gatherType]").val() ?? "both");
+            const hiddenDcRaw = Number(html.find("input[name=hiddenDc]").val() ?? 15);
+            const hiddenBaseDc = Number.isFinite(hiddenDcRaw) ? Math.max(1, Math.floor(hiddenDcRaw)) : 15;
+            const weatherKey = String(html.find("select[name=weather]").val() ?? "clear");
+
+            const actor = game.actors.get(actorId);
+            if (!actor) {
+              ui.notifications?.warn("Select a valid actor for the gather check.");
+              return;
+            }
+
+            const weather = weatherOptions.find((entry) => entry.value === weatherKey) ?? weatherOptions[0];
+            const targetDc = hiddenBaseDc + weather.dcMod;
+            let survival;
+            try {
+              survival = await rollWisdomSurvival(actor, {
+                dc: targetDc,
+                flavor: "Gathering Check: Wisdom (Survival)",
+                rollMode
+              });
+            } catch (error) {
+              ui.notifications?.warn(error?.message ?? "Gather check roll could not be resolved.");
+              return;
+            }
+            const success = typeof survival.passed === "boolean"
+              ? survival.passed
+              : Number(survival.total ?? 0) >= targetDc;
+            const wisMod = Number(actor.system?.abilities?.wis?.mod ?? 0);
+
+            let gainedFood = 0;
+            let gainedWater = 0;
+            let appliedGatherGain = false;
+            let foodInventoryGainSource = "";
+            let waterInventoryGainSource = "";
+
+            if (success) {
+              const coverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
+              if (gatherType === "food" || gatherType === "both") {
+                const foodRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
+                gainedFood = Math.max(0, Math.floor(Number(foodRoll.total ?? 0)));
+              }
+              if (gatherType === "water" || gatherType === "both") {
+                const waterRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
+                gainedWater = Math.max(0, Math.floor(Number(waterRoll.total ?? 0)));
+              }
+
+              const applyGain = game.user.isGM
+                ? await Dialog.confirm({
+                  title: "Approve Gather Recovery",
+                  content: `<p><strong>Actor:</strong> ${actor.name}</p><p><strong>Result:</strong> Success (${survival.total} vs DC ${targetDc})</p><p><strong>Gather Gain:</strong> Food +${gainedFood}, Water +${gainedWater}</p><p>Apply these gains to Party Food/Water pools and linked inventory selections?</p>`,
+                  yes: () => true,
+                  no: () => false,
+                  defaultYes: true
+                })
+                : false;
+
+              if (!game.user.isGM) {
+                ui.notifications?.warn("Gather gains require GM approval before applying resources.");
+              }
+
+              if (applyGain) {
+                const foodItemGain = await addToSelectedInventoryItem(resources.itemSelections?.food, gainedFood);
+                const waterItemGain = await addToSelectedInventoryItem(resources.itemSelections?.water, gainedWater);
+                foodInventoryGainSource = foodItemGain.source;
+                waterInventoryGainSource = waterItemGain.source;
+
+                await updateOperationsLedger((ledger) => {
+                  if (!ledger.resources) ledger.resources = {};
+                  ensureOperationalResourceConfig(ledger.resources);
+                  if (gainedFood > 0) {
+                    ledger.resources.partyFoodRations = Math.max(0, Number(ledger.resources.partyFoodRations ?? 0) + gainedFood);
+                  }
+                  if (gainedWater > 0) {
+                    ledger.resources.partyWaterRations = Math.max(0, Number(ledger.resources.partyWaterRations ?? 0) + gainedWater);
+                  }
+                  if (gatherType === "food" || gatherType === "both") {
+                    ledger.resources.gather.foodCoverageDueKey = coverageDueKey;
+                    ledger.resources.gather.foodCoveredNextUpkeep = true;
+                  }
+                  if (gatherType === "water" || gatherType === "both") {
+                    ledger.resources.gather.waterCoverageDueKey = coverageDueKey;
+                    ledger.resources.gather.waterCoveredNextUpkeep = true;
+                  }
+                });
+                appliedGatherGain = true;
+              }
+            }
+
+            await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+              content: `<p><strong>Gathering Check</strong></p><p><strong>Actor:</strong> ${actor.name}</p><p><strong>Check:</strong> Wisdom (Survival) = ${survival.total}</p><p><strong>Roll Source:</strong> ${survival.source === "monks" ? "Monk's TokenBar" : "Foundry"}</p><p><strong>Weather:</strong> ${weather.label}</p><p><strong>Result:</strong> ${success ? "Success" : "Failure"}</p>${success ? `<p><strong>Resources Gained:</strong> Food Rations +${gainedFood}, Water Rations +${gainedWater}${appliedGatherGain ? " (Approved)" : " (Not Applied)"}</p>${foodInventoryGainSource ? `<p><strong>Food Inventory Increased:</strong> ${foodInventoryGainSource} +${gainedFood}</p>` : ""}${waterInventoryGainSource ? `<p><strong>Water Inventory Increased:</strong> ${waterInventoryGainSource} +${gainedWater}</p>` : ""}<p><strong>Usage Reduction:</strong> ${(gatherType === "both") ? "Food and water" : (gatherType === "food" ? "Food" : "Water")} usage will be reduced for the next upkeep day.</p>` : ""}`
             });
           } catch (error) {
-            ui.notifications?.warn(error?.message ?? "Gather check roll could not be resolved.");
-            return;
+            const actorId = String(html.find("select[name=actorId]").val() ?? "");
+            const gatherType = String(html.find("select[name=gatherType]").val() ?? "both");
+            logUiFailure("resources", "gather resource check failed", error, { actorId, gatherType });
+            ui.notifications?.error("Gather resource check failed. Check the console for details.");
           }
-          const success = typeof survival.passed === "boolean"
-            ? survival.passed
-            : Number(survival.total ?? 0) >= targetDc;
-          const wisMod = Number(actor.system?.abilities?.wis?.mod ?? 0);
-
-          let gainedFood = 0;
-          let gainedWater = 0;
-          let appliedGatherGain = false;
-          let foodInventoryGainSource = "";
-          let waterInventoryGainSource = "";
-
-          if (success) {
-            const coverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
-            if (gatherType === "food" || gatherType === "both") {
-              const foodRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
-              gainedFood = Math.max(0, Math.floor(Number(foodRoll.total ?? 0)));
-            }
-            if (gatherType === "water" || gatherType === "both") {
-              const waterRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
-              gainedWater = Math.max(0, Math.floor(Number(waterRoll.total ?? 0)));
-            }
-
-            const applyGain = game.user.isGM
-              ? await Dialog.confirm({
-                title: "Approve Gather Recovery",
-                content: `<p><strong>Actor:</strong> ${actor.name}</p><p><strong>Result:</strong> Success (${survival.total} vs DC ${targetDc})</p><p><strong>Gather Gain:</strong> Food +${gainedFood}, Water +${gainedWater}</p><p>Apply these gains to Party Food/Water pools and linked inventory selections?</p>`,
-                yes: () => true,
-                no: () => false,
-                defaultYes: true
-              })
-              : false;
-
-            if (!game.user.isGM) {
-              ui.notifications?.warn("Gather gains require GM approval before applying resources.");
-            }
-
-            if (applyGain) {
-              const foodItemGain = await addToSelectedInventoryItem(resources.itemSelections?.food, gainedFood);
-              const waterItemGain = await addToSelectedInventoryItem(resources.itemSelections?.water, gainedWater);
-              foodInventoryGainSource = foodItemGain.source;
-              waterInventoryGainSource = waterItemGain.source;
-
-              await updateOperationsLedger((ledger) => {
-                if (!ledger.resources) ledger.resources = {};
-                ensureOperationalResourceConfig(ledger.resources);
-                if (gainedFood > 0) {
-                  ledger.resources.partyFoodRations = Math.max(0, Number(ledger.resources.partyFoodRations ?? 0) + gainedFood);
-                }
-                if (gainedWater > 0) {
-                  ledger.resources.partyWaterRations = Math.max(0, Number(ledger.resources.partyWaterRations ?? 0) + gainedWater);
-                }
-                if (gatherType === "food" || gatherType === "both") {
-                  ledger.resources.gather.foodCoverageDueKey = coverageDueKey;
-                  ledger.resources.gather.foodCoveredNextUpkeep = true;
-                }
-                if (gatherType === "water" || gatherType === "both") {
-                  ledger.resources.gather.waterCoverageDueKey = coverageDueKey;
-                }
-              });
-              appliedGatherGain = true;
-            }
-          }
-
-          await ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-            content: `<p><strong>Gathering Check</strong></p><p><strong>Actor:</strong> ${actor.name}</p><p><strong>Check:</strong> Wisdom (Survival) = ${survival.total}</p><p><strong>Roll Source:</strong> ${survival.source === "monks" ? "Monk's TokenBar" : "Foundry"}</p><p><strong>Weather:</strong> ${weather.label}</p><p><strong>Result:</strong> ${success ? "Success" : "Failure"}</p>${success ? `<p><strong>Resources Gained:</strong> Food Rations +${gainedFood}, Water Rations +${gainedWater}${appliedGatherGain ? " (Approved)" : " (Not Applied)"}</p>${foodInventoryGainSource ? `<p><strong>Food Inventory Increased:</strong> ${foodInventoryGainSource} +${gainedFood}</p>` : ""}${waterInventoryGainSource ? `<p><strong>Water Inventory Increased:</strong> ${waterInventoryGainSource} +${gainedWater}</p>` : ""}<p><strong>Usage Reduction:</strong> ${(gatherType === "both") ? "Food and water" : (gatherType === "food" ? "Food" : "Water")} usage will be reduced for the next upkeep day.</p>` : ""}`
-          });
         }
       },
       cancel: { label: "Cancel" }
@@ -10592,410 +15088,6 @@ async function showReputationBrief() {
   });
 }
 
-async function setPartyHealthCustomField(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const modifierId = String(element?.dataset?.modifierId ?? "").trim();
-  const field = String(element?.dataset?.field ?? "").trim();
-  if (!modifierId || !field) return;
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const entry = partyHealth.customModifiers.find((row) => row.id === modifierId);
-    if (!entry) return;
-    if (field === "label") entry.label = String(element?.value ?? "").trim() || "Custom Modifier";
-    else if (field === "key") entry.key = String(element?.value ?? "").trim();
-    else if (field === "mode") {
-      const rawMode = Math.floor(Number(element?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-      const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
-      entry.mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
-    } else if (field === "value") entry.value = String(element?.value ?? "").trim();
-    else if (field === "note") entry.note = String(element?.value ?? "");
-    else if (field === "enabled") entry.enabled = Boolean(element?.checked);
-  });
-}
-
-async function addPartyHealthCustomModifier(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const root = element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
-  const label = String(root?.querySelector("input[name='customModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const selectedKey = String(root?.querySelector("select[name='customModifierKeySelect']")?.value ?? "").trim();
-  const key = selectedKey;
-  const value = String(root?.querySelector("input[name='customModifierValue']")?.value ?? "").trim();
-  const note = String(root?.querySelector("textarea[name='customModifierNote']")?.value ?? "");
-  const rawMode = Math.floor(Number(root?.querySelector("select[name='customModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
-  const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
-  if (!key || !value) {
-    ui.notifications?.warn("Select a key preset and provide a value to add a custom modifier.");
-    return;
-  }
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.customModifiers.push({
-      id: foundry.utils.randomID(),
-      label,
-      key,
-      mode,
-      value,
-      note,
-      enabled: true
-    });
-    logAddedPartyHealthModifier(partyHealth, {
-      origin: "custom",
-      label,
-      key,
-      mode,
-      value,
-      note
-    });
-  });
-  resetCustomModifierForm(root);
-}
-
-function applyPartyHealthCustomKeyPreset(element) {
-  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
-  if (!root) return;
-  const selectedKey = String(element?.value ?? "").trim();
-  const input = root.querySelector("input[name='customModifierKeyFilter']");
-  if (!input) return;
-  input.value = selectedKey;
-}
-
-async function applyNonPartySyncActor(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can apply non-party sync.");
-    return;
-  }
-  const actorRef = String(element?.dataset?.actorRef ?? "").trim();
-  const includeEnvironment = String(element?.dataset?.sceneTarget ?? "").trim().toLowerCase() === "true";
-  if (!actorRef) return;
-  const actor = resolveActorFromReference(actorRef);
-  if (!actor) {
-    ui.notifications?.warn("Sync target actor not found.");
-    return;
-  }
-  const result = await syncSingleSceneNonPartyActor(actor, null, resolveIntegrationMode(), {
-    includeEnvironment
-  });
-  refreshOpenApps();
-  emitSocketRefresh();
-  if (result.synced) {
-    ui.notifications?.info(`Reapplied non-party sync to ${actor.name}.`);
-    return;
-  }
-  if (result.cleared) {
-    ui.notifications?.info(`Cleared non-party sync from ${actor.name} because sync is currently disabled.`);
-    return;
-  }
-  ui.notifications?.info(`No non-party sync changes were needed for ${actor.name}.`);
-}
-
-async function clearNonPartySyncActor(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can clear non-party sync.");
-    return;
-  }
-  const actorRef = String(element?.dataset?.actorRef ?? "").trim();
-  if (!actorRef) return;
-  const actor = resolveActorFromReference(actorRef);
-  if (!actor) {
-    ui.notifications?.warn("Sync target actor not found.");
-    return;
-  }
-  await clearActorIntegrationPayload(actor);
-  refreshOpenApps();
-  emitSocketRefresh();
-  ui.notifications?.info(`Cleared non-party sync from ${actor.name}.`);
-}
-
-async function reapplyAllNonPartySync() {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can reapply non-party sync.");
-    return;
-  }
-  const result = await syncSceneNonPartyIntegrationActors(null, resolveIntegrationMode());
-  refreshOpenApps();
-  emitSocketRefresh();
-  ui.notifications?.info(`Non-party sync applied (${result.scopeLabel}): ${result.synced} synced, ${result.cleared} cleared across ${result.total} actor(s).`);
-}
-
-async function clearAllNonPartySync() {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can clear non-party sync.");
-    return;
-  }
-  const config = getSceneNonPartySyncConfig();
-  const targets = getNonPartyIntegrationActors(config.scope);
-  let cleared = 0;
-  for (const actor of targets) {
-    const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
-    const hasEffect = Boolean(getIntegrationEffect(actor));
-    const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
-    const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
-    if (!hasSync && !hasEffect && !hasInjuryEffect && !hasEnvironmentEffect) continue;
-    await clearActorIntegrationPayload(actor);
-    cleared += 1;
-  }
-  refreshOpenApps();
-  emitSocketRefresh();
-  ui.notifications?.info(`Cleared non-party sync (${config.scopeLabel}) from ${cleared} actor(s).`);
-}
-
-async function removeActiveSyncEffect(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can remove synced effects.");
-    return;
-  }
-  const actorId = String(element?.dataset?.actorId ?? "").trim();
-  const effectId = String(element?.dataset?.effectId ?? "").trim();
-  if (!actorId) return;
-  const actor = game.actors.get(actorId);
-  if (!actor) {
-    ui.notifications?.warn("Actor not found.");
-    return;
-  }
-
-  if (effectId) {
-    const effect = actor.effects.get(effectId);
-    if (effect) {
-      await safeDeleteActiveEffect(actor, effect, "integration");
-      ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
-      return;
-    }
-  }
-
-  await removeIntegrationEffect(actor);
-  ui.notifications?.info(`Removed synced effect from ${actor.name}.`);
-}
-
-async function archiveActiveSyncEffect(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can archive synced effects.");
-    return;
-  }
-  const actorId = String(element?.dataset?.actorId ?? "").trim();
-  const effectId = String(element?.dataset?.effectId ?? "").trim();
-  if (!actorId || !effectId) return;
-
-  const actor = game.actors.get(actorId);
-  if (!actor) {
-    ui.notifications?.warn("Actor not found.");
-    return;
-  }
-  const effect = actor.effects.get(effectId);
-  if (!effect) {
-    ui.notifications?.warn("Synced effect not found.");
-    return;
-  }
-
-  const effectData = foundry.utils.deepClone(effect.toObject());
-  if (Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.archivedSyncEffects = partyHealth.archivedSyncEffects.filter((entry) => String(entry?.actorId ?? "").trim() !== actor.id);
-    partyHealth.archivedSyncEffects.push({
-      id: foundry.utils.randomID(),
-      actorId: actor.id,
-      actorName: String(actor.name ?? "Unknown Actor"),
-      effectName: String(effect.name ?? INTEGRATION_EFFECT_NAME),
-      label: String(effect.name ?? "Archived Sync Effect"),
-      note: "",
-      archivedAt: Date.now(),
-      archivedBy: String(game.user?.name ?? "GM"),
-      effectData
-    });
-  });
-
-  await safeDeleteActiveEffect(actor, effect, "integration");
-  ui.notifications?.info(`Archived synced effect from ${actor.name}.`);
-}
-
-async function restoreArchivedSyncEffect(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can restore archived synced effects.");
-    return;
-  }
-  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
-  if (!archiveId) return;
-
-  const ledger = getOperationsLedger();
-  const partyHealth = ensurePartyHealthState(ledger);
-  const archived = partyHealth.archivedSyncEffects.find((entry) => entry.id === archiveId);
-  if (!archived) {
-    ui.notifications?.warn("Archived effect not found.");
-    return;
-  }
-
-  const actor = game.actors.get(String(archived.actorId ?? "").trim());
-  if (!actor) {
-    ui.notifications?.warn("Target actor for archived effect not found.");
-    return;
-  }
-
-  const effectData = foundry.utils.deepClone(archived.effectData ?? {});
-  if (!effectData || typeof effectData !== "object") {
-    ui.notifications?.warn("Archived effect data is invalid.");
-    return;
-  }
-  if (Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
-  if (!String(effectData.name ?? "").trim()) {
-    effectData.name = String(archived.effectName ?? archived.label ?? INTEGRATION_EFFECT_NAME);
-  }
-
-  await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
-  await updateOperationsLedger((nextLedger) => {
-    const nextPartyHealth = ensurePartyHealthState(nextLedger);
-    nextPartyHealth.archivedSyncEffects = nextPartyHealth.archivedSyncEffects.filter((entry) => entry.id !== archiveId);
-  });
-  ui.notifications?.info(`Restored archived effect to ${actor.name}.`);
-}
-
-async function removeArchivedSyncEffect(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can remove archived synced effects.");
-    return;
-  }
-  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
-  if (!archiveId) return;
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.archivedSyncEffects = partyHealth.archivedSyncEffects.filter((entry) => entry.id !== archiveId);
-  });
-}
-
-async function setArchivedSyncField(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit archived synced effects.");
-    return;
-  }
-  const archiveId = String(element?.dataset?.archiveId ?? "").trim();
-  const field = String(element?.dataset?.field ?? "").trim();
-  if (!archiveId || !field) return;
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const row = partyHealth.archivedSyncEffects.find((entry) => entry.id === archiveId);
-    if (!row) return;
-    if (field === "label") row.label = String(element?.value ?? "").trim() || "Archived Sync Effect";
-    else if (field === "note") row.note = String(element?.value ?? "");
-  });
-}
-
-async function showOperationalLogsManager() {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can manage global logs.");
-    return;
-  }
-
-  const context = buildOperationsContext();
-  const logs = Array.isArray(context?.globalLogs?.entries) ? context.globalLogs.entries : [];
-  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-
-  const rows = logs
-    .map((entry) => {
-      const noteLabel = entry.hasNote ? `<div class="po-op-summary">Note: ${escape(entry.note)}</div>` : "";
-      return `
-      <div class="po-log-manager-row" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}" data-search="${escape(`${entry.logTypeLabel} ${entry.title} ${entry.summary} ${entry.details} ${entry.note} ${entry.createdBy}`.toLowerCase())}">
-        <div><strong>${escape(entry.logTypeLabel)}</strong> - ${escape(entry.title)}</div>
-        <div class="po-op-summary">${escape(entry.summary)}${entry.details ? ` - ${escape(entry.details)}` : ""}</div>
-        ${noteLabel}
-        <div class="po-op-summary">${escape(entry.createdAtLabel)} by ${escape(entry.createdBy)}</div>
-        <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-log-action="load" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}">Load</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-log-action="remove" data-log-id="${escape(entry.sourceId)}" data-log-type="${escape(entry.logType)}">Remove</button>
-        </div>
-      </div>`;
-    })
-    .join("");
-
-  const content = `
-    <div class="po-help po-log-manager">
-      <label class="po-resource-row">
-        <span>Filter logs</span>
-        <input type="text" class="po-input" data-log-filter placeholder="Search type, title, summary, note" />
-      </label>
-      <div class="po-op-summary">${logs.length} total global log entries.</div>
-      <div class="po-log-manager-list" data-log-list>
-        ${rows || '<div class="po-op-summary">No global logs available.</div>'}
-      </div>
-    </div>
-  `;
-
-  const dialog = new Dialog({
-    title: "Global Logs Manager",
-    content,
-    buttons: {
-      close: {
-        label: "Close"
-      }
-    },
-    render: (html) => {
-      const root = html?.[0];
-      if (!root) return;
-      const filterInput = root.querySelector("[data-log-filter]");
-      const list = root.querySelector("[data-log-list]");
-
-      const applyFilter = () => {
-        const query = String(filterInput?.value ?? "").trim().toLowerCase();
-        for (const row of list?.querySelectorAll(".po-log-manager-row") ?? []) {
-          const haystack = String(row?.dataset?.search ?? "");
-          row.style.display = !query || haystack.includes(query) ? "" : "none";
-        }
-      };
-
-      filterInput?.addEventListener("input", applyFilter);
-      list?.addEventListener("click", async (event) => {
-        const button = event.target.closest("button[data-log-action]");
-        if (!button) return;
-        const action = String(button.dataset.logAction ?? "").trim();
-        const logId = String(button.dataset.logId ?? "").trim();
-        const logType = String(button.dataset.logType ?? "").trim();
-        if (!logId || !logType) return;
-        if (action === "load") {
-          let loaded = false;
-          if (logType === "environment") loaded = await editOperationalEnvironmentLogById(logId);
-          if (logType === "weather") loaded = await loadWeatherLogToQuickPanel(logId);
-          if (loaded) {
-            ui.notifications?.info(`Loaded ${logType} log into controls.`);
-            dialog.close();
-          }
-          return;
-        }
-        if (action === "remove") {
-          let removed = false;
-          if (logType === "environment") removed = await removeOperationalEnvironmentLogById(logId);
-          if (logType === "weather") removed = await removeWeatherLogById(logId);
-          if (!removed) return;
-          const row = list.querySelector(`.po-log-manager-row[data-log-id=\"${CSS.escape(logId)}\"][data-log-type=\"${CSS.escape(logType)}\"]`);
-          row?.remove();
-        }
-      });
-    }
-  });
-
-  dialog.render(true);
-}
-
-async function removePartyHealthCustomModifier(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const modifierId = String(element?.dataset?.modifierId ?? "").trim();
-  if (!modifierId) return;
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.customModifiers = partyHealth.customModifiers.filter((row) => row.id !== modifierId);
-  });
-}
-
 function getLootPackSourceMetaById(packId) {
   const id = String(packId ?? "").trim();
   if (!id) return null;
@@ -11233,13 +15325,24 @@ function setLootPreviewField(element) {
   if (!game.user.isGM) return;
   const field = String(element?.dataset?.field ?? "").trim();
   if (!field) return;
+  const normalizedField = field === "actorCount" ? "creatures" : field;
   const current = getLootPreviewDraft();
-  const numericFields = new Set(["actorCount", "currencyScalar", "itemScalar", "tableScalar"]);
+  const numericFields = new Set([
+    "creatures",
+    "actorCount",
+    "currencyScalar",
+    "itemScalar",
+    "tableScalar",
+    "valueBudgetScalar",
+    "valueStrictness",
+    "maxItemValueGp",
+    "targetItemsValueGp"
+  ]);
   const next = {
     ...current,
-    [field]: (numericFields.has(field))
-      ? Number(element?.value ?? current.actorCount ?? 1)
-      : String(element?.value ?? current[field] ?? "")
+    [normalizedField]: (numericFields.has(normalizedField))
+      ? Number(element?.value ?? current.creatures ?? current.actorCount ?? 1)
+      : String(element?.value ?? current[normalizedField] ?? "")
   };
   setLootPreviewDraft(next);
 }
@@ -11284,23 +15387,27 @@ function readLootPreviewDraftFromUi(element) {
     profile: root.querySelector("select[name='lootPreviewProfile']")?.value ?? "",
     challenge: root.querySelector("select[name='lootPreviewChallenge']")?.value ?? "",
     scale: root.querySelector("select[name='lootPreviewScale']")?.value ?? "",
-    actorCount: root.querySelector("input[name='lootPreviewActorCount']")?.value ?? 1,
+    creatures: root.querySelector("input[name='lootPreviewCreatures']")?.value ?? 1,
     currencyScalar: root.querySelector("input[name='lootPreviewCurrencyScalar']")?.value ?? 100,
     itemScalar: root.querySelector("input[name='lootPreviewItemScalar']")?.value ?? 100,
-    tableScalar: root.querySelector("input[name='lootPreviewTableScalar']")?.value ?? 100
+    tableScalar: root.querySelector("input[name='lootPreviewTableScalar']")?.value ?? 100,
+    valueBudgetScalar: root.querySelector("input[name='lootPreviewValueBudgetScalar']")?.value ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR,
+    valueStrictness: root.querySelector("input[name='lootPreviewValueStrictness']")?.value ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS,
+    maxItemValueGp: root.querySelector("input[name='lootPreviewMaxItemValueGp']")?.value ?? 0,
+    targetItemsValueGp: root.querySelector("input[name='lootPreviewTargetItemsValueGp']")?.value ?? 0
   });
 }
 
 async function rollLootPreview(element) {
   if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can generate loot previews.");
+    ui.notifications?.warn("Only the GM can generate loot builder output.");
     return;
   }
   const draft = readLootPreviewDraftFromUi(element) ?? getLootPreviewDraft();
   setLootPreviewDraft(draft);
   const payload = await generateLootPreviewPayload(draft);
   setLootPreviewResult(payload);
-  ui.notifications?.info(`Loot preview generated (${payload.items.length} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`);
+  ui.notifications?.info(`Loot builder generated (${payload.items.length} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`);
 }
 
 function clearLootPreviewResult() {
@@ -11324,6 +15431,282 @@ async function openLootItemFromElement(element) {
   ui.notifications?.warn("No sheet is available for that item.");
 }
 
+function buildLootPreviewResultSkeleton() {
+  const draft = getLootPreviewDraft();
+  const sourceConfig = getLootSourceConfig();
+  return {
+    generatedAt: Date.now(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    draft,
+    currency: {
+      pp: 0,
+      gp: 0,
+      sp: 0,
+      cp: 0,
+      gpEquivalent: 0,
+      formula: ""
+    },
+    items: [],
+    tableRolls: [],
+    stats: {
+      candidateCount: 0,
+      itemCountTarget: 0,
+      itemCountGenerated: 0,
+      tableRollCount: 0,
+      enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+      enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
+    },
+    warnings: []
+  };
+}
+
+function getMutableLootPreviewResult() {
+  const current = getLootPreviewResult();
+  if (current && typeof current === "object") return foundry.utils.deepClone(current);
+  return buildLootPreviewResultSkeleton();
+}
+
+function refreshLootPreviewResultStats(result) {
+  const sourceConfig = getLootSourceConfig();
+  const itemCountGenerated = Array.isArray(result?.items) ? result.items.length : 0;
+  const tableRollCount = Array.isArray(result?.tableRolls) ? result.tableRolls.length : 0;
+  const currentTarget = Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0);
+  result.stats = {
+    candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
+    itemCountTarget: Math.max(currentTarget, itemCountGenerated),
+    itemCountGenerated,
+    tableRollCount,
+    enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+    enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
+  };
+}
+
+function buildLootPreviewSourceLabel(documentRef, fallback = "Manual") {
+  const uuid = String(documentRef?.uuid ?? "").trim();
+  if (uuid.startsWith("Compendium.")) {
+    const parts = uuid.split(".");
+    if (parts.length >= 3) return `${parts[1]}.${parts[2]}`;
+    return "Compendium";
+  }
+  if (uuid.startsWith("Item.")) return "World Item Directory";
+  return String(fallback ?? "Manual").trim() || "Manual";
+}
+
+function buildLootPreviewItemFromDocument(documentRef, options = {}) {
+  const data = (documentRef && typeof documentRef?.toObject === "function") ? documentRef.toObject() : documentRef;
+  const uuid = String(documentRef?.uuid ?? data?.uuid ?? "").trim();
+  const rarity = getLootRarityFromData(data);
+  return {
+    id: foundry.utils.randomID(),
+    uuid,
+    name: String(data?.name ?? "Item").trim() || "Item",
+    img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    itemType: String(data?.type ?? "").trim(),
+    rarity,
+    sourceLabel: buildLootPreviewSourceLabel(documentRef, options?.sourceLabel ?? "Manual Add")
+  };
+}
+
+async function resolveLootItemDocumentFromDropData(data = {}) {
+  const uuid = String(data?.uuid ?? "").trim();
+  if (uuid) {
+    const document = await resolveUuidDocument(uuid);
+    if (document?.documentName === "Item") return document;
+  }
+
+  const type = String(data?.type ?? "").trim();
+  if (type !== "Item") return null;
+  const worldId = String(data?.id ?? data?._id ?? "").trim();
+  const packId = String(data?.pack ?? data?.collection ?? data?.compendium ?? "").trim();
+  if (packId && worldId) {
+    const pack = game.packs?.get(packId);
+    if (!pack) return null;
+    const document = await pack.getDocument(worldId);
+    return document?.documentName === "Item" ? document : null;
+  }
+  if (worldId) {
+    const worldItem = game.items?.get(worldId);
+    return worldItem?.documentName === "Item" ? worldItem : null;
+  }
+  return null;
+}
+
+function addItemToLootPreviewResult(itemEntry) {
+  const result = getMutableLootPreviewResult();
+  if (!Array.isArray(result.items)) result.items = [];
+  result.items.push(itemEntry);
+  result.generatedAt = Date.now();
+  result.generatedBy = String(game.user?.name ?? "GM");
+  refreshLootPreviewResultStats(result);
+  setLootPreviewResult(result);
+}
+
+async function addLootPreviewItemByUuid(uuidInput = "") {
+  const uuid = String(uuidInput ?? "").trim();
+  if (!uuid) return false;
+  const document = await resolveUuidDocument(uuid);
+  if (!document || document.documentName !== "Item") return false;
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, { sourceLabel: "Manual Add" }));
+  return true;
+}
+
+async function addLootPreviewItemByPicker() {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can curate loot builder items.");
+    return false;
+  }
+  const worldItems = [...(game.items?.contents ?? [])]
+    .filter((entry) => entry?.documentName === "Item")
+    .sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")));
+
+  const optionsHtml = worldItems.map((item) => `<option value="${foundry.utils.escapeHTML(String(item.id))}">${foundry.utils.escapeHTML(String(item.name ?? item.id))}</option>`).join("");
+  const canPickWorld = optionsHtml.length > 0;
+
+  const choice = await new Promise((resolve) => {
+    const dialog = new Dialog({
+      title: "Add Item To Loot Builder",
+      content: `
+        <div class="po-help">
+          <div class="form-group">
+            <label>World Item</label>
+            <select name="lootPreviewAddWorldItem" ${canPickWorld ? "" : "disabled"}>
+              ${canPickWorld ? optionsHtml : "<option value=''>No world items available</option>"}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Or Item UUID</label>
+            <input type="text" name="lootPreviewAddUuid" placeholder="Compendium.package.collection.ItemId or Item.worldId" />
+          </div>
+        </div>
+      `,
+      buttons: {
+        add: {
+          label: "Add Item",
+          callback: (html) => {
+            resolve({
+              worldItemId: String(html.find("select[name='lootPreviewAddWorldItem']").val() ?? "").trim(),
+              uuid: String(html.find("input[name='lootPreviewAddUuid']").val() ?? "").trim()
+            });
+          }
+        },
+        cancel: {
+          label: "Cancel",
+          callback: () => resolve(null)
+        }
+      },
+      default: "add"
+    });
+    dialog.render(true);
+  });
+
+  if (!choice) return false;
+  const uuid = String(choice.uuid ?? "").trim();
+  if (uuid) {
+    const addedByUuid = await addLootPreviewItemByUuid(uuid);
+    if (!addedByUuid) ui.notifications?.warn("Could not resolve Item UUID.");
+    return addedByUuid;
+  }
+
+  const worldItemId = String(choice.worldItemId ?? "").trim();
+  if (!worldItemId) return false;
+  const worldItem = game.items?.get(worldItemId);
+  if (!worldItem || worldItem.documentName !== "Item") {
+    ui.notifications?.warn("Selected world item was not found.");
+    return false;
+  }
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(worldItem, { sourceLabel: "World Item Directory" }));
+  return true;
+}
+
+async function addLootPreviewItemFromDropEvent(event) {
+  if (!game.user.isGM) return false;
+  let data = null;
+  try {
+    data = TextEditor.getDragEventData(event);
+  } catch {
+    data = null;
+  }
+  if (!data || typeof data !== "object") return false;
+  const document = await resolveLootItemDocumentFromDropData(data);
+  if (!document) {
+    ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
+    return false;
+  }
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, { sourceLabel: "Drag Drop" }));
+  return true;
+}
+
+async function removeLootPreviewItem(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can curate loot builder items.");
+    return false;
+  }
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  const itemUuid = String(element?.dataset?.itemUuid ?? "").trim();
+  if (!itemId && !itemUuid) return false;
+  const result = getMutableLootPreviewResult();
+  const currentItems = Array.isArray(result.items) ? result.items : [];
+  const nextItems = currentItems.filter((entry) => {
+    const entryId = String(entry?.id ?? "").trim();
+    const entryUuid = String(entry?.uuid ?? "").trim();
+    if (itemId && entryId === itemId) return false;
+    if (!itemId && itemUuid && entryUuid === itemUuid) return false;
+    return true;
+  });
+  if (nextItems.length === currentItems.length) return false;
+  result.items = nextItems;
+  result.generatedAt = Date.now();
+  result.generatedBy = String(game.user?.name ?? "GM");
+  refreshLootPreviewResultStats(result);
+  setLootPreviewResult(result);
+  return true;
+}
+
+function getLootPreviewCurrencyGpEquivalent(currency = {}) {
+  const pp = Math.max(0, Math.floor(Number(currency?.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(currency?.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(currency?.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(currency?.cp ?? 0) || 0));
+  return Math.max(0, Number(((pp * 10) + gp + (sp * 0.1) + (cp * 0.01)).toFixed(2)));
+}
+
+function adjustLootPreviewCurrency(element) {
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can curate loot builder currency.");
+    return false;
+  }
+  const result = getLootPreviewResult();
+  if (!result || typeof result !== "object") {
+    ui.notifications?.warn("Generate loot builder output first.");
+    return false;
+  }
+
+  const root = element?.closest(".po-loot-preview-panel");
+  if (!root) return false;
+  const denom = String(root.querySelector("select[name='lootPreviewCurrencyAdjustDenom']")?.value ?? "gp").trim().toLowerCase();
+  const qtyOverrideRaw = Number(element?.dataset?.qty ?? NaN);
+  const qtyRaw = Number(root.querySelector("input[name='lootPreviewCurrencyAdjustQty']")?.value ?? 1);
+  const qty = Number.isFinite(qtyOverrideRaw) && qtyOverrideRaw > 0
+    ? Math.max(1, Math.floor(qtyOverrideRaw))
+    : (Number.isFinite(qtyRaw) ? Math.max(1, Math.floor(qtyRaw)) : 1);
+  const direction = String(element?.dataset?.direction ?? "add").trim().toLowerCase();
+  if (!["pp", "gp", "sp", "cp"].includes(denom)) return false;
+
+  const next = foundry.utils.deepClone(result);
+  if (!next.currency || typeof next.currency !== "object") {
+    next.currency = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0, formula: "" };
+  }
+  const current = Math.max(0, Math.floor(Number(next.currency[denom] ?? 0) || 0));
+  next.currency[denom] = direction === "subtract"
+    ? Math.max(0, current - qty)
+    : current + qty;
+  next.currency.gpEquivalent = getLootPreviewCurrencyGpEquivalent(next.currency);
+  next.generatedAt = Date.now();
+  next.generatedBy = String(game.user?.name ?? "GM");
+  setLootPreviewResult(next);
+  return true;
+}
+
 async function publishLootPreviewToClaims() {
   if (!game.user.isGM) {
     ui.notifications?.warn("Only the GM can publish loot claims.");
@@ -11331,12 +15714,12 @@ async function publishLootPreviewToClaims() {
   }
   const result = getLootPreviewResult();
   if (!result || typeof result !== "object") {
-    ui.notifications?.warn("Run a loot preview first.");
+    ui.notifications?.warn("Run loot builder first.");
     return;
   }
   const items = Array.isArray(result.items) ? result.items : [];
   if (items.length === 0) {
-    ui.notifications?.warn("The preview has no items to publish.");
+    ui.notifications?.warn("The builder has no items to publish.");
     return;
   }
 
@@ -11360,7 +15743,9 @@ async function publishLootPreviewToClaims() {
       img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       itemType: String(entry?.itemType ?? "").trim(),
       rarity: String(entry?.rarity ?? "").trim(),
-      sourceLabel: String(entry?.sourceLabel ?? "").trim()
+      sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+      majorItem: isLootItemLikelyMajor(entry),
+      vouchedByActorIds: []
     }));
     claims.tableRolls = Array.isArray(result?.tableRolls)
       ? result.tableRolls.map((entry) => ({
@@ -11375,6 +15760,7 @@ async function publishLootPreviewToClaims() {
     claims.claimsLog = [];
   });
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
+  if (game.user?.isGM) openGmLootClaimsBoard({ force: true });
   ui.notifications?.info(`Published ${items.length} loot item(s) to player claims.`);
 }
 
@@ -11399,8 +15785,139 @@ async function clearLootClaimsPool() {
 
 function getLootClaimActorIdFromElement(element) {
   const root = element?.closest(".po-loot-claims-panel");
-  const actorId = String(root?.querySelector("select[name='lootClaimActorId']")?.value ?? "").trim();
-  return actorId;
+  const actorId = normalizeLootClaimActorId(root?.querySelector("select[name='lootClaimActorId']")?.value);
+  if (actorId) {
+    setLootClaimActorSelection(actorId);
+    return actorId;
+  }
+  return getLootClaimActorSelection();
+}
+
+function getLootClaimVouchIntentFromElement(element) {
+  const explicit = String(element?.dataset?.shouldVouch ?? "").trim().toLowerCase();
+  if (explicit === "true") return true;
+  if (explicit === "false") return false;
+  return true;
+}
+
+async function setLootClaimItemMajor(itemIdInput, majorItemInput) {
+  const itemId = String(itemIdInput ?? "").trim();
+  if (!itemId) return { ok: false, message: "Missing item id." };
+  if (!game.user?.isGM) return { ok: false, message: "Only the GM can update major-item status." };
+  const majorItem = Boolean(majorItemInput);
+  let updated = false;
+  await updateOperationsLedger((ledger) => {
+    const claims = ensureLootClaimsState(ledger);
+    const item = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+    if (!item) return;
+    item.majorItem = majorItem;
+    updated = true;
+  });
+  if (!updated) return { ok: false, message: "Loot item no longer exists." };
+  return { ok: true };
+}
+
+async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouchInput = true) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const itemId = String(itemIdInput ?? "").trim();
+  const shouldVouch = Boolean(shouldVouchInput);
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+  const eligibleActorIds = new Set(getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
+  if (!eligibleActorIds.has(actorId)) return { ok: false, message: "Actor is not eligible for claim vouchers." };
+
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const claimItem = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextClaims = ensureLootClaimsState(nextLedger);
+    const nextItem = nextClaims.items.find((entry) => String(entry?.id ?? "") === itemId);
+    if (!nextItem) return;
+    if (!Array.isArray(nextItem.vouchedByActorIds)) nextItem.vouchedByActorIds = [];
+    const filtered = nextItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+    const hasActor = filtered.includes(actorId);
+    if (shouldVouch && !hasActor) filtered.push(actorId);
+    if (!shouldVouch && hasActor) {
+      const index = filtered.indexOf(actorId);
+      if (index >= 0) filtered.splice(index, 1);
+    }
+    nextItem.vouchedByActorIds = filtered;
+  });
+
+  return {
+    ok: true,
+    actorName: String(actor.name ?? "Actor"),
+    itemName: String(claimItem.name ?? "Item"),
+    shouldVouch
+  };
+}
+
+async function postLootRollOffToChat(itemName, winnerActorName, rollRows = [], tieNote = "") {
+  const rows = Array.isArray(rollRows) ? rollRows : [];
+  const rowsHtml = rows.map((row) => {
+    const actorName = poEscapeHtml(String(row?.actorName ?? "Actor"));
+    const total = Number.isFinite(Number(row?.total)) ? Math.floor(Number(row.total)) : 0;
+    return `<li><strong>${actorName}</strong>: ${total}</li>`;
+  }).join("");
+  const tieHtml = tieNote ? `<p><em>${poEscapeHtml(String(tieNote))}</em></p>` : "";
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Loot Roll-Off</strong></p>
+        <p><strong>${poEscapeHtml(String(itemName ?? "Item"))}</strong> winner: ${poEscapeHtml(String(winnerActorName ?? "Actor"))}</p>
+        <ul>${rowsHtml}</ul>
+        ${tieHtml}
+      </div>
+    `
+  });
+}
+
+async function runLootItemRollOff(itemIdInput) {
+  const itemId = String(itemIdInput ?? "").trim();
+  if (!itemId) return { ok: false, message: "Missing item id." };
+  if (!game.user?.isGM) return { ok: false, message: "Only the GM can run roll-offs." };
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const item = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  if (!item) return { ok: false, message: "Loot item no longer exists." };
+  const voucherActorIds = Array.isArray(item.vouchedByActorIds)
+    ? item.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  const contenders = voucherActorIds
+    .map((actorId) => game.actors.get(actorId))
+    .filter((actor) => actor && actor.type === "character");
+  if (contenders.length < 2) return { ok: false, message: "At least two vouchers are required for a roll-off." };
+
+  const rollRows = [];
+  for (const actor of contenders) {
+    const roll = await (new Roll("1d100")).evaluate({ async: true });
+    rollRows.push({ actorId: String(actor.id), actorName: String(actor.name ?? `Actor ${actor.id}`), total: Number(roll?.total ?? 0) });
+  }
+
+  const sorted = [...rollRows].sort((a, b) => Number(b.total ?? 0) - Number(a.total ?? 0));
+  const topTotal = Number(sorted[0]?.total ?? 0);
+  const tiedTop = sorted.filter((entry) => Number(entry.total ?? 0) === topTotal);
+  const winner = tiedTop.length > 1
+    ? tiedTop[Math.floor(Math.random() * tiedTop.length)]
+    : sorted[0];
+  const tieNote = tiedTop.length > 1
+    ? `Tie at ${topTotal}; winner selected by tiebreak among tied contenders.`
+    : "";
+
+  const claimOutcome = await applyLootClaimForUser(game.user, winner.actorId, itemId);
+  if (!claimOutcome.ok) return { ok: false, message: claimOutcome.message ?? "Failed to apply roll-off claim." };
+
+  await postLootRollOffToChat(item.name, winner.actorName, rollRows, tieNote);
+  await postLootItemClaimToChat({ ...claimOutcome, claimedByName: "Roll-Off" });
+  return {
+    ok: true,
+    itemName: String(item.name ?? "Item"),
+    winnerName: String(winner.actorName ?? "Actor")
+  };
 }
 
 function getJournalFolderParentId(folder) {
@@ -11530,20 +16047,6 @@ async function ensureOperationsJournalFolderTree() {
   return { root, categories };
 }
 
-async function openOperationsJournalRepository() {
-  if (!game.user?.isGM) {
-    ui.notifications?.warn("Only the GM can open the operations journal repository.");
-    return;
-  }
-  const tree = await ensureOperationsJournalFolderTree();
-  if (!tree?.root) {
-    ui.notifications?.warn("Unable to initialize the operations journal repository.");
-    return;
-  }
-  ui.sidebar?.activateTab?.("journal");
-  ui.notifications?.info(`Journal repository ready under '${tree.root.name}'.`);
-}
-
 function journalFolderIsUnderRoot(folderId, rootId) {
   const start = String(folderId ?? "").trim();
   const root = String(rootId ?? "").trim();
@@ -11559,125 +16062,31 @@ function journalFolderIsUnderRoot(folderId, rootId) {
   return false;
 }
 
-function getJournalFolderPath(folderId, rootId) {
-  const parts = [];
-  let currentId = String(folderId ?? "").trim();
-  const root = String(rootId ?? "").trim();
-  let guard = 0;
-  while (currentId && guard < 40) {
-    const folder = game.folders?.get(currentId);
-    if (!folder) break;
-    parts.unshift(String(folder.name ?? "Folder"));
-    const parentId = getJournalFolderParentId(folder);
-    if (!parentId || currentId === root) break;
-    currentId = parentId;
-    guard += 1;
-  }
-  return parts.join(" / ");
-}
-
-function getJournalEntryTimestamp(entry) {
-  const sourceStats = entry?._source?._stats ?? {};
-  const created = Number(sourceStats.createdTime ?? 0);
-  const modified = Number(sourceStats.modifiedTime ?? 0);
-  if (Number.isFinite(modified) && modified > 0) return modified;
-  if (Number.isFinite(created) && created > 0) return created;
-  return Date.now();
-}
-
-function buildUuidJournalLink(uuid, label) {
-  const ref = String(uuid ?? "").trim();
-  const text = String(label ?? "").trim() || "Link";
-  if (!ref) return foundry.utils.escapeHTML(text);
-  return `@UUID[${ref}]{${foundry.utils.escapeHTML(text)}}`;
-}
-
-function buildOperationsJournalContext() {
-  const view = getOperationsJournalViewState();
-  const rootFolder = findOperationsJournalRootFolder();
-  const rootId = String(rootFolder?.id ?? "").trim();
-  const filterQuery = String(view.filter ?? "").trim().toLowerCase();
-  const category = String(view.category ?? "all").trim().toLowerCase();
-  const sort = String(view.sort ?? "newest").trim().toLowerCase();
-  const entriesRaw = (game.journal?.contents ?? [])
-    .filter((entry) => entry?.testUserPermission?.(game.user, "OBSERVER"))
-    .filter((entry) => {
-      if (!rootId) return false;
-      const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
-      return journalFolderIsUnderRoot(folderId, rootId);
-    })
-    .map((entry) => {
-      const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
-      const folderPath = getJournalFolderPath(folderId, rootId);
-      const categoryLabel = folderPath.split(" / ")[1] ?? "";
-      const categoryKey = Object.entries(OPERATIONS_JOURNAL_CATEGORIES)
-        .find(([, label]) => String(label).toLowerCase() === String(categoryLabel).toLowerCase())?.[0] ?? "session";
-      const timestamp = getJournalEntryTimestamp(entry);
-      return {
-        id: String(entry.id ?? ""),
-        name: String(entry.name ?? "Journal Entry"),
-        folderPath,
-        categoryKey,
-        categoryLabel: OPERATIONS_JOURNAL_CATEGORIES[categoryKey] ?? "Session",
-        sortTimestamp: timestamp,
-        sortTimestampLabel: new Date(timestamp).toLocaleString()
-      };
-    });
-  const entriesFiltered = entriesRaw.filter((entry) => {
-    if (category !== "all" && entry.categoryKey !== category) return false;
-    if (!filterQuery) return true;
-    const haystack = `${entry.name} ${entry.folderPath} ${entry.categoryLabel}`.toLowerCase();
-    return haystack.includes(filterQuery);
-  });
-  entriesFiltered.sort((a, b) => {
-    if (sort === "oldest") return Number(a.sortTimestamp ?? 0) - Number(b.sortTimestamp ?? 0);
-    if (sort === "title") return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    if (sort === "folder") {
-      const folderCmp = String(a.folderPath ?? "").localeCompare(String(b.folderPath ?? ""));
-      if (folderCmp !== 0) return folderCmp;
-      return Number(b.sortTimestamp ?? 0) - Number(a.sortTimestamp ?? 0);
-    }
-    return Number(b.sortTimestamp ?? 0) - Number(a.sortTimestamp ?? 0);
-  });
-
-  return {
-    hasRootFolder: Boolean(rootId),
-    rootFolderName: OPERATIONS_JOURNAL_ROOT_NAME,
-    filter: String(view.filter ?? ""),
-    entries: entriesFiltered,
-    hasEntries: entriesFiltered.length > 0,
-    totalEntries: entriesRaw.length,
-    visibleEntries: entriesFiltered.length,
-    sortOptions: buildJournalSortOptions(sort),
-    categoryOptions: buildJournalCategoryOptions(category)
-  };
-}
-
-async function createOperationsJournalEntry(payload = {}) {
+async function createOperationsJournalEntry(options = {}) {
   if (!game.user?.isGM) return null;
-  const categoryRaw = String(payload?.category ?? "session").trim().toLowerCase();
-  const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw) ? categoryRaw : "session";
-  const sensitivity = String(payload?.sensitivity ?? "public").trim().toLowerCase();
-  const visibilityMode = getJournalVisibilityMode();
-  const now = Date.now();
-  const stamp = new Date(now).toLocaleString();
-  const title = String(payload?.title ?? "Operations Log").trim() || "Operations Log";
-  const summary = String(payload?.summary ?? "").trim();
-  const body = String(payload?.body ?? "").trim();
-  const redactedBody = String(payload?.redactedBody ?? "").trim();
-  const safeSummary = foundry.utils.escapeHTML(summary);
-  const safeStamp = foundry.utils.escapeHTML(stamp);
-  const isSensitive = sensitivity === "gm" || sensitivity === "sensitive";
-  const useGmOnly = isSensitive && visibilityMode === JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
-  const useRedacted = isSensitive && visibilityMode === JOURNAL_VISIBILITY_MODES.REDACTED;
-  const effectiveSummary = useRedacted
-    ? String(payload?.redactedSummary ?? "Details restricted to GM view.").trim()
-    : summary;
-  const safeEffectiveSummary = foundry.utils.escapeHTML(effectiveSummary);
-  const effectiveBody = useRedacted
-    ? (redactedBody || "<p>Details redacted by Party Operations journal visibility settings.</p>")
-    : (body || "<p>No additional details.</p>");
-  const ownership = useGmOnly
+
+  const categoryRaw = String(options?.category ?? options?.categoryKey ?? "session").trim().toLowerCase();
+  const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw)
+    ? categoryRaw
+    : "session";
+  const title = String(options?.title ?? "Operations Log").trim() || "Operations Log";
+  const summary = String(options?.summary ?? "").trim();
+  const redactedSummary = String(options?.redactedSummary ?? "").trim();
+  const body = String(options?.body ?? "").trim() || "<p>No details provided.</p>";
+  const redactedBody = String(options?.redactedBody ?? "").trim();
+  const sensitivity = String(options?.sensitivity ?? "public").trim().toLowerCase();
+
+  const visibility = getJournalVisibilityMode();
+  let effectiveSummary = summary;
+  let effectiveBody = body;
+
+  if (sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.REDACTED) {
+    effectiveSummary = redactedSummary || summary;
+    effectiveBody = redactedBody || body;
+  }
+
+  const gmOnly = sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
+  const ownership = gmOnly
     ? (() => {
       const next = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
       for (const user of game.users?.contents ?? []) {
@@ -11687,11 +16096,17 @@ async function createOperationsJournalEntry(payload = {}) {
       return next;
     })()
     : { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
+
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const stamp = new Date().toLocaleString();
+  const safeStamp = escape(stamp);
+  const safeEffectiveSummary = escape(effectiveSummary);
   const finalBody = `
     <p><em>${safeStamp}</em></p>
     ${safeEffectiveSummary ? `<p>${safeEffectiveSummary}</p>` : ""}
     ${effectiveBody}
   `;
+
   try {
     const { categoryFolder } = await ensureOperationsJournalFolder(categoryKey);
     const htmlFormat = Number(CONST?.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1);
@@ -11714,133 +16129,6 @@ async function createOperationsJournalEntry(payload = {}) {
     ui.notifications?.warn(`Party Operations journal write failed: ${title}`);
     return null;
   }
-}
-
-async function createSessionSummaryJournal() {
-  if (!game.user?.isGM) {
-    ui.notifications?.warn("Only the GM can create session summary journals.");
-    return;
-  }
-  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-  const window = getSessionSummaryWindowBounds();
-  const since = Number(window.start ?? (Date.now() - 86400000));
-  const now = Number(window.end ?? Date.now());
-  const ledger = getOperationsLedger();
-  const downtime = ensureDowntimeState(ledger);
-  const reputation = ensureReputationState(ledger);
-  const environment = ensureEnvironmentState(ledger);
-  const weather = ensureWeatherState(ledger);
-  const lootClaims = ensureLootClaimsState(ledger);
-  const context = buildOperationsContext();
-
-  const downtimePending = Object.values(downtime.entries ?? {}).filter((entry) => entry?.pending !== false).length;
-  const downtimeResolvedRecent = (downtime.logs ?? []).filter((entry) => Number(entry?.resolvedAt ?? 0) >= since);
-  const downtimeRecentRows = downtimeResolvedRecent
-    .slice(0, 8)
-    .map((entry) => {
-      const actorName = String(entry?.actorName ?? "Actor");
-      const actorUuid = String(game.actors.get(String(entry?.actorId ?? ""))?.uuid ?? "");
-      const actionLabel = String(entry?.actionLabel ?? getDowntimeActionDefinition(entry?.actionKey).label ?? "Downtime");
-      const summary = String(entry?.summary ?? "").trim() || "Resolved.";
-      return `<li>${buildUuidJournalLink(actorUuid, actorName)} - ${escape(actionLabel)}: ${escape(summary)}</li>`;
-    })
-    .join("");
-
-  const reputationRecent = [];
-  for (const faction of reputation.factions ?? []) {
-    for (const row of faction.noteLogs ?? []) {
-      if (Number(row?.loggedAt ?? 0) < since) continue;
-      reputationRecent.push({
-        factionLabel: String(faction.label ?? "Faction"),
-        score: Number(row?.score ?? faction.score ?? 0),
-        note: String(row?.note ?? "").trim(),
-        loggedAt: Number(row?.loggedAt ?? 0)
-      });
-    }
-  }
-  reputationRecent.sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0));
-  const reputationRows = reputationRecent
-    .slice(0, 8)
-    .map((row) => {
-      const signed = row.score > 0 ? `+${row.score}` : String(row.score);
-      return `<li>${escape(row.factionLabel)} (${escape(signed)}): ${escape(row.note || "Logged change.")}</li>`;
-    })
-    .join("");
-
-  const environmentRecent = (environment.logs ?? []).filter((entry) => Number(entry?.createdAt ?? 0) >= since);
-  const environmentRows = environmentRecent
-    .slice(0, 8)
-    .map((entry) => {
-      const preset = getEnvironmentPresetByKey(entry?.presetKey).label;
-      const dc = Math.max(1, Math.floor(Number(entry?.movementDc ?? 12) || 12));
-      const note = String(entry?.note ?? "").trim();
-      return `<li>${escape(preset)} (DC ${dc})${note ? ` - ${escape(note)}` : ""}</li>`;
-    })
-    .join("");
-
-  const weatherRecent = (weather.logs ?? []).filter((entry) => Number(entry?.loggedAt ?? 0) >= since);
-  const weatherRows = weatherRecent
-    .slice(0, 8)
-    .map((entry) => {
-      const label = String(entry?.label ?? "Weather").trim() || "Weather";
-      const vis = Number(entry?.visibilityModifier ?? 0);
-      const darkness = Number(entry?.darkness ?? 0);
-      return `<li>${escape(label)} - visibility ${escape(formatSignedModifier(vis) || "0")}, darkness ${darkness.toFixed(2)}</li>`;
-    })
-    .join("");
-
-  const lootRecent = (lootClaims.claimsLog ?? []).filter((entry) => Number(entry?.claimedAt ?? 0) >= since);
-  const lootRows = lootRecent
-    .slice(0, 12)
-    .map((entry) => {
-      const actorName = String(entry?.actorName ?? "Actor");
-      const actorUuid = String(game.actors.get(String(entry?.actorId ?? ""))?.uuid ?? "");
-      const itemName = String(entry?.itemName ?? "Item");
-      const by = String(entry?.claimedByName ?? "Player");
-      return `<li>${buildUuidJournalLink(actorUuid, actorName)} received ${escape(itemName)} (claimed by ${escape(by)})</li>`;
-    })
-    .join("");
-
-  const title = "Session Summary";
-  const summary = `${window.label}: ${new Date(since).toLocaleString()} to ${new Date(now).toLocaleString()}`;
-  const body = `
-    <p><strong>Window:</strong> ${escape(summary)}</p>
-    <p><strong>Operations Snapshot:</strong> Role Coverage ${context.summary?.roleCoverage ?? 0}/${context.summary?.roleTotal ?? 0}, Active SOPs ${context.summary?.activeSops ?? 0}/${context.summary?.sopTotal ?? 0}, Risk Tier ${escape(String(context.summary?.effects?.riskTier ?? "moderate"))}</p>
-    <p><strong>Downtime:</strong> ${downtimeResolvedRecent.length} resolved in window, ${downtimePending} pending.</p>
-    ${downtimeRecentRows ? `<ul>${downtimeRecentRows}</ul>` : "<p>No resolved downtime entries in this window.</p>"}
-    <p><strong>Reputation Notes:</strong> ${reputationRecent.length} logged.</p>
-    ${reputationRows ? `<ul>${reputationRows}</ul>` : "<p>No reputation notes logged in this window.</p>"}
-    <p><strong>Environment Logs:</strong> ${environmentRecent.length} entries.</p>
-    ${environmentRows ? `<ul>${environmentRows}</ul>` : "<p>No environment logs in this window.</p>"}
-    <p><strong>Weather Logs:</strong> ${weatherRecent.length} entries.</p>
-    ${weatherRows ? `<ul>${weatherRows}</ul>` : "<p>No weather logs in this window.</p>"}
-    <p><strong>Loot Claims:</strong> ${lootRecent.length} claims in window.</p>
-    ${lootRows ? `<ul>${lootRows}</ul>` : "<p>No loot claims in this window.</p>"}
-  `;
-
-  const entry = await createOperationsJournalEntry({
-    category: "session",
-    sensitivity: "gm",
-    title,
-    summary,
-    redactedSummary: `${window.label} operations summary.`,
-    body,
-    redactedBody: `
-      <p><strong>Window:</strong> ${escape(window.label)}</p>
-      <p><strong>Downtime:</strong> ${downtimeResolvedRecent.length} resolved, ${downtimePending} pending.</p>
-      <p><strong>Reputation Notes:</strong> ${reputationRecent.length} logged.</p>
-      <p><strong>Environment Logs:</strong> ${environmentRecent.length} entries.</p>
-      <p><strong>Weather Logs:</strong> ${weatherRecent.length} entries.</p>
-      <p><strong>Loot Claims:</strong> ${lootRecent.length} claims.</p>
-      <p><em>Detailed summary content is redacted.</em></p>
-    `
-  });
-  if (!entry) {
-    ui.notifications?.warn("Failed to create session summary journal.");
-    return;
-  }
-  entry.sheet?.render(true);
-  ui.notifications?.info("Session summary journal created.");
 }
 
 async function openJournalEntryFromElement(element) {
@@ -11875,6 +16163,12 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput) {
   const claims = ensureLootClaimsState(ledger);
   const claimItem = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
   if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
+  const voucherActorIds = Array.isArray(claimItem.vouchedByActorIds)
+    ? claimItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  if (voucherActorIds.length > 1) {
+    return { ok: false, message: "This item has multiple vouchers. Run a roll-off first." };
+  }
   const itemData = await buildLootClaimItemDocumentData(claimItem);
   if (!itemData) return { ok: false, message: "The source item could not be resolved. Ask GM to reroll/publish again." };
 
@@ -12035,6 +16329,56 @@ async function claimLootItemForPlayer(element) {
   ui.notifications?.info("Loot claim request sent to GM.");
 }
 
+async function toggleLootItemVouchForPlayer(element) {
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  if (!itemId) return;
+  const actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    ui.notifications?.warn("Select a character first.");
+    return;
+  }
+  const shouldVouch = getLootClaimVouchIntentFromElement(element);
+
+  if (game.user.isGM) {
+    const outcome = await applyLootVouchForUser(game.user, actorId, itemId, shouldVouch);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Vouch update failed.");
+      return;
+    }
+    ui.notifications?.info(`${outcome.actorName} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-vouch",
+    userId: game.user.id,
+    actorId,
+    itemId,
+    shouldVouch
+  });
+  ui.notifications?.info(shouldVouch ? "Voucher request sent to GM." : "Voucher removal request sent to GM.");
+}
+
+async function setLootItemMajorFromElement(element) {
+  if (!game.user?.isGM) return;
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  if (!itemId) return;
+  const outcome = await setLootClaimItemMajor(itemId, Boolean(element?.checked));
+  if (!outcome.ok) ui.notifications?.warn(outcome.message ?? "Unable to update major-item status.");
+}
+
+async function runLootRollOffFromElement(element) {
+  if (!game.user?.isGM) return;
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  if (!itemId) return;
+  const outcome = await runLootItemRollOff(itemId);
+  if (!outcome.ok) {
+    ui.notifications?.warn(outcome.message ?? "Roll-off failed.");
+    return;
+  }
+  ui.notifications?.info(`Roll-off resolved: ${outcome.winnerName} receives ${outcome.itemName}.`);
+}
+
 async function claimLootCurrencyForPlayer(element) {
   const actorId = getLootClaimActorIdFromElement(element);
   if (!actorId) {
@@ -12082,8 +16426,8 @@ async function postLootItemClaimToChat(outcome = {}) {
     content: `
       <div class="po-chat-claim">
         <p><strong>Loot Claimed</strong></p>
-        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${foundry.utils.escapeHTML(actorName)} received <strong>${foundry.utils.escapeHTML(itemName)}</strong>.</p>
-        <p><em>Claimed by ${foundry.utils.escapeHTML(claimedBy)}</em></p>
+        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemName)}</strong>.</p>
+        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
     `
   });
@@ -12094,7 +16438,7 @@ async function postLootItemClaimToChat(outcome = {}) {
     body: `
       <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
       <p><strong>Item:</strong> ${buildUuidJournalLink(itemUuid, itemName)}</p>
-      <p><strong>Claimed By:</strong> ${foundry.utils.escapeHTML(claimedBy)}</p>
+      <p><strong>Claimed By:</strong> ${poEscapeHtml(claimedBy)}</p>
     `
   });
 }
@@ -12112,8 +16456,8 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
     content: `
       <div class="po-chat-claim">
         <p><strong>Currency Claimed</strong></p>
-        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${foundry.utils.escapeHTML(actorName)} received <strong>${foundry.utils.escapeHTML(shareLabel)}</strong>.</p>
-        <p><em>Claimed by ${foundry.utils.escapeHTML(claimedBy)}</em></p>
+        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(shareLabel)}</strong>.</p>
+        <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
     `
   });
@@ -12123,8 +16467,8 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
     summary: `${actorName} received ${shareLabel}`,
     body: `
       <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
-      <p><strong>Currency:</strong> ${foundry.utils.escapeHTML(shareLabel)}</p>
-      <p><strong>Claimed By:</strong> ${foundry.utils.escapeHTML(claimedBy)}</p>
+      <p><strong>Currency:</strong> ${poEscapeHtml(shareLabel)}</p>
+      <p><strong>Claimed By:</strong> ${poEscapeHtml(claimedBy)}</p>
     `
   });
 }
@@ -12481,7 +16825,7 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
   if (!suppressChat) {
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-      content: `<p><strong>Weather Logged:</strong> ${foundry.utils.escapeHTML(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${foundry.utils.escapeHTML(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${foundry.utils.escapeHTML(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+      content: `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${poEscapeHtml(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
     });
   }
   return {
@@ -12583,44 +16927,6 @@ async function removeWeatherLogById(logId) {
     removed = weather.logs.length < before;
   });
   return removed;
-}
-
-async function editGlobalLog(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can edit global logs.");
-    return;
-  }
-  const logType = String(element?.dataset?.logType ?? "").trim();
-  const logId = String(element?.dataset?.logId ?? "").trim();
-  if (!logType || !logId) return;
-
-  if (logType === "environment") {
-    const loaded = await editOperationalEnvironmentLogById(logId);
-    if (loaded) ui.notifications?.info("Loaded environment log into current controls.");
-    return;
-  }
-  if (logType === "weather") {
-    const loaded = await loadWeatherLogToQuickPanel(logId);
-    if (loaded) ui.notifications?.info("Loaded weather log into quick weather panel.");
-  }
-}
-
-async function removeGlobalLog(element) {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can remove global logs.");
-    return;
-  }
-  const logType = String(element?.dataset?.logType ?? "").trim();
-  const logId = String(element?.dataset?.logId ?? "").trim();
-  if (!logType || !logId) return;
-
-  if (logType === "environment") {
-    await removeOperationalEnvironmentLogById(logId);
-    return;
-  }
-  if (logType === "weather") {
-    await removeWeatherLogById(logId);
-  }
 }
 
 async function setBaseOperationsConfig(element) {
@@ -13054,6 +17360,7 @@ async function applyOperationalUpkeep(options = {}) {
   let foodTargetedUsed = 0;
   let waterRationUsed = 0;
   let waterStoreUsed = 0;
+  let waterTargetedUsed = 0;
   let unmetFoodDrain = 0;
   let unmetWaterDrain = 0;
 
@@ -13087,15 +17394,29 @@ async function applyOperationalUpkeep(options = {}) {
     ledger.resources.water = afterWater;
     ledger.resources.torches = afterTorches;
     ledger.resources.gather.foodCoveredNextUpkeep = false;
+    ledger.resources.gather.waterCoveredNextUpkeep = false;
     if (Number.isFinite(foodCoverageDueKey) && foodCoverageDueKey <= currentDueCount) ledger.resources.gather.foodCoverageDueKey = null;
     if (Number.isFinite(waterCoverageDueKey) && waterCoverageDueKey <= currentDueCount) ledger.resources.gather.waterCoverageDueKey = null;
     ledger.resources.upkeepLastAppliedTs = currentTimestamp;
   });
 
-  const itemResults = await depleteLinkedResourceItems({ foodDrain: unmetFoodDrain, waterDrain: effectiveWaterDrain, torchDrain }, itemSelections);
+  let itemResults = [];
+  try {
+    itemResults = await depleteLinkedResourceItems({ foodDrain: unmetFoodDrain, waterDrain: unmetWaterDrain, torchDrain }, itemSelections);
+  } catch (error) {
+    logUiFailure("resources", "linked resource depletion failed during upkeep", error, {
+      foodDrain: unmetFoodDrain,
+      waterDrain: unmetWaterDrain,
+      torchDrain
+    });
+    throw error;
+  }
   const foodItemResult = itemResults.find((entry) => entry.key === "food");
+  const waterItemResult = itemResults.find((entry) => entry.key === "water");
   foodTargetedUsed = Math.max(0, Number(foodItemResult?.consumed ?? 0));
+  waterTargetedUsed = Math.max(0, Number(waterItemResult?.consumed ?? 0));
   unmetFoodDrain = Math.max(0, unmetFoodDrain - foodTargetedUsed);
+  unmetWaterDrain = Math.max(0, unmetWaterDrain - waterTargetedUsed);
 
   const shortages = [];
   if (unmetFoodDrain > 0) shortages.push(`food short by ${unmetFoodDrain}`);
@@ -13106,8 +17427,8 @@ async function applyOperationalUpkeep(options = {}) {
     ? `Food -${effectiveFoodDrain} (${foodCoveredDays} day covered by successful gather check; Food Rations -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
     : `Food -${effectiveFoodDrain} (Food Rations -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
   const waterSummary = waterCoveredDays > 0
-    ? `Water -${effectiveWaterDrain} (${waterCoveredDays} day covered by successful gather check; Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed})`
-    : `Water -${effectiveWaterDrain} (Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed})`;
+    ? `Water -${effectiveWaterDrain} (${waterCoveredDays} day covered by successful gather check; Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
+    : `Water -${effectiveWaterDrain} (Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
   const summary = `Daily upkeep applied for ${upkeepDays} day(s): ${foodSummary}, ${waterSummary}, Torches -${torchDrain}.`;
   const itemSummary = itemResults
     .filter((entry) => entry.needed > 0)
@@ -14901,14 +19222,6 @@ async function swapSlots(element) {
   dialog.render(true);
 }
 
-async function toggleRestLock(element) {
-  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
-  await updateRestWatchState((state) => {
-    state.locked = Boolean(checked);
-    state.lockedBy = state.locked ? (game.user?.name ?? "GM") : "";
-  });
-}
-
 async function updateVisibility(element) {
   const value = element?.value ?? element?.querySelector?.("select")?.value;
   if (!value) return;
@@ -15057,29 +19370,6 @@ async function clearRestWatchAll() {
   await updateRestWatchState((state) => {
     state.slots = buildStoredWatchSlots();
   });
-}
-
-function showMarchingHelp() {
-  const content = `
-  <div class="po-help">
-    <p><strong>Purpose:</strong> Defines the party's physical formation while traveling or exploring.</p>
-    <p><strong>Authority:</strong> GM assigns and removes actors from ranks. Players can view when opened by the GM.</p>
-    <ul>
-      <li><strong>Front:</strong> First to encounter threats.</li>
-      <li><strong>Middle:</strong> Partially protected support.</li>
-      <li><strong>Rear:</strong> Last engaged, rear guard.</li>
-      <li><strong>Lock:</strong> Prevents rank changes.</li>
-      <li><strong>Formations:</strong> Change how ranks are interpreted.</li>
-      <li><strong>Light:</strong> Track visible light sources per rank.</li>
-    </ul>
-  </div>`;
-
-  new Dialog({
-    title: "Party Operations - Marching Order",
-    content,
-    buttons: { ok: { label: "OK" } },
-    default: "ok"
-  }).render(true);
 }
 
 async function runDoctrineCheckPrompt() {
@@ -15269,14 +19559,6 @@ async function joinRank(element) {
   });
 }
 
-async function toggleMarchLock(element) {
-  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
-  await updateMarchingOrderState((state) => {
-    state.locked = Boolean(checked);
-    state.lockedBy = state.locked ? (game.user?.name ?? "GM") : "";
-  });
-}
-
 async function toggleLight(element) {
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
@@ -15419,20 +19701,46 @@ function openActorSheetFromElement(element) {
 
 function getRestWatchState() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.REST_STATE);
-  return foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
+  const merged = foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
     insertValues: true
   });
+  const sourceSlots = Array.isArray(merged?.slots) ? merged.slots : buildStoredWatchSlots();
+  merged.slots = sourceSlots.map((slot, index) => {
+    const entrySource = Array.isArray(slot?.entries) ? slot.entries : [];
+    const entries = entrySource
+      .map((entry) => {
+        const actorId = String(entry?.actorId ?? "").trim();
+        if (!actorId) return null;
+        return {
+          actorId,
+          notes: String(entry?.notes ?? "")
+        };
+      })
+      .filter(Boolean);
+    return {
+      id: String(slot?.id ?? `watch-${index + 1}`),
+      timeRange: String(slot?.timeRange ?? ""),
+      entries
+    };
+  });
+  if (merged.slots.length === 0) merged.slots = buildStoredWatchSlots();
+  merged.locked = false;
+  merged.lockedBy = "";
+  return merged;
 }
 
 function getMarchingOrderState() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.MARCH_STATE);
-  return foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
+  const merged = foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
     insertValues: true
   });
+  merged.locked = false;
+  merged.lockedBy = "";
+  return merged;
 }
 
 function buildVisibilityOptions(current) {
@@ -15609,8 +19917,11 @@ function buildWatchSlotsView(state, isGM, visibility) {
   const lockedForUser = isLockedForUser(state, isGM);
   const activeActorId = !isGM ? getActiveCharacterId() : null;
   const activities = getRestActivities();
+  const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0
+    ? state.slots
+    : buildStoredWatchSlots();
   
-  return state.slots.map((slot, index) => {
+  return sourceSlots.map((slot, index) => {
     // Migrate old format: if slot has actorId, convert to entries
     let entries = slot.entries ?? [];
     if (slot.actorId && entries.length === 0) {
@@ -15915,6 +20226,11 @@ function extractCalendarEntryId(result) {
 }
 
 function isModuleDebugEnabled() {
+  try {
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.DEBUG_ENABLED));
+  } catch {
+    // Continue to legacy debug probes.
+  }
   try {
     const devModeApi = game.modules.get("_dev-mode")?.api;
     if (typeof devModeApi?.getPackageDebugValue === "function") {
@@ -16349,13 +20665,11 @@ function userOwnsActor(actor) {
 
 function canDragEntry(actorId, isGM, locked) {
   if (!isGM) return false;
-  if (locked) return false;
   return true;
 }
 
 function isLockedForUser(state, isGM) {
-  if (isGM) return false;
-  return Boolean(state.locked);
+  return false;
 }
 
 function buildActorView(actor, isGM, visibility) {
@@ -16689,9 +21003,11 @@ function clampFloatingLauncherPosition(pos, options = {}) {
   const launcherHeight = Math.max(140, Number(launcher?.offsetHeight ?? 140));
   const lockAware = options?.lockAware !== false;
   const locked = lockAware ? isFloatingLauncherLocked() : false;
-  const minLeft = locked ? 8 : getFloatingLauncherLeftInset();
+  const maxLeft = Math.max(8, width - launcherWidth - 8);
+  const requestedMinLeft = locked ? 8 : getFloatingLauncherLeftInset();
+  const minLeft = Math.min(Math.max(8, requestedMinLeft), maxLeft);
   return {
-    left: Math.max(minLeft, Math.min(width - launcherWidth - 8, Number(pos.left ?? minLeft))),
+    left: Math.max(minLeft, Math.min(maxLeft, Number(pos.left ?? minLeft))),
     top: Math.max(8, Math.min(height - launcherHeight - 8, Number(pos.top ?? 180)))
   };
 }
@@ -16732,6 +21048,23 @@ function applyFloatingLauncherInlineStyles(launcher, position = null) {
   launcher.style.top = `${pos.top}px`;
 }
 
+function ensureLauncherInViewport() {
+  const launcher = document.getElementById("po-floating-launcher");
+  if (!launcher) return;
+  const rect = launcher.getBoundingClientRect?.();
+  if (!rect) return;
+  const outsideViewport =
+    rect.right < 0 ||
+    rect.left > window.innerWidth ||
+    rect.bottom < 0 ||
+    rect.top > window.innerHeight;
+  if (!outsideViewport) return;
+  const centered = getFloatingLauncherCenteredPosition();
+  const clamped = clampFloatingLauncherPosition(centered, { lockAware: false });
+  applyFloatingLauncherInlineStyles(launcher, clamped);
+  saveFloatingLauncherPosition(clamped);
+}
+
 function scheduleLauncherRecoveryPass() {
   if (launcherRecoveryScheduled) return;
   launcherRecoveryScheduled = true;
@@ -16740,8 +21073,16 @@ function scheduleLauncherRecoveryPass() {
   for (const delay of LAUNCHER_RECOVERY_DELAYS_MS) {
     window.setTimeout(() => {
       try {
-        ensureClickOpener();
-        ensureFloatingLauncher();
+        if (shouldShowFloatingLauncher()) {
+          ensureClickOpener();
+          ensureFloatingLauncher();
+          ensureLauncherInViewport();
+        } else {
+          removeClickOpener();
+          removeFloatingLauncher();
+        }
+        if (shouldShowSidebarLauncher()) ensureSidebarLauncher();
+        else removeSidebarLauncher();
       } catch (error) {
         console.warn(`${MODULE_ID}: launcher recovery pass failed`, error);
       } finally {
@@ -16753,36 +21094,213 @@ function scheduleLauncherRecoveryPass() {
   }
 }
 
-function openOperationsUi() {
-  setActiveRestMainTab("operations");
-  const app = new RestWatchApp();
-  app.render({ force: true });
+function queueInventoryRefresh(actor, reason = "inventory-update") {
+  if (!actor || actor.documentName !== "Actor") return;
+  const hookMode = getInventoryHookModeSetting();
+  if (hookMode === INVENTORY_HOOK_MODES.OFF) return;
+  const actorId = String(actor.id ?? "").trim();
+  if (!actorId) return;
+
+  const existing = pendingInventoryRefreshByActor.get(actorId);
+  if (existing) window.clearTimeout(existing);
+
+  const timeoutId = window.setTimeout(() => {
+    pendingInventoryRefreshByActor.delete(actorId);
+    refreshOpenApps();
+    if (hookMode === INVENTORY_HOOK_MODES.SYNC && game.user?.isGM) {
+      scheduleIntegrationSync(reason);
+    }
+  }, 120);
+
+  pendingInventoryRefreshByActor.set(actorId, timeoutId);
+}
+
+function hasInventoryDelta(changed) {
+  if (!changed || typeof changed !== "object") return false;
+  if (Object.prototype.hasOwnProperty.call(changed, "items")) return true;
+  const itemDelta = foundry.utils.getProperty(changed, "items");
+  return Boolean(itemDelta && typeof itemDelta === "object");
+}
+
+function openMainTab(tabId, renderOptions = { force: true }) {
+  const normalized = normalizeMainTabId(tabId, "rest-watch");
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  logUiDebug("launcher", "openMainTab request", {
+    tabId,
+    normalized,
+    template: getTemplateForMainTab(normalized),
+    isGM: Boolean(game.user?.isGM)
+  });
+
+  if (normalized === "marching-order") {
+    if (restWatchAppInstance?.element?.isConnected) {
+      void restWatchAppInstance.close();
+    }
+    if (restWatchPlayerAppInstance?.element?.isConnected) {
+      void restWatchPlayerAppInstance.close();
+    }
+    const app = marchingOrderAppInstance?.element?.isConnected
+      ? marchingOrderAppInstance
+      : new MarchingOrderApp();
+    app.render(renderOptions);
+    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "marching-order" });
+    return app;
+  }
+
+  if (marchingOrderAppInstance?.element?.isConnected) {
+    void marchingOrderAppInstance.close();
+  }
+
+  if (normalized === "gm") {
+    if (!game.user?.isGM) {
+      ui.notifications?.warn("GM permissions are required for the GM section.");
+      return null;
+    }
+    setActiveRestMainTab("gm");
+    const app = restWatchAppInstance?.element?.isConnected
+      ? restWatchAppInstance
+      : new RestWatchApp();
+    app._activePanel = "gm";
+    app.render(renderOptions);
+    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "gm" });
+    return app;
+  }
+
+  if (normalized === "operations") {
+    setActiveRestMainTab("operations");
+    const app = restWatchAppInstance?.element?.isConnected
+      ? restWatchAppInstance
+      : new RestWatchApp();
+    app._activePanel = "operations";
+    app.render(renderOptions);
+    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "operations" });
+    return app;
+  }
+
+  setActiveRestMainTab("rest-watch");
+  const app = game.user?.isGM
+    ? (restWatchAppInstance?.element?.isConnected ? restWatchAppInstance : new RestWatchApp())
+    : (restWatchPlayerAppInstance?.element?.isConnected ? restWatchPlayerAppInstance : new RestWatchPlayerApp());
+  if (game.user?.isGM) app._activePanel = "rest-watch";
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "rest-watch" });
   return app;
+}
+
+function openOperationsUi() {
+  return openMainTab("operations", { force: true });
 }
 
 function openRestWatchUiForCurrentUser(renderOptions = { force: true }) {
-  const app = game.user?.isGM ? new RestWatchApp() : new RestWatchPlayerApp();
-  app.render(renderOptions);
-  return app;
+  return openMainTab("rest-watch", renderOptions);
 }
 
 function openGmUi() {
-  if (!game.user?.isGM) {
-    ui.notifications?.warn("GM permissions are required for the GM section.");
-    return null;
+  return openMainTab("gm", { force: true });
+}
+
+function normalizeLauncherPlacement(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === LAUNCHER_PLACEMENTS.SIDEBAR) return LAUNCHER_PLACEMENTS.SIDEBAR;
+  if (normalized === LAUNCHER_PLACEMENTS.BOTH) return LAUNCHER_PLACEMENTS.BOTH;
+  return LAUNCHER_PLACEMENTS.FLOATING;
+}
+
+function getLauncherPlacement() {
+  try {
+    return normalizeLauncherPlacement(game.settings.get(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT));
+  } catch {
+    return LAUNCHER_PLACEMENTS.FLOATING;
   }
-  setActiveRestMainTab("gm");
-  const app = new RestWatchApp();
-  app.render({ force: true });
-  return app;
+}
+
+function shouldShowFloatingLauncher() {
+  const placement = getLauncherPlacement();
+  return placement === LAUNCHER_PLACEMENTS.FLOATING || placement === LAUNCHER_PLACEMENTS.BOTH;
+}
+
+function shouldShowSidebarLauncher() {
+  const placement = getLauncherPlacement();
+  return placement === LAUNCHER_PLACEMENTS.SIDEBAR || placement === LAUNCHER_PLACEMENTS.BOTH;
+}
+
+function removeClickOpener() {
+  document.getElementById("po-click-opener")?.remove();
+}
+
+function removeFloatingLauncher() {
+  document.getElementById("po-floating-launcher")?.remove();
+}
+
+function removeSidebarLauncher() {
+  document.getElementById("po-sidebar-launcher")?.remove();
+}
+
+async function setLauncherPlacement(placement) {
+  const normalized = normalizeLauncherPlacement(placement);
+  await game.settings.set(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT, normalized);
+  return normalized;
+}
+
+function handleLauncherAction(action, context = {}) {
+  const tabId = getMainTabIdFromAction(action);
+  if (tabId) {
+    logUiDebug("launcher", "opening launcher action", {
+      action,
+      tabId,
+      template: getTemplateForMainTab(tabId)
+    });
+    try {
+      openMainTab(tabId, { force: true });
+    } catch (error) {
+      console.error(`${MODULE_ID}: launcher action failed`, { action, error });
+      ui.notifications?.error(`Party Operations failed to open ${tabId}. Check console for details.`);
+    }
+    return;
+  }
+  if (action === "lock") {
+    const launcher = context.launcherElement ?? document.getElementById("po-floating-launcher");
+    if (!launcher) return;
+    const current = clampFloatingLauncherPosition({
+      left: parseFloat(launcher.style.left || "16"),
+      top: parseFloat(launcher.style.top || "180")
+    }, { lockAware: false });
+    launcher.style.left = `${current.left}px`;
+    launcher.style.top = `${current.top}px`;
+    void saveFloatingLauncherPosition(current);
+    void game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, true);
+    return;
+  }
+  if (action === "unlock") {
+    void game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, false);
+    return;
+  }
+  if (action === "dock-sidebar") {
+    void setLauncherPlacement(LAUNCHER_PLACEMENTS.SIDEBAR);
+    return;
+  }
+  if (action === "dock-floating") {
+    void setLauncherPlacement(LAUNCHER_PLACEMENTS.FLOATING);
+    return;
+  }
 }
 
 function ensureLauncherUi() {
   let error = null;
+  const placement = getLauncherPlacement();
   try {
-    ensureClickOpener();
-    ensureFloatingLauncher();
-    scheduleLauncherRecoveryPass();
+    if (shouldShowFloatingLauncher()) {
+      ensureClickOpener();
+      ensureFloatingLauncher();
+      ensureLauncherInViewport();
+      scheduleLauncherRecoveryPass();
+    } else {
+      removeClickOpener();
+      removeFloatingLauncher();
+    }
+
+    if (shouldShowSidebarLauncher()) ensureSidebarLauncher();
+    else removeSidebarLauncher();
   } catch (caught) {
     error = caught;
     console.error(`${MODULE_ID}: ensureLauncherUi failed`, caught);
@@ -16790,24 +21308,78 @@ function ensureLauncherUi() {
 
   const clickOpener = document.getElementById("po-click-opener");
   const floatingLauncher = document.getElementById("po-floating-launcher");
+  const sidebarLauncher = document.getElementById("po-sidebar-launcher");
   return {
-    ok: Boolean(clickOpener || floatingLauncher) && !error,
+    ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher) && !error,
+    placement,
     clickOpener: Boolean(clickOpener),
     floatingLauncher: Boolean(floatingLauncher),
+    sidebarLauncher: Boolean(sidebarLauncher),
     error: error ? String(error?.message ?? error) : null
+  };
+}
+
+function getLauncherStatusSnapshot() {
+  const clickOpener = document.getElementById("po-click-opener");
+  const floatingLauncher = document.getElementById("po-floating-launcher");
+  const sidebarLauncher = document.getElementById("po-sidebar-launcher");
+  const placement = getLauncherPlacement();
+  return {
+    ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher),
+    placement,
+    clickOpener: Boolean(clickOpener),
+    floatingLauncher: Boolean(floatingLauncher),
+    sidebarLauncher: Boolean(sidebarLauncher),
+    sidebarPresent: Boolean(document.getElementById("sidebar")),
+    moduleId: MODULE_ID
+  };
+}
+
+async function forceLauncherRecovery(reason = "unknown") {
+  let status = ensureLauncherUi();
+  if (status?.ok) return { ...status, recovered: false, reason };
+
+  try {
+    await setLauncherPlacement(LAUNCHER_PLACEMENTS.BOTH);
+  } catch {
+    // Keep trying even if setting write fails.
+  }
+
+  try {
+    await resetFloatingLauncherPosition();
+  } catch {
+    // Keep trying even if reset fails.
+  }
+
+  removeClickOpener();
+  removeFloatingLauncher();
+  removeSidebarLauncher();
+
+  ensureClickOpener();
+  ensureFloatingLauncher();
+  ensureSidebarLauncher();
+  ensureLauncherInViewport();
+
+  status = ensureLauncherUi();
+  const snapshot = getLauncherStatusSnapshot();
+  if (!status?.ok && !snapshot.ok) {
+    console.warn(`${MODULE_ID}: launcher recovery failed`, { reason, status, snapshot });
+  }
+
+  return {
+    ...status,
+    recovered: Boolean(status?.ok),
+    reason,
+    snapshot
   };
 }
 
 function buildPartyOperationsApi() {
   const api = {
-    restWatch: () => openRestWatchUiForCurrentUser({ force: true }),
-    marchingOrder: () => {
-      const app = new MarchingOrderApp();
-      app.render({ force: true });
-      return app;
-    },
-    operations: () => openOperationsUi(),
-    gm: () => openGmUi(),
+    restWatch: () => openMainTab("rest-watch", { force: true }),
+    marchingOrder: () => openMainTab("marching-order", { force: true }),
+    operations: () => openMainTab("operations", { force: true }),
+    gm: () => openMainTab("gm", { force: true }),
     refreshAll: () => refreshOpenApps(),
     getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
     applyUpkeep: () => applyOperationalUpkeep(),
@@ -16817,14 +21389,24 @@ function buildPartyOperationsApi() {
     undoSessionAutopilot: () => undoLastSessionAutopilot(),
     syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
     syncIntegrations: () => scheduleIntegrationSync("api"),
+    getConfig: () => foundry.utils.deepClone(getModuleConfigSnapshot()),
+    getTypedConfig: () => foundry.utils.deepClone(getPartyOpsConfigSetting()),
+    saveTypedConfig: (input) => savePartyOpsConfigSetting(input),
+    getInventoryHookMode: () => getInventoryHookModeSetting(),
+    setInventoryHookMode: (mode) => setInventoryHookMode(mode),
+    getLauncherPlacement: () => getLauncherPlacement(),
+    setLauncherPlacement: (placement) => setLauncherPlacement(placement),
     getLootSourceConfig: () => foundry.utils.deepClone(getLootSourceConfig()),
     previewLoot: (draft) => generateLootPreviewPayload(draft),
+    generateLootFromPackIds: (packIds, input, options) => generateLootFromPackIds(packIds, input, options),
     getLootPreviewResult: () => foundry.utils.deepClone(getLootPreviewResult()),
     diagnoseWorldData: (options) => diagnoseWorldData(options),
     repairWorldData: () => diagnoseWorldData({ repair: true }),
     resetLauncherPosition: () => resetFloatingLauncherPosition(),
     ensureLauncher: () => ensureLauncherUi(),
     showLauncher: () => ensureLauncherUi(),
+    forceLauncherRecovery: (reason) => forceLauncherRecovery(reason),
+    launcherStatus: () => getLauncherStatusSnapshot(),
     apiStatus: () => ({
       moduleActive: Boolean(game.modules?.get?.(MODULE_ID)?.active),
       hasGameApi: Boolean(game.partyOperations),
@@ -16849,6 +21431,30 @@ function registerPartyOperationsApi() {
   game.partyOperations = api;
   globalThis.partyOperations = api;
   globalThis.PartyOperations = api;
+
+  try {
+    Object.defineProperty(globalThis, "partyOperations", {
+      configurable: true,
+      get: () => game.partyOperations ?? api,
+      set: (value) => {
+        game.partyOperations = value;
+      }
+    });
+  } catch {
+    // Ignore if runtime prevents redefining globals.
+  }
+
+  try {
+    Object.defineProperty(globalThis, "PartyOperations", {
+      configurable: true,
+      get: () => game.partyOperations ?? api,
+      set: (value) => {
+        game.partyOperations = value;
+      }
+    });
+  } catch {
+    // Ignore if runtime prevents redefining globals.
+  }
 
   const moduleRef = game.modules?.get?.(MODULE_ID);
   if (moduleRef) {
@@ -16881,12 +21487,87 @@ function ensureClickOpener() {
     opener.innerHTML = '<i class="fas fa-compass"></i>';
     opener.addEventListener("click", () => {
       ensureFloatingLauncher();
-      openRestWatchUiForCurrentUser({ force: true });
+      handleLauncherAction("rest");
     });
     document.body.appendChild(opener);
   }
 
   applyClickOpenerInlineStyles(opener);
+}
+
+function ensureSidebarLauncher() {
+  const sidebar = document.getElementById("sidebar");
+  if (!sidebar) return null;
+
+  let launcher = document.getElementById("po-sidebar-launcher");
+  if (!launcher) {
+    launcher = document.createElement("section");
+    launcher.id = "po-sidebar-launcher";
+    launcher.classList.add("po-sidebar-launcher");
+    sidebar.appendChild(launcher);
+  } else if (launcher.parentElement !== sidebar) {
+    sidebar.appendChild(launcher);
+  }
+
+  const setLauncherMarkup = (target) => {
+    const buttonsMarkup = PO_SIDEBAR_VIEW_ITEMS
+      .filter((item) => !item.gmOnly || game.user?.isGM)
+      .map((item) => {
+        const gmClass = item.gmOnly ? " po-sidebar-gm" : "";
+        return `
+        <button type="button" class="po-sidebar-btn${gmClass}" data-action="${item.action}" data-tab-id="${item.id}" data-target="${item.target}" title="${item.title}" aria-label="${item.title}">
+          <i class="${item.icon}"></i><span>${item.label}</span>
+        </button>`;
+      })
+      .join("");
+
+    target.innerHTML = `
+      <header class="po-sidebar-launcher-header">
+        <h4 class="po-sidebar-launcher-title">Party Operations</h4>
+        <button type="button" class="po-sidebar-btn po-sidebar-dock" data-action="dock-floating" title="Dock launcher on screen" aria-label="Dock launcher on screen">
+          <i class="fas fa-external-link-alt"></i>
+        </button>
+      </header>
+      <div class="po-sidebar-launcher-grid">
+        ${buttonsMarkup}
+      </div>
+    `;
+    logUiDebug("sidebar-launcher", "rebuilt sidebar launcher", {
+      items: PO_SIDEBAR_VIEW_ITEMS
+        .filter((item) => !item.gmOnly || game.user?.isGM)
+        .map((item) => ({ id: item.id, action: item.action, target: item.target }))
+    });
+  };
+
+  const hasRestBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="rest-watch"]'));
+  const hasOperationsBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="operations"]'));
+  const hasMarchBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="marching-order"]'));
+  const hasGmBtn = !game.user?.isGM || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
+  const hasDockBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-action="dock-floating"]'));
+  if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
+    setLauncherMarkup(launcher);
+  }
+
+  if (launcher.dataset.poSidebarLauncherBound !== "1") {
+    launcher.dataset.poSidebarLauncherBound = "1";
+    launcher.addEventListener("click", (event) => {
+      const button = event.target?.closest(".po-sidebar-btn");
+      if (!button) return;
+      const action = button.dataset.action;
+      if (!action) return;
+      logUiDebug("sidebar-launcher", "sidebar launcher click", {
+        action,
+        tabId: button.dataset.tabId,
+        target: button.dataset.target,
+        template: getTemplateForMainTab(button.dataset.tabId)
+      });
+      handleLauncherAction(action);
+    });
+  }
+
+  const gmButton = launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]');
+  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
+  return launcher;
 }
 
 function ensureFloatingLauncher() {
@@ -16904,6 +21585,9 @@ function ensureFloatingLauncher() {
       <button type="button" class="po-floating-btn" data-action="march" title="Open Marching Order" aria-label="Open Marching Order"><i class="fas fa-arrow-up"></i></button>
       <button type="button" class="po-floating-btn po-floating-gm" data-action="gm" title="Open GM Section" aria-label="Open GM Section">
         <i class="fas fa-user-shield"></i>
+      </button>
+      <button type="button" class="po-floating-btn po-floating-dock" data-action="dock-sidebar" title="Dock launcher in sidebar" aria-label="Dock launcher in sidebar">
+        <i class="fas fa-columns"></i>
       </button>
       <button type="button" class="po-floating-btn po-floating-lock" data-action="lock" title="Lock launcher" aria-label="Lock launcher">
         <i class="fas fa-lock"></i>
@@ -16925,31 +21609,8 @@ function ensureFloatingLauncher() {
       const button = event.target?.closest(".po-floating-btn");
       if (!button) return;
       const action = button.dataset.action;
-      if (action === "rest") openRestWatchUiForCurrentUser({ force: true });
-      if (action === "operations") {
-        setActiveRestMainTab("operations");
-        new RestWatchApp().render({ force: true });
-      }
-      if (action === "march") new MarchingOrderApp().render({ force: true });
-      if (action === "gm") {
-        if (!game.user?.isGM) {
-          ui.notifications?.warn("GM permissions are required for the GM section.");
-          return;
-        }
-        setActiveRestMainTab("gm");
-        new RestWatchApp().render({ force: true });
-      }
-      if (action === "lock") {
-        const current = clampFloatingLauncherPosition({
-          left: parseFloat(launcher.style.left || "16"),
-          top: parseFloat(launcher.style.top || "180")
-        }, { lockAware: false });
-        launcher.style.left = `${current.left}px`;
-        launcher.style.top = `${current.top}px`;
-        saveFloatingLauncherPosition(current);
-        game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, true);
-      }
-      if (action === "unlock") game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, false);
+      if (!action) return;
+      handleLauncherAction(action, { launcherElement: launcher });
     });
 
     const handle = launcher.querySelector(".po-floating-handle");
@@ -17019,9 +21680,10 @@ function ensureFloatingLauncher() {
     const hasOperationsBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="operations"]'));
     const hasMarchBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="march"]'));
     const hasGmBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="gm"]'));
+    const hasDockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="dock-sidebar"]'));
     const hasLockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="lock"]'));
     const hasUnlockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="unlock"]'));
-    if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasLockBtn || !hasUnlockBtn) {
+    if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn || !hasLockBtn || !hasUnlockBtn) {
       setLauncherMarkup(launcher);
     }
   }
@@ -17183,20 +21845,169 @@ async function diagnoseWorldData(options = {}) {
 }
 
 function setupPartyOperationsUI() {
-  // Keep UI launcher independent from scene controls; remove any legacy injected control.
+  Hooks.on("getSceneControlButtons", (controls) => {
+    if (!Array.isArray(controls)) return;
+    if (controls.some((control) => control?.name === "party-operations")) return;
+
+    const tools = [
+      {
+        name: "po-rest-watch",
+        title: "Open Rest Watch",
+        icon: "fas fa-moon",
+        button: true,
+        onClick: () => openMainTab("rest-watch", { force: true })
+      },
+      {
+        name: "po-marching-order",
+        title: "Open Marching Order",
+        icon: "fas fa-arrow-up",
+        button: true,
+        onClick: () => openMainTab("marching-order", { force: true })
+      },
+      {
+        name: "po-operations",
+        title: "Open Operations",
+        icon: "fas fa-clipboard-list",
+        button: true,
+        onClick: () => openMainTab("operations", { force: true })
+      }
+    ];
+
+    if (game.user?.isGM) {
+      tools.push({
+        name: "po-gm",
+        title: "Open GM",
+        icon: "fas fa-user-shield",
+        button: true,
+        onClick: () => openMainTab("gm", { force: true })
+      });
+    }
+
+    controls.push({
+      name: "party-operations",
+      title: "Party Operations",
+      icon: "fas fa-compass",
+      visible: true,
+      tools,
+      activeTool: "po-rest-watch"
+    });
+  });
+
+  // Keep launcher UI visible across re-renders.
   Hooks.on("renderSceneControls", (controls, html) => {
-    const root = html?.querySelector ? html : html?.[0] ?? null;
-    root?.querySelector?.("[data-control='party-operations']")?.remove();
     ensureLauncherUi();
   });
 
   Hooks.on("canvasReady", () => {
     ensureLauncherUi();
   });
+
+  Hooks.on("renderHotbar", () => {
+    ensureLauncherUi();
+  });
+
+  Hooks.on("renderSidebarTab", () => {
+    ensureLauncherUi();
+  });
+
+  Hooks.on("renderNavigation", () => {
+    ensureLauncherUi();
+  });
+}
+
+function registerPartyOpsHooks() {
+  if (partyOpsHooksRegistered) return;
+  partyOpsHooksRegistered = true;
+
+  Hooks.on("updateWorldTime", async () => {
+    refreshOpenApps();
+    await notifyDailyInjuryReminders();
+    if (!game.user.isGM) return;
+    await applyOperationalUpkeep({ automatic: true });
+  });
+
+  Hooks.on("createToken", async (tokenDoc, options, userId) => {
+    await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
+  });
+
+  Hooks.on("preUpdateToken", (tokenDoc, changed, options) => {
+    if (options?.poEnvironmentClamp) return;
+    if (!changed || (changed.x === undefined && changed.y === undefined)) return;
+    environmentMoveOriginByToken.set(tokenDoc.id, {
+      x: Number(tokenDoc.x ?? 0),
+      y: Number(tokenDoc.y ?? 0)
+    });
+  });
+
+  Hooks.on("updateToken", async (tokenDoc, changed, options) => {
+    await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
+  });
+
+  Hooks.on("updateActor", (actor, changed) => {
+    if (!hasInventoryDelta(changed)) return;
+    queueInventoryRefresh(actor, "inventory-update-actor");
+  });
+
+  Hooks.on("createItem", (item) => {
+    const actor = item?.parent;
+    if (!actor || actor.documentName !== "Actor") return;
+    queueInventoryRefresh(actor, "inventory-create-item");
+  });
+
+  Hooks.on("updateItem", (item, changed) => {
+    const actor = item?.parent;
+    if (!actor || actor.documentName !== "Actor") return;
+    if (!changed || typeof changed !== "object") return;
+
+    const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
+    const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
+    const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
+    const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
+    const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
+
+    if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
+    queueInventoryRefresh(actor, "inventory-update-item");
+  });
+
+  Hooks.on("deleteItem", (item) => {
+    const actor = item?.parent;
+    if (!actor || actor.documentName !== "Actor") return;
+    queueInventoryRefresh(actor, "inventory-delete-item");
+  });
+
+  Hooks.on("updateSetting", (setting) => {
+    const settingKey = setting?.key ?? "";
+    if (!settingKey) return;
+    if (consumeSuppressedSettingRefresh(settingKey)) return;
+    const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
+    const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
+    const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
+    const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
+    const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
+    const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
+    const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
+    const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
+    const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
+    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey || settingKey === journalVisibilityKey || settingKey === sessionSummaryRangeKey) {
+      refreshOpenApps();
+    }
+    if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
+      scheduleIntegrationSync("update-setting");
+    }
+  });
+
+  Hooks.on("canvasReady", () => {
+    if (!game.user.isGM) return;
+    scheduleIntegrationSync("canvas-ready");
+  });
 }
 
 Hooks.once("init", () => {
   registerPartyOperationsApi();
+  registerPartyOpsSettings((key) => {
+    if (key === SETTINGS.DEBUG_ENABLED) return;
+    refreshOpenApps();
+  });
   game.settings.register(MODULE_ID, SETTINGS.REST_STATE, {
     scope: "world",
     config: false,
@@ -17260,6 +22071,120 @@ Hooks.once("init", () => {
     default: buildDefaultLootSourceConfig()
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ENABLED, {
+    name: "Auto Inventory For Unlinked Tokens",
+    hint: "When enabled, new unlinked NPC tokens get generated usable inventory on placement.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_WEAPON_PACK, {
+    name: "Auto Inventory Weapon Pack",
+    hint: "Compendium pack ID used for weapon lookups (for example dnd5e.items).",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "dnd5e.items",
+    onChange: () => autoInventoryPackIndexCache.clear()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ARMOR_PACK, {
+    name: "Auto Inventory Armor Pack",
+    hint: "Compendium pack ID used for armor/shield lookups.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "dnd5e.items",
+    onChange: () => autoInventoryPackIndexCache.clear()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_GEAR_PACK, {
+    name: "Auto Inventory Gear Pack",
+    hint: "Compendium pack ID used for adventuring gear lookups.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "dnd5e.items",
+    onChange: () => autoInventoryPackIndexCache.clear()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLES_PACK, {
+    name: "Auto Inventory Consumables Pack",
+    hint: "Compendium pack ID used for potions and consumables lookups.",
+    scope: "world",
+    config: true,
+    type: String,
+    default: "dnd5e.items",
+    onChange: () => autoInventoryPackIndexCache.clear()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_ENABLED, {
+    name: "Auto Inventory Currency",
+    hint: "If enabled, generated unlinked token inventory can include weighted currency bundles.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ITEM_CHANCE_SCALAR, {
+    name: "Auto Inventory Item Chance (%)",
+    hint: "Scales non-mandatory equipment/gear chance for unlinked token auto inventory.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: {
+      min: 0,
+      max: 200,
+      step: 5
+    },
+    default: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLE_CHANCE_SCALAR, {
+    name: "Auto Inventory Consumable Chance (%)",
+    hint: "Scales potion and utility consumable chance for unlinked token auto inventory.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: {
+      min: 0,
+      max: 300,
+      step: 5
+    },
+    default: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_SCALAR, {
+    name: "Auto Inventory Currency Scale (%)",
+    hint: "Scales generated currency bundle amounts for unlinked token auto inventory.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: {
+      min: 0,
+      max: 300,
+      step: 5
+    },
+    default: AUTO_INV_DEFAULT_CURRENCY_SCALAR
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_QUALITY_SHIFT, {
+    name: "Auto Inventory Quality Shift",
+    hint: "Shifts item quality band from CR (-2 to +2) for stricter or richer gear quality.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: {
+      min: -2,
+      max: 2,
+      step: 1
+    },
+    default: AUTO_INV_DEFAULT_QUALITY_SHIFT
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.INTEGRATION_MODE, {
     name: "Integration Mode",
     hint: "Choose how Party Operations syncs state for DAE/automation modules.",
@@ -17296,6 +22221,21 @@ Hooks.once("init", () => {
     default: "prefer-monks"
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT, {
+    name: "Launcher Placement",
+    hint: "Choose whether the Party Operations launcher is on-screen, in the sidebar, or both.",
+    scope: "client",
+    config: true,
+    type: String,
+    choices: {
+      [LAUNCHER_PLACEMENTS.FLOATING]: "Floating on Screen",
+      [LAUNCHER_PLACEMENTS.SIDEBAR]: "Pinned in Sidebar",
+      [LAUNCHER_PLACEMENTS.BOTH]: "Show Both"
+    },
+    default: LAUNCHER_PLACEMENTS.FLOATING,
+    onChange: () => ensureLauncherUi()
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, {
     scope: "client",
     config: false,
@@ -17313,7 +22253,7 @@ Hooks.once("init", () => {
     config: true,
     type: Boolean,
     default: false,
-    onChange: () => ensureFloatingLauncher()
+    onChange: () => ensureLauncherUi()
   });
 
   game.settings.register(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_RESET, {
@@ -17327,7 +22267,7 @@ Hooks.once("init", () => {
       if (!value) return;
       await resetFloatingLauncherPosition();
       await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_RESET, false);
-      ensureFloatingLauncher();
+      ensureLauncherUi();
     }
   });
 
@@ -17337,7 +22277,7 @@ Hooks.once("init", () => {
     scope: "world",
     config: true,
     type: Boolean,
-    default: true
+    default: false
   });
 
   game.settings.register(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY, {
@@ -17381,6 +22321,20 @@ Hooks.once("init", () => {
     default: { folders: {} }
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE, {
+    name: "Inventory Hook Mode",
+    hint: "Controls actor inventory hook behavior for Party Operations refresh/sync.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [INVENTORY_HOOK_MODES.OFF]: "Off",
+      [INVENTORY_HOOK_MODES.REFRESH]: "Refresh UI Only",
+      [INVENTORY_HOOK_MODES.SYNC]: "Refresh UI + Integration Sync"
+    },
+    default: INVENTORY_HOOK_MODES.SYNC
+  });
+
   game.keybindings.register(MODULE_ID, "openRestWatch", {
     name: "Open Rest Watch",
     editable: [],
@@ -17402,17 +22356,25 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   registerPartyOperationsApi();
+  void validatePartyOperationsTemplates();
+  bindPoBrowserBackNavigation();
+  
   // Setup UI controls for sidebar
   setupPartyOperationsUI();
   ensureLauncherUi();
+  window.setTimeout(() => ensureLauncherUi(), 250);
+  window.setTimeout(() => ensureLauncherUi(), 1000);
+  window.setTimeout(() => ensureLauncherUi(), 3000);
+  window.setTimeout(() => {
+    forceLauncherRecovery("ready-self-heal").catch((error) => {
+      console.warn(`${MODULE_ID}: launcher self-heal failed`, error);
+    });
+  }, 4200);
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players
   if (!game.user.isGM) {
-    const autoOpenPlayerUi = game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST) ?? true;
-    if (autoOpenPlayerUi) {
-      openRestWatchUiForCurrentUser({ force: true });
-    }
+    // Intentionally do not auto-open UI on ready.
   } else {
     scheduleIntegrationSync("ready");
     ensureOperationsJournalFolderTree().catch((error) => {
@@ -17506,53 +22468,15 @@ Hooks.once("ready", () => {
       await applyPlayerLootCurrencyClaimRequest(message, requester);
       return;
     }
-  });
-
-  Hooks.on("updateWorldTime", async () => {
-    refreshOpenApps();
-    await notifyDailyInjuryReminders();
-    if (!game.user.isGM) return;
-    await applyOperationalUpkeep({ automatic: true });
-  });
-
-  Hooks.on("preUpdateToken", (tokenDoc, changed, options) => {
-    if (options?.poEnvironmentClamp) return;
-    if (!changed || (changed.x === undefined && changed.y === undefined)) return;
-    environmentMoveOriginByToken.set(tokenDoc.id, {
-      x: Number(tokenDoc.x ?? 0),
-      y: Number(tokenDoc.y ?? 0)
-    });
-  });
-
-  Hooks.on("updateToken", async (tokenDoc, changed, options) => {
-    await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
-  });
-
-  Hooks.on("updateSetting", (setting) => {
-    const settingKey = setting?.key ?? "";
-    if (!settingKey) return;
-    if (consumeSuppressedSettingRefresh(settingKey)) return;
-    const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
-    const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
-    const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
-    const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
-    const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
-    const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
-    const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-    const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
-    const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
-    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey || settingKey === journalVisibilityKey || settingKey === sessionSummaryRangeKey) {
-      refreshOpenApps();
-    }
-    if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
-      scheduleIntegrationSync("update-setting");
+    if (message.type === "ops:loot-vouch") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerLootVouchRequest(message, requester);
+      return;
     }
   });
 
-  Hooks.on("canvasReady", () => {
-    if (!game.user.isGM) return;
-    scheduleIntegrationSync("canvas-ready");
-  });
+  registerPartyOpsHooks();
 });
 
 async function applyPlayerSopNoteRequest(message, requesterRef = null) {
@@ -17636,6 +22560,21 @@ async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null)
   await postLootCurrencyClaimToChat(outcome);
   const s = outcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
   ui.notifications?.info(`${requester.name} claimed currency for ${outcome.actorName}: ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
+}
+
+async function applyPlayerLootVouchRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
+  if (!actorId || !itemId) return;
+  const shouldVouch = message?.shouldVouch !== false;
+  const outcome = await applyLootVouchForUser(requester, actorId, itemId, shouldVouch);
+  if (!outcome.ok) {
+    ui.notifications?.warn(`Loot voucher failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+    return;
+  }
+  ui.notifications?.info(`${requester.name} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
 }
 
 async function applyRestRequest(request, requesterRef) {
@@ -17725,8 +22664,6 @@ async function applyMarchRequest(request, requesterRef) {
   if (!requester) return;
   const requesterActor = requester.character;
 
-  if (state.locked) return;
-
   // joinRank: must be requester's character
   if (request.op === "joinRank") {
     if (!requesterActor || requesterActor.id !== request.actorId) return; // security check
@@ -17789,13 +22726,33 @@ function refreshOpenApps() {
   refreshOpenAppsQueued = true;
   requestAnimationFrame(() => {
     refreshOpenAppsQueued = false;
-  const ids = new Set(["rest-watch-app", "marching-order-app", "rest-watch-player-app"]);
-  const knownInstances = [restWatchAppInstance, marchingOrderAppInstance, restWatchPlayerAppInstance]
+  const ids = new Set([
+    "rest-watch-app",
+    "marching-order-app",
+    "rest-watch-player-app",
+    "party-operations-global-modifier-summary",
+    "party-operations-gm-environment-page",
+    "party-operations-gm-loot-page",
+    "party-operations-gm-loot-claims-board"
+  ]);
+  const knownInstances = [
+    restWatchAppInstance,
+    marchingOrderAppInstance,
+    restWatchPlayerAppInstance,
+    globalModifierSummaryAppInstance,
+    gmEnvironmentPageAppInstance,
+    gmLootPageAppInstance,
+    gmLootClaimsBoardAppInstance
+  ]
     .filter((app) => app?.element?.isConnected);
   const apps = Object.values(ui.windows).filter((app) =>
     app instanceof RestWatchApp ||
     app instanceof MarchingOrderApp ||
     app instanceof RestWatchPlayerApp ||
+    app instanceof GlobalModifierSummaryApp ||
+    app instanceof GmEnvironmentPageApp ||
+    app instanceof GmLootPageApp ||
+    app instanceof GmLootClaimsBoardApp ||
     ids.has(app?.id ?? app?.options?.id)
   );
   const unique = Array.from(new Set([...apps, ...knownInstances]));
@@ -17909,6 +22866,7 @@ export function emitSocketRefresh() {
 function emitOpenRestPlayers() {
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
 }
+
 
 
 

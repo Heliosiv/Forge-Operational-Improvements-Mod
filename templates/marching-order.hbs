@@ -5,11 +5,11 @@
       <div class="po-subtitle" aria-live="polite">Marching Order - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
     <nav class="po-tabs po-tabs-main po-tabs-main-header" role="navigation" aria-label="Party Operations views">
-      <button type="button" class="po-tab" data-action="main-tab" data-tab="rest-watch" aria-current="false">Rest Watch</button>
-      <button type="button" class="po-tab is-active" data-action="main-tab" data-tab="marching-order" aria-current="page">Marching Order</button>
-      <button type="button" class="po-tab" data-action="main-tab" data-tab="operations" aria-current="false">Operations</button>
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="rest" aria-selected="false" aria-current="false">Rest Watch</button>
+      <button type="button" class="po-tab is-active" data-action="switch-tab" data-tab="march" aria-selected="true" aria-current="page">Marching Order</button>
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="operations" aria-selected="false" aria-current="false">Operations</button>
       {{#if isGM}}
-      <button type="button" class="po-tab" data-action="main-tab" data-tab="gm" aria-current="false">GM</button>
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="gm" aria-selected="false" aria-current="false">GM</button>
       {{/if}}
     </nav>
     <div class="po-controls">
@@ -24,12 +24,8 @@
     </div>
   </header>
 
-  {{#if lockBannerText}}
-  <div class="po-lock-banner {{lockBannerClass}}" title="{{lockBannerTooltip}}">{{lockBannerText}}</div>
-  {{/if}}
-
   <div class="po-body">
-  <section class="po-overview" aria-label="Marching status">
+  <section id="po-march-overview" class="po-overview" aria-label="Marching status">
     <article class="po-overview-card">
       <span>Assigned Actors</span>
       <strong>{{overview.totalAssigned}}</strong>
@@ -46,14 +42,10 @@
       <span>Light Sources</span>
       <strong>{{overview.lightSources}}</strong>
     </article>
-    <article class="po-overview-card">
-      <span>Lock Status</span>
-      <strong>{{overview.lockState}}</strong>
-    </article>
   </section>
 
   <section class="po-content">
-    <section class="po-usage-panel po-collapsible {{#if usageCollapsed}}is-collapsed{{/if}}" data-section-id="usage">
+    <section id="po-march-usage" class="po-usage-panel po-collapsible {{#if usageCollapsed}}is-collapsed{{/if}}" data-section-id="usage">
       <header class="po-collapsible-head">
         <div class="po-section-title">How to Use</div>
       </header>
@@ -63,14 +55,14 @@
           <li>Use <strong>Add Actor</strong> in each rank to assign party members.</li>
           <li>Drag actor cards by the grip handle to reorder within a rank.</li>
           <li>Edit each actor's <strong>Notes</strong> directly inside their card.</li>
-          <li>Use <strong>Lock Marching Order</strong> to freeze player edits during planning.</li>
+          <li>Use planning sections to organize rank assignment before movement.</li>
         </ul>
       </div>
       {{/unless}}
     </section>
 
-    <div class="po-grid">
-      <div class="po-ranks">
+    <div class="po-grid po-columns">
+      <div id="po-march-ranks" class="po-ranks po-left">
         {{#each ranks}}
         <section class="po-rank-col po-collapsible {{#if collapsed}}is-collapsed{{/if}}" data-rank-id="{{id}}" data-section-id="rank-{{id}}">
           <header class="po-rank-header">
@@ -171,33 +163,8 @@
       </div>
 
       {{#if isGM}}
-      <aside class="po-gm-panel">
-        <div class="po-gm-section po-collapsible {{#if gmSections.helpCollapsed}}is-collapsed{{/if}}" data-section-id="gm-help">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Help</div>
-          </header>
-          {{#unless gmSections.helpCollapsed}}
-          <div class="po-collapsible-body">
-            <button type="button" class="po-btn" data-action="help">Help</button>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div class="po-gm-section po-collapsible {{#if gmSections.lockCollapsed}}is-collapsed{{/if}}" data-section-id="gm-lock">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Lock</div>
-          </header>
-          {{#unless gmSections.lockCollapsed}}
-          <div class="po-collapsible-body">
-            <label class="po-switch">
-              <input type="checkbox" data-action="toggle-lock" {{#if locked}}checked{{/if}} />
-              <span>Lock Marching Order</span>
-            </label>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div class="po-gm-section po-collapsible {{#if gmSections.formationsCollapsed}}is-collapsed{{/if}}" data-section-id="gm-formations">
+      <aside class="po-gm-panel po-right">
+        <div id="po-march-gm-formations" class="po-gm-section po-collapsible {{#if gmSections.formationsCollapsed}}is-collapsed{{/if}}" data-section-id="gm-formations">
           <header class="po-collapsible-head">
             <div class="po-section-title">Formations</div>
           </header>
@@ -216,7 +183,7 @@
           {{/unless}}
         </div>
 
-        <div class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
+        <div id="po-march-gm-light" class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
           <header class="po-collapsible-head">
             <div class="po-section-title">Torch / Light</div>
           </header>
@@ -240,7 +207,7 @@
           {{/unless}}
         </div>
 
-        <div class="po-gm-section po-collapsible {{#if gmSections.exportCollapsed}}is-collapsed{{/if}}" data-section-id="gm-export">
+        <div id="po-march-gm-export" class="po-gm-section po-collapsible {{#if gmSections.exportCollapsed}}is-collapsed{{/if}}" data-section-id="gm-export">
           <header class="po-collapsible-head">
             <div class="po-section-title">Export</div>
           </header>
@@ -252,7 +219,7 @@
           {{/unless}}
         </div>
 
-        <div class="po-gm-section po-collapsible {{#if gmSections.snapshotCollapsed}}is-collapsed{{/if}}" data-section-id="gm-snapshot">
+        <div id="po-march-gm-snapshot" class="po-gm-section po-collapsible {{#if gmSections.snapshotCollapsed}}is-collapsed{{/if}}" data-section-id="gm-snapshot">
           <header class="po-collapsible-head">
             <div class="po-section-title">Snapshot</div>
           </header>
@@ -263,7 +230,7 @@
           {{/unless}}
         </div>
 
-        <div class="po-gm-section po-collapsible {{#if gmSections.clearCollapsed}}is-collapsed{{/if}}" data-section-id="gm-clear">
+        <div id="po-march-gm-clear" class="po-gm-section po-collapsible {{#if gmSections.clearCollapsed}}is-collapsed{{/if}}" data-section-id="gm-clear">
           <header class="po-collapsible-head">
             <div class="po-section-title">Clear</div>
           </header>
@@ -274,7 +241,7 @@
           {{/unless}}
         </div>
 
-        <div class="po-gm-section po-collapsible {{#if gmSections.gmNotesCollapsed}}is-collapsed{{/if}}" data-section-id="gm-notes">
+        <div id="po-march-gm-notes" class="po-gm-section po-collapsible {{#if gmSections.gmNotesCollapsed}}is-collapsed{{/if}}" data-section-id="gm-notes">
           <header class="po-collapsible-head">
             <div class="po-section-title">GM Marching Notes</div>
           </header>
@@ -291,10 +258,6 @@
   </section>
   </div>
 
-  <footer class="po-footer">
-    <div class="po-footer-text">Marching Order</div>
-    <div class="po-footer-text">Drag and drop to reorder ranks</div>
-  </footer>
 </div>
 
 

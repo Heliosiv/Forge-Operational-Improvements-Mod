@@ -1,0 +1,61 @@
+<section class="party-operations-app">
+  <header class="po-app-header">
+    <nav class="po-app-tabs" aria-label="Party Operations Tabs">
+      <button type="button" data-action="switch-tab" data-tab="rest-watch" class="{{#if tabRestWatch}}is-active{{/if}}">Rest Watch</button>
+      <button type="button" data-action="switch-tab" data-tab="marching-order" class="{{#if tabMarchingOrder}}is-active{{/if}}">Marching Order</button>
+      <button type="button" data-action="switch-tab" data-tab="loot" class="{{#if tabLoot}}is-active{{/if}}">Loot</button>
+    </nav>
+  </header>
+
+  <section class="po-app-body">
+    {{#if tabRestWatch}}
+      <article class="po-tab-panel" data-tab="rest-watch">
+        <h3>Rest Watch Snapshot</h3>
+        <pre>{{snapshotsText.restWatch}}</pre>
+      </article>
+    {{/if}}
+
+    {{#if tabMarchingOrder}}
+      <article class="po-tab-panel" data-tab="marching-order">
+        <h3>Marching Order Snapshot</h3>
+        <pre>{{snapshotsText.marchingOrder}}</pre>
+      </article>
+    {{/if}}
+
+    {{#if tabLoot}}
+      <article class="po-tab-panel" data-tab="loot">
+        <h3>Generate Suggested Loot</h3>
+        <div class="po-form-row">
+          <label>CR</label>
+          <input type="number" name="lootCr" min="0" max="30" step="1" value="5" />
+        </div>
+        <div class="po-form-row">
+          <label>Scarcity</label>
+          <select name="lootScarcity">
+            <option value="abundant">Abundant</option>
+            <option value="normal" selected>Normal</option>
+            <option value="scarce">Scarce</option>
+          </select>
+        </div>
+        <div class="po-form-row">
+          <label>Target</label>
+          <select name="lootTarget">
+            <option value="pocket" selected>Pocket</option>
+            <option value="horde">Horde</option>
+          </select>
+        </div>
+        <button type="button" data-action="generate-loot">Generate Loot</button>
+
+        {{#if lootResult}}
+          <hr />
+          <p><strong>Gold:</strong> {{lootResult.gold}}</p>
+          <ul>
+            {{#each lootResult.items as |entry|}}
+              <li>{{entry.name}} (x{{entry.qty}}) - {{entry.uuid}}</li>
+            {{/each}}
+          </ul>
+        {{/if}}
+      </article>
+    {{/if}}
+  </section>
+</section>
