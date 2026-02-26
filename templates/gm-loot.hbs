@@ -45,7 +45,7 @@
           <button type="button" class="po-btn po-btn-sm" data-action="add-loot-preview-item">Add Item</button>
           <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear Builder Items</button>
           <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims">Clear Claim Board</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless operations.lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
           <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
         </div>
       </div>
@@ -112,7 +112,7 @@
           {{#if operations.lootSources.itemPackVisibleOptions.length}}
           <div class="po-loot-pack-grid">
           {{#each operations.lootSources.itemPackVisibleOptions}}
-          <div class="po-op-role-row"><div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div></div><label class="po-switch"><input type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>Enabled</span></label><label class="po-resource-row"><span>Weight</span><input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" /></label></div>
+          <div class="po-op-role-row"><div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div></div><label class="po-switch"><input id="po-loot-pack-enabled-{{id}}" name="poLootPackEnabled_{{id}}" type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>Enabled</span></label><label class="po-resource-row"><span>Weight</span><input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" /></label></div>
           {{/each}}
           </div>
           {{else}}<div class="po-op-summary">No item-pack sources detected for current filter.</div>{{/if}}
@@ -125,7 +125,7 @@
           {{#if operations.lootSources.tableOptions.length}}
           <div class="po-roll-table-grid">
           {{#each operations.lootSources.tableOptions}}
-          <div class="po-op-role-row"><div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div></div><label class="po-switch"><input type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>Enabled</span></label><label class="po-resource-row"><span>Roll Category</span><select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">{{#each typeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label></div>
+          <div class="po-op-role-row"><div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div></div><label class="po-switch"><input id="po-loot-table-enabled-{{id}}" name="poLootTableEnabled_{{id}}" type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>Enabled</span></label><label class="po-resource-row"><span>Roll Category</span><select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">{{#each typeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label></div>
           {{/each}}
           </div>
           {{else}}<div class="po-op-summary">No roll-table sources detected.</div>{{/if}}
@@ -148,7 +148,12 @@
 
       <div class="po-op-divider"></div>
       <div class="po-section-title">Published Claim Board</div>
-      <div class="po-op-summary">Published: {{operations.lootClaims.publishedAtLabel}} by {{operations.lootClaims.publishedBy}}</div>
+      {{#if operations.lootClaims.hasSelectedRun}}
+      <div class="po-op-summary">Selected Run: {{operations.lootClaims.selectedRunCard.statusLabel}} | Published: {{operations.lootClaims.publishedAtLabel}} by {{operations.lootClaims.publishedBy}}</div>
+      {{else}}
+      <div class="po-op-summary">No claim run is currently selected.</div>
+      {{/if}}
+      <div class="po-op-summary">Open Runs: {{operations.lootClaims.openRunCount}} | Archived Runs: {{operations.lootClaims.archivedRunCount}}</div>
       <div class="po-op-summary">Claimable Items: {{operations.lootClaims.itemCount}} | Logged Claims: {{operations.lootClaims.claimsLogCount}}</div>
       <div class="po-op-summary">Currency Remaining: {{operations.lootClaims.currencyRemaining.pp}} pp - {{operations.lootClaims.currencyRemaining.gp}} gp - {{operations.lootClaims.currencyRemaining.sp}} sp - {{operations.lootClaims.currencyRemaining.cp}} cp | Currency Claims: {{operations.lootClaims.currencyClaimedCount}}</div>
     </section>

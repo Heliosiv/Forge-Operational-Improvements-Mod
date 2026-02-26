@@ -5,7 +5,7 @@
     "url":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
     "manifest":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
     "download":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
-    "version":  "2.2.0-test.4",
+    "version":  "2.2.1-test.13",
     "authors":  [
                     {
                         "name":  "Heliosiv"
@@ -28,6 +28,7 @@
                       "templates/rest-watch-player.hbs",
                       "templates/global-modifiers.hbs",
                       "templates/gm-environment.hbs",
+                      "templates/gm-downtime.hbs",
                       "templates/gm-loot.hbs",
                       "templates/gm-loot-claims-board.hbs"
                   ],

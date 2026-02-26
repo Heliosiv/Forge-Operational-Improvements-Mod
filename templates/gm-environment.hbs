@@ -16,7 +16,7 @@
     <section class="po-content" id="po-panel-gm-environment-page">
       <div class="po-grid is-operations-layout">
         <div id="po-gm-environment" class="po-gm-section">
-          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+          <details class="po-panel-disclosure po-panel-disclosure-lg">
             <summary class="po-panel-disclosure-summary">
               <span class="po-section-title">GM Environment Controls</span>
               <span class="po-op-summary">Presets, assignments, movement checks, and logs</span>
@@ -38,7 +38,7 @@
                 <div class="po-op-summary">Always-On Status: {{environment.outcomes.alwaysOn}}</div>
               </div>
               <label class="po-switch">
-                <input type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
+                <input id="po-environment-sync-non-party" name="poEnvironmentSyncNonParty" type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
                 <span>Also apply environment preset effects to non-party scene actors</span>
               </label>
 
