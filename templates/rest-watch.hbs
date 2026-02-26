@@ -1019,62 +1019,119 @@
 
         {{#if operationsPageMerchants}}
 
-        <div id="po-ops-merchants" class="po-gm-section po-merchants-page">
+        <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
-          <div class="po-hint">Select a party actor, then open available shops to buy goods.</div>
+          <div class="po-hint">Set your city, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
 
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Trading Actor</div>
-              <div class="po-op-role-status">{{operations.merchants.currentSettlementLabel}}</div>
+          <div class="po-merchant-showcase">
+            <div class="po-merchant-showcase-head">
+              <label class="po-resource-row">
+                <span>City</span>
+                <select class="po-select" data-action="merchant-select-city">
+                  {{#each operations.merchants.settlementOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Trading As</span>
+                <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
+                  {{#each operations.merchants.actorOptions}}
+                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <div class="po-op-summary">Viewer: {{operations.merchants.viewerName}}</div>
+              <div class="po-op-summary">Last Access Logged: {{operations.merchants.viewerLastAccessLabel}}</div>
             </div>
-            <label class="po-resource-row">
-              <span>Actor</span>
-              <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
-                {{#each operations.merchants.actorOptions}}
-                <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                {{/each}}
-              </select>
-            </label>
-            {{#if operations.merchants.hasActiveActor}}
-            <div class="po-op-summary">Selected: {{operations.merchants.activeActorName}}</div>
-            <div class="po-op-summary">Social Score: {{operations.merchants.activeActorSocialScore}}</div>
-            {{else}}
-            <div class="po-op-summary">No eligible actor selected.</div>
-            {{/if}}
-          </div>
 
-          {{#if operations.merchants.hasAvailableMerchants}}
-          <div class="po-roles-grid">
-            {{#each operations.merchants.availableMerchants}}
-            <div class="po-op-role-row" data-merchant-id="{{id}}">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{name}}{{#if title}} - {{title}}{{/if}}</div>
-                <div class="po-op-role-status {{#if hasStock}}is-ready{{else}}is-missing{{/if}}">
-                  {{#if hasStock}}{{stockItemCount}} item(s){{else}}No stock{{/if}}
+            <div class="po-merchant-showcase-main">
+              <div class="po-merchant-stage-card">
+                <div class="po-merchant-doorway">
+                  <div class="po-merchant-doorway-glow"></div>
+                  <div class="po-merchant-silhouette"></div>
+                  {{#if operations.merchants.hasActiveMerchant}}
+                  <img class="po-merchant-stage-image" src="{{operations.merchants.activeMerchantImg}}" alt="{{operations.merchants.activeMerchantName}}" loading="lazy" />
+                  {{/if}}
                 </div>
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{operations.merchants.activeMerchantName}}{{#if operations.merchants.activeMerchantTitle}} - {{operations.merchants.activeMerchantTitle}}{{/if}}</div>
+                  <div class="po-op-role-status">{{operations.merchants.selectedSettlementLabel}}</div>
+                </div>
+                {{#if operations.merchants.activeMerchantRace}}
+                <div class="po-op-summary">Race: {{operations.merchants.activeMerchantRace}}</div>
+                {{/if}}
+                <div class="po-op-summary">Actor: {{#if operations.merchants.hasActiveActor}}{{operations.merchants.activeActorName}}{{else}}No eligible actor selected{{/if}}</div>
+                <div class="po-op-summary">Social Score: {{operations.merchants.activeActorSocialScore}}</div>
+                <div class="po-op-summary">Stock: {{operations.merchants.activeMerchantStockCount}} item(s) - Buy x{{operations.merchants.activeMerchantBuyMarkupLabel}}</div>
+                <button
+                  type="button"
+                  class="po-btn po-btn-sm"
+                  data-action="merchant-open-shop"
+                  data-merchant-id="{{operations.merchants.activeMerchantId}}"
+                  data-actor-id="{{operations.merchants.activeActorId}}"
+                  data-settlement="{{operations.merchants.selectedSettlement}}"
+                  {{#unless operations.merchants.activeMerchantCanOpenShop}}disabled{{/unless}}
+                >
+                  Open Shop
+                </button>
               </div>
-              <div class="po-op-summary">Settlement: {{settlementLabel}}</div>
-              <div class="po-op-summary">Pricing: Buy x{{buyMarkupLabel}}</div>
-              <div class="po-op-summary">Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
-              <button
-                type="button"
-                class="po-btn po-btn-sm"
-                data-action="merchant-open-shop"
-                data-merchant-id="{{id}}"
-                data-actor-id="{{@root.operations.merchants.activeActorId}}"
-                {{#unless canOpenShop}}disabled{{/unless}}
-              >
-                Open Shop
-              </button>
+
+              <div class="po-merchant-tabs-card">
+                <div class="po-section-title">Merchants in Rotation</div>
+                {{#if operations.merchants.hasAvailableMerchants}}
+                <div class="po-merchant-tabs-list">
+                  {{#each operations.merchants.availableMerchants}}
+                  <button
+                    type="button"
+                    class="po-tab {{#if tabActive}}is-active{{/if}}"
+                    data-action="merchant-select-tab"
+                    data-merchant-id="{{id}}"
+                    title="{{name}}{{#if title}} - {{title}}{{/if}}"
+                  >
+                    <span class="po-merchant-tab-name">{{name}}</span>
+                    <span class="po-merchant-tab-meta">{{settlementLabel}} - {{#if hasStock}}{{stockItemCount}} item(s){{else}}No stock{{/if}}</span>
+                  </button>
+                  {{/each}}
+                </div>
+                {{else}}
+                <div class="po-op-summary">No merchants are currently available for this actor/city combination.</div>
+                {{/if}}
+              </div>
             </div>
-            {{/each}}
+
+            <div class="po-merchant-stock-card">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">Available Supplies</div>
+                <div class="po-op-role-status">{{operations.merchants.inventoryItemCount}} listed</div>
+              </div>
+              {{#if operations.merchants.hasInventoryRows}}
+              <div class="po-merchant-stock-list">
+                {{#each operations.merchants.inventoryRows}}
+                <div class="po-merchant-stock-row">
+                  <img class="po-merchant-stock-image" src="{{img}}" alt="{{name}}" loading="lazy" />
+                  <div class="po-merchant-stock-main">
+                    <div class="po-merchant-stock-name">{{name}}</div>
+                    <div class="po-merchant-stock-meta">
+                      <span>Qty {{quantity}}</span>
+                      <span>Weight {{weightLabel}}</span>
+                      <span>Base {{basePriceLabel}}</span>
+                      <span>Buy {{buyPriceLabel}}</span>
+                    </div>
+                  </div>
+                  <div class="po-merchant-stock-multiplier">x{{markupLabel}}</div>
+                </div>
+                {{/each}}
+              </div>
+              {{else}}
+              <div class="po-op-summary">No stocked wares are available for the selected merchant.</div>
+              {{/if}}
+            </div>
           </div>
-          {{else}}
-          <div class="po-op-summary">No merchants are currently available for the selected actor.</div>
-          {{/if}}
           {{#if @root.isGM}}
-          <div class="po-op-summary">GM merchant editor is available in the GM section.</div>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Editor</button>
+          </div>
           {{/if}}
         </div>
 
@@ -1434,6 +1491,7 @@
               <div class="po-op-summary"><strong>Global Modifiers:</strong> Opens a read-only page showing currently applied global and party modifiers.</div>
               <div class="po-op-summary"><strong>Environment:</strong> Opens a dedicated GM Environment page.</div>
               <div class="po-op-summary"><strong>Downtime:</strong> Opens a dedicated GM Downtime page for tuning, result editing, and sorting.</div>
+              <div class="po-op-summary"><strong>Merchants:</strong> Opens the standalone GM Merchant Editor page.</div>
               <div class="po-op-summary"><strong>Loot:</strong> Opens a dedicated GM Loot page.</div>
               <div class="po-op-summary"><strong>Quick Weather Presets:</strong> Expand the weather disclosure below to record scene weather, visibility, darkness, and optional DAE effects.</div>
               <div class="po-op-summary"><strong>Automation & Sync Settings:</strong> Contains Sync Effects, Run Autopilot, and Undo Autopilot.</div>
@@ -1445,6 +1503,7 @@
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">Global Modifiers</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-environment">Environment</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-downtime">Downtime</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-merchants">Merchants</button>
             <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-loot">Loot</button>
           </div>
           <div class="po-two-col po-gm-quick-panels">
@@ -1710,320 +1769,7 @@
         <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} - Visibility Modifier {{operations.weather.currentVisibilityModifier}} - Darkness {{operations.weather.currentDarkness}}</div>
         </div>
 
-        <div id="po-gm-merchants" class="po-gm-section po-merchants-page">
-          <div class="po-section-title">Merchant Editor</div>
-          <div class="po-hint">Configure merchant definitions, compendium sources, and curated wares for the player buy-only shop flow.</div>
-
-          <label class="po-resource-row">
-            <span>Current Settlement Context</span>
-            <input type="text" class="po-input" data-action="merchant-settlement" value="{{operations.merchants.currentSettlement}}" placeholder="Blank = global availability context" />
-          </label>
-
-          <input type="hidden" name="merchantId" value="{{operations.merchants.gm.editor.id}}" />
-
-          <div class="po-two-col">
-            <div class="po-col">
-              <label class="po-resource-row">
-                <span>Name</span>
-                <input type="text" name="merchantName" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.name}}" placeholder="Merchant Name" />
-              </label>
-              <label class="po-resource-row">
-                <span>Title</span>
-                <input type="text" name="merchantTitle" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.title}}" placeholder="Optional subtitle" />
-              </label>
-              <label class="po-resource-row">
-                <span>Image</span>
-                <input type="text" name="merchantImg" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.img}}" placeholder="icons/svg/item-bag.svg" />
-              </label>
-              <label class="po-resource-row">
-                <span>Settlement</span>
-                <input type="text" name="merchantSettlement" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.settlement}}" placeholder="global or blank for global" />
-              </label>
-              <label class="po-resource-row">
-                <span>Actor</span>
-                <select class="po-select" name="merchantActorId" data-action="merchant-editor-draft-change">
-                  {{#each operations.merchants.gm.actorOptions}}
-                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Hidden Merchant</span>
-                <input type="checkbox" name="merchantIsHidden" data-action="merchant-editor-draft-change" {{#if operations.merchants.gm.editor.isHidden}}checked{{/if}} />
-              </label>
-              <label class="po-resource-row">
-                <span>Requires Contract</span>
-                <input type="checkbox" name="merchantRequiresContract" data-action="merchant-editor-draft-change" {{#if operations.merchants.gm.editor.requiresContract}}checked{{/if}} />
-              </label>
-              <label class="po-resource-row">
-                <span>Contract Key</span>
-                <input type="text" name="merchantContractKey" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.contractKey}}" placeholder="Optional contract key" />
-              </label>
-              <label class="po-resource-row">
-                <span>Social Gate Enabled</span>
-                <input type="checkbox" name="merchantSocialGateEnabled" data-action="merchant-editor-draft-change" {{#if operations.merchants.gm.editor.socialGateEnabled}}checked{{/if}} />
-              </label>
-              <label class="po-resource-row">
-                <span>Min Social Score</span>
-                <input type="number" min="-20" max="20" step="1" name="merchantMinSocialScore" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.minSocialScore}}" />
-              </label>
-            </div>
-
-            <div class="po-col">
-              <label class="po-resource-row">
-                <span>Buy Markup</span>
-                <input type="number" min="0" max="10" step="0.01" name="merchantBuyMarkup" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.buyMarkup}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Sell Rate (unused in buy-only UI)</span>
-                <input type="number" min="0" max="10" step="0.01" name="merchantSellRate" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.sellRate}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Stock Source Type</span>
-                <select class="po-select" name="merchantSourceType" data-action="merchant-editor-draft-change">
-                  {{#each operations.merchants.gm.sourceTypeOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Stock Source</span>
-                <select class="po-select" name="merchantSourceRef" data-action="merchant-editor-draft-change">
-                  {{#each operations.merchants.gm.sourceRefOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Include Tags</span>
-                <select class="po-select" name="merchantIncludeTags" data-action="merchant-editor-draft-change" multiple size="6">
-                  {{#each operations.merchants.gm.includeTagOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Exclude Tags</span>
-                <select class="po-select" name="merchantExcludeTags" data-action="merchant-editor-draft-change" multiple size="6">
-                  {{#each operations.merchants.gm.excludeTagOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{#if operations.merchants.gm.hasTagCatalog}}
-              <div class="po-op-summary">Tag Catalog: {{operations.merchants.gm.tagCatalogCount}} discovered tag(s).</div>
-              {{else}}
-              <div class="po-op-summary">Tag Catalog: none discovered for the current source filters.</div>
-              {{/if}}
-              <div class="po-op-summary">Use Ctrl/Cmd-click to select multiple include/exclude tags.</div>
-              <label class="po-resource-row">
-                <span>Max Items</span>
-                <input type="number" min="1" max="100" step="1" name="merchantMaxItems" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.maxItems}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Target Value (gp)</span>
-                <input type="number" min="0" max="1000000" step="1" name="merchantTargetValueGp" class="po-input" data-action="merchant-editor-draft-change" value="{{operations.merchants.gm.editor.targetValueGp}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Scarcity</span>
-                <select class="po-select" name="merchantScarcity" data-action="merchant-editor-draft-change">
-                  {{#each operations.merchants.gm.scarcityOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <details class="po-panel-disclosure" open>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Compendium Item Pack Sources</span>
-              <span class="po-op-summary">Showing <span data-merchant-pack-visible-count>{{operations.merchants.gm.sourcePackVisibleCount}}</span> of <span data-merchant-pack-total-count>{{operations.merchants.gm.sourcePackOptions.length}}</span></span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <label class="po-resource-row">
-                <span>Filter</span>
-                <input type="search" class="po-input" data-merchant-pack-filter="1" value="{{operations.merchants.gm.sourcePackFilter}}" placeholder="Search pack name, id, source kind" />
-              </label>
-              {{#if operations.merchants.gm.sourcePackOptions.length}}
-              <div class="po-loot-pack-grid">
-                {{#each operations.merchants.gm.sourcePackOptions}}
-                <div class="po-op-role-row po-merchant-pack-row" data-merchant-pack-row="1" data-search="{{label}} {{id}} {{sourceKind}}">
-                  <div class="po-op-role-head">
-                    <div class="po-op-role-name">{{label}}</div>
-                    <div class="po-op-role-status">{{#if available}}Available{{else}}Unavailable{{/if}}</div>
-                  </div>
-                  <label class="po-switch">
-                    <input type="checkbox" name="merchantSourcePackIds" value="{{id}}" data-action="toggle-merchant-pack-source" {{#if enabled}}checked{{/if}} />
-                    <span>Enabled</span>
-                  </label>
-                </div>
-                {{/each}}
-              </div>
-              {{/if}}
-              <div class="po-op-summary" data-merchant-pack-empty {{#if operations.merchants.gm.sourcePackVisibleCount}}hidden{{/if}}>No compendium packs match the current filter.</div>
-            </div>
-          </details>
-
-          <details class="po-panel-disclosure" open>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Item Type Filters</span>
-              <span class="po-op-summary">Refine which item types can be rolled into stock</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <div class="po-item-filter-grid">
-                {{#each operations.merchants.gm.allowedTypeOptions}}
-                <div class="po-checkbox-target">
-                  <input id="po-merchant-allowed-type-{{value}}" type="checkbox" name="merchantAllowedType" value="{{value}}" data-action="toggle-merchant-allowed-type" {{#if selected}}checked{{/if}} />
-                  <label class="po-checkbox-target-label" for="po-merchant-allowed-type-{{value}}">{{label}}</label>
-                </div>
-                {{/each}}
-              </div>
-            </div>
-          </details>
-
-          <details class="po-panel-disclosure" open>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Curated Merchant Wares</span>
-              <span class="po-op-summary">Drag to reorder selected wares before stock refresh</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <textarea name="merchantCuratedItemUuids" hidden>{{operations.merchants.gm.editor.curatedItemUuidsInput}}</textarea>
-              <div class="po-loot-preview-dropzone" data-merchant-curated-dropzone>Drag an item here from the candidate list, sidebar, or compendium to add it to curated wares.</div>
-
-              {{#if operations.merchants.gm.hasCuratedRows}}
-              <div class="po-roles-grid" data-merchant-curated-list>
-                {{#each operations.merchants.gm.curatedRows}}
-                <div class="po-op-role-row po-merchant-curated-row" draggable="true" data-merchant-curated-row="1" data-item-uuid="{{uuid}}" data-search="{{name}} {{uuid}} {{itemType}} {{sourceLabel}}">
-                  <div class="po-op-role-head">
-                    <div class="po-op-role-name">{{name}}</div>
-                    <div class="po-op-role-status">{{itemTypeLabel}}</div>
-                  </div>
-                  <div class="po-op-summary">Source: {{sourceLabel}}</div>
-                  <div class="po-op-action-row">
-                    <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}" {{#unless canOpen}}disabled{{/unless}}>Open</button>
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-remove-curated-item" data-item-uuid="{{uuid}}">Remove</button>
-                  </div>
-                </div>
-                {{/each}}
-              </div>
-              {{else}}
-              <div class="po-op-summary">No curated wares selected yet.</div>
-              {{/if}}
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-clear-curated-items">Clear Curated Wares</button>
-              </div>
-
-              <div class="po-op-divider"></div>
-              <div class="po-op-summary">Candidate Items: <span data-merchant-candidate-visible-count>{{operations.merchants.gm.candidateRows.length}}</span> / <span data-merchant-candidate-total-count>{{operations.merchants.gm.candidateRows.length}}</span></div>
-              <label class="po-resource-row">
-                <span>Candidate Filter</span>
-                <input type="search" class="po-input" data-merchant-item-filter="1" value="{{operations.merchants.gm.itemFilter}}" placeholder="Filter item name, uuid, type, source" />
-              </label>
-              {{#if operations.merchants.gm.hasCandidateRows}}
-              <div class="po-roles-grid">
-                {{#each operations.merchants.gm.candidateRows}}
-                <div class="po-op-role-row po-merchant-candidate-row" draggable="true" data-merchant-candidate-row="1" data-item-uuid="{{uuid}}" data-search="{{name}} {{uuid}} {{itemType}} {{sourceLabel}}">
-                  <div class="po-op-role-head">
-                    <div class="po-op-role-name">{{name}}</div>
-                    <div class="po-op-role-status">{{itemTypeLabel}}</div>
-                  </div>
-                  <div class="po-op-summary">Source: {{sourceLabel}}</div>
-                  <div class="po-op-summary">Value: {{gpValue}} gp</div>
-                  <div class="po-op-action-row">
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-add-curated-item" data-item-uuid="{{uuid}}">Add To Curated</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
-                  </div>
-                </div>
-                {{/each}}
-              </div>
-              {{/if}}
-              <div class="po-op-summary" data-merchant-candidate-empty {{#if operations.merchants.gm.hasCandidateRows}}hidden{{/if}}>No candidate items match current source + filters.</div>
-            </div>
-          </details>
-
-          <div class="po-controls">
-            <button type="button" class="po-btn" data-action="merchant-new">New</button>
-            <button type="button" class="po-btn" data-action="merchant-save">Save</button>
-            <button type="button" class="po-btn" data-action="merchant-refresh-stock" data-merchant-id="{{operations.merchants.gm.editor.id}}">Refresh Stock</button>
-            <button type="button" class="po-btn" data-action="merchant-refresh-all-stock">Refresh All Stock</button>
-            <button type="button" class="po-btn" data-action="merchant-assign-by-contract-key" data-merchant-id="{{operations.merchants.gm.editor.id}}">Assign by Contract Key</button>
-            <button type="button" class="po-btn" data-action="merchant-open-actor" data-merchant-id="{{operations.merchants.gm.editor.id}}">Open Actor</button>
-            <button type="button" class="po-btn is-danger" data-action="merchant-delete" data-merchant-id="{{operations.merchants.gm.editor.id}}">Delete</button>
-          </div>
-
-          <details class="po-panel-disclosure" open>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Configured Merchants</span>
-              <span class="po-op-summary">{{operations.merchants.gm.definitions.length}} total</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              {{#if operations.merchants.gm.hasDefinitions}}
-              <div class="po-roles-grid">
-                {{#each operations.merchants.gm.definitions}}
-                <div class="po-op-role-row" data-merchant-id="{{id}}">
-                  <div class="po-op-role-head">
-                    <div class="po-op-role-name">{{name}}{{#if title}} - {{title}}{{/if}}</div>
-                    <div class="po-op-role-status {{#if selectedForEdit}}is-ready{{else}}is-missing{{/if}}">{{#if selectedForEdit}}Editing{{else}}Stored{{/if}}</div>
-                  </div>
-                  <div class="po-op-summary">Settlement: {{settlementLabel}}</div>
-                  <div class="po-op-summary">Source: {{sourceTypeLabel}} ({{sourceRefLabel}})</div>
-                  <div class="po-op-summary">Curated: {{curatedItemCount}} | Pack Sources: {{sourcePackCount}} | Allowed Types: {{allowedTypeCount}}</div>
-                  <div class="po-op-summary">Stock: {{stockItemCount}} item(s)</div>
-                  <div class="po-op-summary">Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
-                  <div class="po-controls">
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Open Actor</button>
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
-                  </div>
-                </div>
-                {{/each}}
-              </div>
-              {{else}}
-              <div class="po-op-summary">No merchants configured yet.</div>
-              {{/if}}
-            </div>
-          </details>
-
-          <details class="po-panel-disclosure">
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Contract Assignment</span>
-              <span class="po-op-summary">Toggle per-actor merchant visibility contracts</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              {{#if operations.merchants.gm.hasDefinitions}}
-                {{#if operations.merchants.gm.hasAssignmentRows}}
-                <div class="po-roles-grid">
-                  {{#each operations.merchants.gm.assignmentRows}}
-                  <div class="po-op-role-row" data-actor-id="{{actorId}}">
-                    <div class="po-op-role-head">
-                      <div class="po-op-role-name">{{actorName}}</div>
-                      <div class="po-op-role-status">Contracts: {{contractCount}}</div>
-                    </div>
-                    <div class="po-op-summary">Social Score: {{socialScore}}</div>
-                    <div class="po-roles-grid">
-                      {{#each toggles}}
-                      <label class="po-resource-row">
-                        <span>{{merchantName}}</span>
-                        <input type="checkbox" data-action="merchant-assign-toggle" data-actor-id="{{../actorId}}" data-merchant-id="{{merchantId}}" {{#if assigned}}checked{{/if}} />
-                      </label>
-                      {{/each}}
-                    </div>
-                  </div>
-                  {{/each}}
-                </div>
-                {{else}}
-                <div class="po-op-summary">No player actors available for assignment.</div>
-                {{/if}}
-              {{else}}
-              <div class="po-op-summary">Create at least one merchant before assigning contracts.</div>
-              {{/if}}
-            </div>
-          </details>
-        </div>
-
-        <div class="po-op-summary">Environment and Loot controls were moved to standalone pages. Use the GM Quick Actions buttons above.</div>
+        <div class="po-op-summary">Environment, Merchants, and Loot controls were moved to standalone pages. Use the GM Quick Actions buttons above.</div>
 
         
         {{/if}}

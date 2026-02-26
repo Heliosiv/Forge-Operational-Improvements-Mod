@@ -1,0 +1,138 @@
+<div class="po-window po-window-rest" data-tool="gm-merchants" role="region" aria-label="Party Operations GM Merchants">
+  <header class="po-header">
+    <div class="po-header-main">
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+      <div class="po-subtitle" aria-live="polite">GM Merchants - Generated {{generatedAtLabel}} by {{generatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-btn po-btn-sm" data-action="gm-merchants-page-back">Back</button>
+      <button type="button" class="po-icon-btn" data-action="gm-merchants-page-refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="po-body">
+    <section class="po-content" id="po-panel-gm-merchants-page">
+      <div id="po-gm-merchants" class="po-gm-section po-merchants-page">
+        <div class="po-section-title">Merchant Editor</div>
+        <div class="po-hint">Simplified setup: identity, race, markup %, and stock source (Item Folder or Compendium).</div>
+
+        <input type="hidden" name="merchantId" value="{{merchants.gm.editor.id}}" />
+
+        <div class="po-two-col">
+          <div class="po-col">
+            <label class="po-resource-row">
+              <span>Name</span>
+              <input type="text" name="merchantName" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.name}}" placeholder="Merchant Name" />
+            </label>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-randomize-name">Randomize Merchant</button>
+            </div>
+            <label class="po-resource-row">
+              <span>Title</span>
+              <input type="text" name="merchantTitle" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.title}}" placeholder="Optional subtitle" />
+            </label>
+            <label class="po-resource-row">
+              <span>Race</span>
+              <select class="po-select" name="merchantRace" data-action="merchant-editor-draft-change">
+                {{#each merchants.gm.raceOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Image</span>
+              <input type="text" name="merchantImg" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.img}}" placeholder="icons/svg/item-bag.svg" />
+            </label>
+            <label class="po-resource-row">
+              <span>City / Settlement</span>
+              <input type="text" name="merchantSettlement" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.settlement}}" placeholder="e.g. Waterdeep" />
+            </label>
+          </div>
+
+          <div class="po-col">
+            <label class="po-resource-row">
+              <span>Markup Percent</span>
+              <input type="number" min="0" max="1000" step="0.01" name="merchantMarkupPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.buyMarkupPercent}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Stock Source Type</span>
+              <select class="po-select" name="merchantSourceType" data-action="merchant-editor-draft-change">
+                {{#each merchants.gm.sourceTypeOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Stock Source (Folder or Pack)</span>
+              <select class="po-select" name="merchantSourceRef" data-action="merchant-editor-draft-change">
+                {{#each merchants.gm.sourceRefOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Stock Count</span>
+              <input type="number" min="1" max="100" step="1" name="merchantStockCount" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.stockCount}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Stock Actor</span>
+              <select class="po-select" name="merchantActorId" data-action="merchant-editor-draft-change">
+                {{#each merchants.gm.actorOptions}}
+                <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="po-op-summary">Markup Preview: Buy x{{merchants.gm.editor.buyMarkupMultiplierLabel}}</div>
+
+        <div class="po-controls">
+          <button type="button" class="po-btn" data-action="merchant-create-starters">Create Starters</button>
+          <button type="button" class="po-btn" data-action="merchant-new">New</button>
+          <button type="button" class="po-btn" data-action="merchant-save">Save</button>
+          <button type="button" class="po-btn" data-action="merchant-refresh-stock" data-merchant-id="{{merchants.gm.editor.id}}">Refresh Stock</button>
+          <button type="button" class="po-btn" data-action="merchant-refresh-all-stock">Refresh All Stock</button>
+          <button type="button" class="po-btn" data-action="merchant-open-actor" data-merchant-id="{{merchants.gm.editor.id}}">Open Actor</button>
+          <button type="button" class="po-btn is-danger" data-action="merchant-delete" data-merchant-id="{{merchants.gm.editor.id}}">Delete</button>
+        </div>
+
+        <details class="po-panel-disclosure" open>
+          <summary class="po-panel-disclosure-summary">
+            <span class="po-section-title">Configured Merchants</span>
+            <span class="po-op-summary">{{merchants.gm.definitions.length}} total</span>
+          </summary>
+          <div class="po-panel-disclosure-body">
+            {{#if merchants.gm.hasDefinitions}}
+            <div class="po-roles-grid">
+              {{#each merchants.gm.definitions}}
+              <div class="po-op-role-row" data-merchant-id="{{id}}">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{name}}{{#if title}} - {{title}}{{/if}}</div>
+                  <div class="po-op-role-status {{#if selectedForEdit}}is-ready{{else}}is-missing{{/if}}">{{#if selectedForEdit}}Editing{{else}}Stored{{/if}}</div>
+                </div>
+                <div class="po-op-summary">Race: {{raceLabel}}</div>
+                <div class="po-op-summary">City: {{settlementLabel}}</div>
+                <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
+                <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
+                <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
+                <div class="po-controls">
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Open Actor</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
+                </div>
+              </div>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-op-summary">No merchants configured yet.</div>
+            {{/if}}
+          </div>
+        </details>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,4 +1,48 @@
-﻿const DEBUG_LOG = false;
+import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
+import { createGmDowntimePageApp } from "./features/downtime-ui.js";
+import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
+import { createGmLootPageApp } from "./features/loot-ui.js";
+import { createRestFeatureModule } from "./features/rest-feature.js";
+import { createMarchFeatureModule } from "./features/march-feature.js";
+import {
+  MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
+  MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
+  MERCHANT_ALLOWED_ITEM_TYPES as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES,
+  MERCHANT_ALLOWED_ITEM_TYPE_LIST as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST,
+  MERCHANT_EDITOR_CANDIDATE_LIMIT as DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT,
+  MERCHANT_PREVIEW_ITEM_LIMIT as DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT,
+  MERCHANT_ACCESS_LOG_LIMIT as DOMAIN_MERCHANT_ACCESS_LOG_LIMIT,
+  MERCHANT_ACCESS_LOG_THROTTLE_MS as DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS,
+  MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
+  MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
+  normalizeMerchantTagList as normalizeMerchantTagListDomain,
+  normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
+  normalizeMerchantAllowedItemTypes as normalizeMerchantAllowedItemTypesDomain,
+  normalizeMerchantCuratedItemUuids as normalizeMerchantCuratedItemUuidsDomain,
+  parseMerchantUuidListInput as parseMerchantUuidListInputDomain,
+  formatMerchantUuidListInput as formatMerchantUuidListInputDomain,
+  normalizeMerchantSourceType as normalizeMerchantSourceTypeDomain,
+  normalizeMerchantScarcity as normalizeMerchantScarcityDomain,
+  normalizeMerchantRace as normalizeMerchantRaceDomain,
+  getMerchantRaceKey as getMerchantRaceKeyDomain,
+  getMerchantEditorRaceOptions as getMerchantEditorRaceOptionsDomain,
+  pickRandomMerchantRace as pickRandomMerchantRaceDomain,
+  pickRandomMerchantNamePart as pickRandomMerchantNamePartDomain,
+  generateRandomMerchantName as generateRandomMerchantNameDomain,
+  getMerchantEditorSourceTypeOptions as getMerchantEditorSourceTypeOptionsDomain,
+  normalizeMerchantFolderAlias as normalizeMerchantFolderAliasDomain,
+  findMerchantFolderByAliases as findMerchantFolderByAliasesDomain,
+  buildStarterMerchantPatch as buildStarterMerchantPatchDomain,
+  buildMerchantDefinitionPatchFromEditorForm as buildMerchantDefinitionPatchFromEditorFormDomain,
+  formatMerchantCp as formatMerchantCpDomain,
+  getMerchantItemUnitPriceCp as getMerchantItemUnitPriceCpDomain,
+  getMerchantSourceRefOptionsForEditor as getMerchantSourceRefOptionsForEditorDomain,
+  getMerchantTargetStockCount as getMerchantTargetStockCountDomain,
+  shuffleMerchantRows as shuffleMerchantRowsDomain,
+  selectMerchantStockRows as selectMerchantStockRowsDomain,
+  buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain
+} from "./features/merchant-domain.js";
+const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
 const PRIMARY_MODULE_ID = "party-operations";
@@ -18,6 +62,16 @@ const MODULE_ID = (() => {
   return PRIMARY_MODULE_ID;
 })();
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const FEATURE_MODULES = Object.freeze([
+  createRestFeatureModule(),
+  createMarchFeatureModule()
+]);
+
+function registerFeatureModules() {
+  for (const feature of FEATURE_MODULES) {
+    if (typeof feature?.register === "function") feature.register();
+  }
+}
 
 const PO_ESCAPE_HTML_FALLBACK = (value) => String(value ?? "")
   .replace(/&/g, "&amp;")
@@ -123,6 +177,7 @@ let globalModifierSummaryAppInstance = null;
 let gmEnvironmentPageAppInstance = null;
 let gmLootPageAppInstance = null;
 let gmDowntimePageAppInstance = null;
+let gmMerchantsPageAppInstance = null;
 let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
@@ -145,6 +200,7 @@ let launcherRecoveryScheduled = false;
 let partyOpsHooksRegistered = false;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
+const merchantUiAccessThrottleByKey = new Map();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
 const LAUNCHER_PLACEMENTS = {
   FLOATING: "floating",
@@ -278,6 +334,7 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",
   "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
   "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",
+  "gm-merchants": "modules/party-operations/templates/gm-merchants.hbs",
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
@@ -873,49 +930,16 @@ const DOWNTIME_STALE_PENDING_WARNING = "Selected downtime entry is no longer pen
 const DOWNTIME_GM_ONLY_PRERESOLVE_WARNING = "Only the GM can pre-resolve downtime.";
 const DOWNTIME_GM_ONLY_RESOLVE_WARNING = "Only the GM can resolve downtime.";
 const DOWNTIME_ITEM_REWARD_DROP_LIMIT = 10;
-const MERCHANT_SOURCE_TYPES = Object.freeze({
-  COMPENDIUM_PACK: "compendium-pack",
-  WORLD_FOLDER: "world-folder",
-  WORLD_ITEMS: "world-items"
-});
-const MERCHANT_SCARCITY_LEVELS = Object.freeze({
-  ABUNDANT: "abundant",
-  NORMAL: "normal",
-  SCARCE: "scarce"
-});
-const MERCHANT_ALLOWED_ITEM_TYPES = new Set([
-  "weapon",
-  "equipment",
-  "consumable",
-  "loot",
-  "tool",
-  "backpack",
-  "armor",
-  "ammunition",
-  "trinket"
-]);
-const MERCHANT_ALLOWED_ITEM_TYPE_LIST = Object.freeze(Array.from(MERCHANT_ALLOWED_ITEM_TYPES));
-const MERCHANT_EDITOR_MAX_CURATED_ITEMS = 200;
-const MERCHANT_EDITOR_CANDIDATE_LIMIT = 400;
-const MERCHANT_DEFAULTS = Object.freeze({
-  settlement: "",
-  pricing: Object.freeze({
-    buyMarkup: 1,
-    sellRate: 0.5
-  }),
-  stock: Object.freeze({
-    sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
-    sourceRef: "",
-    sourcePackIds: Object.freeze([]),
-    includeTags: [],
-    excludeTags: [],
-    allowedTypes: Object.freeze([...MERCHANT_ALLOWED_ITEM_TYPE_LIST]),
-    curatedItemUuids: Object.freeze([]),
-    maxItems: 8,
-    targetValueGp: 0,
-    scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL
-  })
-});
+const MERCHANT_SOURCE_TYPES = DOMAIN_MERCHANT_SOURCE_TYPES;
+const MERCHANT_SCARCITY_LEVELS = DOMAIN_MERCHANT_SCARCITY_LEVELS;
+const MERCHANT_ALLOWED_ITEM_TYPES = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES;
+const MERCHANT_ALLOWED_ITEM_TYPE_LIST = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST;
+const MERCHANT_EDITOR_CANDIDATE_LIMIT = DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT;
+const MERCHANT_PREVIEW_ITEM_LIMIT = DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT;
+const MERCHANT_ACCESS_LOG_LIMIT = DOMAIN_MERCHANT_ACCESS_LOG_LIMIT;
+const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
+const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
+const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -961,6 +985,8 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-downtime-results",
   "merchant-settlement",
   "merchant-new",
+  "merchant-create-starters",
+  "merchant-randomize-name",
   "merchant-edit",
   "merchant-save",
   "merchant-delete",
@@ -2173,18 +2199,51 @@ function buildGatherEnvironmentSignature(input = {}) {
   return `${environment}|s${season}|w${weather}|c${corruption}|${hostile}|${corruptedRegion}`;
 }
 
+function getLegacyPartyOpsFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag("partyops", flagKey);
+    } catch {
+      // Legacy scope may be unavailable in newer Foundry versions.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.partyops.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.partyops;
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setLegacyPartyOpsFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag("partyops", flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getGatherAttemptState(actor) {
   if (!actor) return { lastDay: "", lastEnvironmentSignature: "" };
-  const namespace = "partyops";
   return {
     lastDay: String(
-      actor.getFlag(namespace, "gather.lastDay")
-      ?? actor.getFlag(MODULE_ID, "gather.lastDay")
+      actor.getFlag(MODULE_ID, "gather.lastDay")
+      ?? getLegacyPartyOpsFlag(actor, "gather.lastDay")
       ?? ""
     ),
     lastEnvironmentSignature: String(
-      actor.getFlag(namespace, "gather.lastEnvironmentSignature")
-      ?? actor.getFlag(MODULE_ID, "gather.lastEnvironmentSignature")
+      actor.getFlag(MODULE_ID, "gather.lastEnvironmentSignature")
+      ?? getLegacyPartyOpsFlag(actor, "gather.lastEnvironmentSignature")
       ?? ""
     )
   };
@@ -2198,10 +2257,6 @@ async function setGatherAttemptState(actor, dayKey, environmentSignature) {
     "gather.lastWorldTime": Number(getCurrentWorldTimestamp())
   };
   try {
-    await actor.setFlag("partyops", "gather.lastDay", payload["gather.lastDay"]);
-    await actor.setFlag("partyops", "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
-    await actor.setFlag("partyops", "gather.lastWorldTime", payload["gather.lastWorldTime"]);
-    // Keep module-local mirrors for backwards compatibility with older internal reads.
     await actor.setFlag(MODULE_ID, "gather.lastDay", payload["gather.lastDay"]);
     await actor.setFlag(MODULE_ID, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
     await actor.setFlag(MODULE_ID, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
@@ -2212,6 +2267,10 @@ async function setGatherAttemptState(actor, dayKey, environmentSignature) {
       error
     });
   }
+  // Best-effort legacy mirror; do not fail or warn when legacy scope is unavailable.
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]);
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
 }
 
 function canAttemptGatherForDay(actor, dayKey, environmentSignature) {
@@ -4052,6 +4111,80 @@ function setSelectedMerchantActorFromElement(element) {
   return true;
 }
 
+function getMerchantSettlementStorageKey() {
+  return `po-merchant-settlement-${game.user?.id ?? "anon"}`;
+}
+
+function getMerchantSettlementAllValue() {
+  return "__all__";
+}
+
+function normalizeMerchantSettlementSelection(value) {
+  const settlement = String(value ?? "").trim().slice(0, 120);
+  if (!settlement) return "";
+  return settlement.toLowerCase() === "global" ? "" : settlement;
+}
+
+function hasSelectedMerchantSettlementPreference() {
+  return sessionStorage.getItem(getMerchantSettlementStorageKey()) !== null;
+}
+
+function getSelectedMerchantSettlement() {
+  const stored = sessionStorage.getItem(getMerchantSettlementStorageKey());
+  if (stored === getMerchantSettlementAllValue()) return "";
+  return normalizeMerchantSettlementSelection(stored);
+}
+
+function setSelectedMerchantSettlement(settlementInput) {
+  const settlement = normalizeMerchantSettlementSelection(settlementInput);
+  if (!settlement) {
+    sessionStorage.setItem(getMerchantSettlementStorageKey(), getMerchantSettlementAllValue());
+    return "";
+  }
+  sessionStorage.setItem(getMerchantSettlementStorageKey(), settlement);
+  return settlement;
+}
+
+function setSelectedMerchantSettlementFromElement(element) {
+  const nextSettlement = normalizeMerchantSettlementSelection(element?.value);
+  const currentSettlement = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : normalizeMerchantSettlementSelection(getOperationsLedger()?.merchants?.currentSettlement ?? "");
+  if (nextSettlement === currentSettlement) return false;
+  setSelectedMerchantSettlement(nextSettlement);
+  return true;
+}
+
+function getMerchantTabStorageKey() {
+  return `po-merchant-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantTabId(value) {
+  return String(value ?? "").trim();
+}
+
+function getSelectedMerchantTabId() {
+  return normalizeMerchantTabId(sessionStorage.getItem(getMerchantTabStorageKey()));
+}
+
+function setSelectedMerchantTabId(merchantIdInput) {
+  const merchantId = normalizeMerchantTabId(merchantIdInput);
+  if (!merchantId) {
+    sessionStorage.removeItem(getMerchantTabStorageKey());
+    return "";
+  }
+  sessionStorage.setItem(getMerchantTabStorageKey(), merchantId);
+  return merchantId;
+}
+
+function setSelectedMerchantTabIdFromElement(element) {
+  const nextMerchantId = normalizeMerchantTabId(element?.dataset?.merchantId ?? element?.value);
+  const currentMerchantId = getSelectedMerchantTabId();
+  if (nextMerchantId === currentMerchantId) return false;
+  setSelectedMerchantTabId(nextMerchantId);
+  return true;
+}
+
 function getMerchantEditorStorageKey() {
   return `po-merchant-editor-${game.user?.id ?? "anon"}`;
 }
@@ -5860,6 +5993,9 @@ function buildOperationsContextFallback() {
     fallbackMerchants = {
       currentSettlement: "",
       currentSettlementLabel: "Global",
+      settlementOptions: [{ value: "", label: "All Cities", selected: true }],
+      selectedSettlement: "",
+      selectedSettlementLabel: "All Cities",
       actorOptions: [],
       hasActorOptions: false,
       activeActorId: "",
@@ -5868,6 +6004,22 @@ function buildOperationsContextFallback() {
       activeActorSocialScore: 0,
       availableMerchants: [],
       hasAvailableMerchants: false,
+      activeMerchantId: "",
+      hasActiveMerchant: false,
+      activeMerchantName: "No Merchant Selected",
+      activeMerchantTitle: "",
+      activeMerchantRace: "",
+      activeMerchantImg: "icons/svg/mystery-man.svg",
+      activeMerchantStockCount: 0,
+      activeMerchantBuyMarkupLabel: "1.00",
+      activeMerchantCanOpenShop: false,
+      inventoryRows: [],
+      hasInventoryRows: false,
+      inventoryItemCount: 0,
+      viewerName: String(game.user?.name ?? "Player").trim() || "Player",
+      viewerLastAccessLabel: "-",
+      shouldLogAccess: false,
+      accessLogPayload: {},
       gm: {
         definitions: [],
         hasDefinitions: false,
@@ -5875,6 +6027,7 @@ function buildOperationsContextFallback() {
           id: "",
           name: "",
           title: "",
+          race: "",
           img: "icons/svg/item-bag.svg",
           settlement: "",
           isHidden: false,
@@ -5883,8 +6036,10 @@ function buildOperationsContextFallback() {
           socialGateEnabled: false,
           minSocialScore: 0,
           buyMarkup: MERCHANT_DEFAULTS.pricing.buyMarkup,
+          buyMarkupPercent: Number((MERCHANT_DEFAULTS.pricing.buyMarkup * 100).toFixed(2)),
+          buyMarkupMultiplierLabel: (1 + Number(MERCHANT_DEFAULTS.pricing.buyMarkup)).toFixed(2),
           sellRate: MERCHANT_DEFAULTS.pricing.sellRate,
-          sourceType: MERCHANT_DEFAULTS.stock.sourceType,
+          sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
           sourceRef: "",
           sourcePackIds: [],
           includeTagsInput: "",
@@ -5892,14 +6047,16 @@ function buildOperationsContextFallback() {
           allowedTypes: [...MERCHANT_ALLOWED_ITEM_TYPE_LIST],
           curatedItemUuidsInput: "",
           maxItems: MERCHANT_DEFAULTS.stock.maxItems,
+          stockCount: MERCHANT_DEFAULTS.stock.maxItems,
           targetValueGp: MERCHANT_DEFAULTS.stock.targetValueGp,
           scarcity: MERCHANT_DEFAULTS.stock.scarcity,
           actorId: ""
         },
-        sourceTypeOptions: getMerchantSourceTypeOptions(MERCHANT_DEFAULTS.stock.sourceType),
+        sourceTypeOptions: getMerchantEditorSourceTypeOptions(MERCHANT_SOURCE_TYPES.WORLD_FOLDER),
+        raceOptions: getMerchantEditorRaceOptions(""),
         scarcityOptions: getMerchantScarcityOptions(MERCHANT_DEFAULTS.stock.scarcity),
         actorOptions: [{ id: "", name: "Create on refresh", selected: true }],
-        sourceRefOptions: [{ value: "", label: "All World Items", selected: true }],
+        sourceRefOptions: [{ value: "", label: "Select Item Folder", selected: true }],
         sourcePackFilter: "",
         sourcePackOptions: [],
         sourcePackVisibleOptions: [],
@@ -6084,6 +6241,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           const active = getActiveOperationsPage();
           return active === "gm" ? "planning" : active;
         })();
+      if (operationsPageValue === "merchants" && operations?.merchants?.shouldLogAccess === true && operations?.merchants?.accessLogPayload) {
+        void logMerchantUiAccess(operations.merchants.accessLogPayload).catch((error) => {
+          logUiFailure("merchant-access", "failed to record merchant UI access", error, {
+            userId: operations?.merchants?.accessLogPayload?.userId,
+            actorId: operations?.merchants?.accessLogPayload?.actorId
+          });
+        });
+      }
       const operationsPlanningTab = getActiveOperationsPlanningTab();
       const gmOperationsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
       this._gmOperationsTab = gmOperationsTab;
@@ -6609,684 +6774,701 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (handledJournalAction) return;
 
     try {
-      switch (action) {
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "popout":
-        this.render({ force: true, popOut: true });
-        break;
-      case "assign":
-      case "assign-character":
-        await assignSlotByPicker(element, { source: "pc" });
-        break;
-      case "assign-actor":
-        await assignSlotByPicker(element, { source: "neutral-friendly" });
-        break;
-      case "assign-actor-global":
-        await assignSlotByPicker(element, { source: "all" });
-        break;
-      case "assign-me":
-        await assignSlotToUser(element);
-        break;
-      case "clear":
-        await clearSlotEntry(element);
-        break;
-      case "swap":
-        await swapSlots(element);
-        break;
-      case "toggle-notes":
-        toggleCardNotes(element);
-        break;
-      case "save-entry-notes":
-        {
-          const context = getRestWatchNoteContextFromElement(element);
-          if (context?.slotId && context?.actorId) {
-            clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+      const actionHandlers = {
+        "switch-tab": async () => {
+          this.#onSwitchTabClick(event, element);
+        },
+        "refresh": async () => {
+          emitSocketRefresh();
+        },
+        "popout": async () => {
+          this.render({ force: true, popOut: true });
+        },
+        "assign": async () => {
+          await assignSlotByPicker(element, { source: "pc" });
+        },
+        "assign-character": async () => {
+          await assignSlotByPicker(element, { source: "pc" });
+        },
+        "assign-actor": async () => {
+          await assignSlotByPicker(element, { source: "neutral-friendly" });
+        },
+        "assign-actor-global": async () => {
+          await assignSlotByPicker(element, { source: "all" });
+        },
+        "assign-me": async () => {
+          await assignSlotToUser(element);
+        },
+        "clear": async () => {
+          await clearSlotEntry(element);
+        },
+        "swap": async () => {
+          await swapSlots(element);
+        },
+        "toggle-notes": async () => {
+          toggleCardNotes(element);
+        },
+        "save-entry-notes": async () => {
+          {
+            const context = getRestWatchNoteContextFromElement(element);
+            if (context?.slotId && context?.actorId) {
+              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+            }
           }
-        }
-        await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
-        break;
-      case "visibility":
-        await updateVisibility(element);
-        break;
-      case "autofill-party":
-        await autofillFromParty();
-        break;
-      case "autofill-last":
-        await restoreRestCommitted();
-        break;
-      case "commit-plan":
-        await commitRestWatchState();
-        break;
-      case "copy-text":
-        await copyRestWatchText(false);
-        break;
-      case "copy-md":
-        await copyRestWatchText(true);
-        break;
-      case "clear-all":
-        await clearRestWatchAll();
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "time-range":
-        await updateTimeRange(element);
-        break;
-      case "switch-character":
-        await switchActiveCharacter(element);
-        break;
-      case "set-exhaustion":
-        await updateExhaustion(element);
-        break;
-      case "set-activity":
-        await updateActivity(element, { skipLocalRefresh: true });
-        break;
-      case "reset-activities":
-        await resetAllActivities();
-        break;
-      case "toggle-campfire":
-        await toggleCampfire(element);
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-panel-tab":
-        setActiveGmPanelTab(element?.dataset?.tab);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "operations-page":
-        setActiveOperationsPage(element?.dataset?.page);
-        if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessAllPlayerOps()) setActiveRestMainTab("gm");
-        else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-select-actor":
-        if (setMerchantActorSelectionFromElement(element)) {
+          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
+        },
+        "visibility": async () => {
+          await updateVisibility(element);
+        },
+        "autofill-party": async () => {
+          await autofillFromParty();
+        },
+        "autofill-last": async () => {
+          await restoreRestCommitted();
+        },
+        "commit-plan": async () => {
+          await commitRestWatchState();
+        },
+        "copy-text": async () => {
+          await copyRestWatchText(false);
+        },
+        "copy-md": async () => {
+          await copyRestWatchText(true);
+        },
+        "clear-all": async () => {
+          await clearRestWatchAll();
+        },
+        "ping": async () => {
+          await pingActorFromElement(element);
+        },
+        "time-range": async () => {
+          await updateTimeRange(element);
+        },
+        "switch-character": async () => {
+          await switchActiveCharacter(element);
+        },
+        "set-exhaustion": async () => {
+          await updateExhaustion(element);
+        },
+        "set-activity": async () => {
+          await updateActivity(element, { skipLocalRefresh: true });
+        },
+        "reset-activities": async () => {
+          await resetAllActivities();
+        },
+        "toggle-campfire": async () => {
+          await toggleCampfire(element);
+        },
+        "toggle-mini-viz": async () => {
+          setMiniVizCollapsed(!isMiniVizCollapsed());
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "merchant-open-shop":
-        await openMerchantShopFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-settlement":
-        await setMerchantSettlementFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-editor-draft-change":
-        if (cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })) {
+        },
+        "gm-panel-tab": async () => {
+          setActiveGmPanelTab(element?.dataset?.tab);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "merchant-new":
-        resetMerchantEditorSelection();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-edit":
-        if (setMerchantEditorSelectionFromElement(element)) {
+        },
+        "operations-page": async () => {
+          setActiveOperationsPage(element?.dataset?.page);
+          if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessAllPlayerOps()) setActiveRestMainTab("gm");
+          else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "merchant-save":
-        await saveMerchantFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-delete":
-        await deleteMerchantFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-refresh-stock":
-        await refreshMerchantStockFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-refresh-all-stock":
-        await refreshAllMerchantStocksFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-assign-by-contract-key":
-        await assignMerchantByContractKeyFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-assign-toggle":
-        await setMerchantAssignmentFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-open-actor":
-        await openMerchantActorFromElement(element);
-        break;
-      case "toggle-merchant-pack-source":
-        await toggleMerchantPackSourceFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-merchant-allowed-type":
-        await toggleMerchantAllowedTypeFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-add-curated-item":
-        await addMerchantCuratedItemFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-remove-curated-item":
-        await removeMerchantCuratedItemFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "merchant-clear-curated-items":
-        await clearMerchantCuratedItemsFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "operations-planning-tab":
-        setActiveOperationsPlanningTab(element?.dataset?.planningTab);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-ops-tab":
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "gm ops tab click", {
-            requestedTab: String(element?.dataset?.gmTab ?? ""),
-            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
-            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+        },
+        "merchant-select-actor": async () => {
+          if (setMerchantActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-select-city": async () => {
+          if (setMerchantSettlementSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-select-tab": async () => {
+          if (setSelectedMerchantTabIdFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-open-shop": async () => {
+          await openMerchantShopFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-settlement": async () => {
+          await setMerchantSettlementFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-editor-draft-change": async () => {
+          if (cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-new": async () => {
+          resetMerchantEditorSelection();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-randomize-name": async () => {
+          if (randomizeMerchantNameFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-edit": async () => {
+          if (setMerchantEditorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-save": async () => {
+          await saveMerchantFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-delete": async () => {
+          await deleteMerchantFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-refresh-stock": async () => {
+          await refreshMerchantStockFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-refresh-all-stock": async () => {
+          await refreshAllMerchantStocksFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-by-contract-key": async () => {
+          await assignMerchantByContractKeyFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-toggle": async () => {
+          await setMerchantAssignmentFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-open-actor": async () => {
+          await openMerchantActorFromElement(element);
+        },
+        "toggle-merchant-pack-source": async () => {
+          await toggleMerchantPackSourceFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-merchant-allowed-type": async () => {
+          await toggleMerchantAllowedTypeFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-add-curated-item": async () => {
+          await addMerchantCuratedItemFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-remove-curated-item": async () => {
+          await removeMerchantCuratedItemFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-clear-curated-items": async () => {
+          await clearMerchantCuratedItemsFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "operations-planning-tab": async () => {
+          setActiveOperationsPlanningTab(element?.dataset?.planningTab);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-ops-tab": async () => {
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "gm ops tab click", {
+              requestedTab: String(element?.dataset?.gmTab ?? ""),
+              beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+              beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+            });
+          }
+          this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
+          setActiveGmOperationsTab(this._gmOperationsTab);
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "gm ops tab applied", {
+              afterGmOpsTab: this._gmOperationsTab,
+              storedGmOpsTab: getActiveGmOperationsTab()
+            });
+          }
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-role": async () => {
+          await setOperationalRole(element);
+        },
+        "clear-role": async () => {
+          await clearOperationalRole(element);
+        },
+        "toggle-sop": async () => {
+          await toggleOperationalSOP(element, { skipLocalRefresh: true });
+        },
+        "set-sop-note": async () => {
+          clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
+          await setOperationalSopNote(element, { suppressUiWarning: true });
+        },
+        "save-sop-note": async () => {
+          const sopKey = String(element?.dataset?.sop ?? "").trim();
+          clearScheduledSopNoteSave(this, sopKey);
+          const noteInput = getSopNoteTextareaFromElement(element);
+          if (!noteInput) {
+            logUiDebug("operations-sop", "save-sop-note could not resolve textarea", {
+              sopKey,
+              target: summarizeClickTarget(event?.target ?? element)
+            });
+            ui.notifications?.warn("Could not find the SOP note input to save.");
+            return;
+          }
+          await setOperationalSopNote(noteInput, {
+            suppressUiWarning: false,
+            notify: true
           });
-        }
-        this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
-        setActiveGmOperationsTab(this._gmOperationsTab);
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "gm ops tab applied", {
-            afterGmOpsTab: this._gmOperationsTab,
-            storedGmOpsTab: getActiveGmOperationsTab()
-          });
-        }
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-role":
-        await setOperationalRole(element);
-        break;
-      case "clear-role":
-        await clearOperationalRole(element);
-        break;
-      case "toggle-sop":
-        await toggleOperationalSOP(element, { skipLocalRefresh: true });
-        break;
-      case "set-sop-note":
-        clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
-        await setOperationalSopNote(element, { suppressUiWarning: true });
-        break;
-      case "save-sop-note": {
-        const sopKey = String(element?.dataset?.sop ?? "").trim();
-        clearScheduledSopNoteSave(this, sopKey);
-        const noteInput = getSopNoteTextareaFromElement(element);
-        if (!noteInput) {
-          logUiDebug("operations-sop", "save-sop-note could not resolve textarea", {
-            sopKey,
-            target: summarizeClickTarget(event?.target ?? element)
-          });
-          ui.notifications?.warn("Could not find the SOP note input to save.");
-          break;
-        }
-        await setOperationalSopNote(noteInput, {
-          suppressUiWarning: false,
-          notify: true
-        });
-        break;
-      }
-      case "set-resource":
-        await setOperationalResource(element);
-        break;
-      case "set-downtime-hours":
-        await setDowntimeHoursGranted(element);
-        break;
-      case "set-downtime-tuning":
-        await setDowntimeTuningField(element);
-        break;
-      case "set-downtime-resolve-target":
-        applyDowntimeResolverBaseToUi(element, { force: true });
-        break;
-      case "prefill-downtime-resolution":
-        applyDowntimeResolverBaseToUi(element, { force: true });
-        break;
-      case "pre-resolve-selected-downtime-entry":
-        await preResolveSelectedDowntimeEntry(element);
-        break;
-      case "submit-downtime-action":
-        await submitDowntimeAction(element);
-        break;
-      case "clear-downtime-entry":
-        await clearDowntimeEntry(element);
-        break;
-      case "resolve-selected-downtime-entry":
-        await resolveSelectedDowntimeEntry(element);
-        break;
-      case "edit-downtime-result":
-        await editDowntimeResult(element);
-        break;
-      case "clear-downtime-results":
-        await clearDowntimeResults();
-        break;
-      case "unarchive-downtime-log":
-        await unarchiveDowntimeLogEntry(element);
-        break;
-      case "clear-downtime-log":
-        await clearDowntimeLogEntry(element);
-        break;
-      case "post-downtime-log":
-        await postDowntimeLogOutcome(element);
-        break;
-      case "collect-downtime-result":
-        await collectDowntimeResult(element);
-        break;
-      case "set-environment-preset":
-        await setOperationalEnvironmentPreset(element);
-        break;
-      case "set-environment-dc":
-        await setOperationalEnvironmentDc(element);
-        break;
-      case "set-environment-note":
-        await setOperationalEnvironmentNote(element);
-        break;
-      case "set-environment-sync-non-party":
-        await setOperationalEnvironmentSyncNonParty(element);
-        break;
-      case "set-environment-successive":
-        await setOperationalEnvironmentSuccessive(element);
-        break;
-      case "reset-environment-successive-defaults":
-        await resetOperationalEnvironmentSuccessiveDefaults();
-        break;
-      case "toggle-environment-actor":
-        await toggleOperationalEnvironmentActor(element);
-        break;
-      case "add-environment-log":
-        await addOperationalEnvironmentLog();
-        break;
-      case "edit-environment-log":
-        await editOperationalEnvironmentLog(element);
-        break;
-      case "remove-environment-log":
-        await removeOperationalEnvironmentLog(element);
-        break;
-      case "clear-environment-effects":
-        await clearOperationalEnvironmentEffects();
-        break;
-      case "show-environment-brief":
-        await showOperationalEnvironmentBrief();
-        break;
-      case "apply-upkeep":
-        await applyOperationalUpkeep();
-        break;
-      case "gather-resource-check":
-        triggerGatherResourceButtonAnimation(element);
-        await runGatherResourceCheck();
-        break;
-      case "run-gather-preset":
-        await runGatherPresetAction(element);
-        break;
-      case "set-gather-history-filter":
-        setGatherHistoryViewFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-gather-history-filters":
-        clearGatherHistoryFilters();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-gather-history":
-        await clearGatherHistoryAction();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "remove-gather-history-entry":
-        await removeGatherHistoryEntryAction(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "show-operational-brief":
-        await showOperationalBrief();
-        break;
-      case "set-comm-toggle":
-        await setCommunicationToggle(element);
-        break;
-      case "set-comm-text":
-        await setCommunicationText(element);
-        break;
-      case "set-recon-field":
-        await setReconField(element);
-        break;
-      case "run-recon-check":
-        await runReconCheck();
-        break;
-      case "show-recon-brief":
-        await showReconBrief();
-        break;
-      case "show-communication-brief":
-        await showCommunicationBrief();
-        break;
-      case "set-reputation-score":
-        await setReputationScore(element);
-        break;
-      case "adjust-reputation-score":
-        await adjustReputationScore(element);
-        break;
-      case "set-reputation-note":
-        await setReputationNote(element);
-        break;
-      case "log-reputation-note":
-        await logReputationNote(element);
-        break;
-      case "load-reputation-note-log":
-        await loadReputationNoteLog(element);
-        break;
-      case "post-reputation-note-log":
-        await postReputationNoteLog(element);
-        break;
-      case "clear-reputation-note":
-        await clearReputationNote(element);
-        break;
-      case "remove-reputation-note-log":
-        await removeReputationNoteLog(element);
-        break;
-      case "set-reputation-label":
-        await setReputationLabel(element);
-        break;
-      case "add-reputation-faction":
-        await addReputationFaction(element);
-        break;
-      case "remove-reputation-faction":
-        await removeReputationFaction(element);
-        break;
-      case "set-reputation-filter-keyword":
-        setReputationFilterState({ keyword: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-reputation-filter-standing":
-        setReputationFilterState({ standing: String(element?.value ?? "all") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-reputation-filters":
-        setReputationFilterState({ keyword: "", standing: "all" });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "show-reputation-brief":
-        await showReputationBrief();
-        break;
-      case "toggle-loot-pack-sources-collapsed": {
-        const current = getLootPackSourcesUiState();
-        setLootPackSourcesUiState({ collapsed: !current.collapsed });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "set-loot-registry-tab":
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "loot registry tab click", {
-            requestedTab: String(element?.dataset?.tab ?? ""),
-            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
-            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
-          });
-        }
-        this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
-        setActiveLootRegistryTab(this._lootRegistryTab);
-        logUiDebug("loot", "set loot registry tab", {
-          tab: this._lootRegistryTab,
-          storedLootRegistryTab: getActiveLootRegistryTab()
-        });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-pack-filter":
-        setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-loot-pack-filter":
-        setLootPackSourcesUiState({ filter: "" });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-loot-pack-source":
-        await toggleLootPackSource(element);
-        break;
-      case "set-loot-pack-weight":
-        await setLootPackWeight(element);
-        break;
-      case "toggle-loot-table-source":
-        await toggleLootTableSource(element);
-        break;
-      case "set-loot-table-type":
-        await setLootTableType(element);
-        break;
-      case "toggle-loot-item-type":
-        await toggleLootItemType(element);
-        break;
-      case "set-loot-rarity-floor":
-        await setLootRarityFloor(element);
-        break;
-      case "set-loot-rarity-ceiling":
-        await setLootRarityCeiling(element);
-        break;
-      case "set-loot-manifest-pack":
-        await setLootManifestPack(element);
-        break;
-      case "set-loot-keyword-include-tags":
-        await setLootKeywordIncludeTags(element);
-        break;
-      case "set-loot-keyword-exclude-tags":
-        await setLootKeywordExcludeTags(element);
-        break;
-      case "reset-loot-source-config":
-        await resetLootSourceConfig();
-        break;
-      case "set-loot-preview-field":
-        setLootPreviewField(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "roll-loot-preview":
-        await rollLootPreview(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "add-loot-preview-item": {
-        const added = await addLootPreviewItemByPicker();
-        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "remove-loot-preview-item": {
-        const removed = await removeLootPreviewItem(element);
-        if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "adjust-loot-preview-currency": {
-        const adjusted = adjustLootPreviewCurrency(element);
-        if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "clear-loot-preview":
-        clearLootPreviewResult();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "publish-loot-claims":
-        await publishLootPreviewToClaims();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-loot-claims":
-        await clearLootClaimsPool();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-claim-run":
-        if (setLootClaimRunSelectionFromElement(element)) {
+        },
+        "set-resource": async () => {
+          await setOperationalResource(element);
+        },
+        "set-downtime-hours": async () => {
+          await setDowntimeHoursGranted(element);
+        },
+        "set-downtime-tuning": async () => {
+          await setDowntimeTuningField(element);
+        },
+        "set-downtime-resolve-target": async () => {
+          applyDowntimeResolverBaseToUi(element, { force: true });
+        },
+        "prefill-downtime-resolution": async () => {
+          applyDowntimeResolverBaseToUi(element, { force: true });
+        },
+        "pre-resolve-selected-downtime-entry": async () => {
+          await preResolveSelectedDowntimeEntry(element);
+        },
+        "submit-downtime-action": async () => {
+          await submitDowntimeAction(element);
+        },
+        "clear-downtime-entry": async () => {
+          await clearDowntimeEntry(element);
+        },
+        "resolve-selected-downtime-entry": async () => {
+          await resolveSelectedDowntimeEntry(element);
+        },
+        "edit-downtime-result": async () => {
+          await editDowntimeResult(element);
+        },
+        "clear-downtime-results": async () => {
+          await clearDowntimeResults();
+        },
+        "unarchive-downtime-log": async () => {
+          await unarchiveDowntimeLogEntry(element);
+        },
+        "clear-downtime-log": async () => {
+          await clearDowntimeLogEntry(element);
+        },
+        "post-downtime-log": async () => {
+          await postDowntimeLogOutcome(element);
+        },
+        "collect-downtime-result": async () => {
+          await collectDowntimeResult(element);
+        },
+        "set-environment-preset": async () => {
+          await setOperationalEnvironmentPreset(element);
+        },
+        "set-environment-dc": async () => {
+          await setOperationalEnvironmentDc(element);
+        },
+        "set-environment-note": async () => {
+          await setOperationalEnvironmentNote(element);
+        },
+        "set-environment-sync-non-party": async () => {
+          await setOperationalEnvironmentSyncNonParty(element);
+        },
+        "set-environment-successive": async () => {
+          await setOperationalEnvironmentSuccessive(element);
+        },
+        "reset-environment-successive-defaults": async () => {
+          await resetOperationalEnvironmentSuccessiveDefaults();
+        },
+        "toggle-environment-actor": async () => {
+          await toggleOperationalEnvironmentActor(element);
+        },
+        "add-environment-log": async () => {
+          await addOperationalEnvironmentLog();
+        },
+        "edit-environment-log": async () => {
+          await editOperationalEnvironmentLog(element);
+        },
+        "remove-environment-log": async () => {
+          await removeOperationalEnvironmentLog(element);
+        },
+        "clear-environment-effects": async () => {
+          await clearOperationalEnvironmentEffects();
+        },
+        "show-environment-brief": async () => {
+          await showOperationalEnvironmentBrief();
+        },
+        "apply-upkeep": async () => {
+          await applyOperationalUpkeep();
+        },
+        "gather-resource-check": async () => {
+          triggerGatherResourceButtonAnimation(element);
+          await runGatherResourceCheck();
+        },
+        "run-gather-preset": async () => {
+          await runGatherPresetAction(element);
+        },
+        "set-gather-history-filter": async () => {
+          setGatherHistoryViewFromElement(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "set-loot-claims-archive-sort":
-        setLootClaimsArchiveSort(element?.value);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-loot-item":
-        await openLootItemFromElement(element);
-        break;
-      case "claim-loot-item":
-        await claimLootItemForPlayer(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-loot-vouch":
-        await toggleLootItemVouchForPlayer(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-claim-actor":
-        if (setLootClaimActorSelectionFromElement(element)) {
+        },
+        "clear-gather-history-filters": async () => {
+          clearGatherHistoryFilters();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "claim-loot-currency":
-        await claimLootCurrencyForPlayer(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-major-item":
-        await setLootItemMajorFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "run-loot-rolloff":
-        await runLootRollOffFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-gm-loot-claims-board":
-        openGmLootClaimsBoard({
-          force: true,
-          runId: getLootClaimRunIdFromElement(element)
-        });
-        break;
-      case "gm-quick-add-faction":
-        await gmQuickAddFaction();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-add-modifier":
-        openGlobalModifierSummaryPage({ force: true });
-        break;
-      case "gm-quick-open-environment":
-        openGmEnvironmentPage({ force: true });
-        break;
-      case "gm-quick-open-downtime":
-        openGmDowntimePage({ force: true });
-        break;
-      case "gm-quick-open-loot":
-        openGmLootPage({ force: true });
-        break;
-      case "gm-quick-cancel-panel":
-        setActiveGmQuickPanel("none");
-        setGmQuickWeatherDraft(null);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-submit-faction":
-        await gmQuickSubmitFaction(element);
-        break;
-      case "gm-quick-submit-modifier":
-        await gmQuickSubmitModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-save-modifier":
-        await gmQuickSaveModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-set-staged-field":
-        await gmQuickSetStagedModifierField(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-delete-staged-modifier":
-        await gmQuickDeleteStagedModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-delete-saved-modifier":
-        await gmQuickDeleteSavedModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-sync-integrations":
-        scheduleIntegrationSync("gm-quick-action");
-        ui.notifications?.info("Party Operations integration sync queued.");
-        break;
-      case "gm-quick-session-autopilot":
-        await runSessionAutopilot();
-        break;
-      case "gm-quick-undo-autopilot":
-        await undoLastSessionAutopilot();
-        break;
-      case "gm-quick-log-weather":
-        await gmQuickLogCurrentWeather();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-submit-weather":
-        await gmQuickSubmitWeather(element);
-        break;
-      case "gm-quick-weather-select":
-        await gmQuickSelectWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-set":
-        gmQuickUpdateWeatherDraftField(element);
-        break;
-      case "gm-quick-modifier-key-preset":
-        gmQuickApplyModifierKeyPreset(element);
-        break;
-      case "gm-quick-modifier-key-filter":
-        filterModifierPresetSelect(element, "quickGlobalModifierKey");
-        break;
-      case "gm-quick-weather-dae-key-preset":
-        gmQuickApplyWeatherDaeKeyPreset(element);
-        break;
-      case "gm-quick-weather-add-dae":
-        await gmQuickAddWeatherDaeChange(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-remove-dae":
-        await gmQuickRemoveWeatherDaeChange(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-save-preset":
-        await gmQuickSaveWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-delete-preset":
-        await gmQuickDeleteWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-base-ops-config":
-        await setBaseOperationsConfig(element);
-        break;
-      case "upsert-base-site":
-        await upsertBaseOperationsSite(element);
-        break;
-      case "clear-base-site":
-        await clearBaseOperationsSite(element);
-        break;
-      case "open-base-site-storage":
-        await showBaseSiteStorageManager(element);
-        break;
-      case "show-base-ops-brief":
-        await showBaseOperationsBrief();
-        break;
-      case "set-injury-config":
-        await setInjuryRecoveryConfig(element);
-        break;
-      case "upsert-injury":
-        await upsertInjuryEntry(element);
-        break;
-      case "roll-injury-table":
-        await rollInjuryTableForEditor(element);
-        break;
-      case "set-injury-result":
-        syncInjuryEditorFromSelection(element);
-        break;
-      case "stabilize-injury":
-        await stabilizeInjuryEntry(element);
-        break;
-      case "clear-injury":
-        await clearInjuryEntry(element);
-        break;
-      case "show-injury-table":
-        await showInjuryTable();
-        break;
-      case "apply-recovery-cycle":
-        await applyRecoveryCycle();
-        break;
-      case "show-recovery-brief":
-        await showRecoveryBrief();
-        break;
-        default:
-          break;
+        },
+        "clear-gather-history": async () => {
+          await clearGatherHistoryAction();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-gather-history-entry": async () => {
+          await removeGatherHistoryEntryAction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "show-operational-brief": async () => {
+          await showOperationalBrief();
+        },
+        "set-comm-toggle": async () => {
+          await setCommunicationToggle(element);
+        },
+        "set-comm-text": async () => {
+          await setCommunicationText(element);
+        },
+        "set-recon-field": async () => {
+          await setReconField(element);
+        },
+        "run-recon-check": async () => {
+          await runReconCheck();
+        },
+        "show-recon-brief": async () => {
+          await showReconBrief();
+        },
+        "show-communication-brief": async () => {
+          await showCommunicationBrief();
+        },
+        "set-reputation-score": async () => {
+          await setReputationScore(element);
+        },
+        "adjust-reputation-score": async () => {
+          await adjustReputationScore(element);
+        },
+        "set-reputation-note": async () => {
+          await setReputationNote(element);
+        },
+        "log-reputation-note": async () => {
+          await logReputationNote(element);
+        },
+        "load-reputation-note-log": async () => {
+          await loadReputationNoteLog(element);
+        },
+        "post-reputation-note-log": async () => {
+          await postReputationNoteLog(element);
+        },
+        "clear-reputation-note": async () => {
+          await clearReputationNote(element);
+        },
+        "remove-reputation-note-log": async () => {
+          await removeReputationNoteLog(element);
+        },
+        "set-reputation-label": async () => {
+          await setReputationLabel(element);
+        },
+        "add-reputation-faction": async () => {
+          await addReputationFaction(element);
+        },
+        "remove-reputation-faction": async () => {
+          await removeReputationFaction(element);
+        },
+        "set-reputation-filter-keyword": async () => {
+          setReputationFilterState({ keyword: String(element?.value ?? "") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-reputation-filter-standing": async () => {
+          setReputationFilterState({ standing: String(element?.value ?? "all") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-reputation-filters": async () => {
+          setReputationFilterState({ keyword: "", standing: "all" });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "show-reputation-brief": async () => {
+          await showReputationBrief();
+        },
+        "toggle-loot-pack-sources-collapsed": async () => {
+          const current = getLootPackSourcesUiState();
+          setLootPackSourcesUiState({ collapsed: !current.collapsed });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-registry-tab": async () => {
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "loot registry tab click", {
+              requestedTab: String(element?.dataset?.tab ?? ""),
+              beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+              beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+            });
+          }
+          this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+          setActiveLootRegistryTab(this._lootRegistryTab);
+          logUiDebug("loot", "set loot registry tab", {
+            tab: this._lootRegistryTab,
+            storedLootRegistryTab: getActiveLootRegistryTab()
+          });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-pack-filter": async () => {
+          setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-pack-filter": async () => {
+          setLootPackSourcesUiState({ filter: "" });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-loot-pack-source": async () => {
+          await toggleLootPackSource(element);
+        },
+        "set-loot-pack-weight": async () => {
+          await setLootPackWeight(element);
+        },
+        "toggle-loot-table-source": async () => {
+          await toggleLootTableSource(element);
+        },
+        "set-loot-table-type": async () => {
+          await setLootTableType(element);
+        },
+        "toggle-loot-item-type": async () => {
+          await toggleLootItemType(element);
+        },
+        "set-loot-rarity-floor": async () => {
+          await setLootRarityFloor(element);
+        },
+        "set-loot-rarity-ceiling": async () => {
+          await setLootRarityCeiling(element);
+        },
+        "set-loot-manifest-pack": async () => {
+          await setLootManifestPack(element);
+        },
+        "set-loot-keyword-include-tags": async () => {
+          await setLootKeywordIncludeTags(element);
+        },
+        "set-loot-keyword-exclude-tags": async () => {
+          await setLootKeywordExcludeTags(element);
+        },
+        "reset-loot-source-config": async () => {
+          await resetLootSourceConfig();
+        },
+        "set-loot-preview-field": async () => {
+          setLootPreviewField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "roll-loot-preview": async () => {
+          await rollLootPreview(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "add-loot-preview-item": async () => {
+          const added = await addLootPreviewItemByPicker();
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-loot-preview-item": async () => {
+          const removed = await removeLootPreviewItem(element);
+          if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "adjust-loot-preview-currency": async () => {
+          const adjusted = adjustLootPreviewCurrency(element);
+          if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-preview": async () => {
+          clearLootPreviewResult();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "publish-loot-claims": async () => {
+          await publishLootPreviewToClaims();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-claims": async () => {
+          await clearLootClaimsPool();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-claim-run": async () => {
+          if (setLootClaimRunSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "set-loot-claims-archive-sort": async () => {
+          setLootClaimsArchiveSort(element?.value);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "open-loot-item": async () => {
+          await openLootItemFromElement(element);
+        },
+        "claim-loot-item": async () => {
+          await claimLootItemForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-loot-vouch": async () => {
+          await toggleLootItemVouchForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-claim-actor": async () => {
+          if (setLootClaimActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "claim-loot-currency": async () => {
+          await claimLootCurrencyForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-major-item": async () => {
+          await setLootItemMajorFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "run-loot-rolloff": async () => {
+          await runLootRollOffFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "open-gm-loot-claims-board": async () => {
+          openGmLootClaimsBoard({
+            force: true,
+            runId: getLootClaimRunIdFromElement(element)
+          });
+        },
+        "gm-quick-add-faction": async () => {
+          await gmQuickAddFaction();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-add-modifier": async () => {
+          openGlobalModifierSummaryPage({ force: true });
+        },
+        "gm-quick-open-environment": async () => {
+          openGmEnvironmentPage({ force: true });
+        },
+        "gm-quick-open-downtime": async () => {
+          openGmDowntimePage({ force: true });
+        },
+        "gm-quick-open-merchants": async () => {
+          openGmMerchantsPage({ force: true });
+        },
+        "gm-quick-open-loot": async () => {
+          openGmLootPage({ force: true });
+        },
+        "gm-quick-cancel-panel": async () => {
+          setActiveGmQuickPanel("none");
+          setGmQuickWeatherDraft(null);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-submit-faction": async () => {
+          await gmQuickSubmitFaction(element);
+        },
+        "gm-quick-submit-modifier": async () => {
+          await gmQuickSubmitModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-save-modifier": async () => {
+          await gmQuickSaveModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-set-staged-field": async () => {
+          await gmQuickSetStagedModifierField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-delete-staged-modifier": async () => {
+          await gmQuickDeleteStagedModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-delete-saved-modifier": async () => {
+          await gmQuickDeleteSavedModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-sync-integrations": async () => {
+          scheduleIntegrationSync("gm-quick-action");
+          ui.notifications?.info("Party Operations integration sync queued.");
+        },
+        "gm-quick-session-autopilot": async () => {
+          await runSessionAutopilot();
+        },
+        "gm-quick-undo-autopilot": async () => {
+          await undoLastSessionAutopilot();
+        },
+        "gm-quick-log-weather": async () => {
+          await gmQuickLogCurrentWeather();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-submit-weather": async () => {
+          await gmQuickSubmitWeather(element);
+        },
+        "gm-quick-weather-select": async () => {
+          await gmQuickSelectWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-set": async () => {
+          gmQuickUpdateWeatherDraftField(element);
+        },
+        "gm-quick-modifier-key-preset": async () => {
+          gmQuickApplyModifierKeyPreset(element);
+        },
+        "gm-quick-modifier-key-filter": async () => {
+          filterModifierPresetSelect(element, "quickGlobalModifierKey");
+        },
+        "gm-quick-weather-dae-key-preset": async () => {
+          gmQuickApplyWeatherDaeKeyPreset(element);
+        },
+        "gm-quick-weather-add-dae": async () => {
+          await gmQuickAddWeatherDaeChange(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-remove-dae": async () => {
+          await gmQuickRemoveWeatherDaeChange(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-save-preset": async () => {
+          await gmQuickSaveWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-delete-preset": async () => {
+          await gmQuickDeleteWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-base-ops-config": async () => {
+          await setBaseOperationsConfig(element);
+        },
+        "upsert-base-site": async () => {
+          await upsertBaseOperationsSite(element);
+        },
+        "clear-base-site": async () => {
+          await clearBaseOperationsSite(element);
+        },
+        "open-base-site-storage": async () => {
+          await showBaseSiteStorageManager(element);
+        },
+        "show-base-ops-brief": async () => {
+          await showBaseOperationsBrief();
+        },
+        "set-injury-config": async () => {
+          await setInjuryRecoveryConfig(element);
+        },
+        "upsert-injury": async () => {
+          await upsertInjuryEntry(element);
+        },
+        "roll-injury-table": async () => {
+          await rollInjuryTableForEditor(element);
+        },
+        "set-injury-result": async () => {
+          syncInjuryEditorFromSelection(element);
+        },
+        "stabilize-injury": async () => {
+          await stabilizeInjuryEntry(element);
+        },
+        "clear-injury": async () => {
+          await clearInjuryEntry(element);
+        },
+        "show-injury-table": async () => {
+          await showInjuryTable();
+        },
+        "apply-recovery-cycle": async () => {
+          await applyRecoveryCycle();
+        },
+        "show-recovery-brief": async () => {
+          await showRecoveryBrief();
+        },
+      };
+      const handler = actionHandlers[action];
+      if (typeof handler === "function") {
+        await handler();
       }
     } catch (error) {
       logUiFailure("rest-watch", "action handler failed", error, {
@@ -7610,6 +7792,16 @@ function buildGmDowntimePageContext() {
   };
 }
 
+function buildGmMerchantsPageContext() {
+  const merchants = buildMerchantsContext(getOperationsLedger(), { user: game.user });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    merchants
+  };
+}
+
 function buildGmLootPageContext() {
   const operations = getStandaloneOpsContext();
   const lootSources = operations?.lootSources ?? {};
@@ -7698,6 +7890,20 @@ function openGmDowntimePage(renderOptions = { force: true }) {
   return app;
 }
 
+function openGmMerchantsPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view merchant controls.");
+    return null;
+  }
+  const app = gmMerchantsPageAppInstance?.element?.isConnected
+    ? gmMerchantsPageAppInstance
+    : new GmMerchantsPageApp();
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-merchants" });
+  return app;
+}
+
 function openGmLootPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
   if (!canAccessAllPlayerOps()) {
@@ -7724,34 +7930,43 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
   return app;
 }
 
-export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-gm-environment-page",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - GM Environment" },
-    position: { width: 980, height: 760 },
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/gm-environment.hbs" }
-  };
-
+class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
     super(options);
-    gmEnvironmentPageAppInstance = this;
+    this._setPageInstance(this);
   }
 
-  async _prepareContext() {
-    return buildGmEnvironmentPageContext();
+  _setPageInstance(_instance) {}
+
+  _getBoundDatasetKey() {
+    return "";
   }
 
-  async close(options = {}) {
-    if (gmEnvironmentPageAppInstance === this) gmEnvironmentPageAppInstance = null;
-    return super.close(options);
+  _getActionHandlers(_event = null) {
+    return {};
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+  _shouldHandleChangeAction(_action, _actionElement, _event) {
+    return true;
+  }
+
+  _shouldHandleInputAction(_action, _actionElement, _event) {
+    return false;
+  }
+
+  _bindAdditionalListeners(_root) {}
+
+  async _onPostRender(_context, _options) {}
+
+  _getActionErrorScope() {
+    return "stateful-page";
+  }
+
+  _getActionErrorMessage() {
+    return "Page action failed. Check console for details.";
+  }
+
+  _renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
     const uiState = captureUiState(this);
     if (uiState) pendingUiRestore.set(this, uiState);
     const scrollState = captureScrollState(this);
@@ -7759,7 +7974,7 @@ export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(Application
     this.render(renderOptions);
   }
 
-  async #onAction(event) {
+  async _dispatchActionEvent(event) {
     if (event?.type === "click") {
       event.preventDefault();
       event.stopPropagation();
@@ -7769,550 +7984,169 @@ export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(Application
     if (!action) return;
     if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
 
+    const actionHandlers = this._getActionHandlers(event);
+    const handler = actionHandlers?.[action];
+    if (typeof handler !== "function") return;
+
     try {
-      switch (action) {
-        case "gm-environment-page-back":
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        case "gm-environment-page-refresh":
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-sync-non-party":
-          await setOperationalEnvironmentSyncNonParty(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-preset":
-          await setOperationalEnvironmentPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-dc":
-          await setOperationalEnvironmentDc(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-successive":
-          await setOperationalEnvironmentSuccessive(actionElement);
-          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-note":
-          await setOperationalEnvironmentNote(actionElement);
-          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "toggle-environment-actor":
-          await toggleOperationalEnvironmentActor(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "reset-environment-successive-defaults":
-          await resetOperationalEnvironmentSuccessiveDefaults();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "add-environment-log":
-          await addOperationalEnvironmentLog();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "clear-environment-effects":
-          await clearOperationalEnvironmentEffects();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "show-environment-brief":
-          await showOperationalEnvironmentBrief();
-          return;
-        case "gm-quick-log-weather":
-          await gmQuickLogCurrentWeather();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-add-dae":
-          await gmQuickAddWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-remove-dae":
-          await gmQuickRemoveWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-save-preset":
-          await gmQuickSaveWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-delete-preset":
-          await gmQuickDeleteWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-submit-weather":
-          await gmQuickSubmitWeather(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-select":
-          await gmQuickSelectWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-set":
-          gmQuickUpdateWeatherDraftField(actionElement);
-          return;
-        case "gm-quick-weather-dae-key-preset":
-          gmQuickApplyWeatherDaeKeyPreset(actionElement);
-          return;
-      }
+      await handler(actionElement, event);
     } catch (error) {
-      logUiFailure("gm-environment-page", `action failed: ${action}`, error, {
+      logUiFailure(this._getActionErrorScope(), `action failed: ${action}`, error, {
         target: summarizeClickTarget(event?.target)
       });
-      ui.notifications?.warn("Environment action failed. Check console for details.");
+      ui.notifications?.warn(this._getActionErrorMessage());
     }
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-    ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGmEnvironmentPage) {
-      this.element.dataset.poBoundGmEnvironmentPage = "1";
-      this.element.addEventListener("click", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        if (!actionElement) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("change", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("input", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "gm-quick-weather-set" || action === "set-environment-note" || action === "set-environment-successive") {
-          this.#onAction(event);
-        }
-      });
-    }
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    restorePendingScrollState(this);
-  }
-}
-
-export class GmDowntimePageApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-gm-downtime-page",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - GM Downtime" },
-    position: { width: 980, height: 760 },
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/gm-downtime.hbs" }
-  };
-
-  constructor(options = {}) {
-    super(options);
-    gmDowntimePageAppInstance = this;
-  }
-
-  async _prepareContext() {
-    return buildGmDowntimePageContext();
   }
 
   async close(options = {}) {
-    if (gmDowntimePageAppInstance === this) gmDowntimePageAppInstance = null;
+    this._setPageInstance(null);
     return super.close(options);
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
-  }
-
-  async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    const actionElement = event?.target?.closest?.("[data-action]");
-    const action = String(actionElement?.dataset?.action ?? "").trim();
-    if (!action) return;
-    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
-
-    try {
-      switch (action) {
-        case "gm-downtime-page-back":
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        case "gm-downtime-page-refresh":
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-downtime-entry-sort":
-          setGmDowntimeViewState({ entriesSort: String(actionElement?.value ?? "") });
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-downtime-log-sort":
-          setGmDowntimeViewState({ logsSort: String(actionElement?.value ?? "") });
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-downtime-hours":
-          await setDowntimeHoursGranted(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-downtime-tuning":
-          await setDowntimeTuningField(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-downtime-resolve-target":
-          applyDowntimeResolverBaseToUi(actionElement, { force: true });
-          return;
-        case "prefill-downtime-resolution":
-          applyDowntimeResolverBaseToUi(actionElement, { force: true });
-          return;
-        case "pre-resolve-selected-downtime-entry":
-          await preResolveSelectedDowntimeEntry(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "resolve-selected-downtime-entry":
-          await resolveSelectedDowntimeEntry(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "edit-downtime-result":
-          await editDowntimeResult(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "submit-downtime-action":
-          await submitDowntimeAction(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "clear-downtime-entry":
-          await clearDowntimeEntry(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "clear-downtime-results":
-          await clearDowntimeResults();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "unarchive-downtime-log":
-          await unarchiveDowntimeLogEntry(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "clear-downtime-log":
-          await clearDowntimeLogEntry(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "post-downtime-log":
-          await postDowntimeLogOutcome(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "collect-downtime-result":
-          await collectDowntimeResult(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "remove-downtime-item-drop":
-          removeDowntimeResolverItemDropFromUi(actionElement);
-          return;
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    ensurePartyOperationsClass(this);
+    if (this.element) {
+      const datasetKey = this._getBoundDatasetKey();
+      if (datasetKey && !this.element.dataset[datasetKey]) {
+        this.element.dataset[datasetKey] = "1";
+        this.element.addEventListener("click", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          if (isFormActionElement(actionElement)) return;
+          if (!actionElement) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("change", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleChangeAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("input", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleInputAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this._bindAdditionalListeners(this.element);
       }
-    } catch (error) {
-      logUiFailure("gm-downtime-page", `action failed: ${action}`, error, {
-        target: summarizeClickTarget(event?.target)
-      });
-      ui.notifications?.warn("Downtime action failed. Check console for details.");
     }
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-    ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGmDowntimePage) {
-      this.element.dataset.poBoundGmDowntimePage = "1";
-      this.element.addEventListener("click", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        if (!actionElement) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("change", (event) => {
-        if (!event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("dragover", (event) => {
-        const dropZone = event.target?.closest?.("[data-downtime-item-dropzone], [data-downtime-crafting-item-dropzone]");
-        if (!dropZone) return;
-        event.preventDefault();
-      });
-      this.element.addEventListener("drop", async (event) => {
-        const textDropZone = event.target?.closest?.("[data-downtime-item-dropzone]");
-        const craftingDropZone = event.target?.closest?.("[data-downtime-crafting-item-dropzone]");
-        if (craftingDropZone) {
-          event.preventDefault();
-          await addDowntimeResolverCraftingItemDropFromDropEvent(event);
-          return;
-        }
-        const dropZone = textDropZone;
-        if (!dropZone) return;
-        event.preventDefault();
-        await addDowntimeResolverItemRewardFromDropEvent(event);
-      });
-    }
-    const resolverRoot = this.element?.querySelector?.(".po-downtime-resolver");
-    if (resolverRoot) renderDowntimeResolverItemDropList(resolverRoot);
+    await this._onPostRender(context, options);
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
   }
 }
 
-export class GmLootPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-gm-loot-page",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - GM Loot" },
-    position: { width: 980, height: 760 },
-    resizable: true
-  });
+export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
+  BaseStatefulPageApp,
+  setPageInstance: (instance) => {
+    gmEnvironmentPageAppInstance = instance;
+  },
+  buildContext: buildGmEnvironmentPageContext,
+  openMainTab,
+  setOperationalEnvironmentSyncNonParty,
+  setOperationalEnvironmentPreset,
+  setOperationalEnvironmentDc,
+  setOperationalEnvironmentSuccessive,
+  setOperationalEnvironmentNote,
+  toggleOperationalEnvironmentActor,
+  resetOperationalEnvironmentSuccessiveDefaults,
+  addOperationalEnvironmentLog,
+  clearOperationalEnvironmentEffects,
+  showOperationalEnvironmentBrief,
+  gmQuickLogCurrentWeather,
+  gmQuickAddWeatherDaeChange,
+  gmQuickRemoveWeatherDaeChange,
+  gmQuickSaveWeatherPreset,
+  gmQuickDeleteWeatherPreset,
+  gmQuickSubmitWeather,
+  gmQuickSelectWeatherPreset,
+  gmQuickUpdateWeatherDraftField,
+  gmQuickApplyWeatherDaeKeyPreset
+});
 
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/gm-loot.hbs" }
-  };
+export const GmDowntimePageApp = createGmDowntimePageApp({
+  BaseStatefulPageApp,
+  setPageInstance: (instance) => {
+    gmDowntimePageAppInstance = instance;
+  },
+  buildContext: buildGmDowntimePageContext,
+  openMainTab,
+  setGmDowntimeViewState,
+  setDowntimeHoursGranted,
+  setDowntimeTuningField,
+  applyDowntimeResolverBaseToUi,
+  preResolveSelectedDowntimeEntry,
+  resolveSelectedDowntimeEntry,
+  editDowntimeResult,
+  submitDowntimeAction,
+  clearDowntimeEntry,
+  clearDowntimeResults,
+  unarchiveDowntimeLogEntry,
+  clearDowntimeLogEntry,
+  postDowntimeLogOutcome,
+  collectDowntimeResult,
+  removeDowntimeResolverItemDropFromUi,
+  addDowntimeResolverCraftingItemDropFromDropEvent,
+  addDowntimeResolverItemRewardFromDropEvent,
+  renderDowntimeResolverItemDropList
+});
 
-  constructor(options = {}) {
-    super(options);
-    gmLootPageAppInstance = this;
-  }
+export const GmMerchantsPageApp = createGmMerchantsPageApp({
+  BaseStatefulPageApp,
+  setPageInstance: (instance) => {
+    gmMerchantsPageAppInstance = instance;
+  },
+  buildContext: buildGmMerchantsPageContext,
+  openMainTab,
+  cacheMerchantEditorDraftFromElement,
+  resetMerchantEditorSelection,
+  createStarterMerchants,
+  randomizeMerchantNameFromElement,
+  setMerchantEditorSelectionFromElement,
+  saveMerchantFromElement,
+  deleteMerchantFromElement,
+  refreshMerchantStockFromElement,
+  refreshAllMerchantStocksFromElement,
+  openMerchantActorFromElement
+});
 
-  async _prepareContext() {
-    return buildGmLootPageContext();
-  }
-
-  async close(options = {}) {
-    if (gmLootPageAppInstance === this) gmLootPageAppInstance = null;
-    return super.close(options);
-  }
-
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-    ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGmLootPage) {
-      this.element.dataset.poBoundGmLootPage = "1";
-      this.element.addEventListener("click", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "gm-loot-page-back") {
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        }
-        if (action === "gm-loot-page-refresh") {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "open-gm-loot-claims-board") {
-          openGmLootClaimsBoard({
-            force: true,
-            runId: getLootClaimRunIdFromElement(actionElement)
-          });
-          return;
-        }
-
-        switch (action) {
-          case "set-loot-registry-tab":
-            setActiveLootRegistryTab(String(actionElement?.dataset?.tab ?? "preview"));
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-pack-filter":
-            setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "clear-loot-pack-filter":
-            setLootPackSourcesUiState({ filter: "" });
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-pack-source":
-            await toggleLootPackSource(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-pack-weight":
-            await setLootPackWeight(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-table-source":
-            await toggleLootTableSource(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-table-type":
-            await setLootTableType(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-item-type":
-            await toggleLootItemType(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-rarity-floor":
-            await setLootRarityFloor(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-rarity-ceiling":
-            await setLootRarityCeiling(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-manifest-pack":
-            await setLootManifestPack(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-keyword-include-tags":
-            await setLootKeywordIncludeTags(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-keyword-exclude-tags":
-            await setLootKeywordExcludeTags(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "reset-loot-source-config":
-            await resetLootSourceConfig();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-preview-field":
-            setLootPreviewField(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "roll-loot-preview":
-            await rollLootPreview(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "add-loot-preview-item": {
-            const added = await addLootPreviewItemByPicker();
-            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "remove-loot-preview-item": {
-            const removed = await removeLootPreviewItem(actionElement);
-            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "adjust-loot-preview-currency": {
-            const adjusted = adjustLootPreviewCurrency(actionElement);
-            if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "clear-loot-preview":
-            clearLootPreviewResult();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "publish-loot-claims":
-            await publishLootPreviewToClaims();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "clear-loot-claims":
-            await clearLootClaimsPool();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "open-loot-item":
-            await openLootItemFromElement(actionElement);
-            break;
-          default:
-            break;
-        }
-      });
-
-      this.element.addEventListener("change", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "set-loot-preview-field") {
-          setLootPreviewField(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-pack-source") {
-          await toggleLootPackSource(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-table-source") {
-          await toggleLootTableSource(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-table-type") {
-          await setLootTableType(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-item-type") {
-          await toggleLootItemType(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-rarity-floor") {
-          await setLootRarityFloor(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-rarity-ceiling") {
-          await setLootRarityCeiling(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-manifest-pack") {
-          await setLootManifestPack(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-pack-weight") {
-          await setLootPackWeight(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-keyword-include-tags") {
-          await setLootKeywordIncludeTags(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-keyword-exclude-tags") {
-          await setLootKeywordExcludeTags(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-      });
-
-      this.element.addEventListener("input", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "set-loot-pack-filter" || action === "set-loot-preview-field") {
-          if (action === "set-loot-pack-filter") setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-          if (action === "set-loot-preview-field") setLootPreviewField(actionElement);
-        }
-      });
-
-      this.element.addEventListener("dragover", (event) => {
-        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
-        if (!dropZone) return;
-        event.preventDefault();
-      });
-
-      this.element.addEventListener("drop", async (event) => {
-        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
-        if (!dropZone) return;
-        event.preventDefault();
-        const added = await addLootPreviewItemFromDropEvent(event);
-        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-    }
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    restorePendingScrollState(this);
-  }
-}
+export const GmLootPageApp = createGmLootPageApp({
+  BaseStatefulPageApp,
+  setPageInstance: (instance) => {
+    gmLootPageAppInstance = instance;
+  },
+  buildContext: buildGmLootPageContext,
+  openMainTab,
+  openGmLootClaimsBoard,
+  getLootClaimRunIdFromElement,
+  setActiveLootRegistryTab,
+  setLootPackSourcesUiState,
+  toggleLootPackSource,
+  setLootPackWeight,
+  toggleLootTableSource,
+  setLootTableType,
+  toggleLootItemType,
+  setLootRarityFloor,
+  setLootRarityCeiling,
+  setLootManifestPack,
+  setLootKeywordIncludeTags,
+  setLootKeywordExcludeTags,
+  resetLootSourceConfig,
+  setLootPreviewField,
+  rollLootPreview,
+  addLootPreviewItemByPicker,
+  removeLootPreviewItem,
+  adjustLootPreviewCurrency,
+  clearLootPreviewResult,
+  publishLootPreviewToClaims,
+  clearLootClaimsPool,
+  openLootItemFromElement,
+  addLootPreviewItemFromDropEvent
+});
 
 export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -12694,7 +12528,8 @@ function buildDefaultOperationsLedger() {
     merchants: {
       currentSettlement: "",
       definitions: [],
-      stockStateById: {}
+      stockStateById: {},
+      accessLog: []
     },
     downtime: {
       hoursGranted: 4,
@@ -14469,63 +14304,63 @@ function ensureBaseOperationsState(ledger) {
 }
 
 function normalizeMerchantTagList(values = []) {
-  if (!Array.isArray(values)) return [];
-  return values
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
-    .filter((entry, index, arr) => entry.length > 0 && entry.length <= 80 && arr.indexOf(entry) === index)
-    .slice(0, 40);
+  return normalizeMerchantTagListDomain(values);
 }
 
 function normalizeMerchantSourcePackIds(values = [], fallbackSourceRef = "") {
-  const rows = [];
-  if (Array.isArray(values)) rows.push(...values);
-  else if (typeof values === "string") rows.push(...values.split(/[\n,;]+/));
-  if (String(fallbackSourceRef ?? "").trim()) rows.push(String(fallbackSourceRef ?? "").trim());
-  return rows
-    .map((entry) => String(entry ?? "").trim())
-    .filter((entry, index, arr) => entry.length > 0 && entry.length <= 200 && arr.indexOf(entry) === index)
-    .slice(0, 100);
+  return normalizeMerchantSourcePackIdsDomain(values, fallbackSourceRef);
 }
 
 function normalizeMerchantAllowedItemTypes(values = []) {
-  const source = Array.isArray(values) ? values : [];
-  const normalized = source
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
-    .filter((entry, index, arr) => MERCHANT_ALLOWED_ITEM_TYPES.has(entry) && arr.indexOf(entry) === index);
-  if (normalized.length > 0) return normalized;
-  return [...MERCHANT_ALLOWED_ITEM_TYPE_LIST];
+  return normalizeMerchantAllowedItemTypesDomain(values);
 }
 
 function normalizeMerchantCuratedItemUuids(values = []) {
-  const source = Array.isArray(values) ? values : [];
-  return source
-    .map((entry) => String(entry ?? "").trim())
-    .filter((entry, index, arr) => entry.length > 0 && entry.length <= 260 && arr.indexOf(entry) === index)
-    .slice(0, MERCHANT_EDITOR_MAX_CURATED_ITEMS);
+  return normalizeMerchantCuratedItemUuidsDomain(values);
 }
 
 function parseMerchantUuidListInput(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return [];
-  return normalizeMerchantCuratedItemUuids(text.split(/[\n,;]+/));
+  return parseMerchantUuidListInputDomain(value);
 }
 
 function formatMerchantUuidListInput(values = []) {
-  return normalizeMerchantCuratedItemUuids(values).join("\n");
+  return formatMerchantUuidListInputDomain(values);
 }
 
 function normalizeMerchantSourceType(value) {
-  const sourceType = String(value ?? "").trim().toLowerCase();
-  if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return MERCHANT_SOURCE_TYPES.WORLD_FOLDER;
-  return MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+  return normalizeMerchantSourceTypeDomain(value);
 }
 
 function normalizeMerchantScarcity(value) {
-  const scarcity = String(value ?? "").trim().toLowerCase();
-  if (scarcity === MERCHANT_SCARCITY_LEVELS.ABUNDANT) return MERCHANT_SCARCITY_LEVELS.ABUNDANT;
-  if (scarcity === MERCHANT_SCARCITY_LEVELS.SCARCE) return MERCHANT_SCARCITY_LEVELS.SCARCE;
-  return MERCHANT_SCARCITY_LEVELS.NORMAL;
+  return normalizeMerchantScarcityDomain(value);
+}
+
+function normalizeMerchantRace(value) {
+  return normalizeMerchantRaceDomain(value);
+}
+
+function getMerchantRaceKey(value) {
+  return getMerchantRaceKeyDomain(value);
+}
+
+function getMerchantEditorRaceOptions(selectedRaceInput = "") {
+  return getMerchantEditorRaceOptionsDomain(selectedRaceInput);
+}
+
+function pickRandomMerchantRace(fallback = "Human") {
+  return pickRandomMerchantRaceDomain(fallback);
+}
+
+function pickRandomMerchantNamePart(values = [], fallback = "") {
+  return pickRandomMerchantNamePartDomain(values, fallback);
+}
+
+function generateRandomMerchantName(raceInput = "") {
+  return generateRandomMerchantNameDomain(raceInput);
+}
+
+function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+  return getMerchantEditorSourceTypeOptionsDomain(selected);
 }
 
 function normalizeMerchantDefinition(raw = {}, index = 0) {
@@ -14534,16 +14369,14 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const id = String(source.id ?? fallbackId).trim() || fallbackId;
   const name = String(source.name ?? "").trim() || `Merchant ${Math.max(1, Number(index) + 1)}`;
   const title = String(source.title ?? "").trim();
+  const race = normalizeMerchantRace(source.race ?? "");
   const img = String(source.img ?? "").trim() || "icons/svg/item-bag.svg";
   const settlement = String(source.settlement ?? MERCHANT_DEFAULTS.settlement).trim().slice(0, 120);
-  const isHidden = Boolean(source.isHidden);
-  const requiresContract = Boolean(source.requiresContract);
-  const contractKey = String(source.contractKey ?? "").trim().toLowerCase().slice(0, 120);
-  const socialGateEnabled = Boolean(source.socialGateEnabled);
-  const minSocialScoreRaw = Number(source.minSocialScore ?? 0);
-  const minSocialScore = Number.isFinite(minSocialScoreRaw)
-    ? Math.max(-20, Math.min(20, Math.floor(minSocialScoreRaw)))
-    : 0;
+  const isHidden = false;
+  const requiresContract = false;
+  const contractKey = "";
+  const socialGateEnabled = false;
+  const minSocialScore = 0;
   const buyMarkupRaw = Number(source?.pricing?.buyMarkup ?? source.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup);
   const sellRateRaw = Number(source?.pricing?.sellRate ?? source.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
   const buyMarkup = Number.isFinite(buyMarkupRaw) ? Math.max(0, Math.min(10, Number(buyMarkupRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.buyMarkup;
@@ -14573,6 +14406,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     id,
     name,
     title,
+    race,
     img,
     settlement,
     isHidden,
@@ -14613,11 +14447,29 @@ function normalizeMerchantStockStateEntry(raw = {}, fallbackActorId = "") {
   };
 }
 
+function normalizeMerchantAccessLogEntry(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const viewedAtRaw = Number(source.viewedAt ?? source.createdAt ?? source.ts ?? Date.now());
+  const viewedAt = Number.isFinite(viewedAtRaw) ? Math.max(0, Math.floor(viewedAtRaw)) : Date.now();
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    viewedAt,
+    userId: String(source.userId ?? "").trim(),
+    userName: String(source.userName ?? source.viewer ?? "Player").trim() || "Player",
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim(),
+    settlement: normalizeMerchantSettlementSelection(source.settlement ?? source.city ?? ""),
+    merchantId: String(source.merchantId ?? "").trim(),
+    merchantName: String(source.merchantName ?? "").trim()
+  };
+}
+
 function ensureMerchantsState(ledger) {
   if (!ledger || typeof ledger !== "object") return {
     currentSettlement: "",
     definitions: [],
-    stockStateById: {}
+    stockStateById: {},
+    accessLog: []
   };
   if (!ledger.merchants || typeof ledger.merchants !== "object" || Array.isArray(ledger.merchants)) {
     ledger.merchants = {};
@@ -14628,6 +14480,7 @@ function ensureMerchantsState(ledger) {
   if (!merchants.stockStateById || typeof merchants.stockStateById !== "object" || Array.isArray(merchants.stockStateById)) {
     merchants.stockStateById = {};
   }
+  if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
   const seenIds = new Set();
   merchants.definitions = merchants.definitions
     .map((entry, index) => normalizeMerchantDefinition(entry, index))
@@ -14646,6 +14499,11 @@ function ensureMerchantsState(ledger) {
     );
   }
   merchants.stockStateById = normalizedStockState;
+  merchants.accessLog = merchants.accessLog
+    .map((entry) => normalizeMerchantAccessLogEntry(entry))
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
+    .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
   return merchants;
 }
 
@@ -14679,6 +14537,72 @@ async function upsertMerchant(definitionPatch = {}) {
     persisted = foundry.utils.deepClone(normalized);
   });
   return persisted;
+}
+
+function normalizeMerchantFolderAlias(value = "") {
+  return normalizeMerchantFolderAliasDomain(value);
+}
+
+function findMerchantItemFolderByAliases(aliases = []) {
+  return findMerchantFolderByAliasesDomain(aliases, game.folders?.contents ?? []);
+}
+
+function buildStarterMerchantPatch(blueprint = {}, index = 0) {
+  return buildStarterMerchantPatchDomain(blueprint, index, {
+    resolveFolderByAliases: (aliasesInput) => findMerchantItemFolderByAliases(aliasesInput)
+  });
+}
+
+async function createStarterMerchants(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create starter merchants.");
+    return { ok: false, createdCount: 0, updatedCount: 0, refreshedCount: 0, missingFolders: [] };
+  }
+  const blueprints = Array.isArray(MERCHANT_STARTER_BLUEPRINTS) ? MERCHANT_STARTER_BLUEPRINTS : [];
+  if (blueprints.length <= 0) {
+    ui.notifications?.warn("No starter merchant presets are configured.");
+    return { ok: false, createdCount: 0, updatedCount: 0, refreshedCount: 0, missingFolders: [] };
+  }
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  let refreshedCount = 0;
+  const missingFolders = [];
+
+  for (let index = 0; index < blueprints.length; index += 1) {
+    const blueprint = blueprints[index];
+    const patch = buildStarterMerchantPatch(blueprint, index);
+    const existed = Boolean(getMerchantById(patch.id));
+    if (!patch?.stock?.sourceRef) missingFolders.push(String(patch.name ?? `Merchant ${index + 1}`));
+    const saved = await upsertMerchant(patch);
+    if (!saved?.id) continue;
+    if (existed) updatedCount += 1;
+    else createdCount += 1;
+    if (patch?.stock?.sourceRef) {
+      const result = await refreshMerchantStock(saved.id, { silent: true });
+      if (result?.ok) refreshedCount += 1;
+    }
+  }
+
+  const totalSynced = createdCount + updatedCount;
+  if (totalSynced > 0) {
+    ui.notifications?.info(
+      `Starter merchants synced: ${createdCount} created, ${updatedCount} updated, ${refreshedCount} stocked.`
+    );
+  }
+  if (missingFolders.length > 0) {
+    ui.notifications?.warn(
+      `No matching item folders for: ${missingFolders.join(", ")}. Set Stock Source in Merchant Editor.`
+    );
+  }
+
+  return {
+    ok: totalSynced > 0,
+    createdCount,
+    updatedCount,
+    refreshedCount,
+    missingFolders
+  };
 }
 
 async function deleteMerchant(merchantIdInput) {
@@ -14739,7 +14663,7 @@ function computeActorSocialScore(actor) {
   if (!actor) return 0;
   const moduleFlag = Number(actor.getFlag?.(MODULE_ID, "socialScore"));
   if (Number.isFinite(moduleFlag)) return Math.max(-20, Math.min(20, Math.floor(moduleFlag)));
-  const legacyFlag = Number(actor.getFlag?.("partyops", "socialScore"));
+  const legacyFlag = Number(getLegacyPartyOpsFlag(actor, "socialScore"));
   if (Number.isFinite(legacyFlag)) return Math.max(-20, Math.min(20, Math.floor(legacyFlag)));
   return 0;
 }
@@ -14946,14 +14870,13 @@ async function setActorCurrencyFromCp(actor, totalCp) {
 }
 
 function formatMerchantCp(totalCp) {
-  const cp = Math.max(0, Math.floor(Number(totalCp ?? 0) || 0));
-  return `${(cp / 100).toFixed(2)} gp`;
+  return formatMerchantCpDomain(totalCp);
 }
 
 function getMerchantItemUnitPriceCp(itemData = {}, rate = 1) {
-  const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
-  const scalar = Number.isFinite(Number(rate)) ? Math.max(0, Number(rate)) : 1;
-  return Math.max(0, Math.round(baseGp * scalar * 100));
+  return getMerchantItemUnitPriceCpDomain(itemData, rate, {
+    getItemGpValue: getLootItemGpValueFromData
+  });
 }
 
 function getMerchantCompendiumPackIdsFromStock(stock = {}) {
@@ -15053,53 +14976,14 @@ function getMerchantWorldFolderOptions(selectedFolderId = "") {
 }
 
 function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRef = "", sourcePackOptions = []) {
-  const sourceType = normalizeMerchantSourceType(sourceTypeInput);
-  const selected = String(selectedSourceRef ?? "").trim();
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
-    const options = [{
-      value: "",
-      label: "All World Items",
-      selected: !selected
-    }];
-    if (selected) {
-      options.push({
-        value: selected,
-        label: `${selected} (Custom)`,
-        selected: true
-      });
+  return getMerchantSourceRefOptionsForEditorDomain(
+    sourceTypeInput,
+    selectedSourceRef,
+    sourcePackOptions,
+    {
+      getWorldFolderOptions: getMerchantWorldFolderOptions
     }
-    return options;
-  }
-  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-    return getMerchantWorldFolderOptions(selected);
-  }
-
-  const options = (Array.isArray(sourcePackOptions) ? sourcePackOptions : [])
-    .map((entry) => {
-      const id = String(entry?.id ?? "").trim();
-      const label = String(entry?.label ?? id).trim() || id;
-      const available = entry?.available !== false;
-      return {
-        value: id,
-        label: available ? label : `${label} (Unavailable)`,
-        selected: id === selected
-      };
-    })
-    .filter((entry) => entry.value)
-    .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
-  options.unshift({
-    value: "",
-    label: options.length > 0 ? "Select Primary Pack" : "No Compendium Packs Available",
-    selected: !selected
-  });
-  if (selected && !options.some((entry) => entry.value === selected)) {
-    options.push({
-      value: selected,
-      label: `${selected} (Unavailable)`,
-      selected: true
-    });
-  }
-  return options;
+  );
 }
 
 function getMerchantAllowedTypeOptionsForEditor(selectedTypes = []) {
@@ -15282,16 +15166,130 @@ function getMerchantEditorActorOptions(selectedActorId = "") {
 }
 
 function getMerchantTargetStockCount(stock = {}) {
-  const maxItemsRaw = Number(stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
-  const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(1, Math.min(100, Math.floor(maxItemsRaw))) : MERCHANT_DEFAULTS.stock.maxItems;
-  const scarcity = normalizeMerchantScarcity(stock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
-  if (scarcity === MERCHANT_SCARCITY_LEVELS.ABUNDANT) return maxItems;
-  if (scarcity === MERCHANT_SCARCITY_LEVELS.SCARCE) return Math.max(1, Math.floor(maxItems * 0.6));
-  return Math.max(1, Math.floor(maxItems * 0.85));
+  return getMerchantTargetStockCountDomain(stock);
 }
 
 function sortMerchantDefinitions(definitions = []) {
   return [...definitions].sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+}
+
+function buildMerchantSettlementOptions(definitions = [], selectionInput = "", fallbackInput = "") {
+  const selection = normalizeMerchantSettlementSelection(selectionInput);
+  const fallback = normalizeMerchantSettlementSelection(fallbackInput);
+  const catalog = new Map();
+  for (const merchant of Array.isArray(definitions) ? definitions : []) {
+    const settlement = normalizeMerchantSettlementSelection(merchant?.settlement ?? "");
+    if (!settlement) continue;
+    const key = settlement.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, settlement);
+  }
+  if (fallback) {
+    const key = fallback.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, fallback);
+  }
+  if (selection) {
+    const key = selection.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, selection);
+  }
+  const cityRows = Array.from(catalog.values())
+    .sort((a, b) => a.localeCompare(b))
+    .map((value) => ({
+      value,
+      label: getMerchantSettlementLabel(value),
+      selected: false
+    }));
+  const options = [
+    { value: "", label: "All Cities", selected: false },
+    ...cityRows
+  ];
+  const activeValue = options.some((entry) => entry.value.toLowerCase() === selection.toLowerCase())
+    ? selection
+    : (options.some((entry) => entry.value.toLowerCase() === fallback.toLowerCase()) ? fallback : "");
+  for (const entry of options) {
+    entry.selected = entry.value.toLowerCase() === activeValue.toLowerCase();
+  }
+  return {
+    activeValue,
+    activeLabel: activeValue ? getMerchantSettlementLabel(activeValue) : "All Cities",
+    options
+  };
+}
+
+function buildMerchantInventoryRowsForDisplay(merchant = {}) {
+  const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const rows = (merchantActor?.items?.contents ?? [])
+    .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
+    .map((item) => {
+      const itemData = getMerchantItemData(item);
+      const quantity = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+      const baseCp = getMerchantItemUnitPriceCp(itemData, 1);
+      const buyCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
+      const weight = Math.max(0, Number(getItemWeightValue(itemData) || getItemWeightValue(item) || 0));
+      const weightLabel = weight > 0
+        ? `${weight % 1 === 0 ? weight.toFixed(0) : weight.toFixed(1)} lb`
+        : "-";
+      return {
+        id: String(item?.id ?? ""),
+        name: String(item?.name ?? "Item").trim() || "Item",
+        img: String(item?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        quantity,
+        weight,
+        weightLabel,
+        baseCp,
+        buyCp,
+        basePriceLabel: formatMerchantCp(baseCp),
+        buyPriceLabel: formatMerchantCp(buyCp),
+        markupLabel: buyMarkup.toFixed(2)
+      };
+    })
+    .filter((entry) => entry.quantity > 0)
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+    .slice(0, MERCHANT_PREVIEW_ITEM_LIMIT);
+  return {
+    rows,
+    hasRows: rows.length > 0,
+    buyMarkupLabel: buyMarkup.toFixed(2),
+    itemCount: rows.length
+  };
+}
+
+async function logMerchantUiAccess(payload = {}) {
+  const userId = String(payload?.userId ?? game.user?.id ?? "").trim();
+  if (!userId) return false;
+  const now = Date.now();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const throttleKey = `${userId}:${actorId}:${settlement.toLowerCase()}:${merchantId}`;
+  const lastViewedAt = Number(merchantUiAccessThrottleByKey.get(throttleKey) ?? 0);
+  if (Number.isFinite(lastViewedAt) && (now - lastViewedAt) < MERCHANT_ACCESS_LOG_THROTTLE_MS) return false;
+
+  merchantUiAccessThrottleByKey.set(throttleKey, now);
+  if (merchantUiAccessThrottleByKey.size > 1000) {
+    for (const [key, ts] of merchantUiAccessThrottleByKey.entries()) {
+      if ((now - Number(ts ?? 0)) > (MERCHANT_ACCESS_LOG_THROTTLE_MS * 10)) merchantUiAccessThrottleByKey.delete(key);
+    }
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
+    merchants.accessLog.unshift(normalizeMerchantAccessLogEntry({
+      viewedAt: now,
+      userId,
+      userName: String(payload?.userName ?? game.user?.name ?? "Player").trim() || "Player",
+      actorId,
+      actorName: String(payload?.actorName ?? "").trim(),
+      settlement,
+      merchantId,
+      merchantName: String(payload?.merchantName ?? "").trim()
+    }));
+    merchants.accessLog = merchants.accessLog
+      .sort((a, b) => Number(b?.viewedAt ?? 0) - Number(a?.viewedAt ?? 0))
+      .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
+  }, { skipLocalRefresh: true });
+  return true;
 }
 
 function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
@@ -15316,19 +15314,24 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const activeActor = activeActorId ? game.actors.get(activeActorId) : null;
   const activeActorContracts = activeActor ? getActorMerchantContracts(activeActor) : {};
   const activeActorSocialScore = activeActor ? computeActorSocialScore(activeActor) : 0;
+  const storedSettlement = getSelectedMerchantSettlement();
+  const hasStoredSettlement = hasSelectedMerchantSettlementPreference();
 
   const definitionsForDisplay = definitions.map((merchant) => {
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
     const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
+    const buyMarkupRaw = Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0;
     const stockItemCount = merchantActor
       ? (merchantActor.items?.contents ?? []).filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim())).length
       : 0;
     return {
       ...merchant,
+      raceLabel: normalizeMerchantRace(merchant.race ?? "") || "Unspecified",
       settlementLabel: getMerchantSettlementLabel(merchant.settlement),
       sourceTypeLabel: getMerchantSourceTypeLabel(merchant.stock?.sourceType),
       sourceRefLabel: getMerchantSourceRefLabel(merchant),
-      buyMarkupLabel: Number(1 + (Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0)).toFixed(2),
+      buyMarkupLabel: Number(1 + buyMarkupRaw).toFixed(2),
+      buyMarkupPercentLabel: `${Math.round(Math.max(0, buyMarkupRaw) * 100)}%`,
       sellRatePercentLabel: `${Math.round(Number(merchant?.pricing?.sellRate ?? 0.5) * 100)}%`,
       includeTagsText: formatMerchantTagsCsv(merchant?.stock?.includeTags ?? []),
       excludeTagsText: formatMerchantTagsCsv(merchant?.stock?.excludeTags ?? []),
@@ -15348,11 +15351,17 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       activeActorMeetsSocialGate: !merchant.socialGateEnabled || activeActorSocialScore >= Number(merchant.minSocialScore ?? 0)
     };
   });
+  const settlementView = buildMerchantSettlementOptions(
+    definitionsForDisplay,
+    storedSettlement,
+    hasStoredSettlement ? "" : merchantsState.currentSettlement
+  );
+  if (hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
 
   const availableMerchants = (!activeActor)
     ? []
     : definitionsForDisplay
-      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, merchantsState.currentSettlement, { isGM: false }))
+      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: false }))
       .map((merchant) => {
         const canOpenShop = Boolean(activeActorId)
           && Boolean(merchant.actorId && game.actors.get(merchant.actorId));
@@ -15361,6 +15370,33 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
           canOpenShop
         };
       });
+  const storedMerchantTabId = getSelectedMerchantTabId();
+  const fallbackMerchantTabId = availableMerchants[0]?.id ?? "";
+  const activeMerchantId = availableMerchants.some((entry) => entry.id === storedMerchantTabId)
+    ? storedMerchantTabId
+    : fallbackMerchantTabId;
+  if (storedMerchantTabId !== activeMerchantId) setSelectedMerchantTabId(activeMerchantId);
+  const availableMerchantsWithTabs = availableMerchants.map((merchant) => ({
+    ...merchant,
+    tabActive: merchant.id === activeMerchantId
+  }));
+  const activeMerchant = availableMerchantsWithTabs.find((entry) => entry.id === activeMerchantId) ?? null;
+  const activeMerchantInventory = buildMerchantInventoryRowsForDisplay(activeMerchant ?? {});
+  const userId = String(user?.id ?? "").trim();
+  const accessLog = (merchantsState.accessLog ?? [])
+    .map((entry) => normalizeMerchantAccessLogEntry(entry))
+    .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
+    .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
+  const latestUserAccess = accessLog.find((entry) => String(entry?.userId ?? "").trim() === userId) ?? null;
+  const accessLogPayload = {
+    userId,
+    userName: String(user?.name ?? "Player").trim() || "Player",
+    actorId: activeActorId,
+    actorName: String(activeActor?.name ?? "").trim(),
+    settlement: settlementView.activeValue,
+    merchantId: activeMerchantId,
+    merchantName: String(activeMerchant?.name ?? "").trim()
+  };
 
   const editorSelection = getMerchantEditorSelection();
   const editorSelectionIsNew = editorSelection === "__new__";
@@ -15399,55 +15435,63 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     if (editorSelectionKey === "__new__") merged.id = "";
     return getMerchantDefinitionDraftSource(merged);
   })();
-  const editorSourceType = normalizeMerchantSourceType(editorDraft?.stock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS);
+  const editorSourceTypeRaw = normalizeMerchantSourceType(editorDraft?.stock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
+  const editorSourceType = editorSourceTypeRaw === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+    ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
+    : editorSourceTypeRaw;
   const editorScarcity = normalizeMerchantScarcity(editorDraft?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
   const editorSourcePackIds = getMerchantCompendiumPackIdsFromStock(editorDraft?.stock ?? {});
-  const editorPackFilter = getMerchantEditorPackFilter();
   const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
   const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
     editorSourceType,
     editorDraft?.stock?.sourceRef ?? "",
     editorSourcePackOptions
   );
-  const editorSourcePackVisibleOptions = editorSourcePackOptions.filter((entry) => matchesLootSourceSearchQuery(editorPackFilter, entry));
-  const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
-  const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
-  const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
-  const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorDraft?.stock?.allowedTypes ?? []);
-  const editorCuratedRows = buildMerchantCuratedRowsForEditor(editorDraft?.stock?.curatedItemUuids ?? []);
-  const editorItemFilter = getMerchantEditorItemFilter();
-  const editorCandidateRows = buildMerchantEditorCandidateRows(editorDraft, { filter: "" });
-  const assignmentRows = getOwnedPcActors()
-    .sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")))
-    .map((actor) => {
-      const contracts = getActorMerchantContracts(actor);
-      const toggles = definitionsForDisplay.map((merchant) => ({
-        merchantId: merchant.id,
-        merchantName: merchant.name,
-        merchantTitle: merchant.title,
-        assigned: Boolean(contracts[merchant.id]),
-        disabled: false
-      }));
-      return {
-        actorId: String(actor?.id ?? ""),
-        actorName: String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`,
-        socialScore: computeActorSocialScore(actor),
-        toggles,
-        contractCount: toggles.filter((entry) => entry.assigned).length
-      };
-    });
+  const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const editorBuyMarkupPercent = Number((editorBuyMarkup * 100).toFixed(2));
+  const editorStockCountRaw = Number(editorDraft?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
+  const editorStockCount = Number.isFinite(editorStockCountRaw)
+    ? Math.max(1, Math.min(100, Math.floor(editorStockCountRaw)))
+    : MERCHANT_DEFAULTS.stock.maxItems;
+  const editorTagCatalog = [];
+  const editorIncludeTagOptions = [];
+  const editorExcludeTagOptions = [];
+  const editorAllowedTypeOptions = [];
+  const editorCuratedRows = [];
+  const editorItemFilter = "";
+  const editorCandidateRows = [];
+  const assignmentRows = [];
 
   return {
     currentSettlement: String(merchantsState.currentSettlement ?? ""),
     currentSettlementLabel: getMerchantSettlementLabel(merchantsState.currentSettlement),
+    settlementOptions: settlementView.options,
+    selectedSettlement: settlementView.activeValue,
+    selectedSettlementLabel: settlementView.activeLabel,
     actorOptions,
     hasActorOptions: actorOptions.length > 0,
     activeActorId,
     activeActorName: String(activeActor?.name ?? "").trim(),
     hasActiveActor: Boolean(activeActor),
     activeActorSocialScore,
-    availableMerchants,
-    hasAvailableMerchants: availableMerchants.length > 0,
+    availableMerchants: availableMerchantsWithTabs,
+    hasAvailableMerchants: availableMerchantsWithTabs.length > 0,
+    activeMerchantId,
+    hasActiveMerchant: Boolean(activeMerchant),
+    activeMerchantName: String(activeMerchant?.name ?? "").trim() || "No Merchant Selected",
+    activeMerchantTitle: String(activeMerchant?.title ?? "").trim(),
+    activeMerchantRace: normalizeMerchantRace(activeMerchant?.race ?? ""),
+    activeMerchantImg: String(activeMerchant?.img ?? "icons/svg/mystery-man.svg").trim() || "icons/svg/mystery-man.svg",
+    activeMerchantStockCount: Math.max(0, Number(activeMerchant?.stockItemCount ?? 0) || 0),
+    activeMerchantBuyMarkupLabel: String(activeMerchantInventory?.buyMarkupLabel ?? "1.00"),
+    activeMerchantCanOpenShop: Boolean(activeMerchant?.canOpenShop),
+    inventoryRows: activeMerchantInventory.rows,
+    hasInventoryRows: activeMerchantInventory.hasRows,
+    inventoryItemCount: Math.max(0, Number(activeMerchantInventory.itemCount ?? 0) || 0),
+    viewerName: String(user?.name ?? "Player").trim() || "Player",
+    viewerLastAccessLabel: formatMerchantTimestampLabel(latestUserAccess?.viewedAt),
+    shouldLogAccess: true,
+    accessLogPayload,
     gm: {
       definitions: definitionsForDisplay.map((merchant) => ({
         ...merchant,
@@ -15458,6 +15502,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         id: String(editorDraft?.id ?? ""),
         name: String(editorDraft?.name ?? ""),
         title: String(editorDraft?.title ?? ""),
+        race: normalizeMerchantRace(editorDraft?.race ?? ""),
         img: String(editorDraft?.img ?? "icons/svg/item-bag.svg"),
         settlement: String(editorDraft?.settlement ?? ""),
         isHidden: Boolean(editorDraft?.isHidden),
@@ -15466,6 +15511,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         socialGateEnabled: Boolean(editorDraft?.socialGateEnabled),
         minSocialScore: Number(editorDraft?.minSocialScore ?? 0) || 0,
         buyMarkup: Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup),
+        buyMarkupPercent: editorBuyMarkupPercent,
+        buyMarkupMultiplierLabel: (1 + editorBuyMarkup).toFixed(2),
         sellRate: Number(editorDraft?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate),
         sourceType: editorSourceType,
         sourceRef: String(editorDraft?.stock?.sourceRef ?? ""),
@@ -15474,20 +15521,22 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         excludeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.excludeTags ?? []),
         allowedTypes: normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []),
         curatedItemUuidsInput: formatMerchantUuidListInput(editorDraft?.stock?.curatedItemUuids ?? []),
-        maxItems: Number(editorDraft?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
+        maxItems: editorStockCount,
+        stockCount: editorStockCount,
         targetValueGp: Number(editorDraft?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp),
         scarcity: editorScarcity,
         actorId: String(editorDraft?.actorId ?? "")
       },
-      sourceTypeOptions: getMerchantSourceTypeOptions(editorSourceType),
+      sourceTypeOptions: getMerchantEditorSourceTypeOptions(editorSourceType),
+      raceOptions: getMerchantEditorRaceOptions(editorDraft?.race ?? ""),
       scarcityOptions: getMerchantScarcityOptions(editorScarcity),
       actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
       sourceRefOptions: editorSourceRefOptions,
-      sourcePackFilter: editorPackFilter,
+      sourcePackFilter: "",
       sourcePackOptions: editorSourcePackOptions,
-      sourcePackVisibleOptions: editorSourcePackVisibleOptions,
-      sourcePackVisibleCount: editorSourcePackVisibleOptions.length,
-      sourcePackFilterActive: Boolean(editorPackFilter),
+      sourcePackVisibleOptions: editorSourcePackOptions,
+      sourcePackVisibleCount: editorSourcePackOptions.length,
+      sourcePackFilterActive: false,
       tagCatalogCount: editorTagCatalog.length,
       hasTagCatalog: editorTagCatalog.length > 0,
       includeTagOptions: editorIncludeTagOptions,
@@ -15514,62 +15563,31 @@ function readMerchantDefinitionPatchFromElement(element) {
     const raw = Number(pageRoot.querySelector(selector)?.value ?? fallback);
     return Number.isFinite(raw) ? raw : fallback;
   };
-  const getChecked = (selector) => Boolean(pageRoot.querySelector(selector)?.checked);
-  const getCheckedValues = (selector) => Array.from(pageRoot.querySelectorAll(selector))
-    .filter((entry) => Boolean(entry?.checked))
-    .map((entry) => String(entry?.value ?? "").trim())
-    .filter(Boolean);
-  const getSelectedValues = (selector) => {
-    const select = pageRoot.querySelector(selector);
-    if (!select?.selectedOptions) return [];
-    return Array.from(select.selectedOptions)
-      .map((entry) => String(entry?.value ?? "").trim())
-      .filter(Boolean);
-  };
-  const getTagValues = (selectSelector, inputSelector) => {
-    const selectedValues = normalizeMerchantTagList(getSelectedValues(selectSelector));
-    if (selectedValues.length > 0) return selectedValues;
-    return normalizeMerchantTagsCsv(getText(inputSelector));
-  };
-  const getCuratedItemUuids = () => {
-    const fromRows = Array.from(pageRoot.querySelectorAll("[data-merchant-curated-row]"))
-      .map((entry) => String(entry?.dataset?.itemUuid ?? "").trim())
-      .filter(Boolean);
-    if (fromRows.length > 0) return normalizeMerchantCuratedItemUuids(fromRows);
-    return parseMerchantUuidListInput(
-      getText("textarea[name='merchantCuratedItemUuids']")
-      || getText("input[name='merchantCuratedItemUuids']")
-    );
-  };
-  return {
-    id: getText("input[name='merchantId']"),
+  const merchantId = getText("input[name='merchantId']");
+  const existingMerchant = merchantId ? getMerchantById(merchantId) : null;
+  const raceInput = (
+    getText("select[name='merchantRace']")
+    || getText("input[name='merchantRace']")
+  );
+  const markupPercent = getNumber(
+    "input[name='merchantMarkupPercent']",
+    getNumber("input[name='merchantBuyMarkup']", MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
+  );
+  const stockCount = getNumber("input[name='merchantStockCount']", MERCHANT_DEFAULTS.stock.maxItems);
+  return buildMerchantDefinitionPatchFromEditorFormDomain({
+    id: merchantId,
     name: getText("input[name='merchantName']"),
     title: getText("input[name='merchantTitle']"),
+    race: normalizeMerchantRace(raceInput),
     img: getText("input[name='merchantImg']"),
     settlement: getText("input[name='merchantSettlement']"),
-    isHidden: getChecked("input[name='merchantIsHidden']"),
-    requiresContract: getChecked("input[name='merchantRequiresContract']"),
-    contractKey: getText("input[name='merchantContractKey']"),
-    socialGateEnabled: getChecked("input[name='merchantSocialGateEnabled']"),
-    minSocialScore: getNumber("input[name='merchantMinSocialScore']", 0),
-    pricing: {
-      buyMarkup: getNumber("input[name='merchantBuyMarkup']", MERCHANT_DEFAULTS.pricing.buyMarkup),
-      sellRate: getNumber("input[name='merchantSellRate']", MERCHANT_DEFAULTS.pricing.sellRate)
-    },
-    stock: {
-      sourceType: getText("select[name='merchantSourceType']"),
-      sourceRef: getText("select[name='merchantSourceRef']") || getText("input[name='merchantSourceRef']"),
-      sourcePackIds: getCheckedValues("input[name='merchantSourcePackIds']"),
-      includeTags: getTagValues("select[name='merchantIncludeTags']", "input[name='merchantIncludeTags']"),
-      excludeTags: getTagValues("select[name='merchantExcludeTags']", "input[name='merchantExcludeTags']"),
-      allowedTypes: getCheckedValues("input[name='merchantAllowedType']"),
-      curatedItemUuids: getCuratedItemUuids(),
-      maxItems: getNumber("input[name='merchantMaxItems']", MERCHANT_DEFAULTS.stock.maxItems),
-      targetValueGp: getNumber("input[name='merchantTargetValueGp']", MERCHANT_DEFAULTS.stock.targetValueGp),
-      scarcity: getText("select[name='merchantScarcity']")
-    },
-    actorId: getText("select[name='merchantActorId']")
-  };
+    sourceType: getText("select[name='merchantSourceType']"),
+    sourceRef: getText("select[name='merchantSourceRef']") || getText("input[name='merchantSourceRef']"),
+    actorId: getText("select[name='merchantActorId']"),
+    markupPercent,
+    stockCount,
+    existingStock: existingMerchant?.stock ?? {}
+  });
 }
 
 async function getMerchantSourceDocuments(merchant = {}) {
@@ -15595,93 +15613,28 @@ async function getMerchantSourceDocuments(merchant = {}) {
 }
 
 function buildMerchantCandidateRows(documents = [], merchant = {}) {
-  const stock = merchant?.stock ?? {};
-  const curatedUuids = new Set(normalizeMerchantCuratedItemUuids(stock?.curatedItemUuids ?? []));
-  const allowedTypes = new Set(normalizeMerchantAllowedItemTypes(stock?.allowedTypes ?? []));
-  const includeTags = normalizeMerchantTagList(stock?.includeTags ?? []);
-  const excludeTags = normalizeMerchantTagList(stock?.excludeTags ?? []);
-  const rows = [];
-  for (const documentRef of (Array.isArray(documents) ? documents : [])) {
-    const data = getMerchantItemData(documentRef);
-    const itemType = String(data?.type ?? "").trim().toLowerCase();
-    if (!MERCHANT_ALLOWED_ITEM_TYPES.has(itemType)) continue;
-    const itemName = String(data?.name ?? "").trim();
-    if (!itemName) continue;
-    const rowKey = String(documentRef?.uuid ?? data?.uuid ?? `${itemType}:${itemName}:${rows.length}`).trim();
-    if (!rowKey) continue;
-    const isCurated = curatedUuids.has(rowKey);
-    if (!isCurated && allowedTypes.size > 0 && !allowedTypes.has(itemType)) continue;
-    const tags = getMerchantItemTagsFromData(data);
-    if (!isCurated && !isLootKeywordMatch(tags, includeTags, excludeTags)) continue;
-    const gpValue = Math.max(0, Number(getLootItemGpValueFromData(data) || 0));
-    rows.push({
-      key: rowKey,
-      data,
-      gpValue,
-      isCurated
-    });
-  }
-  return rows;
+  return buildMerchantStockCandidateRowsDomain(documents, merchant, {
+    getItemData: getMerchantItemData,
+    getItemTags: getMerchantItemTagsFromData,
+    matchesTagFilters: isLootKeywordMatch,
+    getItemGpValue: getLootItemGpValueFromData,
+    allowedItemTypes: MERCHANT_ALLOWED_ITEM_TYPES,
+    normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
+    normalizeAllowedItemTypes: normalizeMerchantAllowedItemTypes,
+    normalizeTagList: normalizeMerchantTagList
+  });
 }
 
 function shuffleMerchantRows(values = []) {
-  const rows = [...values];
-  for (let index = rows.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    const current = rows[index];
-    rows[index] = rows[swapIndex];
-    rows[swapIndex] = current;
-  }
-  return rows;
+  return shuffleMerchantRowsDomain(values);
 }
 
 function selectMerchantStockRows(candidates = [], merchant = {}) {
-  const stock = merchant?.stock ?? {};
-  const curatedOrder = normalizeMerchantCuratedItemUuids(stock?.curatedItemUuids ?? []);
-  const targetCount = getMerchantTargetStockCount(stock);
-  const targetValueGpRaw = Number(stock?.targetValueGp ?? 0);
-  const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, targetValueGpRaw) : 0;
-  const shuffled = shuffleMerchantRows(candidates);
-  const selected = [];
-  let runningValue = 0;
-  const selectedKeys = new Set();
-
-  if (curatedOrder.length > 0) {
-    for (const uuid of curatedOrder) {
-      if (selected.length >= targetCount) break;
-      const match = shuffled.find((entry) => String(entry?.key ?? "") === uuid);
-      if (!match || selectedKeys.has(match.key)) continue;
-      selected.push(match);
-      selectedKeys.add(match.key);
-      runningValue += Math.max(0, Number(match?.gpValue ?? 0) || 0);
-    }
-  }
-
-  for (const candidate of shuffled) {
-    if (selected.length >= targetCount) break;
-    if (selectedKeys.has(candidate.key)) continue;
-    const candidateValue = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
-    if (targetValueGp > 0 && selected.length > 0) {
-      const softCap = targetValueGp * 1.15;
-      const closeEnough = runningValue >= (targetValueGp * 0.75);
-      if ((runningValue + candidateValue) > softCap && closeEnough) continue;
-    }
-    selected.push(candidate);
-    selectedKeys.add(candidate.key);
-    runningValue += candidateValue;
-  }
-
-  if (selected.length < targetCount) {
-    for (const candidate of shuffled) {
-      if (selected.length >= targetCount) break;
-      if (selectedKeys.has(candidate.key)) continue;
-      selected.push(candidate);
-      selectedKeys.add(candidate.key);
-    }
-  }
-
-  if (selected.length === 0 && shuffled.length > 0) selected.push(shuffled[0]);
-  return selected;
+  return selectMerchantStockRowsDomain(candidates, merchant, {
+    normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
+    getTargetStockCount: getMerchantTargetStockCount,
+    shuffleRows: shuffleMerchantRows
+  });
 }
 
 function createMerchantOwnershipDefaults() {
@@ -15903,7 +15856,11 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   const merchants = ensureMerchantsState(ledger);
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
   if (!merchant) return { ok: false, message: "Merchant not found." };
-  if (!isMerchantAvailableToActor(merchant, actor, merchants.currentSettlement, { isGM: false })) {
+  const settlementPreference = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : merchants.currentSettlement;
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? settlementPreference);
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
     return { ok: false, message: "Merchant is not currently available to this actor." };
   }
 
@@ -15968,6 +15925,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       actorName: String(actor.name ?? "Actor"),
       merchantId,
       merchantName: String(merchant.name ?? "Merchant"),
+      settlement,
       totalBuyCp,
       totalSellCp,
       netCp,
@@ -15992,8 +15950,10 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   }
 }
 
-function buildMerchantTradeDialogContent(merchant, actor, merchantActor) {
+function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const settlement = normalizeMerchantSettlementSelection(settlementInput);
+  const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Cities";
   const merchantItems = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
     .map((item) => {
@@ -16023,8 +15983,9 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor) {
   const actorFunds = formatMerchantCp(currencyBundleToCp(getActorCurrencyBundle(actor)));
 
   return `
-    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}">
+    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}" data-settlement="${poEscapeHtml(settlement)}">
       <p><strong>${poEscapeHtml(String(actor?.name ?? "Actor"))}</strong> shopping with <strong>${poEscapeHtml(String(merchant?.name ?? "Merchant"))}</strong>.</p>
+      <p>City: ${poEscapeHtml(settlementLabel)}</p>
       <p>Player Funds: ${poEscapeHtml(actorFunds)}</p>
       <details open>
         <summary><strong>Buy</strong></summary>
@@ -16044,6 +16005,7 @@ function readMerchantTradeInputsFromDialog(html) {
   if (!root) return null;
   const merchantId = String(root.dataset?.merchantId ?? "").trim();
   const actorId = String(root.dataset?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(root.dataset?.settlement ?? "");
   const readLines = (selector, datasetKey) => Array.from(root.querySelectorAll(selector))
     .map((input) => {
       const qtyRaw = Number(input?.value ?? 0);
@@ -16055,6 +16017,7 @@ function readMerchantTradeInputsFromDialog(html) {
   return {
     merchantId,
     actorId,
+    settlement,
     buyItems: readLines("input[data-merchant-buy-item]", "merchantBuyItem"),
     sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem")
   };
@@ -16094,7 +16057,7 @@ function bindMerchantTradeDialogTotals(html) {
   recalc();
 }
 
-async function openMerchantShopById(merchantIdInput, actorIdInput) {
+async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInput = undefined) {
   const merchantId = String(merchantIdInput ?? "").trim();
   const actorId = String(actorIdInput ?? "").trim() || getSelectedMerchantActorId();
   if (!merchantId || !actorId) {
@@ -16108,12 +16071,18 @@ async function openMerchantShopById(merchantIdInput, actorIdInput) {
   }
   const ledger = getOperationsLedger();
   const merchants = ensureMerchantsState(ledger);
+  const settlementPreference = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : merchants.currentSettlement;
+  const settlement = normalizeMerchantSettlementSelection(
+    settlementInput === undefined ? settlementPreference : settlementInput
+  );
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
   if (!merchant) {
     ui.notifications?.warn("Merchant not found.");
     return;
   }
-  if (!isMerchantAvailableToActor(merchant, actor, merchants.currentSettlement, { isGM: false })) {
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
     ui.notifications?.warn("Merchant is not available to this actor.");
     return;
   }
@@ -16125,7 +16094,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput) {
 
   const dialog = new Dialog({
     title: `Merchant Shop - ${String(merchant.name ?? "Merchant")}`,
-    content: buildMerchantTradeDialogContent(merchant, actor, merchantActor),
+    content: buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlement),
     buttons: {
       finalize: {
         label: "Finalize",
@@ -16149,6 +16118,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput) {
             userId: game.user.id,
             merchantId: trade.merchantId,
             actorId: trade.actorId,
+            settlement: trade.settlement,
             buyItems: trade.buyItems,
             sellItems: trade.sellItems
           });
@@ -16191,6 +16161,26 @@ async function setMerchantSettlementFromElement(element) {
 
 function setMerchantActorSelectionFromElement(element) {
   return setSelectedMerchantActorFromElement(element);
+}
+
+function setMerchantSettlementSelectionFromElement(element) {
+  return setSelectedMerchantSettlementFromElement(element);
+}
+
+function randomizeMerchantNameFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can randomize merchant names.");
+    return false;
+  }
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
+    ?? getMerchantDefinitionDraftSource({});
+  const randomRace = pickRandomMerchantRace("Human");
+  const randomName = generateRandomMerchantName(randomRace);
+  draft.race = randomRace;
+  draft.name = randomName;
+  cacheMerchantEditorDraftFromPatch(draft);
+  ui.notifications?.info(`Randomized merchant: ${randomName} (${randomRace}).`);
+  return true;
 }
 
 function resetMerchantEditorSelection() {
@@ -16530,11 +16520,15 @@ async function openMerchantActorFromElement(element) {
 async function openMerchantShopFromElement(element) {
   const merchantId = String(element?.dataset?.merchantId ?? "").trim();
   const actorId = String(element?.dataset?.actorId ?? "").trim() || getSelectedMerchantActorId();
+  const settlementDataset = Object.prototype.hasOwnProperty.call(element?.dataset ?? {}, "settlement")
+    ? element.dataset.settlement
+    : undefined;
+  const settlement = settlementDataset === undefined ? undefined : normalizeMerchantSettlementSelection(settlementDataset);
   if (!merchantId || !actorId) {
     ui.notifications?.warn("Select an actor and merchant first.");
     return false;
   }
-  await openMerchantShopById(merchantId, actorId);
+  await openMerchantShopById(merchantId, actorId, settlement);
   return true;
 }
 
@@ -28770,6 +28764,7 @@ function buildPartyOperationsApi() {
     marchingOrder: () => openMainTab("marching-order", { force: true }),
     operations: () => openMainTab("operations", { force: true }),
     gm: () => openMainTab("gm", { force: true }),
+    gmMerchants: () => openGmMerchantsPage({ force: true }),
     refreshAll: () => refreshOpenApps(),
     getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
     gatherResources: (options = {}) => runGatherResourcesAction(options),
@@ -28812,6 +28807,7 @@ function buildPartyOperationsApi() {
   api.openMarchingOrder = api.marchingOrder;
   api.openOperations = api.operations;
   api.openGM = api.gm;
+  api.openGmMerchants = api.gmMerchants;
   api.gather = api.gatherResources;
   api.launcher = api.ensureLauncher;
 
@@ -29324,103 +29320,167 @@ function setupPartyOperationsUI() {
   });
 }
 
+function registerHookModule(module) {
+  const registrations = Array.isArray(module?.registrations) ? module.registrations : [];
+  for (const registration of registrations) {
+    if (!Array.isArray(registration) || registration.length < 2) continue;
+    const eventName = String(registration[0] ?? "").trim();
+    const handler = registration[1];
+    if (!eventName || typeof handler !== "function") continue;
+    Hooks.on(eventName, handler);
+  }
+}
+
+function buildTimeHookModule() {
+  return {
+    id: "time",
+    registrations: [
+      ["updateWorldTime", async () => {
+        // World time may tick frequently (for example every few seconds with calendar modules),
+        // so avoid forcing a full app rerender on every tick.
+        await notifyDailyInjuryReminders();
+        if (!game.user?.isGM) return;
+        await applyOperationalUpkeep({ automatic: true });
+      }]
+    ]
+  };
+}
+
+function buildUserPresenceHookModule() {
+  return {
+    id: "user-presence",
+    registrations: [
+      ["updateUser", (user, changed) => {
+        if (!user || !changed || game.user?.isGM) return;
+        if (!Object.prototype.hasOwnProperty.call(changed, "active")) return;
+        if (!user.isGM || !user.active) return;
+        schedulePendingSopNoteSync("gm-activated");
+      }]
+    ]
+  };
+}
+
+function buildTokenHookModule() {
+  return {
+    id: "tokens",
+    registrations: [
+      ["createToken", async (tokenDoc, options, userId) => {
+        await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
+      }],
+      ["preUpdateToken", (tokenDoc, changed, options) => {
+        if (options?.poEnvironmentClamp) return;
+        if (!changed || (changed.x === undefined && changed.y === undefined)) return;
+        environmentMoveOriginByToken.set(tokenDoc.id, {
+          x: Number(tokenDoc.x ?? 0),
+          y: Number(tokenDoc.y ?? 0)
+        });
+      }],
+      ["updateToken", async (tokenDoc, changed, options) => {
+        await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
+      }]
+    ]
+  };
+}
+
+function buildInventoryHookModule() {
+  return {
+    id: "inventory",
+    registrations: [
+      ["updateActor", (actor, changed) => {
+        if (!hasInventoryDelta(changed)) return;
+        queueInventoryRefresh(actor, "inventory-update-actor");
+      }],
+      ["createItem", (item) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        queueInventoryRefresh(actor, "inventory-create-item");
+      }],
+      ["updateItem", (item, changed) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        if (!changed || typeof changed !== "object") return;
+
+        const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
+        const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
+        const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
+        const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
+        const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
+
+        if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
+        queueInventoryRefresh(actor, "inventory-update-item");
+      }],
+      ["deleteItem", (item) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        queueInventoryRefresh(actor, "inventory-delete-item");
+      }]
+    ]
+  };
+}
+
+function buildSettingHookModule() {
+  const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
+  const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
+  const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
+  const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
+  const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
+  const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
+  const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
+  const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
+  const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
+  const refreshKeys = new Set([restKey, marchKey, actKey, opsKey, injuryKey, lootSourceKey, journalVisibilityKey, sessionSummaryRangeKey]);
+  const integrationSyncKeys = new Set([restKey, marchKey, opsKey, injuryKey, integrationModeKey]);
+
+  return {
+    id: "settings",
+    registrations: [
+      ["updateSetting", (setting) => {
+        const settingKey = String(setting?.key ?? "").trim();
+        if (!settingKey) return;
+        if (consumeSuppressedSettingRefresh(settingKey)) return;
+        if (refreshKeys.has(settingKey)) refreshOpenApps();
+        if (game.user?.isGM && integrationSyncKeys.has(settingKey)) {
+          scheduleIntegrationSync("update-setting");
+        }
+      }]
+    ]
+  };
+}
+
+function buildIntegrationHookModule() {
+  return {
+    id: "integration",
+    registrations: [
+      ["canvasReady", () => {
+        if (!game.user?.isGM) return;
+        scheduleIntegrationSync("canvas-ready");
+      }]
+    ]
+  };
+}
+
+function getPartyOpsHookModules() {
+  return [
+    buildTimeHookModule(),
+    buildUserPresenceHookModule(),
+    buildTokenHookModule(),
+    buildInventoryHookModule(),
+    buildSettingHookModule(),
+    buildIntegrationHookModule()
+  ];
+}
+
 function registerPartyOpsHooks() {
   if (partyOpsHooksRegistered) return;
   partyOpsHooksRegistered = true;
-
-  Hooks.on("updateWorldTime", async () => {
-    // World time may tick frequently (for example every few seconds with calendar modules),
-    // so avoid forcing a full app rerender on every tick.
-    await notifyDailyInjuryReminders();
-    if (!game.user?.isGM) return;
-    await applyOperationalUpkeep({ automatic: true });
-  });
-
-  Hooks.on("updateUser", (user, changed) => {
-    if (!user || !changed || game.user?.isGM) return;
-    if (!Object.prototype.hasOwnProperty.call(changed, "active")) return;
-    if (!user.isGM || !user.active) return;
-    schedulePendingSopNoteSync("gm-activated");
-  });
-
-  Hooks.on("createToken", async (tokenDoc, options, userId) => {
-    await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
-  });
-
-  Hooks.on("preUpdateToken", (tokenDoc, changed, options) => {
-    if (options?.poEnvironmentClamp) return;
-    if (!changed || (changed.x === undefined && changed.y === undefined)) return;
-    environmentMoveOriginByToken.set(tokenDoc.id, {
-      x: Number(tokenDoc.x ?? 0),
-      y: Number(tokenDoc.y ?? 0)
-    });
-  });
-
-  Hooks.on("updateToken", async (tokenDoc, changed, options) => {
-    await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
-  });
-
-  Hooks.on("updateActor", (actor, changed) => {
-    if (!hasInventoryDelta(changed)) return;
-    queueInventoryRefresh(actor, "inventory-update-actor");
-  });
-
-  Hooks.on("createItem", (item) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    queueInventoryRefresh(actor, "inventory-create-item");
-  });
-
-  Hooks.on("updateItem", (item, changed) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    if (!changed || typeof changed !== "object") return;
-
-    const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
-    const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
-    const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
-    const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
-    const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
-
-    if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
-    queueInventoryRefresh(actor, "inventory-update-item");
-  });
-
-  Hooks.on("deleteItem", (item) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    queueInventoryRefresh(actor, "inventory-delete-item");
-  });
-
-  Hooks.on("updateSetting", (setting) => {
-    const settingKey = setting?.key ?? "";
-    if (!settingKey) return;
-    if (consumeSuppressedSettingRefresh(settingKey)) return;
-    const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
-    const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
-    const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
-    const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
-    const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
-    const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
-    const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-    const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
-    const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
-    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey || settingKey === journalVisibilityKey || settingKey === sessionSummaryRangeKey) {
-      refreshOpenApps();
-    }
-    if (game.user?.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
-      scheduleIntegrationSync("update-setting");
-    }
-  });
-
-  Hooks.on("canvasReady", () => {
-    if (!game.user?.isGM) return;
-    scheduleIntegrationSync("canvas-ready");
-  });
+  for (const hookModule of getPartyOpsHookModules()) {
+    registerHookModule(hookModule);
+  }
 }
 
 Hooks.once("init", () => {
   registerPartyOperationsApi();
+  registerFeatureModules();
   registerPartyOpsSettings((key) => {
     if (key === SETTINGS.DEBUG_ENABLED) return;
     refreshOpenApps();
@@ -30295,6 +30355,7 @@ async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
   if (!requester) return;
   const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
   if (!merchantId || !actorId) return;
   const normalizeLines = (raw) => {
     const source = Array.isArray(raw) ? raw : [];
@@ -30311,6 +30372,7 @@ async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
   const tradePayload = {
     merchantId,
     actorId,
+    settlement,
     buyItems: normalizeLines(message?.buyItems),
     sellItems: normalizeLines(message?.sellItems)
   };
@@ -30575,6 +30637,7 @@ function refreshOpenApps() {
     "party-operations-global-modifier-summary",
     "party-operations-gm-environment-page",
     "party-operations-gm-downtime-page",
+    "party-operations-gm-merchants-page",
     "party-operations-gm-loot-page",
     "party-operations-gm-loot-claims-board"
   ]);
@@ -30585,6 +30648,7 @@ function refreshOpenApps() {
     globalModifierSummaryAppInstance,
     gmEnvironmentPageAppInstance,
     gmDowntimePageAppInstance,
+    gmMerchantsPageAppInstance,
     gmLootPageAppInstance,
     gmLootClaimsBoardAppInstance
   ]
@@ -30596,6 +30660,7 @@ function refreshOpenApps() {
     app instanceof GlobalModifierSummaryApp ||
     app instanceof GmEnvironmentPageApp ||
     app instanceof GmDowntimePageApp ||
+    app instanceof GmMerchantsPageApp ||
     app instanceof GmLootPageApp ||
     app instanceof GmLootClaimsBoardApp ||
     ids.has(app?.id ?? app?.options?.id)
@@ -30723,8 +30788,3 @@ export function emitSocketRefresh() {
 function emitOpenRestPlayers() {
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
 }
-
-
-
-
-

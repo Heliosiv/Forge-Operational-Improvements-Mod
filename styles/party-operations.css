@@ -628,6 +628,231 @@
   background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
 }
 
+.party-operations .po-merchants-player-view .po-merchant-showcase {
+  max-width: 980px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-3);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 42%, var(--po-border));
+  border-radius: calc(var(--po-radius) + 4px);
+  padding: var(--po-space-3);
+  background:
+    radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--po-accent) 18%, transparent), transparent 52%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--po-success) 13%, transparent), transparent 46%),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 78%, transparent), color-mix(in srgb, var(--po-bg) 86%, transparent));
+}
+
+.party-operations .po-merchants-player-view .po-merchant-showcase-head {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--po-space-2);
+  align-items: end;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-showcase-head .po-op-summary {
+  margin: 0;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-showcase-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 30%);
+  gap: var(--po-space-3);
+  align-items: start;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stage-card,
+.party-operations .po-merchants-player-view .po-merchant-tabs-card,
+.party-operations .po-merchants-player-view .po-merchant-stock-card {
+  border: 1px solid color-mix(in srgb, var(--po-border) 82%, var(--po-border-strong));
+  border-radius: var(--po-radius);
+  padding: var(--po-space-3);
+  background: color-mix(in srgb, var(--po-surface) 72%, transparent);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stage-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-doorway {
+  position: relative;
+  min-height: 286px;
+  border-radius: var(--po-radius);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 56%, var(--po-border));
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #2a2c34 92%, var(--po-bg-alt)), color-mix(in srgb, #0f1115 88%, var(--po-bg))),
+    linear-gradient(90deg, color-mix(in srgb, #5f4d30 35%, transparent), color-mix(in srgb, #2a2116 72%, transparent));
+}
+
+.party-operations .po-merchants-player-view .po-merchant-doorway::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, #22190f 70%, transparent), transparent 22%, transparent 78%, color-mix(in srgb, #22190f 70%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, #24180f 72%, transparent) 0 12%, transparent 30% 100%);
+  pointer-events: none;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-doorway::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -130px;
+  width: 88%;
+  height: 260px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border: 22px solid color-mix(in srgb, #3a2c1f 72%, transparent);
+  opacity: 0.56;
+  filter: blur(0.2px);
+  pointer-events: none;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-doorway-glow {
+  position: absolute;
+  inset: 18% 20% 16%;
+  border-radius: 44%;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, #d9c39f 22%, transparent), transparent 65%),
+    radial-gradient(circle at 50% 86%, color-mix(in srgb, #7c5e35 42%, transparent), transparent 76%);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-silhouette {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 142px;
+  height: 226px;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(circle at 50% 16%, color-mix(in srgb, #040404 94%, transparent) 0 20%, transparent 23%),
+    radial-gradient(circle at 50% 66%, color-mix(in srgb, #080808 96%, transparent) 0 58%, transparent 60%);
+  filter: blur(0.5px);
+  opacity: 0.66;
+  pointer-events: none;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stage-image {
+  position: absolute;
+  inset: auto 50% 0 auto;
+  width: min(56%, 280px);
+  height: min(78%, 260px);
+  transform: translateX(50%);
+  object-fit: contain;
+  object-position: bottom center;
+  opacity: 0.76;
+  filter: saturate(0.7) contrast(1.08);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-tabs-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-2);
+  min-height: 360px;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-tabs-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-1);
+  overflow: auto;
+  max-height: 368px;
+  padding-right: 2px;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-tabs-list .po-tab {
+  width: 100%;
+  min-height: 44px;
+  justify-content: center;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-tab-name {
+  font-weight: 700;
+  line-height: 1.14;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-tab-meta {
+  font-size: 0.68rem;
+  color: var(--po-muted);
+  line-height: 1.1;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-list {
+  display: grid;
+  gap: var(--po-space-1);
+  max-height: 320px;
+  overflow: auto;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-row {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--po-space-2);
+  border: 1px solid color-mix(in srgb, var(--po-border) 88%, transparent);
+  border-radius: calc(var(--po-radius) - 3px);
+  padding: var(--po-space-1) var(--po-space-2);
+  background: color-mix(in srgb, var(--po-bg-alt) 70%, transparent);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-image {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-name {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--po-accent-contrast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--po-space-2);
+  font-size: 0.65rem;
+  color: var(--po-muted);
+}
+
+.party-operations .po-merchants-player-view .po-merchant-stock-multiplier {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--po-accent) 90%, var(--po-accent-contrast));
+  white-space: nowrap;
+}
+
 .party-operations .po-merchant-curated-row[draggable="true"],
 .party-operations .po-merchant-candidate-row[draggable="true"] {
   cursor: grab;
@@ -790,6 +1015,22 @@
 }
 
 @media (max-width: 1100px) {
+  .party-operations .po-merchants-player-view .po-merchant-showcase-head {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-showcase-main {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-tabs-card {
+    min-height: 0;
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-tabs-list {
+    max-height: 220px;
+  }
+
   .party-operations .po-loot-preview-generated-layout {
     grid-template-columns: 1fr;
   }
@@ -852,6 +1093,27 @@
 }
 
 @media (max-width: 760px) {
+  .party-operations .po-merchants-player-view .po-merchant-showcase {
+    padding: var(--po-space-2);
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-showcase-head {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-doorway {
+    min-height: 236px;
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-stock-row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .party-operations .po-merchants-player-view .po-merchant-stock-multiplier {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+
   .party-operations .po-loot-pack-grid {
     grid-template-columns: 1fr;
   }
