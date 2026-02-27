@@ -1,6 +1,7 @@
 export function createGmDowntimePageApp(deps) {
   const {
     BaseStatefulPageApp,
+    getResponsiveWindowPosition,
     setPageInstance,
     buildContext,
     openMainTab,
@@ -29,7 +30,7 @@ export function createGmDowntimePageApp(deps) {
       id: "party-operations-gm-downtime-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Downtime" },
-      position: { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-downtime") ?? { width: 980, height: 760 },
       resizable: true
     });
 

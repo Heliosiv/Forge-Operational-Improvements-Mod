@@ -1,18 +1,27 @@
 export function createGmMerchantsPageApp(deps) {
   const {
     BaseStatefulPageApp,
+    getResponsiveWindowPosition,
     setPageInstance,
     buildContext,
     openMainTab,
     cacheMerchantEditorDraftFromElement,
+    setMerchantEditorViewTabFromElement,
     resetMerchantEditorSelection,
     createStarterMerchants,
+    saveMerchantCityCatalogFromElement,
+    assignMerchantCityFromElement,
     randomizeMerchantNameFromElement,
+    randomizeMerchantRaceFromElement,
     setMerchantEditorSelectionFromElement,
     saveMerchantFromElement,
     deleteMerchantFromElement,
     refreshMerchantStockFromElement,
     refreshAllMerchantStocksFromElement,
+    setMerchantAccessModeFromElement,
+    setMerchantAssignmentFromElement,
+    setMerchantAssignmentAllEnabledFromElement,
+    setMerchantAssignmentAllDisabledFromElement,
     openMerchantActorFromElement
   } = deps;
 
@@ -21,7 +30,7 @@ export function createGmMerchantsPageApp(deps) {
       id: "party-operations-gm-merchants-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Merchants" },
-      position: { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-merchants") ?? { width: 1120, height: 920 },
       resizable: true
     });
 
@@ -62,6 +71,9 @@ export function createGmMerchantsPageApp(deps) {
         "merchant-editor-draft-change": async (actionElement) => {
           if (cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true })) rerender();
         },
+        "merchant-editor-view-tab": async (actionElement) => {
+          if (setMerchantEditorViewTabFromElement(actionElement)) rerender();
+        },
         "merchant-new": async () => {
           resetMerchantEditorSelection();
           rerender();
@@ -70,8 +82,29 @@ export function createGmMerchantsPageApp(deps) {
           await createStarterMerchants();
           rerender();
         },
+        "merchant-save-city-catalog": async (actionElement) => {
+          if (await saveMerchantCityCatalogFromElement(actionElement)) rerender();
+        },
+        "merchant-assign-city": async (actionElement) => {
+          if (await assignMerchantCityFromElement(actionElement)) rerender();
+        },
+        "merchant-set-access-mode": async (actionElement) => {
+          if (await setMerchantAccessModeFromElement(actionElement)) rerender();
+        },
+        "merchant-assign-toggle": async (actionElement) => {
+          if (await setMerchantAssignmentFromElement(actionElement)) rerender();
+        },
+        "merchant-assign-all": async (actionElement) => {
+          if (await setMerchantAssignmentAllEnabledFromElement(actionElement)) rerender();
+        },
+        "merchant-assign-none": async (actionElement) => {
+          if (await setMerchantAssignmentAllDisabledFromElement(actionElement)) rerender();
+        },
         "merchant-randomize-name": async (actionElement) => {
           if (randomizeMerchantNameFromElement(actionElement)) rerender();
+        },
+        "merchant-randomize-race": async (actionElement) => {
+          if (randomizeMerchantRaceFromElement(actionElement)) rerender();
         },
         "merchant-edit": async (actionElement) => {
           if (setMerchantEditorSelectionFromElement(actionElement)) rerender();

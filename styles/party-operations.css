@@ -3,7 +3,9 @@
 /* =========================================================
    Root + Variables
    ========================================================= */
-.party-operations .window-content {
+:is(.window-app, .application).party-operations > .window-content,
+:is(.window-app, .application).party-operations-app > .window-content,
+#party-operations-app > .window-content {
   padding: 0;
   height: 100%;
   overflow: hidden;
@@ -1659,6 +1661,63 @@
   display: flex;
   flex-direction: column;
   gap: var(--po-space-2);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-row {
+  align-items: start;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-space-2);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--po-space-1);
+  max-height: 300px;
+  overflow: auto;
+  padding: var(--po-space-2);
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 30%, var(--po-border));
+  border-radius: var(--po-radius);
+  background: color-mix(in srgb, var(--po-bg-alt) 64%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 20%, var(--po-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-surface) 70%, transparent);
+  font-size: 0.78rem;
+  line-height: 1.25;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-option:hover {
+  border-color: color-mix(in srgb, var(--po-accent) 38%, var(--po-border-strong));
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-option input[type="checkbox"] {
+  width: auto;
+  max-width: none;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-option.is-disabled {
+  opacity: 0.62;
+}
+
+@media (max-width: 980px) {
+  .party-operations [data-tool="gm-merchants"] .po-merchant-source-list {
+    grid-template-columns: 1fr;
+    max-height: 240px;
+  }
 }
 
 .party-operations .po-notes-row-lg {
@@ -3384,8 +3443,9 @@
 /* =========================================================
    Marching Order Single-Scroll + Column Layout Fixes
    ========================================================= */
-.party-operations .window-content,
-.party-operations-app .window-content {
+:is(.window-app, .application).party-operations > .window-content,
+:is(.window-app, .application).party-operations-app > .window-content,
+#party-operations-app > .window-content {
   overflow: auto;
 }
 
@@ -3483,8 +3543,8 @@
    Readability Hotfix (Players + Operations Forms)
    ========================================================= */
 .party-operations .po-window {
-  font-size: 15px;
-  line-height: 1.48;
+  font-size: clamp(13px, 0.84rem + 0.14vw, 15px);
+  line-height: 1.45;
 }
 
 .party-operations .po-window button,
@@ -3497,14 +3557,14 @@
 .party-operations .po-window .po-input,
 .party-operations .po-window .po-activity-select,
 .party-operations .po-window .po-notes-input {
-  font-size: 0.92rem;
-  line-height: 1.35;
+  font-size: clamp(0.84rem, 0.78rem + 0.12vw, 0.92rem);
+  line-height: 1.32;
 }
 
 .party-operations .po-window select,
 .party-operations .po-window .po-select,
 .party-operations .po-window .po-activity-select {
-  min-height: 36px;
+  min-height: clamp(30px, 2.1vw, 36px);
   color-scheme: dark;
 }
 

@@ -7,6 +7,7 @@ import { createMarchFeatureModule } from "./features/march-feature.js";
 import {
   MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
   MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
+  MERCHANT_SCARCITY_PROFILES as DOMAIN_MERCHANT_SCARCITY_PROFILES,
   MERCHANT_ALLOWED_ITEM_TYPES as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES,
   MERCHANT_ALLOWED_ITEM_TYPE_LIST as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST,
   MERCHANT_EDITOR_CANDIDATE_LIMIT as DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT,
@@ -16,6 +17,7 @@ import {
   MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
   MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
   normalizeMerchantTagList as normalizeMerchantTagListDomain,
+  normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
   normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
   normalizeMerchantAllowedItemTypes as normalizeMerchantAllowedItemTypesDomain,
   normalizeMerchantCuratedItemUuids as normalizeMerchantCuratedItemUuidsDomain,
@@ -23,17 +25,29 @@ import {
   formatMerchantUuidListInput as formatMerchantUuidListInputDomain,
   normalizeMerchantSourceType as normalizeMerchantSourceTypeDomain,
   normalizeMerchantScarcity as normalizeMerchantScarcityDomain,
+  getMerchantScarcityProfile as getMerchantScarcityProfileDomain,
   normalizeMerchantRace as normalizeMerchantRaceDomain,
+  normalizeMerchantRarity as normalizeMerchantRarityDomain,
+  getMerchantRarityBucket as getMerchantRarityBucketDomain,
+  normalizeMerchantRarityWeights as normalizeMerchantRarityWeightsDomain,
+  normalizeMerchantCityList as normalizeMerchantCityListDomain,
+  parseMerchantCityListInput as parseMerchantCityListInputDomain,
+  formatMerchantCityListInput as formatMerchantCityListInputDomain,
   getMerchantRaceKey as getMerchantRaceKeyDomain,
   getMerchantEditorRaceOptions as getMerchantEditorRaceOptionsDomain,
   pickRandomMerchantRace as pickRandomMerchantRaceDomain,
+  pickRandomMerchantTitle as pickRandomMerchantTitleDomain,
   pickRandomMerchantNamePart as pickRandomMerchantNamePartDomain,
   generateRandomMerchantName as generateRandomMerchantNameDomain,
+  generateRandomMerchantNameUnbound as generateRandomMerchantNameUnboundDomain,
+  buildMerchantOfferTagOptions as buildMerchantOfferTagOptionsDomain,
+  resolveMerchantAllowedTypesFromOfferTags as resolveMerchantAllowedTypesFromOfferTagsDomain,
   getMerchantEditorSourceTypeOptions as getMerchantEditorSourceTypeOptionsDomain,
   normalizeMerchantFolderAlias as normalizeMerchantFolderAliasDomain,
   findMerchantFolderByAliases as findMerchantFolderByAliasesDomain,
   buildStarterMerchantPatch as buildStarterMerchantPatchDomain,
   buildMerchantDefinitionPatchFromEditorForm as buildMerchantDefinitionPatchFromEditorFormDomain,
+  buildMerchantCityOptions as buildMerchantCityOptionsDomain,
   formatMerchantCp as formatMerchantCpDomain,
   getMerchantItemUnitPriceCp as getMerchantItemUnitPriceCpDomain,
   getMerchantSourceRefOptionsForEditor as getMerchantSourceRefOptionsForEditorDomain,
@@ -198,9 +212,11 @@ let sopPendingSyncScheduled = false;
 const activeEffectDeleteLocks = new Set();
 let launcherRecoveryScheduled = false;
 let partyOpsHooksRegistered = false;
+let lootManifestFolderSyncPromise = null;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
 const merchantUiAccessThrottleByKey = new Map();
+const merchantBarterResolutionByKey = new Map();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
 const LAUNCHER_PLACEMENTS = {
   FLOATING: "floating",
@@ -338,6 +354,294 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
+
+const APP_WINDOW_SIZE_PROFILES = Object.freeze({
+  default: Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 700,
+    minHeight: 520,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.92
+  }),
+  "rest-watch": Object.freeze({
+    width: 1020,
+    height: 820,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.96,
+    maxHeightRatio: 0.94
+  }),
+  "rest-watch-player": Object.freeze({
+    width: 760,
+    height: 620,
+    minWidth: 620,
+    minHeight: 500,
+    maxWidthRatio: 0.9,
+    maxHeightRatio: 0.88
+  }),
+  "marching-order": Object.freeze({
+    width: 1320,
+    height: 920,
+    minWidth: 880,
+    minHeight: 620,
+    maxWidthRatio: 0.97,
+    maxHeightRatio: 0.95
+  }),
+  "global-modifiers": Object.freeze({
+    width: 900,
+    height: 720,
+    minWidth: 700,
+    minHeight: 520,
+    maxWidthRatio: 0.92,
+    maxHeightRatio: 0.9
+  }),
+  "gm-environment": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-downtime": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-merchants": Object.freeze({
+    width: 1120,
+    height: 920,
+    minWidth: 860,
+    minHeight: 620,
+    maxWidthRatio: 0.97,
+    maxHeightRatio: 0.95
+  }),
+  "gm-loot": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-loot-claims-board": Object.freeze({
+    width: 920,
+    height: 760,
+    minWidth: 720,
+    minHeight: 560,
+    maxWidthRatio: 0.94,
+    maxHeightRatio: 0.92
+  })
+});
+
+const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
+  "rest-watch-app": "rest-watch",
+  "rest-watch-player-app": "rest-watch-player",
+  "marching-order-app": "marching-order",
+  "party-operations-global-modifier-summary": "global-modifiers",
+  "party-operations-gm-environment-page": "gm-environment",
+  "party-operations-gm-downtime-page": "gm-downtime",
+  "party-operations-gm-merchants-page": "gm-merchants",
+  "party-operations-gm-loot-page": "gm-loot",
+  "party-operations-gm-loot-claims-board": "gm-loot-claims-board"
+});
+
+function normalizeWindowProfileId(profileOrApp) {
+  if (typeof profileOrApp === "string") {
+    const normalized = String(profileOrApp ?? "").trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, normalized)) return normalized;
+    return "default";
+  }
+  const appId = String(profileOrApp?.options?.id ?? profileOrApp?.id ?? "").trim();
+  const mappedProfileId = APP_WINDOW_PROFILE_BY_ID[appId];
+  if (mappedProfileId && Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, mappedProfileId)) return mappedProfileId;
+  return "default";
+}
+
+function getUiViewportSize() {
+  const rawWidth = Number(globalThis?.window?.innerWidth ?? document?.documentElement?.clientWidth ?? 1600);
+  const rawHeight = Number(globalThis?.window?.innerHeight ?? document?.documentElement?.clientHeight ?? 900);
+  const width = Number.isFinite(rawWidth) && rawWidth > 0 ? Math.floor(rawWidth) : 1600;
+  const height = Number.isFinite(rawHeight) && rawHeight > 0 ? Math.floor(rawHeight) : 900;
+  return {
+    width: Math.max(480, width),
+    height: Math.max(360, height)
+  };
+}
+
+function clampWindowMetric(value, min, max, fallback) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(raw)));
+}
+
+function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
+  const profileId = normalizeWindowProfileId(profileOrApp);
+  const profile = APP_WINDOW_SIZE_PROFILES[profileId] ?? APP_WINDOW_SIZE_PROFILES.default;
+  const patch = overrides && typeof overrides === "object" ? overrides : {};
+  const merged = {
+    width: Number(patch.width ?? profile.width),
+    height: Number(patch.height ?? profile.height),
+    minWidth: Number(patch.minWidth ?? profile.minWidth),
+    minHeight: Number(patch.minHeight ?? profile.minHeight),
+    maxWidthRatio: Number(patch.maxWidthRatio ?? profile.maxWidthRatio),
+    maxHeightRatio: Number(patch.maxHeightRatio ?? profile.maxHeightRatio)
+  };
+  const viewport = getUiViewportSize();
+  const minWidth = Math.max(420, Math.floor(Number.isFinite(merged.minWidth) ? merged.minWidth : 700));
+  const minHeight = Math.max(320, Math.floor(Number.isFinite(merged.minHeight) ? merged.minHeight : 520));
+  const maxWidthRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxWidthRatio) ? merged.maxWidthRatio : 0.95));
+  const maxHeightRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxHeightRatio) ? merged.maxHeightRatio : 0.92));
+  const maxWidth = Math.max(minWidth, Math.floor(viewport.width * maxWidthRatio));
+  const maxHeight = Math.max(minHeight, Math.floor(viewport.height * maxHeightRatio));
+  const widthFallback = clampWindowMetric(profile.width, minWidth, maxWidth, maxWidth);
+  const heightFallback = clampWindowMetric(profile.height, minHeight, maxHeight, maxHeight);
+  return {
+    width: clampWindowMetric(merged.width, minWidth, maxWidth, widthFallback),
+    height: clampWindowMetric(merged.height, minHeight, maxHeight, heightFallback)
+  };
+}
+
+function clampWindowPositionToViewport(position, options = {}) {
+  const viewport = getUiViewportSize();
+  const padding = Math.max(0, Math.floor(Number(options.padding ?? 8) || 8));
+  const width = Number(position?.width);
+  const height = Number(position?.height);
+  const left = Number(position?.left);
+  const top = Number(position?.top);
+  const maxLeft = Number.isFinite(width) ? Math.max(padding, viewport.width - Math.floor(width) - padding) : undefined;
+  const maxTop = Number.isFinite(height) ? Math.max(padding, viewport.height - Math.floor(height) - padding) : undefined;
+  return {
+    left: Number.isFinite(left) && Number.isFinite(maxLeft) ? Math.max(padding, Math.min(maxLeft, Math.floor(left))) : undefined,
+    top: Number.isFinite(top) && Number.isFinite(maxTop) ? Math.max(padding, Math.min(maxTop, Math.floor(top))) : undefined
+  };
+}
+
+function getResponsiveWindowOptions(profileId, options = {}) {
+  const patch = options && typeof options === "object" ? options : {};
+  const overridePosition = patch.position && typeof patch.position === "object" ? patch.position : {};
+  return foundry.utils.mergeObject(patch, {
+    position: getResponsiveWindowPosition(profileId, overridePosition)
+  }, { inplace: false, overwrite: true });
+}
+
+function normalizePreservedRenderOptions(renderOptions = null) {
+  const patch = renderOptions && typeof renderOptions === "object" ? renderOptions : {};
+  return foundry.utils.mergeObject({
+    force: true,
+    parts: ["main"],
+    focus: false
+  }, patch, { inplace: false, overwrite: true });
+}
+
+function captureCanvasViewState() {
+  try {
+    const liveCanvas = globalThis?.canvas;
+    if (!liveCanvas?.ready || !liveCanvas?.stage) return null;
+    const sceneId = String(liveCanvas.scene?.id ?? "");
+    if (!sceneId) return null;
+    const x = Number(liveCanvas.stage.pivot?.x);
+    const y = Number(liveCanvas.stage.pivot?.y);
+    const scale = Number(liveCanvas.stage.scale?.x ?? liveCanvas.stage.scale?.y ?? 1);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) return null;
+    return {
+      sceneId,
+      x,
+      y,
+      scale,
+      capturedAt: Date.now()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function hasCanvasViewShifted(previous, current, options = {}) {
+  if (!previous || !current) return false;
+  if (String(previous.sceneId ?? "") !== String(current.sceneId ?? "")) return false;
+  const tolerancePx = Math.max(0.25, Number(options.tolerancePx ?? 1.5));
+  const toleranceScale = Math.max(0.0005, Number(options.toleranceScale ?? 0.0025));
+  return Math.abs(Number(current.x ?? 0) - Number(previous.x ?? 0)) > tolerancePx
+    || Math.abs(Number(current.y ?? 0) - Number(previous.y ?? 0)) > tolerancePx
+    || Math.abs(Number(current.scale ?? 1) - Number(previous.scale ?? 1)) > toleranceScale;
+}
+
+function restoreCanvasViewState(snapshot, options = {}) {
+  try {
+    if (!snapshot) return false;
+    const liveCanvas = globalThis?.canvas;
+    if (!liveCanvas?.ready || !liveCanvas?.stage) return false;
+    if (String(liveCanvas.scene?.id ?? "") !== String(snapshot.sceneId ?? "")) return false;
+    const current = captureCanvasViewState();
+    if (!hasCanvasViewShifted(snapshot, current, options)) return false;
+    const panData = {
+      x: Number(snapshot.x ?? 0),
+      y: Number(snapshot.y ?? 0),
+      scale: Number(snapshot.scale ?? 1),
+      duration: 0
+    };
+    if (typeof liveCanvas.animatePan === "function") {
+      void liveCanvas.animatePan(panData);
+      return true;
+    }
+    if (typeof liveCanvas.pan === "function") {
+      liveCanvas.pan(panData);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function queueCanvasViewRestore(snapshot, options = {}) {
+  if (!snapshot) return;
+  const maxAgeMs = Math.max(80, Math.floor(Number(options.maxAgeMs ?? 1500)));
+  const runRestore = () => {
+    if ((Date.now() - Number(snapshot.capturedAt ?? 0)) > maxAgeMs) return;
+    restoreCanvasViewState(snapshot, options);
+  };
+  requestAnimationFrame(() => {
+    requestAnimationFrame(runRestore);
+  });
+  try {
+    window.setTimeout(runRestore, 64);
+  } catch {
+    // Ignore timer failures in non-browser execution contexts.
+  }
+}
+
+function shouldPreserveCanvasForUiEvent(event, actionElement, actionInput = "") {
+  const eventType = String(event?.type ?? "").trim().toLowerCase();
+  if (eventType === "change" || eventType === "input") return true;
+  const action = String(actionInput ?? actionElement?.dataset?.action ?? "").trim().toLowerCase();
+  if (action === "ping") return false;
+  const tag = String(actionElement?.tagName ?? "").trim().toUpperCase();
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
+  return false;
+}
+
+function renderAppWithPreservedState(app, renderOptions = { force: true, parts: ["main"], focus: false }, options = {}) {
+  if (!app?.render) return;
+  const uiState = captureUiState(app);
+  if (uiState) pendingUiRestore.set(app, uiState);
+  const scrollState = captureScrollState(app);
+  if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
+  const normalizedOptions = normalizePreservedRenderOptions(renderOptions);
+  const preserveCanvas = options?.preserveCanvas !== false;
+  const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+  app.render(normalizedOptions);
+  if (preserveCanvas) {
+    queueCanvasViewRestore(canvasSnapshot, {
+      action: String(options?.action ?? ""),
+      eventType: String(options?.eventType ?? "")
+    });
+  }
+}
 
 const PO_MAIN_TAB_IDS = new Set(["rest-watch", "marching-order", "operations", "gm"]);
 
@@ -569,6 +873,8 @@ const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
 const DEFAULT_MARCH_LIGHT_DIM = 40;
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
 const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
+const LOOT_MANIFEST_PACK_NAME = "party-operations-loot-manifest";
+const LOOT_MANIFEST_PACK_LABEL = "Party Operations Built Items";
 const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
 const LOOT_ITEM_TYPE_LABELS = {
   weapon: "Weapons",
@@ -585,6 +891,38 @@ const LOOT_ITEM_TYPE_LABELS = {
   class: "Class Features",
   race: "Race Features"
 };
+const LOOT_MANIFEST_FOLDER_LABELS = Object.freeze({
+  weapon: "Weapons",
+  equipment: "Equipment",
+  consumable: "Consumables",
+  loot: "Treasure",
+  tool: "Tools",
+  backpack: "Containers",
+  armor: "Armor",
+  ammunition: "Ammunition",
+  trinket: "Trinkets",
+  spell: "Spells",
+  feat: "Features",
+  class: "Class Features",
+  race: "Racial Features",
+  other: "Other"
+});
+const LOOT_MANIFEST_FOLDER_TYPE_PRIORITY = Object.freeze([
+  "weapon",
+  "equipment",
+  "consumable",
+  "loot",
+  "tool",
+  "backpack",
+  "armor",
+  "ammunition",
+  "trinket",
+  "spell",
+  "feat",
+  "class",
+  "race",
+  "other"
+]);
 const LOOT_TABLE_TYPE_OPTIONS = [
   { value: "currency", label: "Currency" },
   { value: "gems", label: "Gems" },
@@ -932,6 +1270,7 @@ const DOWNTIME_GM_ONLY_RESOLVE_WARNING = "Only the GM can resolve downtime.";
 const DOWNTIME_ITEM_REWARD_DROP_LIMIT = 10;
 const MERCHANT_SOURCE_TYPES = DOMAIN_MERCHANT_SOURCE_TYPES;
 const MERCHANT_SCARCITY_LEVELS = DOMAIN_MERCHANT_SCARCITY_LEVELS;
+const MERCHANT_SCARCITY_PROFILES = DOMAIN_MERCHANT_SCARCITY_PROFILES;
 const MERCHANT_ALLOWED_ITEM_TYPES = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES;
 const MERCHANT_ALLOWED_ITEM_TYPE_LIST = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST;
 const MERCHANT_EDITOR_CANDIDATE_LIMIT = DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT;
@@ -940,6 +1279,18 @@ const MERCHANT_ACCESS_LOG_LIMIT = DOMAIN_MERCHANT_ACCESS_LOG_LIMIT;
 const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
 const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
 const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
+const MERCHANT_ACCESS_MODES = Object.freeze({
+  ALL: "all",
+  ASSIGNED: "assigned"
+});
+const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
+  str: "Strength",
+  dex: "Dexterity",
+  con: "Constitution",
+  int: "Intelligence",
+  wis: "Wisdom",
+  cha: "Charisma"
+});
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
@@ -984,9 +1335,12 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-downtime-log",
   "clear-downtime-results",
   "merchant-settlement",
+  "merchant-save-city-catalog",
+  "merchant-assign-city",
   "merchant-new",
   "merchant-create-starters",
   "merchant-randomize-name",
+  "merchant-randomize-race",
   "merchant-edit",
   "merchant-save",
   "merchant-delete",
@@ -994,6 +1348,9 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "merchant-refresh-all-stock",
   "merchant-assign-by-contract-key",
   "merchant-assign-toggle",
+  "merchant-assign-all",
+  "merchant-assign-none",
+  "merchant-set-access-mode",
   "merchant-editor-draft-change",
   "toggle-merchant-pack-source",
   "toggle-merchant-allowed-type",
@@ -1578,8 +1935,12 @@ function ensureOperationalResourceConfig(resources) {
 
 function ensurePartyOperationsClass(appOrElement) {
   const root = getAppRootElement(appOrElement);
-  if (!root?.classList) return;
-  root.classList.add("party-operations");
+  if (!(root instanceof HTMLElement)) return;
+  const frame = root.matches(".window-app, .application")
+    ? root
+    : root.closest(".window-app, .application");
+  if (!frame?.classList) return;
+  frame.classList.add("party-operations");
 }
 
 function applyNonGmOperationsReadonly(appOrElement) {
@@ -3607,7 +3968,7 @@ async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, 
     return { synced: false, cleared: false, skipped: true, enabled };
   }
 
-  const applyAsNonParty = !isTrackableCharacter(actor);
+  const applyAsNonParty = options?.nonParty === false ? false : true;
   const payload = buildActorIntegrationPayload(actor.id, config.context, {
     nonParty: applyAsNonParty,
     includeWorldGlobal: config.syncWorldGlobal,
@@ -3618,22 +3979,38 @@ async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, 
 }
 
 async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, options = {}) {
-  if (!canAccessAllPlayerOps()) return { synced: 0, cleared: 0, total: 0, enabled: false };
+  if (!canAccessAllPlayerOps()) {
+    return {
+      synced: 0,
+      cleared: 0,
+      total: 0,
+      enabled: false,
+      scope: NON_PARTY_SYNC_SCOPES.SCENE,
+      scopeLabel: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.SCENE),
+      managedActorIds: []
+    };
+  }
   const mode = resolvedMode ?? resolveIntegrationMode();
   const config = getSceneNonPartySyncConfig(globalContext);
   const scope = getNonPartySyncScope(options.scope ?? config.scope);
   const targets = getNonPartyIntegrationTargets(scope);
   let synced = 0;
   let cleared = 0;
+  const managedActorIds = new Set();
 
   for (const target of targets) {
     const actor = target?.actor;
     if (!actor) continue;
     const result = await syncSingleSceneNonPartyActor(actor, config.context, mode, {
-      includeEnvironment: target.isSceneTarget === true
+      includeEnvironment: target.isSceneTarget === true,
+      nonParty: true
     });
     if (result.synced) synced += 1;
     if (result.cleared) cleared += 1;
+    if (result.synced) {
+      const actorId = String(actor?.id ?? "").trim();
+      if (actorId) managedActorIds.add(actorId);
+    }
   }
 
   return {
@@ -3642,7 +4019,8 @@ async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, o
     total: targets.length,
     enabled: Boolean(config.enabled),
     scope,
-    scopeLabel: getNonPartySyncScopeLabel(scope)
+    scopeLabel: getNonPartySyncScopeLabel(scope),
+    managedActorIds: Array.from(managedActorIds)
   };
 }
 
@@ -3670,7 +4048,10 @@ async function syncIntegrationState() {
   }
 
   const globalContext = buildIntegrationGlobalContext();
-  await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
+  const nonPartySyncResult = await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
+  const nonPartyManagedActorIds = new Set(
+    Array.isArray(nonPartySyncResult?.managedActorIds) ? nonPartySyncResult.managedActorIds : []
+  );
   for (const actor of trackedActors) {
     const payload = buildActorIntegrationPayload(actor.id, globalContext);
     await applyActorIntegrationPayload(actor, payload, resolvedMode);
@@ -3679,6 +4060,7 @@ async function syncIntegrationState() {
   const staleActors = game.actors.contents.filter((actor) => {
     if (!isTrackableCharacter(actor)) return false;
     if (trackedIds.has(actor.id)) return false;
+    if (nonPartyManagedActorIds.has(String(actor.id ?? ""))) return false;
     const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
     const hasEffect = Boolean(getIntegrationEffect(actor));
     const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
@@ -4243,6 +4625,35 @@ function setMerchantEditorDraftState(selectionKeyInput, draftInput = {}) {
 
 function clearMerchantEditorDraftState() {
   sessionStorage.removeItem(getMerchantEditorDraftStorageKey());
+}
+
+function getMerchantEditorViewTabStorageKey() {
+  return `po-merchant-editor-view-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantEditorViewTab(value, fallback = "editor") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "settings") return "settings";
+  if (normalized === "editor") return "editor";
+  return normalizeMerchantEditorViewTab(fallback, "editor");
+}
+
+function getMerchantEditorViewTab() {
+  return normalizeMerchantEditorViewTab(sessionStorage.getItem(getMerchantEditorViewTabStorageKey()), "editor");
+}
+
+function setMerchantEditorViewTab(value) {
+  const next = normalizeMerchantEditorViewTab(value, "editor");
+  sessionStorage.setItem(getMerchantEditorViewTabStorageKey(), next);
+  return next;
+}
+
+function setMerchantEditorViewTabFromElement(element) {
+  const next = normalizeMerchantEditorViewTab(element?.dataset?.tab ?? element?.value, "editor");
+  const current = getMerchantEditorViewTab();
+  if (next === current) return false;
+  setMerchantEditorViewTab(next);
+  return true;
 }
 
 function getMerchantEditorPackFilterStorageKey() {
@@ -5645,11 +6056,22 @@ function restorePendingWindowState(app) {
   const state = pendingWindowRestore.get(app);
   if (!state) return;
   pendingWindowRestore.delete(app);
-  const position = {
-    left: Number.isFinite(state.left) ? state.left : undefined,
-    top: Number.isFinite(state.top) ? state.top : undefined,
+  const profileId = normalizeWindowProfileId(app);
+  const restoredSize = getResponsiveWindowPosition(profileId, {
     width: Number.isFinite(state.width) && state.width > 100 ? state.width : undefined,
     height: Number.isFinite(state.height) && state.height > 100 ? state.height : undefined
+  });
+  const clampedPlacement = clampWindowPositionToViewport({
+    left: Number.isFinite(state.left) ? state.left : undefined,
+    top: Number.isFinite(state.top) ? state.top : undefined,
+    width: restoredSize.width,
+    height: restoredSize.height
+  });
+  const position = {
+    left: clampedPlacement.left,
+    top: clampedPlacement.top,
+    width: restoredSize.width,
+    height: restoredSize.height
   };
   const apply = () => app.setPosition(position);
   apply();
@@ -6023,6 +6445,10 @@ function buildOperationsContextFallback() {
       gm: {
         definitions: [],
         hasDefinitions: false,
+        editorViewTab: "editor",
+        editorViewTabEditor: true,
+        editorViewTabSettings: false,
+        cityCatalogInput: "",
         editor: {
           id: "",
           name: "",
@@ -6030,6 +6456,7 @@ function buildOperationsContextFallback() {
           race: "",
           img: "icons/svg/item-bag.svg",
           settlement: "",
+          accessMode: MERCHANT_ACCESS_MODES.ALL,
           isHidden: false,
           requiresContract: false,
           contractKey: "",
@@ -6039,24 +6466,53 @@ function buildOperationsContextFallback() {
           buyMarkupPercent: Number((MERCHANT_DEFAULTS.pricing.buyMarkup * 100).toFixed(2)),
           buyMarkupMultiplierLabel: (1 + Number(MERCHANT_DEFAULTS.pricing.buyMarkup)).toFixed(2),
           sellRate: MERCHANT_DEFAULTS.pricing.sellRate,
+          sellRatePercent: Number((Number(MERCHANT_DEFAULTS.pricing.sellRate) * 100).toFixed(2)),
+          sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled !== false,
+          cashOnHandGp: Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp ?? 500),
+          buybackAllowedTypes: normalizeMerchantAllowedItemTypes(
+            MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+            ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+          ),
+          barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled !== false,
+          barterDc: Number(MERCHANT_DEFAULTS.pricing.barterDc ?? 15),
+          barterAbility: normalizeMerchantBarterAbility(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
           sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
           sourceRef: "",
           sourcePackIds: [],
           includeTagsInput: "",
           excludeTagsInput: "",
+          keywordIncludeInput: "",
+          keywordExcludeInput: "",
           allowedTypes: [...MERCHANT_ALLOWED_ITEM_TYPE_LIST],
           curatedItemUuidsInput: "",
           maxItems: MERCHANT_DEFAULTS.stock.maxItems,
           stockCount: MERCHANT_DEFAULTS.stock.maxItems,
           targetValueGp: MERCHANT_DEFAULTS.stock.targetValueGp,
           scarcity: MERCHANT_DEFAULTS.stock.scarcity,
+          scarcityLabel: String(getMerchantScarcityProfile(MERCHANT_DEFAULTS.stock.scarcity)?.label ?? "6 - Normal"),
+          duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
+          maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
+          rarityWeightCommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100),
+          rarityWeightUncommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45),
+          rarityWeightRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16),
+          rarityWeightVeryRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.["very-rare"] ?? 5),
+          rarityWeightLegendary: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1),
           actorId: ""
         },
         sourceTypeOptions: getMerchantEditorSourceTypeOptions(MERCHANT_SOURCE_TYPES.WORLD_FOLDER),
+        accessModeOptions: getMerchantAccessModeOptions(MERCHANT_ACCESS_MODES.ALL),
+        barterAbilityOptions: getMerchantBarterAbilityOptions(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
         raceOptions: getMerchantEditorRaceOptions(""),
+        cityOptions: [{ value: "", label: "Global", selected: true }],
+        offerTagOptions: buildMerchantOfferTagOptions(MERCHANT_DEFAULTS.stock.allowedTypes),
         scarcityOptions: getMerchantScarcityOptions(MERCHANT_DEFAULTS.stock.scarcity),
         actorOptions: [{ id: "", name: "Create on refresh", selected: true }],
-        sourceRefOptions: [{ value: "", label: "Select Item Folder", selected: true }],
+        sourceRefOptions: [{ value: "", label: "Select one or more item folders", selected: true, disabled: true }],
+        sourceRefSelectableOptions: [],
+        hasSourceRefSelectableOptions: false,
+        sourceRefOptionCount: 0,
+        sourceRefSelectedCount: 0,
+        sourceRefHintLabel: "Select one or more item folders",
         sourcePackFilter: "",
         sourcePackOptions: [],
         sourcePackVisibleOptions: [],
@@ -6066,7 +6522,15 @@ function buildOperationsContextFallback() {
         hasTagCatalog: false,
         includeTagOptions: [],
         excludeTagOptions: [],
+        keywordCatalogCount: 0,
+        hasKeywordCatalog: false,
+        keywordIncludeOptions: [],
+        keywordExcludeOptions: [],
         allowedTypeOptions: getMerchantAllowedTypeOptionsForEditor(MERCHANT_DEFAULTS.stock.allowedTypes),
+        buybackTypeOptions: getMerchantAllowedTypeOptionsForEditor(
+          MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+          ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+        ),
         curatedRows: [],
         hasCuratedRows: false,
         itemFilter: "",
@@ -6198,7 +6662,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     id: "rest-watch-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Rest Watch" },
-    position: { width: 1020, height: 820 },
+    position: getResponsiveWindowPosition("rest-watch"),
     resizable: true
   });
 
@@ -6677,11 +7141,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   setActivePanel(panelId, options = {}) {
@@ -6759,22 +7219,25 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #onAction(event) {
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    const isFormAction = isFormActionElement(element);
-    if (event?.type === "click" && !isFormAction) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
-
-    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-    });
-    if (handledJournalAction) return;
-
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
     try {
-      const actionHandlers = {
+      const isFormAction = isFormActionElement(element);
+      if (event?.type === "click" && !isFormAction) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+      if (handledJournalAction) return;
+
+      try {
+        const actionHandlers = {
         "switch-tab": async () => {
           this.#onSwitchTabClick(event, element);
         },
@@ -6883,6 +7346,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
+        "merchant-save-city-catalog": async () => {
+          if (await saveMerchantCityCatalogFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-assign-city": async () => {
+          if (await assignMerchantCityFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
         "merchant-select-tab": async () => {
           if (setSelectedMerchantTabIdFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -6901,12 +7374,22 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
+        "merchant-editor-view-tab": async () => {
+          if (setMerchantEditorViewTabFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
         "merchant-new": async () => {
           resetMerchantEditorSelection();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "merchant-randomize-name": async () => {
           if (randomizeMerchantNameFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-randomize-race": async () => {
+          if (randomizeMerchantRaceFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
@@ -6937,6 +7420,18 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "merchant-assign-toggle": async () => {
           await setMerchantAssignmentFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-all": async () => {
+          await setMerchantAssignmentAllEnabledFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-none": async () => {
+          await setMerchantAssignmentAllDisabledFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-set-access-mode": async () => {
+          await setMerchantAccessModeFromElement(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "merchant-open-actor": async () => {
@@ -7466,17 +7961,25 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await showRecoveryBrief();
         },
       };
-      const handler = actionHandlers[action];
-      if (typeof handler === "function") {
-        await handler();
+        const handler = actionHandlers[action];
+        if (typeof handler === "function") {
+          await handler();
+        }
+      } catch (error) {
+        logUiFailure("rest-watch", "action handler failed", error, {
+          action,
+          eventType: String(event?.type ?? ""),
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.error("Party Operations action failed. Check the console for details.");
       }
-    } catch (error) {
-      logUiFailure("rest-watch", "action handler failed", error, {
-        action,
-        eventType: String(event?.type ?? ""),
-        target: summarizeClickTarget(event?.target)
-      });
-      ui.notifications?.error("Party Operations action failed. Check the console for details.");
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
@@ -7624,7 +8127,7 @@ function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
   }
   const app = globalModifierSummaryAppInstance?.element?.isConnected
     ? globalModifierSummaryAppInstance
-    : new GlobalModifierSummaryApp();
+    : new GlobalModifierSummaryApp(getResponsiveWindowOptions("global-modifiers"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "global-modifiers" });
   return app;
@@ -7635,7 +8138,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
     id: "party-operations-global-modifier-summary",
     classes: ["party-operations"],
     window: { title: "Party Operations - Global Modifiers" },
-    position: { width: 900, height: 720 },
+    position: getResponsiveWindowPosition("global-modifiers"),
     resizable: true
   });
 
@@ -7672,11 +8175,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async _onRender(context, options) {
@@ -7870,7 +8369,7 @@ function openGmEnvironmentPage(renderOptions = { force: true }) {
   }
   const app = gmEnvironmentPageAppInstance?.element?.isConnected
     ? gmEnvironmentPageAppInstance
-    : new GmEnvironmentPageApp();
+    : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-environment" });
   return app;
@@ -7884,7 +8383,7 @@ function openGmDowntimePage(renderOptions = { force: true }) {
   }
   const app = gmDowntimePageAppInstance?.element?.isConnected
     ? gmDowntimePageAppInstance
-    : new GmDowntimePageApp();
+    : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-downtime" });
   return app;
@@ -7898,7 +8397,7 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
   }
   const app = gmMerchantsPageAppInstance?.element?.isConnected
     ? gmMerchantsPageAppInstance
-    : new GmMerchantsPageApp();
+    : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-merchants" });
   return app;
@@ -7912,7 +8411,7 @@ function openGmLootPage(renderOptions = { force: true }) {
   }
   const app = gmLootPageAppInstance?.element?.isConnected
     ? gmLootPageAppInstance
-    : new GmLootPageApp();
+    : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
   return app;
@@ -7924,7 +8423,7 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
   const app = gmLootClaimsBoardAppInstance?.element?.isConnected
     ? gmLootClaimsBoardAppInstance
-    : new GmLootClaimsBoardApp();
+    : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot-claims-board" });
   return app;
@@ -7967,11 +8466,7 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   _renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async _dispatchActionEvent(event) {
@@ -7983,6 +8478,8 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const action = String(actionElement?.dataset?.action ?? "").trim();
     if (!action) return;
     if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
 
     const actionHandlers = this._getActionHandlers(event);
     const handler = actionHandlers?.[action];
@@ -7995,6 +8492,13 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
         target: summarizeClickTarget(event?.target)
       });
       ui.notifications?.warn(this._getActionErrorMessage());
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
@@ -8042,6 +8546,7 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
 export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   BaseStatefulPageApp,
+  getResponsiveWindowPosition,
   setPageInstance: (instance) => {
     gmEnvironmentPageAppInstance = instance;
   },
@@ -8070,6 +8575,7 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
 
 export const GmDowntimePageApp = createGmDowntimePageApp({
   BaseStatefulPageApp,
+  getResponsiveWindowPosition,
   setPageInstance: (instance) => {
     gmDowntimePageAppInstance = instance;
   },
@@ -8097,25 +8603,35 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
 
 export const GmMerchantsPageApp = createGmMerchantsPageApp({
   BaseStatefulPageApp,
+  getResponsiveWindowPosition,
   setPageInstance: (instance) => {
     gmMerchantsPageAppInstance = instance;
   },
   buildContext: buildGmMerchantsPageContext,
   openMainTab,
   cacheMerchantEditorDraftFromElement,
+  setMerchantEditorViewTabFromElement,
   resetMerchantEditorSelection,
   createStarterMerchants,
   randomizeMerchantNameFromElement,
+  randomizeMerchantRaceFromElement,
+  saveMerchantCityCatalogFromElement,
+  assignMerchantCityFromElement,
   setMerchantEditorSelectionFromElement,
   saveMerchantFromElement,
   deleteMerchantFromElement,
   refreshMerchantStockFromElement,
   refreshAllMerchantStocksFromElement,
+  setMerchantAccessModeFromElement,
+  setMerchantAssignmentFromElement,
+  setMerchantAssignmentAllEnabledFromElement,
+  setMerchantAssignmentAllDisabledFromElement,
   openMerchantActorFromElement
 });
 
 export const GmLootPageApp = createGmLootPageApp({
   BaseStatefulPageApp,
+  getResponsiveWindowPosition,
   setPageInstance: (instance) => {
     gmLootPageAppInstance = instance;
   },
@@ -8153,7 +8669,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
     id: "party-operations-gm-loot-claims-board",
     classes: ["party-operations"],
     window: { title: "Party Operations - Live Loot Claims" },
-    position: { width: 920, height: 760 },
+    position: getResponsiveWindowPosition("gm-loot-claims-board"),
     resizable: true
   });
 
@@ -8176,85 +8692,92 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const actionElement = event?.target?.closest?.("[data-action]");
     const action = String(actionElement?.dataset?.action ?? "").trim();
-    if (!action) return;
-    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
-
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
     try {
-      if (action === "gm-loot-claims-board-back") {
-        this.close();
-        if (canAccessAllPlayerOps()) openMainTab("gm", { force: true });
-        else openOperationsLootClaimsTabForPlayer({ force: true });
-        return;
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
       }
-      if (action === "gm-loot-claims-board-refresh") {
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "set-loot-claim-run") {
-        if (setLootClaimRunSelectionFromElement(actionElement)) {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      if (!action) return;
+      if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+
+      try {
+        if (action === "gm-loot-claims-board-back") {
+          this.close();
+          if (canAccessAllPlayerOps()) openMainTab("gm", { force: true });
+          else openOperationsLootClaimsTabForPlayer({ force: true });
+          return;
         }
-        return;
-      }
-      if (action === "claim-loot-item") {
-        await claimLootItemForPlayer(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "toggle-loot-vouch") {
-        await toggleLootItemVouchForPlayer(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "run-loot-rolloff") {
-        await runLootRollOffFromElement(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "open-loot-item") {
-        await openLootItemFromElement(actionElement);
-        return;
-      }
-      if (action === "set-loot-major-item") {
-        await setLootItemMajorFromElement(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "claim-loot-currency") {
-        await claimLootCurrencyForPlayer(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "archive-loot-claim-run") {
-        const runId = getLootClaimRunIdFromElement(actionElement);
-        await clearLootClaimsPool(runId);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "set-loot-claim-actor") {
-        if (setLootClaimActorSelectionFromElement(actionElement)) {
+        if (action === "gm-loot-claims-board-refresh") {
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
         }
+        if (action === "set-loot-claim-run") {
+          if (setLootClaimRunSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "claim-loot-item") {
+          await claimLootItemForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "toggle-loot-vouch") {
+          await toggleLootItemVouchForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "run-loot-rolloff") {
+          await runLootRollOffFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "open-loot-item") {
+          await openLootItemFromElement(actionElement);
+          return;
+        }
+        if (action === "set-loot-major-item") {
+          await setLootItemMajorFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "claim-loot-currency") {
+          await claimLootCurrencyForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "archive-loot-claim-run") {
+          const runId = getLootClaimRunIdFromElement(actionElement);
+          await clearLootClaimsPool(runId);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claim-actor") {
+          if (setLootClaimActorSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        }
+      } catch (error) {
+        logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.warn("Loot claims action failed. Check console for details.");
       }
-    } catch (error) {
-      logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
-        target: summarizeClickTarget(event?.target)
-      });
-      ui.notifications?.warn("Loot claims action failed. Check console for details.");
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
@@ -8285,7 +8808,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     id: "rest-watch-player-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Rest Watch" },
-    position: { width: 760, height: 620 },
+    position: getResponsiveWindowPosition("rest-watch-player"),
     resizable: true
   });
 
@@ -8461,11 +8984,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   #onTabClick(tabElement, html, event = null) {
@@ -8493,93 +9012,104 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
-    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-    });
-    if (handledJournalAction) return;
-
-    switch (action) {
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "main-tab":
-      case "set-panel":
-        this.#onTabClick(element, this.element);
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
+      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "assign-me":
-        await assignSlotToUser(element);
-        break;
-      case "set-activity":
-        await updateActivity(element, { skipLocalRefresh: true });
-        break;
-      case "clear":
-        await clearSlotEntry(element);
-        break;
-      case "toggle-notes":
-        toggleCardNotes(element);
-        break;
-      case "save-entry-notes":
-        {
-          const context = getRestWatchNoteContextFromElement(element);
-          if (context?.slotId && context?.actorId) {
-            clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+      });
+      if (handledJournalAction) return;
+
+      switch (action) {
+        case "refresh":
+          emitSocketRefresh();
+          break;
+        case "switch-tab":
+          this.#onSwitchTabClick(event, element);
+          break;
+        case "main-tab":
+        case "set-panel":
+          this.#onTabClick(element, this.element);
+          break;
+        case "toggle-mini-viz":
+          setMiniVizCollapsed(!isMiniVizCollapsed());
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "assign-me":
+          await assignSlotToUser(element);
+          break;
+        case "set-activity":
+          await updateActivity(element, { skipLocalRefresh: true });
+          break;
+        case "clear":
+          await clearSlotEntry(element);
+          break;
+        case "toggle-notes":
+          toggleCardNotes(element);
+          break;
+        case "save-entry-notes":
+          {
+            const context = getRestWatchNoteContextFromElement(element);
+            if (context?.slotId && context?.actorId) {
+              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+            }
           }
-        }
-        await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "claim-loot-item":
-        await claimLootItemForPlayer(element);
-        break;
-      case "toggle-loot-vouch":
-        await toggleLootItemVouchForPlayer(element);
-        break;
-      case "set-loot-claim-run":
-        if (setLootClaimRunSelectionFromElement(element)) {
+          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
+          break;
+        case "ping":
+          await pingActorFromElement(element);
+          break;
+        case "claim-loot-item":
+          await claimLootItemForPlayer(element);
+          break;
+        case "toggle-loot-vouch":
+          await toggleLootItemVouchForPlayer(element);
+          break;
+        case "set-loot-claim-run":
+          if (setLootClaimRunSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "set-loot-claims-archive-sort":
+          setLootClaimsArchiveSort(element?.value);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "set-loot-claims-archive-sort":
-        setLootClaimsArchiveSort(element?.value);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-claim-actor":
-        if (setLootClaimActorSelectionFromElement(element)) {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "claim-loot-currency":
-        await claimLootCurrencyForPlayer(element);
-        break;
-      case "open-gm-loot-claims-board":
-        openGmLootClaimsBoard({
-          force: true,
-          runId: getLootClaimRunIdFromElement(element)
+          break;
+        case "set-loot-claim-actor":
+          if (setLootClaimActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "claim-loot-currency":
+          await claimLootCurrencyForPlayer(element);
+          break;
+        case "open-gm-loot-claims-board":
+          openGmLootClaimsBoard({
+            force: true,
+            runId: getLootClaimRunIdFromElement(element)
+          });
+          break;
+        case "open-loot-item":
+          await openLootItemFromElement(element);
+          break;
+        default:
+          break;
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
         });
-        break;
-      case "open-loot-item":
-        await openLootItemFromElement(element);
-        break;
-      default:
-        break;
+      }
     }
   }
 
@@ -8615,7 +9145,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     id: "marching-order-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Marching Order" },
-    position: { width: 1320, height: 920 },
+    position: getResponsiveWindowPosition("marching-order"),
     resizable: true
   });
 
@@ -8841,103 +9371,110 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
-
-    switch (action) {
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "main-tab":
-      case "set-panel":
-        this.#onTabClick(element, this.element);
-        break;
-      case "popout":
-        this.render({ force: true, popOut: true });
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-section": {
-        const sectionId = element?.dataset?.sectionId;
-        if (!sectionId) break;
-        setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
       }
-      case "assign-rank":
-        await assignActorToRank(element);
-        break;
-      case "remove-from-rank":
-        await removeActorFromRanks(element);
-        break;
-      case "toggle-light":
-        await toggleLight(element);
-        break;
-      case "set-light-range":
-        await setLightRange(element);
-        break;
-      case "copy-text":
-        await copyMarchingText(false);
-        break;
-      case "copy-md":
-        await copyMarchingText(true);
-        break;
-      case "commit-plan":
-        await commitMarchingOrderState();
-        break;
-      case "clear-all":
-        await clearMarchingAll();
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "formation-standard":
-        await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
-        break;
-      case "formation-combat-ready":
-        await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
-        break;
-      case "formation-tight-corridor":
-        await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
-        break;
-      case "formation-low-visibility":
-        await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
-        break;
-      case "doctrine-check":
-        await runDoctrineCheckPrompt();
-        break;
-      case "toggle-notes":
-          toggleNotesDrawer(element);
-        break;
-      case "save-entry-notes":
-        {
-          const context = getMarchingNoteContextFromElement(element);
-          if (context?.actorId) clearScheduledMarchingNoteSave(this, context.actorId);
+      if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      switch (action) {
+        case "refresh":
+          emitSocketRefresh();
+          break;
+        case "switch-tab":
+          this.#onSwitchTabClick(event, element);
+          break;
+        case "main-tab":
+        case "set-panel":
+          this.#onTabClick(element, this.element);
+          break;
+        case "popout":
+          this.render({ force: true, popOut: true });
+          break;
+        case "toggle-mini-viz":
+          setMiniVizCollapsed(!isMiniVizCollapsed());
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "toggle-section": {
+          const sectionId = element?.dataset?.sectionId;
+          if (!sectionId) break;
+          setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
         }
-        await saveMarchingNoteFromElement(element, { notify: true });
-        break;
-      default:
-        break;
+        case "assign-rank":
+          await assignActorToRank(element);
+          break;
+        case "remove-from-rank":
+          await removeActorFromRanks(element);
+          break;
+        case "toggle-light":
+          await toggleLight(element);
+          break;
+        case "set-light-range":
+          await setLightRange(element);
+          break;
+        case "copy-text":
+          await copyMarchingText(false);
+          break;
+        case "copy-md":
+          await copyMarchingText(true);
+          break;
+        case "commit-plan":
+          await commitMarchingOrderState();
+          break;
+        case "clear-all":
+          await clearMarchingAll();
+          break;
+        case "ping":
+          await pingActorFromElement(element);
+          break;
+        case "formation-standard":
+          await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
+          break;
+        case "formation-combat-ready":
+          await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
+          break;
+        case "formation-tight-corridor":
+          await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
+          break;
+        case "formation-low-visibility":
+          await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
+          break;
+        case "doctrine-check":
+          await runDoctrineCheckPrompt();
+          break;
+        case "toggle-notes":
+            toggleNotesDrawer(element);
+          break;
+        case "save-entry-notes":
+          {
+            const context = getMarchingNoteContextFromElement(element);
+            if (context?.actorId) clearScheduledMarchingNoteSave(this, context.actorId);
+          }
+          await saveMarchingNoteFromElement(element, { notify: true });
+          break;
+        default:
+          break;
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
@@ -9218,6 +9755,292 @@ function getAllCompendiumPacks() {
     else rows.push(entry);
   }
   return rows;
+}
+
+function normalizeLootManifestItemType(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderNameKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderLabelForType(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType);
+  if (!normalizedType) return LOOT_MANIFEST_FOLDER_LABELS.other;
+  const explicit = String(LOOT_MANIFEST_FOLDER_LABELS[normalizedType] ?? "").trim();
+  if (explicit) return explicit;
+  const fallback = String(LOOT_ITEM_TYPE_LABELS[normalizedType] ?? "").trim();
+  if (fallback) return fallback;
+  return normalizedType
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function getLootManifestFolderSortPriority(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType) || "other";
+  const index = LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.indexOf(normalizedType);
+  if (index >= 0) return index;
+  return LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.length + 100;
+}
+
+function getLootManifestCompendiumPack() {
+  const allowedPackages = new Set([String(PRIMARY_MODULE_ID).trim().toLowerCase(), String(PREMIUM_MODULE_ID).trim().toLowerCase()]);
+  const targetName = String(LOOT_MANIFEST_PACK_NAME).trim().toLowerCase();
+  const targetLabel = String(LOOT_MANIFEST_PACK_LABEL).trim().toLowerCase();
+
+  const candidates = getAllCompendiumPacks().filter((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const metadataName = String(pack?.metadata?.name ?? "").trim().toLowerCase();
+    return metadataName === targetName;
+  });
+
+  if (candidates.length > 0) {
+    const packageMatched = candidates.find((pack) => {
+      const packageName = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim().toLowerCase();
+      if (!packageName) return false;
+      return allowedPackages.has(packageName);
+    });
+    if (packageMatched) return packageMatched;
+    return candidates[0];
+  }
+
+  const collectionMatched = getAllCompendiumPacks().find((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const collection = String(pack?.collection ?? "").trim().toLowerCase();
+    return collection.endsWith(`.${targetName}`);
+  });
+  if (collectionMatched) return collectionMatched;
+
+  return getAllCompendiumPacks().find((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const label = String(pack?.metadata?.label ?? pack?.title ?? "").trim().toLowerCase();
+    return label === targetLabel;
+  }) ?? null;
+}
+
+function getCompendiumFolderRows(pack) {
+  const folders = pack?.folders;
+  if (!folders) return [];
+  if (Array.isArray(folders?.contents)) return folders.contents;
+  if (typeof folders.values === "function") return Array.from(folders.values());
+  if (Array.isArray(folders)) return folders;
+  return [];
+}
+
+async function getLootManifestPackItemRows(pack) {
+  try {
+    if (typeof pack?.getIndex === "function") {
+      const index = await pack.getIndex({ fields: ["type", "folder", "name"] });
+      const rows = [];
+      if (Array.isArray(index)) rows.push(...index);
+      else if (Array.isArray(index?.contents)) rows.push(...index.contents);
+      else if (typeof index?.values === "function") rows.push(...Array.from(index.values()));
+      if (rows.length > 0) {
+        return rows.map((entry) => ({
+          id: String(entry?._id ?? entry?.id ?? "").trim(),
+          type: normalizeLootManifestItemType(entry?.type),
+          name: String(entry?.name ?? "").trim(),
+          folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+        })).filter((entry) => entry.id);
+      }
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium index`, error);
+  }
+
+  try {
+    const docs = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+    return (Array.isArray(docs) ? docs : []).map((entry) => ({
+      id: String(entry?.id ?? entry?._id ?? "").trim(),
+      type: normalizeLootManifestItemType(entry?.type),
+      name: String(entry?.name ?? "").trim(),
+      folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+    })).filter((entry) => entry.id);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium documents`, error);
+  }
+
+  return [];
+}
+
+async function updateLootManifestPackItemFolders(pack, updates = []) {
+  const normalizedUpdates = (Array.isArray(updates) ? updates : [])
+    .map((entry) => {
+      const id = String(entry?._id ?? entry?.id ?? "").trim();
+      const folderId = String(entry?.folder ?? "").trim();
+      if (!id) return null;
+      return { _id: id, folder: folderId || null };
+    })
+    .filter(Boolean);
+  if (normalizedUpdates.length <= 0) return 0;
+
+  if (typeof Item?.updateDocuments === "function") {
+    await Item.updateDocuments(normalizedUpdates, { pack: pack.collection });
+    return normalizedUpdates.length;
+  }
+
+  let applied = 0;
+  for (const entry of normalizedUpdates) {
+    try {
+      const document = typeof pack?.getDocument === "function" ? await pack.getDocument(entry._id) : null;
+      if (!document || typeof document.update !== "function") continue;
+      await document.update({ folder: entry.folder });
+      applied += 1;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to update loot manifest item folder`, entry?._id, error);
+    }
+  }
+  return applied;
+}
+
+async function ensureLootManifestCompendiumTypeFolders(options = {}) {
+  if (!game.user?.isGM) return { ok: false, reason: "not-gm" };
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) return { ok: false, reason: "pack-missing" };
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? ""),
+    createdFolders: 0,
+    updatedItems: 0
+  };
+
+  const originalLocked = Boolean(pack?.locked);
+  const mustUnlock = originalLocked && typeof pack?.configure === "function";
+  try {
+    if (mustUnlock) await pack.configure({ locked: false });
+  } catch (error) {
+    report.ok = false;
+    report.reason = "unlock-failed";
+    console.warn(`${MODULE_ID}: unable to unlock loot manifest compendium for folder sync`, error);
+    return report;
+  }
+
+  try {
+    const items = await getLootManifestPackItemRows(pack);
+    if (items.length <= 0) return report;
+
+    const folderRequestsByType = new Map();
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      if (!folderRequestsByType.has(normalizedType)) {
+        folderRequestsByType.set(normalizedType, {
+          type: normalizedType,
+          label: getLootManifestFolderLabelForType(normalizedType),
+          priority: getLootManifestFolderSortPriority(normalizedType)
+        });
+      }
+    }
+
+    if (typeof pack?.getFolders === "function") {
+      await pack.getFolders();
+    }
+    let folders = getCompendiumFolderRows(pack);
+    const folderByName = new Map(
+      folders.map((folder) => [getLootManifestFolderNameKey(folder?.name), folder]).filter(([key]) => key)
+    );
+
+    const foldersToCreate = Array.from(folderRequestsByType.values())
+      .filter((entry) => !folderByName.has(getLootManifestFolderNameKey(entry.label)))
+      .sort((left, right) => {
+        const byPriority = Number(left?.priority ?? 0) - Number(right?.priority ?? 0);
+        if (byPriority !== 0) return byPriority;
+        return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+      })
+      .map((entry, index) => ({
+        name: String(entry.label ?? "Other"),
+        type: "Item",
+        folder: null,
+        sorting: "a",
+        color: null,
+        sort: (index + 1) * 1000
+      }));
+
+    if (foldersToCreate.length > 0) {
+      if (typeof Folder?.createDocuments === "function") {
+        await Folder.createDocuments(foldersToCreate, { pack: pack.collection });
+        report.createdFolders = foldersToCreate.length;
+      } else if (typeof pack?.createFolder === "function") {
+        for (const folderData of foldersToCreate) {
+          await pack.createFolder(folderData);
+          report.createdFolders += 1;
+        }
+      }
+      if (typeof pack?.getFolders === "function") {
+        await pack.getFolders();
+      }
+      folders = getCompendiumFolderRows(pack);
+      folderByName.clear();
+      for (const folder of folders) {
+        const key = getLootManifestFolderNameKey(folder?.name);
+        if (!key) continue;
+        folderByName.set(key, folder);
+      }
+    }
+
+    const itemUpdates = [];
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      const folderLabel = getLootManifestFolderLabelForType(normalizedType);
+      const folder = folderByName.get(getLootManifestFolderNameKey(folderLabel));
+      const folderId = String(folder?.id ?? "").trim();
+      if (!folderId) continue;
+      if (String(item.folderId ?? "").trim() === folderId) continue;
+      itemUpdates.push({
+        _id: item.id,
+        folder: folderId
+      });
+    }
+
+    report.updatedItems = await updateLootManifestPackItemFolders(pack, itemUpdates);
+
+    if (isModuleDebugEnabled()) {
+      console.log(`${MODULE_ID}: loot manifest compendium folder sync`, {
+        reason: String(options?.reason ?? ""),
+        ...report
+      });
+    }
+
+    return report;
+  } catch (error) {
+    report.ok = false;
+    report.reason = "sync-failed";
+    console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
+    return report;
+  } finally {
+    if (mustUnlock) {
+      try {
+        await pack.configure({ locked: true });
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to restore loot manifest compendium lock`, error);
+      }
+    }
+  }
+}
+
+function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
+  if (!game.user?.isGM) return Promise.resolve({ ok: false, reason: "not-gm" });
+  if (lootManifestFolderSyncPromise) return lootManifestFolderSyncPromise;
+
+  lootManifestFolderSyncPromise = ensureLootManifestCompendiumTypeFolders({ reason })
+    .catch((error) => {
+      console.warn(`${MODULE_ID}: unexpected loot manifest folder sync failure`, error);
+      return { ok: false, reason: "unexpected-error" };
+    })
+    .finally(() => {
+      lootManifestFolderSyncPromise = null;
+    });
+  return lootManifestFolderSyncPromise;
 }
 
 function getAvailableLootItemPackSources() {
@@ -12527,6 +13350,7 @@ function buildDefaultOperationsLedger() {
     },
     merchants: {
       currentSettlement: "",
+      cityCatalog: [],
       definitions: [],
       stockStateById: {},
       accessLog: []
@@ -14307,6 +15131,10 @@ function normalizeMerchantTagList(values = []) {
   return normalizeMerchantTagListDomain(values);
 }
 
+function normalizeMerchantKeywordList(values = []) {
+  return normalizeMerchantKeywordListDomain(values);
+}
+
 function normalizeMerchantSourcePackIds(values = [], fallbackSourceRef = "") {
   return normalizeMerchantSourcePackIdsDomain(values, fallbackSourceRef);
 }
@@ -14335,8 +15163,36 @@ function normalizeMerchantScarcity(value) {
   return normalizeMerchantScarcityDomain(value);
 }
 
+function getMerchantScarcityProfile(value) {
+  return getMerchantScarcityProfileDomain(value);
+}
+
 function normalizeMerchantRace(value) {
   return normalizeMerchantRaceDomain(value);
+}
+
+function normalizeMerchantRarity(value) {
+  return normalizeMerchantRarityDomain(value);
+}
+
+function getMerchantRarityBucket(value) {
+  return getMerchantRarityBucketDomain(value);
+}
+
+function normalizeMerchantRarityWeights(raw = {}, fallback = undefined) {
+  return normalizeMerchantRarityWeightsDomain(raw, fallback);
+}
+
+function normalizeMerchantCityList(values = []) {
+  return normalizeMerchantCityListDomain(values);
+}
+
+function parseMerchantCityListInput(value = "") {
+  return parseMerchantCityListInputDomain(value);
+}
+
+function formatMerchantCityListInput(values = []) {
+  return formatMerchantCityListInputDomain(values);
 }
 
 function getMerchantRaceKey(value) {
@@ -14351,6 +15207,10 @@ function pickRandomMerchantRace(fallback = "Human") {
   return pickRandomMerchantRaceDomain(fallback);
 }
 
+function pickRandomMerchantTitle(fallback = "Merchant") {
+  return pickRandomMerchantTitleDomain(fallback);
+}
+
 function pickRandomMerchantNamePart(values = [], fallback = "") {
   return pickRandomMerchantNamePartDomain(values, fallback);
 }
@@ -14359,8 +15219,56 @@ function generateRandomMerchantName(raceInput = "") {
   return generateRandomMerchantNameDomain(raceInput);
 }
 
+function generateRandomMerchantNameUnbound() {
+  return generateRandomMerchantNameUnboundDomain();
+}
+
+function buildMerchantOfferTagOptions(selectedTypes = []) {
+  return buildMerchantOfferTagOptionsDomain(selectedTypes);
+}
+
+function resolveMerchantAllowedTypesFromOfferTags(selectedTagIds = [], fallbackTypes = MERCHANT_ALLOWED_ITEM_TYPE_LIST) {
+  return resolveMerchantAllowedTypesFromOfferTagsDomain(selectedTagIds, fallbackTypes);
+}
+
+function buildMerchantCityOptions(cityList = [], selectedCity = "") {
+  return buildMerchantCityOptionsDomain(cityList, selectedCity);
+}
+
 function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
   return getMerchantEditorSourceTypeOptionsDomain(selected);
+}
+
+function normalizeMerchantAccessMode(value, fallback = MERCHANT_ACCESS_MODES.ALL) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === MERCHANT_ACCESS_MODES.ASSIGNED) return MERCHANT_ACCESS_MODES.ASSIGNED;
+  if (normalized === MERCHANT_ACCESS_MODES.ALL) return MERCHANT_ACCESS_MODES.ALL;
+  return normalizeMerchantAccessMode(fallback, MERCHANT_ACCESS_MODES.ALL);
+}
+
+function normalizeMerchantBarterAbility(value, fallback = MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, normalized)) return normalized;
+  const fallbackKey = String(fallback ?? "cha").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, fallbackKey)) return fallbackKey;
+  return "cha";
+}
+
+function getMerchantAccessModeOptions(selected = MERCHANT_ACCESS_MODES.ALL) {
+  const active = normalizeMerchantAccessMode(selected, MERCHANT_ACCESS_MODES.ALL);
+  return [
+    { value: MERCHANT_ACCESS_MODES.ALL, label: "All Players", selected: active === MERCHANT_ACCESS_MODES.ALL },
+    { value: MERCHANT_ACCESS_MODES.ASSIGNED, label: "Assigned Players", selected: active === MERCHANT_ACCESS_MODES.ASSIGNED }
+  ];
+}
+
+function getMerchantBarterAbilityOptions(selected = MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha") {
+  const active = normalizeMerchantBarterAbility(selected);
+  return Object.entries(MERCHANT_BARTER_ABILITY_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: value === active
+  }));
 }
 
 function normalizeMerchantDefinition(raw = {}, index = 0) {
@@ -14372,6 +15280,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const race = normalizeMerchantRace(source.race ?? "");
   const img = String(source.img ?? "").trim() || "icons/svg/item-bag.svg";
   const settlement = String(source.settlement ?? MERCHANT_DEFAULTS.settlement).trim().slice(0, 120);
+  const accessMode = normalizeMerchantAccessMode(source?.accessMode ?? source?.access?.mode ?? MERCHANT_ACCESS_MODES.ALL);
   const isHidden = false;
   const requiresContract = false;
   const contractKey = "";
@@ -14379,28 +15288,67 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const minSocialScore = 0;
   const buyMarkupRaw = Number(source?.pricing?.buyMarkup ?? source.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup);
   const sellRateRaw = Number(source?.pricing?.sellRate ?? source.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = source?.pricing?.sellEnabled === undefined
+    ? Boolean(source?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
+    : Boolean(source?.pricing?.sellEnabled);
+  const cashOnHandGpRaw = Number(
+    source?.pricing?.cashOnHandGp
+    ?? source?.cashOnHandGp
+    ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+  );
+  const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    source?.pricing?.buybackAllowedTypes
+    ?? source?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const barterEnabled = source?.pricing?.barterEnabled === undefined
+    ? Boolean(source?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled)
+    : Boolean(source?.pricing?.barterEnabled);
+  const barterDcRaw = Number(source?.pricing?.barterDc ?? source?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+  const barterAbility = normalizeMerchantBarterAbility(
+    source?.pricing?.barterAbility ?? source?.barterAbility,
+    MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+  );
   const buyMarkup = Number.isFinite(buyMarkupRaw) ? Math.max(0, Math.min(10, Number(buyMarkupRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.buyMarkup;
   const sellRate = Number.isFinite(sellRateRaw) ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.sellRate;
+  const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const barterDc = Number.isFinite(barterDcRaw)
+    ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
+    : Number(MERCHANT_DEFAULTS.pricing.barterDc);
   const stock = source.stock && typeof source.stock === "object" ? source.stock : {};
   const sourceType = normalizeMerchantSourceType(stock.sourceType ?? source.sourceType);
   const sourceRef = String(stock.sourceRef ?? source.sourceRef ?? "").trim();
   const sourcePackIds = normalizeMerchantSourcePackIds(
     stock.sourcePackIds ?? source.sourcePackIds ?? [],
-    sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK ? sourceRef : ""
+    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : sourceRef
   );
   const includeTags = normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []);
   const excludeTags = normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []);
+  const keywordInclude = normalizeMerchantKeywordList(stock.keywordInclude ?? source.keywordInclude ?? []);
+  const keywordExclude = normalizeMerchantKeywordList(stock.keywordExclude ?? source.keywordExclude ?? []);
   const allowedTypes = normalizeMerchantAllowedItemTypes(stock.allowedTypes ?? source.allowedTypes ?? []);
   const curatedItemUuids = normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? source.curatedItemUuids ?? []);
   const maxItemsRaw = Number(stock.maxItems ?? source.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
   const maxItems = Number.isFinite(maxItemsRaw)
     ? Math.max(1, Math.min(100, Math.floor(maxItemsRaw)))
-    : MERCHANT_DEFAULTS.stock.maxItems;
+    : Math.max(1, Math.min(100, Math.floor(Number(MERCHANT_DEFAULTS.stock.maxItems) || 20)));
   const targetValueGpRaw = Number(stock.targetValueGp ?? source.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
   const targetValueGp = Number.isFinite(targetValueGpRaw)
     ? Math.max(0, Math.min(1000000, Number(targetValueGpRaw.toFixed(2))))
     : MERCHANT_DEFAULTS.stock.targetValueGp;
   const scarcity = normalizeMerchantScarcity(stock.scarcity ?? source.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
+  const duplicateChanceRaw = Number(stock.duplicateChance ?? source.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance ?? 25);
+  const duplicateChance = Number.isFinite(duplicateChanceRaw)
+    ? Math.max(0, Math.min(100, Math.floor(duplicateChanceRaw)))
+    : Math.max(0, Math.min(100, Math.floor(Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25) || 25)));
+  const maxStackSize = 20;
+  const rarityWeights = normalizeMerchantRarityWeights(
+    stock.rarityWeights ?? source.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
+    MERCHANT_DEFAULTS.stock.rarityWeights
+  );
   const actorId = String(source.actorId ?? "").trim();
   return {
     id,
@@ -14409,6 +15357,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     race,
     img,
     settlement,
+    accessMode,
     isHidden,
     requiresContract,
     contractKey,
@@ -14416,21 +15365,32 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     minSocialScore,
     pricing: {
       buyMarkup,
-      sellRate
+      sellRate,
+      sellEnabled,
+      cashOnHandGp,
+      buybackAllowedTypes,
+      barterEnabled,
+      barterDc,
+      barterAbility
     },
     stock: {
       sourceType,
-      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
-        ? String(sourcePackIds[0] ?? sourceRef).trim()
-        : sourceRef,
+      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+        ? ""
+        : String(sourcePackIds[0] ?? sourceRef).trim(),
       sourcePackIds,
       includeTags,
       excludeTags,
+      keywordInclude,
+      keywordExclude,
       allowedTypes,
       curatedItemUuids,
       maxItems,
       targetValueGp,
-      scarcity
+      scarcity,
+      duplicateChance,
+      maxStackSize,
+      rarityWeights
     },
     actorId
   };
@@ -14467,6 +15427,7 @@ function normalizeMerchantAccessLogEntry(raw = {}) {
 function ensureMerchantsState(ledger) {
   if (!ledger || typeof ledger !== "object") return {
     currentSettlement: "",
+    cityCatalog: [],
     definitions: [],
     stockStateById: {},
     accessLog: []
@@ -14476,6 +15437,8 @@ function ensureMerchantsState(ledger) {
   }
   const merchants = ledger.merchants;
   merchants.currentSettlement = String(merchants.currentSettlement ?? "").trim().slice(0, 120);
+  if (!Array.isArray(merchants.cityCatalog)) merchants.cityCatalog = [];
+  merchants.cityCatalog = normalizeMerchantCityList(merchants.cityCatalog);
   if (!Array.isArray(merchants.definitions)) merchants.definitions = [];
   if (!merchants.stockStateById || typeof merchants.stockStateById !== "object" || Array.isArray(merchants.stockStateById)) {
     merchants.stockStateById = {};
@@ -14634,6 +15597,35 @@ async function setMerchantCurrentSettlement(value) {
   });
 }
 
+function buildMerchantCityCatalogRows(merchantsState = {}, definitions = []) {
+  const rows = [];
+  rows.push(...normalizeMerchantCityList(merchantsState?.cityCatalog ?? []));
+  for (const definition of (Array.isArray(definitions) ? definitions : [])) {
+    const settlement = normalizeMerchantSettlementSelection(definition?.settlement ?? "");
+    if (settlement) rows.push(settlement);
+  }
+  return normalizeMerchantCityList(rows);
+}
+
+async function saveMerchantCityCatalog(rawInput = "") {
+  const cityCatalog = parseMerchantCityListInput(rawInput);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.cityCatalog = cityCatalog;
+  });
+  return cityCatalog;
+}
+
+async function setMerchantCityById(merchantIdInput, cityInput = "") {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const settlement = normalizeMerchantSettlementSelection(cityInput);
+  return upsertMerchant({
+    id: merchantId,
+    settlement
+  });
+}
+
 function getActorMerchantContracts(actor) {
   const raw = actor?.getFlag?.(MODULE_ID, "merchantContracts");
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -14682,6 +15674,8 @@ function isMerchantAvailableToActor(merchant, actor, currentSettlement, options 
   if (!isMerchantSettlementMatch(merchant, currentSettlement)) return false;
   const contracts = getActorMerchantContracts(actor);
   const hasContract = Boolean(contracts[merchant.id] || (merchant.contractKey && contracts[merchant.contractKey]));
+  const accessMode = normalizeMerchantAccessMode(merchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+  if (accessMode === MERCHANT_ACCESS_MODES.ASSIGNED && !hasContract) return false;
   if (merchant.requiresContract && !hasContract) return false;
   if (merchant.isHidden && !hasContract) return false;
   if (merchant.socialGateEnabled) {
@@ -14726,11 +15720,15 @@ function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_ITE
 
 function getMerchantScarcityOptions(selected = MERCHANT_SCARCITY_LEVELS.NORMAL) {
   const value = normalizeMerchantScarcity(selected);
-  return [
-    { value: MERCHANT_SCARCITY_LEVELS.ABUNDANT, label: "Abundant", selected: value === MERCHANT_SCARCITY_LEVELS.ABUNDANT },
-    { value: MERCHANT_SCARCITY_LEVELS.NORMAL, label: "Normal", selected: value === MERCHANT_SCARCITY_LEVELS.NORMAL },
-    { value: MERCHANT_SCARCITY_LEVELS.SCARCE, label: "Scarce", selected: value === MERCHANT_SCARCITY_LEVELS.SCARCE }
-  ];
+  return MERCHANT_SCARCITY_PROFILES.map((profile) => {
+    const multiplier = Number(profile?.multiplier ?? 1);
+    const percent = Math.round(multiplier * 100);
+    return {
+      value: String(profile?.value ?? MERCHANT_SCARCITY_LEVELS.NORMAL),
+      label: `${String(profile?.label ?? "Normal")} (${percent}%)`,
+      selected: String(profile?.value ?? "").trim().toLowerCase() === value
+    };
+  });
 }
 
 function normalizeMerchantTagsCsv(value) {
@@ -14741,6 +15739,16 @@ function normalizeMerchantTagsCsv(value) {
 
 function formatMerchantTagsCsv(values = []) {
   return normalizeMerchantTagList(values).join(", ");
+}
+
+function normalizeMerchantKeywordsCsv(value) {
+  const text = String(value ?? "");
+  if (!text.trim()) return [];
+  return normalizeMerchantKeywordList(text.split(/[\n,;]+/));
+}
+
+function formatMerchantKeywordsCsv(values = []) {
+  return normalizeMerchantKeywordList(values).join(", ");
 }
 
 function getMerchantSettlementLabel(value) {
@@ -14817,6 +15825,29 @@ function getMerchantItemTagsFromData(itemData = {}) {
   );
 }
 
+function getMerchantItemKeywordTokensFromData(itemData = {}) {
+  const explicitTags = getMerchantItemTagsFromData(itemData);
+  const explicitKeywords = getLootKeywordsFromData(itemData);
+  const itemType = String(itemData?.type ?? "").trim().toLowerCase();
+  const rarity = normalizeMerchantRarity(getLootRarityFromData(itemData));
+  const name = String(itemData?.name ?? "").trim().toLowerCase();
+  const description = String(itemData?.system?.description?.value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .trim()
+    .toLowerCase();
+  const nameTokens = name.split(/[^a-z0-9]+/).filter((entry) => entry.length >= 3).slice(0, 18);
+  const descriptionTokens = description.split(/[^a-z0-9]+/).filter((entry) => entry.length >= 4).slice(0, 24);
+  return normalizeMerchantKeywordList([
+    ...explicitTags,
+    ...explicitKeywords,
+    itemType,
+    rarity,
+    name,
+    ...nameTokens,
+    ...descriptionTokens
+  ]);
+}
+
 function getActorCurrencyBundle(actor) {
   return {
     pp: getActorCurrentCurrencyValue(actor, "pp"),
@@ -14879,9 +15910,17 @@ function getMerchantItemUnitPriceCp(itemData = {}, rate = 1) {
   });
 }
 
-function getMerchantCompendiumPackIdsFromStock(stock = {}) {
+function getMerchantSourceRefIdsFromStock(stock = {}) {
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return [];
   const sourceRef = String(stock?.sourceRef ?? "").trim();
   return normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? [], sourceRef);
+}
+
+function getMerchantCompendiumPackIdsFromStock(stock = {}) {
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType !== MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return [];
+  return getMerchantSourceRefIdsFromStock(stock);
 }
 
 function getMerchantCompendiumPackLabelMap() {
@@ -14895,7 +15934,6 @@ function getMerchantCompendiumPackLabelMap() {
 function getMerchantSourceRefLabel(merchant = {}) {
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
-  const sourceRef = String(stock?.sourceRef ?? "").trim();
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return "All World Items";
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
     const packIds = getMerchantCompendiumPackIdsFromStock(stock);
@@ -14905,8 +15943,19 @@ function getMerchantSourceRefLabel(merchant = {}) {
     if (labels.length <= 1) return labels[0] ?? packIds[0];
     return `${labels.length} packs selected`;
   }
-  if (!sourceRef) return sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK ? "Pack not selected" : "Folder not selected";
-  return sourceRef;
+  const folderIds = getMerchantSourceRefIdsFromStock(stock);
+  if (!folderIds.length) return "Folder not selected";
+  const folderLabelMap = new Map(
+    (game.folders?.contents ?? [])
+      .filter((folder) => {
+        const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+        return type === "item";
+      })
+      .map((folder) => [String(folder?.id ?? "").trim(), String(folder?.name ?? folder?.id ?? "").trim() || String(folder?.id ?? "").trim()])
+  );
+  const labels = folderIds.map((id) => folderLabelMap.get(id) ?? id).filter(Boolean);
+  if (labels.length <= 1) return labels[0] ?? folderIds[0];
+  return `${labels.length} folders selected`;
 }
 
 function getMerchantCompendiumPackOptionsForEditor(stock = {}) {
@@ -14942,8 +15991,9 @@ function getMerchantCompendiumPackOptionsForEditor(stock = {}) {
   return options;
 }
 
-function getMerchantWorldFolderOptions(selectedFolderId = "") {
-  const selected = String(selectedFolderId ?? "").trim();
+function getMerchantWorldFolderOptions(selectedFolderIds = []) {
+  const selectedValues = normalizeMerchantSourcePackIds(selectedFolderIds);
+  const selectedSet = new Set(selectedValues);
   const options = (game.folders?.contents ?? [])
     .filter((folder) => {
       const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
@@ -14955,30 +16005,43 @@ function getMerchantWorldFolderOptions(selectedFolderId = "") {
       return {
         value: id,
         label,
-        selected: id === selected
+        selected: selectedSet.has(id)
       };
     })
     .filter((entry) => entry.value)
     .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
-  options.unshift({
-    value: "",
-    label: "Select Item Folder",
-    selected: !selected
-  });
-  if (selected && !options.some((entry) => entry.value === selected)) {
+  for (const selectedFolderId of selectedValues) {
+    if (!selectedFolderId) continue;
+    if (options.some((entry) => entry.value === selectedFolderId)) continue;
     options.push({
-      value: selected,
-      label: `${selected} (Unavailable)`,
+      value: selectedFolderId,
+      label: `${selectedFolderId} (Unavailable)`,
       selected: true
+    });
+  }
+  if (options.length <= 0) {
+    return [{
+      value: "",
+      label: "No Item Folders Available",
+      selected: true,
+      disabled: true
+    }];
+  }
+  if (selectedValues.length <= 0) {
+    options.unshift({
+      value: "",
+      label: "Select one or more item folders",
+      selected: true,
+      disabled: true
     });
   }
   return options;
 }
 
-function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRef = "", sourcePackOptions = []) {
+function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = []) {
   return getMerchantSourceRefOptionsForEditorDomain(
     sourceTypeInput,
-    selectedSourceRef,
+    selectedSourceRefs,
     sourcePackOptions,
     {
       getWorldFolderOptions: getMerchantWorldFolderOptions
@@ -15038,6 +16101,44 @@ function buildMerchantTagOptionsForEditor(tagCatalog = [], selectedTags = []) {
   return options.sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
 }
 
+function buildMerchantKeywordCatalogForEditor(merchant = {}) {
+  const keywords = new Set();
+  const documents = getMerchantSourceDocumentsSync(merchant);
+  for (const documentRef of documents) {
+    const data = getMerchantItemData(documentRef);
+    const tokens = getMerchantItemKeywordTokensFromData(data);
+    for (const token of tokens) {
+      const normalized = String(token ?? "").trim().toLowerCase();
+      if (!normalized) continue;
+      keywords.add(normalized);
+    }
+  }
+  return Array.from(keywords)
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .slice(0, 500);
+}
+
+function buildMerchantKeywordOptionsForEditor(keywordCatalog = [], selectedKeywords = []) {
+  const selected = new Set(normalizeMerchantKeywordList(selectedKeywords));
+  const options = (Array.isArray(keywordCatalog) ? keywordCatalog : [])
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => ({
+      value,
+      label: value,
+      selected: selected.has(value)
+    }));
+  for (const keyword of selected) {
+    if (options.some((entry) => entry.value === keyword)) continue;
+    options.push({
+      value: keyword,
+      label: `${keyword} (Unavailable)`,
+      selected: true
+    });
+  }
+  return options.sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+}
+
 function describeMerchantUuidSource(uuidInput) {
   const uuid = String(uuidInput ?? "").trim();
   if (!uuid) return "Source";
@@ -15078,7 +16179,6 @@ function buildMerchantCuratedRowsForEditor(curatedItemUuids = []) {
 function getMerchantSourceDocumentsSync(merchant = {}) {
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
-  const sourceRef = String(stock?.sourceRef ?? "").trim();
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
     const packIds = getMerchantCompendiumPackIdsFromStock(stock);
     const packLabelMap = getMerchantCompendiumPackLabelMap();
@@ -15106,8 +16206,10 @@ function getMerchantSourceDocumentsSync(merchant = {}) {
     return documents;
   }
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-    if (!sourceRef) return [];
-    return (game.items?.contents ?? []).filter((item) => String(item?.folder?.id ?? "") === sourceRef);
+    const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
+    if (!sourceRefs.length) return [];
+    const sourceRefSet = new Set(sourceRefs);
+    return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
   }
   return game.items?.contents ?? [];
 }
@@ -15250,7 +16352,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
     rows,
     hasRows: rows.length > 0,
     buyMarkupLabel: buyMarkup.toFixed(2),
-    itemCount: rows.length
+    itemCount: rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity ?? 0) || 0), 0)
   };
 }
 
@@ -15314,32 +16416,108 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const activeActor = activeActorId ? game.actors.get(activeActorId) : null;
   const activeActorContracts = activeActor ? getActorMerchantContracts(activeActor) : {};
   const activeActorSocialScore = activeActor ? computeActorSocialScore(activeActor) : 0;
+  const assignmentActors = getOwnedPcActors().sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
   const storedSettlement = getSelectedMerchantSettlement();
   const hasStoredSettlement = hasSelectedMerchantSettlementPreference();
 
   const definitionsForDisplay = definitions.map((merchant) => {
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
     const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
+    const scarcityProfile = getMerchantScarcityProfile(merchant?.stock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
     const buyMarkupRaw = Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0;
+    const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+    const sellRate = Number.isFinite(sellRateRaw)
+      ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2))))
+      : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+    const sellEnabled = merchant?.pricing?.sellEnabled !== false;
+    const cashOnHandGpRaw = Number(merchant?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+    const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
+      ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
+      : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+    const cashOnHandLabel = `${cashOnHandGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`;
+    const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+      merchant?.pricing?.buybackAllowedTypes
+      ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    );
+    const buybackTypeLabels = buybackAllowedTypes
+      .map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || itemType)
+      .sort((left, right) => left.localeCompare(right));
+    const buybackTypeSummary = buybackTypeLabels.length >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+      ? "All Item Types"
+      : (buybackTypeLabels.join(", ") || "None");
+    const barterEnabled = merchant?.pricing?.barterEnabled !== false;
+    const barterDcRaw = Number(merchant?.pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+    const barterDc = Number.isFinite(barterDcRaw)
+      ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
+      : Number(MERCHANT_DEFAULTS.pricing.barterDc);
+    const barterAbility = normalizeMerchantBarterAbility(
+      merchant?.pricing?.barterAbility,
+      MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+    );
+    const barterAbilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[barterAbility] ?? "Charisma");
+    const accessMode = normalizeMerchantAccessMode(merchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+    const offerTagOptions = buildMerchantOfferTagOptions(merchant?.stock?.allowedTypes ?? []);
+    const offerTagLabels = offerTagOptions
+      .filter((entry) => entry.selected)
+      .map((entry) => String(entry.label ?? "").trim())
+      .filter(Boolean);
     const stockItemCount = merchantActor
-      ? (merchantActor.items?.contents ?? []).filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim())).length
+      ? (merchantActor.items?.contents ?? [])
+        .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
+        .reduce((sum, item) => sum + Math.max(0, Math.floor(getItemTrackedQuantity(item))), 0)
       : 0;
+    const assignmentRows = assignmentActors.map((actorRef) => {
+      const actorId = String(actorRef?.id ?? "").trim();
+      const contracts = actorRef ? getActorMerchantContracts(actorRef) : {};
+      const assigned = Boolean(actorId && contracts[merchant.id]);
+      return {
+        actorId,
+        actorName: String(actorRef?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`,
+        assigned
+      };
+    });
+    const assignedCount = assignmentRows.reduce((sum, row) => sum + (row.assigned ? 1 : 0), 0);
     return {
       ...merchant,
+      accessMode,
+      accessModeIsAssigned: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED,
+      accessModeIsAll: accessMode === MERCHANT_ACCESS_MODES.ALL,
+      accessModeLabel: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED ? "Assigned Players" : "All Players",
       raceLabel: normalizeMerchantRace(merchant.race ?? "") || "Unspecified",
       settlementLabel: getMerchantSettlementLabel(merchant.settlement),
       sourceTypeLabel: getMerchantSourceTypeLabel(merchant.stock?.sourceType),
       sourceRefLabel: getMerchantSourceRefLabel(merchant),
+      scarcityLabel: String(scarcityProfile?.label ?? "6 - Normal"),
+      scarcityMultiplierPercent: Math.round(Math.max(0, Number(scarcityProfile?.multiplier ?? 1) || 1) * 100),
       buyMarkupLabel: Number(1 + buyMarkupRaw).toFixed(2),
       buyMarkupPercentLabel: `${Math.round(Math.max(0, buyMarkupRaw) * 100)}%`,
-      sellRatePercentLabel: `${Math.round(Number(merchant?.pricing?.sellRate ?? 0.5) * 100)}%`,
+      sellRate,
+      sellRatePercentLabel: `${Math.round(sellRate * 100)}%`,
+      sellEnabled,
+      sellEnabledLabel: sellEnabled ? "Buys from players" : "Not buying items",
+      cashOnHandGp,
+      cashOnHandLabel,
+      buybackAllowedTypes,
+      buybackTypeSummary,
+      barterEnabled,
+      barterDc,
+      barterAbility,
+      barterAbilityLabel,
       includeTagsText: formatMerchantTagsCsv(merchant?.stock?.includeTags ?? []),
       excludeTagsText: formatMerchantTagsCsv(merchant?.stock?.excludeTags ?? []),
+      keywordIncludeText: formatMerchantTagsCsv(merchant?.stock?.keywordInclude ?? []),
+      keywordExcludeText: formatMerchantTagsCsv(merchant?.stock?.keywordExclude ?? []),
       hasIncludeTags: normalizeMerchantTagList(merchant?.stock?.includeTags ?? []).length > 0,
       hasExcludeTags: normalizeMerchantTagList(merchant?.stock?.excludeTags ?? []).length > 0,
+      hasKeywordInclude: normalizeMerchantKeywordList(merchant?.stock?.keywordInclude ?? []).length > 0,
+      hasKeywordExclude: normalizeMerchantKeywordList(merchant?.stock?.keywordExclude ?? []).length > 0,
       sourcePackCount: getMerchantCompendiumPackIdsFromStock(merchant?.stock ?? {}).length,
       allowedTypeCount: normalizeMerchantAllowedItemTypes(merchant?.stock?.allowedTypes ?? []).length,
+      offerTagLabels,
+      offerTagSummary: offerTagLabels.join(", ") || "All",
       curatedItemCount: normalizeMerchantCuratedItemUuids(merchant?.stock?.curatedItemUuids ?? []).length,
+      maxStackSize: 20,
       stockItemCount,
       hasStock: stockItemCount > 0,
       actorName: String(merchantActor?.name ?? "").trim(),
@@ -15348,9 +16526,15 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       lastRefreshedAtLabel: formatMerchantTimestampLabel(stockMeta?.lastRefreshedAt),
       lastRefreshedBy: String(stockMeta?.lastRefreshedBy ?? "").trim() || "-",
       activeActorHasContract: Boolean(activeActorContracts[merchant.id] || (merchant.contractKey && activeActorContracts[merchant.contractKey])),
-      activeActorMeetsSocialGate: !merchant.socialGateEnabled || activeActorSocialScore >= Number(merchant.minSocialScore ?? 0)
+      activeActorMeetsSocialGate: !merchant.socialGateEnabled || activeActorSocialScore >= Number(merchant.minSocialScore ?? 0),
+      assignmentRows,
+      hasAssignmentRows: assignmentRows.length > 0,
+      assignedCount,
+      unassignedCount: Math.max(0, assignmentRows.length - assignedCount),
+      accessModeOptions: getMerchantAccessModeOptions(accessMode)
     };
   });
+  const cityCatalogRows = buildMerchantCityCatalogRows(merchantsState, definitionsForDisplay);
   const settlementView = buildMerchantSettlementOptions(
     definitionsForDisplay,
     storedSettlement,
@@ -15440,23 +16624,72 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
     : editorSourceTypeRaw;
   const editorScarcity = normalizeMerchantScarcity(editorDraft?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
-  const editorSourcePackIds = getMerchantCompendiumPackIdsFromStock(editorDraft?.stock ?? {});
+  const editorSourceRefs = getMerchantSourceRefIdsFromStock(editorDraft?.stock ?? {});
   const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
   const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
     editorSourceType,
-    editorDraft?.stock?.sourceRef ?? "",
+    editorSourceRefs,
     editorSourcePackOptions
   );
+  const editorSourceRefHintLabel = String(
+    editorSourceRefOptions.find((entry) => !String(entry?.value ?? "").trim())?.label ?? ""
+  ).trim();
+  const editorSourceRefSelectableOptions = editorSourceRefOptions
+    .filter((entry) => String(entry?.value ?? "").trim().length > 0);
+  const editorSourceRefSelectedCount = editorSourceRefSelectableOptions
+    .filter((entry) => Boolean(entry?.selected))
+    .length;
+  const editorAllowedTypes = normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []);
+  const editorOfferTagOptions = buildMerchantOfferTagOptions(editorAllowedTypes);
+  const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
+  const editorViewTab = getMerchantEditorViewTab();
+  const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
   const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const editorBuyMarkupPercent = Number((editorBuyMarkup * 100).toFixed(2));
+  const editorSellRateRaw = Number(editorDraft?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const editorSellRate = Number.isFinite(editorSellRateRaw)
+    ? Math.max(0, Math.min(10, Number(editorSellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const editorSellRatePercent = Number((editorSellRate * 100).toFixed(2));
+  const editorSellEnabled = editorDraft?.pricing?.sellEnabled !== false;
+  const editorCashOnHandGpRaw = Number(editorDraft?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const editorCashOnHandGp = Number.isFinite(editorCashOnHandGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(editorCashOnHandGpRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const editorBuybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    editorDraft?.pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const editorBuybackTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorBuybackAllowedTypes);
+  const editorBarterEnabled = editorDraft?.pricing?.barterEnabled !== false;
+  const editorBarterDcRaw = Number(editorDraft?.pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+  const editorBarterDc = Number.isFinite(editorBarterDcRaw)
+    ? Math.max(1, Math.min(40, Math.floor(editorBarterDcRaw)))
+    : Number(MERCHANT_DEFAULTS.pricing.barterDc);
+  const editorBarterAbility = normalizeMerchantBarterAbility(
+    editorDraft?.pricing?.barterAbility,
+    MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+  );
   const editorStockCountRaw = Number(editorDraft?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
   const editorStockCount = Number.isFinite(editorStockCountRaw)
     ? Math.max(1, Math.min(100, Math.floor(editorStockCountRaw)))
     : MERCHANT_DEFAULTS.stock.maxItems;
-  const editorTagCatalog = [];
-  const editorIncludeTagOptions = [];
-  const editorExcludeTagOptions = [];
-  const editorAllowedTypeOptions = [];
+  const editorTargetValueGpRaw = Number(editorDraft?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
+  const editorTargetValueGp = Number.isFinite(editorTargetValueGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(editorTargetValueGpRaw.toFixed(2))))
+    : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const editorRarityWeights = normalizeMerchantRarityWeights(
+    editorDraft?.stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
+    MERCHANT_DEFAULTS.stock.rarityWeights
+  );
+  const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
+  const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
+  const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
+  const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
+  const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
+  const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
+  const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
   const editorCuratedRows = [];
   const editorItemFilter = "";
   const editorCandidateRows = [];
@@ -15495,9 +16728,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     gm: {
       definitions: definitionsForDisplay.map((merchant) => ({
         ...merchant,
+        cityOptions: buildMerchantCityOptions(cityCatalogRows, merchant?.settlement ?? ""),
         selectedForEdit: merchant.id === activeEditorId
       })),
       hasDefinitions: definitionsForDisplay.length > 0,
+      editorViewTab,
+      editorViewTabEditor: editorViewTab !== "settings",
+      editorViewTabSettings: editorViewTab === "settings",
+      cityCatalogInput: formatMerchantCityListInput(merchantsState?.cityCatalog ?? []),
       editor: {
         id: String(editorDraft?.id ?? ""),
         name: String(editorDraft?.name ?? ""),
@@ -15505,6 +16743,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         race: normalizeMerchantRace(editorDraft?.race ?? ""),
         img: String(editorDraft?.img ?? "icons/svg/item-bag.svg"),
         settlement: String(editorDraft?.settlement ?? ""),
+        accessMode: editorAccessMode,
         isHidden: Boolean(editorDraft?.isHidden),
         requiresContract: Boolean(editorDraft?.requiresContract),
         contractKey: String(editorDraft?.contractKey ?? ""),
@@ -15513,25 +16752,51 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         buyMarkup: Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup),
         buyMarkupPercent: editorBuyMarkupPercent,
         buyMarkupMultiplierLabel: (1 + editorBuyMarkup).toFixed(2),
-        sellRate: Number(editorDraft?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate),
+        sellRate: editorSellRate,
+        sellRatePercent: editorSellRatePercent,
+        sellEnabled: editorSellEnabled,
+        cashOnHandGp: editorCashOnHandGp,
+        buybackAllowedTypes: editorBuybackAllowedTypes,
+        barterEnabled: editorBarterEnabled,
+        barterDc: editorBarterDc,
+        barterAbility: editorBarterAbility,
         sourceType: editorSourceType,
-        sourceRef: String(editorDraft?.stock?.sourceRef ?? ""),
-        sourcePackIds: editorSourcePackIds,
+        sourceRef: String(editorSourceRefs[0] ?? editorDraft?.stock?.sourceRef ?? ""),
+        sourcePackIds: editorSourceRefs,
         includeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.includeTags ?? []),
         excludeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.excludeTags ?? []),
-        allowedTypes: normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []),
+        keywordIncludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordInclude ?? []),
+        keywordExcludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordExclude ?? []),
+        allowedTypes: editorAllowedTypes,
         curatedItemUuidsInput: formatMerchantUuidListInput(editorDraft?.stock?.curatedItemUuids ?? []),
         maxItems: editorStockCount,
         stockCount: editorStockCount,
-        targetValueGp: Number(editorDraft?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp),
+        targetValueGp: editorTargetValueGp,
         scarcity: editorScarcity,
+        scarcityLabel: String(getMerchantScarcityProfile(editorScarcity)?.label ?? "6 - Normal"),
+        duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
+        maxStackSize: 20,
+        rarityWeightCommon: Number(editorRarityWeights?.common ?? 100),
+        rarityWeightUncommon: Number(editorRarityWeights?.uncommon ?? 45),
+        rarityWeightRare: Number(editorRarityWeights?.rare ?? 16),
+        rarityWeightVeryRare: Number(editorRarityWeights?.["very-rare"] ?? 5),
+        rarityWeightLegendary: Number(editorRarityWeights?.legendary ?? 1),
         actorId: String(editorDraft?.actorId ?? "")
       },
       sourceTypeOptions: getMerchantEditorSourceTypeOptions(editorSourceType),
+      accessModeOptions: getMerchantAccessModeOptions(editorAccessMode),
+      barterAbilityOptions: getMerchantBarterAbilityOptions(editorBarterAbility),
       raceOptions: getMerchantEditorRaceOptions(editorDraft?.race ?? ""),
+      cityOptions: editorCityOptions,
+      offerTagOptions: editorOfferTagOptions,
       scarcityOptions: getMerchantScarcityOptions(editorScarcity),
       actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
       sourceRefOptions: editorSourceRefOptions,
+      sourceRefSelectableOptions: editorSourceRefSelectableOptions,
+      hasSourceRefSelectableOptions: editorSourceRefSelectableOptions.length > 0,
+      sourceRefOptionCount: editorSourceRefSelectableOptions.length,
+      sourceRefSelectedCount: editorSourceRefSelectedCount,
+      sourceRefHintLabel: editorSourceRefHintLabel,
       sourcePackFilter: "",
       sourcePackOptions: editorSourcePackOptions,
       sourcePackVisibleOptions: editorSourcePackOptions,
@@ -15541,7 +16806,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       hasTagCatalog: editorTagCatalog.length > 0,
       includeTagOptions: editorIncludeTagOptions,
       excludeTagOptions: editorExcludeTagOptions,
+      keywordCatalogCount: editorKeywordCatalog.length,
+      hasKeywordCatalog: editorKeywordCatalog.length > 0,
+      keywordIncludeOptions: editorKeywordIncludeOptions,
+      keywordExcludeOptions: editorKeywordExcludeOptions,
       allowedTypeOptions: editorAllowedTypeOptions,
+      buybackTypeOptions: editorBuybackTypeOptions,
       curatedRows: editorCuratedRows,
       hasCuratedRows: editorCuratedRows.length > 0,
       itemFilter: editorItemFilter,
@@ -15558,35 +16828,160 @@ function readMerchantDefinitionPatchFromElement(element) {
     ?? element?.closest?.("#po-ops-merchants")
     ?? element?.closest?.(".po-merchants-page");
   if (!pageRoot) return null;
-  const getText = (selector) => String(pageRoot.querySelector(selector)?.value ?? "").trim();
+  const getText = (selector, options = {}) => {
+    const node = pageRoot.querySelector(selector);
+    if (!node) {
+      if (Object.prototype.hasOwnProperty.call(options, "missing")) return String(options.missing ?? "").trim();
+      return "";
+    }
+    return String(node?.value ?? "").trim();
+  };
   const getNumber = (selector, fallback = 0) => {
     const raw = Number(pageRoot.querySelector(selector)?.value ?? fallback);
     return Number.isFinite(raw) ? raw : fallback;
   };
+  const getCheckbox = (selector, fallback = false) => {
+    const node = pageRoot.querySelector(selector);
+    if (!(node instanceof HTMLInputElement)) return Boolean(fallback);
+    return Boolean(node.checked);
+  };
+  const getList = (selector, normalizer = normalizeMerchantTagList) => {
+    const node = pageRoot.querySelector(selector);
+    if (!node) return undefined;
+    const text = String(node?.value ?? "").trim();
+    if (!text) return [];
+    return normalizer(text.split(/[\n,;]+/));
+  };
+  const getCheckedValues = (selector, normalizer = normalizeMerchantAllowedItemTypes, fallback = []) => {
+    const nodes = Array.from(pageRoot.querySelectorAll(selector));
+    if (nodes.length <= 0) return normalizer(fallback);
+    const values = nodes
+      .filter((entry) => Boolean(entry?.checked))
+      .map((entry) => String(entry?.value ?? "").trim())
+      .filter(Boolean);
+    return normalizer(values);
+  };
+  const getSelectedValues = (selector, fallback = []) => {
+    const nodes = Array.from(pageRoot.querySelectorAll(selector));
+    if (nodes.length <= 0) return normalizeMerchantSourcePackIds(fallback);
+    const checkboxNodes = nodes.filter(
+      (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+    );
+    if (checkboxNodes.length > 0) {
+      const selectedValues = checkboxNodes
+        .filter((entry) => Boolean(entry?.checked))
+        .map((entry) => String(entry?.value ?? "").trim())
+        .filter(Boolean);
+      return normalizeMerchantSourcePackIds(selectedValues);
+    }
+    const [node] = nodes;
+    const selectedValues = Array.from(node?.selectedOptions ?? [])
+      .map((entry) => String(entry?.value ?? "").trim())
+      .filter(Boolean);
+    return normalizeMerchantSourcePackIds(selectedValues);
+  };
   const merchantId = getText("input[name='merchantId']");
   const existingMerchant = merchantId ? getMerchantById(merchantId) : null;
+  const existingStock = existingMerchant?.stock ?? {};
+  const existingPricing = existingMerchant?.pricing ?? {};
+  const existingAllowedTypes = normalizeMerchantAllowedItemTypes(existingMerchant?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
   const raceInput = (
-    getText("select[name='merchantRace']")
-    || getText("input[name='merchantRace']")
+    getText("select[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
+    || getText("input[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
   );
+  const selectedOfferTags = Array.from(pageRoot.querySelectorAll("input[name='merchantOfferTag']:checked"))
+    .map((entry) => String(entry?.value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const accessMode = getText("select[name='merchantAccessMode']", { missing: existingMerchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL });
+  const sellRatePercent = getNumber(
+    "input[name='merchantSellRatePercent']",
+    Number(existingPricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100
+  );
+  const sellEnabled = getCheckbox("input[name='merchantSellEnabled']", existingPricing?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled);
+  const cashOnHandGp = getNumber(
+    "input[name='merchantCashOnHandGp']",
+    Number(existingPricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp)
+  );
+  const buybackAllowedTypes = getCheckedValues(
+    "input[name='merchantBuybackType']",
+    normalizeMerchantAllowedItemTypes,
+    existingPricing?.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const barterEnabled = getCheckbox("input[name='merchantBarterEnabled']", existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled);
+  const barterDc = getNumber(
+    "input[name='merchantBarterDc']",
+    Number(existingPricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc)
+  );
+  const barterAbility = (
+    getText("select[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
+    || getText("input[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
+  );
+  const allowedTypes = resolveMerchantAllowedTypesFromOfferTags(selectedOfferTags, existingAllowedTypes);
   const markupPercent = getNumber(
     "input[name='merchantMarkupPercent']",
-    getNumber("input[name='merchantBuyMarkup']", MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
+    Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
   );
-  const stockCount = getNumber("input[name='merchantStockCount']", MERCHANT_DEFAULTS.stock.maxItems);
+  const sourceType = getText("select[name='merchantSourceType']", { missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER });
+  const previousDraft = getMerchantEditorDraftState()?.draft ?? {};
+  const previousSourceType = normalizeMerchantSourceType(
+    previousDraft?.stock?.sourceType
+    ?? existingStock?.sourceType
+    ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
+  );
+  const existingSourceRefs = getMerchantSourceRefIdsFromStock(existingStock);
+  const hasSourceRefCheckboxes = pageRoot.querySelectorAll("input[name='merchantSourceRef']").length > 0;
+  const sourceRefsFromSelect = normalizeMerchantSourceType(sourceType) === previousSourceType
+    ? getSelectedValues("select[name='merchantSourceRef']", existingSourceRefs)
+    : [];
+  const sourceRefsFromCheckboxes = normalizeMerchantSourceType(sourceType) === previousSourceType
+    ? getSelectedValues("input[name='merchantSourceRef']", existingSourceRefs)
+    : [];
+  const selectedSourceRefs = hasSourceRefCheckboxes ? sourceRefsFromCheckboxes : sourceRefsFromSelect;
+  const sourceRef = String(
+    selectedSourceRefs[0]
+    ?? getText("select[name='merchantSourceRef']", { missing: "" })
+    ?? ""
+  ).trim();
+  const rarityWeights = normalizeMerchantRarityWeights({
+    common: getNumber("input[name='merchantRarityWeightCommon']", Number(existingStock?.rarityWeights?.common ?? MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100)),
+    uncommon: getNumber("input[name='merchantRarityWeightUncommon']", Number(existingStock?.rarityWeights?.uncommon ?? MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45)),
+    rare: getNumber("input[name='merchantRarityWeightRare']", Number(existingStock?.rarityWeights?.rare ?? MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16)),
+    "very-rare": getNumber("input[name='merchantRarityWeightVeryRare']", Number(existingStock?.rarityWeights?.["very-rare"] ?? MERCHANT_DEFAULTS.stock.rarityWeights?.["very-rare"] ?? 5)),
+    legendary: getNumber("input[name='merchantRarityWeightLegendary']", Number(existingStock?.rarityWeights?.legendary ?? MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1))
+  }, existingStock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
   return buildMerchantDefinitionPatchFromEditorFormDomain({
     id: merchantId,
-    name: getText("input[name='merchantName']"),
-    title: getText("input[name='merchantTitle']"),
+    name: getText("input[name='merchantName']", { missing: existingMerchant?.name ?? "" }),
+    title: getText("input[name='merchantTitle']", { missing: existingMerchant?.title ?? "" }),
     race: normalizeMerchantRace(raceInput),
-    img: getText("input[name='merchantImg']"),
-    settlement: getText("input[name='merchantSettlement']"),
-    sourceType: getText("select[name='merchantSourceType']"),
-    sourceRef: getText("select[name='merchantSourceRef']") || getText("input[name='merchantSourceRef']"),
-    actorId: getText("select[name='merchantActorId']"),
+    img: getText("input[name='merchantImg']", { missing: existingMerchant?.img ?? "" }),
+    settlement: getText("select[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }) || getText("input[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }),
+    accessMode,
+    sourceType,
+    sourceRef: sourceRef || getText("input[name='merchantSourceRef']", { missing: "" }),
+    sourceRefs: selectedSourceRefs,
+    actorId: getText("select[name='merchantActorId']") || String(existingMerchant?.actorId ?? ""),
+    scarcity: getText("select[name='merchantScarcity']", { missing: existingStock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity }),
+    includeTags: getList("input[name='merchantIncludeTags']", normalizeMerchantTagList) ?? existingStock?.includeTags ?? [],
+    excludeTags: getList("input[name='merchantExcludeTags']", normalizeMerchantTagList) ?? existingStock?.excludeTags ?? [],
+    keywordInclude: getList("input[name='merchantKeywordInclude']", normalizeMerchantKeywordList) ?? existingStock?.keywordInclude ?? [],
+    keywordExclude: getList("input[name='merchantKeywordExclude']", normalizeMerchantKeywordList) ?? existingStock?.keywordExclude ?? [],
+    allowedTypes,
     markupPercent,
-    stockCount,
-    existingStock: existingMerchant?.stock ?? {}
+    sellRatePercent,
+    sellEnabled,
+    cashOnHandGp,
+    buybackAllowedTypes,
+    barterEnabled,
+    barterDc,
+    barterAbility,
+    stockCount: Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
+    targetValueGp: getNumber("input[name='merchantTargetValueGp']", Number(existingStock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp)),
+    duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
+    maxStackSize: 20,
+    rarityWeights,
+    existingStock,
+    existingPricing
   });
 }
 
@@ -15604,10 +16999,11 @@ async function getMerchantSourceDocuments(merchant = {}) {
     }
     return documents;
   }
-  const sourceRef = String(stock?.sourceRef ?? "").trim();
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-    if (!sourceRef) return [];
-    return (game.items?.contents ?? []).filter((item) => String(item?.folder?.id ?? "") === sourceRef);
+    const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
+    if (!sourceRefs.length) return [];
+    const sourceRefSet = new Set(sourceRefs);
+    return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
   }
   return game.items?.contents ?? [];
 }
@@ -15616,12 +17012,17 @@ function buildMerchantCandidateRows(documents = [], merchant = {}) {
   return buildMerchantStockCandidateRowsDomain(documents, merchant, {
     getItemData: getMerchantItemData,
     getItemTags: getMerchantItemTagsFromData,
+    getItemKeywords: getMerchantItemKeywordTokensFromData,
     matchesTagFilters: isLootKeywordMatch,
+    matchesKeywordFilters: isLootKeywordMatch,
+    getItemRarity: getLootRarityFromData,
+    getRarityBucket: getMerchantRarityBucket,
     getItemGpValue: getLootItemGpValueFromData,
     allowedItemTypes: MERCHANT_ALLOWED_ITEM_TYPES,
     normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
     normalizeAllowedItemTypes: normalizeMerchantAllowedItemTypes,
-    normalizeTagList: normalizeMerchantTagList
+    normalizeTagList: normalizeMerchantTagList,
+    normalizeKeywordList: normalizeMerchantKeywordList
   });
 }
 
@@ -15632,7 +17033,9 @@ function shuffleMerchantRows(values = []) {
 function selectMerchantStockRows(candidates = [], merchant = {}) {
   return selectMerchantStockRowsDomain(candidates, merchant, {
     normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
+    normalizeRarityWeights: normalizeMerchantRarityWeights,
     getTargetStockCount: getMerchantTargetStockCount,
+    getRarityBucket: getMerchantRarityBucket,
     shuffleRows: shuffleMerchantRows
   });
 }
@@ -15713,7 +17116,10 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     const data = foundry.utils.deepClone(candidate.data ?? {});
     if (!data || typeof data !== "object") continue;
     if (Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
-    const quantity = Math.max(1, getMerchantItemDataQuantity(data));
+    const requestedQuantity = Number(candidate?.quantity ?? getMerchantItemDataQuantity(data));
+    const quantity = Number.isFinite(requestedQuantity)
+      ? Math.max(1, Math.floor(requestedQuantity))
+      : 1;
     setMerchantItemDataQuantity(data, quantity);
     if (!data.flags || typeof data.flags !== "object") data.flags = {};
     if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
@@ -15814,6 +17220,101 @@ async function transferItemBetweenActors(sourceActor, targetActor, sourceItem, q
   return true;
 }
 
+function getMerchantBarterResolutionKey({ userId, actorId, merchantId, settlement } = {}) {
+  const normalizedUserId = String(userId ?? "").trim();
+  const normalizedActorId = String(actorId ?? "").trim();
+  const normalizedMerchantId = String(merchantId ?? "").trim();
+  const normalizedSettlement = normalizeMerchantSettlementSelection(settlement ?? "");
+  if (!normalizedUserId || !normalizedActorId || !normalizedMerchantId) return "";
+  return `${normalizedUserId}:${normalizedActorId}:${normalizedMerchantId}:${normalizedSettlement}`;
+}
+
+function getMerchantBarterResolutionEntryByKey(keyInput = "") {
+  const key = String(keyInput ?? "").trim();
+  if (!key) return null;
+  const entry = merchantBarterResolutionByKey.get(key);
+  return entry && typeof entry === "object"
+    ? foundry.utils.deepClone(entry)
+    : null;
+}
+
+function setMerchantBarterResolutionEntry(entry = {}) {
+  const key = getMerchantBarterResolutionKey(entry);
+  if (!key) return "";
+  const stored = {
+    key,
+    userId: String(entry?.userId ?? "").trim(),
+    actorId: String(entry?.actorId ?? "").trim(),
+    merchantId: String(entry?.merchantId ?? "").trim(),
+    settlement: normalizeMerchantSettlementSelection(entry?.settlement ?? ""),
+    applied: entry?.applied !== false,
+    source: String(entry?.source ?? "").trim(),
+    ability: normalizeMerchantBarterAbility(entry?.ability ?? "cha", "cha"),
+    abilityLabel: String(entry?.abilityLabel ?? MERCHANT_BARTER_ABILITY_LABELS[normalizeMerchantBarterAbility(entry?.ability ?? "cha", "cha")] ?? "Charisma"),
+    checkTotal: Number.isFinite(Number(entry?.checkTotal)) ? Math.floor(Number(entry.checkTotal)) : null,
+    margin: Number.isFinite(Number(entry?.margin)) ? Math.floor(Number(entry.margin)) : 0,
+    success: Boolean(entry?.success),
+    delta: Number.isFinite(Number(entry?.delta)) ? Number(entry.delta) : 0,
+    buyMarkupDelta: Number.isFinite(Number(entry?.buyMarkupDelta)) ? Number(entry.buyMarkupDelta) : 0,
+    sellRateDelta: Number.isFinite(Number(entry?.sellRateDelta)) ? Number(entry.sellRateDelta) : 0,
+    createdAt: Math.max(0, Number(entry?.createdAt ?? Date.now()) || Date.now())
+  };
+  merchantBarterResolutionByKey.set(key, stored);
+  return key;
+}
+
+function clearMerchantBarterResolutionEntryByKey(keyInput = "") {
+  const key = String(keyInput ?? "").trim();
+  if (!key) return;
+  merchantBarterResolutionByKey.delete(key);
+}
+
+function getMerchantBarterUiSummaryText(barter = {}, options = {}) {
+  if (!barter || barter.applied === false) return String(options?.fallback ?? "No barter adjustment applied.");
+  const buyShift = Math.abs(Math.round((Number(barter?.buyMarkupDelta ?? 0) || 0) * 100));
+  const sellShift = Math.abs(Math.round((Number(barter?.sellRateDelta ?? 0) || 0) * 100));
+  const buyLabel = `${Number(barter?.buyMarkupDelta ?? 0) >= 0 ? "+" : "-"}${buyShift}% buy`;
+  const sellLabel = `${Number(barter?.sellRateDelta ?? 0) >= 0 ? "+" : "-"}${sellShift}% sell`;
+  const verdict = barter?.success ? "Favorable" : "Unfavorable";
+  const total = Number.isFinite(Number(barter?.checkTotal)) ? ` (${Math.floor(Number(barter.checkTotal))})` : "";
+  return `${verdict}${total}: ${buyLabel}, ${sellLabel}`;
+}
+
+function getMerchantTradeDialogRoot(htmlOrRoot) {
+  if (!htmlOrRoot) return null;
+  if (htmlOrRoot instanceof HTMLElement && htmlOrRoot.classList?.contains("po-merchant-trade-dialog")) return htmlOrRoot;
+  const htmlRoot = htmlOrRoot?.[0]?.querySelector?.(".po-merchant-trade-dialog");
+  if (htmlRoot) return htmlRoot;
+  const jQueryRoot = htmlOrRoot?.find?.(".po-merchant-trade-dialog")?.[0];
+  if (jQueryRoot) return jQueryRoot;
+  return null;
+}
+
+function readMerchantTradeMetaFromDialogRoot(root) {
+  if (!(root instanceof HTMLElement)) return null;
+  const merchantId = String(root.dataset?.merchantId ?? "").trim();
+  const actorId = String(root.dataset?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(root.dataset?.settlement ?? "");
+  if (!merchantId || !actorId) return null;
+  return { merchantId, actorId, settlement };
+}
+
+function setMerchantTradeDialogBarterStatus(root, options = {}) {
+  if (!(root instanceof HTMLElement)) return;
+  const statusNode = root.querySelector("[data-merchant-barter-status]");
+  if (!statusNode) return;
+  if (options.pending) {
+    statusNode.textContent = String(options.pendingLabel ?? "Barter pending GM resolution...");
+    return;
+  }
+  if (options.error) {
+    statusNode.textContent = String(options.errorLabel ?? "Barter request failed.");
+    return;
+  }
+  const summary = String(options.summary ?? "").trim();
+  statusNode.textContent = summary || "No barter adjustment applied.";
+}
+
 async function postMerchantTradeToChat(outcome = {}) {
   const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
   const merchantName = String(outcome?.merchantName ?? "Merchant").trim() || "Merchant";
@@ -15829,18 +17330,121 @@ async function postMerchantTradeToChat(outcome = {}) {
   const netLabel = netCp > 0
     ? `${formatMerchantCp(netCp)} paid`
     : (netCp < 0 ? `${formatMerchantCp(Math.abs(netCp))} received` : "Even trade");
+  const barter = (outcome?.barter && typeof outcome.barter === "object") ? outcome.barter : null;
+  const barterHtml = barter?.applied
+    ? `<p><strong>Barter:</strong> ${poEscapeHtml(getMerchantBarterUiSummaryText(barter))}</p>`
+    : "";
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
       <div class="po-chat-claim">
         <p><strong>Merchant Trade</strong></p>
         <p>${poEscapeHtml(actorName)} traded with ${poEscapeHtml(merchantName)}.</p>
+        ${barterHtml}
         ${buyHtml}
         ${sellHtml}
         <p><strong>Net:</strong> ${poEscapeHtml(netLabel)}</p>
       </div>
     `
   });
+}
+
+function computeMerchantBarterAdjustment(checkTotalInput, dcInput) {
+  const checkTotal = Math.floor(Number(checkTotalInput ?? 0) || 0);
+  const dc = Math.max(1, Math.floor(Number(dcInput ?? 10) || 10));
+  const margin = checkTotal - dc;
+  const success = margin >= 0;
+  const tiers = 1 + Math.floor(Math.abs(margin) / 5);
+  const delta = Math.min(0.25, tiers * 0.05);
+  return {
+    checkTotal,
+    dc,
+    margin,
+    success,
+    delta,
+    buyMarkupDelta: success ? -delta : delta,
+    sellRateDelta: success ? delta : -delta
+  };
+}
+
+async function rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
+  const pricing = merchant?.pricing ?? {};
+  const enabled = pricing?.barterEnabled !== false;
+  if (!enabled || !actor) return { enabled, applied: false };
+  const ability = normalizeMerchantBarterAbility(pricing?.barterAbility ?? options?.ability ?? "cha", "cha");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[ability] ?? "Charisma");
+  const dc = Math.max(1, Math.min(40, Math.floor(Number(pricing?.barterDc ?? options?.dc ?? 15) || 15)));
+  const flavor = `Barter Check (${abilityLabel})`;
+  const showDc = options?.showDc === true;
+  let total = null;
+  let source = "none";
+
+  try {
+    const monksResult = await requestMonksActorCheck(actor, `ability:${ability}`, dc, flavor, { showDc });
+    const monksTotal = Number(monksResult?.total);
+    if (Number.isFinite(monksTotal)) {
+      total = monksTotal;
+      source = "monks";
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: barter monks check failed`, error);
+  }
+
+  if (!Number.isFinite(total) && typeof actor?.rollAbilityTest === "function") {
+    try {
+      const rollResult = await actor.rollAbilityTest(ability, { fastForward: true, chatMessage: false });
+      const nativeTotal = Number(rollResult?.total ?? rollResult?.roll?.total);
+      if (Number.isFinite(nativeTotal)) {
+        total = nativeTotal;
+        source = "native";
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: barter ability check failed`, error);
+    }
+  }
+
+  if (!Number.isFinite(total)) {
+    const abilityMod = Number(actor?.system?.abilities?.[ability]?.mod ?? 0);
+    const roll = await (new Roll("1d20 + @mod", { mod: abilityMod })).evaluate();
+    await roll.toMessage({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      flavor
+    });
+    total = Number(roll.total ?? 0);
+    source = "fallback";
+  }
+
+  const adjustment = computeMerchantBarterAdjustment(total, dc);
+  return {
+    enabled: true,
+    applied: true,
+    source,
+    ability,
+    abilityLabel,
+    ...adjustment
+  };
+}
+
+function normalizeMerchantTradeBarterResolution(barterInput, merchant = {}) {
+  const pricing = merchant?.pricing ?? {};
+  const enabled = pricing?.barterEnabled !== false;
+  if (!enabled) return { enabled: false, applied: false };
+  const payload = barterInput && typeof barterInput === "object" ? barterInput : null;
+  const checkTotalRaw = Number(payload?.checkTotal);
+  if (!payload || !payload.applied || !Number.isFinite(checkTotalRaw)) {
+    return { enabled: true, applied: false };
+  }
+  const ability = normalizeMerchantBarterAbility(payload?.ability ?? pricing?.barterAbility ?? "cha", "cha");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[ability] ?? "Charisma");
+  const dc = Math.max(1, Math.min(40, Math.floor(Number(pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc ?? 15) || 15)));
+  return {
+    enabled: true,
+    applied: true,
+    source: String(payload?.source ?? "resolved").trim() || "resolved",
+    ability,
+    abilityLabel,
+    ...computeMerchantBarterAdjustment(Math.floor(checkTotalRaw), dc)
+  };
 }
 
 async function applyMerchantTradeForUser(user, payload = {}) {
@@ -15867,11 +17471,45 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   const merchantActor = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
   if (!merchantActor) return { ok: false, message: "Merchant stock actor is unavailable. Ask the GM to refresh stock." };
 
+  const pricing = merchant?.pricing ?? {};
+  const baseBuyMarkup = 1 + Math.max(0, Number(pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const baseSellRateRaw = Number(pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const baseSellRate = Number.isFinite(baseSellRateRaw)
+    ? Math.max(0, Math.min(10, Number(baseSellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = pricing?.sellEnabled !== false;
+  const buybackAllowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(
+    pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  ));
+  const configuredCashGpRaw = Number(pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const configuredCashCp = Number.isFinite(configuredCashGpRaw)
+    ? Math.max(0, Math.floor(Number(configuredCashGpRaw.toFixed(2)) * 100))
+    : 0;
+
   const buyLinesRequested = normalizeMerchantTradeLineItems(payload?.buyItems ?? []);
-  const sellLinesRequested = [];
+  const sellLinesRequestedRaw = normalizeMerchantTradeLineItems(payload?.sellItems ?? []);
+  const sellLinesRequested = sellEnabled ? sellLinesRequestedRaw : [];
   if (buyLinesRequested.length === 0 && sellLinesRequested.length === 0) {
+    if (!sellEnabled && sellLinesRequestedRaw.length > 0) {
+      return { ok: false, message: `${merchant.name} is not buying goods right now.` };
+    }
     return { ok: false, message: "No items selected for trade." };
   }
+
+  let barter = normalizeMerchantTradeBarterResolution(payload?.barterResolution, merchant);
+  if (!barter?.applied && payload?.autoResolveBarter === true) {
+    barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
+  }
+  const effectiveBuyMarkup = Math.max(
+    0,
+    Math.min(10, Number((baseBuyMarkup + Number(barter?.buyMarkupDelta ?? 0)).toFixed(2)))
+  );
+  const effectiveSellRate = Math.max(
+    0,
+    Math.min(10, Number((baseSellRate + Number(barter?.sellRateDelta ?? 0)).toFixed(2)))
+  );
 
   const buyLines = [];
   for (const request of buyLinesRequested) {
@@ -15886,17 +17524,38 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       itemId: String(item.id ?? ""),
       itemName: String(item.name ?? "Item"),
       qty,
-      unitCp: getMerchantItemUnitPriceCp(
-        itemData,
-        1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0)
-      ),
+      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveBuyMarkup),
       sourceItem: item
     });
   }
 
   const sellLines = [];
+  for (const request of sellLinesRequested) {
+    const item = actor.items?.get(String(request.itemId ?? ""));
+    if (!item) continue;
+    const itemType = String(item?.type ?? "").trim().toLowerCase();
+    if (!buybackAllowedTypeSet.has(itemType)) continue;
+    const availableQty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+    if (availableQty <= 0) continue;
+    const qty = Math.min(availableQty, Math.max(0, Math.floor(Number(request.qty ?? 0) || 0)));
+    if (qty <= 0) continue;
+    const itemData = getMerchantItemData(item);
+    sellLines.push({
+      itemId: String(item.id ?? ""),
+      itemName: String(item.name ?? "Item"),
+      qty,
+      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveSellRate),
+      sourceItem: item
+    });
+  }
 
   if (buyLines.length === 0 && sellLines.length === 0) {
+    if (!sellEnabled && buyLinesRequested.length <= 0 && Array.isArray(payload?.sellItems) && payload.sellItems.length > 0) {
+      return { ok: false, message: `${merchant.name} is not buying goods right now.` };
+    }
+    if (buyLinesRequested.length <= 0 && sellLinesRequested.length > 0) {
+      return { ok: false, message: "Selected items cannot be sold to this merchant." };
+    }
     return { ok: false, message: "Selected trade quantities are no longer available." };
   }
 
@@ -15904,15 +17563,28 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   const totalSellCp = sellLines.reduce((sum, row) => sum + (row.unitCp * row.qty), 0);
   const netCp = totalBuyCp - totalSellCp;
   const actorCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(actor));
-  const merchantCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+  let merchantCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+  if (merchantCurrencyBeforeCp <= 0 && configuredCashCp > 0) merchantCurrencyBeforeCp = configuredCashCp;
   if (netCp > 0 && actorCurrencyBeforeCp < netCp) {
     return { ok: false, message: `${actor.name} cannot afford ${formatMerchantCp(netCp)}.` };
+  }
+  if (netCp < 0 && merchantCurrencyBeforeCp < Math.abs(netCp)) {
+    return {
+      ok: false,
+      message: `${merchant.name} only has ${formatMerchantCp(merchantCurrencyBeforeCp)} available for purchases.`
+    };
   }
 
   try {
     for (const line of buyLines) {
+      // eslint-disable-next-line no-await-in-loop
       const ok = await transferItemBetweenActors(merchantActor, actor, line.sourceItem, line.qty, { clearGeneratedFlag: true });
       if (!ok) return { ok: false, message: "Buy transfer failed due to stock changes. Reopen shop and retry." };
+    }
+    for (const line of sellLines) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await transferItemBetweenActors(actor, merchantActor, line.sourceItem, line.qty);
+      if (!ok) return { ok: false, message: "Sell transfer failed due to inventory changes. Reopen shop and retry." };
     }
     const actorCurrencyAfterCp = actorCurrencyBeforeCp - netCp;
     const merchantCurrencyAfterCp = merchantCurrencyBeforeCp + netCp;
@@ -15929,6 +17601,22 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       totalBuyCp,
       totalSellCp,
       netCp,
+      effectiveBuyMarkup,
+      effectiveSellRate,
+      barter: barter?.applied
+        ? {
+          applied: true,
+          source: String(barter.source ?? ""),
+          ability: String(barter.ability ?? "cha"),
+          abilityLabel: String(barter.abilityLabel ?? "Charisma"),
+          dc: Number(barter.dc ?? 0),
+          checkTotal: Number(barter.checkTotal ?? 0),
+          margin: Number(barter.margin ?? 0),
+          success: Boolean(barter.success),
+          buyMarkupDelta: Number(barter.buyMarkupDelta ?? 0),
+          sellRateDelta: Number(barter.sellRateDelta ?? 0)
+        }
+        : { applied: false },
       buyLines: buyLines.map((row) => ({
         itemId: row.itemId,
         itemName: row.itemName,
@@ -15952,7 +17640,38 @@ async function applyMerchantTradeForUser(user, payload = {}) {
 
 function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellRate = Number.isFinite(sellRateRaw)
+    ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = merchant?.pricing?.sellEnabled !== false;
+  const cashOnHandGpRaw = Number(merchant?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const configuredCashCp = Number.isFinite(cashOnHandGpRaw)
+    ? Math.max(0, Math.floor(Number(cashOnHandGpRaw.toFixed(2)) * 100))
+    : 0;
+  const buybackAllowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(
+    merchant?.pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  ));
+  const barterEnabled = merchant?.pricing?.barterEnabled !== false;
+  const barterAbility = normalizeMerchantBarterAbility(merchant?.pricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
+  const barterAbilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[barterAbility] ?? "Charisma");
   const settlement = normalizeMerchantSettlementSelection(settlementInput);
+  const currentUserId = String(game.user?.id ?? "").trim();
+  const barterResolutionKey = getMerchantBarterResolutionKey({
+    userId: currentUserId,
+    actorId: String(actor?.id ?? "").trim(),
+    merchantId: String(merchant?.id ?? "").trim(),
+    settlement
+  });
+  const existingBarterResolution = getMerchantBarterResolutionEntryByKey(barterResolutionKey);
+  const barterButtonLabel = game.user?.isGM ? "Barter" : "Barter (Ask GM)";
+  const barterStatusLabel = barterEnabled
+    ? (existingBarterResolution?.applied
+      ? getMerchantBarterUiSummaryText(existingBarterResolution)
+      : "No barter adjustment applied yet.")
+    : "Barter is disabled.";
   const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Cities";
   const merchantItems = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
@@ -15980,13 +17699,62 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
     `).join("")
     : "<tr><td colspan='4'>No wares available.</td></tr>";
 
+  const actorSellItems = !sellEnabled
+    ? []
+    : (actor?.items?.contents ?? [])
+      .filter((item) => {
+        const itemType = String(item?.type ?? "").trim().toLowerCase();
+        return buybackAllowedTypeSet.has(itemType) && MERCHANT_ALLOWED_ITEM_TYPES.has(itemType);
+      })
+      .map((item) => {
+        const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+        const unitCp = getMerchantItemUnitPriceCp(getMerchantItemData(item), sellRate);
+        return {
+          itemId: String(item?.id ?? ""),
+          itemName: String(item?.name ?? "Item"),
+          itemType: String(item?.type ?? "").trim().toLowerCase(),
+          itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[String(item?.type ?? "").trim().toLowerCase()] ?? item?.type ?? "item"),
+          qty,
+          unitCp
+        };
+      })
+      .filter((row) => row.qty > 0)
+      .sort((a, b) => a.itemName.localeCompare(b.itemName));
+  const sellRowsHtml = !sellEnabled
+    ? "<tr><td colspan='5'>This merchant is not buying goods.</td></tr>"
+    : (actorSellItems.length > 0
+      ? actorSellItems.map((row) => `
+      <tr>
+        <td>${poEscapeHtml(row.itemName)}</td>
+        <td>${poEscapeHtml(row.itemTypeLabel)}</td>
+        <td>${row.qty}</td>
+        <td>${poEscapeHtml(formatMerchantCp(row.unitCp))}</td>
+        <td><input type="number" min="0" max="${row.qty}" value="0" data-merchant-sell-item="${poEscapeHtml(row.itemId)}" data-unit-cp="${row.unitCp}" /></td>
+      </tr>
+    `).join("")
+      : "<tr><td colspan='5'>No eligible items to sell.</td></tr>");
+
   const actorFunds = formatMerchantCp(currencyBundleToCp(getActorCurrencyBundle(actor)));
+  const merchantFundsBase = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+  const merchantFunds = formatMerchantCp(Math.max(merchantFundsBase, configuredCashCp));
+  const buybackTypeSummary = buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+    ? "All item types"
+    : (Array.from(buybackAllowedTypeSet).map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType)).join(", ") || "None");
 
   return `
-    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}" data-settlement="${poEscapeHtml(settlement)}">
+    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}" data-settlement="${poEscapeHtml(settlement)}" data-barter-key="${poEscapeHtml(barterResolutionKey)}">
       <p><strong>${poEscapeHtml(String(actor?.name ?? "Actor"))}</strong> shopping with <strong>${poEscapeHtml(String(merchant?.name ?? "Merchant"))}</strong>.</p>
       <p>City: ${poEscapeHtml(settlementLabel)}</p>
       <p>Player Funds: ${poEscapeHtml(actorFunds)}</p>
+      <p>Merchant Funds: ${poEscapeHtml(merchantFunds)}</p>
+      <p>Buy Markup: x${buyMarkup.toFixed(2)} | Sell Rate: ${Math.round(sellRate * 100)}%</p>
+      ${barterEnabled
+    ? `<p>Barter Check: ${poEscapeHtml(barterAbilityLabel)} (GM-resolved).</p>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm" data-merchant-barter-request>${poEscapeHtml(barterButtonLabel)}</button>
+        <span class="po-op-summary" data-merchant-barter-status>${poEscapeHtml(barterStatusLabel)}</span>
+      </div>`
+    : "<p>Barter Check: Disabled.</p>"}
       <details open>
         <summary><strong>Buy</strong></summary>
         <table class="po-table po-table-sm" style="width:100%;">
@@ -15994,18 +17762,26 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
           <tbody>${buyRowsHtml}</tbody>
         </table>
       </details>
+      <details open>
+        <summary><strong>Sell</strong></summary>
+        <div class="po-op-summary">Accepted Types: ${poEscapeHtml(buybackTypeSummary)}</div>
+        <table class="po-table po-table-sm" style="width:100%;">
+          <thead><tr><th>Item</th><th>Type</th><th>Owned</th><th>Unit</th><th>Qty</th></tr></thead>
+          <tbody>${sellRowsHtml}</tbody>
+        </table>
+      </details>
       <div class="po-op-summary">Buy Total: <strong data-merchant-buy-total>0.00 gp</strong></div>
+      <div class="po-op-summary">Sell Total: <strong data-merchant-sell-total>0.00 gp</strong></div>
       <div class="po-op-summary">Net: <strong data-merchant-net-total>0.00 gp</strong></div>
     </div>
   `;
 }
 
 function readMerchantTradeInputsFromDialog(html) {
-  const root = html?.[0]?.querySelector?.(".po-merchant-trade-dialog") ?? html?.find?.(".po-merchant-trade-dialog")?.[0] ?? null;
+  const root = getMerchantTradeDialogRoot(html);
   if (!root) return null;
-  const merchantId = String(root.dataset?.merchantId ?? "").trim();
-  const actorId = String(root.dataset?.actorId ?? "").trim();
-  const settlement = normalizeMerchantSettlementSelection(root.dataset?.settlement ?? "");
+  const meta = readMerchantTradeMetaFromDialogRoot(root);
+  if (!meta) return null;
   const readLines = (selector, datasetKey) => Array.from(root.querySelectorAll(selector))
     .map((input) => {
       const qtyRaw = Number(input?.value ?? 0);
@@ -16015,16 +17791,16 @@ function readMerchantTradeInputsFromDialog(html) {
     })
     .filter((entry) => entry.itemId && entry.qty > 0);
   return {
-    merchantId,
-    actorId,
-    settlement,
+    merchantId: meta.merchantId,
+    actorId: meta.actorId,
+    settlement: meta.settlement,
     buyItems: readLines("input[data-merchant-buy-item]", "merchantBuyItem"),
     sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem")
   };
 }
 
 function bindMerchantTradeDialogTotals(html) {
-  const root = html?.[0]?.querySelector?.(".po-merchant-trade-dialog") ?? html?.find?.(".po-merchant-trade-dialog")?.[0] ?? null;
+  const root = getMerchantTradeDialogRoot(html);
   if (!root) return;
   const buyNode = root.querySelector("[data-merchant-buy-total]");
   const sellNode = root.querySelector("[data-merchant-sell-total]");
@@ -16055,6 +17831,167 @@ function bindMerchantTradeDialogTotals(html) {
     recalc();
   });
   recalc();
+}
+
+async function resolveMerchantBarterForUser(user, payload = {}) {
+  const userId = String(user?.id ?? "").trim();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  if (!userId || !actorId || !merchantId) return { ok: false, message: "Missing barter payload." };
+
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "").trim() === merchantId);
+  if (!merchant) return { ok: false, message: "Merchant not found." };
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
+    return { ok: false, message: "Merchant is not currently available to this actor." };
+  }
+  if (merchant?.pricing?.barterEnabled === false) {
+    return { ok: false, message: "Barter is disabled for this merchant." };
+  }
+
+  const barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
+  if (!barter?.applied || !Number.isFinite(Number(barter?.checkTotal))) {
+    return { ok: false, message: "Barter check could not be resolved." };
+  }
+
+  const stored = {
+    userId,
+    actorId,
+    merchantId,
+    settlement,
+    applied: true,
+    source: String(barter?.source ?? "resolved"),
+    ability: String(barter?.ability ?? "cha"),
+    abilityLabel: String(barter?.abilityLabel ?? "Charisma"),
+    checkTotal: Number(barter?.checkTotal ?? 0),
+    margin: Number(barter?.margin ?? 0),
+    success: Boolean(barter?.success),
+    delta: Number(barter?.delta ?? 0),
+    buyMarkupDelta: Number(barter?.buyMarkupDelta ?? 0),
+    sellRateDelta: Number(barter?.sellRateDelta ?? 0),
+    createdAt: Date.now()
+  };
+  const key = setMerchantBarterResolutionEntry(stored);
+  const cached = getMerchantBarterResolutionEntryByKey(key);
+  if (!cached) return { ok: false, message: "Failed to store barter resolution." };
+  return {
+    ok: true,
+    key,
+    userId,
+    actorId,
+    merchantId,
+    settlement,
+    summary: getMerchantBarterUiSummaryText(cached),
+    resolution: cached
+  };
+}
+
+function bindMerchantTradeDialogBarterButton(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root) return;
+  const barterButton = root.querySelector("[data-merchant-barter-request]");
+  if (!(barterButton instanceof HTMLButtonElement)) return;
+  if (barterButton.dataset.poBound === "1") return;
+  barterButton.dataset.poBound = "1";
+
+  const applyStatusFromCache = () => {
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) return;
+    const key = getMerchantBarterResolutionKey({
+      userId: String(game.user?.id ?? "").trim(),
+      actorId: meta.actorId,
+      merchantId: meta.merchantId,
+      settlement: meta.settlement
+    });
+    const cached = getMerchantBarterResolutionEntryByKey(key);
+    if (cached?.applied) setMerchantTradeDialogBarterStatus(root, { summary: getMerchantBarterUiSummaryText(cached) });
+  };
+
+  barterButton.addEventListener("click", async () => {
+    if (barterButton.disabled) return;
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) return;
+    barterButton.disabled = true;
+    setMerchantTradeDialogBarterStatus(root, { pending: true });
+
+    try {
+      if (game.user?.isGM) {
+        const resolved = await resolveMerchantBarterForUser(game.user, meta);
+        if (!resolved.ok) {
+          setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: resolved.message ?? "Barter request failed." });
+          return;
+        }
+        setMerchantTradeDialogBarterStatus(root, { summary: String(resolved.summary ?? "").trim() });
+        ui.notifications?.info("Barter resolved.");
+        return;
+      }
+      if (!hasActiveGmClient()) {
+        setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: "No active GM to resolve barter." });
+        ui.notifications?.warn("No active GM to resolve barter.");
+        return;
+      }
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:merchant-barter-request",
+        userId: game.user.id,
+        merchantId: meta.merchantId,
+        actorId: meta.actorId,
+        settlement: meta.settlement
+      });
+      ui.notifications?.info("Barter request sent to GM.");
+    } catch (error) {
+      console.warn(`${MODULE_ID}: barter request failed`, error);
+      setMerchantTradeDialogBarterStatus(root, { error: true });
+    } finally {
+      barterButton.disabled = false;
+      applyStatusFromCache();
+    }
+  });
+
+  applyStatusFromCache();
+}
+
+function syncMerchantBarterStatusForOpenDialogs(payload = {}) {
+  const targetUserId = String(payload?.userId ?? "").trim();
+  const currentUserId = String(game.user?.id ?? "").trim();
+  if (!targetUserId || targetUserId !== currentUserId) return;
+
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  const summary = String(payload?.summary ?? "").trim();
+  const ok = payload?.ok !== false;
+
+  const resolution = ok && payload?.resolution && typeof payload.resolution === "object"
+    ? payload.resolution
+    : null;
+  const key = getMerchantBarterResolutionKey({ userId: currentUserId, actorId, merchantId, settlement });
+  if (resolution) setMerchantBarterResolutionEntry({
+    ...resolution,
+    userId: currentUserId,
+    actorId,
+    merchantId,
+    settlement
+  });
+  else if (!ok) clearMerchantBarterResolutionEntryByKey(key);
+
+  const roots = Array.from(document.querySelectorAll(".po-merchant-trade-dialog"));
+  for (const root of roots) {
+    if (!(root instanceof HTMLElement)) continue;
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) continue;
+    if (meta.merchantId !== merchantId || meta.actorId !== actorId || meta.settlement !== settlement) continue;
+    if (ok) setMerchantTradeDialogBarterStatus(root, { summary: summary || getMerchantBarterUiSummaryText(getMerchantBarterResolutionEntryByKey(key) ?? {}) });
+    else setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: summary || "Barter request failed." });
+  }
+
+  if (ok) ui.notifications?.info(summary || "Barter resolved by GM.");
+  else ui.notifications?.warn(summary || "GM could not resolve barter.");
 }
 
 async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInput = undefined) {
@@ -16104,12 +18041,23 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
             ui.notifications?.warn("Trade form could not be read.");
             return;
           }
+          const barterKey = getMerchantBarterResolutionKey({
+            userId: String(game.user?.id ?? "").trim(),
+            actorId: trade.actorId,
+            merchantId: trade.merchantId,
+            settlement: trade.settlement
+          });
           if (canAccessAllPlayerOps()) {
-            const outcome = await applyMerchantTradeForUser(game.user, trade);
+            const barterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
+            const outcome = await applyMerchantTradeForUser(game.user, {
+              ...trade,
+              barterResolution
+            });
             if (!outcome.ok) {
               ui.notifications?.warn(outcome.message ?? "Trade failed.");
               return;
             }
+            clearMerchantBarterResolutionEntryByKey(barterKey);
             ui.notifications?.info(`Trade complete: ${outcome.actorName} and ${outcome.merchantName}.`);
             return;
           }
@@ -16122,6 +18070,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
             buyItems: trade.buyItems,
             sellItems: trade.sellItems
           });
+          clearMerchantBarterResolutionEntryByKey(barterKey);
           ui.notifications?.info("Merchant trade request sent to GM.");
         }
       },
@@ -16130,6 +18079,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
     default: "finalize",
     render: (html) => {
       bindMerchantTradeDialogTotals(html);
+      bindMerchantTradeDialogBarterButton(html);
     }
   });
   dialog.render(true);
@@ -16167,6 +18117,35 @@ function setMerchantSettlementSelectionFromElement(element) {
   return setSelectedMerchantSettlementFromElement(element);
 }
 
+async function saveMerchantCityCatalogFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage merchant cities.");
+    return false;
+  }
+  const root = getMerchantEditorRootFromElement(element);
+  if (!root) return false;
+  const rawInput = String(root.querySelector("input[name='merchantCityCatalog']")?.value ?? "").trim();
+  const cityCatalog = await saveMerchantCityCatalog(rawInput);
+  ui.notifications?.info(`Saved merchant cities (${cityCatalog.length}).`);
+  return true;
+}
+
+async function assignMerchantCityFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant cities.");
+    return false;
+  }
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  if (!merchantId) return false;
+  const city = normalizeMerchantSettlementSelection(element?.value ?? element?.dataset?.city ?? "");
+  const saved = await setMerchantCityById(merchantId, city);
+  if (!saved?.id) return false;
+  if (String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  return true;
+}
+
 function randomizeMerchantNameFromElement(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can randomize merchant names.");
@@ -16174,12 +18153,26 @@ function randomizeMerchantNameFromElement(element) {
   }
   const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
     ?? getMerchantDefinitionDraftSource({});
-  const randomRace = pickRandomMerchantRace("Human");
-  const randomName = generateRandomMerchantName(randomRace);
-  draft.race = randomRace;
+  const randomName = generateRandomMerchantNameUnbound();
+  const randomTitle = pickRandomMerchantTitle("Merchant");
   draft.name = randomName;
+  draft.title = randomTitle;
   cacheMerchantEditorDraftFromPatch(draft);
-  ui.notifications?.info(`Randomized merchant: ${randomName} (${randomRace}).`);
+  ui.notifications?.info(`Randomized merchant identity: ${randomName} - ${randomTitle}.`);
+  return true;
+}
+
+function randomizeMerchantRaceFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can randomize merchant race.");
+    return false;
+  }
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
+    ?? getMerchantDefinitionDraftSource({});
+  const randomRace = pickRandomMerchantRace("Human");
+  draft.race = randomRace;
+  cacheMerchantEditorDraftFromPatch(draft);
+  ui.notifications?.info(`Randomized race: ${randomRace}.`);
   return true;
 }
 
@@ -16440,6 +18433,79 @@ async function refreshAllMerchantStocksFromElement(_element) {
     return null;
   }
   return refreshAllMerchantStocks();
+}
+
+async function setMerchantAccessModeById(merchantIdInput, modeInput) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const saved = await upsertMerchant({
+    id: merchantId,
+    accessMode: normalizeMerchantAccessMode(modeInput, MERCHANT_ACCESS_MODES.ALL)
+  });
+  if (saved?.id && String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  return saved;
+}
+
+async function setMerchantAccessModeFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update merchant access.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const nextMode = normalizeMerchantAccessMode(
+    element?.value
+    ?? element?.dataset?.accessMode
+    ?? MERCHANT_ACCESS_MODES.ALL,
+    MERCHANT_ACCESS_MODES.ALL
+  );
+  const saved = await setMerchantAccessModeById(merchantId, nextMode);
+  return Boolean(saved?.id);
+}
+
+async function setMerchantAssignmentsForAllActors(merchantIdInput, assigned = true) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return { updated: 0, total: 0 };
+  const actors = getOwnedPcActors();
+  let updated = 0;
+  for (const actor of actors) {
+    if (!actor?.id) continue;
+    const actorId = String(actor.id).trim();
+    if (!actorId) continue;
+    const contracts = getActorMerchantContracts(actor);
+    const alreadyAssigned = Boolean(contracts[merchantId]);
+    if (Boolean(assigned) === alreadyAssigned) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await setMerchantAssignment(actorId, merchantId, Boolean(assigned));
+    if (ok) updated += 1;
+  }
+  return { updated, total: actors.length };
+}
+
+async function setMerchantAssignmentAllFromElement(element, assigned = true) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant contracts.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) return false;
+  const result = await setMerchantAssignmentsForAllActors(merchantId, assigned);
+  const merchantName = String(merchant.name ?? "Merchant").trim() || "Merchant";
+  const verb = assigned ? "Assigned" : "Cleared";
+  ui.notifications?.info(`${verb} ${merchantName} for ${result.updated}/${result.total} actor(s).`);
+  return true;
+}
+
+async function setMerchantAssignmentAllEnabledFromElement(element) {
+  return setMerchantAssignmentAllFromElement(element, true);
+}
+
+async function setMerchantAssignmentAllDisabledFromElement(element) {
+  return setMerchantAssignmentAllFromElement(element, false);
 }
 
 async function assignMerchantByContractKeyFromElement(element) {
@@ -26796,13 +28862,12 @@ async function runDoctrineCheckPrompt() {
 
 function refreshSingleAppPreservingView(app) {
   if (!app?.render) return;
-  const uiState = captureUiState(app);
-  if (uiState) pendingUiRestore.set(app, uiState);
-  const scrollState = captureScrollState(app);
-  if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
   const windowState = captureWindowState(app);
   if (windowState) pendingWindowRestore.set(app, windowState);
-  app.render({ force: true, parts: ["main"], focus: false });
+  renderAppWithPreservedState(app, { force: true, parts: ["main"], focus: false }, {
+    action: "refresh-single-app",
+    eventType: "refresh"
+  });
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
@@ -28522,7 +30587,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     }
     const app = marchingOrderAppInstance?.element?.isConnected
       ? marchingOrderAppInstance
-      : new MarchingOrderApp();
+      : new MarchingOrderApp(getResponsiveWindowOptions("marching-order"));
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "marching-order" });
     return app;
@@ -28543,7 +30608,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     setActiveRestMainTab("gm");
     const app = restWatchAppInstance?.element?.isConnected
       ? restWatchAppInstance
-      : new RestWatchApp();
+      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "gm";
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "gm" });
@@ -28554,7 +30619,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     setActiveRestMainTab("operations");
     const app = restWatchAppInstance?.element?.isConnected
       ? restWatchAppInstance
-      : new RestWatchApp();
+      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "operations";
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "operations" });
@@ -28564,7 +30629,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   setActiveRestMainTab("rest-watch");
   const app = restWatchAppInstance?.element?.isConnected
     ? restWatchAppInstance
-    : new RestWatchApp();
+    : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
   app._activePanel = "rest-watch";
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "rest-watch" });
@@ -30061,7 +32126,7 @@ Hooks.once("init", () => {
     name: "Open Marching Order",
     editable: [],
     onDown: () => {
-      new MarchingOrderApp().render({ force: true });
+      openMainTab("marching-order", { force: true });
       return true;
     }
   });
@@ -30093,6 +32158,9 @@ Hooks.once("ready", () => {
     scheduleIntegrationSync("ready");
     ensureOperationsJournalFolderTree().catch((error) => {
       console.warn(`${MODULE_ID}: failed to initialize operations journal folder tree`, error);
+    });
+    scheduleLootManifestCompendiumTypeFolderSync("ready").catch((error) => {
+      console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
     });
   }
 
@@ -30149,6 +32217,11 @@ Hooks.once("ready", () => {
       // Small delay helps ensure settings updates have propagated before re-rendering
       setTimeout(() => refreshOpenApps(), 75);
       if (!game.user?.isGM) schedulePendingSopNoteSync("socket-refresh");
+      return;
+    }
+
+    if (message.type === "ops:merchant-barter-result") {
+      syncMerchantBarterStatusForOpenDialogs(message);
       return;
     }
 
@@ -30222,6 +32295,12 @@ Hooks.once("ready", () => {
       const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
       if (!requester) return;
       await applyPlayerDowntimeCollectRequest(message, requester);
+      return;
+    }
+    if (message.type === "ops:merchant-barter-request") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerMerchantBarterRequest(message, requester);
       return;
     }
     if (message.type === "ops:merchant-trade") {
@@ -30350,6 +32429,51 @@ async function applyPlayerDowntimeCollectRequest(message, requesterRef = null) {
   ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`);
 }
 
+async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
+  if (!merchantId || !actorId) return;
+
+  const resolved = await resolveMerchantBarterForUser(requester, { merchantId, actorId, settlement });
+  const resolutionPayload = resolved?.ok && resolved?.resolution
+    ? {
+      applied: true,
+      source: String(resolved.resolution?.source ?? "resolved"),
+      ability: String(resolved.resolution?.ability ?? "cha"),
+      abilityLabel: String(resolved.resolution?.abilityLabel ?? "Charisma"),
+      checkTotal: Number(resolved.resolution?.checkTotal ?? 0),
+      margin: Number(resolved.resolution?.margin ?? 0),
+      success: Boolean(resolved.resolution?.success),
+      delta: Number(resolved.resolution?.delta ?? 0),
+      buyMarkupDelta: Number(resolved.resolution?.buyMarkupDelta ?? 0),
+      sellRateDelta: Number(resolved.resolution?.sellRateDelta ?? 0),
+      createdAt: Number(resolved.resolution?.createdAt ?? Date.now())
+    }
+    : null;
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:merchant-barter-result",
+    userId: String(requester?.id ?? ""),
+    merchantId,
+    actorId,
+    settlement,
+    ok: Boolean(resolved?.ok),
+    summary: resolved?.ok
+      ? String(resolved?.summary ?? "Barter resolved.")
+      : String(resolved?.message ?? "Barter request failed."),
+    resolution: resolutionPayload
+  });
+
+  if (!resolved?.ok) {
+    ui.notifications?.warn(`Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`);
+    return;
+  }
+  ui.notifications?.info(`Resolved barter for ${requester.name}: ${resolved.summary}`);
+}
+
 async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
@@ -30376,11 +32500,20 @@ async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
     buyItems: normalizeLines(message?.buyItems),
     sellItems: normalizeLines(message?.sellItems)
   };
+  const barterKey = getMerchantBarterResolutionKey({
+    userId: String(requester?.id ?? "").trim(),
+    actorId,
+    merchantId,
+    settlement
+  });
+  const cachedBarterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
+  if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
   const outcome = await applyMerchantTradeForUser(requester, tradePayload);
   if (!outcome.ok) {
     ui.notifications?.warn(`Merchant trade failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
   }
+  clearMerchantBarterResolutionEntryByKey(barterKey);
   ui.notifications?.info(`${requester.name} completed merchant trade for ${outcome.actorName}.`);
 }
 
@@ -30630,64 +32763,65 @@ function refreshOpenApps() {
   refreshOpenAppsQueued = true;
   requestAnimationFrame(() => {
     refreshOpenAppsQueued = false;
-  const ids = new Set([
-    "rest-watch-app",
-    "marching-order-app",
-    "rest-watch-player-app",
-    "party-operations-global-modifier-summary",
-    "party-operations-gm-environment-page",
-    "party-operations-gm-downtime-page",
-    "party-operations-gm-merchants-page",
-    "party-operations-gm-loot-page",
-    "party-operations-gm-loot-claims-board"
-  ]);
-  const knownInstances = [
-    restWatchAppInstance,
-    marchingOrderAppInstance,
-    restWatchPlayerAppInstance,
-    globalModifierSummaryAppInstance,
-    gmEnvironmentPageAppInstance,
-    gmDowntimePageAppInstance,
-    gmMerchantsPageAppInstance,
-    gmLootPageAppInstance,
-    gmLootClaimsBoardAppInstance
-  ]
-    .filter((app) => app?.element?.isConnected);
-  const apps = Object.values(ui.windows).filter((app) =>
-    app instanceof RestWatchApp ||
-    app instanceof MarchingOrderApp ||
-    app instanceof RestWatchPlayerApp ||
-    app instanceof GlobalModifierSummaryApp ||
-    app instanceof GmEnvironmentPageApp ||
-    app instanceof GmDowntimePageApp ||
-    app instanceof GmMerchantsPageApp ||
-    app instanceof GmLootPageApp ||
-    app instanceof GmLootClaimsBoardApp ||
-    ids.has(app?.id ?? app?.options?.id)
-  );
-  const unique = Array.from(new Set([...apps, ...knownInstances]));
-  for (const app of unique) {
-    // Force re-prepare context and re-render for v12 ApplicationV2
-    if (!app?.render) continue;
-    if (appHasFocusedTypingInput(app)) {
-      logUiDebug("refresh", "skipping rerender for app with focused text input", {
-        appId: String(app?.id ?? app?.options?.id ?? ""),
-        appClass: String(app?.constructor?.name ?? "Application")
+    const canvasSnapshot = captureCanvasViewState();
+    const ids = new Set([
+      "rest-watch-app",
+      "marching-order-app",
+      "rest-watch-player-app",
+      "party-operations-global-modifier-summary",
+      "party-operations-gm-environment-page",
+      "party-operations-gm-downtime-page",
+      "party-operations-gm-merchants-page",
+      "party-operations-gm-loot-page",
+      "party-operations-gm-loot-claims-board"
+    ]);
+    const knownInstances = [
+      restWatchAppInstance,
+      marchingOrderAppInstance,
+      restWatchPlayerAppInstance,
+      globalModifierSummaryAppInstance,
+      gmEnvironmentPageAppInstance,
+      gmDowntimePageAppInstance,
+      gmMerchantsPageAppInstance,
+      gmLootPageAppInstance,
+      gmLootClaimsBoardAppInstance
+    ]
+      .filter((app) => app?.element?.isConnected);
+    const apps = Object.values(ui.windows).filter((app) =>
+      app instanceof RestWatchApp ||
+      app instanceof MarchingOrderApp ||
+      app instanceof RestWatchPlayerApp ||
+      app instanceof GlobalModifierSummaryApp ||
+      app instanceof GmEnvironmentPageApp ||
+      app instanceof GmDowntimePageApp ||
+      app instanceof GmMerchantsPageApp ||
+      app instanceof GmLootPageApp ||
+      app instanceof GmLootClaimsBoardApp ||
+      ids.has(app?.id ?? app?.options?.id)
+    );
+    const unique = Array.from(new Set([...apps, ...knownInstances]));
+    for (const app of unique) {
+      // Force re-prepare context and re-render for v12 ApplicationV2
+      if (!app?.render) continue;
+      if (appHasFocusedTypingInput(app)) {
+        logUiDebug("refresh", "skipping rerender for app with focused text input", {
+          appId: String(app?.id ?? app?.options?.id ?? ""),
+          appClass: String(app?.constructor?.name ?? "Application")
+        });
+        continue;
+      }
+      const windowState = captureWindowState(app);
+      if (windowState) {
+        pendingWindowRestore.set(app, windowState);
+      }
+      renderAppWithPreservedState(app, { force: true, parts: ["main"], focus: false }, {
+        preserveCanvas: false
       });
-      continue;
     }
-    const uiState = captureUiState(app);
-    if (uiState) pendingUiRestore.set(app, uiState);
-    const state = captureScrollState(app);
-    if (state.length > 0) {
-      pendingScrollRestore.set(app, state);
-    }
-    const windowState = captureWindowState(app);
-    if (windowState) {
-      pendingWindowRestore.set(app, windowState);
-    }
-    app.render({ force: true, parts: ["main"], focus: false });
-  }
+    queueCanvasViewRestore(canvasSnapshot, {
+      action: "refresh-open-apps",
+      eventType: "refresh"
+    });
   });
 }
 
@@ -30776,7 +32910,7 @@ function openRestWatchPlayerApp() {
     existing.bringToTop?.();
     return existing;
   }
-  const app = new RestWatchPlayerApp();
+  const app = new RestWatchPlayerApp(getResponsiveWindowOptions("rest-watch-player"));
   app.render({ force: true });
   return app;
 }

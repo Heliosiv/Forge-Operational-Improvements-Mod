@@ -1,6 +1,7 @@
 export function createGmLootPageApp(deps) {
   const {
     BaseStatefulPageApp,
+    getResponsiveWindowPosition,
     setPageInstance,
     buildContext,
     openMainTab,
@@ -36,7 +37,7 @@ export function createGmLootPageApp(deps) {
       id: "party-operations-gm-loot-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Loot" },
-      position: { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-loot") ?? { width: 980, height: 760 },
       resizable: true
     });
 

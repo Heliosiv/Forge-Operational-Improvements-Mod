@@ -1,6 +1,7 @@
 export function createGmEnvironmentPageApp(deps) {
   const {
     BaseStatefulPageApp,
+    getResponsiveWindowPosition,
     setPageInstance,
     buildContext,
     openMainTab,
@@ -30,7 +31,7 @@ export function createGmEnvironmentPageApp(deps) {
       id: "party-operations-gm-environment-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Environment" },
-      position: { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-environment") ?? { width: 980, height: 760 },
       resizable: true
     });
 
