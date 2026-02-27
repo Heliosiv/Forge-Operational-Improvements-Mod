@@ -138,6 +138,11 @@
                   <div class="po-note-label">Notes</div>
                   <label class="po-sr-only" for="po-march-note-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
                   <textarea id="po-march-note-{{../id}}-{{actorId}}" class="po-notes-input po-entry-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNote}}disabled{{/unless}}>{{notes}}</textarea>
+                  {{#if canEditNote}}
+                  <div class="po-notes-actions">
+                    <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes">Save Note</button>
+                  </div>
+                  {{/if}}
                 </div>
               </div>
               <div class="po-entry-actions-inline">

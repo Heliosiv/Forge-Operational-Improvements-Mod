@@ -56,9 +56,14 @@
           {{#each exclusionRows}}
           <div class="po-op-role-row">
             <label class="po-switch" title="Exclude or include this modifier">
-              <input type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if excluded}}checked{{/if}} />
+              <input id="{{modifierInputId}}" name="{{modifierInputName}}" type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if excluded}}checked{{/if}} />
               <span>{{label}} ({{valueLabel}}) - {{scopeLabel}} - {{source}}</span>
             </label>
+            {{#if canDelete}}
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="global-modifier-delete-custom" data-modifier-id="{{modifierId}}">Delete</button>
+            </div>
+            {{/if}}
           </div>
           {{/each}}
           {{else}}

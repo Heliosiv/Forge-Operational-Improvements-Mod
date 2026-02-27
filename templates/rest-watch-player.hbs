@@ -32,64 +32,76 @@
     <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor.</div>
     <div class="po-op-divider"></div>
     <section class="po-loot-claims-panel" aria-label="Loot claims">
-      <div class="po-section-title">Loot Claims</div>
-      <div class="po-loot-claims-summary-grid">
-        <div class="po-op-summary"><strong>Published:</strong> {{lootClaims.publishedAtLabel}} by {{lootClaims.publishedBy}}</div>
-        <div class="po-op-summary"><strong>Pool:</strong> {{lootClaims.itemCount}} item(s)</div>
-        <div class="po-op-summary"><strong>Currency:</strong> {{lootClaims.currencyRemaining.pp}} pp - {{lootClaims.currencyRemaining.gp}} gp - {{lootClaims.currencyRemaining.sp}} sp - {{lootClaims.currencyRemaining.cp}} cp</div>
+      <div class="po-section-head-row">
+        <div class="po-section-title">Loot Claims</div>
+        <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
       </div>
-      {{#if lootClaims.selectedActorClaimedCurrency}}
-      <div class="po-op-summary">Selected actor already claimed a currency share.</div>
+      <div class="po-hint">Choose a loot run below, then handle claims and currency in the Live Claim Board.</div>
+      {{#if lootClaims.hasOpenRuns}}
+      <div class="po-loot-claims-run-grid">
+        {{#each lootClaims.openRuns}}
+        <article class="po-op-role-row po-loot-claim-run-card {{#if selected}}is-selected{{/if}}">
+          <div class="po-op-role-head">
+            <div class="po-op-role-name">Loot Run</div>
+            <div class="po-op-role-status">{{statusLabel}}</div>
+          </div>
+          <div class="po-loot-claim-tags">
+            <span class="po-pill">Items: {{itemCount}}</span>
+            <span class="po-pill">Claims: {{claimsLogCount}}</span>
+            {{#if hasContestedItems}}<span class="po-pill is-warn">Contested: {{contestedItemCount}}</span>{{/if}}
+            {{#if hasCurrencyRemaining}}<span class="po-pill">Currency Open</span>{{/if}}
+          </div>
+          <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
+          <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Live Claim Board</button>
+          </div>
+        </article>
+        {{/each}}
+      </div>
+      {{else}}
+      <div class="po-op-summary">No active loot claim boards.</div>
       {{/if}}
-      {{#if lootClaims.hasItems}}
-      <label class="po-resource-row po-loot-claims-actor-row">
-        <span>Claim As</span>
-        <select name="lootClaimActorId" class="po-select" data-action="set-loot-claim-actor">
-          {{#each lootClaims.actorOptions}}
-          <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-          {{/each}}
-        </select>
-      </label>
-      {{#each lootClaims.items}}
-      <div class="po-op-role-row po-loot-claim-card">
-        <div class="po-op-role-head">
-          <div class="po-op-role-name">{{name}}</div>
-          <div class="po-op-role-status">{{itemType}}</div>
-        </div>
-        <div class="po-loot-claim-tags">
-          {{#if hasRarity}}<span class="po-pill">Rarity: {{rarity}}</span>{{/if}}
-          <span class="po-pill">Source: {{sourceLabel}}</span>
-          {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
-          {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">You vouched</span>{{/if}}
-        </div>
-        <div class="po-loot-claim-vouched-row">
-          <span class="po-loot-claim-vouched-label">Vouched By</span>
-          {{#if hasVouchers}}
-          <div class="po-loot-claim-vouch-list">
-            {{#each vouchedByNames}}
-            <span class="po-pill po-loot-vouch-chip">{{this}}</span>
+      <details class="po-panel-disclosure po-loot-claim-archive-panel">
+        <summary class="po-panel-disclosure-summary">
+          <span class="po-section-title">Archived Loot Claims</span>
+          <span class="po-op-summary">{{lootClaims.archivedRunCount}} archived</span>
+        </summary>
+        <div class="po-panel-disclosure-body">
+          {{#if lootClaims.hasArchivedRuns}}
+          <label class="po-resource-row po-loot-claim-sort-row">
+            <span>Sort</span>
+            <select name="lootClaimsArchiveSort" class="po-select" data-action="set-loot-claims-archive-sort">
+              {{#each lootClaims.archiveSortOptions}}
+              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+          <div class="po-loot-claims-run-grid is-archived">
+            {{#each lootClaims.archivedRuns}}
+            <article class="po-op-role-row po-loot-claim-run-card is-archived {{#if selected}}is-selected{{/if}}">
+              <div class="po-op-role-head">
+                <div class="po-op-role-name">Loot Run</div>
+                <div class="po-op-role-status">{{statusLabel}}</div>
+              </div>
+              <div class="po-loot-claim-tags">
+                <span class="po-pill">Items: {{itemCount}}</span>
+                <span class="po-pill">Claims: {{claimsLogCount}}</span>
+                <span class="po-pill">Archived: {{archivedAtLabel}}</span>
+              </div>
+              <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
+              <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Board Snapshot</button>
+              </div>
+            </article>
             {{/each}}
           </div>
           {{else}}
-          <span class="po-op-summary">No vouchers yet</span>
+          <div class="po-op-summary">No archived loot claims yet.</div>
           {{/if}}
         </div>
-        {{#if requiresRollOff}}<div class="po-op-summary is-warn">Contested major item: GM roll-off required.</div>{{/if}}
-        <div class="po-op-action-row po-loot-claim-actions">
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-item" data-item-id="{{id}}" {{#unless canClaimDirect}}disabled{{/unless}}>Claim</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="toggle-loot-vouch" data-item-id="{{id}}" data-should-vouch="{{#if selectedActorVouched}}false{{else}}true{{/if}}" {{#unless canVouch}}disabled{{/unless}}>{{#if selectedActorVouched}}Unvouch{{else}}Vouch{{/if}}</button>
-          {{#if canOpen}}
-          <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
-          {{/if}}
-        </div>
-      </div>
-      {{/each}}
-      {{else}}
-      <div class="po-op-summary">No claimable items are currently published.</div>
-      {{/if}}
-      <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Claim Currency Share</button>
-      </div>
+      </details>
     </section>
     <div class="po-op-divider"></div>
     <div class="po-cards">
@@ -154,7 +166,15 @@
 
             <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
               <label class="po-sr-only" for="po-player-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-              <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+              <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+              {{#if canEditNotes}}
+              <div class="po-notes-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
+              </div>
+              {{#if @root.notesDebugHint}}
+              <div class="po-note-label">{{@root.notesDebugHint}}</div>
+              {{/if}}
+              {{/if}}
             </div>
           </div>
           {{/each}}

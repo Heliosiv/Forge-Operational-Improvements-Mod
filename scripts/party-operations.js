@@ -1,4 +1,62 @@
-﻿const DEBUG_LOG = false;
+import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
+import { createGmDowntimePageApp } from "./features/downtime-ui.js";
+import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
+import { createGmLootPageApp } from "./features/loot-ui.js";
+import { createRestFeatureModule } from "./features/rest-feature.js";
+import { createMarchFeatureModule } from "./features/march-feature.js";
+import {
+  MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
+  MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
+  MERCHANT_SCARCITY_PROFILES as DOMAIN_MERCHANT_SCARCITY_PROFILES,
+  MERCHANT_ALLOWED_ITEM_TYPES as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES,
+  MERCHANT_ALLOWED_ITEM_TYPE_LIST as DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST,
+  MERCHANT_EDITOR_CANDIDATE_LIMIT as DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT,
+  MERCHANT_PREVIEW_ITEM_LIMIT as DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT,
+  MERCHANT_ACCESS_LOG_LIMIT as DOMAIN_MERCHANT_ACCESS_LOG_LIMIT,
+  MERCHANT_ACCESS_LOG_THROTTLE_MS as DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS,
+  MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
+  MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
+  normalizeMerchantTagList as normalizeMerchantTagListDomain,
+  normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
+  normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
+  normalizeMerchantAllowedItemTypes as normalizeMerchantAllowedItemTypesDomain,
+  normalizeMerchantCuratedItemUuids as normalizeMerchantCuratedItemUuidsDomain,
+  parseMerchantUuidListInput as parseMerchantUuidListInputDomain,
+  formatMerchantUuidListInput as formatMerchantUuidListInputDomain,
+  normalizeMerchantSourceType as normalizeMerchantSourceTypeDomain,
+  normalizeMerchantScarcity as normalizeMerchantScarcityDomain,
+  getMerchantScarcityProfile as getMerchantScarcityProfileDomain,
+  normalizeMerchantRace as normalizeMerchantRaceDomain,
+  normalizeMerchantRarity as normalizeMerchantRarityDomain,
+  getMerchantRarityBucket as getMerchantRarityBucketDomain,
+  normalizeMerchantRarityWeights as normalizeMerchantRarityWeightsDomain,
+  normalizeMerchantCityList as normalizeMerchantCityListDomain,
+  parseMerchantCityListInput as parseMerchantCityListInputDomain,
+  formatMerchantCityListInput as formatMerchantCityListInputDomain,
+  getMerchantRaceKey as getMerchantRaceKeyDomain,
+  getMerchantEditorRaceOptions as getMerchantEditorRaceOptionsDomain,
+  pickRandomMerchantRace as pickRandomMerchantRaceDomain,
+  pickRandomMerchantTitle as pickRandomMerchantTitleDomain,
+  pickRandomMerchantNamePart as pickRandomMerchantNamePartDomain,
+  generateRandomMerchantName as generateRandomMerchantNameDomain,
+  generateRandomMerchantNameUnbound as generateRandomMerchantNameUnboundDomain,
+  buildMerchantOfferTagOptions as buildMerchantOfferTagOptionsDomain,
+  resolveMerchantAllowedTypesFromOfferTags as resolveMerchantAllowedTypesFromOfferTagsDomain,
+  getMerchantEditorSourceTypeOptions as getMerchantEditorSourceTypeOptionsDomain,
+  normalizeMerchantFolderAlias as normalizeMerchantFolderAliasDomain,
+  findMerchantFolderByAliases as findMerchantFolderByAliasesDomain,
+  buildStarterMerchantPatch as buildStarterMerchantPatchDomain,
+  buildMerchantDefinitionPatchFromEditorForm as buildMerchantDefinitionPatchFromEditorFormDomain,
+  buildMerchantCityOptions as buildMerchantCityOptionsDomain,
+  formatMerchantCp as formatMerchantCpDomain,
+  getMerchantItemUnitPriceCp as getMerchantItemUnitPriceCpDomain,
+  getMerchantSourceRefOptionsForEditor as getMerchantSourceRefOptionsForEditorDomain,
+  getMerchantTargetStockCount as getMerchantTargetStockCountDomain,
+  shuffleMerchantRows as shuffleMerchantRowsDomain,
+  selectMerchantStockRows as selectMerchantStockRowsDomain,
+  buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain
+} from "./features/merchant-domain.js";
+const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
 const PRIMARY_MODULE_ID = "party-operations";
@@ -18,6 +76,16 @@ const MODULE_ID = (() => {
   return PRIMARY_MODULE_ID;
 })();
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const FEATURE_MODULES = Object.freeze([
+  createRestFeatureModule(),
+  createMarchFeatureModule()
+]);
+
+function registerFeatureModules() {
+  for (const feature of FEATURE_MODULES) {
+    if (typeof feature?.register === "function") feature.register();
+  }
+}
 
 const PO_ESCAPE_HTML_FALLBACK = (value) => String(value ?? "")
   .replace(/&/g, "&amp;")
@@ -36,6 +104,13 @@ const poEscapeHtml = (value) => {
   return PO_ESCAPE_HTML_FALLBACK(value);
 };
 
+function buildUuidJournalLink(uuid, label) {
+  const safeLabel = poEscapeHtml(String(label ?? "").trim() || "Unknown");
+  const safeUuid = String(uuid ?? "").trim();
+  if (!safeUuid) return safeLabel;
+  return `@UUID[${safeUuid}]{${safeLabel}}`;
+}
+
 try {
   if (typeof foundry?.utils?.escapeHTML !== "function" && foundry?.utils && typeof foundry.utils === "object") {
     foundry.utils.escapeHTML = PO_ESCAPE_HTML_FALLBACK;
@@ -52,6 +127,29 @@ export const SETTINGS = {
   REST_ACTIVITIES: "restActivities",
   OPS_LEDGER: "operationsLedger",
   GATHER_ROLL_MODE: "gatherRollMode",
+  GATHER_ENABLED: "gatherEnabled",
+  GATHER_MIN_HOURS: "gatherMinimumHours",
+  GATHER_DISALLOW_COMBAT: "gatherDisallowCombat",
+  GATHER_DC_LUSH: "gatherBaseDcLushForest",
+  GATHER_DC_TEMPERATE: "gatherBaseDcTemperateHills",
+  GATHER_DC_SPARSE: "gatherBaseDcSparsePlains",
+  GATHER_DC_COLD: "gatherBaseDcColdMountains",
+  GATHER_DC_DESERT: "gatherBaseDcDesert",
+  GATHER_DEFAULT_SEASON_MOD: "gatherDefaultSeasonMod",
+  GATHER_DEFAULT_WEATHER_MOD: "gatherDefaultWeatherMod",
+  GATHER_DEFAULT_CORRUPTION_MOD: "gatherDefaultCorruptionMod",
+  GATHER_ENABLE_HERBALISM_ADVANTAGE: "gatherEnableHerbalismAdvantage",
+  GATHER_ENABLE_HOSTILE_FAIL_FLAG: "gatherEnableHostileEncounterFlag",
+  GATHER_ENABLE_FAIL_BY5_COMPLICATION: "gatherEnableFailBy5Complication",
+  GATHER_ENABLE_SUCCESS_BY5_DOUBLE: "gatherEnableSuccessBy5Double",
+  GATHER_ENABLE_NAT20_BONUS: "gatherEnableNat20Bonus",
+  GATHER_ENABLE_NAT1_FLAG: "gatherEnableNat1Complication",
+  GATHER_ENABLE_CORRUPTION_WATER_CHECK: "gatherEnableCorruptionWaterCheck",
+  GATHER_CORRUPTION_SAVE_DC: "gatherCorruptionConSaveDc",
+  GATHER_ENABLE_WATER_AUTO_FOUND: "gatherEnableWaterAutoFound",
+  GATHER_ENABLE_TRAVEL_TRADEOFF: "gatherEnableTravelTradeoff",
+  GATHER_TRAVEL_TRADEOFF_DEFAULT: "gatherTravelTradeoffDefault",
+  GATHER_TRAVEL_CON_SAVE_DC: "gatherTravelConSaveDc",
   INJURY_RECOVERY: "injuryRecoveryState",
   INJURY_REMINDER_DAY: "injuryReminderDay",
   LOOT_SOURCE_CONFIG: "lootSourceConfig",
@@ -62,6 +160,7 @@ export const SETTINGS = {
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
+  SHARED_GM_PERMISSIONS: "sharedGmPermissions",
   DEBUG_ENABLED: "debugEnabled",
   LOOT_SCARCITY: "lootScarcity",
   REST_AUTOMATION_ENABLED: "restAutomationEnabled",
@@ -91,11 +190,16 @@ let restWatchPlayerAppInstance = null;
 let globalModifierSummaryAppInstance = null;
 let gmEnvironmentPageAppInstance = null;
 let gmLootPageAppInstance = null;
+let gmDowntimePageAppInstance = null;
+let gmMerchantsPageAppInstance = null;
 let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
 const journalFilterDebounceTimers = new WeakMap();
+const sopNoteDebounceTimers = new WeakMap();
+const restWatchNoteDebounceTimers = new WeakMap();
+const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
@@ -103,17 +207,141 @@ let integrationSyncInFlight = false;
 let integrationSyncQueued = false;
 let integrationSyncQueuedReason = "";
 const integrationSyncWaiters = [];
+let sopPendingSyncInFlight = false;
+let sopPendingSyncScheduled = false;
 const activeEffectDeleteLocks = new Set();
 let launcherRecoveryScheduled = false;
 let partyOpsHooksRegistered = false;
+let lootManifestFolderSyncPromise = null;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
+const merchantUiAccessThrottleByKey = new Map();
+const merchantBarterResolutionByKey = new Map();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
 const LAUNCHER_PLACEMENTS = {
   FLOATING: "floating",
   SIDEBAR: "sidebar",
   BOTH: "both"
 };
+const GATHER_TRAVEL_CHOICES = Object.freeze({
+  PACE: "pace",
+  FELL_BEHIND: "fell-behind"
+});
+const GATHER_ENVIRONMENT_KEYS = Object.freeze([
+  "lush_forest_or_river_valley",
+  "temperate_hills_or_light_woodland",
+  "sparse_plains_or_rocky",
+  "cold_mountains_or_swamp",
+  "desert_blighted_wasteland"
+]);
+const GATHER_ENVIRONMENT_LABELS = Object.freeze({
+  lush_forest_or_river_valley: "Lush Forest / River Valley",
+  temperate_hills_or_light_woodland: "Temperate Hills / Light Woodland",
+  sparse_plains_or_rocky: "Sparse Plains / Rocky Terrain",
+  cold_mountains_or_swamp: "Cold Mountains / Swamp",
+  desert_blighted_wasteland: "Desert / Blighted Wasteland"
+});
+const GATHER_DEFAULTS = Object.freeze({
+  enabled: true,
+  minimumHours: 4,
+  disallowCombat: true,
+  baseDc: {
+    lush_forest_or_river_valley: 10,
+    temperate_hills_or_light_woodland: 12,
+    sparse_plains_or_rocky: 14,
+    cold_mountains_or_swamp: 15,
+    desert_blighted_wasteland: 19
+  },
+  seasonMod: 0,
+  weatherMod: 0,
+  corruptionMod: 0,
+  herbalismAdvantageEnabled: false,
+  hostileEncounterFlagEnabled: true,
+  failBy5ComplicationEnabled: true,
+  successBy5DoubleEnabled: true,
+  nat20BonusEnabled: true,
+  nat1ComplicationEnabled: true,
+  corruptionWaterCheckEnabled: false,
+  corruptionConSaveDc: 13,
+  waterAutoFoundEnabled: true,
+  travelTradeoffEnabled: true,
+  travelTradeoffDefault: GATHER_TRAVEL_CHOICES.PACE,
+  travelConSaveDc: 10
+});
+const GATHER_QUICK_PRESETS = Object.freeze([
+  {
+    id: "lush-food-sweep",
+    label: "Lush Food Sweep",
+    description: "Low-risk food pass in lush terrain.",
+    options: {
+      environment: "lush_forest_or_river_valley",
+      resourceType: "food",
+      gatherMode: "plant",
+      seasonMod: 0,
+      weatherMod: 0,
+      corruptionMod: 0,
+      hostileTerrain: false,
+      isCorruptedRegion: false,
+      waterAutoFound: false,
+      duringTravel: false,
+      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
+    }
+  },
+  {
+    id: "river-water-run",
+    label: "River Water Run",
+    description: "Quick water gather at obvious source.",
+    options: {
+      environment: "lush_forest_or_river_valley",
+      resourceType: "water",
+      gatherMode: "standard",
+      seasonMod: 0,
+      weatherMod: 0,
+      corruptionMod: 0,
+      hostileTerrain: false,
+      isCorruptedRegion: false,
+      waterAutoFound: true,
+      duringTravel: false,
+      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
+    }
+  },
+  {
+    id: "temperate-travel-forage",
+    label: "Temperate Travel Forage",
+    description: "On-the-move forage with pace reduction tradeoff.",
+    options: {
+      environment: "temperate_hills_or_light_woodland",
+      resourceType: "food",
+      gatherMode: "standard",
+      seasonMod: 0,
+      weatherMod: 1,
+      corruptionMod: 0,
+      hostileTerrain: false,
+      isCorruptedRegion: false,
+      waterAutoFound: false,
+      duringTravel: true,
+      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
+    }
+  },
+  {
+    id: "wasteland-water-risk",
+    label: "Wasteland Water Risk",
+    description: "High-risk water gather in blighted terrain.",
+    options: {
+      environment: "desert_blighted_wasteland",
+      resourceType: "water",
+      gatherMode: "standard",
+      seasonMod: 0,
+      weatherMod: 2,
+      corruptionMod: 2,
+      hostileTerrain: true,
+      isCorruptedRegion: true,
+      waterAutoFound: false,
+      duringTravel: true,
+      travelTradeoff: GATHER_TRAVEL_CHOICES.FELL_BEHIND
+    }
+  }
+]);
 
 const PO_TEMPLATE_MAP = Object.freeze({
   "rest-watch": "modules/party-operations/templates/rest-watch.hbs",
@@ -121,9 +349,299 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "marching-order": "modules/party-operations/templates/marching-order.hbs",
   "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",
   "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
+  "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",
+  "gm-merchants": "modules/party-operations/templates/gm-merchants.hbs",
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
+
+const APP_WINDOW_SIZE_PROFILES = Object.freeze({
+  default: Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 700,
+    minHeight: 520,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.92
+  }),
+  "rest-watch": Object.freeze({
+    width: 1020,
+    height: 820,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.96,
+    maxHeightRatio: 0.94
+  }),
+  "rest-watch-player": Object.freeze({
+    width: 760,
+    height: 620,
+    minWidth: 620,
+    minHeight: 500,
+    maxWidthRatio: 0.9,
+    maxHeightRatio: 0.88
+  }),
+  "marching-order": Object.freeze({
+    width: 1320,
+    height: 920,
+    minWidth: 880,
+    minHeight: 620,
+    maxWidthRatio: 0.97,
+    maxHeightRatio: 0.95
+  }),
+  "global-modifiers": Object.freeze({
+    width: 900,
+    height: 720,
+    minWidth: 700,
+    minHeight: 520,
+    maxWidthRatio: 0.92,
+    maxHeightRatio: 0.9
+  }),
+  "gm-environment": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-downtime": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-merchants": Object.freeze({
+    width: 1120,
+    height: 920,
+    minWidth: 860,
+    minHeight: 620,
+    maxWidthRatio: 0.97,
+    maxHeightRatio: 0.95
+  }),
+  "gm-loot": Object.freeze({
+    width: 980,
+    height: 760,
+    minWidth: 760,
+    minHeight: 560,
+    maxWidthRatio: 0.95,
+    maxHeightRatio: 0.93
+  }),
+  "gm-loot-claims-board": Object.freeze({
+    width: 920,
+    height: 760,
+    minWidth: 720,
+    minHeight: 560,
+    maxWidthRatio: 0.94,
+    maxHeightRatio: 0.92
+  })
+});
+
+const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
+  "rest-watch-app": "rest-watch",
+  "rest-watch-player-app": "rest-watch-player",
+  "marching-order-app": "marching-order",
+  "party-operations-global-modifier-summary": "global-modifiers",
+  "party-operations-gm-environment-page": "gm-environment",
+  "party-operations-gm-downtime-page": "gm-downtime",
+  "party-operations-gm-merchants-page": "gm-merchants",
+  "party-operations-gm-loot-page": "gm-loot",
+  "party-operations-gm-loot-claims-board": "gm-loot-claims-board"
+});
+
+function normalizeWindowProfileId(profileOrApp) {
+  if (typeof profileOrApp === "string") {
+    const normalized = String(profileOrApp ?? "").trim().toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, normalized)) return normalized;
+    return "default";
+  }
+  const appId = String(profileOrApp?.options?.id ?? profileOrApp?.id ?? "").trim();
+  const mappedProfileId = APP_WINDOW_PROFILE_BY_ID[appId];
+  if (mappedProfileId && Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, mappedProfileId)) return mappedProfileId;
+  return "default";
+}
+
+function getUiViewportSize() {
+  const rawWidth = Number(globalThis?.window?.innerWidth ?? document?.documentElement?.clientWidth ?? 1600);
+  const rawHeight = Number(globalThis?.window?.innerHeight ?? document?.documentElement?.clientHeight ?? 900);
+  const width = Number.isFinite(rawWidth) && rawWidth > 0 ? Math.floor(rawWidth) : 1600;
+  const height = Number.isFinite(rawHeight) && rawHeight > 0 ? Math.floor(rawHeight) : 900;
+  return {
+    width: Math.max(480, width),
+    height: Math.max(360, height)
+  };
+}
+
+function clampWindowMetric(value, min, max, fallback) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(raw)));
+}
+
+function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
+  const profileId = normalizeWindowProfileId(profileOrApp);
+  const profile = APP_WINDOW_SIZE_PROFILES[profileId] ?? APP_WINDOW_SIZE_PROFILES.default;
+  const patch = overrides && typeof overrides === "object" ? overrides : {};
+  const merged = {
+    width: Number(patch.width ?? profile.width),
+    height: Number(patch.height ?? profile.height),
+    minWidth: Number(patch.minWidth ?? profile.minWidth),
+    minHeight: Number(patch.minHeight ?? profile.minHeight),
+    maxWidthRatio: Number(patch.maxWidthRatio ?? profile.maxWidthRatio),
+    maxHeightRatio: Number(patch.maxHeightRatio ?? profile.maxHeightRatio)
+  };
+  const viewport = getUiViewportSize();
+  const minWidth = Math.max(420, Math.floor(Number.isFinite(merged.minWidth) ? merged.minWidth : 700));
+  const minHeight = Math.max(320, Math.floor(Number.isFinite(merged.minHeight) ? merged.minHeight : 520));
+  const maxWidthRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxWidthRatio) ? merged.maxWidthRatio : 0.95));
+  const maxHeightRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxHeightRatio) ? merged.maxHeightRatio : 0.92));
+  const maxWidth = Math.max(minWidth, Math.floor(viewport.width * maxWidthRatio));
+  const maxHeight = Math.max(minHeight, Math.floor(viewport.height * maxHeightRatio));
+  const widthFallback = clampWindowMetric(profile.width, minWidth, maxWidth, maxWidth);
+  const heightFallback = clampWindowMetric(profile.height, minHeight, maxHeight, maxHeight);
+  return {
+    width: clampWindowMetric(merged.width, minWidth, maxWidth, widthFallback),
+    height: clampWindowMetric(merged.height, minHeight, maxHeight, heightFallback)
+  };
+}
+
+function clampWindowPositionToViewport(position, options = {}) {
+  const viewport = getUiViewportSize();
+  const padding = Math.max(0, Math.floor(Number(options.padding ?? 8) || 8));
+  const width = Number(position?.width);
+  const height = Number(position?.height);
+  const left = Number(position?.left);
+  const top = Number(position?.top);
+  const maxLeft = Number.isFinite(width) ? Math.max(padding, viewport.width - Math.floor(width) - padding) : undefined;
+  const maxTop = Number.isFinite(height) ? Math.max(padding, viewport.height - Math.floor(height) - padding) : undefined;
+  return {
+    left: Number.isFinite(left) && Number.isFinite(maxLeft) ? Math.max(padding, Math.min(maxLeft, Math.floor(left))) : undefined,
+    top: Number.isFinite(top) && Number.isFinite(maxTop) ? Math.max(padding, Math.min(maxTop, Math.floor(top))) : undefined
+  };
+}
+
+function getResponsiveWindowOptions(profileId, options = {}) {
+  const patch = options && typeof options === "object" ? options : {};
+  const overridePosition = patch.position && typeof patch.position === "object" ? patch.position : {};
+  return foundry.utils.mergeObject(patch, {
+    position: getResponsiveWindowPosition(profileId, overridePosition)
+  }, { inplace: false, overwrite: true });
+}
+
+function normalizePreservedRenderOptions(renderOptions = null) {
+  const patch = renderOptions && typeof renderOptions === "object" ? renderOptions : {};
+  return foundry.utils.mergeObject({
+    force: true,
+    parts: ["main"],
+    focus: false
+  }, patch, { inplace: false, overwrite: true });
+}
+
+function captureCanvasViewState() {
+  try {
+    const liveCanvas = globalThis?.canvas;
+    if (!liveCanvas?.ready || !liveCanvas?.stage) return null;
+    const sceneId = String(liveCanvas.scene?.id ?? "");
+    if (!sceneId) return null;
+    const x = Number(liveCanvas.stage.pivot?.x);
+    const y = Number(liveCanvas.stage.pivot?.y);
+    const scale = Number(liveCanvas.stage.scale?.x ?? liveCanvas.stage.scale?.y ?? 1);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) return null;
+    return {
+      sceneId,
+      x,
+      y,
+      scale,
+      capturedAt: Date.now()
+    };
+  } catch {
+    return null;
+  }
+}
+
+function hasCanvasViewShifted(previous, current, options = {}) {
+  if (!previous || !current) return false;
+  if (String(previous.sceneId ?? "") !== String(current.sceneId ?? "")) return false;
+  const tolerancePx = Math.max(0.25, Number(options.tolerancePx ?? 1.5));
+  const toleranceScale = Math.max(0.0005, Number(options.toleranceScale ?? 0.0025));
+  return Math.abs(Number(current.x ?? 0) - Number(previous.x ?? 0)) > tolerancePx
+    || Math.abs(Number(current.y ?? 0) - Number(previous.y ?? 0)) > tolerancePx
+    || Math.abs(Number(current.scale ?? 1) - Number(previous.scale ?? 1)) > toleranceScale;
+}
+
+function restoreCanvasViewState(snapshot, options = {}) {
+  try {
+    if (!snapshot) return false;
+    const liveCanvas = globalThis?.canvas;
+    if (!liveCanvas?.ready || !liveCanvas?.stage) return false;
+    if (String(liveCanvas.scene?.id ?? "") !== String(snapshot.sceneId ?? "")) return false;
+    const current = captureCanvasViewState();
+    if (!hasCanvasViewShifted(snapshot, current, options)) return false;
+    const panData = {
+      x: Number(snapshot.x ?? 0),
+      y: Number(snapshot.y ?? 0),
+      scale: Number(snapshot.scale ?? 1),
+      duration: 0
+    };
+    if (typeof liveCanvas.animatePan === "function") {
+      void liveCanvas.animatePan(panData);
+      return true;
+    }
+    if (typeof liveCanvas.pan === "function") {
+      liveCanvas.pan(panData);
+      return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
+function queueCanvasViewRestore(snapshot, options = {}) {
+  if (!snapshot) return;
+  const maxAgeMs = Math.max(80, Math.floor(Number(options.maxAgeMs ?? 1500)));
+  const runRestore = () => {
+    if ((Date.now() - Number(snapshot.capturedAt ?? 0)) > maxAgeMs) return;
+    restoreCanvasViewState(snapshot, options);
+  };
+  requestAnimationFrame(() => {
+    requestAnimationFrame(runRestore);
+  });
+  try {
+    window.setTimeout(runRestore, 64);
+  } catch {
+    // Ignore timer failures in non-browser execution contexts.
+  }
+}
+
+function shouldPreserveCanvasForUiEvent(event, actionElement, actionInput = "") {
+  const eventType = String(event?.type ?? "").trim().toLowerCase();
+  if (eventType === "change" || eventType === "input") return true;
+  const action = String(actionInput ?? actionElement?.dataset?.action ?? "").trim().toLowerCase();
+  if (action === "ping") return false;
+  const tag = String(actionElement?.tagName ?? "").trim().toUpperCase();
+  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
+  return false;
+}
+
+function renderAppWithPreservedState(app, renderOptions = { force: true, parts: ["main"], focus: false }, options = {}) {
+  if (!app?.render) return;
+  const uiState = captureUiState(app);
+  if (uiState) pendingUiRestore.set(app, uiState);
+  const scrollState = captureScrollState(app);
+  if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
+  const normalizedOptions = normalizePreservedRenderOptions(renderOptions);
+  const preserveCanvas = options?.preserveCanvas !== false;
+  const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+  app.render(normalizedOptions);
+  if (preserveCanvas) {
+    queueCanvasViewRestore(canvasSnapshot, {
+      action: String(options?.action ?? ""),
+      eventType: String(options?.eventType ?? "")
+    });
+  }
+}
 
 const PO_MAIN_TAB_IDS = new Set(["rest-watch", "marching-order", "operations", "gm"]);
 
@@ -251,7 +769,7 @@ function diagnoseRenderedMainTabs(root, scope = "ui") {
   const renderedTabs = Array.from(root.querySelectorAll(".po-tabs-main .po-tab[data-panel], .po-tabs-main .po-tab[data-tab]"))
     .map((node) => normalizeMainTabId(node?.dataset?.panel ?? node?.dataset?.tab, "rest-watch"))
     .filter(Boolean);
-  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || game.user?.isGM);
+  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || canAccessAllPlayerOps());
   const missing = expected.filter((id) => !renderedTabs.includes(id));
   const unknown = renderedTabs.filter((id) => !PO_MAIN_TAB_IDS.has(id));
   logUiDebug(scope, "rendered main-tab diagnostics", { expected, renderedTabs, missing, unknown });
@@ -335,10 +853,28 @@ const SCROLL_STATE_SELECTORS = [
 ];
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
+const STEWARD_POOL_KEYS = ["food", "water", "torches"];
+const STEWARD_POOL_MODES = Object.freeze({
+  NONE: "none",
+  FINITE: "finite",
+  INFINITE: "infinite"
+});
+const STEWARD_POOL_LABELS = Object.freeze({
+  food: "Food Rations",
+  water: "Water Rations",
+  torches: "Torches"
+});
+const STEWARD_POOL_LEGACY_FIELD_BY_KEY = Object.freeze({
+  food: "partyFoodRations",
+  water: "partyWaterRations",
+  torches: "torches"
+});
 const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
 const DEFAULT_MARCH_LIGHT_DIM = 40;
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
 const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
+const LOOT_MANIFEST_PACK_NAME = "party-operations-loot-manifest";
+const LOOT_MANIFEST_PACK_LABEL = "Party Operations Built Items";
 const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
 const LOOT_ITEM_TYPE_LABELS = {
   weapon: "Weapons",
@@ -355,6 +891,38 @@ const LOOT_ITEM_TYPE_LABELS = {
   class: "Class Features",
   race: "Race Features"
 };
+const LOOT_MANIFEST_FOLDER_LABELS = Object.freeze({
+  weapon: "Weapons",
+  equipment: "Equipment",
+  consumable: "Consumables",
+  loot: "Treasure",
+  tool: "Tools",
+  backpack: "Containers",
+  armor: "Armor",
+  ammunition: "Ammunition",
+  trinket: "Trinkets",
+  spell: "Spells",
+  feat: "Features",
+  class: "Class Features",
+  race: "Racial Features",
+  other: "Other"
+});
+const LOOT_MANIFEST_FOLDER_TYPE_PRIORITY = Object.freeze([
+  "weapon",
+  "equipment",
+  "consumable",
+  "loot",
+  "tool",
+  "backpack",
+  "armor",
+  "ammunition",
+  "trinket",
+  "spell",
+  "feat",
+  "class",
+  "race",
+  "other"
+]);
 const LOOT_TABLE_TYPE_OPTIONS = [
   { value: "currency", label: "Currency" },
   { value: "gems", label: "Gems" },
@@ -615,16 +1183,123 @@ const DOWNTIME_TUNING_DISCOVERY_OPTIONS = [
   { value: "standard", label: "Standard Discovery" },
   { value: "high", label: "Rich Discovery" }
 ];
+const DOWNTIME_SOCIAL_CONTRACT_OPTIONS = [
+  {
+    key: "",
+    label: "None",
+    summary: "No persistent social contract is attached to this result.",
+    limitations: ""
+  },
+  {
+    key: "potion-broker",
+    label: "Potion Broker",
+    summary: "City alchemy contact willing to buy and sell common potions.",
+    limitations: "Only while in that city; common potions only; up to 2 transactions between downtime collections."
+  },
+  {
+    key: "black-market-fence",
+    label: "Black-Market Fence",
+    summary: "Underworld buyer for discreet goods and contraband.",
+    limitations: "No obvious military relics; fees and legal risk increase each use in the same district."
+  },
+  {
+    key: "guild-supplier",
+    label: "Guild Supplier",
+    summary: "Trade guild quartermaster gives controlled access to materials.",
+    limitations: "Requires a known guild hall; mundane supplies only; cannot bypass scarcity bans."
+  },
+  {
+    key: "info-broker",
+    label: "Information Broker",
+    summary: "Reliable intermediary who can turn coin into targeted leads.",
+    limitations: "One actionable lead purchase per downtime cycle; may trigger attention in high-heat regions."
+  },
+  {
+    key: "noble-patron",
+    label: "Noble Patron Channel",
+    summary: "Court connection grants occasional introductions and permits.",
+    limitations: "Political favors can be called in return; benefits are local to patron influence."
+  }
+];
+const DOWNTIME_ENTRY_SORT_OPTIONS = [
+  { value: "pending", label: "Pending First" },
+  { value: "completed", label: "Completed First" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "updated-desc", label: "Updated Newest" },
+  { value: "updated-asc", label: "Updated Oldest" }
+];
+const DOWNTIME_LOG_SORT_OPTIONS = [
+  { value: "resolved-desc", label: "Resolved Newest" },
+  { value: "resolved-asc", label: "Resolved Oldest" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "action-asc", label: "Action A-Z" }
+];
+const LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS = [
+  { value: "archived-desc", label: "Archived Newest" },
+  { value: "archived-asc", label: "Archived Oldest" },
+  { value: "published-desc", label: "Published Newest" },
+  { value: "published-asc", label: "Published Oldest" },
+  { value: "items-desc", label: "Most Items" },
+  { value: "items-asc", label: "Fewest Items" }
+];
+const GATHER_HISTORY_SORT_OPTIONS = [
+  { value: "newest", label: "Newest First" },
+  { value: "oldest", label: "Oldest First" },
+  { value: "actor-asc", label: "Actor A-Z" },
+  { value: "actor-desc", label: "Actor Z-A" },
+  { value: "rations-desc", label: "Rations High-Low" },
+  { value: "rations-asc", label: "Rations Low-High" }
+];
+const GATHER_HISTORY_RESULT_FILTER_OPTIONS = [
+  { value: "all", label: "All Results" },
+  { value: "success", label: "Success" },
+  { value: "fail", label: "Fail" }
+];
+const GATHER_HISTORY_RESOURCE_FILTER_OPTIONS = [
+  { value: "all", label: "All Types" },
+  { value: "food", label: "Food" },
+  { value: "water", label: "Water" }
+];
 const DOWNTIME_RESOLVE_DEFAULT_HINT = "Set payouts and notes, then resolve.";
 const DOWNTIME_SELECT_PENDING_WARNING = "Select a pending downtime entry.";
 const DOWNTIME_STALE_PENDING_WARNING = "Selected downtime entry is no longer pending.";
 const DOWNTIME_GM_ONLY_PRERESOLVE_WARNING = "Only the GM can pre-resolve downtime.";
 const DOWNTIME_GM_ONLY_RESOLVE_WARNING = "Only the GM can resolve downtime.";
+const DOWNTIME_ITEM_REWARD_DROP_LIMIT = 10;
+const MERCHANT_SOURCE_TYPES = DOMAIN_MERCHANT_SOURCE_TYPES;
+const MERCHANT_SCARCITY_LEVELS = DOMAIN_MERCHANT_SCARCITY_LEVELS;
+const MERCHANT_SCARCITY_PROFILES = DOMAIN_MERCHANT_SCARCITY_PROFILES;
+const MERCHANT_ALLOWED_ITEM_TYPES = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPES;
+const MERCHANT_ALLOWED_ITEM_TYPE_LIST = DOMAIN_MERCHANT_ALLOWED_ITEM_TYPE_LIST;
+const MERCHANT_EDITOR_CANDIDATE_LIMIT = DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT;
+const MERCHANT_PREVIEW_ITEM_LIMIT = DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT;
+const MERCHANT_ACCESS_LOG_LIMIT = DOMAIN_MERCHANT_ACCESS_LOG_LIMIT;
+const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
+const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
+const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
+const MERCHANT_ACCESS_MODES = Object.freeze({
+  ALL: "all",
+  ASSIGNED: "assigned"
+});
+const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
+  str: "Strength",
+  dex: "Dexterity",
+  con: "Constitution",
+  int: "Intelligence",
+  wis: "Wisdom",
+  cha: "Charisma"
+});
 const NON_GM_READONLY_ACTIONS = new Set([
   "set-role",
   "clear-role",
   "toggle-sop",
   "set-resource",
+  "gather-resource-check",
+  "run-gather-preset",
+  "clear-gather-history",
+  "remove-gather-history-entry",
   "set-comm-toggle",
   "set-comm-text",
   "set-recon-field",
@@ -634,6 +1309,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-reputation-note",
   "log-reputation-note",
   "load-reputation-note-log",
+  "post-reputation-note-log",
   "set-reputation-label",
   "add-reputation-faction",
   "remove-reputation-faction",
@@ -654,7 +1330,34 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "prefill-downtime-resolution",
   "pre-resolve-selected-downtime-entry",
   "resolve-selected-downtime-entry",
+  "edit-downtime-result",
+  "unarchive-downtime-log",
+  "clear-downtime-log",
   "clear-downtime-results",
+  "merchant-settlement",
+  "merchant-save-city-catalog",
+  "merchant-assign-city",
+  "merchant-new",
+  "merchant-create-starters",
+  "merchant-randomize-name",
+  "merchant-randomize-race",
+  "merchant-edit",
+  "merchant-save",
+  "merchant-delete",
+  "merchant-refresh-stock",
+  "merchant-refresh-all-stock",
+  "merchant-assign-by-contract-key",
+  "merchant-assign-toggle",
+  "merchant-assign-all",
+  "merchant-assign-none",
+  "merchant-set-access-mode",
+  "merchant-editor-draft-change",
+  "toggle-merchant-pack-source",
+  "toggle-merchant-allowed-type",
+  "merchant-add-curated-item",
+  "merchant-remove-curated-item",
+  "merchant-clear-curated-items",
+  "merchant-open-actor",
   "toggle-loot-pack-source",
   "set-loot-pack-weight",
   "toggle-loot-table-source",
@@ -684,6 +1387,11 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-environment-effects",
   "gm-quick-add-faction",
   "gm-quick-add-modifier",
+  "gm-quick-open-downtime",
+  "gm-quick-save-modifier",
+  "gm-quick-set-staged-field",
+  "gm-quick-delete-staged-modifier",
+  "gm-quick-delete-saved-modifier",
   "gm-quick-submit-faction",
   "gm-quick-submit-modifier",
   "gm-quick-sync-integrations",
@@ -877,6 +1585,29 @@ function getAppRootElement(appOrElement) {
   return null;
 }
 
+function isEditableTypingElement(element) {
+  if (!(element instanceof HTMLElement)) return false;
+  if (element instanceof HTMLTextAreaElement) {
+    return !element.disabled && !element.readOnly;
+  }
+  if (element instanceof HTMLInputElement) {
+    if (element.disabled || element.readOnly) return false;
+    const type = String(element.type ?? "text").trim().toLowerCase();
+    const typingTypes = new Set(["text", "search", "email", "url", "tel", "password", "number"]);
+    return typingTypes.has(type);
+  }
+  if (element instanceof HTMLSelectElement) return false;
+  return element.isContentEditable;
+}
+
+function appHasFocusedTypingInput(appOrElement) {
+  const root = getAppRootElement(appOrElement);
+  const active = document?.activeElement;
+  if (!root || !(active instanceof HTMLElement)) return false;
+  if (!root.contains(active)) return false;
+  return isEditableTypingElement(active);
+}
+
 function refreshTabAccessibility(root) {
   if (!root?.querySelectorAll) return;
   const tablists = Array.from(root.querySelectorAll("[role='tablist']"));
@@ -944,6 +1675,11 @@ function clampSocketText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
   return String(value ?? "").slice(0, cap);
 }
 
+function normalizeRestNoteSaveSource(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === "manual" ? "manual" : "autosave";
+}
+
 function resolveRequester(userOrId, options = {}) {
   const allowGM = options.allowGM !== false;
   const requireActive = options.requireActive === true;
@@ -978,7 +1714,8 @@ function normalizeSocketRestRequest(request) {
       op,
       slotId,
       actorId,
-      text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH)
+      text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH),
+      source: normalizeRestNoteSaveSource(request.source)
     };
   }
   return { op, slotId, actorId };
@@ -1004,15 +1741,133 @@ function normalizeSocketMarchRequest(request) {
   };
 }
 
+function isWritableModuleSettingKey(settingKeyInput) {
+  const settingKey = String(settingKeyInput ?? "").trim();
+  if (!settingKey) return false;
+  return Object.values(SETTINGS).includes(settingKey);
+}
+
+
+function canAccessAllPlayerOps(user = game.user) {
+  if (!user) return false;
+  if (Boolean(user?.isGM)) return true;
+  try {
+    return Boolean(game.settings?.get?.(MODULE_ID, SETTINGS.SHARED_GM_PERMISSIONS));
+  } catch {
+    return false;
+  }
+}
+
+function hasActiveGmClient() {
+  const users = game.users?.contents ?? game.users ?? [];
+  return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
+}
+
+function normalizeStewardPoolMode(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === STEWARD_POOL_MODES.FINITE) return STEWARD_POOL_MODES.FINITE;
+  if (normalized === STEWARD_POOL_MODES.INFINITE) return STEWARD_POOL_MODES.INFINITE;
+  return STEWARD_POOL_MODES.NONE;
+}
+
+function getStewardPoolLegacyField(poolKey) {
+  return String(STEWARD_POOL_LEGACY_FIELD_BY_KEY[poolKey] ?? "").trim();
+}
+
+function normalizeStewardPoolEntry(entryInput, poolKey, resources) {
+  const legacyField = getStewardPoolLegacyField(poolKey);
+  const legacyRaw = Number(resources?.[legacyField] ?? 0);
+  const legacyAmount = Number.isFinite(legacyRaw) ? Math.max(0, Math.floor(legacyRaw)) : 0;
+  const entry = (entryInput && typeof entryInput === "object" && !Array.isArray(entryInput))
+    ? entryInput
+    : {};
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(entry, "mode");
+  let mode = normalizeStewardPoolMode(entry.mode);
+  const amountRaw = Number(entry.amount);
+  const amount = Number.isFinite(amountRaw) ? Math.max(0, Math.floor(amountRaw)) : legacyAmount;
+  if (!hasExplicitMode) mode = amount > 0 ? STEWARD_POOL_MODES.FINITE : STEWARD_POOL_MODES.NONE;
+  const source = String(entry.source ?? "").trim().slice(0, 180);
+  return { mode, amount, source };
+}
+
+function ensureStewardPoolsState(resources) {
+  if (!resources || typeof resources !== "object") return {};
+  if (!resources.stewardPools || typeof resources.stewardPools !== "object" || Array.isArray(resources.stewardPools)) {
+    resources.stewardPools = {};
+  }
+  for (const poolKey of STEWARD_POOL_KEYS) {
+    const normalized = normalizeStewardPoolEntry(resources.stewardPools[poolKey], poolKey, resources);
+    resources.stewardPools[poolKey] = normalized;
+    const legacyField = getStewardPoolLegacyField(poolKey);
+    if (legacyField) {
+      resources[legacyField] = normalized.mode === STEWARD_POOL_MODES.FINITE ? normalized.amount : 0;
+    }
+  }
+  return resources.stewardPools;
+}
+
+function getStewardPoolEntry(resources, poolKey) {
+  const pools = ensureStewardPoolsState(resources);
+  const pool = pools?.[poolKey];
+  if (pool && typeof pool === "object") return pool;
+  return { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" };
+}
+
+function buildStewardPoolContext(resourcesState, poolKey) {
+  const pool = getStewardPoolEntry(resourcesState, poolKey);
+  const mode = normalizeStewardPoolMode(pool.mode);
+  const amount = Math.max(0, Math.floor(Number(pool.amount ?? 0) || 0));
+  const source = String(pool.source ?? "").trim();
+  const modeOptions = [
+    { value: STEWARD_POOL_MODES.NONE, label: "None", selected: mode === STEWARD_POOL_MODES.NONE },
+    { value: STEWARD_POOL_MODES.INFINITE, label: "Surplus Source", selected: mode === STEWARD_POOL_MODES.INFINITE },
+    { value: STEWARD_POOL_MODES.FINITE, label: "Finite Stock", selected: mode === STEWARD_POOL_MODES.FINITE }
+  ];
+  const modeLabel = mode === STEWARD_POOL_MODES.INFINITE
+    ? "Surplus Source"
+    : (mode === STEWARD_POOL_MODES.FINITE ? "Finite Stock" : "None");
+  const amountDisplay = mode === STEWARD_POOL_MODES.FINITE
+    ? String(amount)
+    : (mode === STEWARD_POOL_MODES.INFINITE ? "Surplus" : "None");
+  return {
+    key: poolKey,
+    label: STEWARD_POOL_LABELS[poolKey] ?? poolKey,
+    mode,
+    modeOptions,
+    modeLabel,
+    source,
+    hasSource: source.length > 0,
+    amount,
+    amountDisplay,
+    isNone: mode === STEWARD_POOL_MODES.NONE,
+    isFinite: mode === STEWARD_POOL_MODES.FINITE,
+    isInfinite: mode === STEWARD_POOL_MODES.INFINITE,
+    summaryLabel: source.length > 0 ? `${amountDisplay} - ${source}` : amountDisplay
+  };
+}
+
+function getStewardPoolFiniteAmount(pool) {
+  if (!pool || typeof pool !== "object") return 0;
+  if (normalizeStewardPoolMode(pool.mode) !== STEWARD_POOL_MODES.FINITE) return 0;
+  return Math.max(0, Math.floor(Number(pool.amount ?? 0) || 0));
+}
+
+function isStewardPoolInfinite(pool) {
+  if (!pool || typeof pool !== "object") return false;
+  return normalizeStewardPoolMode(pool.mode) === STEWARD_POOL_MODES.INFINITE;
+}
+
 function ensureOperationalResourceConfig(resources) {
   if (!resources) return;
   const legacyFoodPool = Number(resources.partyRations);
   const configuredFoodPool = Number(resources.partyFoodRations);
   const configuredWaterPool = Number(resources.partyWaterRations);
+  const configuredTorchPool = Number(resources.torches);
   resources.partyFoodRations = Number.isFinite(configuredFoodPool)
     ? Math.max(0, Math.floor(configuredFoodPool))
     : (Number.isFinite(legacyFoodPool) ? Math.max(0, Math.floor(legacyFoodPool)) : 0);
   resources.partyWaterRations = Number.isFinite(configuredWaterPool) ? Math.max(0, Math.floor(configuredWaterPool)) : 0;
+  resources.torches = Number.isFinite(configuredTorchPool) ? Math.max(0, Math.floor(configuredTorchPool)) : 0;
   if (Object.prototype.hasOwnProperty.call(resources, "partyRations")) delete resources.partyRations;
   const upkeepTimestamp = Number(resources.upkeepLastAppliedTs);
   resources.upkeepLastAppliedTs = Number.isFinite(upkeepTimestamp) ? upkeepTimestamp : null;
@@ -1024,6 +1879,38 @@ function ensureOperationalResourceConfig(resources) {
   }
   if (!resources.gather) resources.gather = {};
   if (!resources.gather.weatherMods) resources.gather.weatherMods = {};
+  if (!Array.isArray(resources.gather.history)) resources.gather.history = [];
+  resources.gather.history = resources.gather.history
+    .map((entry) => {
+      const source = (entry && typeof entry === "object") ? entry : {};
+      const timestampRaw = Number(source.timestamp ?? source.createdAt ?? Date.now());
+      const timestamp = Number.isFinite(timestampRaw) ? timestampRaw : Date.now();
+      const resultRaw = String(source.result ?? "").trim().toLowerCase();
+      const result = resultRaw === "success" || resultRaw === "fail" ? resultRaw : (Boolean(source.success) ? "success" : "fail");
+      return {
+        id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        timestamp,
+        actorId: String(source.actorId ?? "").trim(),
+        actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        dayKey: String(source.dayKey ?? "").trim(),
+        result,
+        success: result === "success",
+        resourceType: normalizeGatherResourceType(source.resourceType),
+        rations: Math.max(0, Math.floor(Number(source.rations ?? source.finalRations ?? 0) || 0)),
+        checkTotal: Math.floor(Number(source.checkTotal ?? source.rollTotal ?? 0) || 0),
+        dc: Math.max(1, Math.floor(Number(source.dc ?? 1) || 1)),
+        environment: normalizeGatherEnvironmentKey(source.environment),
+        flags: Array.isArray(source.flags) ? source.flags.map((flag) => String(flag ?? "").trim()).filter(Boolean) : [],
+        complications: Array.isArray(source.complications) ? source.complications.map((flag) => String(flag ?? "").trim()).filter(Boolean) : [],
+        notes: Array.isArray(source.notes) ? source.notes.map((note) => String(note ?? "").trim()).filter(Boolean) : [],
+        gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+        appliedToLedger: Boolean(source.appliedToLedger),
+        inventoryGainSource: String(source.inventoryGainSource ?? "").trim(),
+        inventoryGainAmount: Math.max(0, Math.floor(Number(source.inventoryGainAmount ?? 0) || 0)),
+        createdBy: String(source.createdBy ?? "GM").trim() || "GM"
+      };
+    })
+    .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
   if (typeof resources.gather.foodCoveredNextUpkeep !== "boolean") resources.gather.foodCoveredNextUpkeep = false;
   if (typeof resources.gather.waterCoveredNextUpkeep !== "boolean") resources.gather.waterCoveredNextUpkeep = false;
   const foodCoverageDueKey = Number(resources.gather.foodCoverageDueKey);
@@ -1043,16 +1930,21 @@ function ensureOperationalResourceConfig(resources) {
     resources.gather.weatherMods[key] = Number.isFinite(current) ? current : value;
   }
   if (!resources.upkeep) resources.upkeep = {};
+  ensureStewardPoolsState(resources);
 }
 
 function ensurePartyOperationsClass(appOrElement) {
   const root = getAppRootElement(appOrElement);
-  if (!root?.classList) return;
-  root.classList.add("party-operations");
+  if (!(root instanceof HTMLElement)) return;
+  const frame = root.matches(".window-app, .application")
+    ? root
+    : root.closest(".window-app, .application");
+  if (!frame?.classList) return;
+  frame.classList.add("party-operations");
 }
 
 function applyNonGmOperationsReadonly(appOrElement) {
-  if (game.user?.isGM) return;
+  if (canAccessAllPlayerOps()) return;
   const root = getAppRootElement(appOrElement);
   if (!root) return;
   const operationsWindow = root.querySelector(".po-window[data-main-tab='operations'], .po-window[data-main-tab='gm']");
@@ -1101,9 +1993,35 @@ function consumeSuppressedSettingRefresh(fullSettingKey) {
 }
 
 async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
-  const fullSettingKey = `${MODULE_ID}.${settingKey}`;
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return;
+  const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${normalizedSettingKey}`) ?? null;
+  const settingScope = String(settingRecord?.scope ?? "").trim().toLowerCase();
+
+  if (!game.user?.isGM) {
+    if (settingScope === "client") {
+      const fullClientSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
+      suppressNextSettingRefresh(fullClientSettingKey);
+      await game.settings.set(MODULE_ID, normalizedSettingKey, value);
+      return;
+    }
+    if (!canAccessAllPlayerOps(game.user)) return;
+    const hasActiveGm = hasActiveGmClient();
+    if (!hasActiveGm) {
+      ui.notifications?.warn("Party Operations change blocked: no active GM client is available.");
+      return;
+    }
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "ops:setting-write",
+      userId: game.user.id,
+      settingKey: normalizedSettingKey,
+      value: foundry.utils.deepClone(value)
+    });
+    return;
+  }
+  const fullSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
   suppressNextSettingRefresh(fullSettingKey);
-  await game.settings.set(MODULE_ID, settingKey, value);
+  await game.settings.set(MODULE_ID, normalizedSettingKey, value);
 }
 
 function getIntegrationModeSetting() {
@@ -1266,7 +2184,7 @@ function getInventoryHookModeSetting() {
 
 async function setInventoryHookMode(mode) {
   const normalized = normalizeInventoryHookMode(mode);
-  await game.settings.set(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE, normalized);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INVENTORY_HOOK_MODE, normalized);
   return normalized;
 }
 
@@ -1290,6 +2208,10 @@ function getModuleConfigSnapshot() {
     inventory: {
       hookMode: getInventoryHookModeSetting()
     },
+    gather: {
+      rollMode: getGatherRollModeSetting(),
+      rules: foundry.utils.deepClone(getGatherResourceConfig())
+    },
     typedConfig: {
       value: getPartyOpsConfigSetting()
     }
@@ -1298,6 +2220,545 @@ function getModuleConfigSnapshot() {
 
 function getGatherRollModeSetting() {
   return game.settings.get(MODULE_ID, SETTINGS.GATHER_ROLL_MODE) ?? "prefer-monks";
+}
+
+function clampGatherInteger(value, min, max, fallback) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(min, Math.min(max, Math.floor(raw)));
+}
+
+function clampGatherModifier(value, fallback = 0) {
+  return clampGatherInteger(value, -20, 20, fallback);
+}
+
+function normalizeGatherTravelTradeoff(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === GATHER_TRAVEL_CHOICES.FELL_BEHIND) return GATHER_TRAVEL_CHOICES.FELL_BEHIND;
+  return GATHER_TRAVEL_CHOICES.PACE;
+}
+
+function normalizeGatherEnvironmentKey(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return GATHER_ENVIRONMENT_KEYS.includes(raw) ? raw : GATHER_ENVIRONMENT_KEYS[0];
+}
+
+function normalizeGatherResourceType(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return raw === "water" ? "water" : "food";
+}
+
+function getGatherResourceConfig() {
+  const getSetting = (key, fallback) => {
+    try {
+      const value = game.settings.get(MODULE_ID, key);
+      return value === undefined ? fallback : value;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const config = {
+    enabled: Boolean(getSetting(SETTINGS.GATHER_ENABLED, GATHER_DEFAULTS.enabled)),
+    minimumHours: clampGatherInteger(getSetting(SETTINGS.GATHER_MIN_HOURS, GATHER_DEFAULTS.minimumHours), 1, 24, GATHER_DEFAULTS.minimumHours),
+    disallowCombat: Boolean(getSetting(SETTINGS.GATHER_DISALLOW_COMBAT, GATHER_DEFAULTS.disallowCombat)),
+    baseDc: {
+      lush_forest_or_river_valley: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_LUSH, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley), 1, 30, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley),
+      temperate_hills_or_light_woodland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_TEMPERATE, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland), 1, 30, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland),
+      sparse_plains_or_rocky: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_SPARSE, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky), 1, 30, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky),
+      cold_mountains_or_swamp: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_COLD, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp), 1, 30, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp),
+      desert_blighted_wasteland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_DESERT, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland), 1, 30, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland)
+    },
+    seasonMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_SEASON_MOD, GATHER_DEFAULTS.seasonMod), GATHER_DEFAULTS.seasonMod),
+    weatherMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_WEATHER_MOD, GATHER_DEFAULTS.weatherMod), GATHER_DEFAULTS.weatherMod),
+    corruptionMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_CORRUPTION_MOD, GATHER_DEFAULTS.corruptionMod), GATHER_DEFAULTS.corruptionMod),
+    herbalismAdvantageEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HERBALISM_ADVANTAGE, GATHER_DEFAULTS.herbalismAdvantageEnabled)),
+    hostileEncounterFlagEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HOSTILE_FAIL_FLAG, GATHER_DEFAULTS.hostileEncounterFlagEnabled)),
+    failBy5ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_FAIL_BY5_COMPLICATION, GATHER_DEFAULTS.failBy5ComplicationEnabled)),
+    successBy5DoubleEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, GATHER_DEFAULTS.successBy5DoubleEnabled)),
+    nat20BonusEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT20_BONUS, GATHER_DEFAULTS.nat20BonusEnabled)),
+    nat1ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT1_FLAG, GATHER_DEFAULTS.nat1ComplicationEnabled)),
+    corruptionWaterCheckEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_CORRUPTION_WATER_CHECK, GATHER_DEFAULTS.corruptionWaterCheckEnabled)),
+    corruptionConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_CORRUPTION_SAVE_DC, GATHER_DEFAULTS.corruptionConSaveDc), 1, 30, GATHER_DEFAULTS.corruptionConSaveDc),
+    waterAutoFoundEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_WATER_AUTO_FOUND, GATHER_DEFAULTS.waterAutoFoundEnabled)),
+    travelTradeoffEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_TRAVEL_TRADEOFF, GATHER_DEFAULTS.travelTradeoffEnabled)),
+    travelTradeoffDefault: normalizeGatherTravelTradeoff(getSetting(SETTINGS.GATHER_TRAVEL_TRADEOFF_DEFAULT, GATHER_DEFAULTS.travelTradeoffDefault)),
+    travelConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_TRAVEL_CON_SAVE_DC, GATHER_DEFAULTS.travelConSaveDc), 1, 30, GATHER_DEFAULTS.travelConSaveDc)
+  };
+  return config;
+}
+
+function getGatherEnvironmentChoices(config = getGatherResourceConfig()) {
+  const baseDc = config?.baseDc ?? GATHER_DEFAULTS.baseDc;
+  return GATHER_ENVIRONMENT_KEYS.map((key) => ({
+    value: key,
+    label: `${GATHER_ENVIRONMENT_LABELS[key] ?? key} (DC ${Math.max(1, Math.floor(Number(baseDc?.[key] ?? 10) || 10))})`
+  }));
+}
+
+function getGatherQuickPresets(config = getGatherResourceConfig()) {
+  return GATHER_QUICK_PRESETS.map((entry) => {
+    const source = entry?.options ?? {};
+    const environment = normalizeGatherEnvironmentKey(source.environment);
+    const resourceType = normalizeGatherResourceType(source.resourceType);
+    return {
+      id: String(entry?.id ?? "").trim(),
+      label: String(entry?.label ?? "Preset").trim() || "Preset",
+      description: String(entry?.description ?? "").trim(),
+      options: {
+        environment,
+        resourceType,
+        gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+        seasonMod: clampGatherModifier(source.seasonMod, config.seasonMod),
+        weatherMod: clampGatherModifier(source.weatherMod, config.weatherMod),
+        corruptionMod: clampGatherModifier(source.corruptionMod, config.corruptionMod),
+        hostileTerrain: Boolean(source.hostileTerrain),
+        isCorruptedRegion: Boolean(source.isCorruptedRegion),
+        waterAutoFound: Boolean(source.waterAutoFound),
+        duringTravel: Boolean(source.duringTravel),
+        travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff ?? config.travelTradeoffDefault)
+      }
+    };
+  });
+}
+
+function getGatherQuickPresetById(presetId, config = getGatherResourceConfig()) {
+  const id = String(presetId ?? "").trim();
+  if (!id) return null;
+  return getGatherQuickPresets(config).find((entry) => entry.id === id) ?? null;
+}
+
+function getGatherResourceTypeLabel(value) {
+  return normalizeGatherResourceType(value) === "water" ? "Water" : "Food";
+}
+
+function buildGatherPresetContext(config = getGatherResourceConfig()) {
+  return getGatherQuickPresets(config).map((preset) => {
+    const options = preset?.options ?? {};
+    const environment = normalizeGatherEnvironmentKey(options.environment);
+    const resourceType = normalizeGatherResourceType(options.resourceType);
+    const gatherMode = String(options.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
+    const tagParts = [];
+    if (Boolean(options.duringTravel)) tagParts.push("Travel");
+    if (Boolean(options.hostileTerrain)) tagParts.push("Hostile");
+    if (Boolean(options.isCorruptedRegion)) tagParts.push("Corrupted");
+    if (resourceType === "water" && Boolean(options.waterAutoFound)) tagParts.push("Auto-water");
+    return {
+      id: String(preset?.id ?? "").trim(),
+      label: String(preset?.label ?? "Preset").trim() || "Preset",
+      description: String(preset?.description ?? "").trim(),
+      summary: `${getGatherResourceTypeLabel(resourceType)} | ${GATHER_ENVIRONMENT_LABELS[environment] ?? environment} | ${gatherMode === "plant" ? "Plant" : "Standard"}`,
+      tagsText: tagParts.join(" - "),
+      hasTags: tagParts.length > 0
+    };
+  });
+}
+
+function buildGatherHistoryContext(resourcesState = null, options = {}) {
+  const rows = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
+  const viewStateRaw = options?.viewState ?? getGatherHistoryViewState();
+  const viewState = {
+    search: normalizeGatherHistorySearch(viewStateRaw?.search),
+    result: normalizeGatherHistoryResultFilter(viewStateRaw?.result),
+    resource: normalizeGatherHistoryResourceFilter(viewStateRaw?.resource),
+    environment: normalizeGatherHistoryEnvironmentFilter(viewStateRaw?.environment),
+    actor: normalizeGatherHistoryActorFilter(viewStateRaw?.actor),
+    sort: normalizeGatherHistorySort(viewStateRaw?.sort)
+  };
+
+  const mappedRows = rows.map((entry) => {
+    const source = entry && typeof entry === "object" ? entry : {};
+    const timestamp = Number(source.timestamp ?? Date.now());
+    const timestampDate = new Date(Number.isFinite(timestamp) ? timestamp : Date.now());
+    const success = String(source.result ?? "").trim().toLowerCase() === "success" || source.success === true;
+    const environment = normalizeGatherEnvironmentKey(source.environment);
+    const environmentLabel = GATHER_ENVIRONMENT_LABELS[environment] ?? environment;
+    const resourceType = normalizeGatherResourceType(source.resourceType);
+    const resourceTypeLabel = getGatherResourceTypeLabel(resourceType);
+    const flags = Array.isArray(source.flags) ? source.flags : [];
+    const complications = Array.isArray(source.complications) ? source.complications : [];
+    const notes = Array.isArray(source.notes) ? source.notes : [];
+    const detailParts = [];
+    if (flags.length > 0) detailParts.push(`Flags: ${flags.map((flag) => formatGatherFlagLabel(flag)).join(", ")}`);
+    if (complications.length > 0) detailParts.push(`Complications: ${complications.map((flag) => formatGatherComplicationLabel(flag)).join(", ")}`);
+    if (notes.length > 0) detailParts.push(`Notes: ${notes.join(" | ")}`);
+    const inventoryGainAmount = Math.max(0, Number(source.inventoryGainAmount ?? 0) || 0);
+    const inventoryGainSource = String(source.inventoryGainSource ?? "").trim();
+    if (inventoryGainAmount > 0) {
+      const sourceLabel = inventoryGainSource ? ` (${inventoryGainSource})` : "";
+      detailParts.push(`Inventory +${inventoryGainAmount}${sourceLabel}`);
+    }
+    if (source.appliedToLedger === false && Math.max(0, Number(source.rations ?? 0) || 0) > 0) {
+      detailParts.push("Not applied to party pools");
+    }
+
+    const checkTotal = Number(source.checkTotal ?? 0);
+    const dc = Number(source.dc ?? 0);
+    const rollLabel = Number.isFinite(checkTotal) ? `${Math.floor(checkTotal)}` : "-";
+    const dcLabel = Number.isFinite(dc) ? `${Math.max(1, Math.floor(dc))}` : "-";
+    const actorName = String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+    const actorKey = actorName.toLowerCase();
+    const rations = Math.max(0, Math.floor(Number(source.rations ?? 0) || 0));
+    const detailsText = detailParts.length > 0 ? detailParts.join(" - ") : "-";
+    const createdBy = String(source.createdBy ?? "GM").trim() || "GM";
+    const dayKey = String(source.dayKey ?? "").trim();
+    const resultKey = success ? "success" : "fail";
+    const resultLabel = success ? "Success" : "Fail";
+
+    return {
+      id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
+      timestampLabel: Number.isFinite(timestampDate.getTime()) ? timestampDate.toLocaleString() : "Unknown",
+      dayKey,
+      actorName,
+      actorKey,
+      environment,
+      environmentLabel,
+      resultKey,
+      resultLabel,
+      resultClass: success ? "is-success" : "is-fail",
+      isSuccess: success,
+      rollVsDc: `${rollLabel} vs ${dcLabel}`,
+      resourceType,
+      resourceTypeLabel,
+      rations,
+      detailsText,
+      createdBy,
+      searchText: `${actorName} ${environmentLabel} ${resultLabel} ${resourceTypeLabel} ${detailsText} ${dayKey} ${createdBy}`.toLowerCase()
+    };
+  });
+
+  const actorMap = new Map();
+  for (const row of mappedRows) {
+    if (!row.actorKey || row.actorKey === "all") continue;
+    if (!actorMap.has(row.actorKey)) actorMap.set(row.actorKey, row.actorName);
+  }
+  if (viewState.actor !== "all" && !actorMap.has(viewState.actor)) {
+    viewState.actor = "all";
+  }
+
+  const filteredRows = mappedRows
+    .filter((row) => {
+      if (viewState.result !== "all" && row.resultKey !== viewState.result) return false;
+      if (viewState.resource !== "all" && row.resourceType !== viewState.resource) return false;
+      if (viewState.environment !== "all" && row.environment !== viewState.environment) return false;
+      if (viewState.actor !== "all" && row.actorKey !== viewState.actor) return false;
+      if (viewState.search && !row.searchText.includes(viewState.search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((left, right) => {
+      switch (viewState.sort) {
+        case "oldest":
+          return Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0);
+        case "actor-asc": {
+          const nameCompare = String(left.actorName ?? "").localeCompare(String(right.actorName ?? ""));
+          if (nameCompare !== 0) return nameCompare;
+          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
+        }
+        case "actor-desc": {
+          const nameCompare = String(right.actorName ?? "").localeCompare(String(left.actorName ?? ""));
+          if (nameCompare !== 0) return nameCompare;
+          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
+        }
+        case "rations-asc": {
+          const rationCompare = Number(left.rations ?? 0) - Number(right.rations ?? 0);
+          if (rationCompare !== 0) return rationCompare;
+          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
+        }
+        case "rations-desc": {
+          const rationCompare = Number(right.rations ?? 0) - Number(left.rations ?? 0);
+          if (rationCompare !== 0) return rationCompare;
+          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
+        }
+        case "newest":
+        default:
+          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
+      }
+    });
+
+  const actorOptions = [
+    { value: "all", label: "All Actors", selected: viewState.actor === "all" },
+    ...Array.from(actorMap.entries())
+      .sort((left, right) => String(left[1] ?? "").localeCompare(String(right[1] ?? "")))
+      .map(([value, label]) => ({
+        value,
+        label,
+        selected: viewState.actor === value
+      }))
+  ];
+
+  const environmentOptions = [
+    { value: "all", label: "All Environments", selected: viewState.environment === "all" },
+    ...GATHER_ENVIRONMENT_KEYS.map((key) => ({
+      value: key,
+      label: GATHER_ENVIRONMENT_LABELS[key] ?? key,
+      selected: viewState.environment === key
+    }))
+  ];
+
+  return {
+    rows: filteredRows,
+    hasRows: filteredRows.length > 0,
+    hasAnyRows: mappedRows.length > 0,
+    totalCount: mappedRows.length,
+    visibleCount: filteredRows.length,
+    hiddenCount: Math.max(0, mappedRows.length - filteredRows.length),
+    hasActiveFilters: Boolean(
+      viewState.search
+      || viewState.result !== "all"
+      || viewState.resource !== "all"
+      || viewState.environment !== "all"
+      || viewState.actor !== "all"
+    ),
+    emptyMessage: mappedRows.length > 0
+      ? "No gather checks match the current filters."
+      : "No gather checks logged yet.",
+    sortOptions: GATHER_HISTORY_SORT_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: viewState.sort === entry.value
+    })),
+    resultOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: viewState.result === entry.value
+    })),
+    resourceOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => ({
+      value: entry.value,
+      label: entry.label,
+      selected: viewState.resource === entry.value
+    })),
+    environmentOptions,
+    actorOptions,
+    filters: {
+      ...viewState,
+      searchPlaceholder: "Filter by actor, note, or result"
+    }
+  };
+}
+
+function getGatherDayKey(timestamp = getCurrentWorldTimestamp()) {
+  const api = getSimpleCalendarApi();
+  if (isSimpleCalendarActive() && api?.timestampToDate) {
+    try {
+      const date = api.timestampToDate(timestamp);
+      return `Y${Number(date?.year ?? 0)}-M${Number(date?.month ?? 0)}-D${Number(date?.day ?? 0)}`;
+    } catch {
+      // Fall through.
+    }
+  }
+  return `D${Math.floor(Number(timestamp ?? 0) / 86400)}`;
+}
+
+function buildGatherEnvironmentSignature(input = {}) {
+  const environment = normalizeGatherEnvironmentKey(input.environment);
+  const season = clampGatherModifier(input.seasonMod, 0);
+  const weather = clampGatherModifier(input.weatherMod, 0);
+  const corruption = clampGatherModifier(input.corruptionMod, 0);
+  const hostile = Boolean(input.hostileTerrain) ? "hostile" : "calm";
+  const corruptedRegion = Boolean(input.isCorruptedRegion) ? "corrupted" : "clean";
+  return `${environment}|s${season}|w${weather}|c${corruption}|${hostile}|${corruptedRegion}`;
+}
+
+function getLegacyPartyOpsFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag("partyops", flagKey);
+    } catch {
+      // Legacy scope may be unavailable in newer Foundry versions.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.partyops.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.partyops;
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setLegacyPartyOpsFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag("partyops", flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getGatherAttemptState(actor) {
+  if (!actor) return { lastDay: "", lastEnvironmentSignature: "" };
+  return {
+    lastDay: String(
+      actor.getFlag(MODULE_ID, "gather.lastDay")
+      ?? getLegacyPartyOpsFlag(actor, "gather.lastDay")
+      ?? ""
+    ),
+    lastEnvironmentSignature: String(
+      actor.getFlag(MODULE_ID, "gather.lastEnvironmentSignature")
+      ?? getLegacyPartyOpsFlag(actor, "gather.lastEnvironmentSignature")
+      ?? ""
+    )
+  };
+}
+
+async function setGatherAttemptState(actor, dayKey, environmentSignature) {
+  if (!actor) return;
+  const payload = {
+    "gather.lastDay": String(dayKey ?? ""),
+    "gather.lastEnvironmentSignature": String(environmentSignature ?? ""),
+    "gather.lastWorldTime": Number(getCurrentWorldTimestamp())
+  };
+  try {
+    await actor.setFlag(MODULE_ID, "gather.lastDay", payload["gather.lastDay"]);
+    await actor.setFlag(MODULE_ID, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
+    await actor.setFlag(MODULE_ID, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to persist gather attempt flags`, {
+      actorId: actor.id,
+      actorName: actor.name,
+      error
+    });
+  }
+  // Best-effort legacy mirror; do not fail or warn when legacy scope is unavailable.
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastDay", payload["gather.lastDay"]);
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastEnvironmentSignature", payload["gather.lastEnvironmentSignature"]);
+  await setLegacyPartyOpsFlagSilently(actor, "gather.lastWorldTime", payload["gather.lastWorldTime"]);
+}
+
+function canAttemptGatherForDay(actor, dayKey, environmentSignature) {
+  const state = getGatherAttemptState(actor);
+  if (state.lastDay !== String(dayKey ?? "")) return true;
+  return state.lastEnvironmentSignature !== String(environmentSignature ?? "");
+}
+
+function isActorInImmediateDanger(actor) {
+  if (!actor) return false;
+  const combat = game.combat;
+  if (!combat) return false;
+  const combatants = Array.from(combat.combatants ?? []);
+  return combatants.some((entry) => {
+    if (!entry) return false;
+    if (entry.actorId !== actor.id) return false;
+    if (entry.defeated) return false;
+    return true;
+  });
+}
+
+function mapGatherRationsFromD6(total) {
+  const value = clampGatherInteger(total, 1, 6, 1);
+  if (value <= 3) return 1;
+  if (value <= 5) return 2;
+  return 3;
+}
+
+function resolveGatherResourceOutcome(input = {}) {
+  const resourceType = normalizeGatherResourceType(input.resourceType);
+  const checkTotal = Math.floor(Number(input.checkTotal ?? 0) || 0);
+  const dc = Math.max(1, Math.floor(Number(input.dc ?? 10) || 10));
+  const natural = clampGatherInteger(input.natural, 0, 20, 0);
+  const success = checkTotal >= dc;
+  const successBy = success ? Math.max(0, checkTotal - dc) : 0;
+  const failedBy = success ? 0 : Math.max(0, dc - checkTotal);
+  const resultFlags = [];
+  const complications = [];
+  const notes = [];
+
+  let rationDieTotal = null;
+  let baseRations = 0;
+  let bonusRations = 0;
+
+  const waterAutoFound = Boolean(input.waterAutoFound) && resourceType === "water";
+  if (success) {
+    if (waterAutoFound) {
+      baseRations = 1;
+      notes.push("Water auto-found near obvious source.");
+    } else {
+      rationDieTotal = clampGatherInteger(input.rationDieTotal, 1, 6, 1);
+      baseRations = mapGatherRationsFromD6(rationDieTotal);
+    }
+
+    if (Boolean(input.successBy5DoubleEnabled) && successBy >= 5) {
+      baseRations *= 2;
+      notes.push("Success by 5+: rations doubled.");
+    }
+
+    if (Boolean(input.nat20BonusEnabled) && natural === 20) {
+      bonusRations = clampGatherInteger(input.nat20BonusDieTotal, 1, 4, 1);
+      notes.push(`Natural 20 bonus: +${bonusRations} rations.`);
+      resultFlags.push("safe-campsite-found");
+    }
+  } else {
+    if (Boolean(input.hostileEncounterFlagEnabled) && Boolean(input.hostileTerrain)) {
+      resultFlags.push("encounter-check-flag");
+      notes.push("Hostile terrain encounter check flagged.");
+    }
+    if (Boolean(input.failBy5ComplicationEnabled) && failedBy >= 5) {
+      complications.push("fail-by-5-complication");
+      notes.push("Failed by 5+: complication triggered.");
+    }
+  }
+
+  if (Boolean(input.nat1ComplicationEnabled) && natural === 1) {
+    complications.push("natural-1-danger");
+    notes.push("Natural 1: spoiled/poisoned/attract-danger complication.");
+  }
+
+  const finalRations = success ? Math.max(0, baseRations + bonusRations) : 0;
+  const contaminationRoll = Number(input.contaminationRollTotal);
+  const contaminatedWater = Boolean(success && resourceType === "water" && input.corruptionWaterCheckEnabled && input.isCorruptedRegion && contaminationRoll === 1);
+  if (contaminatedWater) {
+    resultFlags.push("water-contaminated");
+    notes.push("Corrupted water contamination triggered.");
+    if (input.corruptionSavePassed === false) {
+      complications.push("contaminated-water-save-failed");
+      notes.push("Constitution save failed against contamination.");
+    }
+  }
+
+  const travelTradeoff = normalizeGatherTravelTradeoff(input.travelTradeoff);
+  if (Boolean(input.duringTravel) && Boolean(input.travelTradeoffEnabled)) {
+    if (travelTradeoff === GATHER_TRAVEL_CHOICES.PACE) {
+      resultFlags.push("travel-pace-reduced-one-step");
+      notes.push("Travel pace reduced by one step.");
+    } else {
+      resultFlags.push("travel-fell-behind");
+      notes.push("Actor fell behind during travel.");
+      const travelConSavePassed = Boolean(input.travelConSavePassed);
+      if (!travelConSavePassed) {
+        complications.push("travel-con-save-failed");
+        notes.push("Constitution save failed after falling behind.");
+      }
+    }
+  }
+
+  return {
+    success,
+    checkTotal,
+    dc,
+    natural,
+    successBy,
+    failedBy,
+    resourceType,
+    waterAutoFound,
+    rationDieTotal,
+    baseRations,
+    bonusRations,
+    finalRations,
+    contaminatedWater,
+    contaminationRoll: Number.isFinite(contaminationRoll) ? contaminationRoll : null,
+    resultFlags,
+    complications,
+    notes
+  };
 }
 
 function isDaeAvailable() {
@@ -2507,7 +3968,7 @@ async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, 
     return { synced: false, cleared: false, skipped: true, enabled };
   }
 
-  const applyAsNonParty = !isTrackableCharacter(actor);
+  const applyAsNonParty = options?.nonParty === false ? false : true;
   const payload = buildActorIntegrationPayload(actor.id, config.context, {
     nonParty: applyAsNonParty,
     includeWorldGlobal: config.syncWorldGlobal,
@@ -2518,22 +3979,38 @@ async function syncSingleSceneNonPartyActor(actor, globalContext, resolvedMode, 
 }
 
 async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, options = {}) {
-  if (!game.user.isGM) return { synced: 0, cleared: 0, total: 0, enabled: false };
+  if (!canAccessAllPlayerOps()) {
+    return {
+      synced: 0,
+      cleared: 0,
+      total: 0,
+      enabled: false,
+      scope: NON_PARTY_SYNC_SCOPES.SCENE,
+      scopeLabel: getNonPartySyncScopeLabel(NON_PARTY_SYNC_SCOPES.SCENE),
+      managedActorIds: []
+    };
+  }
   const mode = resolvedMode ?? resolveIntegrationMode();
   const config = getSceneNonPartySyncConfig(globalContext);
   const scope = getNonPartySyncScope(options.scope ?? config.scope);
   const targets = getNonPartyIntegrationTargets(scope);
   let synced = 0;
   let cleared = 0;
+  const managedActorIds = new Set();
 
   for (const target of targets) {
     const actor = target?.actor;
     if (!actor) continue;
     const result = await syncSingleSceneNonPartyActor(actor, config.context, mode, {
-      includeEnvironment: target.isSceneTarget === true
+      includeEnvironment: target.isSceneTarget === true,
+      nonParty: true
     });
     if (result.synced) synced += 1;
     if (result.cleared) cleared += 1;
+    if (result.synced) {
+      const actorId = String(actor?.id ?? "").trim();
+      if (actorId) managedActorIds.add(actorId);
+    }
   }
 
   return {
@@ -2542,12 +4019,13 @@ async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, o
     total: targets.length,
     enabled: Boolean(config.enabled),
     scope,
-    scopeLabel: getNonPartySyncScopeLabel(scope)
+    scopeLabel: getNonPartySyncScopeLabel(scope),
+    managedActorIds: Array.from(managedActorIds)
   };
 }
 
 async function syncIntegrationState() {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
 
   const resolvedMode = resolveIntegrationMode();
   const trackedActors = collectIntegrationActorIds();
@@ -2570,7 +4048,10 @@ async function syncIntegrationState() {
   }
 
   const globalContext = buildIntegrationGlobalContext();
-  await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
+  const nonPartySyncResult = await syncSceneNonPartyIntegrationActors(globalContext, resolvedMode);
+  const nonPartyManagedActorIds = new Set(
+    Array.isArray(nonPartySyncResult?.managedActorIds) ? nonPartySyncResult.managedActorIds : []
+  );
   for (const actor of trackedActors) {
     const payload = buildActorIntegrationPayload(actor.id, globalContext);
     await applyActorIntegrationPayload(actor, payload, resolvedMode);
@@ -2579,6 +4060,7 @@ async function syncIntegrationState() {
   const staleActors = game.actors.contents.filter((actor) => {
     if (!isTrackableCharacter(actor)) return false;
     if (trackedIds.has(actor.id)) return false;
+    if (nonPartyManagedActorIds.has(String(actor.id ?? ""))) return false;
     const hasSync = Boolean(actor.getFlag(MODULE_ID, "sync"));
     const hasEffect = Boolean(getIntegrationEffect(actor));
     const hasInjuryEffect = Boolean(getInjuryStatusEffect(actor));
@@ -2592,7 +4074,7 @@ async function syncIntegrationState() {
 }
 
 function scheduleIntegrationSync(reason = "") {
-  if (!game.user.isGM) return;
+  if (!game.user?.isGM) return;
   integrationSyncQueuedReason = String(reason ?? "").trim();
   integrationSyncQueued = true;
   if (integrationSyncInFlight) return;
@@ -2616,7 +4098,7 @@ function resolveIntegrationSyncWaiters() {
 }
 
 async function flushIntegrationSyncQueue(reason = "") {
-  if (!game.user.isGM) return;
+  if (!game.user?.isGM) return;
   const requestedReason = String(reason ?? "").trim();
   if (requestedReason) integrationSyncQueuedReason = requestedReason;
   integrationSyncQueued = true;
@@ -2669,14 +4151,14 @@ function getRestMainTabStorageKey() {
 
 function getActiveRestMainTab() {
   const stored = normalizeMainTabId(sessionStorage.getItem(getRestMainTabStorageKey()), "rest-watch");
-  if (stored === "gm" && game.user?.isGM) return "gm";
+  if (stored === "gm" && canAccessAllPlayerOps()) return "gm";
   if (stored === "operations") return "operations";
   return "rest-watch";
 }
 
 function setActiveRestMainTab(tab) {
   const normalized = normalizeMainTabId(tab, "rest-watch");
-  const value = normalized === "gm" && game.user?.isGM
+  const value = normalized === "gm" && canAccessAllPlayerOps()
     ? "gm"
     : (normalized === "operations" ? "operations" : "rest-watch");
   sessionStorage.setItem(getRestMainTabStorageKey(), value);
@@ -2708,17 +4190,17 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "downtime", "recovery", "gm"]);
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
-  if (stored === "gm" && !game.user?.isGM) return "planning";
+  if (stored === "gm" && !canAccessAllPlayerOps()) return "planning";
   return allowed.has(stored) ? stored : "planning";
 }
 
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "downtime", "recovery", "gm"]);
-  if (page === "gm" && !game.user?.isGM) page = "planning";
+  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
+  if (page === "gm" && !canAccessAllPlayerOps()) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
 }
@@ -2729,6 +4211,128 @@ function getOperationsPlanningTabStorageKey() {
 
 function getReputationFilterStorageKey() {
   return `po-reputation-filter-${game.user?.id ?? "anon"}`;
+}
+
+function getReputationNoteLogSelectionStorageKey() {
+  return `po-reputation-note-log-selection-${game.user?.id ?? "anon"}`;
+}
+
+function getReputationNoteLogSelections() {
+  const raw = sessionStorage.getItem(getReputationNoteLogSelectionStorageKey());
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const normalized = {};
+    for (const [factionId, logId] of Object.entries(parsed)) {
+      const key = String(factionId ?? "").trim();
+      if (!key) continue;
+      const value = String(logId ?? "").trim();
+      if (!value) continue;
+      normalized[key] = value;
+    }
+    return normalized;
+  } catch {
+    return {};
+  }
+}
+
+function setReputationNoteLogSelection(factionIdInput, logIdInput) {
+  const factionId = String(factionIdInput ?? "").trim();
+  if (!factionId) return "";
+  const logId = String(logIdInput ?? "").trim();
+  const state = getReputationNoteLogSelections();
+  if (!logId) {
+    delete state[factionId];
+  } else {
+    state[factionId] = logId;
+  }
+  sessionStorage.setItem(getReputationNoteLogSelectionStorageKey(), JSON.stringify(state));
+  return logId;
+}
+
+function getReputationNoteLogSelection(factionIdInput) {
+  const factionId = String(factionIdInput ?? "").trim();
+  if (!factionId) return "";
+  const state = getReputationNoteLogSelections();
+  return String(state[factionId] ?? "").trim();
+}
+
+function getGatherHistoryViewStorageKey() {
+  return `po-gather-history-view-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeGatherHistorySort(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(GATHER_HISTORY_SORT_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "newest";
+}
+
+function normalizeGatherHistoryResultFilter(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "all";
+}
+
+function normalizeGatherHistoryResourceFilter(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "all";
+}
+
+function normalizeGatherHistoryEnvironmentFilter(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "all") return "all";
+  return GATHER_ENVIRONMENT_KEYS.includes(normalized) ? normalized : "all";
+}
+
+function normalizeGatherHistoryActorFilter(value) {
+  const normalized = String(value ?? "").trim().toLowerCase().slice(0, 120);
+  return normalized || "all";
+}
+
+function normalizeGatherHistorySearch(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function getGatherHistoryViewState() {
+  const fallback = {
+    search: "",
+    result: "all",
+    resource: "all",
+    environment: "all",
+    actor: "all",
+    sort: "newest"
+  };
+  const raw = sessionStorage.getItem(getGatherHistoryViewStorageKey());
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      search: normalizeGatherHistorySearch(parsed?.search),
+      result: normalizeGatherHistoryResultFilter(parsed?.result),
+      resource: normalizeGatherHistoryResourceFilter(parsed?.resource),
+      environment: normalizeGatherHistoryEnvironmentFilter(parsed?.environment),
+      actor: normalizeGatherHistoryActorFilter(parsed?.actor),
+      sort: normalizeGatherHistorySort(parsed?.sort)
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function setGatherHistoryViewState(patch = {}) {
+  const previous = getGatherHistoryViewState();
+  const next = {
+    search: patch?.search === undefined ? previous.search : normalizeGatherHistorySearch(patch.search),
+    result: patch?.result === undefined ? previous.result : normalizeGatherHistoryResultFilter(patch.result),
+    resource: patch?.resource === undefined ? previous.resource : normalizeGatherHistoryResourceFilter(patch.resource),
+    environment: patch?.environment === undefined ? previous.environment : normalizeGatherHistoryEnvironmentFilter(patch.environment),
+    actor: patch?.actor === undefined ? previous.actor : normalizeGatherHistoryActorFilter(patch.actor),
+    sort: patch?.sort === undefined ? previous.sort : normalizeGatherHistorySort(patch.sort)
+  };
+  sessionStorage.setItem(getGatherHistoryViewStorageKey(), JSON.stringify(next));
+  return next;
 }
 
 function getReputationFilterState() {
@@ -2791,12 +4395,38 @@ function getLootClaimActorStorageKey() {
   return `po-loot-claim-actor-${game.user?.id ?? "anon"}`;
 }
 
+function getLootClaimRunStorageKey() {
+  return `po-loot-claim-run-${game.user?.id ?? "anon"}`;
+}
+
+function getLootClaimsArchiveSortStorageKey() {
+  return `po-loot-claim-archive-sort-${game.user?.id ?? "anon"}`;
+}
+
 function normalizeLootClaimActorId(value) {
   return String(value ?? "").trim();
 }
 
+function normalizeLootClaimRunId(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeLootClaimsArchiveSort(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "archived-desc";
+}
+
 function getLootClaimActorSelection() {
   return normalizeLootClaimActorId(sessionStorage.getItem(getLootClaimActorStorageKey()));
+}
+
+function getLootClaimRunSelection() {
+  return normalizeLootClaimRunId(sessionStorage.getItem(getLootClaimRunStorageKey()));
+}
+
+function getLootClaimsArchiveSort() {
+  return normalizeLootClaimsArchiveSort(sessionStorage.getItem(getLootClaimsArchiveSortStorageKey()));
 }
 
 function setLootClaimActorSelection(actorIdInput) {
@@ -2809,11 +4439,260 @@ function setLootClaimActorSelection(actorIdInput) {
   return actorId;
 }
 
+function setLootClaimRunSelection(runIdInput) {
+  const runId = normalizeLootClaimRunId(runIdInput);
+  if (!runId) {
+    sessionStorage.removeItem(getLootClaimRunStorageKey());
+    return "";
+  }
+  sessionStorage.setItem(getLootClaimRunStorageKey(), runId);
+  return runId;
+}
+
+function setLootClaimsArchiveSort(sortInput) {
+  const sort = normalizeLootClaimsArchiveSort(sortInput);
+  sessionStorage.setItem(getLootClaimsArchiveSortStorageKey(), sort);
+  return sort;
+}
+
 function setLootClaimActorSelectionFromElement(element) {
   const nextActorId = normalizeLootClaimActorId(element?.value);
   const currentActorId = getLootClaimActorSelection();
   if (nextActorId === currentActorId) return false;
   setLootClaimActorSelection(nextActorId);
+  return true;
+}
+
+function getMerchantActorStorageKey() {
+  return `po-merchant-actor-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantActorId(value) {
+  return String(value ?? "").trim();
+}
+
+function getSelectedMerchantActorId() {
+  return normalizeMerchantActorId(sessionStorage.getItem(getMerchantActorStorageKey()));
+}
+
+function setSelectedMerchantActorId(actorIdInput) {
+  const actorId = normalizeMerchantActorId(actorIdInput);
+  if (!actorId) {
+    sessionStorage.removeItem(getMerchantActorStorageKey());
+    return "";
+  }
+  sessionStorage.setItem(getMerchantActorStorageKey(), actorId);
+  return actorId;
+}
+
+function setSelectedMerchantActorFromElement(element) {
+  const nextActorId = normalizeMerchantActorId(element?.value);
+  const currentActorId = getSelectedMerchantActorId();
+  if (nextActorId === currentActorId) return false;
+  setSelectedMerchantActorId(nextActorId);
+  return true;
+}
+
+function getMerchantSettlementStorageKey() {
+  return `po-merchant-settlement-${game.user?.id ?? "anon"}`;
+}
+
+function getMerchantSettlementAllValue() {
+  return "__all__";
+}
+
+function normalizeMerchantSettlementSelection(value) {
+  const settlement = String(value ?? "").trim().slice(0, 120);
+  if (!settlement) return "";
+  return settlement.toLowerCase() === "global" ? "" : settlement;
+}
+
+function hasSelectedMerchantSettlementPreference() {
+  return sessionStorage.getItem(getMerchantSettlementStorageKey()) !== null;
+}
+
+function getSelectedMerchantSettlement() {
+  const stored = sessionStorage.getItem(getMerchantSettlementStorageKey());
+  if (stored === getMerchantSettlementAllValue()) return "";
+  return normalizeMerchantSettlementSelection(stored);
+}
+
+function setSelectedMerchantSettlement(settlementInput) {
+  const settlement = normalizeMerchantSettlementSelection(settlementInput);
+  if (!settlement) {
+    sessionStorage.setItem(getMerchantSettlementStorageKey(), getMerchantSettlementAllValue());
+    return "";
+  }
+  sessionStorage.setItem(getMerchantSettlementStorageKey(), settlement);
+  return settlement;
+}
+
+function setSelectedMerchantSettlementFromElement(element) {
+  const nextSettlement = normalizeMerchantSettlementSelection(element?.value);
+  const currentSettlement = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : normalizeMerchantSettlementSelection(getOperationsLedger()?.merchants?.currentSettlement ?? "");
+  if (nextSettlement === currentSettlement) return false;
+  setSelectedMerchantSettlement(nextSettlement);
+  return true;
+}
+
+function getMerchantTabStorageKey() {
+  return `po-merchant-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantTabId(value) {
+  return String(value ?? "").trim();
+}
+
+function getSelectedMerchantTabId() {
+  return normalizeMerchantTabId(sessionStorage.getItem(getMerchantTabStorageKey()));
+}
+
+function setSelectedMerchantTabId(merchantIdInput) {
+  const merchantId = normalizeMerchantTabId(merchantIdInput);
+  if (!merchantId) {
+    sessionStorage.removeItem(getMerchantTabStorageKey());
+    return "";
+  }
+  sessionStorage.setItem(getMerchantTabStorageKey(), merchantId);
+  return merchantId;
+}
+
+function setSelectedMerchantTabIdFromElement(element) {
+  const nextMerchantId = normalizeMerchantTabId(element?.dataset?.merchantId ?? element?.value);
+  const currentMerchantId = getSelectedMerchantTabId();
+  if (nextMerchantId === currentMerchantId) return false;
+  setSelectedMerchantTabId(nextMerchantId);
+  return true;
+}
+
+function getMerchantEditorStorageKey() {
+  return `po-merchant-editor-${game.user?.id ?? "anon"}`;
+}
+
+function getMerchantEditorSelection() {
+  return String(sessionStorage.getItem(getMerchantEditorStorageKey()) ?? "").trim();
+}
+
+function setMerchantEditorSelection(merchantIdInput) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  const previous = getMerchantEditorSelection();
+  if (!merchantId) {
+    sessionStorage.removeItem(getMerchantEditorStorageKey());
+    clearMerchantEditorDraftState();
+    return "";
+  }
+  sessionStorage.setItem(getMerchantEditorStorageKey(), merchantId);
+  if (merchantId !== previous) clearMerchantEditorDraftState();
+  return merchantId;
+}
+
+function getMerchantEditorDraftStorageKey() {
+  return `po-merchant-editor-draft-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantEditorSelectionKey(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || "__new__";
+}
+
+function getMerchantEditorDraftState() {
+  const raw = sessionStorage.getItem(getMerchantEditorDraftStorageKey());
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    const selectionKey = normalizeMerchantEditorSelectionKey(parsed.selectionKey);
+    const draft = getMerchantDefinitionDraftSource(parsed.draft ?? {});
+    if (selectionKey === "__new__") draft.id = "";
+    return { selectionKey, draft };
+  } catch (_error) {
+    return null;
+  }
+}
+
+function setMerchantEditorDraftState(selectionKeyInput, draftInput = {}) {
+  const selectionKey = normalizeMerchantEditorSelectionKey(selectionKeyInput);
+  const draft = getMerchantDefinitionDraftSource(draftInput ?? {});
+  if (selectionKey === "__new__") draft.id = "";
+  sessionStorage.setItem(getMerchantEditorDraftStorageKey(), JSON.stringify({
+    selectionKey,
+    draft
+  }));
+  return { selectionKey, draft };
+}
+
+function clearMerchantEditorDraftState() {
+  sessionStorage.removeItem(getMerchantEditorDraftStorageKey());
+}
+
+function getMerchantEditorViewTabStorageKey() {
+  return `po-merchant-editor-view-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantEditorViewTab(value, fallback = "editor") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "settings") return "settings";
+  if (normalized === "editor") return "editor";
+  return normalizeMerchantEditorViewTab(fallback, "editor");
+}
+
+function getMerchantEditorViewTab() {
+  return normalizeMerchantEditorViewTab(sessionStorage.getItem(getMerchantEditorViewTabStorageKey()), "editor");
+}
+
+function setMerchantEditorViewTab(value) {
+  const next = normalizeMerchantEditorViewTab(value, "editor");
+  sessionStorage.setItem(getMerchantEditorViewTabStorageKey(), next);
+  return next;
+}
+
+function setMerchantEditorViewTabFromElement(element) {
+  const next = normalizeMerchantEditorViewTab(element?.dataset?.tab ?? element?.value, "editor");
+  const current = getMerchantEditorViewTab();
+  if (next === current) return false;
+  setMerchantEditorViewTab(next);
+  return true;
+}
+
+function getMerchantEditorPackFilterStorageKey() {
+  return `po-merchant-pack-filter-${game.user?.id ?? "anon"}`;
+}
+
+function getMerchantEditorItemFilterStorageKey() {
+  return `po-merchant-item-filter-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantEditorFilter(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function getMerchantEditorPackFilter() {
+  return normalizeMerchantEditorFilter(sessionStorage.getItem(getMerchantEditorPackFilterStorageKey()));
+}
+
+function setMerchantEditorPackFilter(value) {
+  const normalized = normalizeMerchantEditorFilter(value);
+  sessionStorage.setItem(getMerchantEditorPackFilterStorageKey(), normalized);
+  return normalized;
+}
+
+function getMerchantEditorItemFilter() {
+  return normalizeMerchantEditorFilter(sessionStorage.getItem(getMerchantEditorItemFilterStorageKey()));
+}
+
+function setMerchantEditorItemFilter(value) {
+  const normalized = normalizeMerchantEditorFilter(value);
+  sessionStorage.setItem(getMerchantEditorItemFilterStorageKey(), normalized);
+  return normalized;
+}
+
+function setLootClaimRunSelectionFromElement(element) {
+  const nextRunId = normalizeLootClaimRunId(element?.value);
+  const currentRunId = getLootClaimRunSelection();
+  if (nextRunId === currentRunId) return false;
+  setLootClaimRunSelection(nextRunId);
   return true;
 }
 
@@ -2829,6 +4708,51 @@ function getActiveLootRegistryTab() {
 function setActiveLootRegistryTab(tab) {
   const value = String(tab ?? "preview").trim().toLowerCase();
   sessionStorage.setItem(getLootRegistryTabStorageKey(), value === "settings" ? "settings" : "preview");
+}
+
+function getGmDowntimeViewStorageKey() {
+  return `po-gm-downtime-view-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeDowntimeEntriesSort(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "pending";
+}
+
+function normalizeDowntimeLogsSort(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const allowed = new Set(DOWNTIME_LOG_SORT_OPTIONS.map((entry) => entry.value));
+  return allowed.has(normalized) ? normalized : "resolved-desc";
+}
+
+function getGmDowntimeViewState() {
+  const fallback = { entriesSort: "pending", logsSort: "resolved-desc" };
+  const raw = sessionStorage.getItem(getGmDowntimeViewStorageKey());
+  if (!raw) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      entriesSort: normalizeDowntimeEntriesSort(parsed?.entriesSort),
+      logsSort: normalizeDowntimeLogsSort(parsed?.logsSort)
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function setGmDowntimeViewState(patch = {}) {
+  const previous = getGmDowntimeViewState();
+  const next = {
+    entriesSort: patch?.entriesSort === undefined
+      ? previous.entriesSort
+      : normalizeDowntimeEntriesSort(patch.entriesSort),
+    logsSort: patch?.logsSort === undefined
+      ? previous.logsSort
+      : normalizeDowntimeLogsSort(patch.logsSort)
+  };
+  sessionStorage.setItem(getGmDowntimeViewStorageKey(), JSON.stringify(next));
+  return next;
 }
 
 function getNonPartySyncFilterStorageKey() {
@@ -2954,6 +4878,524 @@ function scheduleOperationsJournalFilterUpdate(app, value, rerender) {
     }
   }, delay);
   journalFilterDebounceTimers.set(app, timer);
+}
+
+function clearScheduledSopNoteSave(app, sopKey) {
+  if (!app || !sopKey) return;
+  const timersByKey = sopNoteDebounceTimers.get(app);
+  if (!timersByKey) return;
+  const existing = timersByKey.get(sopKey);
+  if (existing) window.clearTimeout(existing);
+  timersByKey.delete(sopKey);
+  if (timersByKey.size === 0) sopNoteDebounceTimers.delete(app);
+}
+
+function scheduleOperationalSopNoteSave(app, element) {
+  if (!app || !element) return;
+  const sopKey = String(element?.dataset?.sop ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
+  let timersByKey = sopNoteDebounceTimers.get(app);
+  if (!timersByKey) {
+    timersByKey = new Map();
+    sopNoteDebounceTimers.set(app, timersByKey);
+  }
+  const existing = timersByKey.get(sopKey);
+  if (existing) window.clearTimeout(existing);
+  const timer = window.setTimeout(async () => {
+    try {
+      await setOperationalSopNote(element, { suppressUiWarning: true });
+    } finally {
+      clearScheduledSopNoteSave(app, sopKey);
+    }
+  }, 300);
+  timersByKey.set(sopKey, timer);
+}
+
+function cacheOperationalSopNoteDraftFromElement(element) {
+  const sopKey = String(element?.dataset?.sop ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
+  const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
+  writeSopCachedNoteEntry(sopKey, note, { pendingSync: false });
+}
+
+function getSopNoteTextareaFromElement(element) {
+  const directTextarea = element?.matches?.("textarea[data-action='set-sop-note']") ? element : null;
+  if (directTextarea) return directTextarea;
+  const sopKey = String(element?.dataset?.sop ?? "").trim();
+  if (!sopKey) return null;
+  const noteBlock = element?.closest?.(".po-sop-note-block");
+  if (noteBlock) {
+    const scoped = noteBlock.querySelector(`textarea[data-action='set-sop-note'][data-sop='${sopKey}']`)
+      ?? noteBlock.querySelector("textarea[data-action='set-sop-note']");
+    if (scoped) return scoped;
+  }
+  const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
+  return root?.querySelector?.(`textarea[data-action='set-sop-note'][data-sop='${sopKey}']`) ?? null;
+}
+
+function buildRestWatchNoteTimerKey(slotId, actorId) {
+  return `${String(slotId ?? "").trim()}::${String(actorId ?? "").trim()}`;
+}
+
+function getNoteDraftCacheStorageKey() {
+  const worldId = String(game.world?.id ?? "world").trim() || "world";
+  const userId = String(game.user?.id ?? "user").trim() || "user";
+  return `${MODULE_ID}.noteDraftCache.${worldId}.${userId}`;
+}
+
+function readNoteDraftCacheStore() {
+  try {
+    const raw = localStorage.getItem(getNoteDraftCacheStorageKey());
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeNoteDraftCacheStore(store = {}) {
+  try {
+    localStorage.setItem(getNoteDraftCacheStorageKey(), JSON.stringify(store));
+  } catch {
+    // Ignore storage errors silently.
+  }
+}
+
+function getNoteDraftCacheValue(cacheKeyInput) {
+  const cacheKey = String(cacheKeyInput ?? "").trim();
+  if (!cacheKey) return "";
+  const store = readNoteDraftCacheStore();
+  const entry = store[cacheKey];
+  if (entry && typeof entry === "object" && typeof entry.text === "string") return entry.text;
+  return "";
+}
+
+function setNoteDraftCacheValue(cacheKeyInput, textInput) {
+  const cacheKey = String(cacheKeyInput ?? "").trim();
+  if (!cacheKey) return;
+  const text = String(textInput ?? "");
+  const store = readNoteDraftCacheStore();
+  if (!text.trim()) {
+    delete store[cacheKey];
+    writeNoteDraftCacheStore(store);
+    return;
+  }
+  store[cacheKey] = {
+    text,
+    updatedAt: Date.now()
+  };
+  const entries = Object.entries(store);
+  if (entries.length > 300) {
+    entries
+      .sort((a, b) => Number(a?.[1]?.updatedAt ?? 0) - Number(b?.[1]?.updatedAt ?? 0))
+      .slice(0, entries.length - 300)
+      .forEach(([key]) => delete store[key]);
+  }
+  writeNoteDraftCacheStore(store);
+}
+
+function clearNoteDraftCacheValue(cacheKeyInput) {
+  const cacheKey = String(cacheKeyInput ?? "").trim();
+  if (!cacheKey) return;
+  const store = readNoteDraftCacheStore();
+  if (!Object.prototype.hasOwnProperty.call(store, cacheKey)) return;
+  delete store[cacheKey];
+  writeNoteDraftCacheStore(store);
+}
+
+function getRestWatchNoteCacheKey(slotIdInput, actorIdInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slotId || !actorId) return "";
+  return `rest:${slotId}:${actorId}`;
+}
+
+function getMarchingNoteCacheKey(actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return "";
+  return `march:${actorId}`;
+}
+
+function getSopNoteCacheKey(sopKeyInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return "";
+  return `sop:${sopKey}`;
+}
+
+function readSopCachedNoteEntry(sopKeyInput) {
+  const cacheKey = getSopNoteCacheKey(sopKeyInput);
+  if (!cacheKey) return null;
+  const store = readNoteDraftCacheStore();
+  const entry = store[cacheKey];
+  if (!entry || typeof entry !== "object") return null;
+  const text = clampSocketText(entry.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const pendingSync = Boolean(entry.pendingSync);
+  if (!String(text ?? "").trim() && !pendingSync) return null;
+  return {
+    sopKey: String(sopKeyInput ?? "").trim(),
+    text,
+    pendingSync,
+    updatedAt: Math.max(0, Number(entry.updatedAt ?? 0) || 0)
+  };
+}
+
+function writeSopCachedNoteEntry(sopKeyInput, textInput, options = {}) {
+  const cacheKey = getSopNoteCacheKey(sopKeyInput);
+  if (!cacheKey) return;
+  const text = clampSocketText(textInput ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const pendingSync = options?.pendingSync !== false;
+  if (!String(text ?? "").trim() && !pendingSync) {
+    clearNoteDraftCacheValue(cacheKey);
+    return;
+  }
+  const store = readNoteDraftCacheStore();
+  store[cacheKey] = {
+    text,
+    pendingSync,
+    updatedAt: Date.now()
+  };
+  const entries = Object.entries(store);
+  if (entries.length > 300) {
+    entries
+      .sort((a, b) => Number(a?.[1]?.updatedAt ?? 0) - Number(b?.[1]?.updatedAt ?? 0))
+      .slice(0, entries.length - 300)
+      .forEach(([key]) => delete store[key]);
+  }
+  writeNoteDraftCacheStore(store);
+}
+
+function clearSopCachedNoteEntry(sopKeyInput) {
+  const cacheKey = getSopNoteCacheKey(sopKeyInput);
+  if (!cacheKey) return;
+  clearNoteDraftCacheValue(cacheKey);
+}
+
+function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  const worldNote = clampSocketText(worldNoteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const cached = readSopCachedNoteEntry(sopKey);
+  if (!cached) return { note: worldNote, pendingSync: false };
+  if (cached.text === worldNote) {
+    clearSopCachedNoteEntry(sopKey);
+    return { note: worldNote, pendingSync: false };
+  }
+  return { note: cached.text, pendingSync: cached.pendingSync };
+}
+
+function getPendingSopCachedNotes() {
+  return SOP_KEYS
+    .map((sopKey) => readSopCachedNoteEntry(sopKey))
+    .filter((entry) => Boolean(entry?.pendingSync));
+}
+
+function schedulePendingSopNoteSync(reason = "context") {
+  if (game.user?.isGM) return;
+  if (sopPendingSyncScheduled || sopPendingSyncInFlight) return;
+  if (!hasActiveGmClient()) return;
+  if (getPendingSopCachedNotes().length === 0) return;
+  sopPendingSyncScheduled = true;
+  window.setTimeout(async () => {
+    sopPendingSyncScheduled = false;
+    await flushPendingSopNoteSync(reason);
+  }, 120);
+}
+
+async function flushPendingSopNoteSync(reason = "manual") {
+  if (game.user?.isGM) return 0;
+  if (sopPendingSyncInFlight) return 0;
+  if (!hasActiveGmClient()) return 0;
+  const pending = getPendingSopCachedNotes();
+  if (pending.length === 0) return 0;
+  sopPendingSyncInFlight = true;
+  let synced = 0;
+  try {
+    for (const entry of pending) {
+      const sopKey = String(entry?.sopKey ?? "").trim();
+      if (!sopKey || !SOP_KEYS.includes(sopKey)) continue;
+      const note = clampSocketText(entry?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:setSopNote",
+        userId: game.user.id,
+        sopKey,
+        note
+      });
+      writeSopCachedNoteEntry(sopKey, note, { pendingSync: false });
+      synced += 1;
+    }
+    if (synced > 0) {
+      logUiDebug("operations-sop", "flushed pending SOP notes to GM socket bridge", {
+        reason: String(reason ?? "manual"),
+        synced,
+        userId: String(game.user?.id ?? ""),
+        userName: String(game.user?.name ?? "Unknown")
+      });
+    }
+  } finally {
+    sopPendingSyncInFlight = false;
+  }
+  return synced;
+}
+
+function clearScheduledRestWatchNoteSave(app, slotId, actorId) {
+  if (!app) return;
+  const key = buildRestWatchNoteTimerKey(slotId, actorId);
+  if (!key || key === "::") return;
+  const timersByKey = restWatchNoteDebounceTimers.get(app);
+  if (!timersByKey) return;
+  const existing = timersByKey.get(key);
+  if (existing) window.clearTimeout(existing);
+  timersByKey.delete(key);
+  if (timersByKey.size === 0) restWatchNoteDebounceTimers.delete(app);
+}
+
+function getRestWatchNoteContextFromElement(element) {
+  const noteInput = element?.matches?.("textarea.po-notes-input")
+    ? element
+    : element?.closest?.(".po-notes")?.querySelector?.("textarea.po-notes-input");
+  const watchEntry = noteInput?.closest?.(".po-watch-entry");
+  const slotCard = noteInput?.closest?.(".po-card");
+  const slotId = String(slotCard?.dataset?.slotId ?? "").trim();
+  const actorId = String(watchEntry?.dataset?.actorId ?? "").trim();
+  return {
+    slotId,
+    actorId,
+    text: String(noteInput?.value ?? ""),
+    noteInput
+  };
+}
+
+function cacheRestWatchNoteDraftFromElement(element) {
+  const context = getRestWatchNoteContextFromElement(element);
+  if (!context?.slotId || !context?.actorId) return;
+  const cacheKey = getRestWatchNoteCacheKey(context.slotId, context.actorId);
+  setNoteDraftCacheValue(cacheKey, context.text);
+}
+
+function appendRestWatchNoteAudit(state, payload = {}) {
+  if (!state || typeof state !== "object") return;
+  if (!Array.isArray(state.noteAudit)) state.noteAudit = [];
+  const slotId = String(payload.slotId ?? "").trim();
+  const actorId = String(payload.actorId ?? "").trim();
+  if (!slotId || !actorId) return;
+  state.noteAudit.unshift({
+    id: foundry.utils.randomID(),
+    slotId,
+    actorId,
+    source: normalizeRestNoteSaveSource(payload.source),
+    textPreview: clampSocketText(payload.textPreview ?? payload.text ?? "", 200),
+    savedAt: Number(payload.savedAt ?? Date.now()) || Date.now(),
+    savedBy: String(payload.savedBy ?? game.user?.name ?? "Unknown")
+  });
+  if (state.noteAudit.length > 200) state.noteAudit = state.noteAudit.slice(0, 200);
+}
+
+async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
+  const slotId = String(context?.slotId ?? "").trim();
+  const actorId = String(context?.actorId ?? "").trim();
+  if (!slotId || !actorId) return false;
+  const source = normalizeRestNoteSaveSource(options?.source ?? "autosave");
+  const text = clampSocketText(context?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
+  setNoteDraftCacheValue(cacheKey, text);
+
+  if (!canAccessAllPlayerOps()) {
+    const actor = game.actors.get(actorId);
+    if (!actor || !canUserControlActor(actor, game.user)) {
+      logUiDebug("rest-watch-notes", "blocked note save (client permission check failed)", {
+        slotId,
+        actorId,
+        userId: String(game.user?.id ?? ""),
+        userName: String(game.user?.name ?? "Unknown")
+      });
+      ui.notifications?.warn("You can only save notes for characters you can access.");
+      return false;
+    }
+    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
+    if (options?.notify) ui.notifications?.info("Note saved.");
+    return true;
+  }
+
+  let changed = false;
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+      slot.actorId = null;
+      slot.notes = "";
+    }
+    if (!slot.entries) slot.entries = [];
+    const entry = slot.entries.find((row) => String(row?.actorId ?? "") === actorId);
+    if (!entry) return;
+    const previous = String(entry.notes ?? "");
+    if (previous === text) return;
+    entry.notes = text;
+    appendRestWatchNoteAudit(state, {
+      slotId,
+      actorId,
+      source,
+      textPreview: text,
+      savedBy: String(game.user?.name ?? "GM")
+    });
+    changed = true;
+  });
+
+  if (options?.notify) {
+    ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
+  }
+  return changed;
+}
+
+async function saveRestWatchEntryNoteFromElement(element, options = {}) {
+  const context = getRestWatchNoteContextFromElement(element);
+  if (!context?.slotId || !context?.actorId) return false;
+  return saveRestWatchEntryNoteByContext(context, options);
+}
+
+function scheduleRestWatchNoteSave(app, element, options = {}) {
+  if (!app || !element) return;
+  const context = getRestWatchNoteContextFromElement(element);
+  if (!context?.slotId || !context?.actorId) return;
+  let timersByKey = restWatchNoteDebounceTimers.get(app);
+  if (!timersByKey) {
+    timersByKey = new Map();
+    restWatchNoteDebounceTimers.set(app, timersByKey);
+  }
+  const key = buildRestWatchNoteTimerKey(context.slotId, context.actorId);
+  const existing = timersByKey.get(key);
+  if (existing) window.clearTimeout(existing);
+  const timer = window.setTimeout(async () => {
+    try {
+      await saveRestWatchEntryNoteByContext(context, {
+        source: options?.source ?? "autosave",
+        notify: false
+      });
+    } finally {
+      clearScheduledRestWatchNoteSave(app, context.slotId, context.actorId);
+    }
+  }, 300);
+  timersByKey.set(key, timer);
+}
+
+function getMarchingNoteContextFromElement(element) {
+  const noteInput = element?.matches?.("textarea.po-entry-notes-input")
+    ? element
+    : element?.closest?.(".po-entry-notes")?.querySelector?.("textarea.po-entry-notes-input");
+  const actorId = String(noteInput?.closest?.("[data-actor-id]")?.dataset?.actorId ?? "").trim();
+  return {
+    actorId,
+    text: String(noteInput?.value ?? ""),
+    noteInput
+  };
+}
+
+function cacheMarchingNoteDraftFromElement(element) {
+  const context = getMarchingNoteContextFromElement(element);
+  if (!context?.actorId) return;
+  const cacheKey = getMarchingNoteCacheKey(context.actorId);
+  setNoteDraftCacheValue(cacheKey, context.text);
+}
+
+async function saveMarchingNoteByContext(context = {}, options = {}) {
+  const actorId = String(context?.actorId ?? "").trim();
+  if (!actorId) return false;
+  const text = clampSocketText(context?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const cacheKey = getMarchingNoteCacheKey(actorId);
+  setNoteDraftCacheValue(cacheKey, text);
+
+  if (!canAccessAllPlayerOps()) {
+    const actor = game.actors.get(actorId);
+    if (!actor || !canUserControlActor(actor, game.user)) {
+      logUiDebug("march-notes", "blocked note save (client permission check failed)", {
+        actorId,
+        userId: String(game.user?.id ?? ""),
+        userName: String(game.user?.name ?? "Unknown")
+      });
+      ui.notifications?.warn("You can only save notes for characters you can access.");
+      return false;
+    }
+    await updateMarchingOrderState({ op: "setNote", actorId, text });
+    if (options?.notify) ui.notifications?.info("Note saved.");
+    return true;
+  }
+
+  let changed = false;
+  await updateMarchingOrderState((state) => {
+    if (!state.notes) state.notes = {};
+    const previous = String(state.notes[actorId] ?? "");
+    if (previous === text) return;
+    state.notes[actorId] = text;
+    changed = true;
+  });
+  if (options?.notify) {
+    ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
+  }
+  return changed;
+}
+
+async function saveMarchingNoteFromElement(element, options = {}) {
+  const context = getMarchingNoteContextFromElement(element);
+  if (!context?.actorId) return false;
+  return saveMarchingNoteByContext(context, options);
+}
+
+function clearScheduledMarchingNoteSave(app, actorIdInput) {
+  if (!app) return;
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return;
+  const timersByActor = marchingNoteDebounceTimers.get(app);
+  if (!timersByActor) return;
+  const existing = timersByActor.get(actorId);
+  if (existing) window.clearTimeout(existing);
+  timersByActor.delete(actorId);
+  if (timersByActor.size === 0) marchingNoteDebounceTimers.delete(app);
+}
+
+function scheduleMarchingNoteSave(app, element, options = {}) {
+  if (!app || !element) return;
+  const context = getMarchingNoteContextFromElement(element);
+  if (!context?.actorId) return;
+  let timersByActor = marchingNoteDebounceTimers.get(app);
+  if (!timersByActor) {
+    timersByActor = new Map();
+    marchingNoteDebounceTimers.set(app, timersByActor);
+  }
+  const existing = timersByActor.get(context.actorId);
+  if (existing) window.clearTimeout(existing);
+  const timer = window.setTimeout(async () => {
+    try {
+      await saveMarchingNoteByContext(context, {
+        source: options?.source ?? "autosave",
+        notify: false
+      });
+    } finally {
+      clearScheduledMarchingNoteSave(app, context.actorId);
+    }
+  }, 300);
+  timersByActor.set(context.actorId, timer);
+}
+
+function hydrateCachedNoteDraftInputs(root) {
+  if (!root?.querySelectorAll) return;
+
+  root.querySelectorAll(".po-watch-entry .po-notes-input").forEach((input) => {
+    const context = getRestWatchNoteContextFromElement(input);
+    if (!context?.slotId || !context?.actorId) return;
+    const cacheKey = getRestWatchNoteCacheKey(context.slotId, context.actorId);
+    const cached = getNoteDraftCacheValue(cacheKey);
+    if (cached === "") return;
+    if (String(input.value ?? "") !== cached) input.value = cached;
+  });
+
+  root.querySelectorAll(".po-entry-notes .po-entry-notes-input").forEach((input) => {
+    const context = getMarchingNoteContextFromElement(input);
+    if (!context?.actorId) return;
+    const cacheKey = getMarchingNoteCacheKey(context.actorId);
+    const cached = getNoteDraftCacheValue(cacheKey);
+    if (cached === "") return;
+    if (String(input.value ?? "") !== cached) input.value = cached;
+  });
 }
 
 function buildJournalSortOptions(selectedSort = "newest") {
@@ -3262,14 +5704,15 @@ function normalizeLootRegistryTab(tab, fallback = "preview") {
 }
 
 function getActiveOperationsPlanningTab() {
-  const allowed = new Set(["roles", "sops", "resources", "bonuses"]);
-  const stored = sessionStorage.getItem(getOperationsPlanningTabStorageKey()) ?? "roles";
+  const allowed = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
+  const stored = String(sessionStorage.getItem(getOperationsPlanningTabStorageKey()) ?? "roles").trim().toLowerCase();
   return allowed.has(stored) ? stored : "roles";
 }
 
 function setActiveOperationsPlanningTab(tab) {
-  const allowed = new Set(["roles", "sops", "resources", "bonuses"]);
-  const value = allowed.has(tab) ? tab : "roles";
+  const allowed = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
+  const normalized = String(tab ?? "").trim().toLowerCase();
+  const value = allowed.has(normalized) ? normalized : "roles";
   sessionStorage.setItem(getOperationsPlanningTabStorageKey(), value);
 }
 
@@ -3613,11 +6056,22 @@ function restorePendingWindowState(app) {
   const state = pendingWindowRestore.get(app);
   if (!state) return;
   pendingWindowRestore.delete(app);
-  const position = {
-    left: Number.isFinite(state.left) ? state.left : undefined,
-    top: Number.isFinite(state.top) ? state.top : undefined,
+  const profileId = normalizeWindowProfileId(app);
+  const restoredSize = getResponsiveWindowPosition(profileId, {
     width: Number.isFinite(state.width) && state.width > 100 ? state.width : undefined,
     height: Number.isFinite(state.height) && state.height > 100 ? state.height : undefined
+  });
+  const clampedPlacement = clampWindowPositionToViewport({
+    left: Number.isFinite(state.left) ? state.left : undefined,
+    top: Number.isFinite(state.top) ? state.top : undefined,
+    width: restoredSize.width,
+    height: restoredSize.height
+  });
+  const position = {
+    left: clampedPlacement.left,
+    top: clampedPlacement.top,
+    width: restoredSize.width,
+    height: restoredSize.height
   };
   const apply = () => app.setPosition(position);
   apply();
@@ -3795,6 +6249,24 @@ function buildOperationsContextFallback() {
     fallbackLootClaims = buildLootClaimsContext(game.user);
   } catch (_error) {
     fallbackLootClaims = {
+      selectedRunId: "",
+      selectedRunStatus: "open",
+      selectedRunIsArchived: false,
+      hasSelectedRun: false,
+      selectedRunCard: null,
+      hasOpenRuns: false,
+      openRunCount: 0,
+      openRuns: [],
+      hasArchivedRuns: false,
+      archivedRunCount: 0,
+      archivedRuns: [],
+      archiveSort: "archived-desc",
+      archiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS.map((entry) => ({
+        value: entry.value,
+        label: entry.label,
+        selected: entry.value === "archived-desc"
+      })),
+      runOptions: [],
       publishedAtLabel: "-",
       publishedBy: "-",
       itemCount: 0,
@@ -3826,14 +6298,26 @@ function buildOperationsContextFallback() {
       actorOptions: buildRoleActorOptions(actorId)
     };
   });
-  const sops = [
-    { key: "campSetup", label: "Camp setup", active: Boolean(ledger.sops?.campSetup), note: String(ledger.sopNotes?.campSetup ?? "") },
-    { key: "watchRotation", label: "Watch rotation", active: Boolean(ledger.sops?.watchRotation), note: String(ledger.sopNotes?.watchRotation ?? "") },
-    { key: "dungeonBreach", label: "Dungeon breach protocol", active: Boolean(ledger.sops?.dungeonBreach), note: String(ledger.sopNotes?.dungeonBreach ?? "") },
-    { key: "urbanEntry", label: "Urban entry protocol", active: Boolean(ledger.sops?.urbanEntry), note: String(ledger.sopNotes?.urbanEntry ?? "") },
-    { key: "prisonerHandling", label: "Prisoner handling", active: Boolean(ledger.sops?.prisonerHandling), note: String(ledger.sopNotes?.prisonerHandling ?? "") },
-    { key: "retreatProtocol", label: "Retreat protocol", active: Boolean(ledger.sops?.retreatProtocol), note: String(ledger.sopNotes?.retreatProtocol ?? "") }
+  const sopMeta = [
+    { key: "campSetup", label: "Camp setup" },
+    { key: "watchRotation", label: "Watch rotation" },
+    { key: "dungeonBreach", label: "Dungeon breach protocol" },
+    { key: "urbanEntry", label: "Urban entry protocol" },
+    { key: "prisonerHandling", label: "Prisoner handling" },
+    { key: "retreatProtocol", label: "Retreat protocol" }
   ];
+  const sops = sopMeta.map((sop) => {
+    const worldNote = String(ledger.sopNotes?.[sop.key] ?? "");
+    const resolved = resolveSopNoteForView(sop.key, worldNote);
+    return {
+      key: sop.key,
+      label: sop.label,
+      active: Boolean(ledger.sops?.[sop.key]),
+      note: resolved.note,
+      pendingLocalSync: resolved.pendingSync
+    };
+  });
+  schedulePendingSopNoteSync("operations-fallback-context");
   const roleCoverage = roles.filter((role) => role.hasActor).length;
   const activeSops = sops.filter((sop) => sop.active).length;
   const fallbackEffects = (() => {
@@ -3871,6 +6355,11 @@ function buildOperationsContextFallback() {
   })();
   const fallbackResourcesState = foundry.utils.deepClone(ledger.resources ?? {});
   ensureOperationalResourceConfig(fallbackResourcesState);
+  const fallbackStewardPools = {
+    food: buildStewardPoolContext(fallbackResourcesState, "food"),
+    water: buildStewardPoolContext(fallbackResourcesState, "water"),
+    torches: buildStewardPoolContext(fallbackResourcesState, "torches")
+  };
   const fallbackUpkeep = {
     partySize: Number(ledger.resources?.upkeep?.partySize ?? 4),
     foodPerMember: Number(ledger.resources?.upkeep?.foodPerMember ?? 1),
@@ -3885,15 +6374,19 @@ function buildOperationsContextFallback() {
   const fallbackUpkeepDaysPending = getUpkeepDaysFromCalendar(fallbackResourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
   const fallbackResourcesNumeric = {
     food: Number(fallbackResourcesState.food ?? 0),
-    partyFoodRations: Number(fallbackResourcesState.partyFoodRations ?? 0),
-    partyWaterRations: Number(fallbackResourcesState.partyWaterRations ?? 0),
+    partyFoodRations: getStewardPoolFiniteAmount(fallbackStewardPools.food),
+    partyWaterRations: getStewardPoolFiniteAmount(fallbackStewardPools.water),
     water: Number(fallbackResourcesState.water ?? 0),
-    torches: Number(fallbackResourcesState.torches ?? 0)
+    torches: getStewardPoolFiniteAmount(fallbackStewardPools.torches)
   };
+  const fallbackInfiniteFoodSteward = isStewardPoolInfinite(fallbackStewardPools.food);
+  const fallbackInfiniteWaterSteward = isStewardPoolInfinite(fallbackStewardPools.water);
   const fallbackLinkedFoodStock = getSelectedResourceItemQuantity(fallbackResourcesState, "food");
+  const fallbackLinkedWaterStock = getSelectedResourceItemQuantity(fallbackResourcesState, "water");
   const fallbackTotalFoodReserve = Math.max(0, fallbackResourcesNumeric.partyFoodRations) + fallbackLinkedFoodStock;
-  const fallbackTotalWaterReserve = Math.max(0, fallbackResourcesNumeric.partyWaterRations);
-  const fallbackFormatCyclesLeft = (stock, drain) => {
+  const fallbackTotalWaterReserve = Math.max(0, fallbackResourcesNumeric.partyWaterRations) + fallbackLinkedWaterStock;
+  const fallbackFormatCyclesLeft = (stock, drain, infinite = false) => {
+    if (infinite) return "infinite";
     if (drain <= 0) return "infinite";
     return (Math.max(0, stock) / drain).toFixed(1);
   };
@@ -3910,8 +6403,144 @@ function buildOperationsContextFallback() {
   } catch {
     fallbackGatherWeatherOptions = [];
   }
+  const fallbackGatherHistoryView = getGatherHistoryViewState();
+  const fallbackGatherPresets = buildGatherPresetContext();
+  const fallbackGatherHistory = buildGatherHistoryContext(fallbackResourcesState, { viewState: fallbackGatherHistoryView });
   const fallbackEnvironmentPreset = getEnvironmentPresetByKey(String(ledger.environment?.presetKey ?? "none"));
   const fallbackEnvironmentCheck = getEnvironmentCheckMeta(fallbackEnvironmentPreset);
+  let fallbackMerchants;
+  try {
+    fallbackMerchants = buildMerchantsContext(ledger, { user: game.user });
+  } catch {
+    fallbackMerchants = {
+      currentSettlement: "",
+      currentSettlementLabel: "Global",
+      settlementOptions: [{ value: "", label: "All Cities", selected: true }],
+      selectedSettlement: "",
+      selectedSettlementLabel: "All Cities",
+      actorOptions: [],
+      hasActorOptions: false,
+      activeActorId: "",
+      activeActorName: "",
+      hasActiveActor: false,
+      activeActorSocialScore: 0,
+      availableMerchants: [],
+      hasAvailableMerchants: false,
+      activeMerchantId: "",
+      hasActiveMerchant: false,
+      activeMerchantName: "No Merchant Selected",
+      activeMerchantTitle: "",
+      activeMerchantRace: "",
+      activeMerchantImg: "icons/svg/mystery-man.svg",
+      activeMerchantStockCount: 0,
+      activeMerchantBuyMarkupLabel: "1.00",
+      activeMerchantCanOpenShop: false,
+      inventoryRows: [],
+      hasInventoryRows: false,
+      inventoryItemCount: 0,
+      viewerName: String(game.user?.name ?? "Player").trim() || "Player",
+      viewerLastAccessLabel: "-",
+      shouldLogAccess: false,
+      accessLogPayload: {},
+      gm: {
+        definitions: [],
+        hasDefinitions: false,
+        editorViewTab: "editor",
+        editorViewTabEditor: true,
+        editorViewTabSettings: false,
+        cityCatalogInput: "",
+        editor: {
+          id: "",
+          name: "",
+          title: "",
+          race: "",
+          img: "icons/svg/item-bag.svg",
+          settlement: "",
+          accessMode: MERCHANT_ACCESS_MODES.ALL,
+          isHidden: false,
+          requiresContract: false,
+          contractKey: "",
+          socialGateEnabled: false,
+          minSocialScore: 0,
+          buyMarkup: MERCHANT_DEFAULTS.pricing.buyMarkup,
+          buyMarkupPercent: Number((MERCHANT_DEFAULTS.pricing.buyMarkup * 100).toFixed(2)),
+          buyMarkupMultiplierLabel: (1 + Number(MERCHANT_DEFAULTS.pricing.buyMarkup)).toFixed(2),
+          sellRate: MERCHANT_DEFAULTS.pricing.sellRate,
+          sellRatePercent: Number((Number(MERCHANT_DEFAULTS.pricing.sellRate) * 100).toFixed(2)),
+          sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled !== false,
+          cashOnHandGp: Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp ?? 500),
+          buybackAllowedTypes: normalizeMerchantAllowedItemTypes(
+            MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+            ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+          ),
+          barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled !== false,
+          barterDc: Number(MERCHANT_DEFAULTS.pricing.barterDc ?? 15),
+          barterAbility: normalizeMerchantBarterAbility(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
+          sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
+          sourceRef: "",
+          sourcePackIds: [],
+          includeTagsInput: "",
+          excludeTagsInput: "",
+          keywordIncludeInput: "",
+          keywordExcludeInput: "",
+          allowedTypes: [...MERCHANT_ALLOWED_ITEM_TYPE_LIST],
+          curatedItemUuidsInput: "",
+          maxItems: MERCHANT_DEFAULTS.stock.maxItems,
+          stockCount: MERCHANT_DEFAULTS.stock.maxItems,
+          targetValueGp: MERCHANT_DEFAULTS.stock.targetValueGp,
+          scarcity: MERCHANT_DEFAULTS.stock.scarcity,
+          scarcityLabel: String(getMerchantScarcityProfile(MERCHANT_DEFAULTS.stock.scarcity)?.label ?? "6 - Normal"),
+          duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
+          maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
+          rarityWeightCommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100),
+          rarityWeightUncommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45),
+          rarityWeightRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16),
+          rarityWeightVeryRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.["very-rare"] ?? 5),
+          rarityWeightLegendary: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1),
+          actorId: ""
+        },
+        sourceTypeOptions: getMerchantEditorSourceTypeOptions(MERCHANT_SOURCE_TYPES.WORLD_FOLDER),
+        accessModeOptions: getMerchantAccessModeOptions(MERCHANT_ACCESS_MODES.ALL),
+        barterAbilityOptions: getMerchantBarterAbilityOptions(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
+        raceOptions: getMerchantEditorRaceOptions(""),
+        cityOptions: [{ value: "", label: "Global", selected: true }],
+        offerTagOptions: buildMerchantOfferTagOptions(MERCHANT_DEFAULTS.stock.allowedTypes),
+        scarcityOptions: getMerchantScarcityOptions(MERCHANT_DEFAULTS.stock.scarcity),
+        actorOptions: [{ id: "", name: "Create on refresh", selected: true }],
+        sourceRefOptions: [{ value: "", label: "Select one or more item folders", selected: true, disabled: true }],
+        sourceRefSelectableOptions: [],
+        hasSourceRefSelectableOptions: false,
+        sourceRefOptionCount: 0,
+        sourceRefSelectedCount: 0,
+        sourceRefHintLabel: "Select one or more item folders",
+        sourcePackFilter: "",
+        sourcePackOptions: [],
+        sourcePackVisibleOptions: [],
+        sourcePackVisibleCount: 0,
+        sourcePackFilterActive: false,
+        tagCatalogCount: 0,
+        hasTagCatalog: false,
+        includeTagOptions: [],
+        excludeTagOptions: [],
+        keywordCatalogCount: 0,
+        hasKeywordCatalog: false,
+        keywordIncludeOptions: [],
+        keywordExcludeOptions: [],
+        allowedTypeOptions: getMerchantAllowedTypeOptionsForEditor(MERCHANT_DEFAULTS.stock.allowedTypes),
+        buybackTypeOptions: getMerchantAllowedTypeOptionsForEditor(
+          MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+          ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+        ),
+        curatedRows: [],
+        hasCuratedRows: false,
+        itemFilter: "",
+        candidateRows: [],
+        hasCandidateRows: false,
+        assignmentRows: [],
+        hasAssignmentRows: false
+      }
+    };
+  }
   return {
     summary: {
       roleCoverage,
@@ -3925,10 +6554,12 @@ function buildOperationsContextFallback() {
     resources: {
       food: fallbackResourcesNumeric.food,
       linkedFoodStock: fallbackLinkedFoodStock,
+      linkedWaterStock: fallbackLinkedWaterStock,
       partyFoodRations: fallbackResourcesNumeric.partyFoodRations,
       partyWaterRations: fallbackResourcesNumeric.partyWaterRations,
       water: fallbackResourcesNumeric.water,
       torches: fallbackResourcesNumeric.torches,
+      stewardPools: fallbackStewardPools,
       itemSelections: {
         food: buildResourceSelectionContext(fallbackResourcesState, "food"),
         water: buildResourceSelectionContext(fallbackResourcesState, "water"),
@@ -3937,6 +6568,10 @@ function buildOperationsContextFallback() {
       gatherWeatherOptions: fallbackGatherWeatherOptions,
       gatherFoodCoveredNextUpkeep: fallbackGatherFoodCoveredNextUpkeep,
       gatherWaterCoveredNextUpkeep: fallbackGatherWaterCoveredNextUpkeep,
+      gatherPresets: fallbackGatherPresets,
+      hasGatherPresets: fallbackGatherPresets.length > 0,
+      gatherHistory: fallbackGatherHistory,
+      hasGatherHistory: fallbackGatherHistory.hasRows,
       summary: {
         foodDrainPerDay: fallbackFoodDrainPerDay,
         waterDrainPerDay: fallbackWaterDrainPerDay,
@@ -3944,10 +6579,13 @@ function buildOperationsContextFallback() {
         upkeepDaysPending: fallbackUpkeepDaysPending,
         foodDrainPending: fallbackFoodDrainPerDay * fallbackUpkeepDaysPending,
         waterDrainPending: fallbackWaterDrainPerDay * fallbackUpkeepDaysPending,
-        foodCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalFoodReserve, fallbackFoodDrainPerDay),
-        foodRationCyclesLeft: fallbackFormatCyclesLeft(fallbackResourcesNumeric.partyFoodRations, fallbackFoodDrainPerDay),
-        waterCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay),
-        waterRationCyclesLeft: fallbackFormatCyclesLeft(fallbackResourcesNumeric.partyWaterRations, fallbackWaterDrainPerDay),
+        foodStewardPoolDisplay: fallbackStewardPools.food.amountDisplay,
+        waterStewardPoolDisplay: fallbackStewardPools.water.amountDisplay,
+        torchStewardPoolDisplay: fallbackStewardPools.torches.amountDisplay,
+        foodCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalFoodReserve, fallbackFoodDrainPerDay, fallbackInfiniteFoodSteward),
+        foodRationCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalFoodReserve, fallbackFoodDrainPerDay, fallbackInfiniteFoodSteward),
+        waterCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay, fallbackInfiniteWaterSteward),
+        waterRationCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay, fallbackInfiniteWaterSteward),
         selectedBindingCount: fallbackSelectedBindingCount
       },
       upkeep: fallbackUpkeep,
@@ -3966,6 +6604,8 @@ function buildOperationsContextFallback() {
       showWeatherPanel: gmQuickPanel === "weather",
       modifierKeyOptions: fallbackModifierKeyOptions,
       modifierModeOptions: fallbackModifierModeOptions,
+      stagedModifierQueue: [],
+      hasStagedModifierQueue: false,
       hasModifierAddLog: false,
       modifierAddLog: [],
       weatherSceneSnapshot: fallbackWeatherSceneSnapshot,
@@ -3975,6 +6615,7 @@ function buildOperationsContextFallback() {
     },
     lootSources: fallbackLootSources,
     lootClaims: fallbackLootClaims,
+    merchants: fallbackMerchants,
     environment: {
       preset: fallbackEnvironmentPreset,
       targetCount: 0,
@@ -4021,7 +6662,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     id: "rest-watch-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Rest Watch" },
-    position: { width: 1020, height: 820 },
+    position: getResponsiveWindowPosition("rest-watch"),
     resizable: true
   });
 
@@ -4031,7 +6672,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   async _prepareContext() {
     try {
-      const isGM = game.user.isGM;
+      const isGM = canAccessAllPlayerOps();
       const state = getRestWatchState();
       const visibility = state.visibility ?? "names-passives";
       const slots = buildWatchSlotsView(state, isGM, visibility);
@@ -4064,6 +6705,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           const active = getActiveOperationsPage();
           return active === "gm" ? "planning" : active;
         })();
+      if (operationsPageValue === "merchants" && operations?.merchants?.shouldLogAccess === true && operations?.merchants?.accessLogPayload) {
+        void logMerchantUiAccess(operations.merchants.accessLogPayload).catch((error) => {
+          logUiFailure("merchant-access", "failed to record merchant UI access", error, {
+            userId: operations?.merchants?.accessLogPayload?.userId,
+            actorId: operations?.merchants?.accessLogPayload?.actorId
+          });
+        });
+      }
       const operationsPlanningTab = getActiveOperationsPlanningTab();
       const gmOperationsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
       this._gmOperationsTab = gmOperationsTab;
@@ -4123,6 +6772,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPageReputation: operationsPageValue === "reputation",
         operationsPageSupply: false,
         operationsPageBase: operationsPageValue === "base",
+        operationsPageMerchants: operationsPageValue === "merchants",
         operationsPageDowntime: operationsPageValue === "downtime",
         operationsPageRecovery: operationsPageValue === "recovery",
         operationsPageGm: operationsPageValue === "gm",
@@ -4131,6 +6781,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPlanningRoles: operationsPlanningTab === "roles",
         operationsPlanningSops: operationsPlanningTab === "sops",
         operationsPlanningResources: operationsPlanningTab === "resources",
+        operationsPlanningLoot: operationsPlanningTab === "loot",
         operationsPlanningBonuses: operationsPlanningTab === "bonuses",
         overview: {
           totalSlots,
@@ -4156,7 +6807,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       console.error(`${MODULE_ID}: RestWatchApp _prepareContext failed`, error);
       const mainTab = normalizeMainTabId(getActiveRestMainTab(), "rest-watch");
       const operationsTabActive = mainTab === "operations" || mainTab === "gm";
-      const isGM = Boolean(game.user?.isGM);
+      const isGM = Boolean(canAccessAllPlayerOps());
       const fallbackState = getRestWatchState();
       const fallbackVisibility = fallbackState.visibility ?? "names-passives";
       const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
@@ -4213,6 +6864,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPageReputation: fallbackOpsPage === "reputation",
         operationsPageSupply: false,
         operationsPageBase: fallbackOpsPage === "base",
+        operationsPageMerchants: fallbackOpsPage === "merchants",
         operationsPageDowntime: fallbackOpsPage === "downtime",
         operationsPageRecovery: fallbackOpsPage === "recovery",
         operationsPageGm: fallbackOpsPage === "gm",
@@ -4221,6 +6873,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPlanningRoles: fallbackPlanningTab === "roles",
         operationsPlanningSops: fallbackPlanningTab === "sops",
         operationsPlanningResources: fallbackPlanningTab === "resources",
+        operationsPlanningLoot: fallbackPlanningTab === "loot",
         operationsPlanningBonuses: fallbackPlanningTab === "bonuses",
         overview: {
           totalSlots: fallbackTotalSlots,
@@ -4284,13 +6937,29 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
           this.#onAction(event);
         } else if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheRestWatchNoteDraftFromElement(event.target);
+          scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
         }
       });
 
       this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("input[data-merchant-pack-filter]")) {
+          setMerchantEditorPackFilter(event.target?.value ?? "");
+          applyMerchantEditorFilters(this.element);
+          return;
+        }
+        if (event.target?.matches("input[data-merchant-item-filter]")) {
+          setMerchantEditorItemFilter(event.target?.value ?? "");
+          applyMerchantEditorFilters(this.element);
+          return;
+        }
         if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
           this.#onAction(event);
+          return;
+        }
+        if (event.target?.matches("textarea[data-action='set-sop-note']")) {
+          cacheOperationalSopNoteDraftFromElement(event.target);
+          scheduleOperationalSopNoteSave(this, event.target);
           return;
         }
         if (event.target?.matches("input[data-action='set-journal-filter']")) {
@@ -4300,7 +6969,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
         if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheRestWatchNoteDraftFromElement(event.target);
+          return;
         }
       });
 
@@ -4309,13 +6979,85 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (portrait) openActorSheetFromElement(portrait);
       });
 
+      this.element.addEventListener("dragstart", (event) => {
+        const curatedRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (curatedRow) {
+          const itemUuid = String(curatedRow?.dataset?.itemUuid ?? "").trim();
+          if (!itemUuid || !event.dataTransfer) return;
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-po-merchant-curated", itemUuid);
+          event.dataTransfer.setData("text/plain", itemUuid);
+          return;
+        }
+
+        const candidateRow = event.target?.closest?.("[data-merchant-candidate-row]");
+        if (!candidateRow) return;
+        const candidateUuid = String(candidateRow?.dataset?.itemUuid ?? "").trim();
+        if (!candidateUuid || !event.dataTransfer) return;
+        event.dataTransfer.effectAllowed = "copy";
+        event.dataTransfer.setData("application/x-po-merchant-candidate", candidateUuid);
+        event.dataTransfer.setData("text/plain", candidateUuid);
+      });
+
       this.element.addEventListener("dragover", (event) => {
+        const merchantDropTarget = event.target?.closest?.("[data-merchant-curated-dropzone], [data-merchant-curated-list], [data-merchant-curated-row]");
+        if (merchantDropTarget) {
+          event.preventDefault();
+          if (merchantDropTarget.classList?.contains("po-merchant-curated-row")) merchantDropTarget.classList.add("is-drop-target");
+          return;
+        }
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
       });
 
+      this.element.addEventListener("dragleave", (event) => {
+        const merchantDropRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (!merchantDropRow) return;
+        merchantDropRow.classList.remove("is-drop-target");
+      });
+
       this.element.addEventListener("drop", async (event) => {
+        this.element.querySelectorAll?.("[data-merchant-curated-row].is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
+        const merchantDropZone = event.target?.closest?.("[data-merchant-curated-dropzone]");
+        if (merchantDropZone) {
+          event.preventDefault();
+          const draggedCuratedUuid = getMerchantCuratedDragUuidFromEvent(event);
+          if (draggedCuratedUuid) {
+            const moved = await reorderMerchantCuratedItemsFromElement(merchantDropZone, draggedCuratedUuid, "");
+            if (moved) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const draggedCandidateUuid = getMerchantCandidateDragUuidFromEvent(event);
+          if (draggedCandidateUuid) {
+            const added = await addMerchantCuratedItemFromElement(merchantDropZone, draggedCandidateUuid);
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const added = await addMerchantCuratedItemFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        const merchantDropRow = event.target?.closest?.("[data-merchant-curated-row]");
+        if (merchantDropRow) {
+          event.preventDefault();
+          const draggedUuid = getMerchantCuratedDragUuidFromEvent(event);
+          const targetUuid = String(merchantDropRow?.dataset?.itemUuid ?? "").trim();
+          if (draggedUuid) {
+            const moved = await reorderMerchantCuratedItemsFromElement(merchantDropRow, draggedUuid, targetUuid);
+            if (moved) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const draggedCandidateUuid = getMerchantCandidateDragUuidFromEvent(event);
+          if (draggedCandidateUuid) {
+            const added = await addMerchantCuratedItemFromElement(merchantDropRow, draggedCandidateUuid);
+            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
+          const added = await addMerchantCuratedItemFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
@@ -4328,6 +7070,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this.#updateActivityUI();
     this.#applyOperationsHoverHints();
     applyNonGmOperationsReadonly(this);
+    applyMerchantEditorFilters(this.element);
     refreshTabAccessibility(this.element);
     diagnoseRenderedMainTabs(this.element, "rest-watch");
     this._activePanel = normalizeMainTabId(this.element?.dataset?.mainTab ?? this._activePanel ?? getActiveRestMainTab(), "rest-watch");
@@ -4348,13 +7091,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDrop(this.element);
     
-    if (game.user.isGM && !this._openedPlayers) {
+    if (game.user?.isGM && canAccessAllPlayerOps() && !this._openedPlayers) {
       emitOpenRestPlayers();
       this._openedPlayers = true;
     }
 
     restorePendingWindowState(this);
     restorePendingUiState(this);
+    hydrateCachedNoteDraftInputs(this.element);
     syncNotesDisclosureState(this.element);
     restorePendingScrollState(this);
 
@@ -4397,16 +7141,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   setActivePanel(panelId, options = {}) {
     const normalized = normalizeMainTabId(panelId, "rest-watch");
-    if (normalized === "gm" && !game.user?.isGM) {
+    if (normalized === "gm" && !canAccessAllPlayerOps()) {
       ui.notifications?.warn("GM permissions are required for the GM section.");
       return;
     }
@@ -4477,535 +7217,776 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
-
-    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-    });
-    if (handledJournalAction) return;
-
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
     try {
-      switch (action) {
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "popout":
-        this.render({ force: true, popOut: true });
-        break;
-      case "assign":
-      case "assign-character":
-        await assignSlotByPicker(element, { source: "pc" });
-        break;
-      case "assign-actor":
-        await assignSlotByPicker(element, { source: "neutral-friendly" });
-        break;
-      case "assign-actor-global":
-        await assignSlotByPicker(element, { source: "all" });
-        break;
-      case "assign-me":
-        await assignSlotToUser(element);
-        break;
-      case "clear":
-        await clearSlotEntry(element);
-        break;
-      case "swap":
-        await swapSlots(element);
-        break;
-      case "toggle-notes":
-        toggleCardNotes(element);
-        break;
-      case "visibility":
-        await updateVisibility(element);
-        break;
-      case "autofill-party":
-        await autofillFromParty();
-        break;
-      case "autofill-last":
-        await restoreRestCommitted();
-        break;
-      case "commit-plan":
-        await commitRestWatchState();
-        break;
-      case "copy-text":
-        await copyRestWatchText(false);
-        break;
-      case "copy-md":
-        await copyRestWatchText(true);
-        break;
-      case "clear-all":
-        await clearRestWatchAll();
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "time-range":
-        await updateTimeRange(element);
-        break;
-      case "switch-character":
-        await switchActiveCharacter(element);
-        break;
-      case "set-exhaustion":
-        await updateExhaustion(element);
-        break;
-      case "set-activity":
-        await updateActivity(element, { skipLocalRefresh: true });
-        break;
-      case "reset-activities":
-        await resetAllActivities();
-        break;
-      case "toggle-campfire":
-        await toggleCampfire(element);
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-panel-tab":
-        setActiveGmPanelTab(element?.dataset?.tab);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "operations-page":
-        setActiveOperationsPage(element?.dataset?.page);
-        if (String(element?.dataset?.page ?? "").trim() === "gm" && game.user?.isGM) setActiveRestMainTab("gm");
-        else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "operations-planning-tab":
-        setActiveOperationsPlanningTab(element?.dataset?.planningTab);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-ops-tab":
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "gm ops tab click", {
-            requestedTab: String(element?.dataset?.gmTab ?? ""),
-            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
-            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
-          });
-        }
-        this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
-        setActiveGmOperationsTab(this._gmOperationsTab);
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "gm ops tab applied", {
-            afterGmOpsTab: this._gmOperationsTab,
-            storedGmOpsTab: getActiveGmOperationsTab()
-          });
-        }
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-role":
-        await setOperationalRole(element);
-        break;
-      case "clear-role":
-        await clearOperationalRole(element);
-        break;
-      case "toggle-sop":
-        await toggleOperationalSOP(element, { skipLocalRefresh: true });
-        break;
-      case "set-sop-note":
-        await setOperationalSopNote(element);
-        break;
-      case "set-resource":
-        await setOperationalResource(element);
-        break;
-      case "set-downtime-hours":
-        await setDowntimeHoursGranted(element);
-        break;
-      case "set-downtime-tuning":
-        await setDowntimeTuningField(element);
-        break;
-      case "set-downtime-resolve-target":
-        applyDowntimeResolverBaseToUi(element, { force: true });
-        break;
-      case "prefill-downtime-resolution":
-        applyDowntimeResolverBaseToUi(element, { force: true });
-        break;
-      case "pre-resolve-selected-downtime-entry":
-        await preResolveSelectedDowntimeEntry(element);
-        break;
-      case "submit-downtime-action":
-        await submitDowntimeAction(element);
-        break;
-      case "clear-downtime-entry":
-        await clearDowntimeEntry(element);
-        break;
-      case "resolve-selected-downtime-entry":
-        await resolveSelectedDowntimeEntry(element);
-        break;
-      case "clear-downtime-results":
-        await clearDowntimeResults();
-        break;
-      case "post-downtime-log":
-        await postDowntimeLogOutcome(element);
-        break;
-      case "collect-downtime-result":
-        await collectDowntimeResult(element);
-        break;
-      case "set-environment-preset":
-        await setOperationalEnvironmentPreset(element);
-        break;
-      case "set-environment-dc":
-        await setOperationalEnvironmentDc(element);
-        break;
-      case "set-environment-note":
-        await setOperationalEnvironmentNote(element);
-        break;
-      case "set-environment-sync-non-party":
-        await setOperationalEnvironmentSyncNonParty(element);
-        break;
-      case "set-environment-successive":
-        await setOperationalEnvironmentSuccessive(element);
-        break;
-      case "reset-environment-successive-defaults":
-        await resetOperationalEnvironmentSuccessiveDefaults();
-        break;
-      case "toggle-environment-actor":
-        await toggleOperationalEnvironmentActor(element);
-        break;
-      case "add-environment-log":
-        await addOperationalEnvironmentLog();
-        break;
-      case "edit-environment-log":
-        await editOperationalEnvironmentLog(element);
-        break;
-      case "remove-environment-log":
-        await removeOperationalEnvironmentLog(element);
-        break;
-      case "clear-environment-effects":
-        await clearOperationalEnvironmentEffects();
-        break;
-      case "show-environment-brief":
-        await showOperationalEnvironmentBrief();
-        break;
-      case "apply-upkeep":
-        await applyOperationalUpkeep();
-        break;
-      case "gather-resource-check":
-        await runGatherResourceCheck();
-        break;
-      case "show-operational-brief":
-        await showOperationalBrief();
-        break;
-      case "set-comm-toggle":
-        await setCommunicationToggle(element);
-        break;
-      case "set-comm-text":
-        await setCommunicationText(element);
-        break;
-      case "set-recon-field":
-        await setReconField(element);
-        break;
-      case "run-recon-check":
-        await runReconCheck();
-        break;
-      case "show-recon-brief":
-        await showReconBrief();
-        break;
-      case "show-communication-brief":
-        await showCommunicationBrief();
-        break;
-      case "set-reputation-score":
-        await setReputationScore(element);
-        break;
-      case "adjust-reputation-score":
-        await adjustReputationScore(element);
-        break;
-      case "set-reputation-note":
-        await setReputationNote(element);
-        break;
-      case "log-reputation-note":
-        await logReputationNote(element);
-        break;
-      case "load-reputation-note-log":
-        await loadReputationNoteLog(element);
-        break;
-      case "clear-reputation-note":
-        await clearReputationNote(element);
-        break;
-      case "remove-reputation-note-log":
-        await removeReputationNoteLog(element);
-        break;
-      case "set-reputation-label":
-        await setReputationLabel(element);
-        break;
-      case "add-reputation-faction":
-        await addReputationFaction(element);
-        break;
-      case "remove-reputation-faction":
-        await removeReputationFaction(element);
-        break;
-      case "set-reputation-filter-keyword":
-        setReputationFilterState({ keyword: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-reputation-filter-standing":
-        setReputationFilterState({ standing: String(element?.value ?? "all") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-reputation-filters":
-        setReputationFilterState({ keyword: "", standing: "all" });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "show-reputation-brief":
-        await showReputationBrief();
-        break;
-      case "toggle-loot-pack-sources-collapsed": {
-        const current = getLootPackSourcesUiState();
-        setLootPackSourcesUiState({ collapsed: !current.collapsed });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
+      const isFormAction = isFormActionElement(element);
+      if (event?.type === "click" && !isFormAction) {
+        event.preventDefault();
+        event.stopPropagation();
       }
-      case "set-loot-registry-tab":
-        if (isModuleDebugEnabled()) {
-          logUiDebug("loot", "loot registry tab click", {
-            requestedTab: String(element?.dataset?.tab ?? ""),
-            beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
-            beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
-          });
-        }
-        this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
-        setActiveLootRegistryTab(this._lootRegistryTab);
-        logUiDebug("loot", "set loot registry tab", {
-          tab: this._lootRegistryTab,
-          storedLootRegistryTab: getActiveLootRegistryTab()
-        });
+      if (DEBUG_LOG) console.log("RestWatchApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-pack-filter":
-        setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-loot-pack-filter":
-        setLootPackSourcesUiState({ filter: "" });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-loot-pack-source":
-        await toggleLootPackSource(element);
-        break;
-      case "set-loot-pack-weight":
-        await setLootPackWeight(element);
-        break;
-      case "toggle-loot-table-source":
-        await toggleLootTableSource(element);
-        break;
-      case "set-loot-table-type":
-        await setLootTableType(element);
-        break;
-      case "toggle-loot-item-type":
-        await toggleLootItemType(element);
-        break;
-      case "set-loot-rarity-floor":
-        await setLootRarityFloor(element);
-        break;
-      case "set-loot-rarity-ceiling":
-        await setLootRarityCeiling(element);
-        break;
-      case "set-loot-manifest-pack":
-        await setLootManifestPack(element);
-        break;
-      case "set-loot-keyword-include-tags":
-        await setLootKeywordIncludeTags(element);
-        break;
-      case "set-loot-keyword-exclude-tags":
-        await setLootKeywordExcludeTags(element);
-        break;
-      case "reset-loot-source-config":
-        await resetLootSourceConfig();
-        break;
-      case "set-loot-preview-field":
-        setLootPreviewField(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "roll-loot-preview":
-        await rollLootPreview(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "add-loot-preview-item": {
-        const added = await addLootPreviewItemByPicker();
-        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "remove-loot-preview-item": {
-        const removed = await removeLootPreviewItem(element);
-        if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "adjust-loot-preview-currency": {
-        const adjusted = adjustLootPreviewCurrency(element);
-        if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      }
-      case "clear-loot-preview":
-        clearLootPreviewResult();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "publish-loot-claims":
-        await publishLootPreviewToClaims();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "clear-loot-claims":
-        await clearLootClaimsPool();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-loot-item":
-        await openLootItemFromElement(element);
-        break;
-      case "toggle-loot-vouch":
-        await toggleLootItemVouchForPlayer(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-loot-major-item":
-        await setLootItemMajorFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "run-loot-rolloff":
-        await runLootRollOffFromElement(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "open-gm-loot-claims-board":
-        openGmLootClaimsBoard({ force: true });
-        break;
-      case "gm-quick-add-faction":
-        await gmQuickAddFaction();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-add-modifier":
-        openGlobalModifierSummaryPage({ force: true });
-        break;
-      case "gm-quick-open-environment":
-        openGmEnvironmentPage({ force: true });
-        break;
-      case "gm-quick-open-loot":
-        openGmLootPage({ force: true });
-        break;
-      case "gm-quick-cancel-panel":
-        setActiveGmQuickPanel("none");
-        setGmQuickWeatherDraft(null);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-submit-faction":
-        await gmQuickSubmitFaction(element);
-        break;
-      case "gm-quick-submit-modifier":
-        await gmQuickSubmitModifier(element);
-        break;
-      case "gm-quick-sync-integrations":
-        scheduleIntegrationSync("gm-quick-action");
-        ui.notifications?.info("Party Operations integration sync queued.");
-        break;
-      case "gm-quick-session-autopilot":
-        await runSessionAutopilot();
-        break;
-      case "gm-quick-undo-autopilot":
-        await undoLastSessionAutopilot();
-        break;
-      case "gm-quick-log-weather":
-        await gmQuickLogCurrentWeather();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-submit-weather":
-        await gmQuickSubmitWeather(element);
-        break;
-      case "gm-quick-weather-select":
-        await gmQuickSelectWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-set":
-        gmQuickUpdateWeatherDraftField(element);
-        break;
-      case "gm-quick-modifier-key-preset":
-        gmQuickApplyModifierKeyPreset(element);
-        break;
-      case "gm-quick-modifier-key-filter":
-        filterModifierPresetSelect(element, "quickGlobalModifierKey");
-        break;
-      case "gm-quick-weather-dae-key-preset":
-        gmQuickApplyWeatherDaeKeyPreset(element);
-        break;
-      case "gm-quick-weather-add-dae":
-        await gmQuickAddWeatherDaeChange(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-remove-dae":
-        await gmQuickRemoveWeatherDaeChange(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-save-preset":
-        await gmQuickSaveWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "gm-quick-weather-delete-preset":
-        await gmQuickDeleteWeatherPreset(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "set-base-ops-config":
-        await setBaseOperationsConfig(element);
-        break;
-      case "upsert-base-site":
-        await upsertBaseOperationsSite(element);
-        break;
-      case "clear-base-site":
-        await clearBaseOperationsSite(element);
-        break;
-      case "open-base-site-storage":
-        await showBaseSiteStorageManager(element);
-        break;
-      case "show-base-ops-brief":
-        await showBaseOperationsBrief();
-        break;
-      case "set-injury-config":
-        await setInjuryRecoveryConfig(element);
-        break;
-      case "upsert-injury":
-        await upsertInjuryEntry(element);
-        break;
-      case "roll-injury-table":
-        await rollInjuryTableForEditor(element);
-        break;
-      case "set-injury-result":
-        syncInjuryEditorFromSelection(element);
-        break;
-      case "stabilize-injury":
-        await stabilizeInjuryEntry(element);
-        break;
-      case "clear-injury":
-        await clearInjuryEntry(element);
-        break;
-      case "show-injury-table":
-        await showInjuryTable();
-        break;
-      case "apply-recovery-cycle":
-        await applyRecoveryCycle();
-        break;
-      case "show-recovery-brief":
-        await showRecoveryBrief();
-        break;
-        default:
-          break;
-      }
-    } catch (error) {
-      logUiFailure("rest-watch", "action handler failed", error, {
-        action,
-        eventType: String(event?.type ?? ""),
-        target: summarizeClickTarget(event?.target)
       });
-      ui.notifications?.error("Party Operations action failed. Check the console for details.");
+      if (handledJournalAction) return;
+
+      try {
+        const actionHandlers = {
+        "switch-tab": async () => {
+          this.#onSwitchTabClick(event, element);
+        },
+        "refresh": async () => {
+          emitSocketRefresh();
+        },
+        "popout": async () => {
+          this.render({ force: true, popOut: true });
+        },
+        "assign": async () => {
+          await assignSlotByPicker(element, { source: "pc" });
+        },
+        "assign-character": async () => {
+          await assignSlotByPicker(element, { source: "pc" });
+        },
+        "assign-actor": async () => {
+          await assignSlotByPicker(element, { source: "neutral-friendly" });
+        },
+        "assign-actor-global": async () => {
+          await assignSlotByPicker(element, { source: "all" });
+        },
+        "assign-me": async () => {
+          await assignSlotToUser(element);
+        },
+        "clear": async () => {
+          await clearSlotEntry(element);
+        },
+        "swap": async () => {
+          await swapSlots(element);
+        },
+        "toggle-notes": async () => {
+          toggleCardNotes(element);
+        },
+        "save-entry-notes": async () => {
+          {
+            const context = getRestWatchNoteContextFromElement(element);
+            if (context?.slotId && context?.actorId) {
+              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+            }
+          }
+          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
+        },
+        "visibility": async () => {
+          await updateVisibility(element);
+        },
+        "autofill-party": async () => {
+          await autofillFromParty();
+        },
+        "autofill-last": async () => {
+          await restoreRestCommitted();
+        },
+        "commit-plan": async () => {
+          await commitRestWatchState();
+        },
+        "copy-text": async () => {
+          await copyRestWatchText(false);
+        },
+        "copy-md": async () => {
+          await copyRestWatchText(true);
+        },
+        "clear-all": async () => {
+          await clearRestWatchAll();
+        },
+        "ping": async () => {
+          await pingActorFromElement(element);
+        },
+        "time-range": async () => {
+          await updateTimeRange(element);
+        },
+        "switch-character": async () => {
+          await switchActiveCharacter(element);
+        },
+        "set-exhaustion": async () => {
+          await updateExhaustion(element);
+        },
+        "set-activity": async () => {
+          await updateActivity(element, { skipLocalRefresh: true });
+        },
+        "reset-activities": async () => {
+          await resetAllActivities();
+        },
+        "toggle-campfire": async () => {
+          await toggleCampfire(element);
+        },
+        "toggle-mini-viz": async () => {
+          setMiniVizCollapsed(!isMiniVizCollapsed());
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-panel-tab": async () => {
+          setActiveGmPanelTab(element?.dataset?.tab);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "operations-page": async () => {
+          setActiveOperationsPage(element?.dataset?.page);
+          if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessAllPlayerOps()) setActiveRestMainTab("gm");
+          else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-select-actor": async () => {
+          if (setMerchantActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-select-city": async () => {
+          if (setMerchantSettlementSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-save-city-catalog": async () => {
+          if (await saveMerchantCityCatalogFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-assign-city": async () => {
+          if (await assignMerchantCityFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-select-tab": async () => {
+          if (setSelectedMerchantTabIdFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-open-shop": async () => {
+          await openMerchantShopFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-settlement": async () => {
+          await setMerchantSettlementFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-editor-draft-change": async () => {
+          if (cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-editor-view-tab": async () => {
+          if (setMerchantEditorViewTabFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-new": async () => {
+          resetMerchantEditorSelection();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-randomize-name": async () => {
+          if (randomizeMerchantNameFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-randomize-race": async () => {
+          if (randomizeMerchantRaceFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-edit": async () => {
+          if (setMerchantEditorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-save": async () => {
+          await saveMerchantFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-delete": async () => {
+          await deleteMerchantFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-refresh-stock": async () => {
+          await refreshMerchantStockFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-refresh-all-stock": async () => {
+          await refreshAllMerchantStocksFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-by-contract-key": async () => {
+          await assignMerchantByContractKeyFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-toggle": async () => {
+          await setMerchantAssignmentFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-all": async () => {
+          await setMerchantAssignmentAllEnabledFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-assign-none": async () => {
+          await setMerchantAssignmentAllDisabledFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-set-access-mode": async () => {
+          await setMerchantAccessModeFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-open-actor": async () => {
+          await openMerchantActorFromElement(element);
+        },
+        "toggle-merchant-pack-source": async () => {
+          await toggleMerchantPackSourceFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-merchant-allowed-type": async () => {
+          await toggleMerchantAllowedTypeFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-add-curated-item": async () => {
+          await addMerchantCuratedItemFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-remove-curated-item": async () => {
+          await removeMerchantCuratedItemFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "merchant-clear-curated-items": async () => {
+          await clearMerchantCuratedItemsFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "operations-planning-tab": async () => {
+          setActiveOperationsPlanningTab(element?.dataset?.planningTab);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-ops-tab": async () => {
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "gm ops tab click", {
+              requestedTab: String(element?.dataset?.gmTab ?? ""),
+              beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+              beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+            });
+          }
+          this._gmOperationsTab = normalizeGmOperationsTab(element?.dataset?.gmTab);
+          setActiveGmOperationsTab(this._gmOperationsTab);
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "gm ops tab applied", {
+              afterGmOpsTab: this._gmOperationsTab,
+              storedGmOpsTab: getActiveGmOperationsTab()
+            });
+          }
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-role": async () => {
+          await setOperationalRole(element);
+        },
+        "clear-role": async () => {
+          await clearOperationalRole(element);
+        },
+        "toggle-sop": async () => {
+          await toggleOperationalSOP(element, { skipLocalRefresh: true });
+        },
+        "set-sop-note": async () => {
+          clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
+          await setOperationalSopNote(element, { suppressUiWarning: true });
+        },
+        "save-sop-note": async () => {
+          const sopKey = String(element?.dataset?.sop ?? "").trim();
+          clearScheduledSopNoteSave(this, sopKey);
+          const noteInput = getSopNoteTextareaFromElement(element);
+          if (!noteInput) {
+            logUiDebug("operations-sop", "save-sop-note could not resolve textarea", {
+              sopKey,
+              target: summarizeClickTarget(event?.target ?? element)
+            });
+            ui.notifications?.warn("Could not find the SOP note input to save.");
+            return;
+          }
+          await setOperationalSopNote(noteInput, {
+            suppressUiWarning: false,
+            notify: true
+          });
+        },
+        "set-resource": async () => {
+          await setOperationalResource(element);
+        },
+        "set-downtime-hours": async () => {
+          await setDowntimeHoursGranted(element);
+        },
+        "set-downtime-tuning": async () => {
+          await setDowntimeTuningField(element);
+        },
+        "set-downtime-resolve-target": async () => {
+          applyDowntimeResolverBaseToUi(element, { force: true });
+        },
+        "prefill-downtime-resolution": async () => {
+          applyDowntimeResolverBaseToUi(element, { force: true });
+        },
+        "pre-resolve-selected-downtime-entry": async () => {
+          await preResolveSelectedDowntimeEntry(element);
+        },
+        "submit-downtime-action": async () => {
+          await submitDowntimeAction(element);
+        },
+        "clear-downtime-entry": async () => {
+          await clearDowntimeEntry(element);
+        },
+        "resolve-selected-downtime-entry": async () => {
+          await resolveSelectedDowntimeEntry(element);
+        },
+        "edit-downtime-result": async () => {
+          await editDowntimeResult(element);
+        },
+        "clear-downtime-results": async () => {
+          await clearDowntimeResults();
+        },
+        "unarchive-downtime-log": async () => {
+          await unarchiveDowntimeLogEntry(element);
+        },
+        "clear-downtime-log": async () => {
+          await clearDowntimeLogEntry(element);
+        },
+        "post-downtime-log": async () => {
+          await postDowntimeLogOutcome(element);
+        },
+        "collect-downtime-result": async () => {
+          await collectDowntimeResult(element);
+        },
+        "set-environment-preset": async () => {
+          await setOperationalEnvironmentPreset(element);
+        },
+        "set-environment-dc": async () => {
+          await setOperationalEnvironmentDc(element);
+        },
+        "set-environment-note": async () => {
+          await setOperationalEnvironmentNote(element);
+        },
+        "set-environment-sync-non-party": async () => {
+          await setOperationalEnvironmentSyncNonParty(element);
+        },
+        "set-environment-successive": async () => {
+          await setOperationalEnvironmentSuccessive(element);
+        },
+        "reset-environment-successive-defaults": async () => {
+          await resetOperationalEnvironmentSuccessiveDefaults();
+        },
+        "toggle-environment-actor": async () => {
+          await toggleOperationalEnvironmentActor(element);
+        },
+        "add-environment-log": async () => {
+          await addOperationalEnvironmentLog();
+        },
+        "edit-environment-log": async () => {
+          await editOperationalEnvironmentLog(element);
+        },
+        "remove-environment-log": async () => {
+          await removeOperationalEnvironmentLog(element);
+        },
+        "clear-environment-effects": async () => {
+          await clearOperationalEnvironmentEffects();
+        },
+        "show-environment-brief": async () => {
+          await showOperationalEnvironmentBrief();
+        },
+        "apply-upkeep": async () => {
+          await applyOperationalUpkeep();
+        },
+        "gather-resource-check": async () => {
+          triggerGatherResourceButtonAnimation(element);
+          await runGatherResourceCheck();
+        },
+        "run-gather-preset": async () => {
+          await runGatherPresetAction(element);
+        },
+        "set-gather-history-filter": async () => {
+          setGatherHistoryViewFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-gather-history-filters": async () => {
+          clearGatherHistoryFilters();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-gather-history": async () => {
+          await clearGatherHistoryAction();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-gather-history-entry": async () => {
+          await removeGatherHistoryEntryAction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "show-operational-brief": async () => {
+          await showOperationalBrief();
+        },
+        "set-comm-toggle": async () => {
+          await setCommunicationToggle(element);
+        },
+        "set-comm-text": async () => {
+          await setCommunicationText(element);
+        },
+        "set-recon-field": async () => {
+          await setReconField(element);
+        },
+        "run-recon-check": async () => {
+          await runReconCheck();
+        },
+        "show-recon-brief": async () => {
+          await showReconBrief();
+        },
+        "show-communication-brief": async () => {
+          await showCommunicationBrief();
+        },
+        "set-reputation-score": async () => {
+          await setReputationScore(element);
+        },
+        "adjust-reputation-score": async () => {
+          await adjustReputationScore(element);
+        },
+        "set-reputation-note": async () => {
+          await setReputationNote(element);
+        },
+        "log-reputation-note": async () => {
+          await logReputationNote(element);
+        },
+        "load-reputation-note-log": async () => {
+          await loadReputationNoteLog(element);
+        },
+        "post-reputation-note-log": async () => {
+          await postReputationNoteLog(element);
+        },
+        "clear-reputation-note": async () => {
+          await clearReputationNote(element);
+        },
+        "remove-reputation-note-log": async () => {
+          await removeReputationNoteLog(element);
+        },
+        "set-reputation-label": async () => {
+          await setReputationLabel(element);
+        },
+        "add-reputation-faction": async () => {
+          await addReputationFaction(element);
+        },
+        "remove-reputation-faction": async () => {
+          await removeReputationFaction(element);
+        },
+        "set-reputation-filter-keyword": async () => {
+          setReputationFilterState({ keyword: String(element?.value ?? "") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-reputation-filter-standing": async () => {
+          setReputationFilterState({ standing: String(element?.value ?? "all") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-reputation-filters": async () => {
+          setReputationFilterState({ keyword: "", standing: "all" });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "show-reputation-brief": async () => {
+          await showReputationBrief();
+        },
+        "toggle-loot-pack-sources-collapsed": async () => {
+          const current = getLootPackSourcesUiState();
+          setLootPackSourcesUiState({ collapsed: !current.collapsed });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-registry-tab": async () => {
+          if (isModuleDebugEnabled()) {
+            logUiDebug("loot", "loot registry tab click", {
+              requestedTab: String(element?.dataset?.tab ?? ""),
+              beforeGmOpsTab: normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab()),
+              beforeLootRegistryTab: normalizeLootRegistryTab(this._lootRegistryTab ?? getActiveLootRegistryTab())
+            });
+          }
+          this._lootRegistryTab = normalizeLootRegistryTab(String(element?.dataset?.tab ?? "preview"));
+          setActiveLootRegistryTab(this._lootRegistryTab);
+          logUiDebug("loot", "set loot registry tab", {
+            tab: this._lootRegistryTab,
+            storedLootRegistryTab: getActiveLootRegistryTab()
+          });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-pack-filter": async () => {
+          setLootPackSourcesUiState({ filter: String(element?.value ?? "") });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-pack-filter": async () => {
+          setLootPackSourcesUiState({ filter: "" });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-loot-pack-source": async () => {
+          await toggleLootPackSource(element);
+        },
+        "set-loot-pack-weight": async () => {
+          await setLootPackWeight(element);
+        },
+        "toggle-loot-table-source": async () => {
+          await toggleLootTableSource(element);
+        },
+        "set-loot-table-type": async () => {
+          await setLootTableType(element);
+        },
+        "toggle-loot-item-type": async () => {
+          await toggleLootItemType(element);
+        },
+        "set-loot-rarity-floor": async () => {
+          await setLootRarityFloor(element);
+        },
+        "set-loot-rarity-ceiling": async () => {
+          await setLootRarityCeiling(element);
+        },
+        "set-loot-manifest-pack": async () => {
+          await setLootManifestPack(element);
+        },
+        "set-loot-keyword-include-tags": async () => {
+          await setLootKeywordIncludeTags(element);
+        },
+        "set-loot-keyword-exclude-tags": async () => {
+          await setLootKeywordExcludeTags(element);
+        },
+        "reset-loot-source-config": async () => {
+          await resetLootSourceConfig();
+        },
+        "set-loot-preview-field": async () => {
+          setLootPreviewField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "roll-loot-preview": async () => {
+          await rollLootPreview(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "add-loot-preview-item": async () => {
+          const added = await addLootPreviewItemByPicker();
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-loot-preview-item": async () => {
+          const removed = await removeLootPreviewItem(element);
+          if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "adjust-loot-preview-currency": async () => {
+          const adjusted = adjustLootPreviewCurrency(element);
+          if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-preview": async () => {
+          clearLootPreviewResult();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "publish-loot-claims": async () => {
+          await publishLootPreviewToClaims();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-loot-claims": async () => {
+          await clearLootClaimsPool();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-claim-run": async () => {
+          if (setLootClaimRunSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "set-loot-claims-archive-sort": async () => {
+          setLootClaimsArchiveSort(element?.value);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "open-loot-item": async () => {
+          await openLootItemFromElement(element);
+        },
+        "claim-loot-item": async () => {
+          await claimLootItemForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-loot-vouch": async () => {
+          await toggleLootItemVouchForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-claim-actor": async () => {
+          if (setLootClaimActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "claim-loot-currency": async () => {
+          await claimLootCurrencyForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-major-item": async () => {
+          await setLootItemMajorFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "run-loot-rolloff": async () => {
+          await runLootRollOffFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "open-gm-loot-claims-board": async () => {
+          openGmLootClaimsBoard({
+            force: true,
+            runId: getLootClaimRunIdFromElement(element)
+          });
+        },
+        "gm-quick-add-faction": async () => {
+          await gmQuickAddFaction();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-add-modifier": async () => {
+          openGlobalModifierSummaryPage({ force: true });
+        },
+        "gm-quick-open-environment": async () => {
+          openGmEnvironmentPage({ force: true });
+        },
+        "gm-quick-open-downtime": async () => {
+          openGmDowntimePage({ force: true });
+        },
+        "gm-quick-open-merchants": async () => {
+          openGmMerchantsPage({ force: true });
+        },
+        "gm-quick-open-loot": async () => {
+          openGmLootPage({ force: true });
+        },
+        "gm-quick-cancel-panel": async () => {
+          setActiveGmQuickPanel("none");
+          setGmQuickWeatherDraft(null);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-submit-faction": async () => {
+          await gmQuickSubmitFaction(element);
+        },
+        "gm-quick-submit-modifier": async () => {
+          await gmQuickSubmitModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-save-modifier": async () => {
+          await gmQuickSaveModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-set-staged-field": async () => {
+          await gmQuickSetStagedModifierField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-delete-staged-modifier": async () => {
+          await gmQuickDeleteStagedModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-delete-saved-modifier": async () => {
+          await gmQuickDeleteSavedModifier(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-sync-integrations": async () => {
+          scheduleIntegrationSync("gm-quick-action");
+          ui.notifications?.info("Party Operations integration sync queued.");
+        },
+        "gm-quick-session-autopilot": async () => {
+          await runSessionAutopilot();
+        },
+        "gm-quick-undo-autopilot": async () => {
+          await undoLastSessionAutopilot();
+        },
+        "gm-quick-log-weather": async () => {
+          await gmQuickLogCurrentWeather();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-submit-weather": async () => {
+          await gmQuickSubmitWeather(element);
+        },
+        "gm-quick-weather-select": async () => {
+          await gmQuickSelectWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-set": async () => {
+          gmQuickUpdateWeatherDraftField(element);
+        },
+        "gm-quick-modifier-key-preset": async () => {
+          gmQuickApplyModifierKeyPreset(element);
+        },
+        "gm-quick-modifier-key-filter": async () => {
+          filterModifierPresetSelect(element, "quickGlobalModifierKey");
+        },
+        "gm-quick-weather-dae-key-preset": async () => {
+          gmQuickApplyWeatherDaeKeyPreset(element);
+        },
+        "gm-quick-weather-add-dae": async () => {
+          await gmQuickAddWeatherDaeChange(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-remove-dae": async () => {
+          await gmQuickRemoveWeatherDaeChange(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-save-preset": async () => {
+          await gmQuickSaveWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "gm-quick-weather-delete-preset": async () => {
+          await gmQuickDeleteWeatherPreset(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-base-ops-config": async () => {
+          await setBaseOperationsConfig(element);
+        },
+        "upsert-base-site": async () => {
+          await upsertBaseOperationsSite(element);
+        },
+        "clear-base-site": async () => {
+          await clearBaseOperationsSite(element);
+        },
+        "open-base-site-storage": async () => {
+          await showBaseSiteStorageManager(element);
+        },
+        "show-base-ops-brief": async () => {
+          await showBaseOperationsBrief();
+        },
+        "set-injury-config": async () => {
+          await setInjuryRecoveryConfig(element);
+        },
+        "upsert-injury": async () => {
+          await upsertInjuryEntry(element);
+        },
+        "roll-injury-table": async () => {
+          await rollInjuryTableForEditor(element);
+        },
+        "set-injury-result": async () => {
+          syncInjuryEditorFromSelection(element);
+        },
+        "stabilize-injury": async () => {
+          await stabilizeInjuryEntry(element);
+        },
+        "clear-injury": async () => {
+          await clearInjuryEntry(element);
+        },
+        "show-injury-table": async () => {
+          await showInjuryTable();
+        },
+        "apply-recovery-cycle": async () => {
+          await applyRecoveryCycle();
+        },
+        "show-recovery-brief": async () => {
+          await showRecoveryBrief();
+        },
+      };
+        const handler = actionHandlers[action];
+        if (typeof handler === "function") {
+          await handler();
+        }
+      } catch (error) {
+        logUiFailure("rest-watch", "action handler failed", error, {
+          action,
+          eventType: String(event?.type ?? ""),
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.error("Party Operations action failed. Check the console for details.");
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
   async #onNotesChange(event) {
+    if (event?.type === "input") return;
     const state = getRestWatchState();
-    if (isLockedForUser(state, game.user.isGM)) {
+    if (isLockedForUser(state, canAccessAllPlayerOps())) {
       ui.notifications?.warn("Rest watch is locked by the GM.");
       return;
     }
@@ -5013,7 +7994,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (!slotId) return;
     const text = event.target.value ?? "";
 
-    if (!game.user.isGM) {
+    if (!canAccessAllPlayerOps()) {
       const actor = getActiveActorForUser();
       if (!actor) return;
       await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
@@ -5113,10 +8094,10 @@ function buildGlobalModifierSummaryContext() {
   };
 }
 
-async function setGlobalModifierExcluded(modifierId, excluded) {
+async function setGlobalModifierExcluded(modifierId, excluded, options = {}) {
   const normalizedId = String(modifierId ?? "").trim();
   if (!normalizedId) return false;
-  if (!game.user?.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update modifier exclusions.");
     return false;
   }
@@ -5133,20 +8114,20 @@ async function setGlobalModifierExcluded(modifierId, excluded) {
       partyHealth.modifierEnabled = {};
     }
     partyHealth.modifierEnabled[normalizedId] = !excluded;
-  });
+  }, options);
 
   return true;
 }
 
 function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!game.user?.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("GM permissions are required to view global modifiers.");
     return null;
   }
   const app = globalModifierSummaryAppInstance?.element?.isConnected
     ? globalModifierSummaryAppInstance
-    : new GlobalModifierSummaryApp();
+    : new GlobalModifierSummaryApp(getResponsiveWindowOptions("global-modifiers"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "global-modifiers" });
   return app;
@@ -5157,7 +8138,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
     id: "party-operations-global-modifier-summary",
     classes: ["party-operations"],
     window: { title: "Party Operations - Global Modifiers" },
-    position: { width: 900, height: 720 },
+    position: getResponsiveWindowPosition("global-modifiers"),
     resizable: true
   });
 
@@ -5194,11 +8175,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async _onRender(context, options) {
@@ -5210,12 +8187,20 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         const actionElement = event.target?.closest?.("[data-action]");
         const action = String(actionElement?.dataset?.action ?? "").trim();
         if (!action) return;
+        if (action === "global-modifier-set-excluded") {
+          event.stopPropagation();
+          return;
+        }
         if (action === "global-modifiers-back") {
+          event.preventDefault();
+          event.stopPropagation();
           this.close();
           openMainTab("gm", { force: true });
           return;
         }
         if (action === "global-modifiers-refresh") {
+          event.preventDefault();
+          event.stopPropagation();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         }
       });
@@ -5223,9 +8208,11 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         const actionElement = event.target?.closest?.("[data-action]");
         const action = String(actionElement?.dataset?.action ?? "").trim();
         if (action !== "global-modifier-set-excluded") return;
+        event.preventDefault();
+        event.stopPropagation();
         const modifierId = String(actionElement?.dataset?.modifierId ?? "").trim();
         const excluded = Boolean(actionElement?.checked);
-        await setGlobalModifierExcluded(modifierId, excluded);
+        await setGlobalModifierExcluded(modifierId, excluded, { skipLocalRefresh: true });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
     }
@@ -5287,6 +8274,33 @@ function buildGmEnvironmentPageContext() {
   };
 }
 
+function buildGmDowntimePageContext() {
+  const ledger = getOperationsLedger();
+  const downtimeState = ensureDowntimeState(ledger);
+  const viewState = getGmDowntimeViewState();
+  const downtime = buildDowntimeContext(downtimeState, {
+    user: game.user,
+    entriesSort: viewState.entriesSort,
+    logsSort: viewState.logsSort
+  });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    downtime
+  };
+}
+
+function buildGmMerchantsPageContext() {
+  const merchants = buildMerchantsContext(getOperationsLedger(), { user: game.user });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    merchants
+  };
+}
+
 function buildGmLootPageContext() {
   const operations = getStandaloneOpsContext();
   const lootSources = operations?.lootSources ?? {};
@@ -5342,88 +8356,120 @@ function buildGmLootClaimsBoardContext() {
     generatedAtLabel: new Date().toLocaleString(),
     generatedBy: String(game.user?.name ?? "GM"),
     lootClaims: buildLootClaimsContext(game.user),
-    isGM: Boolean(game.user?.isGM)
+    isGM: Boolean(canAccessAllPlayerOps()),
+    canManageClaims: Boolean(canAccessAllPlayerOps())
   };
 }
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!game.user?.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("GM permissions are required to view environment controls.");
     return null;
   }
   const app = gmEnvironmentPageAppInstance?.element?.isConnected
     ? gmEnvironmentPageAppInstance
-    : new GmEnvironmentPageApp();
+    : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-environment" });
   return app;
 }
 
+function openGmDowntimePage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view downtime controls.");
+    return null;
+  }
+  const app = gmDowntimePageAppInstance?.element?.isConnected
+    ? gmDowntimePageAppInstance
+    : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-downtime" });
+  return app;
+}
+
+function openGmMerchantsPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view merchant controls.");
+    return null;
+  }
+  const app = gmMerchantsPageAppInstance?.element?.isConnected
+    ? gmMerchantsPageAppInstance
+    : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-merchants" });
+  return app;
+}
+
 function openGmLootPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!game.user?.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
   const app = gmLootPageAppInstance?.element?.isConnected
     ? gmLootPageAppInstance
-    : new GmLootPageApp();
+    : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
   return app;
 }
 
 function openGmLootClaimsBoard(renderOptions = { force: true }) {
+  const runId = normalizeLootClaimRunId(renderOptions?.runId);
+  if (runId) setLootClaimRunSelection(runId);
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!game.user?.isGM) {
-    ui.notifications?.warn("GM permissions are required to view the live claims board.");
-    return null;
-  }
   const app = gmLootClaimsBoardAppInstance?.element?.isConnected
     ? gmLootClaimsBoardAppInstance
-    : new GmLootClaimsBoardApp();
+    : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot-claims-board" });
   return app;
 }
 
-export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-gm-environment-page",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - GM Environment" },
-    position: { width: 980, height: 760 },
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/gm-environment.hbs" }
-  };
-
+class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   constructor(options = {}) {
     super(options);
-    gmEnvironmentPageAppInstance = this;
+    this._setPageInstance(this);
   }
 
-  async _prepareContext() {
-    return buildGmEnvironmentPageContext();
+  _setPageInstance(_instance) {}
+
+  _getBoundDatasetKey() {
+    return "";
   }
 
-  async close(options = {}) {
-    if (gmEnvironmentPageAppInstance === this) gmEnvironmentPageAppInstance = null;
-    return super.close(options);
+  _getActionHandlers(_event = null) {
+    return {};
   }
 
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+  _shouldHandleChangeAction(_action, _actionElement, _event) {
+    return true;
   }
 
-  async #onAction(event) {
+  _shouldHandleInputAction(_action, _actionElement, _event) {
+    return false;
+  }
+
+  _bindAdditionalListeners(_root) {}
+
+  async _onPostRender(_context, _options) {}
+
+  _getActionErrorScope() {
+    return "stateful-page";
+  }
+
+  _getActionErrorMessage() {
+    return "Page action failed. Check console for details.";
+  }
+
+  _renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
+    renderAppWithPreservedState(this, renderOptions);
+  }
+
+  async _dispatchActionEvent(event) {
     if (event?.type === "click") {
       event.preventDefault();
       event.stopPropagation();
@@ -5432,385 +8478,198 @@ export class GmEnvironmentPageApp extends HandlebarsApplicationMixin(Application
     const action = String(actionElement?.dataset?.action ?? "").trim();
     if (!action) return;
     if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+
+    const actionHandlers = this._getActionHandlers(event);
+    const handler = actionHandlers?.[action];
+    if (typeof handler !== "function") return;
 
     try {
-      switch (action) {
-        case "gm-environment-page-back":
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        case "gm-environment-page-refresh":
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-sync-non-party":
-          await setOperationalEnvironmentSyncNonParty(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-preset":
-          await setOperationalEnvironmentPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-dc":
-          await setOperationalEnvironmentDc(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-successive":
-          await setOperationalEnvironmentSuccessive(actionElement);
-          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "set-environment-note":
-          await setOperationalEnvironmentNote(actionElement);
-          if (event?.type !== "input") this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "toggle-environment-actor":
-          await toggleOperationalEnvironmentActor(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "reset-environment-successive-defaults":
-          await resetOperationalEnvironmentSuccessiveDefaults();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "add-environment-log":
-          await addOperationalEnvironmentLog();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "clear-environment-effects":
-          await clearOperationalEnvironmentEffects();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "show-environment-brief":
-          await showOperationalEnvironmentBrief();
-          return;
-        case "gm-quick-log-weather":
-          await gmQuickLogCurrentWeather();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-add-dae":
-          await gmQuickAddWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-remove-dae":
-          await gmQuickRemoveWeatherDaeChange(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-save-preset":
-          await gmQuickSaveWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-delete-preset":
-          await gmQuickDeleteWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-submit-weather":
-          await gmQuickSubmitWeather(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-select":
-          await gmQuickSelectWeatherPreset(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        case "gm-quick-weather-set":
-          gmQuickUpdateWeatherDraftField(actionElement);
-          return;
-        case "gm-quick-weather-dae-key-preset":
-          gmQuickApplyWeatherDaeKeyPreset(actionElement);
-          return;
-      }
+      await handler(actionElement, event);
     } catch (error) {
-      logUiFailure("gm-environment-page", `action failed: ${action}`, error, {
+      logUiFailure(this._getActionErrorScope(), `action failed: ${action}`, error, {
         target: summarizeClickTarget(event?.target)
       });
-      ui.notifications?.warn("Environment action failed. Check console for details.");
+      ui.notifications?.warn(this._getActionErrorMessage());
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-    ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGmEnvironmentPage) {
-      this.element.dataset.poBoundGmEnvironmentPage = "1";
-      this.element.addEventListener("click", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        if (!actionElement) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("change", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        this.#onAction(event);
-      });
-      this.element.addEventListener("input", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "gm-quick-weather-set" || action === "set-environment-note" || action === "set-environment-successive") {
-          this.#onAction(event);
-        }
-      });
-    }
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    restorePendingScrollState(this);
-  }
-}
-
-export class GmLootPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-gm-loot-page",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - GM Loot" },
-    position: { width: 980, height: 760 },
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/gm-loot.hbs" }
-  };
-
-  constructor(options = {}) {
-    super(options);
-    gmLootPageAppInstance = this;
-  }
-
-  async _prepareContext() {
-    return buildGmLootPageContext();
   }
 
   async close(options = {}) {
-    if (gmLootPageAppInstance === this) gmLootPageAppInstance = null;
+    this._setPageInstance(null);
     return super.close(options);
-  }
-
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
   }
 
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGmLootPage) {
-      this.element.dataset.poBoundGmLootPage = "1";
-      this.element.addEventListener("click", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "gm-loot-page-back") {
-          this.close();
-          openMainTab("gm", { force: true });
-          return;
-        }
-        if (action === "gm-loot-page-refresh") {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "open-gm-loot-claims-board") {
-          openGmLootClaimsBoard({ force: true });
-          return;
-        }
-
-        switch (action) {
-          case "set-loot-registry-tab":
-            setActiveLootRegistryTab(String(actionElement?.dataset?.tab ?? "preview"));
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-pack-filter":
-            setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "clear-loot-pack-filter":
-            setLootPackSourcesUiState({ filter: "" });
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-pack-source":
-            await toggleLootPackSource(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-pack-weight":
-            await setLootPackWeight(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-table-source":
-            await toggleLootTableSource(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-table-type":
-            await setLootTableType(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "toggle-loot-item-type":
-            await toggleLootItemType(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-rarity-floor":
-            await setLootRarityFloor(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-rarity-ceiling":
-            await setLootRarityCeiling(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-manifest-pack":
-            await setLootManifestPack(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-keyword-include-tags":
-            await setLootKeywordIncludeTags(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-keyword-exclude-tags":
-            await setLootKeywordExcludeTags(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "reset-loot-source-config":
-            await resetLootSourceConfig();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "set-loot-preview-field":
-            setLootPreviewField(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "roll-loot-preview":
-            await rollLootPreview(actionElement);
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "add-loot-preview-item": {
-            const added = await addLootPreviewItemByPicker();
-            if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "remove-loot-preview-item": {
-            const removed = await removeLootPreviewItem(actionElement);
-            if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "adjust-loot-preview-currency": {
-            const adjusted = adjustLootPreviewCurrency(actionElement);
-            if (adjusted) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          }
-          case "clear-loot-preview":
-            clearLootPreviewResult();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "publish-loot-claims":
-            await publishLootPreviewToClaims();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "clear-loot-claims":
-            await clearLootClaimsPool();
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-            break;
-          case "open-loot-item":
-            await openLootItemFromElement(actionElement);
-            break;
-          default:
-            break;
-        }
-      });
-
-      this.element.addEventListener("change", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "set-loot-preview-field") {
-          setLootPreviewField(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-pack-source") {
-          await toggleLootPackSource(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-table-source") {
-          await toggleLootTableSource(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-table-type") {
-          await setLootTableType(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "toggle-loot-item-type") {
-          await toggleLootItemType(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-rarity-floor") {
-          await setLootRarityFloor(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-rarity-ceiling") {
-          await setLootRarityCeiling(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-manifest-pack") {
-          await setLootManifestPack(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-pack-weight") {
-          await setLootPackWeight(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-keyword-include-tags") {
-          await setLootKeywordIncludeTags(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "set-loot-keyword-exclude-tags") {
-          await setLootKeywordExcludeTags(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-      });
-
-      this.element.addEventListener("input", (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "set-loot-pack-filter" || action === "set-loot-preview-field") {
-          if (action === "set-loot-pack-filter") setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-          if (action === "set-loot-preview-field") setLootPreviewField(actionElement);
-        }
-      });
-
-      this.element.addEventListener("dragover", (event) => {
-        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
-        if (!dropZone) return;
-        event.preventDefault();
-      });
-
-      this.element.addEventListener("drop", async (event) => {
-        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
-        if (!dropZone) return;
-        event.preventDefault();
-        const added = await addLootPreviewItemFromDropEvent(event);
-        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
+    if (this.element) {
+      const datasetKey = this._getBoundDatasetKey();
+      if (datasetKey && !this.element.dataset[datasetKey]) {
+        this.element.dataset[datasetKey] = "1";
+        this.element.addEventListener("click", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          if (isFormActionElement(actionElement)) return;
+          if (!actionElement) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("change", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleChangeAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this.element.addEventListener("input", (event) => {
+          const actionElement = event.target?.closest?.("[data-action]");
+          const action = String(actionElement?.dataset?.action ?? "").trim();
+          if (!action) return;
+          if (!this._shouldHandleInputAction(action, actionElement, event)) return;
+          void this._dispatchActionEvent(event);
+        });
+        this._bindAdditionalListeners(this.element);
+      }
     }
+    await this._onPostRender(context, options);
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
   }
 }
+
+export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    gmEnvironmentPageAppInstance = instance;
+  },
+  buildContext: buildGmEnvironmentPageContext,
+  openMainTab,
+  setOperationalEnvironmentSyncNonParty,
+  setOperationalEnvironmentPreset,
+  setOperationalEnvironmentDc,
+  setOperationalEnvironmentSuccessive,
+  setOperationalEnvironmentNote,
+  toggleOperationalEnvironmentActor,
+  resetOperationalEnvironmentSuccessiveDefaults,
+  addOperationalEnvironmentLog,
+  clearOperationalEnvironmentEffects,
+  showOperationalEnvironmentBrief,
+  gmQuickLogCurrentWeather,
+  gmQuickAddWeatherDaeChange,
+  gmQuickRemoveWeatherDaeChange,
+  gmQuickSaveWeatherPreset,
+  gmQuickDeleteWeatherPreset,
+  gmQuickSubmitWeather,
+  gmQuickSelectWeatherPreset,
+  gmQuickUpdateWeatherDraftField,
+  gmQuickApplyWeatherDaeKeyPreset
+});
+
+export const GmDowntimePageApp = createGmDowntimePageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    gmDowntimePageAppInstance = instance;
+  },
+  buildContext: buildGmDowntimePageContext,
+  openMainTab,
+  setGmDowntimeViewState,
+  setDowntimeHoursGranted,
+  setDowntimeTuningField,
+  applyDowntimeResolverBaseToUi,
+  preResolveSelectedDowntimeEntry,
+  resolveSelectedDowntimeEntry,
+  editDowntimeResult,
+  submitDowntimeAction,
+  clearDowntimeEntry,
+  clearDowntimeResults,
+  unarchiveDowntimeLogEntry,
+  clearDowntimeLogEntry,
+  postDowntimeLogOutcome,
+  collectDowntimeResult,
+  removeDowntimeResolverItemDropFromUi,
+  addDowntimeResolverCraftingItemDropFromDropEvent,
+  addDowntimeResolverItemRewardFromDropEvent,
+  renderDowntimeResolverItemDropList
+});
+
+export const GmMerchantsPageApp = createGmMerchantsPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    gmMerchantsPageAppInstance = instance;
+  },
+  buildContext: buildGmMerchantsPageContext,
+  openMainTab,
+  cacheMerchantEditorDraftFromElement,
+  setMerchantEditorViewTabFromElement,
+  resetMerchantEditorSelection,
+  createStarterMerchants,
+  randomizeMerchantNameFromElement,
+  randomizeMerchantRaceFromElement,
+  saveMerchantCityCatalogFromElement,
+  assignMerchantCityFromElement,
+  setMerchantEditorSelectionFromElement,
+  saveMerchantFromElement,
+  deleteMerchantFromElement,
+  refreshMerchantStockFromElement,
+  refreshAllMerchantStocksFromElement,
+  setMerchantAccessModeFromElement,
+  setMerchantAssignmentFromElement,
+  setMerchantAssignmentAllEnabledFromElement,
+  setMerchantAssignmentAllDisabledFromElement,
+  openMerchantActorFromElement
+});
+
+export const GmLootPageApp = createGmLootPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    gmLootPageAppInstance = instance;
+  },
+  buildContext: buildGmLootPageContext,
+  openMainTab,
+  openGmLootClaimsBoard,
+  getLootClaimRunIdFromElement,
+  setActiveLootRegistryTab,
+  setLootPackSourcesUiState,
+  toggleLootPackSource,
+  setLootPackWeight,
+  toggleLootTableSource,
+  setLootTableType,
+  toggleLootItemType,
+  setLootRarityFloor,
+  setLootRarityCeiling,
+  setLootManifestPack,
+  setLootKeywordIncludeTags,
+  setLootKeywordExcludeTags,
+  resetLootSourceConfig,
+  setLootPreviewField,
+  rollLootPreview,
+  addLootPreviewItemByPicker,
+  removeLootPreviewItem,
+  adjustLootPreviewCurrency,
+  clearLootPreviewResult,
+  publishLootPreviewToClaims,
+  clearLootClaimsPool,
+  openLootItemFromElement,
+  addLootPreviewItemFromDropEvent
+});
 
 export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
     id: "party-operations-gm-loot-claims-board",
     classes: ["party-operations"],
     window: { title: "Party Operations - Live Loot Claims" },
-    position: { width: 920, height: 760 },
+    position: getResponsiveWindowPosition("gm-loot-claims-board"),
     resizable: true
   });
 
@@ -5833,67 +8692,92 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const actionElement = event?.target?.closest?.("[data-action]");
     const action = String(actionElement?.dataset?.action ?? "").trim();
-    if (!action) return;
-    if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
-
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, actionElement, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
     try {
-      if (action === "gm-loot-claims-board-back") {
-        this.close();
-        openMainTab("gm", { force: true });
-        return;
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
       }
-      if (action === "gm-loot-claims-board-refresh") {
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "claim-loot-item") {
-        await claimLootItemForPlayer(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "toggle-loot-vouch") {
-        await toggleLootItemVouchForPlayer(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "run-loot-rolloff") {
-        await runLootRollOffFromElement(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "open-loot-item") {
-        await openLootItemFromElement(actionElement);
-        return;
-      }
-      if (action === "set-loot-major-item") {
-        await setLootItemMajorFromElement(actionElement);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-      if (action === "set-loot-claim-actor") {
-        if (setLootClaimActorSelectionFromElement(actionElement)) {
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      if (!action) return;
+      if (actionElement?.tagName === "SELECT" && event?.type !== "change") return;
+
+      try {
+        if (action === "gm-loot-claims-board-back") {
+          this.close();
+          if (canAccessAllPlayerOps()) openMainTab("gm", { force: true });
+          else openOperationsLootClaimsTabForPlayer({ force: true });
+          return;
         }
+        if (action === "gm-loot-claims-board-refresh") {
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claim-run") {
+          if (setLootClaimRunSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "claim-loot-item") {
+          await claimLootItemForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "toggle-loot-vouch") {
+          await toggleLootItemVouchForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "run-loot-rolloff") {
+          await runLootRollOffFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "open-loot-item") {
+          await openLootItemFromElement(actionElement);
+          return;
+        }
+        if (action === "set-loot-major-item") {
+          await setLootItemMajorFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "claim-loot-currency") {
+          await claimLootCurrencyForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "archive-loot-claim-run") {
+          const runId = getLootClaimRunIdFromElement(actionElement);
+          await clearLootClaimsPool(runId);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claim-actor") {
+          if (setLootClaimActorSelectionFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        }
+      } catch (error) {
+        logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
+          target: summarizeClickTarget(event?.target)
+        });
+        ui.notifications?.warn("Loot claims action failed. Check console for details.");
       }
-    } catch (error) {
-      logUiFailure("gm-loot-claims-board", `action failed: ${action}`, error, {
-        target: summarizeClickTarget(event?.target)
-      });
-      ui.notifications?.warn("Loot claims action failed. Check console for details.");
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action,
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
@@ -5924,7 +8808,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     id: "rest-watch-player-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Rest Watch" },
-    position: { width: 760, height: 620 },
+    position: getResponsiveWindowPosition("rest-watch-player"),
     resizable: true
   });
 
@@ -6054,7 +8938,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
           this.#onAction(event);
         } else if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheRestWatchNoteDraftFromElement(event.target);
+          scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
         }
       });
 
@@ -6066,7 +8951,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           return;
         }
         if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheRestWatchNoteDraftFromElement(event.target);
+          return;
         }
       });
 
@@ -6080,6 +8966,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     diagnoseRenderedMainTabs(this.element, "rest-watch-player");
     restorePendingWindowState(this);
     restorePendingUiState(this);
+    hydrateCachedNoteDraftInputs(this.element);
     syncNotesDisclosureState(this.element);
     restorePendingScrollState(this);
   }
@@ -6097,11 +8984,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   #onTabClick(tabElement, html, event = null) {
@@ -6129,85 +9012,122 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
 
-    const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
-      this.#renderWithPreservedState({ force: true, parts: ["main"] });
-    });
-    if (handledJournalAction) return;
-
-    switch (action) {
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "main-tab":
-      case "set-panel":
-        this.#onTabClick(element, this.element);
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
+      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "assign-me":
-        await assignSlotToUser(element);
-        break;
-      case "set-activity":
-        await updateActivity(element, { skipLocalRefresh: true });
-        break;
-      case "clear":
-        await clearSlotEntry(element);
-        break;
-      case "toggle-notes":
-        toggleCardNotes(element);
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "claim-loot-item":
-        await claimLootItemForPlayer(element);
-        break;
-      case "toggle-loot-vouch":
-        await toggleLootItemVouchForPlayer(element);
-        break;
-      case "set-loot-claim-actor":
-        if (setLootClaimActorSelectionFromElement(element)) {
+      });
+      if (handledJournalAction) return;
+
+      switch (action) {
+        case "refresh":
+          emitSocketRefresh();
+          break;
+        case "switch-tab":
+          this.#onSwitchTabClick(event, element);
+          break;
+        case "main-tab":
+        case "set-panel":
+          this.#onTabClick(element, this.element);
+          break;
+        case "toggle-mini-viz":
+          setMiniVizCollapsed(!isMiniVizCollapsed());
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-        break;
-      case "claim-loot-currency":
-        await claimLootCurrencyForPlayer(element);
-        break;
-      case "open-loot-item":
-        await openLootItemFromElement(element);
-        break;
-      default:
-        break;
+          break;
+        case "assign-me":
+          await assignSlotToUser(element);
+          break;
+        case "set-activity":
+          await updateActivity(element, { skipLocalRefresh: true });
+          break;
+        case "clear":
+          await clearSlotEntry(element);
+          break;
+        case "toggle-notes":
+          toggleCardNotes(element);
+          break;
+        case "save-entry-notes":
+          {
+            const context = getRestWatchNoteContextFromElement(element);
+            if (context?.slotId && context?.actorId) {
+              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
+            }
+          }
+          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
+          break;
+        case "ping":
+          await pingActorFromElement(element);
+          break;
+        case "claim-loot-item":
+          await claimLootItemForPlayer(element);
+          break;
+        case "toggle-loot-vouch":
+          await toggleLootItemVouchForPlayer(element);
+          break;
+        case "set-loot-claim-run":
+          if (setLootClaimRunSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "set-loot-claims-archive-sort":
+          setLootClaimsArchiveSort(element?.value);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "set-loot-claim-actor":
+          if (setLootClaimActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "claim-loot-currency":
+          await claimLootCurrencyForPlayer(element);
+          break;
+        case "open-gm-loot-claims-board":
+          openGmLootClaimsBoard({
+            force: true,
+            runId: getLootClaimRunIdFromElement(element)
+          });
+          break;
+        case "open-loot-item":
+          await openLootItemFromElement(element);
+          break;
+        default:
+          break;
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
   async #onNotesChange(event) {
+    if (event?.type === "input") return;
     const state = getRestWatchState();
-    if (isLockedForUser(state, game.user.isGM)) {
+    if (isLockedForUser(state, canAccessAllPlayerOps())) {
       ui.notifications?.warn("Rest watch is locked by the GM.");
       return;
     }
     const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
     if (!slotId) return;
     const text = event.target.value ?? "";
-    const actor = getActiveActorForUser();
-    if (actor) {
-      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
-    }
+    const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
+    if (!actorId) return;
+    const actor = game.actors.get(actorId);
+    if (!actor || !canUserControlActor(actor, game.user)) return;
+    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
   }
 
   async close(options = {}) {
@@ -6225,7 +9145,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     id: "marching-order-app",
     classes: ["party-operations"],
     window: { title: "Party Operations - Marching Order" },
-    position: { width: 1320, height: 920 },
+    position: getResponsiveWindowPosition("marching-order"),
     resizable: true
   });
 
@@ -6234,7 +9154,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   };
 
   async _prepareContext() {
-    const isGM = game.user.isGM;
+    const isGM = canAccessAllPlayerOps();
     const state = getMarchingOrderState();
     const ranks = buildRanksView(state, isGM);
     const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
@@ -6369,7 +9289,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
           this.#onAction(event);
         } else if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheMarchingNoteDraftFromElement(event.target);
+          scheduleMarchingNoteSave(this, event.target, { source: "autosave" });
         } else if (event.target?.matches("textarea.po-gm-notes")) {
           this.#onGMNotesChange(event);
         }
@@ -6382,9 +9303,11 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
       this.element.addEventListener("input", (event) => {
         if (event.target?.matches("textarea.po-notes-input")) {
-          this.#onNotesChange(event);
+          cacheMarchingNoteDraftFromElement(event.target);
+          return;
         } else if (event.target?.matches("textarea.po-gm-notes")) {
-          this.#onGMNotesChange(event);
+          // Save on change/blur only to avoid typing jitter.
+          return;
         }
       });
     }
@@ -6406,6 +9329,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     restorePendingWindowState(this);
     restorePendingUiState(this);
+    hydrateCachedNoteDraftInputs(this.element);
     restorePendingScrollState(this);
     
     if (DEBUG_LOG) console.log("MarchingOrderApp: event delegation attached", this.element);
@@ -6447,109 +9371,124 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    const uiState = captureUiState(this);
-    if (uiState) pendingUiRestore.set(this, uiState);
-    const scrollState = captureScrollState(this);
-    if (scrollState.length > 0) pendingScrollRestore.set(this, scrollState);
-    this.render(renderOptions);
+    renderAppWithPreservedState(this, renderOptions);
   }
 
   async #onAction(event) {
-    if (event?.type === "click") {
-      event.preventDefault();
-      event.stopPropagation();
-    }
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
-    if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
-    if (!action) return;
-    if (element?.tagName === "SELECT" && event?.type !== "change") return;
-
-    switch (action) {
-      case "refresh":
-        emitSocketRefresh();
-        break;
-      case "switch-tab":
-        this.#onSwitchTabClick(event, element);
-        break;
-      case "main-tab":
-      case "set-panel":
-        this.#onTabClick(element, this.element);
-        break;
-      case "popout":
-        this.render({ force: true, popOut: true });
-        break;
-      case "toggle-mini-viz":
-        setMiniVizCollapsed(!isMiniVizCollapsed());
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
-      case "toggle-section": {
-        const sectionId = element?.dataset?.sectionId;
-        if (!sectionId) break;
-        setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        break;
+    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
+    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
+    try {
+      if (event?.type === "click") {
+        event.preventDefault();
+        event.stopPropagation();
       }
-      case "assign-rank":
-        await assignActorToRank(element);
-        break;
-      case "remove-from-rank":
-        await removeActorFromRanks(element);
-        break;
-      case "toggle-light":
-        await toggleLight(element);
-        break;
-      case "set-light-range":
-        await setLightRange(element);
-        break;
-      case "copy-text":
-        await copyMarchingText(false);
-        break;
-      case "copy-md":
-        await copyMarchingText(true);
-        break;
-      case "commit-plan":
-        await commitMarchingOrderState();
-        break;
-      case "clear-all":
-        await clearMarchingAll();
-        break;
-      case "ping":
-        await pingActorFromElement(element);
-        break;
-      case "formation-standard":
-        await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
-        break;
-      case "formation-combat-ready":
-        await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
-        break;
-      case "formation-tight-corridor":
-        await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
-        break;
-      case "formation-low-visibility":
-        await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
-        break;
-      case "doctrine-check":
-        await runDoctrineCheckPrompt();
-        break;
-      case "toggle-notes":
-          toggleNotesDrawer(element);
-        break;
-      default:
-        break;
+      if (DEBUG_LOG) console.log("MarchingOrderApp #onAction:", { action, element, event });
+      if (!action) return;
+      if (element?.tagName === "SELECT" && event?.type !== "change") return;
+
+      switch (action) {
+        case "refresh":
+          emitSocketRefresh();
+          break;
+        case "switch-tab":
+          this.#onSwitchTabClick(event, element);
+          break;
+        case "main-tab":
+        case "set-panel":
+          this.#onTabClick(element, this.element);
+          break;
+        case "popout":
+          this.render({ force: true, popOut: true });
+          break;
+        case "toggle-mini-viz":
+          setMiniVizCollapsed(!isMiniVizCollapsed());
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "toggle-section": {
+          const sectionId = element?.dataset?.sectionId;
+          if (!sectionId) break;
+          setMarchSectionCollapsed(sectionId, !isMarchSectionCollapsed(sectionId));
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        }
+        case "assign-rank":
+          await assignActorToRank(element);
+          break;
+        case "remove-from-rank":
+          await removeActorFromRanks(element);
+          break;
+        case "toggle-light":
+          await toggleLight(element);
+          break;
+        case "set-light-range":
+          await setLightRange(element);
+          break;
+        case "copy-text":
+          await copyMarchingText(false);
+          break;
+        case "copy-md":
+          await copyMarchingText(true);
+          break;
+        case "commit-plan":
+          await commitMarchingOrderState();
+          break;
+        case "clear-all":
+          await clearMarchingAll();
+          break;
+        case "ping":
+          await pingActorFromElement(element);
+          break;
+        case "formation-standard":
+          await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
+          break;
+        case "formation-combat-ready":
+          await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
+          break;
+        case "formation-tight-corridor":
+          await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
+          break;
+        case "formation-low-visibility":
+          await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
+          break;
+        case "doctrine-check":
+          await runDoctrineCheckPrompt();
+          break;
+        case "toggle-notes":
+            toggleNotesDrawer(element);
+          break;
+        case "save-entry-notes":
+          {
+            const context = getMarchingNoteContextFromElement(element);
+            if (context?.actorId) clearScheduledMarchingNoteSave(this, context.actorId);
+          }
+          await saveMarchingNoteFromElement(element, { notify: true });
+          break;
+        default:
+          break;
+      }
+    } finally {
+      if (preserveCanvas) {
+        queueCanvasViewRestore(canvasSnapshot, {
+          action: String(action ?? ""),
+          eventType: String(event?.type ?? "")
+        });
+      }
     }
   }
 
   async #onNotesChange(event) {
+    if (event?.type === "input") return;
     const state = getMarchingOrderState();
-    if (isLockedForUser(state, game.user.isGM)) {
+    if (isLockedForUser(state, canAccessAllPlayerOps())) {
       ui.notifications?.warn("Marching order is locked by the GM.");
       return;
     }
     const text = event.target.value ?? "";
 
     // Players: only allowed to edit notes for characters they own
-    if (!game.user.isGM) {
+    if (!canAccessAllPlayerOps()) {
       const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId || getActiveActorForUser()?.id;
       if (!actorId) return;
       const actor = game.actors.get(actorId);
@@ -6568,12 +9507,13 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   }
 
   async #onGMNotesChange(event) {
+    if (event?.type === "input") return;
     const state = getMarchingOrderState();
-    if (isLockedForUser(state, game.user.isGM)) {
+    if (isLockedForUser(state, canAccessAllPlayerOps())) {
       ui.notifications?.warn("Marching order is locked by the GM.");
       return;
     }
-    if (!game.user.isGM) return; // GM notes are GM-only
+    if (!canAccessAllPlayerOps()) return; // GM notes are GM-only
     const text = event.target.value ?? "";
     await updateMarchingOrderState((state) => {
       state.gmNotes = text;
@@ -6792,7 +9732,7 @@ function getLootSourceConfig() {
 
 async function updateLootSourceConfig(mutator, options = {}) {
   if (typeof mutator !== "function") return;
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -6815,6 +9755,292 @@ function getAllCompendiumPacks() {
     else rows.push(entry);
   }
   return rows;
+}
+
+function normalizeLootManifestItemType(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderNameKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function getLootManifestFolderLabelForType(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType);
+  if (!normalizedType) return LOOT_MANIFEST_FOLDER_LABELS.other;
+  const explicit = String(LOOT_MANIFEST_FOLDER_LABELS[normalizedType] ?? "").trim();
+  if (explicit) return explicit;
+  const fallback = String(LOOT_ITEM_TYPE_LABELS[normalizedType] ?? "").trim();
+  if (fallback) return fallback;
+  return normalizedType
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function getLootManifestFolderSortPriority(itemType = "") {
+  const normalizedType = normalizeLootManifestItemType(itemType) || "other";
+  const index = LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.indexOf(normalizedType);
+  if (index >= 0) return index;
+  return LOOT_MANIFEST_FOLDER_TYPE_PRIORITY.length + 100;
+}
+
+function getLootManifestCompendiumPack() {
+  const allowedPackages = new Set([String(PRIMARY_MODULE_ID).trim().toLowerCase(), String(PREMIUM_MODULE_ID).trim().toLowerCase()]);
+  const targetName = String(LOOT_MANIFEST_PACK_NAME).trim().toLowerCase();
+  const targetLabel = String(LOOT_MANIFEST_PACK_LABEL).trim().toLowerCase();
+
+  const candidates = getAllCompendiumPacks().filter((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const metadataName = String(pack?.metadata?.name ?? "").trim().toLowerCase();
+    return metadataName === targetName;
+  });
+
+  if (candidates.length > 0) {
+    const packageMatched = candidates.find((pack) => {
+      const packageName = String(pack?.metadata?.packageName ?? pack?.metadata?.package ?? "").trim().toLowerCase();
+      if (!packageName) return false;
+      return allowedPackages.has(packageName);
+    });
+    if (packageMatched) return packageMatched;
+    return candidates[0];
+  }
+
+  const collectionMatched = getAllCompendiumPacks().find((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const collection = String(pack?.collection ?? "").trim().toLowerCase();
+    return collection.endsWith(`.${targetName}`);
+  });
+  if (collectionMatched) return collectionMatched;
+
+  return getAllCompendiumPacks().find((pack) => {
+    const documentName = String(pack?.documentName ?? pack?.metadata?.type ?? "").trim().toLowerCase();
+    if (documentName !== "item") return false;
+    const label = String(pack?.metadata?.label ?? pack?.title ?? "").trim().toLowerCase();
+    return label === targetLabel;
+  }) ?? null;
+}
+
+function getCompendiumFolderRows(pack) {
+  const folders = pack?.folders;
+  if (!folders) return [];
+  if (Array.isArray(folders?.contents)) return folders.contents;
+  if (typeof folders.values === "function") return Array.from(folders.values());
+  if (Array.isArray(folders)) return folders;
+  return [];
+}
+
+async function getLootManifestPackItemRows(pack) {
+  try {
+    if (typeof pack?.getIndex === "function") {
+      const index = await pack.getIndex({ fields: ["type", "folder", "name"] });
+      const rows = [];
+      if (Array.isArray(index)) rows.push(...index);
+      else if (Array.isArray(index?.contents)) rows.push(...index.contents);
+      else if (typeof index?.values === "function") rows.push(...Array.from(index.values()));
+      if (rows.length > 0) {
+        return rows.map((entry) => ({
+          id: String(entry?._id ?? entry?.id ?? "").trim(),
+          type: normalizeLootManifestItemType(entry?.type),
+          name: String(entry?.name ?? "").trim(),
+          folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+        })).filter((entry) => entry.id);
+      }
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium index`, error);
+  }
+
+  try {
+    const docs = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+    return (Array.isArray(docs) ? docs : []).map((entry) => ({
+      id: String(entry?.id ?? entry?._id ?? "").trim(),
+      type: normalizeLootManifestItemType(entry?.type),
+      name: String(entry?.name ?? "").trim(),
+      folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+    })).filter((entry) => entry.id);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to read loot manifest compendium documents`, error);
+  }
+
+  return [];
+}
+
+async function updateLootManifestPackItemFolders(pack, updates = []) {
+  const normalizedUpdates = (Array.isArray(updates) ? updates : [])
+    .map((entry) => {
+      const id = String(entry?._id ?? entry?.id ?? "").trim();
+      const folderId = String(entry?.folder ?? "").trim();
+      if (!id) return null;
+      return { _id: id, folder: folderId || null };
+    })
+    .filter(Boolean);
+  if (normalizedUpdates.length <= 0) return 0;
+
+  if (typeof Item?.updateDocuments === "function") {
+    await Item.updateDocuments(normalizedUpdates, { pack: pack.collection });
+    return normalizedUpdates.length;
+  }
+
+  let applied = 0;
+  for (const entry of normalizedUpdates) {
+    try {
+      const document = typeof pack?.getDocument === "function" ? await pack.getDocument(entry._id) : null;
+      if (!document || typeof document.update !== "function") continue;
+      await document.update({ folder: entry.folder });
+      applied += 1;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to update loot manifest item folder`, entry?._id, error);
+    }
+  }
+  return applied;
+}
+
+async function ensureLootManifestCompendiumTypeFolders(options = {}) {
+  if (!game.user?.isGM) return { ok: false, reason: "not-gm" };
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) return { ok: false, reason: "pack-missing" };
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? ""),
+    createdFolders: 0,
+    updatedItems: 0
+  };
+
+  const originalLocked = Boolean(pack?.locked);
+  const mustUnlock = originalLocked && typeof pack?.configure === "function";
+  try {
+    if (mustUnlock) await pack.configure({ locked: false });
+  } catch (error) {
+    report.ok = false;
+    report.reason = "unlock-failed";
+    console.warn(`${MODULE_ID}: unable to unlock loot manifest compendium for folder sync`, error);
+    return report;
+  }
+
+  try {
+    const items = await getLootManifestPackItemRows(pack);
+    if (items.length <= 0) return report;
+
+    const folderRequestsByType = new Map();
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      if (!folderRequestsByType.has(normalizedType)) {
+        folderRequestsByType.set(normalizedType, {
+          type: normalizedType,
+          label: getLootManifestFolderLabelForType(normalizedType),
+          priority: getLootManifestFolderSortPriority(normalizedType)
+        });
+      }
+    }
+
+    if (typeof pack?.getFolders === "function") {
+      await pack.getFolders();
+    }
+    let folders = getCompendiumFolderRows(pack);
+    const folderByName = new Map(
+      folders.map((folder) => [getLootManifestFolderNameKey(folder?.name), folder]).filter(([key]) => key)
+    );
+
+    const foldersToCreate = Array.from(folderRequestsByType.values())
+      .filter((entry) => !folderByName.has(getLootManifestFolderNameKey(entry.label)))
+      .sort((left, right) => {
+        const byPriority = Number(left?.priority ?? 0) - Number(right?.priority ?? 0);
+        if (byPriority !== 0) return byPriority;
+        return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+      })
+      .map((entry, index) => ({
+        name: String(entry.label ?? "Other"),
+        type: "Item",
+        folder: null,
+        sorting: "a",
+        color: null,
+        sort: (index + 1) * 1000
+      }));
+
+    if (foldersToCreate.length > 0) {
+      if (typeof Folder?.createDocuments === "function") {
+        await Folder.createDocuments(foldersToCreate, { pack: pack.collection });
+        report.createdFolders = foldersToCreate.length;
+      } else if (typeof pack?.createFolder === "function") {
+        for (const folderData of foldersToCreate) {
+          await pack.createFolder(folderData);
+          report.createdFolders += 1;
+        }
+      }
+      if (typeof pack?.getFolders === "function") {
+        await pack.getFolders();
+      }
+      folders = getCompendiumFolderRows(pack);
+      folderByName.clear();
+      for (const folder of folders) {
+        const key = getLootManifestFolderNameKey(folder?.name);
+        if (!key) continue;
+        folderByName.set(key, folder);
+      }
+    }
+
+    const itemUpdates = [];
+    for (const item of items) {
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      const folderLabel = getLootManifestFolderLabelForType(normalizedType);
+      const folder = folderByName.get(getLootManifestFolderNameKey(folderLabel));
+      const folderId = String(folder?.id ?? "").trim();
+      if (!folderId) continue;
+      if (String(item.folderId ?? "").trim() === folderId) continue;
+      itemUpdates.push({
+        _id: item.id,
+        folder: folderId
+      });
+    }
+
+    report.updatedItems = await updateLootManifestPackItemFolders(pack, itemUpdates);
+
+    if (isModuleDebugEnabled()) {
+      console.log(`${MODULE_ID}: loot manifest compendium folder sync`, {
+        reason: String(options?.reason ?? ""),
+        ...report
+      });
+    }
+
+    return report;
+  } catch (error) {
+    report.ok = false;
+    report.reason = "sync-failed";
+    console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
+    return report;
+  } finally {
+    if (mustUnlock) {
+      try {
+        await pack.configure({ locked: true });
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to restore loot manifest compendium lock`, error);
+      }
+    }
+  }
+}
+
+function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
+  if (!game.user?.isGM) return Promise.resolve({ ok: false, reason: "not-gm" });
+  if (lootManifestFolderSyncPromise) return lootManifestFolderSyncPromise;
+
+  lootManifestFolderSyncPromise = ensureLootManifestCompendiumTypeFolders({ reason })
+    .catch((error) => {
+      console.warn(`${MODULE_ID}: unexpected loot manifest folder sync failure`, error);
+      return { ok: false, reason: "unexpected-error" };
+    })
+    .finally(() => {
+      lootManifestFolderSyncPromise = null;
+    });
+  return lootManifestFolderSyncPromise;
 }
 
 function getAvailableLootItemPackSources() {
@@ -7491,7 +10717,7 @@ function isPrimaryActiveGmForAutoInventory() {
   const activeGms = (game.users ?? [])
     .filter((user) => Boolean(user?.active) && Boolean(user?.isGM))
     .sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
-  if (activeGms.length === 0) return Boolean(game.user?.isGM);
+  if (activeGms.length === 0) return Boolean(canAccessAllPlayerOps());
   return String(activeGms[0]?.id ?? "") === String(game.user?.id ?? "");
 }
 
@@ -7721,7 +10947,7 @@ async function resolveAutoInventoryPlanToItemData(plan = []) {
 }
 
 async function applyAutoInventoryToUnlinkedToken(tokenDoc, options = {}, userId = null) {
-  if (!game.user?.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   if (!isPrimaryActiveGmForAutoInventory()) return;
   const settings = getAutoInventorySettingsSnapshot();
   if (!settings.enabled) return;
@@ -9843,7 +13069,101 @@ function buildLootPreviewContext() {
 function buildLootClaimsContext(user = game.user) {
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
-  const publishedAt = Number(claims.publishedAt ?? 0);
+  const boards = Array.isArray(claims.boards) ? claims.boards : [];
+  const openBoards = boards
+    .filter((entry) => String(entry?.status ?? "open") !== "archived")
+    .sort((a, b) => Number(b?.publishedAt ?? 0) - Number(a?.publishedAt ?? 0));
+  const archivedBoards = boards
+    .filter((entry) => String(entry?.status ?? "open") === "archived");
+  const boardById = new Map(boards.map((entry) => [String(entry?.id ?? ""), entry]));
+  const storedRunId = getLootClaimRunSelection();
+  const fallbackRunId = normalizeLootClaimRunId(claims.activeBoardId) || String(openBoards[0]?.id ?? "") || String(archivedBoards[0]?.id ?? "");
+  const selectedRunId = boardById.has(storedRunId) ? storedRunId : fallbackRunId;
+  if (storedRunId !== selectedRunId) setLootClaimRunSelection(selectedRunId);
+  const selectedRun = boardById.get(selectedRunId) ?? null;
+  const displayRun = selectedRun ?? openBoards[0] ?? archivedBoards[0] ?? null;
+  const displayRunId = normalizeLootClaimRunId(displayRun?.id);
+  const displayRunStatus = String(displayRun?.status ?? "open");
+  const displayRunIsArchived = displayRunStatus === "archived";
+  if (displayRunId && displayRunId !== selectedRunId) setLootClaimRunSelection(displayRunId);
+
+  const formatTimestampLabel = (timestampInput, fallbackLabel = "-") => {
+    const timestamp = Math.max(0, Number(timestampInput ?? 0) || 0);
+    return timestamp > 0 ? new Date(timestamp).toLocaleString() : fallbackLabel;
+  };
+
+  const mapRunCard = (run) => {
+    const id = normalizeLootClaimRunId(run?.id);
+    const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
+    const currencyRemaining = run?.currencyRemaining ?? run?.currency ?? {};
+    const hasCurrencyRemaining = ["pp", "gp", "sp", "cp"].some((denom) => {
+      return Math.max(0, Math.floor(Number(currencyRemaining?.[denom] ?? 0) || 0)) > 0;
+    });
+    const itemCount = Array.isArray(run?.items) ? run.items.length : 0;
+    const claimsLogCount = Array.isArray(run?.claimsLog) ? run.claimsLog.length : 0;
+    const contestedItemCount = Array.isArray(run?.items)
+      ? run.items.filter((item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length > 1).length
+      : 0;
+    const majorItemCount = Array.isArray(run?.items)
+      ? run.items.filter((item) => Boolean(item?.majorItem)).length
+      : 0;
+    return {
+      id,
+      selected: id === displayRunId,
+      status,
+      isOpen: status === "open",
+      isArchived: status === "archived",
+      statusLabel: status === "archived" ? "Archived" : "Open",
+      publishedAt: Math.max(0, Number(run?.publishedAt ?? 0) || 0),
+      publishedAtLabel: formatTimestampLabel(run?.publishedAt),
+      publishedBy: String(run?.publishedBy ?? "").trim() || "GM",
+      archivedAt: Math.max(0, Number(run?.archivedAt ?? 0) || 0),
+      archivedAtLabel: formatTimestampLabel(run?.archivedAt, "Not archived"),
+      archivedBy: String(run?.archivedBy ?? "").trim() || "GM",
+      itemCount,
+      claimsLogCount,
+      contestedItemCount,
+      majorItemCount,
+      hasContestedItems: contestedItemCount > 0,
+      hasMajorItems: majorItemCount > 0,
+      hasCurrencyRemaining,
+      currencyRemaining: {
+        pp: Math.max(0, Math.floor(Number(currencyRemaining?.pp ?? 0) || 0)),
+        gp: Math.max(0, Math.floor(Number(currencyRemaining?.gp ?? 0) || 0)),
+        sp: Math.max(0, Math.floor(Number(currencyRemaining?.sp ?? 0) || 0)),
+        cp: Math.max(0, Math.floor(Number(currencyRemaining?.cp ?? 0) || 0))
+      },
+      currencyRemainingLabel: formatLootCurrencyRemainingLabel(currencyRemaining),
+      tableRollCount: Array.isArray(run?.tableRolls) ? run.tableRolls.length : 0
+    };
+  };
+
+  const archiveSort = getLootClaimsArchiveSort();
+  const sortedArchivedBoards = [...archivedBoards].sort((left, right) => {
+    const leftArchivedAt = Math.max(0, Number(left?.archivedAt ?? 0) || 0);
+    const rightArchivedAt = Math.max(0, Number(right?.archivedAt ?? 0) || 0);
+    const leftPublishedAt = Math.max(0, Number(left?.publishedAt ?? 0) || 0);
+    const rightPublishedAt = Math.max(0, Number(right?.publishedAt ?? 0) || 0);
+    const leftItemCount = Array.isArray(left?.items) ? left.items.length : 0;
+    const rightItemCount = Array.isArray(right?.items) ? right.items.length : 0;
+    switch (archiveSort) {
+      case "archived-asc":
+        return leftArchivedAt - rightArchivedAt;
+      case "published-desc":
+        return rightPublishedAt - leftPublishedAt;
+      case "published-asc":
+        return leftPublishedAt - rightPublishedAt;
+      case "items-desc":
+        return rightItemCount - leftItemCount;
+      case "items-asc":
+        return leftItemCount - rightItemCount;
+      case "archived-desc":
+      default:
+        return rightArchivedAt - leftArchivedAt;
+    }
+  });
+
+  const publishedAt = Number(displayRun?.publishedAt ?? claims.publishedAt ?? 0);
   const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
   const selectableActors = getDowntimeSelectableActorsForUser(user);
   const actorOptions = selectableActors.map((actor) => ({
@@ -9863,35 +13183,90 @@ function buildLootClaimsContext(user = game.user) {
   const ownedPcActors = getOwnedPcActors();
   const eligibleActorIds = new Set(ownedPcActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
   const actorNameById = new Map(ownedPcActors.map((actor) => [String(actor?.id ?? "").trim(), String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`]));
-  const claimedActorIds = new Set((claims.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
+  const displayCurrencyClaimedActorIds = Array.isArray(displayRun?.currencyClaimedActorIds)
+    ? displayRun.currencyClaimedActorIds
+    : [];
+  const claimedActorIds = new Set(displayCurrencyClaimedActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean));
   const selectedActorClaimedCurrency = claimedActorIds.has(selectedActorId);
+  const displayCurrency = displayRun?.currency ?? { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+  const displayCurrencyRemaining = displayRun?.currencyRemaining ?? displayCurrency;
   const currencyRemaining = {
-    pp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.pp ?? claims.currency?.pp ?? 0) || 0)),
-    gp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.gp ?? claims.currency?.gp ?? 0) || 0)),
-    sp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.sp ?? claims.currency?.sp ?? 0) || 0)),
-    cp: Math.max(0, Math.floor(Number(claims.currencyRemaining?.cp ?? claims.currency?.cp ?? 0) || 0)),
-    gpEquivalent: Math.max(0, Number(claims.currencyRemaining?.gpEquivalent ?? claims.currency?.gpEquivalent ?? 0) || 0)
+    pp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.pp ?? displayCurrency?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.gp ?? displayCurrency?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.sp ?? displayCurrency?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.cp ?? displayCurrency?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(displayCurrencyRemaining?.gpEquivalent ?? displayCurrency?.gpEquivalent ?? 0) || 0)
   };
   const hasCurrencyRemaining = currencyRemaining.pp > 0 || currencyRemaining.gp > 0 || currencyRemaining.sp > 0 || currencyRemaining.cp > 0;
+  const displayItems = Array.isArray(displayRun?.items) ? displayRun.items : [];
+  const displayTableRolls = Array.isArray(displayRun?.tableRolls) ? displayRun.tableRolls : [];
+  const displayClaimsLog = Array.isArray(displayRun?.claimsLog) ? displayRun.claimsLog : [];
+  const openRunCards = openBoards.map((run) => mapRunCard(run));
+  const archivedRunCards = sortedArchivedBoards.map((run) => mapRunCard(run));
+  const selectedRunCard = displayRun ? mapRunCard(displayRun) : null;
+  const runOptions = [...openBoards, ...sortedArchivedBoards].map((run) => {
+    const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
+    const statusLabel = status === "archived" ? "Archived" : "Open";
+    const publishedLabel = formatTimestampLabel(run?.publishedAt);
+    const itemCount = Array.isArray(run?.items) ? run.items.length : 0;
+    return {
+      id: String(run?.id ?? ""),
+      label: `${publishedLabel} - ${itemCount} item(s) - ${statusLabel}`,
+      selected: String(run?.id ?? "") === displayRunId,
+      isArchived: status === "archived",
+      isOpen: status === "open"
+    };
+  });
+  const archiveSortOptions = LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === archiveSort
+  }));
+  const hasSelectedRun = Boolean(displayRun);
+  const selectedRunHasItems = displayItems.length > 0;
+  const selectedRunClaimsLogCount = displayClaimsLog.length;
+  const selectedRunContestedItemCount = displayItems.filter((entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1).length;
+  const canClaimCurrency = hasSelectedRun
+    && !displayRunIsArchived
+    && Boolean(selectedActorId)
+    && eligibleActorIds.has(selectedActorId)
+    && hasCurrencyRemaining
+    && !selectedActorClaimedCurrency;
   return {
+    selectedRunId: displayRunId,
+    selectedRunStatus: displayRunStatus,
+    selectedRunIsArchived: displayRunIsArchived,
+    hasSelectedRun,
+    selectedRunCard,
+    canArchiveSelectedRun: hasSelectedRun && !displayRunIsArchived,
+    hasOpenRuns: openRunCards.length > 0,
+    openRunCount: openRunCards.length,
+    openRuns: openRunCards,
+    hasArchivedRuns: archivedRunCards.length > 0,
+    archivedRunCount: archivedRunCards.length,
+    archivedRuns: archivedRunCards,
+    archiveSort,
+    archiveSortOptions,
+    runOptions,
     publishedAtLabel,
-    publishedBy: String(claims.publishedBy ?? "").trim() || "GM",
+    publishedBy: String(displayRun?.publishedBy ?? claims.publishedBy ?? "").trim() || "GM",
     hasPublished: publishedAt > 0,
-    hasItems: claims.items.length > 0,
-    itemCount: claims.items.length,
-    claimsLogCount: claims.claimsLog.length,
-    currency: foundry.utils.deepClone(claims.currency),
+    hasItems: selectedRunHasItems,
+    itemCount: displayItems.length,
+    claimsLogCount: selectedRunClaimsLogCount,
+    currency: foundry.utils.deepClone(displayCurrency),
     currencyRemaining,
     hasCurrencyRemaining,
     selectedActorClaimedCurrency,
-    canClaimCurrency: Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId) && hasCurrencyRemaining && !selectedActorClaimedCurrency,
+    canClaimCurrency,
     currencyClaimedCount: claimedActorIds.size,
-    tableRolls: foundry.utils.deepClone(claims.tableRolls),
+    tableRolls: foundry.utils.deepClone(displayTableRolls),
     actorOptions,
     selectedActorId,
     selectedActorName,
-    items: claims.items.map((entry) => ({
+    items: displayItems.map((entry) => ({
       ...entry,
+      claimRunId: displayRunId,
       hasRarity: entry.rarity.length > 0,
       canOpen: entry.uuid.length > 0,
       isMajorItem: Boolean(entry.majorItem),
@@ -9903,16 +13278,16 @@ function buildLootClaimsContext(user = game.user) {
       hasVouchers: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 0,
       selectedActorVouched: Boolean(selectedActorId) && Array.isArray(entry.vouchedByActorIds)
         && entry.vouchedByActorIds.includes(selectedActorId),
-      canVouch: Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId),
+      canVouch: !displayRunIsArchived && Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId),
       requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
-      canRunRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
-      canClaimDirect: !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
+      canRunRollOff: !displayRunIsArchived && Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
+      canClaimDirect: !displayRunIsArchived && !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
       vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
         .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
         .filter(Boolean)
         .join(", ")
     })),
-    contestedItemCount: claims.items.filter((entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1).length
+    contestedItemCount: selectedRunContestedItemCount
   };
 }
 
@@ -9973,6 +13348,13 @@ function buildDefaultOperationsLedger() {
       maintenanceRisk: "moderate",
       sites: []
     },
+    merchants: {
+      currentSettlement: "",
+      cityCatalog: [],
+      definitions: [],
+      stockStateById: {},
+      accessLog: []
+    },
     downtime: {
       hoursGranted: 4,
       tuning: {
@@ -9986,6 +13368,8 @@ function buildDefaultOperationsLedger() {
     lootClaims: {
       publishedAt: 0,
       publishedBy: "",
+      activeBoardId: "",
+      boards: [],
       currency: {
         pp: 0,
         gp: 0,
@@ -10023,16 +13407,23 @@ function buildDefaultOperationsLedger() {
     partyHealth: {
       modifierEnabled: {},
       customModifiers: [],
+      stagedModifierQueue: [],
+      modifierAddLog: [],
       archivedSyncEffects: [],
       syncToSceneNonParty: true,
       nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
     },
     resources: {
       food: 14,
-      partyFoodRations: 28,
+      partyFoodRations: 0,
       partyWaterRations: 0,
       water: 14,
-      torches: 6,
+      torches: 0,
+      stewardPools: {
+        food: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" },
+        water: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" },
+        torches: { mode: STEWARD_POOL_MODES.NONE, amount: 0, source: "" }
+      },
       upkeepLastAppliedTs: null,
       gather: {
         weatherMods: {
@@ -10044,7 +13435,8 @@ function buildDefaultOperationsLedger() {
           extreme: 5
         },
         foodCoverageDueKey: null,
-        waterCoverageDueKey: null
+        waterCoverageDueKey: null,
+        history: []
       },
       encumbrance: "light",
       upkeep: {
@@ -10108,6 +13500,7 @@ function getOperationsLedger() {
   merged.supplyLines = ensureObject(merged.supplyLines, defaults.supplyLines);
   merged.recon = ensureObject(merged.recon, defaults.recon);
   merged.baseOperations = ensureObject(merged.baseOperations, defaults.baseOperations);
+  merged.merchants = ensureObject(merged.merchants, defaults.merchants);
   merged.downtime = ensureObject(merged.downtime, defaults.downtime);
   merged.lootClaims = ensureObject(merged.lootClaims, defaults.lootClaims);
   merged.environment = ensureObject(merged.environment, defaults.environment);
@@ -10122,6 +13515,8 @@ function getOperationsLedger() {
   merged.supplyLines.safehouses = Array.isArray(merged.supplyLines.safehouses) ? merged.supplyLines.safehouses : [];
   merged.baseOperations.sites = Array.isArray(merged.baseOperations.sites) ? merged.baseOperations.sites : [];
   merged.downtime.logs = Array.isArray(merged.downtime.logs) ? merged.downtime.logs : [];
+  merged.lootClaims.boards = Array.isArray(merged.lootClaims.boards) ? merged.lootClaims.boards : [];
+  merged.lootClaims.activeBoardId = normalizeLootClaimRunId(merged.lootClaims.activeBoardId);
   merged.lootClaims.items = Array.isArray(merged.lootClaims.items) ? merged.lootClaims.items : [];
   merged.lootClaims.tableRolls = Array.isArray(merged.lootClaims.tableRolls) ? merged.lootClaims.tableRolls : [];
   merged.lootClaims.claimsLog = Array.isArray(merged.lootClaims.claimsLog) ? merged.lootClaims.claimsLog : [];
@@ -10132,6 +13527,12 @@ function getOperationsLedger() {
   merged.environment.checkResults = Array.isArray(merged.environment.checkResults) ? merged.environment.checkResults : [];
   merged.weather.logs = Array.isArray(merged.weather.logs) ? merged.weather.logs : [];
   merged.partyHealth.customModifiers = Array.isArray(merged.partyHealth.customModifiers) ? merged.partyHealth.customModifiers : [];
+  merged.partyHealth.stagedModifierQueue = Array.isArray(merged.partyHealth.stagedModifierQueue)
+    ? merged.partyHealth.stagedModifierQueue
+    : [];
+  merged.partyHealth.modifierAddLog = Array.isArray(merged.partyHealth.modifierAddLog)
+    ? merged.partyHealth.modifierAddLog
+    : [];
   merged.partyHealth.archivedSyncEffects = Array.isArray(merged.partyHealth.archivedSyncEffects)
     ? merged.partyHealth.archivedSyncEffects
     : [];
@@ -10139,19 +13540,26 @@ function getOperationsLedger() {
   merged.resources.gather = ensureObject(merged.resources.gather, defaults.resources.gather);
   merged.resources.gather.weatherMods = ensureObject(merged.resources.gather.weatherMods, defaults.resources.gather.weatherMods);
   merged.resources.upkeep = ensureObject(merged.resources.upkeep, defaults.resources.upkeep);
+  ensureOperationalResourceConfig(merged.resources);
+  ensureMerchantsState(merged);
 
   return merged;
 }
 
 async function updateOperationsLedger(mutator, options = {}) {
   if (typeof mutator !== "function") return;
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can update operations data.");
-    return;
-  }
   try {
     const ledger = getOperationsLedger();
     mutator(ledger);
+
+    if (!game.user?.isGM) {
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:ledger-write",
+        userId: game.user.id,
+        ledger
+      });
+      return;
+    }
 
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
     scheduleIntegrationSync("operations-ledger");
@@ -10159,7 +13567,8 @@ async function updateOperationsLedger(mutator, options = {}) {
     emitSocketRefresh();
   } catch (error) {
     logUiFailure("operations-ledger", "update failed", error, {
-      skipLocalRefresh: Boolean(options?.skipLocalRefresh)
+      skipLocalRefresh: Boolean(options?.skipLocalRefresh),
+      isGM: Boolean(game.user?.isGM)
     });
     throw error;
   }
@@ -10459,8 +13868,16 @@ function buildOperationsContext() {
     key: sop.key,
     label: sop.label,
     active: Boolean(ledger.sops?.[sop.key]),
-    note: String(ledger.sopNotes?.[sop.key] ?? "")
+    ...(() => {
+      const worldNote = String(ledger.sopNotes?.[sop.key] ?? "");
+      const resolved = resolveSopNoteForView(sop.key, worldNote);
+      return {
+        note: resolved.note,
+        pendingLocalSync: resolved.pendingSync
+      };
+    })()
   }));
+  schedulePendingSopNoteSync("operations-context");
 
   const roleCoverage = roles.filter((role) => role.hasActor).length;
   const missingRoles = Math.max(0, roles.length - roleCoverage);
@@ -10486,6 +13903,7 @@ function buildOperationsContext() {
   lootSources.registryTabSettings = lootRegistryTab === "settings";
   lootSources.preview = buildLootPreviewContext();
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
+  const merchants = buildMerchantsContext(ledger, { user: game.user });
   const environmentState = ensureEnvironmentState(ledger);
   const weatherState = ensureWeatherState(ledger);
   const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey);
@@ -10601,23 +14019,35 @@ function buildOperationsContext() {
 
   const resourcesState = foundry.utils.deepClone(ledger.resources ?? {});
   ensureOperationalResourceConfig(resourcesState);
+  const stewardPools = {
+    food: buildStewardPoolContext(resourcesState, "food"),
+    water: buildStewardPoolContext(resourcesState, "water"),
+    torches: buildStewardPoolContext(resourcesState, "torches")
+  };
+  const gatherHistoryView = getGatherHistoryViewState();
   const gatherWeatherOptions = getGatherWeatherOptions(resourcesState);
+  const gatherPresets = buildGatherPresetContext();
+  const gatherHistory = buildGatherHistoryContext(resourcesState, { viewState: gatherHistoryView });
   const foodDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.foodPerMember * upkeep.foodMultiplier));
   const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
   const torchDrainPerDay = Math.max(0, Math.ceil(upkeep.torchPerRest));
   const upkeepDaysPending = getUpkeepDaysFromCalendar(resourcesState.upkeepLastAppliedTs, getCurrentWorldTimestamp());
   const resourcesNumeric = {
     food: Number(resourcesState.food ?? 0),
-    partyFoodRations: Number(resourcesState.partyFoodRations ?? 0),
-    partyWaterRations: Number(resourcesState.partyWaterRations ?? 0),
+    partyFoodRations: getStewardPoolFiniteAmount(stewardPools.food),
+    partyWaterRations: getStewardPoolFiniteAmount(stewardPools.water),
     water: Number(resourcesState.water ?? 0),
-    torches: Number(resourcesState.torches ?? 0)
+    torches: getStewardPoolFiniteAmount(stewardPools.torches)
   };
+  const hasInfiniteFoodSteward = isStewardPoolInfinite(stewardPools.food);
+  const hasInfiniteWaterSteward = isStewardPoolInfinite(stewardPools.water);
   const linkedFoodStock = getSelectedResourceItemQuantity(resourcesState, "food");
+  const linkedWaterStock = getSelectedResourceItemQuantity(resourcesState, "water");
   const totalFoodReserve = Math.max(0, resourcesNumeric.partyFoodRations) + linkedFoodStock;
-  const totalWaterReserve = Math.max(0, resourcesNumeric.partyWaterRations);
+  const totalWaterReserve = Math.max(0, resourcesNumeric.partyWaterRations) + linkedWaterStock;
 
-  const formatCyclesLeft = (stock, drain) => {
+  const formatCyclesLeft = (stock, drain, infinite = false) => {
+    if (infinite) return "infinite";
     if (drain <= 0) return "infinite";
     return (Math.max(0, stock) / drain).toFixed(1);
   };
@@ -10741,6 +14171,7 @@ function buildOperationsContext() {
       const origin = String(entry?.origin ?? "custom").trim() || "custom";
       return {
         id: String(entry?.id ?? foundry.utils.randomID()),
+        customModifierId: String(entry?.customModifierId ?? "").trim(),
         origin,
         originLabel: origin === "quick" ? "Quick Panel" : "Custom Panel",
         label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
@@ -10757,6 +14188,38 @@ function buildOperationsContext() {
     .filter((entry) => entry.key && entry.value)
     .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
     .slice(0, 8);
+  const stagedModifierQueue = (partyHealthState.stagedModifierQueue ?? [])
+    .map((entry) => {
+      const createdAt = Number(entry?.createdAt ?? Date.now()) || Date.now();
+      const createdAtDate = new Date(createdAt);
+      const key = String(entry?.key ?? "").trim();
+      const mode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()),
+        label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+        key,
+        keyLabel: getDaeKeyLabel(key),
+        mode,
+        modeLabel: getActiveEffectModeLabel(mode),
+        value: String(entry?.value ?? "").trim(),
+        note: String(entry?.note ?? ""),
+        hasNote: String(entry?.note ?? "").trim().length > 0,
+        modeOptions: partyModifierModeOptions.map((option) => ({
+          ...option,
+          selected: Number(option.value) === Number(mode)
+        })),
+        keyOptions: partyModifierKeyOptions.map((option) => ({
+          ...option,
+          selected: String(option.value ?? "").trim() === key
+        })),
+        createdBy: String(entry?.createdBy ?? "GM").trim() || "GM",
+        createdAt,
+        createdAtLabel: Number.isFinite(createdAtDate.getTime()) ? createdAtDate.toLocaleString() : "Unknown"
+      };
+    })
+    .filter((entry) => entry.key && entry.value)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 12);
   const resolvedIntegrationMode = resolveIntegrationMode();
   const integrationModeLabel = getIntegrationModeLabel(resolvedIntegrationMode);
   const nonPartySyncScope = getNonPartySyncScope(partyHealthState.nonPartySyncScope);
@@ -10829,10 +14292,12 @@ function buildOperationsContext() {
     resources: {
       food: resourcesNumeric.food,
       linkedFoodStock,
+      linkedWaterStock,
       partyFoodRations: resourcesNumeric.partyFoodRations,
       partyWaterRations: resourcesNumeric.partyWaterRations,
       water: resourcesNumeric.water,
       torches: resourcesNumeric.torches,
+      stewardPools,
       itemSelections: {
         food: buildResourceSelectionContext(resourcesState, "food"),
         water: buildResourceSelectionContext(resourcesState, "water"),
@@ -10841,6 +14306,10 @@ function buildOperationsContext() {
       gatherWeatherOptions,
       gatherFoodCoveredNextUpkeep,
       gatherWaterCoveredNextUpkeep,
+      gatherPresets,
+      hasGatherPresets: gatherPresets.length > 0,
+      gatherHistory,
+      hasGatherHistory: gatherHistory.hasRows,
       summary: {
         foodDrainPerDay,
         waterDrainPerDay,
@@ -10848,10 +14317,13 @@ function buildOperationsContext() {
         upkeepDaysPending,
         foodDrainPending: foodDrainPerDay * upkeepDaysPending,
         waterDrainPending: waterDrainPerDay * upkeepDaysPending,
-        foodCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay),
-        foodRationCyclesLeft: formatCyclesLeft(resourcesNumeric.partyFoodRations, foodDrainPerDay),
-        waterCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay),
-        waterRationCyclesLeft: formatCyclesLeft(resourcesNumeric.partyWaterRations, waterDrainPerDay),
+        foodStewardPoolDisplay: stewardPools.food.amountDisplay,
+        waterStewardPoolDisplay: stewardPools.water.amountDisplay,
+        torchStewardPoolDisplay: stewardPools.torches.amountDisplay,
+        foodCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay, hasInfiniteFoodSteward),
+        foodRationCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay, hasInfiniteFoodSteward),
+        waterCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
+        waterRationCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
         selectedBindingCount
       },
       upkeep,
@@ -10973,6 +14445,8 @@ function buildOperationsContext() {
       showWeatherPanel: gmQuickPanel === "weather",
       modifierModeOptions: partyModifierModeOptions,
       modifierKeyOptions: partyModifierKeyOptions,
+      stagedModifierQueue,
+      hasStagedModifierQueue: stagedModifierQueue.length > 0,
       modifierAddLog,
       hasModifierAddLog: modifierAddLog.length > 0,
       weatherSceneSnapshot,
@@ -11000,6 +14474,7 @@ function buildOperationsContext() {
     },
     reputation,
     baseOperations,
+    merchants,
     summary: {
       roleCoverage,
       roleTotal: roles.length,
@@ -11383,6 +14858,7 @@ function getReputationAccessLabel(score) {
 }
 
 function buildReputationContext(reputationState, filters = {}) {
+  const noteLogSelections = getReputationNoteLogSelections();
   const rawFactions = Array.isArray(reputationState?.factions)
     ? reputationState.factions.map((entry) => normalizeReputationFaction(entry))
     : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
@@ -11391,6 +14867,13 @@ function buildReputationContext(reputationState, filters = {}) {
     const noteLogs = Array.isArray(faction.noteLogs)
       ? faction.noteLogs.map((row) => normalizeReputationNoteLog(row)).sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
       : [];
+    let selectedNoteLogId = String(noteLogSelections[faction.id] ?? "").trim();
+    if (selectedNoteLogId && !noteLogs.some((row) => String(row.id ?? "") === selectedNoteLogId)) {
+      selectedNoteLogId = "";
+    }
+    const selectedNoteLog = selectedNoteLogId
+      ? (noteLogs.find((row) => String(row.id ?? "") === selectedNoteLogId) ?? null)
+      : null;
     const noteLogOptions = noteLogs.slice(0, 50).map((row) => {
       const signedScore = row.score > 0 ? `+${row.score}` : String(row.score);
       const stamp = row.dayLabel || formatRecoveryDueLabel(Number(row.loggedAt ?? Date.now()));
@@ -11398,9 +14881,18 @@ function buildReputationContext(reputationState, filters = {}) {
       return {
         value: row.id,
         label: `${stamp} - Rep ${signedScore} - ${summary}`,
-        note: row.note
+        note: row.note,
+        selected: selectedNoteLogId === String(row.id ?? "")
       };
     });
+    const selectedScore = Number(selectedNoteLog?.score ?? 0);
+    const selectedScoreLabel = selectedScore > 0 ? `+${selectedScore}` : String(selectedScore);
+    const selectedDayLabel = String(selectedNoteLog?.dayLabel ?? "").trim()
+      || formatRecoveryDueLabel(Number(selectedNoteLog?.loggedAt ?? Date.now()));
+    const selectedPreviewSource = String(selectedNoteLog?.note ?? "").trim();
+    const selectedPreview = selectedPreviewSource.length > 160
+      ? `${selectedPreviewSource.slice(0, 157)}...`
+      : selectedPreviewSource;
     return {
       ...faction,
       key: faction.id,
@@ -11411,7 +14903,13 @@ function buildReputationContext(reputationState, filters = {}) {
       noteLogs,
       noteLogOptions,
       hasNoteLogs: noteLogOptions.length > 0,
-      noteLogCount: noteLogOptions.length
+      noteLogCount: noteLogOptions.length,
+      selectedNoteLogId,
+      selectedNoteLog,
+      hasSelectedNoteLog: Boolean(selectedNoteLog),
+      selectedNoteLogScoreLabel: selectedScoreLabel,
+      selectedNoteLogDayLabel: selectedDayLabel,
+      selectedNoteLogPreview: selectedPreview
     };
   });
 
@@ -11629,9 +15127,3578 @@ function ensureBaseOperationsState(ledger) {
   return ledger.baseOperations;
 }
 
+function normalizeMerchantTagList(values = []) {
+  return normalizeMerchantTagListDomain(values);
+}
+
+function normalizeMerchantKeywordList(values = []) {
+  return normalizeMerchantKeywordListDomain(values);
+}
+
+function normalizeMerchantSourcePackIds(values = [], fallbackSourceRef = "") {
+  return normalizeMerchantSourcePackIdsDomain(values, fallbackSourceRef);
+}
+
+function normalizeMerchantAllowedItemTypes(values = []) {
+  return normalizeMerchantAllowedItemTypesDomain(values);
+}
+
+function normalizeMerchantCuratedItemUuids(values = []) {
+  return normalizeMerchantCuratedItemUuidsDomain(values);
+}
+
+function parseMerchantUuidListInput(value) {
+  return parseMerchantUuidListInputDomain(value);
+}
+
+function formatMerchantUuidListInput(values = []) {
+  return formatMerchantUuidListInputDomain(values);
+}
+
+function normalizeMerchantSourceType(value) {
+  return normalizeMerchantSourceTypeDomain(value);
+}
+
+function normalizeMerchantScarcity(value) {
+  return normalizeMerchantScarcityDomain(value);
+}
+
+function getMerchantScarcityProfile(value) {
+  return getMerchantScarcityProfileDomain(value);
+}
+
+function normalizeMerchantRace(value) {
+  return normalizeMerchantRaceDomain(value);
+}
+
+function normalizeMerchantRarity(value) {
+  return normalizeMerchantRarityDomain(value);
+}
+
+function getMerchantRarityBucket(value) {
+  return getMerchantRarityBucketDomain(value);
+}
+
+function normalizeMerchantRarityWeights(raw = {}, fallback = undefined) {
+  return normalizeMerchantRarityWeightsDomain(raw, fallback);
+}
+
+function normalizeMerchantCityList(values = []) {
+  return normalizeMerchantCityListDomain(values);
+}
+
+function parseMerchantCityListInput(value = "") {
+  return parseMerchantCityListInputDomain(value);
+}
+
+function formatMerchantCityListInput(values = []) {
+  return formatMerchantCityListInputDomain(values);
+}
+
+function getMerchantRaceKey(value) {
+  return getMerchantRaceKeyDomain(value);
+}
+
+function getMerchantEditorRaceOptions(selectedRaceInput = "") {
+  return getMerchantEditorRaceOptionsDomain(selectedRaceInput);
+}
+
+function pickRandomMerchantRace(fallback = "Human") {
+  return pickRandomMerchantRaceDomain(fallback);
+}
+
+function pickRandomMerchantTitle(fallback = "Merchant") {
+  return pickRandomMerchantTitleDomain(fallback);
+}
+
+function pickRandomMerchantNamePart(values = [], fallback = "") {
+  return pickRandomMerchantNamePartDomain(values, fallback);
+}
+
+function generateRandomMerchantName(raceInput = "") {
+  return generateRandomMerchantNameDomain(raceInput);
+}
+
+function generateRandomMerchantNameUnbound() {
+  return generateRandomMerchantNameUnboundDomain();
+}
+
+function buildMerchantOfferTagOptions(selectedTypes = []) {
+  return buildMerchantOfferTagOptionsDomain(selectedTypes);
+}
+
+function resolveMerchantAllowedTypesFromOfferTags(selectedTagIds = [], fallbackTypes = MERCHANT_ALLOWED_ITEM_TYPE_LIST) {
+  return resolveMerchantAllowedTypesFromOfferTagsDomain(selectedTagIds, fallbackTypes);
+}
+
+function buildMerchantCityOptions(cityList = [], selectedCity = "") {
+  return buildMerchantCityOptionsDomain(cityList, selectedCity);
+}
+
+function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+  return getMerchantEditorSourceTypeOptionsDomain(selected);
+}
+
+function normalizeMerchantAccessMode(value, fallback = MERCHANT_ACCESS_MODES.ALL) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === MERCHANT_ACCESS_MODES.ASSIGNED) return MERCHANT_ACCESS_MODES.ASSIGNED;
+  if (normalized === MERCHANT_ACCESS_MODES.ALL) return MERCHANT_ACCESS_MODES.ALL;
+  return normalizeMerchantAccessMode(fallback, MERCHANT_ACCESS_MODES.ALL);
+}
+
+function normalizeMerchantBarterAbility(value, fallback = MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, normalized)) return normalized;
+  const fallbackKey = String(fallback ?? "cha").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, fallbackKey)) return fallbackKey;
+  return "cha";
+}
+
+function getMerchantAccessModeOptions(selected = MERCHANT_ACCESS_MODES.ALL) {
+  const active = normalizeMerchantAccessMode(selected, MERCHANT_ACCESS_MODES.ALL);
+  return [
+    { value: MERCHANT_ACCESS_MODES.ALL, label: "All Players", selected: active === MERCHANT_ACCESS_MODES.ALL },
+    { value: MERCHANT_ACCESS_MODES.ASSIGNED, label: "Assigned Players", selected: active === MERCHANT_ACCESS_MODES.ASSIGNED }
+  ];
+}
+
+function getMerchantBarterAbilityOptions(selected = MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha") {
+  const active = normalizeMerchantBarterAbility(selected);
+  return Object.entries(MERCHANT_BARTER_ABILITY_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: value === active
+  }));
+}
+
+function normalizeMerchantDefinition(raw = {}, index = 0) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const fallbackId = foundry.utils.randomID();
+  const id = String(source.id ?? fallbackId).trim() || fallbackId;
+  const name = String(source.name ?? "").trim() || `Merchant ${Math.max(1, Number(index) + 1)}`;
+  const title = String(source.title ?? "").trim();
+  const race = normalizeMerchantRace(source.race ?? "");
+  const img = String(source.img ?? "").trim() || "icons/svg/item-bag.svg";
+  const settlement = String(source.settlement ?? MERCHANT_DEFAULTS.settlement).trim().slice(0, 120);
+  const accessMode = normalizeMerchantAccessMode(source?.accessMode ?? source?.access?.mode ?? MERCHANT_ACCESS_MODES.ALL);
+  const isHidden = false;
+  const requiresContract = false;
+  const contractKey = "";
+  const socialGateEnabled = false;
+  const minSocialScore = 0;
+  const buyMarkupRaw = Number(source?.pricing?.buyMarkup ?? source.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup);
+  const sellRateRaw = Number(source?.pricing?.sellRate ?? source.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = source?.pricing?.sellEnabled === undefined
+    ? Boolean(source?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
+    : Boolean(source?.pricing?.sellEnabled);
+  const cashOnHandGpRaw = Number(
+    source?.pricing?.cashOnHandGp
+    ?? source?.cashOnHandGp
+    ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+  );
+  const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    source?.pricing?.buybackAllowedTypes
+    ?? source?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const barterEnabled = source?.pricing?.barterEnabled === undefined
+    ? Boolean(source?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled)
+    : Boolean(source?.pricing?.barterEnabled);
+  const barterDcRaw = Number(source?.pricing?.barterDc ?? source?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+  const barterAbility = normalizeMerchantBarterAbility(
+    source?.pricing?.barterAbility ?? source?.barterAbility,
+    MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+  );
+  const buyMarkup = Number.isFinite(buyMarkupRaw) ? Math.max(0, Math.min(10, Number(buyMarkupRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.buyMarkup;
+  const sellRate = Number.isFinite(sellRateRaw) ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.sellRate;
+  const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const barterDc = Number.isFinite(barterDcRaw)
+    ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
+    : Number(MERCHANT_DEFAULTS.pricing.barterDc);
+  const stock = source.stock && typeof source.stock === "object" ? source.stock : {};
+  const sourceType = normalizeMerchantSourceType(stock.sourceType ?? source.sourceType);
+  const sourceRef = String(stock.sourceRef ?? source.sourceRef ?? "").trim();
+  const sourcePackIds = normalizeMerchantSourcePackIds(
+    stock.sourcePackIds ?? source.sourcePackIds ?? [],
+    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : sourceRef
+  );
+  const includeTags = normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []);
+  const excludeTags = normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []);
+  const keywordInclude = normalizeMerchantKeywordList(stock.keywordInclude ?? source.keywordInclude ?? []);
+  const keywordExclude = normalizeMerchantKeywordList(stock.keywordExclude ?? source.keywordExclude ?? []);
+  const allowedTypes = normalizeMerchantAllowedItemTypes(stock.allowedTypes ?? source.allowedTypes ?? []);
+  const curatedItemUuids = normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? source.curatedItemUuids ?? []);
+  const maxItemsRaw = Number(stock.maxItems ?? source.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
+  const maxItems = Number.isFinite(maxItemsRaw)
+    ? Math.max(1, Math.min(100, Math.floor(maxItemsRaw)))
+    : Math.max(1, Math.min(100, Math.floor(Number(MERCHANT_DEFAULTS.stock.maxItems) || 20)));
+  const targetValueGpRaw = Number(stock.targetValueGp ?? source.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
+  const targetValueGp = Number.isFinite(targetValueGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(targetValueGpRaw.toFixed(2))))
+    : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const scarcity = normalizeMerchantScarcity(stock.scarcity ?? source.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
+  const duplicateChanceRaw = Number(stock.duplicateChance ?? source.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance ?? 25);
+  const duplicateChance = Number.isFinite(duplicateChanceRaw)
+    ? Math.max(0, Math.min(100, Math.floor(duplicateChanceRaw)))
+    : Math.max(0, Math.min(100, Math.floor(Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25) || 25)));
+  const maxStackSize = 20;
+  const rarityWeights = normalizeMerchantRarityWeights(
+    stock.rarityWeights ?? source.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
+    MERCHANT_DEFAULTS.stock.rarityWeights
+  );
+  const actorId = String(source.actorId ?? "").trim();
+  return {
+    id,
+    name,
+    title,
+    race,
+    img,
+    settlement,
+    accessMode,
+    isHidden,
+    requiresContract,
+    contractKey,
+    socialGateEnabled,
+    minSocialScore,
+    pricing: {
+      buyMarkup,
+      sellRate,
+      sellEnabled,
+      cashOnHandGp,
+      buybackAllowedTypes,
+      barterEnabled,
+      barterDc,
+      barterAbility
+    },
+    stock: {
+      sourceType,
+      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+        ? ""
+        : String(sourcePackIds[0] ?? sourceRef).trim(),
+      sourcePackIds,
+      includeTags,
+      excludeTags,
+      keywordInclude,
+      keywordExclude,
+      allowedTypes,
+      curatedItemUuids,
+      maxItems,
+      targetValueGp,
+      scarcity,
+      duplicateChance,
+      maxStackSize,
+      rarityWeights
+    },
+    actorId
+  };
+}
+
+function normalizeMerchantStockStateEntry(raw = {}, fallbackActorId = "") {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const refreshedAtRaw = Number(source.lastRefreshedAt ?? source.refreshedAt ?? 0);
+  const lastRefreshedAt = Number.isFinite(refreshedAtRaw) ? Math.max(0, Math.floor(refreshedAtRaw)) : 0;
+  return {
+    lastRefreshedAt,
+    lastRefreshedBy: String(source.lastRefreshedBy ?? source.refreshedBy ?? "").trim() || "GM",
+    actorId: String(source.actorId ?? fallbackActorId ?? "").trim()
+  };
+}
+
+function normalizeMerchantAccessLogEntry(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const viewedAtRaw = Number(source.viewedAt ?? source.createdAt ?? source.ts ?? Date.now());
+  const viewedAt = Number.isFinite(viewedAtRaw) ? Math.max(0, Math.floor(viewedAtRaw)) : Date.now();
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    viewedAt,
+    userId: String(source.userId ?? "").trim(),
+    userName: String(source.userName ?? source.viewer ?? "Player").trim() || "Player",
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim(),
+    settlement: normalizeMerchantSettlementSelection(source.settlement ?? source.city ?? ""),
+    merchantId: String(source.merchantId ?? "").trim(),
+    merchantName: String(source.merchantName ?? "").trim()
+  };
+}
+
+function ensureMerchantsState(ledger) {
+  if (!ledger || typeof ledger !== "object") return {
+    currentSettlement: "",
+    cityCatalog: [],
+    definitions: [],
+    stockStateById: {},
+    accessLog: []
+  };
+  if (!ledger.merchants || typeof ledger.merchants !== "object" || Array.isArray(ledger.merchants)) {
+    ledger.merchants = {};
+  }
+  const merchants = ledger.merchants;
+  merchants.currentSettlement = String(merchants.currentSettlement ?? "").trim().slice(0, 120);
+  if (!Array.isArray(merchants.cityCatalog)) merchants.cityCatalog = [];
+  merchants.cityCatalog = normalizeMerchantCityList(merchants.cityCatalog);
+  if (!Array.isArray(merchants.definitions)) merchants.definitions = [];
+  if (!merchants.stockStateById || typeof merchants.stockStateById !== "object" || Array.isArray(merchants.stockStateById)) {
+    merchants.stockStateById = {};
+  }
+  if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
+  const seenIds = new Set();
+  merchants.definitions = merchants.definitions
+    .map((entry, index) => normalizeMerchantDefinition(entry, index))
+    .filter((entry) => {
+      if (!entry.id || seenIds.has(entry.id)) return false;
+      seenIds.add(entry.id);
+      return true;
+    });
+  const normalizedStockState = {};
+  for (const definition of merchants.definitions) {
+    const merchantId = String(definition.id ?? "").trim();
+    if (!merchantId) continue;
+    normalizedStockState[merchantId] = normalizeMerchantStockStateEntry(
+      merchants.stockStateById?.[merchantId],
+      definition.actorId
+    );
+  }
+  merchants.stockStateById = normalizedStockState;
+  merchants.accessLog = merchants.accessLog
+    .map((entry) => normalizeMerchantAccessLogEntry(entry))
+    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
+    .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
+  return merchants;
+}
+
+function getMerchants() {
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  return foundry.utils.deepClone(merchants.definitions ?? []);
+}
+
+async function upsertMerchant(definitionPatch = {}) {
+  let persisted = null;
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    const incomingId = String(definitionPatch?.id ?? "").trim();
+    const existingIndex = incomingId
+      ? merchants.definitions.findIndex((entry) => String(entry?.id ?? "") === incomingId)
+      : -1;
+    const base = existingIndex >= 0 ? merchants.definitions[existingIndex] : {};
+    const merged = {
+      ...foundry.utils.deepClone(base),
+      ...foundry.utils.deepClone(definitionPatch),
+      id: incomingId || String(base?.id ?? "")
+    };
+    const normalized = normalizeMerchantDefinition(merged, existingIndex >= 0 ? existingIndex : merchants.definitions.length);
+    if (existingIndex >= 0) merchants.definitions[existingIndex] = normalized;
+    else merchants.definitions.push(normalized);
+    merchants.stockStateById[normalized.id] = normalizeMerchantStockStateEntry(
+      merchants.stockStateById?.[normalized.id],
+      normalized.actorId
+    );
+    persisted = foundry.utils.deepClone(normalized);
+  });
+  return persisted;
+}
+
+function normalizeMerchantFolderAlias(value = "") {
+  return normalizeMerchantFolderAliasDomain(value);
+}
+
+function findMerchantItemFolderByAliases(aliases = []) {
+  return findMerchantFolderByAliasesDomain(aliases, game.folders?.contents ?? []);
+}
+
+function buildStarterMerchantPatch(blueprint = {}, index = 0) {
+  return buildStarterMerchantPatchDomain(blueprint, index, {
+    resolveFolderByAliases: (aliasesInput) => findMerchantItemFolderByAliases(aliasesInput)
+  });
+}
+
+async function createStarterMerchants(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create starter merchants.");
+    return { ok: false, createdCount: 0, updatedCount: 0, refreshedCount: 0, missingFolders: [] };
+  }
+  const blueprints = Array.isArray(MERCHANT_STARTER_BLUEPRINTS) ? MERCHANT_STARTER_BLUEPRINTS : [];
+  if (blueprints.length <= 0) {
+    ui.notifications?.warn("No starter merchant presets are configured.");
+    return { ok: false, createdCount: 0, updatedCount: 0, refreshedCount: 0, missingFolders: [] };
+  }
+
+  let createdCount = 0;
+  let updatedCount = 0;
+  let refreshedCount = 0;
+  const missingFolders = [];
+
+  for (let index = 0; index < blueprints.length; index += 1) {
+    const blueprint = blueprints[index];
+    const patch = buildStarterMerchantPatch(blueprint, index);
+    const existed = Boolean(getMerchantById(patch.id));
+    if (!patch?.stock?.sourceRef) missingFolders.push(String(patch.name ?? `Merchant ${index + 1}`));
+    const saved = await upsertMerchant(patch);
+    if (!saved?.id) continue;
+    if (existed) updatedCount += 1;
+    else createdCount += 1;
+    if (patch?.stock?.sourceRef) {
+      const result = await refreshMerchantStock(saved.id, { silent: true });
+      if (result?.ok) refreshedCount += 1;
+    }
+  }
+
+  const totalSynced = createdCount + updatedCount;
+  if (totalSynced > 0) {
+    ui.notifications?.info(
+      `Starter merchants synced: ${createdCount} created, ${updatedCount} updated, ${refreshedCount} stocked.`
+    );
+  }
+  if (missingFolders.length > 0) {
+    ui.notifications?.warn(
+      `No matching item folders for: ${missingFolders.join(", ")}. Set Stock Source in Merchant Editor.`
+    );
+  }
+
+  return {
+    ok: totalSynced > 0,
+    createdCount,
+    updatedCount,
+    refreshedCount,
+    missingFolders
+  };
+}
+
+async function deleteMerchant(merchantIdInput) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return;
+  const cleanupActors = getOwnedPcActors();
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.definitions = merchants.definitions.filter((entry) => String(entry?.id ?? "") !== merchantId);
+    if (merchants.stockStateById && typeof merchants.stockStateById === "object") {
+      delete merchants.stockStateById[merchantId];
+    }
+  });
+  for (const actor of cleanupActors) {
+    if (!actor) continue;
+    const contracts = getActorMerchantContracts(actor);
+    if (!contracts[merchantId]) continue;
+    const next = foundry.utils.deepClone(contracts);
+    delete next[merchantId];
+    await actor.setFlag(MODULE_ID, "merchantContracts", next);
+  }
+}
+
+async function setMerchantCurrentSettlement(value) {
+  const settlement = String(value ?? "").trim().slice(0, 120);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.currentSettlement = settlement;
+  });
+}
+
+function buildMerchantCityCatalogRows(merchantsState = {}, definitions = []) {
+  const rows = [];
+  rows.push(...normalizeMerchantCityList(merchantsState?.cityCatalog ?? []));
+  for (const definition of (Array.isArray(definitions) ? definitions : [])) {
+    const settlement = normalizeMerchantSettlementSelection(definition?.settlement ?? "");
+    if (settlement) rows.push(settlement);
+  }
+  return normalizeMerchantCityList(rows);
+}
+
+async function saveMerchantCityCatalog(rawInput = "") {
+  const cityCatalog = parseMerchantCityListInput(rawInput);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.cityCatalog = cityCatalog;
+  });
+  return cityCatalog;
+}
+
+async function setMerchantCityById(merchantIdInput, cityInput = "") {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const settlement = normalizeMerchantSettlementSelection(cityInput);
+  return upsertMerchant({
+    id: merchantId,
+    settlement
+  });
+}
+
+function getActorMerchantContracts(actor) {
+  const raw = actor?.getFlag?.(MODULE_ID, "merchantContracts");
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const normalized = {};
+  for (const [keyRaw, valueRaw] of Object.entries(raw)) {
+    const key = String(keyRaw ?? "").trim();
+    if (!key) continue;
+    if (valueRaw === true) normalized[key] = true;
+  }
+  return normalized;
+}
+
+async function setMerchantAssignment(actorIdInput, merchantIdInput, assigned) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!actorId || !merchantId) return false;
+  const actor = game.actors.get(actorId);
+  if (!actor) return false;
+  const current = foundry.utils.deepClone(getActorMerchantContracts(actor));
+  if (assigned) current[merchantId] = true;
+  else delete current[merchantId];
+  await actor.setFlag(MODULE_ID, "merchantContracts", current);
+  return true;
+}
+
+function computeActorSocialScore(actor) {
+  if (!actor) return 0;
+  const moduleFlag = Number(actor.getFlag?.(MODULE_ID, "socialScore"));
+  if (Number.isFinite(moduleFlag)) return Math.max(-20, Math.min(20, Math.floor(moduleFlag)));
+  const legacyFlag = Number(getLegacyPartyOpsFlag(actor, "socialScore"));
+  if (Number.isFinite(legacyFlag)) return Math.max(-20, Math.min(20, Math.floor(legacyFlag)));
+  return 0;
+}
+
+function isMerchantSettlementMatch(merchant, currentSettlementInput) {
+  const merchantSettlement = String(merchant?.settlement ?? "").trim().toLowerCase();
+  if (!merchantSettlement || merchantSettlement === "global") return true;
+  const currentSettlement = String(currentSettlementInput ?? "").trim().toLowerCase();
+  if (!currentSettlement) return true;
+  return merchantSettlement === currentSettlement;
+}
+
+function isMerchantAvailableToActor(merchant, actor, currentSettlement, options = {}) {
+  if (!merchant || !actor) return false;
+  if (options?.isGM) return true;
+  if (!isMerchantSettlementMatch(merchant, currentSettlement)) return false;
+  const contracts = getActorMerchantContracts(actor);
+  const hasContract = Boolean(contracts[merchant.id] || (merchant.contractKey && contracts[merchant.contractKey]));
+  const accessMode = normalizeMerchantAccessMode(merchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+  if (accessMode === MERCHANT_ACCESS_MODES.ASSIGNED && !hasContract) return false;
+  if (merchant.requiresContract && !hasContract) return false;
+  if (merchant.isHidden && !hasContract) return false;
+  if (merchant.socialGateEnabled) {
+    const score = computeActorSocialScore(actor);
+    if (score < Number(merchant.minSocialScore ?? 0)) return false;
+  }
+  return true;
+}
+
+function getActorMerchants(actor) {
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  const isGM = canAccessAllPlayerOps();
+  return merchants.definitions
+    .filter((entry) => isMerchantAvailableToActor(entry, actor, merchants.currentSettlement, { isGM }))
+    .map((entry) => foundry.utils.deepClone(entry));
+}
+
+function getMerchantById(merchantIdInput, ledger = getOperationsLedger()) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const merchants = ensureMerchantsState(ledger);
+  return merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId) ?? null;
+}
+
+function getMerchantStockStateById(merchantIdInput, ledger = getOperationsLedger()) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const merchants = ensureMerchantsState(ledger);
+  const stockState = merchants.stockStateById?.[merchantId];
+  return stockState ? normalizeMerchantStockStateEntry(stockState) : null;
+}
+
+function getMerchantSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
+  const value = normalizeMerchantSourceType(selected);
+  return [
+    { value: MERCHANT_SOURCE_TYPES.WORLD_ITEMS, label: "World Items", selected: value === MERCHANT_SOURCE_TYPES.WORLD_ITEMS },
+    { value: MERCHANT_SOURCE_TYPES.WORLD_FOLDER, label: "World Folder", selected: value === MERCHANT_SOURCE_TYPES.WORLD_FOLDER },
+    { value: MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK, label: "Compendium Pack", selected: value === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK }
+  ];
+}
+
+function getMerchantScarcityOptions(selected = MERCHANT_SCARCITY_LEVELS.NORMAL) {
+  const value = normalizeMerchantScarcity(selected);
+  return MERCHANT_SCARCITY_PROFILES.map((profile) => {
+    const multiplier = Number(profile?.multiplier ?? 1);
+    const percent = Math.round(multiplier * 100);
+    return {
+      value: String(profile?.value ?? MERCHANT_SCARCITY_LEVELS.NORMAL),
+      label: `${String(profile?.label ?? "Normal")} (${percent}%)`,
+      selected: String(profile?.value ?? "").trim().toLowerCase() === value
+    };
+  });
+}
+
+function normalizeMerchantTagsCsv(value) {
+  const text = String(value ?? "");
+  if (!text.trim()) return [];
+  return normalizeMerchantTagList(text.split(/[\n,;]+/));
+}
+
+function formatMerchantTagsCsv(values = []) {
+  return normalizeMerchantTagList(values).join(", ");
+}
+
+function normalizeMerchantKeywordsCsv(value) {
+  const text = String(value ?? "");
+  if (!text.trim()) return [];
+  return normalizeMerchantKeywordList(text.split(/[\n,;]+/));
+}
+
+function formatMerchantKeywordsCsv(values = []) {
+  return normalizeMerchantKeywordList(values).join(", ");
+}
+
+function getMerchantSettlementLabel(value) {
+  const settlement = String(value ?? "").trim();
+  if (!settlement || settlement.toLowerCase() === "global") return "Global";
+  return settlement;
+}
+
+function formatMerchantTimestampLabel(value) {
+  const ts = Number(value ?? 0);
+  if (!Number.isFinite(ts) || ts <= 0) return "-";
+  const date = new Date(ts);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString() : "-";
+}
+
+function getMerchantSourceTypeLabel(value) {
+  const normalized = normalizeMerchantSourceType(value);
+  if (normalized === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return "Compendium Pack";
+  if (normalized === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return "World Folder";
+  return "World Items";
+}
+
+function normalizeMerchantTradeLineItems(raw = []) {
+  if (!Array.isArray(raw)) return [];
+  const byItemId = new Map();
+  for (const entry of raw) {
+    const itemId = String(entry?.itemId ?? "").trim();
+    const qtyRaw = Number(entry?.qty ?? entry?.quantity ?? 0);
+    const qty = Number.isFinite(qtyRaw) ? Math.max(0, Math.min(999, Math.floor(qtyRaw))) : 0;
+    if (!itemId || qty <= 0) continue;
+    byItemId.set(itemId, Math.max(0, (byItemId.get(itemId) ?? 0) + qty));
+  }
+  return Array.from(byItemId.entries()).map(([itemId, qty]) => ({ itemId, qty }));
+}
+
+function getMerchantItemData(itemLike) {
+  if (!itemLike) return {};
+  if (typeof itemLike.toObject === "function") return itemLike.toObject();
+  return itemLike;
+}
+
+function getMerchantItemDataQuantity(itemData = {}) {
+  const quantity = Number(itemData?.system?.quantity);
+  if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
+  const quantityValue = Number(itemData?.system?.quantity?.value);
+  if (Number.isFinite(quantityValue)) return Math.max(0, Math.floor(quantityValue));
+  const uses = Number(itemData?.system?.uses?.value);
+  if (Number.isFinite(uses)) return Math.max(0, Math.floor(uses));
+  return 1;
+}
+
+function setMerchantItemDataQuantity(itemData = {}, quantity = 1) {
+  const next = Math.max(0, Math.floor(Number(quantity ?? 0) || 0));
+  const data = itemData && typeof itemData === "object" ? itemData : {};
+  if (!data.system || typeof data.system !== "object") data.system = {};
+  if (data.system.quantity !== undefined && data.system.quantity !== null) {
+    if (typeof data.system.quantity === "object") data.system.quantity.value = next;
+    else data.system.quantity = next;
+    return data;
+  }
+  if (data.system.uses?.value !== undefined) {
+    data.system.uses.value = next;
+    return data;
+  }
+  data.system.quantity = next;
+  return data;
+}
+
+function getMerchantItemTagsFromData(itemData = {}) {
+  return normalizeMerchantTagList(
+    itemData?.flags?.[MODULE_ID]?.tags
+    ?? itemData?.flags?.["party-operations"]?.tags
+    ?? []
+  );
+}
+
+function getMerchantItemKeywordTokensFromData(itemData = {}) {
+  const explicitTags = getMerchantItemTagsFromData(itemData);
+  const explicitKeywords = getLootKeywordsFromData(itemData);
+  const itemType = String(itemData?.type ?? "").trim().toLowerCase();
+  const rarity = normalizeMerchantRarity(getLootRarityFromData(itemData));
+  const name = String(itemData?.name ?? "").trim().toLowerCase();
+  const description = String(itemData?.system?.description?.value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .trim()
+    .toLowerCase();
+  const nameTokens = name.split(/[^a-z0-9]+/).filter((entry) => entry.length >= 3).slice(0, 18);
+  const descriptionTokens = description.split(/[^a-z0-9]+/).filter((entry) => entry.length >= 4).slice(0, 24);
+  return normalizeMerchantKeywordList([
+    ...explicitTags,
+    ...explicitKeywords,
+    itemType,
+    rarity,
+    name,
+    ...nameTokens,
+    ...descriptionTokens
+  ]);
+}
+
+function getActorCurrencyBundle(actor) {
+  return {
+    pp: getActorCurrentCurrencyValue(actor, "pp"),
+    gp: getActorCurrentCurrencyValue(actor, "gp"),
+    sp: getActorCurrentCurrencyValue(actor, "sp"),
+    cp: getActorCurrentCurrencyValue(actor, "cp")
+  };
+}
+
+function currencyBundleToCp(bundle = {}) {
+  const pp = Math.max(0, Math.floor(Number(bundle?.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(bundle?.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(bundle?.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(bundle?.cp ?? 0) || 0));
+  return (pp * 1000) + (gp * 100) + (sp * 10) + cp;
+}
+
+function cpToCurrencyBundle(totalCpInput) {
+  const totalCp = Math.max(0, Math.floor(Number(totalCpInput ?? 0) || 0));
+  let remaining = totalCp;
+  const pp = Math.floor(remaining / 1000);
+  remaining -= pp * 1000;
+  const gp = Math.floor(remaining / 100);
+  remaining -= gp * 100;
+  const sp = Math.floor(remaining / 10);
+  remaining -= sp * 10;
+  const cp = Math.floor(remaining);
+  return { pp, gp, sp, cp };
+}
+
+async function setActorCurrencyBundle(actor, bundle = {}) {
+  if (!actor) return cpToCurrencyBundle(0);
+  const normalized = {
+    pp: Math.max(0, Math.floor(Number(bundle?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(bundle?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(bundle?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(bundle?.cp ?? 0) || 0))
+  };
+  const updates = {};
+  for (const denom of ["pp", "gp", "sp", "cp"]) {
+    if (typeof actor.system?.currency?.[denom] === "object") updates[`system.currency.${denom}.value`] = normalized[denom];
+    else updates[`system.currency.${denom}`] = normalized[denom];
+  }
+  await actor.update(updates);
+  return normalized;
+}
+
+async function setActorCurrencyFromCp(actor, totalCp) {
+  const bundle = cpToCurrencyBundle(totalCp);
+  return setActorCurrencyBundle(actor, bundle);
+}
+
+function formatMerchantCp(totalCp) {
+  return formatMerchantCpDomain(totalCp);
+}
+
+function getMerchantItemUnitPriceCp(itemData = {}, rate = 1) {
+  return getMerchantItemUnitPriceCpDomain(itemData, rate, {
+    getItemGpValue: getLootItemGpValueFromData
+  });
+}
+
+function getMerchantSourceRefIdsFromStock(stock = {}) {
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return [];
+  const sourceRef = String(stock?.sourceRef ?? "").trim();
+  return normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? [], sourceRef);
+}
+
+function getMerchantCompendiumPackIdsFromStock(stock = {}) {
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType !== MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return [];
+  return getMerchantSourceRefIdsFromStock(stock);
+}
+
+function getMerchantCompendiumPackLabelMap() {
+  return new Map(
+    getAvailableLootItemPackSources()
+      .filter((entry) => String(entry?.sourceKind ?? "").trim() === "compendium-pack")
+      .map((entry) => [String(entry?.id ?? "").trim(), String(entry?.label ?? "").trim() || String(entry?.id ?? "").trim()])
+  );
+}
+
+function getMerchantSourceRefLabel(merchant = {}) {
+  const stock = merchant?.stock ?? {};
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return "All World Items";
+  if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
+    const packIds = getMerchantCompendiumPackIdsFromStock(stock);
+    if (!packIds.length) return "Pack not selected";
+    const labelMap = getMerchantCompendiumPackLabelMap();
+    const labels = packIds.map((id) => labelMap.get(id) ?? id).filter(Boolean);
+    if (labels.length <= 1) return labels[0] ?? packIds[0];
+    return `${labels.length} packs selected`;
+  }
+  const folderIds = getMerchantSourceRefIdsFromStock(stock);
+  if (!folderIds.length) return "Folder not selected";
+  const folderLabelMap = new Map(
+    (game.folders?.contents ?? [])
+      .filter((folder) => {
+        const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+        return type === "item";
+      })
+      .map((folder) => [String(folder?.id ?? "").trim(), String(folder?.name ?? folder?.id ?? "").trim() || String(folder?.id ?? "").trim()])
+  );
+  const labels = folderIds.map((id) => folderLabelMap.get(id) ?? id).filter(Boolean);
+  if (labels.length <= 1) return labels[0] ?? folderIds[0];
+  return `${labels.length} folders selected`;
+}
+
+function getMerchantCompendiumPackOptionsForEditor(stock = {}) {
+  const selectedPackIds = new Set(getMerchantCompendiumPackIdsFromStock(stock));
+  const options = getAvailableLootItemPackSources()
+    .filter((entry) => String(entry?.sourceKind ?? "").trim() === "compendium-pack")
+    .map((entry) => {
+      const id = String(entry?.id ?? "").trim();
+      return {
+        id,
+        label: String(entry?.label ?? id).trim() || id,
+        sourceKind: String(entry?.sourceKind ?? "compendium-pack"),
+        available: true,
+        enabled: selectedPackIds.has(id)
+      };
+    });
+  for (const selectedPackId of selectedPackIds) {
+    if (!selectedPackId) continue;
+    if (options.some((entry) => entry.id === selectedPackId)) continue;
+    options.push({
+      id: selectedPackId,
+      label: `${selectedPackId} (Unavailable)`,
+      sourceKind: "compendium-pack",
+      available: false,
+      enabled: true
+    });
+  }
+  options.sort((a, b) => {
+    const enabledDelta = Number(Boolean(b.enabled)) - Number(Boolean(a.enabled));
+    if (enabledDelta !== 0) return enabledDelta;
+    return String(a.label ?? "").localeCompare(String(b.label ?? ""));
+  });
+  return options;
+}
+
+function getMerchantWorldFolderOptions(selectedFolderIds = []) {
+  const selectedValues = normalizeMerchantSourcePackIds(selectedFolderIds);
+  const selectedSet = new Set(selectedValues);
+  const options = (game.folders?.contents ?? [])
+    .filter((folder) => {
+      const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+      return type === "item";
+    })
+    .map((folder) => {
+      const id = String(folder?.id ?? "").trim();
+      const label = String(folder?.name ?? id).trim() || id;
+      return {
+        value: id,
+        label,
+        selected: selectedSet.has(id)
+      };
+    })
+    .filter((entry) => entry.value)
+    .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+  for (const selectedFolderId of selectedValues) {
+    if (!selectedFolderId) continue;
+    if (options.some((entry) => entry.value === selectedFolderId)) continue;
+    options.push({
+      value: selectedFolderId,
+      label: `${selectedFolderId} (Unavailable)`,
+      selected: true
+    });
+  }
+  if (options.length <= 0) {
+    return [{
+      value: "",
+      label: "No Item Folders Available",
+      selected: true,
+      disabled: true
+    }];
+  }
+  if (selectedValues.length <= 0) {
+    options.unshift({
+      value: "",
+      label: "Select one or more item folders",
+      selected: true,
+      disabled: true
+    });
+  }
+  return options;
+}
+
+function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = []) {
+  return getMerchantSourceRefOptionsForEditorDomain(
+    sourceTypeInput,
+    selectedSourceRefs,
+    sourcePackOptions,
+    {
+      getWorldFolderOptions: getMerchantWorldFolderOptions
+    }
+  );
+}
+
+function getMerchantAllowedTypeOptionsForEditor(selectedTypes = []) {
+  const selected = new Set(normalizeMerchantAllowedItemTypes(selectedTypes));
+  return [...MERCHANT_ALLOWED_ITEM_TYPE_LIST]
+    .map((value) => {
+      const label = String(LOOT_ITEM_TYPE_LABELS[value] ?? value).trim() || value;
+      return {
+        value,
+        label,
+        selected: selected.has(value)
+      };
+    })
+    .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+}
+
+function buildMerchantTagCatalogForEditor(merchant = {}) {
+  const tags = new Set();
+  const documents = getMerchantSourceDocumentsSync(merchant);
+  for (const documentRef of documents) {
+    const data = getMerchantItemData(documentRef);
+    const itemTags = getMerchantItemTagsFromData(data);
+    for (const tag of itemTags) {
+      const normalized = String(tag ?? "").trim().toLowerCase();
+      if (!normalized) continue;
+      tags.add(normalized);
+    }
+  }
+  return Array.from(tags)
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .slice(0, 400);
+}
+
+function buildMerchantTagOptionsForEditor(tagCatalog = [], selectedTags = []) {
+  const selected = new Set(normalizeMerchantTagList(selectedTags));
+  const options = (Array.isArray(tagCatalog) ? tagCatalog : [])
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => ({
+      value,
+      label: value,
+      selected: selected.has(value)
+    }));
+  for (const tag of selected) {
+    if (options.some((entry) => entry.value === tag)) continue;
+    options.push({
+      value: tag,
+      label: `${tag} (Unavailable)`,
+      selected: true
+    });
+  }
+  return options.sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+}
+
+function buildMerchantKeywordCatalogForEditor(merchant = {}) {
+  const keywords = new Set();
+  const documents = getMerchantSourceDocumentsSync(merchant);
+  for (const documentRef of documents) {
+    const data = getMerchantItemData(documentRef);
+    const tokens = getMerchantItemKeywordTokensFromData(data);
+    for (const token of tokens) {
+      const normalized = String(token ?? "").trim().toLowerCase();
+      if (!normalized) continue;
+      keywords.add(normalized);
+    }
+  }
+  return Array.from(keywords)
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .slice(0, 500);
+}
+
+function buildMerchantKeywordOptionsForEditor(keywordCatalog = [], selectedKeywords = []) {
+  const selected = new Set(normalizeMerchantKeywordList(selectedKeywords));
+  const options = (Array.isArray(keywordCatalog) ? keywordCatalog : [])
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((value) => ({
+      value,
+      label: value,
+      selected: selected.has(value)
+    }));
+  for (const keyword of selected) {
+    if (options.some((entry) => entry.value === keyword)) continue;
+    options.push({
+      value: keyword,
+      label: `${keyword} (Unavailable)`,
+      selected: true
+    });
+  }
+  return options.sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
+}
+
+function describeMerchantUuidSource(uuidInput) {
+  const uuid = String(uuidInput ?? "").trim();
+  if (!uuid) return "Source";
+  if (uuid.startsWith("Compendium.")) {
+    const parts = uuid.split(".");
+    if (parts.length >= 3) return `${parts[1]}.${parts[2]}`;
+    return "Compendium";
+  }
+  if (uuid.startsWith("Item.")) return "World Item Directory";
+  return "Source";
+}
+
+function buildMerchantCuratedRowsForEditor(curatedItemUuids = []) {
+  return normalizeMerchantCuratedItemUuids(curatedItemUuids).map((uuid) => {
+    let documentRef = null;
+    if (typeof fromUuidSync === "function") {
+      try {
+        documentRef = fromUuidSync(uuid);
+      } catch {
+        documentRef = null;
+      }
+    }
+    const data = getMerchantItemData(documentRef ?? {});
+    const itemType = String(data?.type ?? "").trim().toLowerCase();
+    const itemTypeLabel = String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || "Item";
+    return {
+      uuid,
+      name: String(data?.name ?? uuid).trim() || uuid,
+      img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+      itemType,
+      itemTypeLabel,
+      sourceLabel: describeMerchantUuidSource(uuid),
+      canOpen: Boolean(uuid)
+    };
+  });
+}
+
+function getMerchantSourceDocumentsSync(merchant = {}) {
+  const stock = merchant?.stock ?? {};
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
+    const packIds = getMerchantCompendiumPackIdsFromStock(stock);
+    const packLabelMap = getMerchantCompendiumPackLabelMap();
+    const documents = [];
+    for (const packId of packIds) {
+      const pack = game.packs?.get(packId);
+      if (!pack) continue;
+      const sourceLabel = packLabelMap.get(packId) ?? packId;
+      const indexRows = getCollectionValues(pack.index);
+      for (const indexRow of indexRows) {
+        const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
+        const docId = String(entry?._id ?? entry?.id ?? "").trim();
+        if (!docId) continue;
+        documents.push({
+          uuid: `Compendium.${packId}.Item.${docId}`,
+          name: String(entry?.name ?? docId).trim() || docId,
+          img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+          type: String(entry?.type ?? "").trim(),
+          flags: foundry.utils.deepClone(entry?.flags ?? {}),
+          system: foundry.utils.deepClone(entry?.system ?? {}),
+          _merchantSourceLabel: sourceLabel
+        });
+      }
+    }
+    return documents;
+  }
+  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+    const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
+    if (!sourceRefs.length) return [];
+    const sourceRefSet = new Set(sourceRefs);
+    return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
+  }
+  return game.items?.contents ?? [];
+}
+
+function buildMerchantEditorCandidateRows(editorDraft = {}, options = {}) {
+  const stock = editorDraft?.stock ?? {};
+  const curated = new Set(normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? []));
+  const filterNeedle = normalizeMerchantEditorFilter(options?.filter ?? getMerchantEditorItemFilter()).toLowerCase();
+  const sourceDocuments = getMerchantSourceDocumentsSync(editorDraft);
+  const rows = buildMerchantCandidateRows(sourceDocuments, editorDraft)
+    .map((candidate) => {
+      const data = getMerchantItemData(candidate?.data ?? {});
+      const uuid = String(candidate?.key ?? data?.uuid ?? "").trim();
+      const itemType = String(data?.type ?? "").trim().toLowerCase();
+      const sourceLabel = String(data?._merchantSourceLabel ?? describeMerchantUuidSource(uuid)).trim() || "Source";
+      const name = String(data?.name ?? uuid).trim() || uuid;
+      const searchBlob = `${name} ${uuid} ${itemType} ${sourceLabel}`.toLowerCase();
+      return {
+        uuid,
+        name,
+        img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        itemType,
+        itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || "Item",
+        sourceLabel,
+        gpValue: Math.max(0, Number(candidate?.gpValue ?? 0) || 0),
+        searchBlob
+      };
+    })
+    .filter((entry) => entry.uuid && !curated.has(entry.uuid))
+    .filter((entry) => !filterNeedle || entry.searchBlob.includes(filterNeedle))
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+    .slice(0, MERCHANT_EDITOR_CANDIDATE_LIMIT);
+  return rows;
+}
+
+function getMerchantDefinitionDraftSource(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const draft = normalizeMerchantDefinition(source);
+  if (!source?.id) draft.id = "";
+  if (!source?.name) draft.name = "";
+  return draft;
+}
+
+function getMerchantEditorActorOptions(selectedActorId = "") {
+  const selected = String(selectedActorId ?? "").trim();
+  const actors = game.actors?.contents ?? [];
+  const sorted = [...actors].sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")));
+  return [
+    { id: "", name: "Create on refresh", selected: !selected },
+    ...sorted.map((actor) => ({
+      id: String(actor?.id ?? ""),
+      name: String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`,
+      selected: String(actor?.id ?? "") === selected
+    }))
+  ];
+}
+
+function getMerchantTargetStockCount(stock = {}) {
+  return getMerchantTargetStockCountDomain(stock);
+}
+
+function sortMerchantDefinitions(definitions = []) {
+  return [...definitions].sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+}
+
+function buildMerchantSettlementOptions(definitions = [], selectionInput = "", fallbackInput = "") {
+  const selection = normalizeMerchantSettlementSelection(selectionInput);
+  const fallback = normalizeMerchantSettlementSelection(fallbackInput);
+  const catalog = new Map();
+  for (const merchant of Array.isArray(definitions) ? definitions : []) {
+    const settlement = normalizeMerchantSettlementSelection(merchant?.settlement ?? "");
+    if (!settlement) continue;
+    const key = settlement.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, settlement);
+  }
+  if (fallback) {
+    const key = fallback.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, fallback);
+  }
+  if (selection) {
+    const key = selection.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, selection);
+  }
+  const cityRows = Array.from(catalog.values())
+    .sort((a, b) => a.localeCompare(b))
+    .map((value) => ({
+      value,
+      label: getMerchantSettlementLabel(value),
+      selected: false
+    }));
+  const options = [
+    { value: "", label: "All Cities", selected: false },
+    ...cityRows
+  ];
+  const activeValue = options.some((entry) => entry.value.toLowerCase() === selection.toLowerCase())
+    ? selection
+    : (options.some((entry) => entry.value.toLowerCase() === fallback.toLowerCase()) ? fallback : "");
+  for (const entry of options) {
+    entry.selected = entry.value.toLowerCase() === activeValue.toLowerCase();
+  }
+  return {
+    activeValue,
+    activeLabel: activeValue ? getMerchantSettlementLabel(activeValue) : "All Cities",
+    options
+  };
+}
+
+function buildMerchantInventoryRowsForDisplay(merchant = {}) {
+  const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const rows = (merchantActor?.items?.contents ?? [])
+    .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
+    .map((item) => {
+      const itemData = getMerchantItemData(item);
+      const quantity = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+      const baseCp = getMerchantItemUnitPriceCp(itemData, 1);
+      const buyCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
+      const weight = Math.max(0, Number(getItemWeightValue(itemData) || getItemWeightValue(item) || 0));
+      const weightLabel = weight > 0
+        ? `${weight % 1 === 0 ? weight.toFixed(0) : weight.toFixed(1)} lb`
+        : "-";
+      return {
+        id: String(item?.id ?? ""),
+        name: String(item?.name ?? "Item").trim() || "Item",
+        img: String(item?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        quantity,
+        weight,
+        weightLabel,
+        baseCp,
+        buyCp,
+        basePriceLabel: formatMerchantCp(baseCp),
+        buyPriceLabel: formatMerchantCp(buyCp),
+        markupLabel: buyMarkup.toFixed(2)
+      };
+    })
+    .filter((entry) => entry.quantity > 0)
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+    .slice(0, MERCHANT_PREVIEW_ITEM_LIMIT);
+  return {
+    rows,
+    hasRows: rows.length > 0,
+    buyMarkupLabel: buyMarkup.toFixed(2),
+    itemCount: rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity ?? 0) || 0), 0)
+  };
+}
+
+async function logMerchantUiAccess(payload = {}) {
+  const userId = String(payload?.userId ?? game.user?.id ?? "").trim();
+  if (!userId) return false;
+  const now = Date.now();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const throttleKey = `${userId}:${actorId}:${settlement.toLowerCase()}:${merchantId}`;
+  const lastViewedAt = Number(merchantUiAccessThrottleByKey.get(throttleKey) ?? 0);
+  if (Number.isFinite(lastViewedAt) && (now - lastViewedAt) < MERCHANT_ACCESS_LOG_THROTTLE_MS) return false;
+
+  merchantUiAccessThrottleByKey.set(throttleKey, now);
+  if (merchantUiAccessThrottleByKey.size > 1000) {
+    for (const [key, ts] of merchantUiAccessThrottleByKey.entries()) {
+      if ((now - Number(ts ?? 0)) > (MERCHANT_ACCESS_LOG_THROTTLE_MS * 10)) merchantUiAccessThrottleByKey.delete(key);
+    }
+  }
+
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
+    merchants.accessLog.unshift(normalizeMerchantAccessLogEntry({
+      viewedAt: now,
+      userId,
+      userName: String(payload?.userName ?? game.user?.name ?? "Player").trim() || "Player",
+      actorId,
+      actorName: String(payload?.actorName ?? "").trim(),
+      settlement,
+      merchantId,
+      merchantName: String(payload?.merchantName ?? "").trim()
+    }));
+    merchants.accessLog = merchants.accessLog
+      .sort((a, b) => Number(b?.viewedAt ?? 0) - Number(a?.viewedAt ?? 0))
+      .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
+  }, { skipLocalRefresh: true });
+  return true;
+}
+
+function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
+  const user = options?.user ?? game.user;
+  const merchantsState = ensureMerchantsState(ledger);
+  const definitions = sortMerchantDefinitions(merchantsState.definitions ?? []);
+  const stockStateById = merchantsState.stockStateById ?? {};
+  const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const actorOptions = selectableActors.map((actor) => ({
+    id: String(actor?.id ?? ""),
+    name: String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`,
+    selected: false
+  }));
+  const storedActorId = getSelectedMerchantActorId();
+  const preferredActorId = storedActorId
+    || String(getActiveActorForUser()?.id ?? "").trim()
+    || String(user?.character?.id ?? "").trim();
+  const fallbackActorId = actorOptions[0]?.id ?? "";
+  const activeActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
+  for (const option of actorOptions) option.selected = option.id === activeActorId;
+  if (!storedActorId || storedActorId !== activeActorId) setSelectedMerchantActorId(activeActorId);
+  const activeActor = activeActorId ? game.actors.get(activeActorId) : null;
+  const activeActorContracts = activeActor ? getActorMerchantContracts(activeActor) : {};
+  const activeActorSocialScore = activeActor ? computeActorSocialScore(activeActor) : 0;
+  const assignmentActors = getOwnedPcActors().sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+  const storedSettlement = getSelectedMerchantSettlement();
+  const hasStoredSettlement = hasSelectedMerchantSettlementPreference();
+
+  const definitionsForDisplay = definitions.map((merchant) => {
+    const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
+    const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
+    const scarcityProfile = getMerchantScarcityProfile(merchant?.stock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
+    const buyMarkupRaw = Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0;
+    const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+    const sellRate = Number.isFinite(sellRateRaw)
+      ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2))))
+      : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+    const sellEnabled = merchant?.pricing?.sellEnabled !== false;
+    const cashOnHandGpRaw = Number(merchant?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+    const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
+      ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
+      : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+    const cashOnHandLabel = `${cashOnHandGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`;
+    const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+      merchant?.pricing?.buybackAllowedTypes
+      ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    );
+    const buybackTypeLabels = buybackAllowedTypes
+      .map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || itemType)
+      .sort((left, right) => left.localeCompare(right));
+    const buybackTypeSummary = buybackTypeLabels.length >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+      ? "All Item Types"
+      : (buybackTypeLabels.join(", ") || "None");
+    const barterEnabled = merchant?.pricing?.barterEnabled !== false;
+    const barterDcRaw = Number(merchant?.pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+    const barterDc = Number.isFinite(barterDcRaw)
+      ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
+      : Number(MERCHANT_DEFAULTS.pricing.barterDc);
+    const barterAbility = normalizeMerchantBarterAbility(
+      merchant?.pricing?.barterAbility,
+      MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+    );
+    const barterAbilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[barterAbility] ?? "Charisma");
+    const accessMode = normalizeMerchantAccessMode(merchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+    const offerTagOptions = buildMerchantOfferTagOptions(merchant?.stock?.allowedTypes ?? []);
+    const offerTagLabels = offerTagOptions
+      .filter((entry) => entry.selected)
+      .map((entry) => String(entry.label ?? "").trim())
+      .filter(Boolean);
+    const stockItemCount = merchantActor
+      ? (merchantActor.items?.contents ?? [])
+        .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
+        .reduce((sum, item) => sum + Math.max(0, Math.floor(getItemTrackedQuantity(item))), 0)
+      : 0;
+    const assignmentRows = assignmentActors.map((actorRef) => {
+      const actorId = String(actorRef?.id ?? "").trim();
+      const contracts = actorRef ? getActorMerchantContracts(actorRef) : {};
+      const assigned = Boolean(actorId && contracts[merchant.id]);
+      return {
+        actorId,
+        actorName: String(actorRef?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`,
+        assigned
+      };
+    });
+    const assignedCount = assignmentRows.reduce((sum, row) => sum + (row.assigned ? 1 : 0), 0);
+    return {
+      ...merchant,
+      accessMode,
+      accessModeIsAssigned: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED,
+      accessModeIsAll: accessMode === MERCHANT_ACCESS_MODES.ALL,
+      accessModeLabel: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED ? "Assigned Players" : "All Players",
+      raceLabel: normalizeMerchantRace(merchant.race ?? "") || "Unspecified",
+      settlementLabel: getMerchantSettlementLabel(merchant.settlement),
+      sourceTypeLabel: getMerchantSourceTypeLabel(merchant.stock?.sourceType),
+      sourceRefLabel: getMerchantSourceRefLabel(merchant),
+      scarcityLabel: String(scarcityProfile?.label ?? "6 - Normal"),
+      scarcityMultiplierPercent: Math.round(Math.max(0, Number(scarcityProfile?.multiplier ?? 1) || 1) * 100),
+      buyMarkupLabel: Number(1 + buyMarkupRaw).toFixed(2),
+      buyMarkupPercentLabel: `${Math.round(Math.max(0, buyMarkupRaw) * 100)}%`,
+      sellRate,
+      sellRatePercentLabel: `${Math.round(sellRate * 100)}%`,
+      sellEnabled,
+      sellEnabledLabel: sellEnabled ? "Buys from players" : "Not buying items",
+      cashOnHandGp,
+      cashOnHandLabel,
+      buybackAllowedTypes,
+      buybackTypeSummary,
+      barterEnabled,
+      barterDc,
+      barterAbility,
+      barterAbilityLabel,
+      includeTagsText: formatMerchantTagsCsv(merchant?.stock?.includeTags ?? []),
+      excludeTagsText: formatMerchantTagsCsv(merchant?.stock?.excludeTags ?? []),
+      keywordIncludeText: formatMerchantTagsCsv(merchant?.stock?.keywordInclude ?? []),
+      keywordExcludeText: formatMerchantTagsCsv(merchant?.stock?.keywordExclude ?? []),
+      hasIncludeTags: normalizeMerchantTagList(merchant?.stock?.includeTags ?? []).length > 0,
+      hasExcludeTags: normalizeMerchantTagList(merchant?.stock?.excludeTags ?? []).length > 0,
+      hasKeywordInclude: normalizeMerchantKeywordList(merchant?.stock?.keywordInclude ?? []).length > 0,
+      hasKeywordExclude: normalizeMerchantKeywordList(merchant?.stock?.keywordExclude ?? []).length > 0,
+      sourcePackCount: getMerchantCompendiumPackIdsFromStock(merchant?.stock ?? {}).length,
+      allowedTypeCount: normalizeMerchantAllowedItemTypes(merchant?.stock?.allowedTypes ?? []).length,
+      offerTagLabels,
+      offerTagSummary: offerTagLabels.join(", ") || "All",
+      curatedItemCount: normalizeMerchantCuratedItemUuids(merchant?.stock?.curatedItemUuids ?? []).length,
+      maxStackSize: 20,
+      stockItemCount,
+      hasStock: stockItemCount > 0,
+      actorName: String(merchantActor?.name ?? "").trim(),
+      hasActor: Boolean(merchantActor),
+      lastRefreshedAt: Number(stockMeta?.lastRefreshedAt ?? 0) || 0,
+      lastRefreshedAtLabel: formatMerchantTimestampLabel(stockMeta?.lastRefreshedAt),
+      lastRefreshedBy: String(stockMeta?.lastRefreshedBy ?? "").trim() || "-",
+      activeActorHasContract: Boolean(activeActorContracts[merchant.id] || (merchant.contractKey && activeActorContracts[merchant.contractKey])),
+      activeActorMeetsSocialGate: !merchant.socialGateEnabled || activeActorSocialScore >= Number(merchant.minSocialScore ?? 0),
+      assignmentRows,
+      hasAssignmentRows: assignmentRows.length > 0,
+      assignedCount,
+      unassignedCount: Math.max(0, assignmentRows.length - assignedCount),
+      accessModeOptions: getMerchantAccessModeOptions(accessMode)
+    };
+  });
+  const cityCatalogRows = buildMerchantCityCatalogRows(merchantsState, definitionsForDisplay);
+  const settlementView = buildMerchantSettlementOptions(
+    definitionsForDisplay,
+    storedSettlement,
+    hasStoredSettlement ? "" : merchantsState.currentSettlement
+  );
+  if (hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
+
+  const availableMerchants = (!activeActor)
+    ? []
+    : definitionsForDisplay
+      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: false }))
+      .map((merchant) => {
+        const canOpenShop = Boolean(activeActorId)
+          && Boolean(merchant.actorId && game.actors.get(merchant.actorId));
+        return {
+          ...merchant,
+          canOpenShop
+        };
+      });
+  const storedMerchantTabId = getSelectedMerchantTabId();
+  const fallbackMerchantTabId = availableMerchants[0]?.id ?? "";
+  const activeMerchantId = availableMerchants.some((entry) => entry.id === storedMerchantTabId)
+    ? storedMerchantTabId
+    : fallbackMerchantTabId;
+  if (storedMerchantTabId !== activeMerchantId) setSelectedMerchantTabId(activeMerchantId);
+  const availableMerchantsWithTabs = availableMerchants.map((merchant) => ({
+    ...merchant,
+    tabActive: merchant.id === activeMerchantId
+  }));
+  const activeMerchant = availableMerchantsWithTabs.find((entry) => entry.id === activeMerchantId) ?? null;
+  const activeMerchantInventory = buildMerchantInventoryRowsForDisplay(activeMerchant ?? {});
+  const userId = String(user?.id ?? "").trim();
+  const accessLog = (merchantsState.accessLog ?? [])
+    .map((entry) => normalizeMerchantAccessLogEntry(entry))
+    .sort((a, b) => Number(b.viewedAt ?? 0) - Number(a.viewedAt ?? 0))
+    .slice(0, MERCHANT_ACCESS_LOG_LIMIT);
+  const latestUserAccess = accessLog.find((entry) => String(entry?.userId ?? "").trim() === userId) ?? null;
+  const accessLogPayload = {
+    userId,
+    userName: String(user?.name ?? "Player").trim() || "Player",
+    actorId: activeActorId,
+    actorName: String(activeActor?.name ?? "").trim(),
+    settlement: settlementView.activeValue,
+    merchantId: activeMerchantId,
+    merchantName: String(activeMerchant?.name ?? "").trim()
+  };
+
+  const editorSelection = getMerchantEditorSelection();
+  const editorSelectionIsNew = editorSelection === "__new__";
+  const fallbackEditorId = definitionsForDisplay[0]?.id ?? "";
+  const activeEditorId = editorSelectionIsNew
+    ? "__new__"
+    : (definitionsForDisplay.some((entry) => entry.id === editorSelection)
+      ? editorSelection
+      : fallbackEditorId);
+  if (editorSelection !== activeEditorId) setMerchantEditorSelection(activeEditorId);
+  const editingDefinition = activeEditorId === "__new__"
+    ? null
+    : (definitionsForDisplay.find((entry) => entry.id === activeEditorId) ?? null);
+  const baseEditorDraft = getMerchantDefinitionDraftSource(editingDefinition ?? {});
+  const editorSelectionKey = normalizeMerchantEditorSelectionKey(activeEditorId);
+  const draftState = getMerchantEditorDraftState();
+  const editorDraft = (() => {
+    if (!draftState || draftState.selectionKey !== editorSelectionKey || !draftState.draft) {
+      const fallback = foundry.utils.deepClone(baseEditorDraft);
+      if (editorSelectionKey === "__new__") fallback.id = "";
+      return fallback;
+    }
+    const source = draftState.draft ?? {};
+    const merged = {
+      ...foundry.utils.deepClone(baseEditorDraft),
+      ...foundry.utils.deepClone(source),
+      pricing: {
+        ...foundry.utils.deepClone(baseEditorDraft?.pricing ?? {}),
+        ...foundry.utils.deepClone(source?.pricing ?? {})
+      },
+      stock: {
+        ...foundry.utils.deepClone(baseEditorDraft?.stock ?? {}),
+        ...foundry.utils.deepClone(source?.stock ?? {})
+      }
+    };
+    if (editorSelectionKey === "__new__") merged.id = "";
+    return getMerchantDefinitionDraftSource(merged);
+  })();
+  const editorSourceTypeRaw = normalizeMerchantSourceType(editorDraft?.stock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
+  const editorSourceType = editorSourceTypeRaw === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+    ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
+    : editorSourceTypeRaw;
+  const editorScarcity = normalizeMerchantScarcity(editorDraft?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
+  const editorSourceRefs = getMerchantSourceRefIdsFromStock(editorDraft?.stock ?? {});
+  const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
+  const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
+    editorSourceType,
+    editorSourceRefs,
+    editorSourcePackOptions
+  );
+  const editorSourceRefHintLabel = String(
+    editorSourceRefOptions.find((entry) => !String(entry?.value ?? "").trim())?.label ?? ""
+  ).trim();
+  const editorSourceRefSelectableOptions = editorSourceRefOptions
+    .filter((entry) => String(entry?.value ?? "").trim().length > 0);
+  const editorSourceRefSelectedCount = editorSourceRefSelectableOptions
+    .filter((entry) => Boolean(entry?.selected))
+    .length;
+  const editorAllowedTypes = normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []);
+  const editorOfferTagOptions = buildMerchantOfferTagOptions(editorAllowedTypes);
+  const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
+  const editorViewTab = getMerchantEditorViewTab();
+  const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+  const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const editorBuyMarkupPercent = Number((editorBuyMarkup * 100).toFixed(2));
+  const editorSellRateRaw = Number(editorDraft?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const editorSellRate = Number.isFinite(editorSellRateRaw)
+    ? Math.max(0, Math.min(10, Number(editorSellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const editorSellRatePercent = Number((editorSellRate * 100).toFixed(2));
+  const editorSellEnabled = editorDraft?.pricing?.sellEnabled !== false;
+  const editorCashOnHandGpRaw = Number(editorDraft?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const editorCashOnHandGp = Number.isFinite(editorCashOnHandGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(editorCashOnHandGpRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const editorBuybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    editorDraft?.pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const editorBuybackTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorBuybackAllowedTypes);
+  const editorBarterEnabled = editorDraft?.pricing?.barterEnabled !== false;
+  const editorBarterDcRaw = Number(editorDraft?.pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
+  const editorBarterDc = Number.isFinite(editorBarterDcRaw)
+    ? Math.max(1, Math.min(40, Math.floor(editorBarterDcRaw)))
+    : Number(MERCHANT_DEFAULTS.pricing.barterDc);
+  const editorBarterAbility = normalizeMerchantBarterAbility(
+    editorDraft?.pricing?.barterAbility,
+    MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+  );
+  const editorStockCountRaw = Number(editorDraft?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
+  const editorStockCount = Number.isFinite(editorStockCountRaw)
+    ? Math.max(1, Math.min(100, Math.floor(editorStockCountRaw)))
+    : MERCHANT_DEFAULTS.stock.maxItems;
+  const editorTargetValueGpRaw = Number(editorDraft?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
+  const editorTargetValueGp = Number.isFinite(editorTargetValueGpRaw)
+    ? Math.max(0, Math.min(1000000, Number(editorTargetValueGpRaw.toFixed(2))))
+    : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const editorRarityWeights = normalizeMerchantRarityWeights(
+    editorDraft?.stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
+    MERCHANT_DEFAULTS.stock.rarityWeights
+  );
+  const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
+  const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
+  const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
+  const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
+  const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
+  const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
+  const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
+  const editorCuratedRows = [];
+  const editorItemFilter = "";
+  const editorCandidateRows = [];
+  const assignmentRows = [];
+
+  return {
+    currentSettlement: String(merchantsState.currentSettlement ?? ""),
+    currentSettlementLabel: getMerchantSettlementLabel(merchantsState.currentSettlement),
+    settlementOptions: settlementView.options,
+    selectedSettlement: settlementView.activeValue,
+    selectedSettlementLabel: settlementView.activeLabel,
+    actorOptions,
+    hasActorOptions: actorOptions.length > 0,
+    activeActorId,
+    activeActorName: String(activeActor?.name ?? "").trim(),
+    hasActiveActor: Boolean(activeActor),
+    activeActorSocialScore,
+    availableMerchants: availableMerchantsWithTabs,
+    hasAvailableMerchants: availableMerchantsWithTabs.length > 0,
+    activeMerchantId,
+    hasActiveMerchant: Boolean(activeMerchant),
+    activeMerchantName: String(activeMerchant?.name ?? "").trim() || "No Merchant Selected",
+    activeMerchantTitle: String(activeMerchant?.title ?? "").trim(),
+    activeMerchantRace: normalizeMerchantRace(activeMerchant?.race ?? ""),
+    activeMerchantImg: String(activeMerchant?.img ?? "icons/svg/mystery-man.svg").trim() || "icons/svg/mystery-man.svg",
+    activeMerchantStockCount: Math.max(0, Number(activeMerchant?.stockItemCount ?? 0) || 0),
+    activeMerchantBuyMarkupLabel: String(activeMerchantInventory?.buyMarkupLabel ?? "1.00"),
+    activeMerchantCanOpenShop: Boolean(activeMerchant?.canOpenShop),
+    inventoryRows: activeMerchantInventory.rows,
+    hasInventoryRows: activeMerchantInventory.hasRows,
+    inventoryItemCount: Math.max(0, Number(activeMerchantInventory.itemCount ?? 0) || 0),
+    viewerName: String(user?.name ?? "Player").trim() || "Player",
+    viewerLastAccessLabel: formatMerchantTimestampLabel(latestUserAccess?.viewedAt),
+    shouldLogAccess: true,
+    accessLogPayload,
+    gm: {
+      definitions: definitionsForDisplay.map((merchant) => ({
+        ...merchant,
+        cityOptions: buildMerchantCityOptions(cityCatalogRows, merchant?.settlement ?? ""),
+        selectedForEdit: merchant.id === activeEditorId
+      })),
+      hasDefinitions: definitionsForDisplay.length > 0,
+      editorViewTab,
+      editorViewTabEditor: editorViewTab !== "settings",
+      editorViewTabSettings: editorViewTab === "settings",
+      cityCatalogInput: formatMerchantCityListInput(merchantsState?.cityCatalog ?? []),
+      editor: {
+        id: String(editorDraft?.id ?? ""),
+        name: String(editorDraft?.name ?? ""),
+        title: String(editorDraft?.title ?? ""),
+        race: normalizeMerchantRace(editorDraft?.race ?? ""),
+        img: String(editorDraft?.img ?? "icons/svg/item-bag.svg"),
+        settlement: String(editorDraft?.settlement ?? ""),
+        accessMode: editorAccessMode,
+        isHidden: Boolean(editorDraft?.isHidden),
+        requiresContract: Boolean(editorDraft?.requiresContract),
+        contractKey: String(editorDraft?.contractKey ?? ""),
+        socialGateEnabled: Boolean(editorDraft?.socialGateEnabled),
+        minSocialScore: Number(editorDraft?.minSocialScore ?? 0) || 0,
+        buyMarkup: Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup),
+        buyMarkupPercent: editorBuyMarkupPercent,
+        buyMarkupMultiplierLabel: (1 + editorBuyMarkup).toFixed(2),
+        sellRate: editorSellRate,
+        sellRatePercent: editorSellRatePercent,
+        sellEnabled: editorSellEnabled,
+        cashOnHandGp: editorCashOnHandGp,
+        buybackAllowedTypes: editorBuybackAllowedTypes,
+        barterEnabled: editorBarterEnabled,
+        barterDc: editorBarterDc,
+        barterAbility: editorBarterAbility,
+        sourceType: editorSourceType,
+        sourceRef: String(editorSourceRefs[0] ?? editorDraft?.stock?.sourceRef ?? ""),
+        sourcePackIds: editorSourceRefs,
+        includeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.includeTags ?? []),
+        excludeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.excludeTags ?? []),
+        keywordIncludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordInclude ?? []),
+        keywordExcludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordExclude ?? []),
+        allowedTypes: editorAllowedTypes,
+        curatedItemUuidsInput: formatMerchantUuidListInput(editorDraft?.stock?.curatedItemUuids ?? []),
+        maxItems: editorStockCount,
+        stockCount: editorStockCount,
+        targetValueGp: editorTargetValueGp,
+        scarcity: editorScarcity,
+        scarcityLabel: String(getMerchantScarcityProfile(editorScarcity)?.label ?? "6 - Normal"),
+        duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
+        maxStackSize: 20,
+        rarityWeightCommon: Number(editorRarityWeights?.common ?? 100),
+        rarityWeightUncommon: Number(editorRarityWeights?.uncommon ?? 45),
+        rarityWeightRare: Number(editorRarityWeights?.rare ?? 16),
+        rarityWeightVeryRare: Number(editorRarityWeights?.["very-rare"] ?? 5),
+        rarityWeightLegendary: Number(editorRarityWeights?.legendary ?? 1),
+        actorId: String(editorDraft?.actorId ?? "")
+      },
+      sourceTypeOptions: getMerchantEditorSourceTypeOptions(editorSourceType),
+      accessModeOptions: getMerchantAccessModeOptions(editorAccessMode),
+      barterAbilityOptions: getMerchantBarterAbilityOptions(editorBarterAbility),
+      raceOptions: getMerchantEditorRaceOptions(editorDraft?.race ?? ""),
+      cityOptions: editorCityOptions,
+      offerTagOptions: editorOfferTagOptions,
+      scarcityOptions: getMerchantScarcityOptions(editorScarcity),
+      actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
+      sourceRefOptions: editorSourceRefOptions,
+      sourceRefSelectableOptions: editorSourceRefSelectableOptions,
+      hasSourceRefSelectableOptions: editorSourceRefSelectableOptions.length > 0,
+      sourceRefOptionCount: editorSourceRefSelectableOptions.length,
+      sourceRefSelectedCount: editorSourceRefSelectedCount,
+      sourceRefHintLabel: editorSourceRefHintLabel,
+      sourcePackFilter: "",
+      sourcePackOptions: editorSourcePackOptions,
+      sourcePackVisibleOptions: editorSourcePackOptions,
+      sourcePackVisibleCount: editorSourcePackOptions.length,
+      sourcePackFilterActive: false,
+      tagCatalogCount: editorTagCatalog.length,
+      hasTagCatalog: editorTagCatalog.length > 0,
+      includeTagOptions: editorIncludeTagOptions,
+      excludeTagOptions: editorExcludeTagOptions,
+      keywordCatalogCount: editorKeywordCatalog.length,
+      hasKeywordCatalog: editorKeywordCatalog.length > 0,
+      keywordIncludeOptions: editorKeywordIncludeOptions,
+      keywordExcludeOptions: editorKeywordExcludeOptions,
+      allowedTypeOptions: editorAllowedTypeOptions,
+      buybackTypeOptions: editorBuybackTypeOptions,
+      curatedRows: editorCuratedRows,
+      hasCuratedRows: editorCuratedRows.length > 0,
+      itemFilter: editorItemFilter,
+      candidateRows: editorCandidateRows,
+      hasCandidateRows: editorCandidateRows.length > 0,
+      assignmentRows,
+      hasAssignmentRows: assignmentRows.length > 0
+    }
+  };
+}
+
+function readMerchantDefinitionPatchFromElement(element) {
+  const pageRoot = element?.closest?.("#po-gm-merchants")
+    ?? element?.closest?.("#po-ops-merchants")
+    ?? element?.closest?.(".po-merchants-page");
+  if (!pageRoot) return null;
+  const getText = (selector, options = {}) => {
+    const node = pageRoot.querySelector(selector);
+    if (!node) {
+      if (Object.prototype.hasOwnProperty.call(options, "missing")) return String(options.missing ?? "").trim();
+      return "";
+    }
+    return String(node?.value ?? "").trim();
+  };
+  const getNumber = (selector, fallback = 0) => {
+    const raw = Number(pageRoot.querySelector(selector)?.value ?? fallback);
+    return Number.isFinite(raw) ? raw : fallback;
+  };
+  const getCheckbox = (selector, fallback = false) => {
+    const node = pageRoot.querySelector(selector);
+    if (!(node instanceof HTMLInputElement)) return Boolean(fallback);
+    return Boolean(node.checked);
+  };
+  const getList = (selector, normalizer = normalizeMerchantTagList) => {
+    const node = pageRoot.querySelector(selector);
+    if (!node) return undefined;
+    const text = String(node?.value ?? "").trim();
+    if (!text) return [];
+    return normalizer(text.split(/[\n,;]+/));
+  };
+  const getCheckedValues = (selector, normalizer = normalizeMerchantAllowedItemTypes, fallback = []) => {
+    const nodes = Array.from(pageRoot.querySelectorAll(selector));
+    if (nodes.length <= 0) return normalizer(fallback);
+    const values = nodes
+      .filter((entry) => Boolean(entry?.checked))
+      .map((entry) => String(entry?.value ?? "").trim())
+      .filter(Boolean);
+    return normalizer(values);
+  };
+  const getSelectedValues = (selector, fallback = []) => {
+    const nodes = Array.from(pageRoot.querySelectorAll(selector));
+    if (nodes.length <= 0) return normalizeMerchantSourcePackIds(fallback);
+    const checkboxNodes = nodes.filter(
+      (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+    );
+    if (checkboxNodes.length > 0) {
+      const selectedValues = checkboxNodes
+        .filter((entry) => Boolean(entry?.checked))
+        .map((entry) => String(entry?.value ?? "").trim())
+        .filter(Boolean);
+      return normalizeMerchantSourcePackIds(selectedValues);
+    }
+    const [node] = nodes;
+    const selectedValues = Array.from(node?.selectedOptions ?? [])
+      .map((entry) => String(entry?.value ?? "").trim())
+      .filter(Boolean);
+    return normalizeMerchantSourcePackIds(selectedValues);
+  };
+  const merchantId = getText("input[name='merchantId']");
+  const existingMerchant = merchantId ? getMerchantById(merchantId) : null;
+  const existingStock = existingMerchant?.stock ?? {};
+  const existingPricing = existingMerchant?.pricing ?? {};
+  const existingAllowedTypes = normalizeMerchantAllowedItemTypes(existingMerchant?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
+  const raceInput = (
+    getText("select[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
+    || getText("input[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
+  );
+  const selectedOfferTags = Array.from(pageRoot.querySelectorAll("input[name='merchantOfferTag']:checked"))
+    .map((entry) => String(entry?.value ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  const accessMode = getText("select[name='merchantAccessMode']", { missing: existingMerchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL });
+  const sellRatePercent = getNumber(
+    "input[name='merchantSellRatePercent']",
+    Number(existingPricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100
+  );
+  const sellEnabled = getCheckbox("input[name='merchantSellEnabled']", existingPricing?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled);
+  const cashOnHandGp = getNumber(
+    "input[name='merchantCashOnHandGp']",
+    Number(existingPricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp)
+  );
+  const buybackAllowedTypes = getCheckedValues(
+    "input[name='merchantBuybackType']",
+    normalizeMerchantAllowedItemTypes,
+    existingPricing?.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const barterEnabled = getCheckbox("input[name='merchantBarterEnabled']", existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled);
+  const barterDc = getNumber(
+    "input[name='merchantBarterDc']",
+    Number(existingPricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc)
+  );
+  const barterAbility = (
+    getText("select[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
+    || getText("input[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
+  );
+  const allowedTypes = resolveMerchantAllowedTypesFromOfferTags(selectedOfferTags, existingAllowedTypes);
+  const markupPercent = getNumber(
+    "input[name='merchantMarkupPercent']",
+    Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
+  );
+  const sourceType = getText("select[name='merchantSourceType']", { missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER });
+  const previousDraft = getMerchantEditorDraftState()?.draft ?? {};
+  const previousSourceType = normalizeMerchantSourceType(
+    previousDraft?.stock?.sourceType
+    ?? existingStock?.sourceType
+    ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
+  );
+  const existingSourceRefs = getMerchantSourceRefIdsFromStock(existingStock);
+  const hasSourceRefCheckboxes = pageRoot.querySelectorAll("input[name='merchantSourceRef']").length > 0;
+  const sourceRefsFromSelect = normalizeMerchantSourceType(sourceType) === previousSourceType
+    ? getSelectedValues("select[name='merchantSourceRef']", existingSourceRefs)
+    : [];
+  const sourceRefsFromCheckboxes = normalizeMerchantSourceType(sourceType) === previousSourceType
+    ? getSelectedValues("input[name='merchantSourceRef']", existingSourceRefs)
+    : [];
+  const selectedSourceRefs = hasSourceRefCheckboxes ? sourceRefsFromCheckboxes : sourceRefsFromSelect;
+  const sourceRef = String(
+    selectedSourceRefs[0]
+    ?? getText("select[name='merchantSourceRef']", { missing: "" })
+    ?? ""
+  ).trim();
+  const rarityWeights = normalizeMerchantRarityWeights({
+    common: getNumber("input[name='merchantRarityWeightCommon']", Number(existingStock?.rarityWeights?.common ?? MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100)),
+    uncommon: getNumber("input[name='merchantRarityWeightUncommon']", Number(existingStock?.rarityWeights?.uncommon ?? MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45)),
+    rare: getNumber("input[name='merchantRarityWeightRare']", Number(existingStock?.rarityWeights?.rare ?? MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16)),
+    "very-rare": getNumber("input[name='merchantRarityWeightVeryRare']", Number(existingStock?.rarityWeights?.["very-rare"] ?? MERCHANT_DEFAULTS.stock.rarityWeights?.["very-rare"] ?? 5)),
+    legendary: getNumber("input[name='merchantRarityWeightLegendary']", Number(existingStock?.rarityWeights?.legendary ?? MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1))
+  }, existingStock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
+  return buildMerchantDefinitionPatchFromEditorFormDomain({
+    id: merchantId,
+    name: getText("input[name='merchantName']", { missing: existingMerchant?.name ?? "" }),
+    title: getText("input[name='merchantTitle']", { missing: existingMerchant?.title ?? "" }),
+    race: normalizeMerchantRace(raceInput),
+    img: getText("input[name='merchantImg']", { missing: existingMerchant?.img ?? "" }),
+    settlement: getText("select[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }) || getText("input[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }),
+    accessMode,
+    sourceType,
+    sourceRef: sourceRef || getText("input[name='merchantSourceRef']", { missing: "" }),
+    sourceRefs: selectedSourceRefs,
+    actorId: getText("select[name='merchantActorId']") || String(existingMerchant?.actorId ?? ""),
+    scarcity: getText("select[name='merchantScarcity']", { missing: existingStock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity }),
+    includeTags: getList("input[name='merchantIncludeTags']", normalizeMerchantTagList) ?? existingStock?.includeTags ?? [],
+    excludeTags: getList("input[name='merchantExcludeTags']", normalizeMerchantTagList) ?? existingStock?.excludeTags ?? [],
+    keywordInclude: getList("input[name='merchantKeywordInclude']", normalizeMerchantKeywordList) ?? existingStock?.keywordInclude ?? [],
+    keywordExclude: getList("input[name='merchantKeywordExclude']", normalizeMerchantKeywordList) ?? existingStock?.keywordExclude ?? [],
+    allowedTypes,
+    markupPercent,
+    sellRatePercent,
+    sellEnabled,
+    cashOnHandGp,
+    buybackAllowedTypes,
+    barterEnabled,
+    barterDc,
+    barterAbility,
+    stockCount: Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
+    targetValueGp: getNumber("input[name='merchantTargetValueGp']", Number(existingStock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp)),
+    duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
+    maxStackSize: 20,
+    rarityWeights,
+    existingStock,
+    existingPricing
+  });
+}
+
+async function getMerchantSourceDocuments(merchant = {}) {
+  const stock = merchant?.stock ?? {};
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType);
+  if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
+    const packIds = getMerchantCompendiumPackIdsFromStock(stock);
+    if (!packIds.length) return [];
+    const documents = [];
+    for (const packId of packIds) {
+      const docs = await loadItemsFromPack(packId);
+      if (!Array.isArray(docs) || docs.length === 0) continue;
+      documents.push(...docs);
+    }
+    return documents;
+  }
+  if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
+    const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
+    if (!sourceRefs.length) return [];
+    const sourceRefSet = new Set(sourceRefs);
+    return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
+  }
+  return game.items?.contents ?? [];
+}
+
+function buildMerchantCandidateRows(documents = [], merchant = {}) {
+  return buildMerchantStockCandidateRowsDomain(documents, merchant, {
+    getItemData: getMerchantItemData,
+    getItemTags: getMerchantItemTagsFromData,
+    getItemKeywords: getMerchantItemKeywordTokensFromData,
+    matchesTagFilters: isLootKeywordMatch,
+    matchesKeywordFilters: isLootKeywordMatch,
+    getItemRarity: getLootRarityFromData,
+    getRarityBucket: getMerchantRarityBucket,
+    getItemGpValue: getLootItemGpValueFromData,
+    allowedItemTypes: MERCHANT_ALLOWED_ITEM_TYPES,
+    normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
+    normalizeAllowedItemTypes: normalizeMerchantAllowedItemTypes,
+    normalizeTagList: normalizeMerchantTagList,
+    normalizeKeywordList: normalizeMerchantKeywordList
+  });
+}
+
+function shuffleMerchantRows(values = []) {
+  return shuffleMerchantRowsDomain(values);
+}
+
+function selectMerchantStockRows(candidates = [], merchant = {}) {
+  return selectMerchantStockRowsDomain(candidates, merchant, {
+    normalizeCuratedItemUuids: normalizeMerchantCuratedItemUuids,
+    normalizeRarityWeights: normalizeMerchantRarityWeights,
+    getTargetStockCount: getMerchantTargetStockCount,
+    getRarityBucket: getMerchantRarityBucket,
+    shuffleRows: shuffleMerchantRows
+  });
+}
+
+function createMerchantOwnershipDefaults() {
+  const ownership = {
+    default: CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0
+  };
+  for (const user of game.users?.contents ?? []) {
+    if (!user?.isGM) continue;
+    ownership[String(user.id)] = CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3;
+  }
+  return ownership;
+}
+
+async function ensureMerchantActor(merchantInput, options = {}) {
+  const merchant = (merchantInput && typeof merchantInput === "object")
+    ? merchantInput
+    : getMerchantById(merchantInput);
+  if (!merchant) return null;
+  const existing = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  if (existing) return existing;
+  if (!canAccessAllPlayerOps()) return null;
+
+  const actorName = String(merchant.name ?? "Merchant").trim() || "Merchant";
+  const actorImg = String(merchant.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+  const actorData = {
+    name: `Merchant Stock: ${actorName}`,
+    type: "npc",
+    img: actorImg,
+    ownership: createMerchantOwnershipDefaults(),
+    flags: {
+      [MODULE_ID]: {
+        merchantId: String(merchant.id ?? "").trim()
+      }
+    }
+  };
+  const created = await Actor.create(actorData, { renderSheet: false });
+  if (!created) return null;
+
+  if (options?.skipLedgerUpdate !== true) {
+    await updateOperationsLedger((ledger) => {
+      const merchants = ensureMerchantsState(ledger);
+      const entry = merchants.definitions.find((row) => String(row?.id ?? "") === String(merchant.id ?? ""));
+      if (entry) entry.actorId = String(created.id ?? "");
+      merchants.stockStateById[String(merchant.id ?? "")] = normalizeMerchantStockStateEntry(
+        merchants.stockStateById?.[String(merchant.id ?? "")],
+        String(created.id ?? "")
+      );
+    });
+  }
+  return created;
+}
+
+async function refreshMerchantStock(merchantIdInput, options = {}) {
+  if (!canAccessAllPlayerOps()) return { ok: false, message: "Only the GM can refresh merchant stock." };
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return { ok: false, message: "Merchant id is required." };
+  const ledger = getOperationsLedger();
+  const merchant = getMerchantById(merchantId, ledger);
+  if (!merchant) return { ok: false, message: "Merchant not found." };
+  const merchantActor = await ensureMerchantActor(merchant, { skipLedgerUpdate: true });
+  if (!merchantActor) return { ok: false, message: "Merchant actor could not be created." };
+
+  const sourceDocuments = await getMerchantSourceDocuments(merchant);
+  const candidates = buildMerchantCandidateRows(sourceDocuments, merchant);
+  const selected = selectMerchantStockRows(candidates, merchant);
+  const generatedItemIds = (merchantActor.items?.contents ?? [])
+    .filter((item) => item?.flags?.[MODULE_ID]?.merchantGenerated === true)
+    .map((item) => String(item?.id ?? ""))
+    .filter(Boolean);
+  if (generatedItemIds.length > 0) {
+    await merchantActor.deleteEmbeddedDocuments("Item", generatedItemIds);
+  }
+
+  const createData = [];
+  for (const candidate of selected) {
+    const data = foundry.utils.deepClone(candidate.data ?? {});
+    if (!data || typeof data !== "object") continue;
+    if (Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
+    const requestedQuantity = Number(candidate?.quantity ?? getMerchantItemDataQuantity(data));
+    const quantity = Number.isFinite(requestedQuantity)
+      ? Math.max(1, Math.floor(requestedQuantity))
+      : 1;
+    setMerchantItemDataQuantity(data, quantity);
+    if (!data.flags || typeof data.flags !== "object") data.flags = {};
+    if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
+    data.flags[MODULE_ID].merchantGenerated = true;
+    data.flags[MODULE_ID].merchantId = merchantId;
+    createData.push(data);
+  }
+  if (createData.length > 0) {
+    await merchantActor.createEmbeddedDocuments("Item", createData);
+  }
+
+  const refreshedAt = Date.now();
+  const refreshedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  await updateOperationsLedger((nextLedger) => {
+    const merchants = ensureMerchantsState(nextLedger);
+    const entry = merchants.definitions.find((row) => String(row?.id ?? "") === merchantId);
+    if (entry) entry.actorId = String(merchantActor.id ?? "");
+    merchants.stockStateById[merchantId] = {
+      lastRefreshedAt: refreshedAt,
+      lastRefreshedBy: refreshedBy,
+      actorId: String(merchantActor.id ?? "")
+    };
+  });
+
+  const createdCount = createData.length;
+  if (!options?.silent) {
+    ui.notifications?.info(`Refreshed stock for ${merchant.name} (${createdCount} item${createdCount === 1 ? "" : "s"}).`);
+  }
+  return {
+    ok: true,
+    merchantId,
+    merchantName: String(merchant.name ?? "Merchant"),
+    actorId: String(merchantActor.id ?? ""),
+    createdCount,
+    refreshedAt,
+    refreshedBy
+  };
+}
+
+async function refreshAllMerchantStocks(options = {}) {
+  if (!canAccessAllPlayerOps()) return { ok: false, refreshed: 0, failed: 0, results: [] };
+  const merchants = getMerchants();
+  const results = [];
+  for (const merchant of merchants) {
+    const result = await refreshMerchantStock(merchant.id, { silent: true });
+    results.push(result);
+  }
+  const refreshed = results.filter((entry) => entry?.ok).length;
+  const failed = results.length - refreshed;
+  if (!options?.silent) {
+    ui.notifications?.info(`Merchant stock refresh complete: ${refreshed} succeeded, ${failed} failed.`);
+  }
+  return { ok: failed === 0, refreshed, failed, results };
+}
+
+function findTradeTargetItem(actor, sourceItem) {
+  const name = String(sourceItem?.name ?? "").trim().toLowerCase();
+  const type = String(sourceItem?.type ?? "").trim().toLowerCase();
+  if (!actor || !name || !type) return null;
+  return (actor.items?.contents ?? []).find((item) => {
+    if (!item) return false;
+    return String(item.name ?? "").trim().toLowerCase() === name
+      && String(item.type ?? "").trim().toLowerCase() === type;
+  }) ?? null;
+}
+
+function buildTradeItemData(sourceItem, quantity, options = {}) {
+  const data = getMerchantItemData(sourceItem);
+  if (!data || typeof data !== "object") return null;
+  const clone = foundry.utils.deepClone(data);
+  if (Object.prototype.hasOwnProperty.call(clone, "_id")) delete clone._id;
+  setMerchantItemDataQuantity(clone, Math.max(1, Math.floor(Number(quantity ?? 1) || 1)));
+  if (!clone.flags || typeof clone.flags !== "object") clone.flags = {};
+  if (!clone.flags[MODULE_ID] || typeof clone.flags[MODULE_ID] !== "object") clone.flags[MODULE_ID] = {};
+  if (options?.clearGeneratedFlag) delete clone.flags[MODULE_ID].merchantGenerated;
+  return clone;
+}
+
+async function transferItemBetweenActors(sourceActor, targetActor, sourceItem, quantity, options = {}) {
+  const qty = Math.max(0, Math.floor(Number(quantity ?? 0) || 0));
+  if (!sourceActor || !targetActor || !sourceItem || qty <= 0) return false;
+  const sourceCurrent = Math.max(0, Math.floor(getItemTrackedQuantity(sourceItem)));
+  if (sourceCurrent < qty) return false;
+
+  const targetExisting = findTradeTargetItem(targetActor, sourceItem);
+  if (targetExisting) {
+    const existingQty = Math.max(0, Math.floor(getItemTrackedQuantity(targetExisting)));
+    await setItemTrackedQuantity(targetExisting, existingQty + qty);
+  } else {
+    const itemData = buildTradeItemData(sourceItem, qty, options);
+    if (!itemData) return false;
+    await targetActor.createEmbeddedDocuments("Item", [itemData]);
+  }
+
+  const sourceNext = sourceCurrent - qty;
+  if (sourceNext <= 0) await sourceItem.delete();
+  else await setItemTrackedQuantity(sourceItem, sourceNext);
+  return true;
+}
+
+function getMerchantBarterResolutionKey({ userId, actorId, merchantId, settlement } = {}) {
+  const normalizedUserId = String(userId ?? "").trim();
+  const normalizedActorId = String(actorId ?? "").trim();
+  const normalizedMerchantId = String(merchantId ?? "").trim();
+  const normalizedSettlement = normalizeMerchantSettlementSelection(settlement ?? "");
+  if (!normalizedUserId || !normalizedActorId || !normalizedMerchantId) return "";
+  return `${normalizedUserId}:${normalizedActorId}:${normalizedMerchantId}:${normalizedSettlement}`;
+}
+
+function getMerchantBarterResolutionEntryByKey(keyInput = "") {
+  const key = String(keyInput ?? "").trim();
+  if (!key) return null;
+  const entry = merchantBarterResolutionByKey.get(key);
+  return entry && typeof entry === "object"
+    ? foundry.utils.deepClone(entry)
+    : null;
+}
+
+function setMerchantBarterResolutionEntry(entry = {}) {
+  const key = getMerchantBarterResolutionKey(entry);
+  if (!key) return "";
+  const stored = {
+    key,
+    userId: String(entry?.userId ?? "").trim(),
+    actorId: String(entry?.actorId ?? "").trim(),
+    merchantId: String(entry?.merchantId ?? "").trim(),
+    settlement: normalizeMerchantSettlementSelection(entry?.settlement ?? ""),
+    applied: entry?.applied !== false,
+    source: String(entry?.source ?? "").trim(),
+    ability: normalizeMerchantBarterAbility(entry?.ability ?? "cha", "cha"),
+    abilityLabel: String(entry?.abilityLabel ?? MERCHANT_BARTER_ABILITY_LABELS[normalizeMerchantBarterAbility(entry?.ability ?? "cha", "cha")] ?? "Charisma"),
+    checkTotal: Number.isFinite(Number(entry?.checkTotal)) ? Math.floor(Number(entry.checkTotal)) : null,
+    margin: Number.isFinite(Number(entry?.margin)) ? Math.floor(Number(entry.margin)) : 0,
+    success: Boolean(entry?.success),
+    delta: Number.isFinite(Number(entry?.delta)) ? Number(entry.delta) : 0,
+    buyMarkupDelta: Number.isFinite(Number(entry?.buyMarkupDelta)) ? Number(entry.buyMarkupDelta) : 0,
+    sellRateDelta: Number.isFinite(Number(entry?.sellRateDelta)) ? Number(entry.sellRateDelta) : 0,
+    createdAt: Math.max(0, Number(entry?.createdAt ?? Date.now()) || Date.now())
+  };
+  merchantBarterResolutionByKey.set(key, stored);
+  return key;
+}
+
+function clearMerchantBarterResolutionEntryByKey(keyInput = "") {
+  const key = String(keyInput ?? "").trim();
+  if (!key) return;
+  merchantBarterResolutionByKey.delete(key);
+}
+
+function getMerchantBarterUiSummaryText(barter = {}, options = {}) {
+  if (!barter || barter.applied === false) return String(options?.fallback ?? "No barter adjustment applied.");
+  const buyShift = Math.abs(Math.round((Number(barter?.buyMarkupDelta ?? 0) || 0) * 100));
+  const sellShift = Math.abs(Math.round((Number(barter?.sellRateDelta ?? 0) || 0) * 100));
+  const buyLabel = `${Number(barter?.buyMarkupDelta ?? 0) >= 0 ? "+" : "-"}${buyShift}% buy`;
+  const sellLabel = `${Number(barter?.sellRateDelta ?? 0) >= 0 ? "+" : "-"}${sellShift}% sell`;
+  const verdict = barter?.success ? "Favorable" : "Unfavorable";
+  const total = Number.isFinite(Number(barter?.checkTotal)) ? ` (${Math.floor(Number(barter.checkTotal))})` : "";
+  return `${verdict}${total}: ${buyLabel}, ${sellLabel}`;
+}
+
+function getMerchantTradeDialogRoot(htmlOrRoot) {
+  if (!htmlOrRoot) return null;
+  if (htmlOrRoot instanceof HTMLElement && htmlOrRoot.classList?.contains("po-merchant-trade-dialog")) return htmlOrRoot;
+  const htmlRoot = htmlOrRoot?.[0]?.querySelector?.(".po-merchant-trade-dialog");
+  if (htmlRoot) return htmlRoot;
+  const jQueryRoot = htmlOrRoot?.find?.(".po-merchant-trade-dialog")?.[0];
+  if (jQueryRoot) return jQueryRoot;
+  return null;
+}
+
+function readMerchantTradeMetaFromDialogRoot(root) {
+  if (!(root instanceof HTMLElement)) return null;
+  const merchantId = String(root.dataset?.merchantId ?? "").trim();
+  const actorId = String(root.dataset?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(root.dataset?.settlement ?? "");
+  if (!merchantId || !actorId) return null;
+  return { merchantId, actorId, settlement };
+}
+
+function setMerchantTradeDialogBarterStatus(root, options = {}) {
+  if (!(root instanceof HTMLElement)) return;
+  const statusNode = root.querySelector("[data-merchant-barter-status]");
+  if (!statusNode) return;
+  if (options.pending) {
+    statusNode.textContent = String(options.pendingLabel ?? "Barter pending GM resolution...");
+    return;
+  }
+  if (options.error) {
+    statusNode.textContent = String(options.errorLabel ?? "Barter request failed.");
+    return;
+  }
+  const summary = String(options.summary ?? "").trim();
+  statusNode.textContent = summary || "No barter adjustment applied.";
+}
+
+async function postMerchantTradeToChat(outcome = {}) {
+  const actorName = String(outcome?.actorName ?? "Actor").trim() || "Actor";
+  const merchantName = String(outcome?.merchantName ?? "Merchant").trim() || "Merchant";
+  const buyRows = Array.isArray(outcome?.buyLines) ? outcome.buyLines : [];
+  const sellRows = Array.isArray(outcome?.sellLines) ? outcome.sellLines : [];
+  const buyHtml = buyRows.length > 0
+    ? `<p><strong>Bought:</strong> ${buyRows.map((row) => `${poEscapeHtml(row.itemName)} x${row.qty}`).join(", ")}</p>`
+    : "";
+  const sellHtml = sellRows.length > 0
+    ? `<p><strong>Sold:</strong> ${sellRows.map((row) => `${poEscapeHtml(row.itemName)} x${row.qty}`).join(", ")}</p>`
+    : "";
+  const netCp = Math.floor(Number(outcome?.netCp ?? 0) || 0);
+  const netLabel = netCp > 0
+    ? `${formatMerchantCp(netCp)} paid`
+    : (netCp < 0 ? `${formatMerchantCp(Math.abs(netCp))} received` : "Even trade");
+  const barter = (outcome?.barter && typeof outcome.barter === "object") ? outcome.barter : null;
+  const barterHtml = barter?.applied
+    ? `<p><strong>Barter:</strong> ${poEscapeHtml(getMerchantBarterUiSummaryText(barter))}</p>`
+    : "";
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim">
+        <p><strong>Merchant Trade</strong></p>
+        <p>${poEscapeHtml(actorName)} traded with ${poEscapeHtml(merchantName)}.</p>
+        ${barterHtml}
+        ${buyHtml}
+        ${sellHtml}
+        <p><strong>Net:</strong> ${poEscapeHtml(netLabel)}</p>
+      </div>
+    `
+  });
+}
+
+function computeMerchantBarterAdjustment(checkTotalInput, dcInput) {
+  const checkTotal = Math.floor(Number(checkTotalInput ?? 0) || 0);
+  const dc = Math.max(1, Math.floor(Number(dcInput ?? 10) || 10));
+  const margin = checkTotal - dc;
+  const success = margin >= 0;
+  const tiers = 1 + Math.floor(Math.abs(margin) / 5);
+  const delta = Math.min(0.25, tiers * 0.05);
+  return {
+    checkTotal,
+    dc,
+    margin,
+    success,
+    delta,
+    buyMarkupDelta: success ? -delta : delta,
+    sellRateDelta: success ? delta : -delta
+  };
+}
+
+async function rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
+  const pricing = merchant?.pricing ?? {};
+  const enabled = pricing?.barterEnabled !== false;
+  if (!enabled || !actor) return { enabled, applied: false };
+  const ability = normalizeMerchantBarterAbility(pricing?.barterAbility ?? options?.ability ?? "cha", "cha");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[ability] ?? "Charisma");
+  const dc = Math.max(1, Math.min(40, Math.floor(Number(pricing?.barterDc ?? options?.dc ?? 15) || 15)));
+  const flavor = `Barter Check (${abilityLabel})`;
+  const showDc = options?.showDc === true;
+  let total = null;
+  let source = "none";
+
+  try {
+    const monksResult = await requestMonksActorCheck(actor, `ability:${ability}`, dc, flavor, { showDc });
+    const monksTotal = Number(monksResult?.total);
+    if (Number.isFinite(monksTotal)) {
+      total = monksTotal;
+      source = "monks";
+    }
+  } catch (error) {
+    console.warn(`${MODULE_ID}: barter monks check failed`, error);
+  }
+
+  if (!Number.isFinite(total) && typeof actor?.rollAbilityTest === "function") {
+    try {
+      const rollResult = await actor.rollAbilityTest(ability, { fastForward: true, chatMessage: false });
+      const nativeTotal = Number(rollResult?.total ?? rollResult?.roll?.total);
+      if (Number.isFinite(nativeTotal)) {
+        total = nativeTotal;
+        source = "native";
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: barter ability check failed`, error);
+    }
+  }
+
+  if (!Number.isFinite(total)) {
+    const abilityMod = Number(actor?.system?.abilities?.[ability]?.mod ?? 0);
+    const roll = await (new Roll("1d20 + @mod", { mod: abilityMod })).evaluate();
+    await roll.toMessage({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      flavor
+    });
+    total = Number(roll.total ?? 0);
+    source = "fallback";
+  }
+
+  const adjustment = computeMerchantBarterAdjustment(total, dc);
+  return {
+    enabled: true,
+    applied: true,
+    source,
+    ability,
+    abilityLabel,
+    ...adjustment
+  };
+}
+
+function normalizeMerchantTradeBarterResolution(barterInput, merchant = {}) {
+  const pricing = merchant?.pricing ?? {};
+  const enabled = pricing?.barterEnabled !== false;
+  if (!enabled) return { enabled: false, applied: false };
+  const payload = barterInput && typeof barterInput === "object" ? barterInput : null;
+  const checkTotalRaw = Number(payload?.checkTotal);
+  if (!payload || !payload.applied || !Number.isFinite(checkTotalRaw)) {
+    return { enabled: true, applied: false };
+  }
+  const ability = normalizeMerchantBarterAbility(payload?.ability ?? pricing?.barterAbility ?? "cha", "cha");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[ability] ?? "Charisma");
+  const dc = Math.max(1, Math.min(40, Math.floor(Number(pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc ?? 15) || 15)));
+  return {
+    enabled: true,
+    applied: true,
+    source: String(payload?.source ?? "resolved").trim() || "resolved",
+    ability,
+    abilityLabel,
+    ...computeMerchantBarterAdjustment(Math.floor(checkTotalRaw), dc)
+  };
+}
+
+async function applyMerchantTradeForUser(user, payload = {}) {
+  const actorId = String(payload?.actorId ?? "").trim();
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  if (!actorId || !merchantId) return { ok: false, message: "Missing trade payload." };
+
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
+  if (!merchant) return { ok: false, message: "Merchant not found." };
+  const settlementPreference = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : merchants.currentSettlement;
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? settlementPreference);
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
+    return { ok: false, message: "Merchant is not currently available to this actor." };
+  }
+
+  const merchantActor = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  if (!merchantActor) return { ok: false, message: "Merchant stock actor is unavailable. Ask the GM to refresh stock." };
+
+  const pricing = merchant?.pricing ?? {};
+  const baseBuyMarkup = 1 + Math.max(0, Number(pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const baseSellRateRaw = Number(pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const baseSellRate = Number.isFinite(baseSellRateRaw)
+    ? Math.max(0, Math.min(10, Number(baseSellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = pricing?.sellEnabled !== false;
+  const buybackAllowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(
+    pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  ));
+  const configuredCashGpRaw = Number(pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const configuredCashCp = Number.isFinite(configuredCashGpRaw)
+    ? Math.max(0, Math.floor(Number(configuredCashGpRaw.toFixed(2)) * 100))
+    : 0;
+
+  const buyLinesRequested = normalizeMerchantTradeLineItems(payload?.buyItems ?? []);
+  const sellLinesRequestedRaw = normalizeMerchantTradeLineItems(payload?.sellItems ?? []);
+  const sellLinesRequested = sellEnabled ? sellLinesRequestedRaw : [];
+  if (buyLinesRequested.length === 0 && sellLinesRequested.length === 0) {
+    if (!sellEnabled && sellLinesRequestedRaw.length > 0) {
+      return { ok: false, message: `${merchant.name} is not buying goods right now.` };
+    }
+    return { ok: false, message: "No items selected for trade." };
+  }
+
+  let barter = normalizeMerchantTradeBarterResolution(payload?.barterResolution, merchant);
+  if (!barter?.applied && payload?.autoResolveBarter === true) {
+    barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
+  }
+  const effectiveBuyMarkup = Math.max(
+    0,
+    Math.min(10, Number((baseBuyMarkup + Number(barter?.buyMarkupDelta ?? 0)).toFixed(2)))
+  );
+  const effectiveSellRate = Math.max(
+    0,
+    Math.min(10, Number((baseSellRate + Number(barter?.sellRateDelta ?? 0)).toFixed(2)))
+  );
+
+  const buyLines = [];
+  for (const request of buyLinesRequested) {
+    const item = merchantActor.items?.get(String(request.itemId ?? ""));
+    if (!item) continue;
+    const availableQty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+    if (availableQty <= 0) continue;
+    const qty = Math.min(availableQty, Math.max(0, Math.floor(Number(request.qty ?? 0) || 0)));
+    if (qty <= 0) continue;
+    const itemData = getMerchantItemData(item);
+    buyLines.push({
+      itemId: String(item.id ?? ""),
+      itemName: String(item.name ?? "Item"),
+      qty,
+      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveBuyMarkup),
+      sourceItem: item
+    });
+  }
+
+  const sellLines = [];
+  for (const request of sellLinesRequested) {
+    const item = actor.items?.get(String(request.itemId ?? ""));
+    if (!item) continue;
+    const itemType = String(item?.type ?? "").trim().toLowerCase();
+    if (!buybackAllowedTypeSet.has(itemType)) continue;
+    const availableQty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+    if (availableQty <= 0) continue;
+    const qty = Math.min(availableQty, Math.max(0, Math.floor(Number(request.qty ?? 0) || 0)));
+    if (qty <= 0) continue;
+    const itemData = getMerchantItemData(item);
+    sellLines.push({
+      itemId: String(item.id ?? ""),
+      itemName: String(item.name ?? "Item"),
+      qty,
+      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveSellRate),
+      sourceItem: item
+    });
+  }
+
+  if (buyLines.length === 0 && sellLines.length === 0) {
+    if (!sellEnabled && buyLinesRequested.length <= 0 && Array.isArray(payload?.sellItems) && payload.sellItems.length > 0) {
+      return { ok: false, message: `${merchant.name} is not buying goods right now.` };
+    }
+    if (buyLinesRequested.length <= 0 && sellLinesRequested.length > 0) {
+      return { ok: false, message: "Selected items cannot be sold to this merchant." };
+    }
+    return { ok: false, message: "Selected trade quantities are no longer available." };
+  }
+
+  const totalBuyCp = buyLines.reduce((sum, row) => sum + (row.unitCp * row.qty), 0);
+  const totalSellCp = sellLines.reduce((sum, row) => sum + (row.unitCp * row.qty), 0);
+  const netCp = totalBuyCp - totalSellCp;
+  const actorCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(actor));
+  let merchantCurrencyBeforeCp = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+  if (merchantCurrencyBeforeCp <= 0 && configuredCashCp > 0) merchantCurrencyBeforeCp = configuredCashCp;
+  if (netCp > 0 && actorCurrencyBeforeCp < netCp) {
+    return { ok: false, message: `${actor.name} cannot afford ${formatMerchantCp(netCp)}.` };
+  }
+  if (netCp < 0 && merchantCurrencyBeforeCp < Math.abs(netCp)) {
+    return {
+      ok: false,
+      message: `${merchant.name} only has ${formatMerchantCp(merchantCurrencyBeforeCp)} available for purchases.`
+    };
+  }
+
+  try {
+    for (const line of buyLines) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await transferItemBetweenActors(merchantActor, actor, line.sourceItem, line.qty, { clearGeneratedFlag: true });
+      if (!ok) return { ok: false, message: "Buy transfer failed due to stock changes. Reopen shop and retry." };
+    }
+    for (const line of sellLines) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await transferItemBetweenActors(actor, merchantActor, line.sourceItem, line.qty);
+      if (!ok) return { ok: false, message: "Sell transfer failed due to inventory changes. Reopen shop and retry." };
+    }
+    const actorCurrencyAfterCp = actorCurrencyBeforeCp - netCp;
+    const merchantCurrencyAfterCp = merchantCurrencyBeforeCp + netCp;
+    await setActorCurrencyFromCp(actor, actorCurrencyAfterCp);
+    await setActorCurrencyFromCp(merchantActor, merchantCurrencyAfterCp);
+
+    const outcome = {
+      ok: true,
+      actorId: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Actor"),
+      merchantId,
+      merchantName: String(merchant.name ?? "Merchant"),
+      settlement,
+      totalBuyCp,
+      totalSellCp,
+      netCp,
+      effectiveBuyMarkup,
+      effectiveSellRate,
+      barter: barter?.applied
+        ? {
+          applied: true,
+          source: String(barter.source ?? ""),
+          ability: String(barter.ability ?? "cha"),
+          abilityLabel: String(barter.abilityLabel ?? "Charisma"),
+          dc: Number(barter.dc ?? 0),
+          checkTotal: Number(barter.checkTotal ?? 0),
+          margin: Number(barter.margin ?? 0),
+          success: Boolean(barter.success),
+          buyMarkupDelta: Number(barter.buyMarkupDelta ?? 0),
+          sellRateDelta: Number(barter.sellRateDelta ?? 0)
+        }
+        : { applied: false },
+      buyLines: buyLines.map((row) => ({
+        itemId: row.itemId,
+        itemName: row.itemName,
+        qty: row.qty,
+        unitCp: row.unitCp
+      })),
+      sellLines: sellLines.map((row) => ({
+        itemId: row.itemId,
+        itemName: row.itemName,
+        qty: row.qty,
+        unitCp: row.unitCp
+      }))
+    };
+    await postMerchantTradeToChat(outcome);
+    return outcome;
+  } catch (error) {
+    console.warn(`${MODULE_ID}: merchant trade failed`, { merchantId, actorId, error });
+    return { ok: false, message: String(error?.message ?? "Trade failed.") };
+  }
+}
+
+function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
+  const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellRate = Number.isFinite(sellRateRaw)
+    ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2))))
+    : Number(MERCHANT_DEFAULTS.pricing.sellRate);
+  const sellEnabled = merchant?.pricing?.sellEnabled !== false;
+  const cashOnHandGpRaw = Number(merchant?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const configuredCashCp = Number.isFinite(cashOnHandGpRaw)
+    ? Math.max(0, Math.floor(Number(cashOnHandGpRaw.toFixed(2)) * 100))
+    : 0;
+  const buybackAllowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(
+    merchant?.pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  ));
+  const barterEnabled = merchant?.pricing?.barterEnabled !== false;
+  const barterAbility = normalizeMerchantBarterAbility(merchant?.pricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
+  const barterAbilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[barterAbility] ?? "Charisma");
+  const settlement = normalizeMerchantSettlementSelection(settlementInput);
+  const currentUserId = String(game.user?.id ?? "").trim();
+  const barterResolutionKey = getMerchantBarterResolutionKey({
+    userId: currentUserId,
+    actorId: String(actor?.id ?? "").trim(),
+    merchantId: String(merchant?.id ?? "").trim(),
+    settlement
+  });
+  const existingBarterResolution = getMerchantBarterResolutionEntryByKey(barterResolutionKey);
+  const barterButtonLabel = game.user?.isGM ? "Barter" : "Barter (Ask GM)";
+  const barterStatusLabel = barterEnabled
+    ? (existingBarterResolution?.applied
+      ? getMerchantBarterUiSummaryText(existingBarterResolution)
+      : "No barter adjustment applied yet.")
+    : "Barter is disabled.";
+  const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Cities";
+  const merchantItems = (merchantActor?.items?.contents ?? [])
+    .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
+    .map((item) => {
+      const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+      const unitCp = getMerchantItemUnitPriceCp(getMerchantItemData(item), buyMarkup);
+      return {
+        itemId: String(item?.id ?? ""),
+        itemName: String(item?.name ?? "Item"),
+        qty,
+        unitCp
+      };
+    })
+    .filter((row) => row.qty > 0)
+    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+
+  const buyRowsHtml = merchantItems.length > 0
+    ? merchantItems.map((row) => `
+      <tr>
+        <td>${poEscapeHtml(row.itemName)}</td>
+        <td>${row.qty}</td>
+        <td>${poEscapeHtml(formatMerchantCp(row.unitCp))}</td>
+        <td><input type="number" min="0" max="${row.qty}" value="0" data-merchant-buy-item="${poEscapeHtml(row.itemId)}" data-unit-cp="${row.unitCp}" /></td>
+      </tr>
+    `).join("")
+    : "<tr><td colspan='4'>No wares available.</td></tr>";
+
+  const actorSellItems = !sellEnabled
+    ? []
+    : (actor?.items?.contents ?? [])
+      .filter((item) => {
+        const itemType = String(item?.type ?? "").trim().toLowerCase();
+        return buybackAllowedTypeSet.has(itemType) && MERCHANT_ALLOWED_ITEM_TYPES.has(itemType);
+      })
+      .map((item) => {
+        const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+        const unitCp = getMerchantItemUnitPriceCp(getMerchantItemData(item), sellRate);
+        return {
+          itemId: String(item?.id ?? ""),
+          itemName: String(item?.name ?? "Item"),
+          itemType: String(item?.type ?? "").trim().toLowerCase(),
+          itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[String(item?.type ?? "").trim().toLowerCase()] ?? item?.type ?? "item"),
+          qty,
+          unitCp
+        };
+      })
+      .filter((row) => row.qty > 0)
+      .sort((a, b) => a.itemName.localeCompare(b.itemName));
+  const sellRowsHtml = !sellEnabled
+    ? "<tr><td colspan='5'>This merchant is not buying goods.</td></tr>"
+    : (actorSellItems.length > 0
+      ? actorSellItems.map((row) => `
+      <tr>
+        <td>${poEscapeHtml(row.itemName)}</td>
+        <td>${poEscapeHtml(row.itemTypeLabel)}</td>
+        <td>${row.qty}</td>
+        <td>${poEscapeHtml(formatMerchantCp(row.unitCp))}</td>
+        <td><input type="number" min="0" max="${row.qty}" value="0" data-merchant-sell-item="${poEscapeHtml(row.itemId)}" data-unit-cp="${row.unitCp}" /></td>
+      </tr>
+    `).join("")
+      : "<tr><td colspan='5'>No eligible items to sell.</td></tr>");
+
+  const actorFunds = formatMerchantCp(currencyBundleToCp(getActorCurrencyBundle(actor)));
+  const merchantFundsBase = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+  const merchantFunds = formatMerchantCp(Math.max(merchantFundsBase, configuredCashCp));
+  const buybackTypeSummary = buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+    ? "All item types"
+    : (Array.from(buybackAllowedTypeSet).map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType)).join(", ") || "None");
+
+  return `
+    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}" data-settlement="${poEscapeHtml(settlement)}" data-barter-key="${poEscapeHtml(barterResolutionKey)}">
+      <p><strong>${poEscapeHtml(String(actor?.name ?? "Actor"))}</strong> shopping with <strong>${poEscapeHtml(String(merchant?.name ?? "Merchant"))}</strong>.</p>
+      <p>City: ${poEscapeHtml(settlementLabel)}</p>
+      <p>Player Funds: ${poEscapeHtml(actorFunds)}</p>
+      <p>Merchant Funds: ${poEscapeHtml(merchantFunds)}</p>
+      <p>Buy Markup: x${buyMarkup.toFixed(2)} | Sell Rate: ${Math.round(sellRate * 100)}%</p>
+      ${barterEnabled
+    ? `<p>Barter Check: ${poEscapeHtml(barterAbilityLabel)} (GM-resolved).</p>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm" data-merchant-barter-request>${poEscapeHtml(barterButtonLabel)}</button>
+        <span class="po-op-summary" data-merchant-barter-status>${poEscapeHtml(barterStatusLabel)}</span>
+      </div>`
+    : "<p>Barter Check: Disabled.</p>"}
+      <details open>
+        <summary><strong>Buy</strong></summary>
+        <table class="po-table po-table-sm" style="width:100%;">
+          <thead><tr><th>Item</th><th>Stock</th><th>Unit</th><th>Qty</th></tr></thead>
+          <tbody>${buyRowsHtml}</tbody>
+        </table>
+      </details>
+      <details open>
+        <summary><strong>Sell</strong></summary>
+        <div class="po-op-summary">Accepted Types: ${poEscapeHtml(buybackTypeSummary)}</div>
+        <table class="po-table po-table-sm" style="width:100%;">
+          <thead><tr><th>Item</th><th>Type</th><th>Owned</th><th>Unit</th><th>Qty</th></tr></thead>
+          <tbody>${sellRowsHtml}</tbody>
+        </table>
+      </details>
+      <div class="po-op-summary">Buy Total: <strong data-merchant-buy-total>0.00 gp</strong></div>
+      <div class="po-op-summary">Sell Total: <strong data-merchant-sell-total>0.00 gp</strong></div>
+      <div class="po-op-summary">Net: <strong data-merchant-net-total>0.00 gp</strong></div>
+    </div>
+  `;
+}
+
+function readMerchantTradeInputsFromDialog(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root) return null;
+  const meta = readMerchantTradeMetaFromDialogRoot(root);
+  if (!meta) return null;
+  const readLines = (selector, datasetKey) => Array.from(root.querySelectorAll(selector))
+    .map((input) => {
+      const qtyRaw = Number(input?.value ?? 0);
+      const qty = Number.isFinite(qtyRaw) ? Math.max(0, Math.floor(qtyRaw)) : 0;
+      const itemId = String(input?.dataset?.[datasetKey] ?? "").trim();
+      return { itemId, qty };
+    })
+    .filter((entry) => entry.itemId && entry.qty > 0);
+  return {
+    merchantId: meta.merchantId,
+    actorId: meta.actorId,
+    settlement: meta.settlement,
+    buyItems: readLines("input[data-merchant-buy-item]", "merchantBuyItem"),
+    sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem")
+  };
+}
+
+function bindMerchantTradeDialogTotals(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root) return;
+  const buyNode = root.querySelector("[data-merchant-buy-total]");
+  const sellNode = root.querySelector("[data-merchant-sell-total]");
+  const netNode = root.querySelector("[data-merchant-net-total]");
+  const recalc = () => {
+    const sumBySelector = (selector) => Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
+      const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
+      const max = Math.max(0, Math.floor(Number(input?.getAttribute?.("max") ?? 0) || 0));
+      if (qty > max) input.value = String(max);
+      const unitCp = Math.max(0, Math.floor(Number(input?.dataset?.unitCp ?? 0) || 0));
+      return sum + (Math.max(0, Math.min(qty, max)) * unitCp);
+    }, 0);
+    const buyCp = sumBySelector("input[data-merchant-buy-item]");
+    const sellCp = sumBySelector("input[data-merchant-sell-item]");
+    const netCp = buyCp - sellCp;
+    if (buyNode) buyNode.textContent = formatMerchantCp(buyCp);
+    if (sellNode) sellNode.textContent = formatMerchantCp(sellCp);
+    if (netNode) {
+      netNode.textContent = netCp >= 0
+        ? `${formatMerchantCp(netCp)} paid`
+        : `${formatMerchantCp(Math.abs(netCp))} received`;
+    }
+  };
+  root.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (!target.matches("input[data-merchant-buy-item], input[data-merchant-sell-item]")) return;
+    recalc();
+  });
+  recalc();
+}
+
+async function resolveMerchantBarterForUser(user, payload = {}) {
+  const userId = String(user?.id ?? "").trim();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  if (!userId || !actorId || !merchantId) return { ok: false, message: "Missing barter payload." };
+
+  const actor = game.actors.get(actorId);
+  if (!actor) return { ok: false, message: "Actor not found." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
+
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "").trim() === merchantId);
+  if (!merchant) return { ok: false, message: "Merchant not found." };
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
+    return { ok: false, message: "Merchant is not currently available to this actor." };
+  }
+  if (merchant?.pricing?.barterEnabled === false) {
+    return { ok: false, message: "Barter is disabled for this merchant." };
+  }
+
+  const barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
+  if (!barter?.applied || !Number.isFinite(Number(barter?.checkTotal))) {
+    return { ok: false, message: "Barter check could not be resolved." };
+  }
+
+  const stored = {
+    userId,
+    actorId,
+    merchantId,
+    settlement,
+    applied: true,
+    source: String(barter?.source ?? "resolved"),
+    ability: String(barter?.ability ?? "cha"),
+    abilityLabel: String(barter?.abilityLabel ?? "Charisma"),
+    checkTotal: Number(barter?.checkTotal ?? 0),
+    margin: Number(barter?.margin ?? 0),
+    success: Boolean(barter?.success),
+    delta: Number(barter?.delta ?? 0),
+    buyMarkupDelta: Number(barter?.buyMarkupDelta ?? 0),
+    sellRateDelta: Number(barter?.sellRateDelta ?? 0),
+    createdAt: Date.now()
+  };
+  const key = setMerchantBarterResolutionEntry(stored);
+  const cached = getMerchantBarterResolutionEntryByKey(key);
+  if (!cached) return { ok: false, message: "Failed to store barter resolution." };
+  return {
+    ok: true,
+    key,
+    userId,
+    actorId,
+    merchantId,
+    settlement,
+    summary: getMerchantBarterUiSummaryText(cached),
+    resolution: cached
+  };
+}
+
+function bindMerchantTradeDialogBarterButton(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root) return;
+  const barterButton = root.querySelector("[data-merchant-barter-request]");
+  if (!(barterButton instanceof HTMLButtonElement)) return;
+  if (barterButton.dataset.poBound === "1") return;
+  barterButton.dataset.poBound = "1";
+
+  const applyStatusFromCache = () => {
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) return;
+    const key = getMerchantBarterResolutionKey({
+      userId: String(game.user?.id ?? "").trim(),
+      actorId: meta.actorId,
+      merchantId: meta.merchantId,
+      settlement: meta.settlement
+    });
+    const cached = getMerchantBarterResolutionEntryByKey(key);
+    if (cached?.applied) setMerchantTradeDialogBarterStatus(root, { summary: getMerchantBarterUiSummaryText(cached) });
+  };
+
+  barterButton.addEventListener("click", async () => {
+    if (barterButton.disabled) return;
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) return;
+    barterButton.disabled = true;
+    setMerchantTradeDialogBarterStatus(root, { pending: true });
+
+    try {
+      if (game.user?.isGM) {
+        const resolved = await resolveMerchantBarterForUser(game.user, meta);
+        if (!resolved.ok) {
+          setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: resolved.message ?? "Barter request failed." });
+          return;
+        }
+        setMerchantTradeDialogBarterStatus(root, { summary: String(resolved.summary ?? "").trim() });
+        ui.notifications?.info("Barter resolved.");
+        return;
+      }
+      if (!hasActiveGmClient()) {
+        setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: "No active GM to resolve barter." });
+        ui.notifications?.warn("No active GM to resolve barter.");
+        return;
+      }
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:merchant-barter-request",
+        userId: game.user.id,
+        merchantId: meta.merchantId,
+        actorId: meta.actorId,
+        settlement: meta.settlement
+      });
+      ui.notifications?.info("Barter request sent to GM.");
+    } catch (error) {
+      console.warn(`${MODULE_ID}: barter request failed`, error);
+      setMerchantTradeDialogBarterStatus(root, { error: true });
+    } finally {
+      barterButton.disabled = false;
+      applyStatusFromCache();
+    }
+  });
+
+  applyStatusFromCache();
+}
+
+function syncMerchantBarterStatusForOpenDialogs(payload = {}) {
+  const targetUserId = String(payload?.userId ?? "").trim();
+  const currentUserId = String(game.user?.id ?? "").trim();
+  if (!targetUserId || targetUserId !== currentUserId) return;
+
+  const merchantId = String(payload?.merchantId ?? "").trim();
+  const actorId = String(payload?.actorId ?? "").trim();
+  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
+  const summary = String(payload?.summary ?? "").trim();
+  const ok = payload?.ok !== false;
+
+  const resolution = ok && payload?.resolution && typeof payload.resolution === "object"
+    ? payload.resolution
+    : null;
+  const key = getMerchantBarterResolutionKey({ userId: currentUserId, actorId, merchantId, settlement });
+  if (resolution) setMerchantBarterResolutionEntry({
+    ...resolution,
+    userId: currentUserId,
+    actorId,
+    merchantId,
+    settlement
+  });
+  else if (!ok) clearMerchantBarterResolutionEntryByKey(key);
+
+  const roots = Array.from(document.querySelectorAll(".po-merchant-trade-dialog"));
+  for (const root of roots) {
+    if (!(root instanceof HTMLElement)) continue;
+    const meta = readMerchantTradeMetaFromDialogRoot(root);
+    if (!meta) continue;
+    if (meta.merchantId !== merchantId || meta.actorId !== actorId || meta.settlement !== settlement) continue;
+    if (ok) setMerchantTradeDialogBarterStatus(root, { summary: summary || getMerchantBarterUiSummaryText(getMerchantBarterResolutionEntryByKey(key) ?? {}) });
+    else setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: summary || "Barter request failed." });
+  }
+
+  if (ok) ui.notifications?.info(summary || "Barter resolved by GM.");
+  else ui.notifications?.warn(summary || "GM could not resolve barter.");
+}
+
+async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInput = undefined) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  const actorId = String(actorIdInput ?? "").trim() || getSelectedMerchantActorId();
+  if (!merchantId || !actorId) {
+    ui.notifications?.warn("Select a merchant and actor first.");
+    return;
+  }
+  const actor = game.actors.get(actorId);
+  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only trade for an actor you can access.");
+    return;
+  }
+  const ledger = getOperationsLedger();
+  const merchants = ensureMerchantsState(ledger);
+  const settlementPreference = hasSelectedMerchantSettlementPreference()
+    ? getSelectedMerchantSettlement()
+    : merchants.currentSettlement;
+  const settlement = normalizeMerchantSettlementSelection(
+    settlementInput === undefined ? settlementPreference : settlementInput
+  );
+  const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
+  if (!merchant) {
+    ui.notifications?.warn("Merchant not found.");
+    return;
+  }
+  if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
+    ui.notifications?.warn("Merchant is not available to this actor.");
+    return;
+  }
+  const merchantActor = merchant.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  if (!merchantActor) {
+    ui.notifications?.warn("Merchant stock actor is unavailable. Ask the GM to refresh stock.");
+    return;
+  }
+
+  const dialog = new Dialog({
+    title: `Merchant Shop - ${String(merchant.name ?? "Merchant")}`,
+    content: buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlement),
+    buttons: {
+      finalize: {
+        label: "Finalize",
+        callback: async (html) => {
+          const trade = readMerchantTradeInputsFromDialog(html);
+          if (!trade) {
+            ui.notifications?.warn("Trade form could not be read.");
+            return;
+          }
+          const barterKey = getMerchantBarterResolutionKey({
+            userId: String(game.user?.id ?? "").trim(),
+            actorId: trade.actorId,
+            merchantId: trade.merchantId,
+            settlement: trade.settlement
+          });
+          if (canAccessAllPlayerOps()) {
+            const barterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
+            const outcome = await applyMerchantTradeForUser(game.user, {
+              ...trade,
+              barterResolution
+            });
+            if (!outcome.ok) {
+              ui.notifications?.warn(outcome.message ?? "Trade failed.");
+              return;
+            }
+            clearMerchantBarterResolutionEntryByKey(barterKey);
+            ui.notifications?.info(`Trade complete: ${outcome.actorName} and ${outcome.merchantName}.`);
+            return;
+          }
+          game.socket.emit(SOCKET_CHANNEL, {
+            type: "ops:merchant-trade",
+            userId: game.user.id,
+            merchantId: trade.merchantId,
+            actorId: trade.actorId,
+            settlement: trade.settlement,
+            buyItems: trade.buyItems,
+            sellItems: trade.sellItems
+          });
+          clearMerchantBarterResolutionEntryByKey(barterKey);
+          ui.notifications?.info("Merchant trade request sent to GM.");
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "finalize",
+    render: (html) => {
+      bindMerchantTradeDialogTotals(html);
+      bindMerchantTradeDialogBarterButton(html);
+    }
+  });
+  dialog.render(true);
+}
+
+function getMerchantEditorRootFromElement(element) {
+  return element?.closest?.("#po-gm-merchants")
+    ?? element?.closest?.("#po-ops-merchants")
+    ?? element?.closest?.(".po-merchants-page")
+    ?? null;
+}
+
+function getMerchantIdFromElementOrEditor(element) {
+  const explicit = String(element?.dataset?.merchantId ?? "").trim();
+  if (explicit) return explicit;
+  const root = getMerchantEditorRootFromElement(element);
+  return String(root?.querySelector?.("input[name='merchantId']")?.value ?? "").trim();
+}
+
+async function setMerchantSettlementFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can set the current settlement.");
+    return false;
+  }
+  const settlement = String(element?.value ?? "").trim();
+  await setMerchantCurrentSettlement(settlement);
+  return true;
+}
+
+function setMerchantActorSelectionFromElement(element) {
+  return setSelectedMerchantActorFromElement(element);
+}
+
+function setMerchantSettlementSelectionFromElement(element) {
+  return setSelectedMerchantSettlementFromElement(element);
+}
+
+async function saveMerchantCityCatalogFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage merchant cities.");
+    return false;
+  }
+  const root = getMerchantEditorRootFromElement(element);
+  if (!root) return false;
+  const rawInput = String(root.querySelector("input[name='merchantCityCatalog']")?.value ?? "").trim();
+  const cityCatalog = await saveMerchantCityCatalog(rawInput);
+  ui.notifications?.info(`Saved merchant cities (${cityCatalog.length}).`);
+  return true;
+}
+
+async function assignMerchantCityFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant cities.");
+    return false;
+  }
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  if (!merchantId) return false;
+  const city = normalizeMerchantSettlementSelection(element?.value ?? element?.dataset?.city ?? "");
+  const saved = await setMerchantCityById(merchantId, city);
+  if (!saved?.id) return false;
+  if (String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  return true;
+}
+
+function randomizeMerchantNameFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can randomize merchant names.");
+    return false;
+  }
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
+    ?? getMerchantDefinitionDraftSource({});
+  const randomName = generateRandomMerchantNameUnbound();
+  const randomTitle = pickRandomMerchantTitle("Merchant");
+  draft.name = randomName;
+  draft.title = randomTitle;
+  cacheMerchantEditorDraftFromPatch(draft);
+  ui.notifications?.info(`Randomized merchant identity: ${randomName} - ${randomTitle}.`);
+  return true;
+}
+
+function randomizeMerchantRaceFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can randomize merchant race.");
+    return false;
+  }
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
+    ?? getMerchantDefinitionDraftSource({});
+  const randomRace = pickRandomMerchantRace("Human");
+  draft.race = randomRace;
+  cacheMerchantEditorDraftFromPatch(draft);
+  ui.notifications?.info(`Randomized race: ${randomRace}.`);
+  return true;
+}
+
+function resetMerchantEditorSelection() {
+  setMerchantEditorSelection("__new__");
+  setMerchantEditorDraftState("__new__", getMerchantDefinitionDraftSource({}));
+}
+
+function setMerchantEditorSelectionFromElement(element) {
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  if (!merchantId) return false;
+  const merchant = getMerchantById(merchantId);
+  setMerchantEditorSelection(merchantId);
+  if (merchant) setMerchantEditorDraftState(merchantId, merchant);
+  return true;
+}
+
+function getMerchantEditorSelectionKeyForPatch(patch = {}) {
+  const selected = normalizeMerchantEditorSelectionKey(getMerchantEditorSelection());
+  const patchId = String(patch?.id ?? "").trim();
+  if (selected === "__new__") return "__new__";
+  if (patchId) return patchId;
+  if (selected) return selected;
+  return "__new__";
+}
+
+function cacheMerchantEditorDraftFromPatch(patch = {}, selectionKeyInput = "") {
+  const selectionKey = normalizeMerchantEditorSelectionKey(selectionKeyInput || getMerchantEditorSelectionKeyForPatch(patch));
+  const draft = getMerchantDefinitionDraftSource(patch);
+  if (selectionKey === "__new__") draft.id = "";
+  setMerchantEditorDraftState(selectionKey, draft);
+  return draft;
+}
+
+function cacheMerchantEditorDraftFromElement(element, options = {}) {
+  const patch = readMerchantDefinitionPatchFromElement(element);
+  if (!patch) {
+    if (!options.suppressMissingFormWarning) ui.notifications?.warn("Merchant editor form not found.");
+    return null;
+  }
+  return cacheMerchantEditorDraftFromPatch(patch);
+}
+
+async function persistMerchantEditorPatchFromElement(element, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can save merchants.");
+    return null;
+  }
+  const patch = readMerchantDefinitionPatchFromElement(element);
+  if (!patch) {
+    if (!options.suppressMissingFormWarning) ui.notifications?.warn("Merchant editor form not found.");
+    return null;
+  }
+  if (!String(patch.name ?? "").trim()) {
+    if (!options.suppressNameWarning) ui.notifications?.warn("Merchant name is required.");
+    return null;
+  }
+  const saved = await upsertMerchant(patch);
+  if (saved?.id) setMerchantEditorSelection(saved.id);
+  clearMerchantEditorDraftState();
+  if (options.notifySaved) ui.notifications?.info(`Saved merchant: ${String(saved?.name ?? "Merchant")}.`);
+  return saved;
+}
+
+async function saveMerchantFromElement(element) {
+  return persistMerchantEditorPatchFromElement(element, { notifySaved: true });
+}
+
+async function saveMerchantStockControlsFromElement(element) {
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true });
+  return Boolean(draft);
+}
+
+async function toggleMerchantPackSourceFromElement(element) {
+  return saveMerchantStockControlsFromElement(element);
+}
+
+async function toggleMerchantAllowedTypeFromElement(element) {
+  return saveMerchantStockControlsFromElement(element);
+}
+
+async function addMerchantCuratedItemFromElement(element, uuidInput = "") {
+  const itemUuid = String(uuidInput ?? element?.dataset?.itemUuid ?? "").trim();
+  if (!itemUuid) return false;
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can curate merchant items.");
+    return false;
+  }
+  const patch = cacheMerchantEditorDraftFromElement(element);
+  if (!patch) return false;
+  const current = normalizeMerchantCuratedItemUuids(patch?.stock?.curatedItemUuids ?? []);
+  if (current.includes(itemUuid)) return false;
+  patch.stock.curatedItemUuids = normalizeMerchantCuratedItemUuids([...current, itemUuid]);
+  cacheMerchantEditorDraftFromPatch(patch);
+  return true;
+}
+
+async function removeMerchantCuratedItemFromElement(element) {
+  const itemUuid = String(element?.dataset?.itemUuid ?? "").trim();
+  if (!itemUuid) return false;
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can curate merchant items.");
+    return false;
+  }
+  const patch = cacheMerchantEditorDraftFromElement(element);
+  if (!patch) return false;
+  const current = normalizeMerchantCuratedItemUuids(patch?.stock?.curatedItemUuids ?? []);
+  const next = current.filter((entry) => entry !== itemUuid);
+  if (next.length === current.length) return false;
+  patch.stock.curatedItemUuids = next;
+  cacheMerchantEditorDraftFromPatch(patch);
+  return true;
+}
+
+async function clearMerchantCuratedItemsFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can curate merchant items.");
+    return false;
+  }
+  const patch = cacheMerchantEditorDraftFromElement(element);
+  if (!patch) return false;
+  if (normalizeMerchantCuratedItemUuids(patch?.stock?.curatedItemUuids ?? []).length <= 0) return false;
+  patch.stock.curatedItemUuids = [];
+  cacheMerchantEditorDraftFromPatch(patch);
+  return true;
+}
+
+async function reorderMerchantCuratedItemsFromElement(element, draggedUuidInput, targetUuidInput = "") {
+  const draggedUuid = String(draggedUuidInput ?? "").trim();
+  const targetUuid = String(targetUuidInput ?? "").trim();
+  if (!draggedUuid) return false;
+  if (!canAccessAllPlayerOps()) return false;
+  const patch = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true });
+  if (!patch) return false;
+  const current = normalizeMerchantCuratedItemUuids(patch?.stock?.curatedItemUuids ?? []);
+  if (!current.includes(draggedUuid)) return false;
+  const next = current.filter((entry) => entry !== draggedUuid);
+  const targetIndex = targetUuid ? next.indexOf(targetUuid) : -1;
+  if (targetIndex < 0) next.push(draggedUuid);
+  else next.splice(targetIndex, 0, draggedUuid);
+  if (JSON.stringify(next) === JSON.stringify(current)) return false;
+  patch.stock.curatedItemUuids = next;
+  cacheMerchantEditorDraftFromPatch(patch);
+  return true;
+}
+
+function getMerchantCuratedDragUuidFromEvent(event) {
+  const transfer = event?.dataTransfer;
+  if (!transfer) return "";
+  return String(transfer.getData("application/x-po-merchant-curated") || "").trim();
+}
+
+function getMerchantCandidateDragUuidFromEvent(event) {
+  const transfer = event?.dataTransfer;
+  if (!transfer) return "";
+  return String(transfer.getData("application/x-po-merchant-candidate") || "").trim();
+}
+
+async function addMerchantCuratedItemFromDropEvent(event) {
+  if (!canAccessAllPlayerOps()) return false;
+  let data = null;
+  try {
+    data = TextEditor.getDragEventData(event);
+  } catch {
+    data = null;
+  }
+  if (!data || typeof data !== "object") return false;
+  const document = await resolveLootItemDocumentFromDropData(data);
+  if (!document) {
+    ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
+    return false;
+  }
+  return addMerchantCuratedItemFromElement(event?.target, String(document.uuid ?? "").trim());
+}
+
+function applyMerchantEditorFilters(rootLike) {
+  const root = getAppRootElement(rootLike);
+  if (!root?.querySelectorAll) return;
+  const packFilterInput = root.querySelector("input[data-merchant-pack-filter]");
+  const itemFilterInput = root.querySelector("input[data-merchant-item-filter]");
+  const packFilter = normalizeMerchantEditorFilter(packFilterInput?.value ?? getMerchantEditorPackFilter()).toLowerCase();
+  const itemFilter = normalizeMerchantEditorFilter(itemFilterInput?.value ?? getMerchantEditorItemFilter()).toLowerCase();
+  const applyFilter = (selector, filterNeedle) => {
+    const rows = Array.from(root.querySelectorAll(selector));
+    let visibleCount = 0;
+    for (const row of rows) {
+      const searchBlob = String(row?.dataset?.search ?? row?.textContent ?? "").toLowerCase();
+      const visible = !filterNeedle || searchBlob.includes(filterNeedle);
+      row.hidden = !visible;
+      row.classList.toggle("is-hidden", !visible);
+      if (visible) visibleCount += 1;
+    }
+    return { visibleCount, totalCount: rows.length };
+  };
+
+  const packStats = applyFilter("[data-merchant-pack-row]", packFilter);
+  const itemStats = applyFilter("[data-merchant-candidate-row]", itemFilter);
+  for (const node of root.querySelectorAll("[data-merchant-pack-visible-count]")) {
+    node.textContent = String(packStats.visibleCount);
+  }
+  for (const node of root.querySelectorAll("[data-merchant-pack-total-count]")) {
+    node.textContent = String(packStats.totalCount);
+  }
+  for (const node of root.querySelectorAll("[data-merchant-candidate-visible-count]")) {
+    node.textContent = String(itemStats.visibleCount);
+  }
+  for (const node of root.querySelectorAll("[data-merchant-candidate-total-count]")) {
+    node.textContent = String(itemStats.totalCount);
+  }
+  const packEmptyNode = root.querySelector("[data-merchant-pack-empty]");
+  if (packEmptyNode) packEmptyNode.hidden = packStats.visibleCount > 0;
+  const candidateEmptyNode = root.querySelector("[data-merchant-candidate-empty]");
+  if (candidateEmptyNode) candidateEmptyNode.hidden = itemStats.visibleCount > 0;
+}
+
+async function deleteMerchantFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can delete merchants.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) {
+    ui.notifications?.warn("Select a merchant to delete.");
+    return false;
+  }
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) {
+    ui.notifications?.warn("Merchant not found.");
+    return false;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Delete Merchant",
+    content: `<p>Delete <strong>${poEscapeHtml(String(merchant.name ?? "Merchant"))}</strong>?</p>`
+  });
+  if (!confirmed) return false;
+  await deleteMerchant(merchantId);
+  if (getMerchantEditorSelection() === merchantId) setMerchantEditorSelection("");
+  ui.notifications?.info(`Deleted merchant: ${merchant.name}.`);
+  return true;
+}
+
+async function refreshMerchantStockFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can refresh merchant stock.");
+    return null;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) {
+    ui.notifications?.warn("Select a merchant first.");
+    return null;
+  }
+  return refreshMerchantStock(merchantId);
+}
+
+async function refreshAllMerchantStocksFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can refresh merchant stock.");
+    return null;
+  }
+  return refreshAllMerchantStocks();
+}
+
+async function setMerchantAccessModeById(merchantIdInput, modeInput) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const saved = await upsertMerchant({
+    id: merchantId,
+    accessMode: normalizeMerchantAccessMode(modeInput, MERCHANT_ACCESS_MODES.ALL)
+  });
+  if (saved?.id && String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  return saved;
+}
+
+async function setMerchantAccessModeFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update merchant access.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const nextMode = normalizeMerchantAccessMode(
+    element?.value
+    ?? element?.dataset?.accessMode
+    ?? MERCHANT_ACCESS_MODES.ALL,
+    MERCHANT_ACCESS_MODES.ALL
+  );
+  const saved = await setMerchantAccessModeById(merchantId, nextMode);
+  return Boolean(saved?.id);
+}
+
+async function setMerchantAssignmentsForAllActors(merchantIdInput, assigned = true) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return { updated: 0, total: 0 };
+  const actors = getOwnedPcActors();
+  let updated = 0;
+  for (const actor of actors) {
+    if (!actor?.id) continue;
+    const actorId = String(actor.id).trim();
+    if (!actorId) continue;
+    const contracts = getActorMerchantContracts(actor);
+    const alreadyAssigned = Boolean(contracts[merchantId]);
+    if (Boolean(assigned) === alreadyAssigned) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await setMerchantAssignment(actorId, merchantId, Boolean(assigned));
+    if (ok) updated += 1;
+  }
+  return { updated, total: actors.length };
+}
+
+async function setMerchantAssignmentAllFromElement(element, assigned = true) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant contracts.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) return false;
+  const result = await setMerchantAssignmentsForAllActors(merchantId, assigned);
+  const merchantName = String(merchant.name ?? "Merchant").trim() || "Merchant";
+  const verb = assigned ? "Assigned" : "Cleared";
+  ui.notifications?.info(`${verb} ${merchantName} for ${result.updated}/${result.total} actor(s).`);
+  return true;
+}
+
+async function setMerchantAssignmentAllEnabledFromElement(element) {
+  return setMerchantAssignmentAllFromElement(element, true);
+}
+
+async function setMerchantAssignmentAllDisabledFromElement(element) {
+  return setMerchantAssignmentAllFromElement(element, false);
+}
+
+async function assignMerchantByContractKeyFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign by contract key.");
+    return null;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) {
+    ui.notifications?.warn("Select a merchant first.");
+    return null;
+  }
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) {
+    ui.notifications?.warn("Merchant not found.");
+    return null;
+  }
+  const contractKey = String(merchant.contractKey ?? "").trim().toLowerCase();
+  if (!contractKey) {
+    ui.notifications?.warn("Set a contract key on the merchant first.");
+    return null;
+  }
+
+  const actors = getOwnedPcActors();
+  let matched = 0;
+  let assigned = 0;
+  for (const actor of actors) {
+    const contracts = getActorMerchantContracts(actor);
+    if (!contracts[contractKey]) continue;
+    matched += 1;
+    if (contracts[merchantId]) continue;
+    const nextContracts = foundry.utils.deepClone(contracts);
+    nextContracts[merchantId] = true;
+    await actor.setFlag(MODULE_ID, "merchantContracts", nextContracts);
+    assigned += 1;
+  }
+
+  if (matched <= 0) {
+    ui.notifications?.warn(`No actors currently have contract key "${contractKey}".`);
+    return { ok: false, merchantId, contractKey, matched, assigned };
+  }
+  const alreadyAssigned = Math.max(0, matched - assigned);
+  const merchantName = String(merchant.name ?? "Merchant").trim() || "Merchant";
+  if (alreadyAssigned > 0) {
+    ui.notifications?.info(`Assigned ${merchantName} to ${assigned} actor(s) via "${contractKey}" (${alreadyAssigned} already assigned).`);
+  } else {
+    ui.notifications?.info(`Assigned ${merchantName} to ${assigned} actor(s) via "${contractKey}".`);
+  }
+  return { ok: true, merchantId, contractKey, matched, assigned };
+}
+
+async function setMerchantAssignmentFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant contracts.");
+    return false;
+  }
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  if (!actorId || !merchantId) return false;
+  const assigned = Boolean(element?.checked);
+  return setMerchantAssignment(actorId, merchantId, assigned);
+}
+
+async function openMerchantActorFromElement(element) {
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) return false;
+  const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
+  if (!merchantActor) {
+    ui.notifications?.warn("Merchant actor is not configured yet. Use Refresh Stock first.");
+    return false;
+  }
+  merchantActor.sheet?.render(true);
+  return true;
+}
+
+async function openMerchantShopFromElement(element) {
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  const actorId = String(element?.dataset?.actorId ?? "").trim() || getSelectedMerchantActorId();
+  const settlementDataset = Object.prototype.hasOwnProperty.call(element?.dataset ?? {}, "settlement")
+    ? element.dataset.settlement
+    : undefined;
+  const settlement = settlementDataset === undefined ? undefined : normalizeMerchantSettlementSelection(settlementDataset);
+  if (!merchantId || !actorId) {
+    ui.notifications?.warn("Select an actor and merchant first.");
+    return false;
+  }
+  await openMerchantShopById(merchantId, actorId, settlement);
+  return true;
+}
+
 function getDowntimeActionDefinition(actionKey = "") {
   const key = String(actionKey ?? "").trim().toLowerCase();
   return DOWNTIME_ACTION_OPTIONS.find((entry) => entry.key === key) ?? DOWNTIME_ACTION_OPTIONS[0];
+}
+
+function getDowntimeSocialContractDefinition(contractKey = "") {
+  const key = String(contractKey ?? "").trim().toLowerCase();
+  return DOWNTIME_SOCIAL_CONTRACT_OPTIONS.find((entry) => entry.key === key) ?? DOWNTIME_SOCIAL_CONTRACT_OPTIONS[0];
+}
+
+function buildDowntimeSocialContractOptions(selectedKey = "") {
+  const selected = String(selectedKey ?? "").trim().toLowerCase();
+  return DOWNTIME_SOCIAL_CONTRACT_OPTIONS.map((entry) => ({
+    value: entry.key,
+    label: entry.label,
+    summary: entry.summary,
+    limitations: entry.limitations,
+    selected: entry.key === selected
+  }));
+}
+
+function normalizeDowntimeSocialContract(rawContract = {}, actionKey = "") {
+  const source = (rawContract && typeof rawContract === "object")
+    ? rawContract
+    : { key: rawContract };
+  const definition = getDowntimeSocialContractDefinition(source?.key ?? source?.value ?? "");
+  const notes = String(source?.notes ?? source?.detail ?? "").trim().slice(0, 800);
+  const featureItemId = String(source?.featureItemId ?? "").trim();
+  const action = String(actionKey ?? "").trim().toLowerCase();
+  const hasContract = Boolean(definition.key);
+  const available = hasContract && action === "carousing";
+  return {
+    key: available ? definition.key : "",
+    label: available ? definition.label : "",
+    summary: available ? definition.summary : "",
+    limitations: available ? definition.limitations : "",
+    notes: available ? notes : "",
+    featureItemId: available ? featureItemId : "",
+    hasContract: available
+  };
+}
+
+function normalizeDowntimeItemRewardDrop(rawDrop = {}) {
+  const source = (rawDrop && typeof rawDrop === "object")
+    ? rawDrop
+    : { name: rawDrop };
+  const id = String(source?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID();
+  const uuid = String(source?.uuid ?? "").trim();
+  const name = String(source?.name ?? "Item").trim() || "Item";
+  const img = String(source?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+  const itemType = String(source?.itemType ?? source?.type ?? "loot").trim() || "loot";
+  const quantityRaw = Number(source?.quantity ?? 1);
+  const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
+  return {
+    id,
+    uuid,
+    name,
+    img,
+    itemType,
+    quantity
+  };
+}
+
+function normalizeDowntimeItemRewardDrops(rawDrops = []) {
+  if (!Array.isArray(rawDrops)) return [];
+  return rawDrops
+    .map((entry) => normalizeDowntimeItemRewardDrop(entry))
+    .filter((entry) => entry.name.length > 0)
+    .slice(0, DOWNTIME_ITEM_REWARD_DROP_LIMIT);
+}
+
+function serializeDowntimeItemRewardDrops(rawDrops = []) {
+  const drops = normalizeDowntimeItemRewardDrops(rawDrops);
+  try {
+    return JSON.stringify(drops);
+  } catch {
+    return "[]";
+  }
+}
+
+function parseDowntimeItemRewardDrops(rawValue = "[]") {
+  const text = String(rawValue ?? "").trim();
+  if (!text) return [];
+  try {
+    const parsed = JSON.parse(text);
+    return normalizeDowntimeItemRewardDrops(parsed);
+  } catch {
+    return [];
+  }
+}
+
+function buildDowntimeItemRewardDropFromDocument(documentRef) {
+  if (!documentRef || documentRef.documentName !== "Item") return null;
+  return normalizeDowntimeItemRewardDrop({
+    id: foundry.utils.randomID(),
+    uuid: String(documentRef.uuid ?? "").trim(),
+    name: String(documentRef.name ?? "Item").trim() || "Item",
+    img: String(documentRef.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    itemType: String(documentRef.type ?? "loot").trim() || "loot",
+    quantity: 1
+  });
 }
 
 function normalizeDowntimeResult(result = {}) {
@@ -11643,22 +18710,41 @@ function normalizeDowntimeResult(result = {}) {
     : [];
   const rollTotalRaw = Number(result?.rollTotal ?? 0);
   const gpDeltaRaw = Number(result?.gpDelta ?? 0);
+  const hasAwardField = result?.gpAward !== undefined && result?.gpAward !== null;
+  const hasCostField = result?.gpCost !== undefined && result?.gpCost !== null;
+  const gpAwardRaw = Number(result?.gpAward);
+  const gpCostRaw = Number(result?.gpCost);
   const progressRaw = Number(result?.progress ?? 0);
   const rumorCountRaw = Number(result?.rumorCount ?? 0);
   const itemRewards = Array.isArray(result?.itemRewards)
     ? result.itemRewards
       .map((entry) => String(entry ?? "").trim())
       .filter(Boolean)
-      .slice(0, 10)
+      .slice(0, DOWNTIME_ITEM_REWARD_DROP_LIMIT)
     : [];
+  const itemRewardDrops = normalizeDowntimeItemRewardDrops(result?.itemRewardDrops ?? []);
   const gmNotes = String(result?.gmNotes ?? "").trim();
   const collected = result?.collected === true;
   const collectedAtRaw = Number(result?.collectedAt ?? 0);
   const collectedAt = Number.isFinite(collectedAtRaw) && collectedAtRaw > 0 ? collectedAtRaw : 0;
   const collectedBy = String(result?.collectedBy ?? "").trim();
-  const gpDelta = Number.isFinite(gpDeltaRaw) ? Math.floor(gpDeltaRaw) : 0;
+  const legacyGpDelta = Number.isFinite(gpDeltaRaw) ? Math.floor(gpDeltaRaw) : 0;
+  const gpAward = hasAwardField && Number.isFinite(gpAwardRaw)
+    ? Math.max(0, Math.floor(gpAwardRaw))
+    : Math.max(0, legacyGpDelta);
+  const gpCost = hasCostField && Number.isFinite(gpCostRaw)
+    ? Math.max(0, Math.floor(gpCostRaw))
+    : Math.max(0, -legacyGpDelta);
+  const gpDelta = gpAward - gpCost;
   const rumorCount = Number.isFinite(rumorCountRaw) ? Math.max(0, Math.floor(rumorCountRaw)) : 0;
-  const hasClaimableRewards = gpDelta > 0 || rumorCount > 0 || itemRewards.length > 0 || gmNotes.length > 0;
+  const socialContract = normalizeDowntimeSocialContract(result?.socialContract ?? {}, actionDef.key);
+  const hasClaimableRewards = gpAward > 0
+    || gpCost > 0
+    || rumorCount > 0
+    || itemRewards.length > 0
+    || itemRewardDrops.length > 0
+    || gmNotes.length > 0
+    || socialContract.hasContract;
   return {
     id: String(result?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     actionKey: actionDef.key,
@@ -11666,6 +18752,8 @@ function normalizeDowntimeResult(result = {}) {
     summary: String(result?.summary ?? "").trim(),
     details,
     rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : 0,
+    gpAward,
+    gpCost,
     gpDelta,
     progress: Number.isFinite(progressRaw) ? Math.max(0, Math.floor(progressRaw)) : 0,
     complication: String(result?.complication ?? "").trim(),
@@ -11673,7 +18761,9 @@ function normalizeDowntimeResult(result = {}) {
     resolvedBy: String(result?.resolvedBy ?? "GM").trim() || "GM",
     rumorCount,
     itemRewards,
+    itemRewardDrops,
     gmNotes,
+    socialContract,
     hasClaimableRewards,
     collected,
     collectedAt,
@@ -11707,6 +18797,7 @@ function ensureDowntimeState(ledger) {
   }
 
   const normalizedEntries = {};
+  const archivedCollectedEntries = [];
   for (const [rawActorId, rawEntry] of Object.entries(downtime.entries ?? {})) {
     const actorId = String(rawEntry?.actorId ?? rawActorId ?? "").trim();
     if (!actorId) continue;
@@ -11725,9 +18816,19 @@ function ensureDowntimeState(ledger) {
     const stagedAtRaw = Number(rawEntry?.stagedAt ?? 0);
     const stagedAt = stagedResult && Number.isFinite(stagedAtRaw) && stagedAtRaw > 0 ? stagedAtRaw : 0;
     const stagedBy = stagedResult ? (String(rawEntry?.stagedBy ?? "").trim() || "GM") : "";
+    const actorName = String(rawEntry?.actorName ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
+    if (!pending && lastResult?.collected === true) {
+      archivedCollectedEntries.push({
+        ...lastResult,
+        actorId,
+        actorName,
+        hours
+      });
+      continue;
+    }
     normalizedEntries[actorId] = {
       actorId,
-      actorName: String(rawEntry?.actorName ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`,
+      actorName,
       actionKey: actionDef.key,
       hours,
       note: String(rawEntry?.note ?? "").slice(0, 1000),
@@ -11744,7 +18845,9 @@ function ensureDowntimeState(ledger) {
   downtime.entries = normalizedEntries;
 
   if (!Array.isArray(downtime.logs)) downtime.logs = [];
-  downtime.logs = downtime.logs
+  const mergedLogsSource = [...downtime.logs, ...archivedCollectedEntries];
+  const seenLogKeys = new Set();
+  downtime.logs = mergedLogsSource
     .map((entry) => {
       const normalized = normalizeDowntimeResult(entry);
       return {
@@ -11754,43 +18857,45 @@ function ensureDowntimeState(ledger) {
         hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4))
       };
     })
-    .filter((entry) => entry.actorId)
+    .filter((entry) => {
+      if (!entry.actorId) return false;
+      const idKey = String(entry.id ?? "").trim();
+      const resolvedAtKey = Number(entry.resolvedAt ?? 0);
+      const dedupeKey = `${entry.actorId}::${idKey || resolvedAtKey}`;
+      if (seenLogKeys.has(dedupeKey)) return false;
+      seenLogKeys.add(dedupeKey);
+      return true;
+    })
     .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
     .slice(0, 80);
 
   return downtime;
 }
 
-function ensureLootClaimsState(ledger) {
-  if (!ledger.lootClaims || typeof ledger.lootClaims !== "object") {
-    ledger.lootClaims = {};
-  }
-  const claims = ledger.lootClaims;
-  const publishedAtRaw = Number(claims.publishedAt ?? 0);
-  claims.publishedAt = Number.isFinite(publishedAtRaw) && publishedAtRaw > 0 ? publishedAtRaw : 0;
-  claims.publishedBy = String(claims.publishedBy ?? "").trim();
-  if (!claims.currency || typeof claims.currency !== "object") claims.currency = {};
-  claims.currency = {
-    pp: Math.max(0, Math.floor(Number(claims.currency.pp ?? 0) || 0)),
-    gp: Math.max(0, Math.floor(Number(claims.currency.gp ?? 0) || 0)),
-    sp: Math.max(0, Math.floor(Number(claims.currency.sp ?? 0) || 0)),
-    cp: Math.max(0, Math.floor(Number(claims.currency.cp ?? 0) || 0)),
-    gpEquivalent: Math.max(0, Number(claims.currency.gpEquivalent ?? 0) || 0)
-  };
-  if (!claims.currencyRemaining || typeof claims.currencyRemaining !== "object") claims.currencyRemaining = {};
-  claims.currencyRemaining = {
-    pp: Math.max(0, Math.floor(Number(claims.currencyRemaining.pp ?? claims.currency.pp ?? 0) || 0)),
-    gp: Math.max(0, Math.floor(Number(claims.currencyRemaining.gp ?? claims.currency.gp ?? 0) || 0)),
-    sp: Math.max(0, Math.floor(Number(claims.currencyRemaining.sp ?? claims.currency.sp ?? 0) || 0)),
-    cp: Math.max(0, Math.floor(Number(claims.currencyRemaining.cp ?? claims.currency.cp ?? 0) || 0)),
-    gpEquivalent: Math.max(0, Number(claims.currencyRemaining.gpEquivalent ?? claims.currency.gpEquivalent ?? 0) || 0)
-  };
-  if (!Array.isArray(claims.currencyClaimedActorIds)) claims.currencyClaimedActorIds = [];
-  claims.currencyClaimedActorIds = claims.currencyClaimedActorIds
+function normalizeLootClaimCurrencyRecord(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object" ? fallback : {};
+  const pp = Math.max(0, Math.floor(Number(source.pp ?? base.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(source.gp ?? base.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(source.sp ?? base.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(source.cp ?? base.cp ?? 0) || 0));
+  const gpEquivalentRaw = Number(source.gpEquivalent ?? base.gpEquivalent);
+  const gpEquivalent = Number.isFinite(gpEquivalentRaw) && gpEquivalentRaw >= 0
+    ? gpEquivalentRaw
+    : (pp * 10) + gp + (sp * 0.1) + (cp * 0.01);
+  return { pp, gp, sp, cp, gpEquivalent };
+}
+
+function normalizeLootClaimActorIdList(values = []) {
+  if (!Array.isArray(values)) return [];
+  return values
     .map((entry) => String(entry ?? "").trim())
     .filter((entry, index, arr) => entry.length > 0 && arr.indexOf(entry) === index);
-  if (!Array.isArray(claims.items)) claims.items = [];
-  claims.items = claims.items
+}
+
+function normalizeLootClaimItemsList(values = []) {
+  const source = Array.isArray(values) ? values : [];
+  return source
     .map((entry) => ({
       id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
       uuid: String(entry?.uuid ?? "").trim(),
@@ -11800,15 +18905,14 @@ function ensureLootClaimsState(ledger) {
       rarity: String(entry?.rarity ?? "").trim(),
       sourceLabel: String(entry?.sourceLabel ?? "").trim(),
       majorItem: Boolean(entry?.majorItem),
-      vouchedByActorIds: Array.isArray(entry?.vouchedByActorIds)
-        ? entry.vouchedByActorIds
-          .map((actorId) => String(actorId ?? "").trim())
-          .filter((actorId, index, arr) => actorId && arr.indexOf(actorId) === index)
-        : []
+      vouchedByActorIds: normalizeLootClaimActorIdList(entry?.vouchedByActorIds)
     }))
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
-  if (!Array.isArray(claims.tableRolls)) claims.tableRolls = [];
-  claims.tableRolls = claims.tableRolls
+}
+
+function normalizeLootClaimTableRolls(values = []) {
+  const source = Array.isArray(values) ? values : [];
+  return source
     .map((entry) => ({
       sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
       sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
@@ -11818,8 +18922,11 @@ function ensureLootClaimsState(ledger) {
       result: String(entry?.result ?? "No result").trim() || "No result"
     }))
     .slice(0, 40);
-  if (!Array.isArray(claims.claimsLog)) claims.claimsLog = [];
-  claims.claimsLog = claims.claimsLog
+}
+
+function normalizeLootClaimLogEntries(values = []) {
+  const source = Array.isArray(values) ? values : [];
+  return source
     .map((entry) => ({
       id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
       itemId: String(entry?.itemId ?? "").trim(),
@@ -11833,6 +18940,133 @@ function ensureLootClaimsState(ledger) {
     .filter((entry) => entry.itemId && entry.actorId)
     .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
     .slice(0, 120);
+}
+
+function normalizeLootClaimBoardRecord(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const base = fallback && typeof fallback === "object" ? fallback : {};
+  const id = normalizeLootClaimRunId(source.id ?? base.id) || foundry.utils.randomID();
+  const publishedAtRaw = Number(source.publishedAt ?? base.publishedAt ?? 0);
+  const publishedAt = Number.isFinite(publishedAtRaw) && publishedAtRaw > 0 ? publishedAtRaw : 0;
+  const archivedAtRaw = Number(source.archivedAt ?? base.archivedAt ?? 0);
+  const archivedAt = Number.isFinite(archivedAtRaw) && archivedAtRaw > 0 ? archivedAtRaw : 0;
+  const statusRaw = String(source.status ?? base.status ?? "").trim().toLowerCase();
+  const status = (statusRaw === "archived" || archivedAt > 0) ? "archived" : "open";
+  const publishedBy = String(source.publishedBy ?? base.publishedBy ?? "").trim();
+  const archivedBy = String(source.archivedBy ?? base.archivedBy ?? "").trim();
+  const currency = normalizeLootClaimCurrencyRecord(source.currency, base.currency);
+  const currencyRemaining = normalizeLootClaimCurrencyRecord(source.currencyRemaining, currency);
+  const currencyClaimedActorIds = normalizeLootClaimActorIdList(source.currencyClaimedActorIds ?? base.currencyClaimedActorIds);
+  const items = normalizeLootClaimItemsList(source.items ?? base.items);
+  const tableRolls = normalizeLootClaimTableRolls(source.tableRolls ?? base.tableRolls);
+  const claimsLog = normalizeLootClaimLogEntries(source.claimsLog ?? base.claimsLog);
+  return {
+    id,
+    status,
+    publishedAt,
+    publishedBy,
+    archivedAt: status === "archived" ? archivedAt : 0,
+    archivedBy: status === "archived" ? archivedBy : "",
+    currency,
+    currencyRemaining,
+    currencyClaimedActorIds,
+    items,
+    tableRolls,
+    claimsLog
+  };
+}
+
+function lootClaimBoardHasData(board = {}) {
+  if (!board || typeof board !== "object") return false;
+  const publishedAt = Math.max(0, Number(board.publishedAt ?? 0) || 0);
+  const itemCount = Array.isArray(board.items) ? board.items.length : 0;
+  const tableRollCount = Array.isArray(board.tableRolls) ? board.tableRolls.length : 0;
+  const claimCount = Array.isArray(board.claimsLog) ? board.claimsLog.length : 0;
+  const currencySource = board.currencyRemaining ?? board.currency ?? {};
+  const hasCurrency = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Math.floor(Number(currencySource?.[denom] ?? 0) || 0)) > 0);
+  return publishedAt > 0 || itemCount > 0 || tableRollCount > 0 || claimCount > 0 || hasCurrency;
+}
+
+function ensureLootClaimsState(ledger) {
+  if (!ledger.lootClaims || typeof ledger.lootClaims !== "object") {
+    ledger.lootClaims = {};
+  }
+  const claims = ledger.lootClaims;
+  if (!Array.isArray(claims.boards)) claims.boards = [];
+
+  if (claims.boards.length === 0) {
+    const legacyBoard = normalizeLootClaimBoardRecord({
+      id: normalizeLootClaimRunId(claims.activeBoardId) || foundry.utils.randomID(),
+      status: "open",
+      publishedAt: claims.publishedAt,
+      publishedBy: claims.publishedBy,
+      currency: claims.currency,
+      currencyRemaining: claims.currencyRemaining,
+      currencyClaimedActorIds: claims.currencyClaimedActorIds,
+      items: claims.items,
+      tableRolls: claims.tableRolls,
+      claimsLog: claims.claimsLog
+    });
+    if (lootClaimBoardHasData(legacyBoard)) claims.boards = [legacyBoard];
+  }
+
+  const seenBoardIds = new Set();
+  claims.boards = claims.boards
+    .map((entry) => normalizeLootClaimBoardRecord(entry))
+    .filter((entry) => {
+      if (!entry.id) return false;
+      if (seenBoardIds.has(entry.id)) return false;
+      seenBoardIds.add(entry.id);
+      return lootClaimBoardHasData(entry);
+    })
+    .sort((left, right) => {
+      const leftRank = left.status === "archived" ? 1 : 0;
+      const rightRank = right.status === "archived" ? 1 : 0;
+      if (leftRank !== rightRank) return leftRank - rightRank;
+      const leftSortTs = left.status === "archived"
+        ? Math.max(Number(left.archivedAt ?? 0), Number(left.publishedAt ?? 0))
+        : Number(left.publishedAt ?? 0);
+      const rightSortTs = right.status === "archived"
+        ? Math.max(Number(right.archivedAt ?? 0), Number(right.publishedAt ?? 0))
+        : Number(right.publishedAt ?? 0);
+      return rightSortTs - leftSortTs;
+    });
+
+  const openBoardIds = new Set(
+    claims.boards
+      .filter((entry) => String(entry?.status ?? "open") !== "archived")
+      .map((entry) => String(entry?.id ?? ""))
+      .filter(Boolean)
+  );
+  const requestedActiveBoardId = normalizeLootClaimRunId(claims.activeBoardId);
+  const activeBoardId = openBoardIds.has(requestedActiveBoardId)
+    ? requestedActiveBoardId
+    : (claims.boards.find((entry) => String(entry?.status ?? "open") !== "archived")?.id ?? "");
+  claims.activeBoardId = normalizeLootClaimRunId(activeBoardId);
+
+  const activeBoard = claims.boards.find((entry) => String(entry?.id ?? "") === claims.activeBoardId)
+    ?? claims.boards[0]
+    ?? null;
+
+  if (activeBoard) {
+    claims.publishedAt = Math.max(0, Number(activeBoard.publishedAt ?? 0) || 0);
+    claims.publishedBy = String(activeBoard.publishedBy ?? "").trim();
+    claims.currency = foundry.utils.deepClone(activeBoard.currency ?? { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 });
+    claims.currencyRemaining = foundry.utils.deepClone(activeBoard.currencyRemaining ?? claims.currency);
+    claims.currencyClaimedActorIds = normalizeLootClaimActorIdList(activeBoard.currencyClaimedActorIds);
+    claims.items = normalizeLootClaimItemsList(activeBoard.items);
+    claims.tableRolls = normalizeLootClaimTableRolls(activeBoard.tableRolls);
+    claims.claimsLog = normalizeLootClaimLogEntries(activeBoard.claimsLog);
+  } else {
+    claims.publishedAt = 0;
+    claims.publishedBy = "";
+    claims.currency = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+    claims.currencyRemaining = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
+    claims.currencyClaimedActorIds = [];
+    claims.items = [];
+    claims.tableRolls = [];
+    claims.claimsLog = [];
+  }
   return claims;
 }
 
@@ -11840,18 +19074,19 @@ function getDowntimeSelectableActorsForUser(user = game.user) {
   if (!user) return [];
   const unique = new Map();
   const addActor = (actor) => {
-    if (!actor || actor.type !== "character" || !actor.hasPlayerOwner || !actor.id) return;
+    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!canUserManageDowntimeActor(user, actor)) return;
     unique.set(String(actor.id), actor);
   };
 
-  if (user.isGM) {
+  if (canAccessAllPlayerOps(user)) {
     for (const actor of getOwnedPcActors()) addActor(actor);
   } else {
-    for (const actor of game.actors.contents) {
-      if (!actor || actor.type !== "character" || !actor.hasPlayerOwner) continue;
-      if (actor.testUserPermission?.(user, "OWNER")) addActor(actor);
+    for (const actor of getOwnedPcActors()) addActor(actor);
+    if (unique.size === 0) {
+      for (const actor of game.actors.contents) addActor(actor);
     }
-    if (user.character && user.character.testUserPermission?.(user, "OWNER")) addActor(user.character);
+    if (user.character && user.character.type === "character") addActor(user.character);
   }
 
   return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
@@ -11859,9 +19094,19 @@ function getDowntimeSelectableActorsForUser(user = game.user) {
 
 function canUserManageDowntimeActor(user, actor) {
   if (!user || !actor) return false;
-  if (user.isGM) return true;
-  if (!actor.hasPlayerOwner || actor.type !== "character") return false;
-  return Boolean(actor.testUserPermission?.(user, "OWNER"));
+  if (canAccessAllPlayerOps(user)) return true;
+  if (actor.type !== "character") return false;
+  try {
+    if (typeof actor.testUserPermission === "function") {
+      return Boolean(
+        actor.testUserPermission(user, "OWNER")
+        || actor.testUserPermission(user, "OBSERVER")
+      );
+    }
+  } catch {
+    // Fall through to conservative rejection.
+  }
+  return false;
 }
 
 function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
@@ -11876,23 +19121,31 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
   const discoveryBonus = discovery === "low" ? 0 : discovery === "high" ? 1 : 0;
 
   let gpAward = 0;
+  let gpCost = 0;
   let rumorCount = 0;
   let itemRewards = [];
+  let itemRewardDrops = [];
   let summary = `${actionDef.label} resolved.`;
   let hint = DOWNTIME_RESOLVE_DEFAULT_HINT;
+  let socialContract = normalizeDowntimeSocialContract({}, actionDef.key);
 
   switch (actionDef.key) {
-    case "carousing":
+    case "carousing": {
+      const socialSpend = Math.max(2, Math.round((5 * blocks) * economyMultiplier));
       rumorCount = Math.max(1, blocks + discoveryBonus);
       gpAward = Math.max(0, Math.floor(blocks * economyMultiplier));
+      gpCost = socialSpend;
       summary = `Carousing established ${rumorCount} rumor/contact lead(s).`;
-      hint = "Carousing defaults to rumors/contacts with optional small coin favors.";
+      hint = "Carousing can establish a social contract connection. Choose the contract type and confirm costs.";
+      socialContract = normalizeDowntimeSocialContract({ key: "potion-broker" }, actionDef.key);
       break;
+    }
     case "crafting":
       itemRewards = ["Crafting materials package"];
+      itemRewardDrops = [];
       gpAward = Math.max(0, Math.floor((2 * blocks) * economyMultiplier));
       summary = "Crafting yielded usable materials or a completed mundane item.";
-      hint = "Crafting defaults to item/material rewards plus optional reimbursement.";
+      hint = "Crafting defaults to item/material rewards plus optional reimbursement. Drag dropped crafting items are granted directly on collect.";
       break;
     case "profession":
       gpAward = Math.max(1, Math.floor((3 * blocks) * economyMultiplier));
@@ -11923,11 +19176,14 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
     actionKey: actionDef.key,
     actionLabel: actionDef.label,
     gpAward: Math.max(0, Math.floor(gpAward)),
+    gpCost: Math.max(0, Math.floor(gpCost)),
     rumorCount: Math.max(0, Math.floor(rumorCount)),
     itemRewards,
+    itemRewardDrops,
     itemRewardsText: itemRewards.join("\n"),
     summary,
     gmNotes: "",
+    socialContract,
     hint
   };
 }
@@ -11935,6 +19191,8 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
 function buildDowntimeContext(downtimeState = {}, options = {}) {
   const user = options.user ?? game.user;
   const isGMUser = Boolean(user?.isGM);
+  const entriesSort = normalizeDowntimeEntriesSort(options?.entriesSort);
+  const logsSort = normalizeDowntimeLogsSort(options?.logsSort);
   const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
   const tuning = downtimeState?.tuning ?? {};
   const economy = String(tuning.economy ?? "standard");
@@ -11957,7 +19215,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const actorEntries = Object.values(downtimeState?.entries ?? {}).map((entry) => {
     const actor = game.actors.get(String(entry?.actorId ?? "").trim());
     const actionDef = getDowntimeActionDefinition(entry?.actionKey);
-    const updatedAtRaw = Number(entry?.updatedAt ?? 0);
+    const updatedAtRawValue = Number(entry?.updatedAt ?? 0);
+    const updatedAtRaw = Number.isFinite(updatedAtRawValue) ? updatedAtRawValue : 0;
     const updatedAtDate = updatedAtRaw > 0 ? new Date(updatedAtRaw) : null;
     const updatedAtLabel = updatedAtDate && Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Not set";
     const result = entry?.lastResult ? normalizeDowntimeResult(entry.lastResult) : null;
@@ -11965,10 +19224,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const stagedAtValue = Number(entry?.stagedAt ?? stagedResult?.resolvedAt ?? 0);
     const stagedAtLabel = stagedAtValue > 0 ? new Date(stagedAtValue).toLocaleString() : "";
     const hasPreResolved = Boolean(stagedResult);
-    const gpDelta = Number(result?.gpDelta ?? 0);
+    const gpAward = Math.max(0, Number(result?.gpAward ?? 0) || 0);
+    const gpCost = Math.max(0, Number(result?.gpCost ?? 0) || 0);
+    const gpDelta = Number(result?.gpDelta ?? (gpAward - gpCost) ?? 0);
     const rumorCount = Math.max(0, Number(result?.rumorCount ?? 0) || 0);
     const itemRewards = Array.isArray(result?.itemRewards) ? result.itemRewards : [];
+    const itemRewardDrops = normalizeDowntimeItemRewardDrops(result?.itemRewardDrops ?? []);
     const gmNotes = String(result?.gmNotes ?? "");
+    const socialContract = normalizeDowntimeSocialContract(result?.socialContract ?? {}, actionDef.key);
     const isCollected = result?.collected === true;
     const collectedAt = Number(result?.collectedAt ?? 0);
     const collectedAtLabel = collectedAt > 0 ? new Date(collectedAt).toLocaleString() : "";
@@ -11977,9 +19240,12 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       && !isCollected
       && canUserManageDowntimeActor(user, actor);
     const rewardParts = [];
-    if (gpDelta > 0) rewardParts.push(`${gpDelta} gp`);
+    if (gpAward > 0) rewardParts.push(`+${gpAward} gp`);
+    if (gpCost > 0) rewardParts.push(`-${gpCost} gp cost`);
     if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
     if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
+    if (itemRewardDrops.length > 0) rewardParts.push(`${itemRewardDrops.length} crafted item drop(s)`);
+    if (socialContract.hasContract) rewardParts.push(`Connection: ${socialContract.label}`);
     if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
     return {
       actorId: String(entry?.actorId ?? "").trim(),
@@ -11994,6 +19260,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       statusLabel: entry?.pending !== false
         ? (isGMUser && hasPreResolved ? "Pre-Resolved (GM Draft)" : "Pending Resolution")
         : "Resolved",
+      updatedAtValue: updatedAtRaw,
       updatedAtLabel,
       updatedBy: String(entry?.updatedBy ?? "Player"),
       canClear: canUserManageDowntimeActor(user, actor),
@@ -12002,7 +19269,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       resultDetails: Array.isArray(result?.details) ? result.details : [],
       hasResultDetails: Array.isArray(result?.details) && result.details.length > 0,
       rollTotal: Number(result?.rollTotal ?? 0),
+      resolvedAtValue: Number.isFinite(Number(result?.resolvedAt ?? 0))
+        ? Number(result?.resolvedAt ?? 0)
+        : 0,
+      gpAward,
+      gpCost,
       gpDelta,
+      gpAwardLabel: `+${Math.floor(gpAward)}`,
+      gpCostLabel: `-${Math.floor(gpCost)}`,
       gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
       progress: Math.max(0, Number(result?.progress ?? 0) || 0),
       hasComplication: String(result?.complication ?? "").trim().length > 0,
@@ -12013,8 +19287,17 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasRumorCount: rumorCount > 0,
       itemRewards,
       hasItemRewards: itemRewards.length > 0,
+      itemRewardDrops,
+      hasItemRewardDrops: itemRewardDrops.length > 0,
       gmNotes,
       hasGmNotes: gmNotes.trim().length > 0,
+      socialContract,
+      hasSocialContract: socialContract.hasContract,
+      socialContractLabel: socialContract.label,
+      socialContractSummary: socialContract.summary,
+      socialContractLimitations: socialContract.limitations,
+      socialContractNotes: socialContract.notes,
+      hasSocialContractNotes: socialContract.notes.length > 0,
       isCollected,
       canCollect,
       hasClaimableRewards: Boolean(result?.hasClaimableRewards),
@@ -12025,11 +19308,31 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       preResolvedAtLabel: isGMUser && hasPreResolved ? stagedAtLabel : "",
       preResolvedBy: isGMUser && hasPreResolved ? String(entry?.stagedBy ?? "GM") : ""
     };
-  }).sort((a, b) => {
-    const pendingA = a.pending ? 0 : 1;
-    const pendingB = b.pending ? 0 : 1;
-    if (pendingA !== pendingB) return pendingA - pendingB;
-    return a.actorName.localeCompare(b.actorName);
+  });
+
+  const compareActorNameAsc = (a, b) => a.actorName.localeCompare(b.actorName);
+  const compareActorNameDesc = (a, b) => b.actorName.localeCompare(a.actorName);
+  const compareUpdatedDesc = (a, b) => {
+    const diff = Number(b.updatedAtValue ?? 0) - Number(a.updatedAtValue ?? 0);
+    if (diff !== 0) return diff;
+    return compareActorNameAsc(a, b);
+  };
+  const compareUpdatedAsc = (a, b) => {
+    const diff = Number(a.updatedAtValue ?? 0) - Number(b.updatedAtValue ?? 0);
+    if (diff !== 0) return diff;
+    return compareActorNameAsc(a, b);
+  };
+  actorEntries.sort((a, b) => {
+    if (entriesSort === "completed") {
+      if (a.pending !== b.pending) return a.pending ? 1 : -1;
+      return compareActorNameAsc(a, b);
+    }
+    if (entriesSort === "actor-asc") return compareActorNameAsc(a, b);
+    if (entriesSort === "actor-desc") return compareActorNameDesc(a, b);
+    if (entriesSort === "updated-desc") return compareUpdatedDesc(a, b);
+    if (entriesSort === "updated-asc") return compareUpdatedAsc(a, b);
+    if (a.pending !== b.pending) return a.pending ? -1 : 1;
+    return compareActorNameAsc(a, b);
   });
 
   const currentEntry = actorEntries.find((entry) => entry.actorId === defaultActorId) ?? null;
@@ -12044,17 +19347,25 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     ? downtimeState.logs
       .map((entry) => {
         const normalized = normalizeDowntimeResult(entry);
-        const gpDelta = Number(normalized.gpDelta ?? 0);
-        const resolvedAtValue = Number(normalized.resolvedAt);
+        const gpAward = Math.max(0, Number(normalized.gpAward ?? 0) || 0);
+        const gpCost = Math.max(0, Number(normalized.gpCost ?? 0) || 0);
+        const gpDelta = Number(normalized.gpDelta ?? (gpAward - gpCost) ?? 0);
+        const resolvedAtRaw = Number(normalized.resolvedAt);
+        const resolvedAtValue = Number.isFinite(resolvedAtRaw) ? resolvedAtRaw : 0;
         const resolvedAtDate = new Date(resolvedAtValue);
         const rumorCount = Math.max(0, Number(normalized.rumorCount ?? 0) || 0);
         const itemRewards = Array.isArray(normalized.itemRewards) ? normalized.itemRewards : [];
+        const itemRewardDrops = normalizeDowntimeItemRewardDrops(normalized.itemRewardDrops ?? []);
         const gmNotes = String(normalized.gmNotes ?? "");
+        const socialContract = normalizeDowntimeSocialContract(normalized.socialContract ?? {}, normalized.actionKey);
         const collectedAt = Number(normalized.collectedAt ?? 0);
         const rewardParts = [];
-        if (gpDelta > 0) rewardParts.push(`${gpDelta} gp`);
+        if (gpAward > 0) rewardParts.push(`+${gpAward} gp`);
+        if (gpCost > 0) rewardParts.push(`-${gpCost} gp cost`);
         if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
         if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
+        if (itemRewardDrops.length > 0) rewardParts.push(`${itemRewardDrops.length} crafted item drop(s)`);
+        if (socialContract.hasContract) rewardParts.push(`Connection: ${socialContract.label}`);
         if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
         return {
           logId: String(normalized.id ?? "").trim() || foundry.utils.randomID(),
@@ -12065,9 +19376,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           summary: normalized.summary,
           details: Array.isArray(normalized.details) ? normalized.details : [],
           hasDetails: Array.isArray(normalized.details) && normalized.details.length > 0,
+          resolvedAtValue,
           resolvedAtLabel: Number.isFinite(resolvedAtDate.getTime()) ? resolvedAtDate.toLocaleString() : "Unknown",
           resolvedBy: normalized.resolvedBy,
+          gpAward,
+          gpCost,
           gpDelta,
+          gpAwardLabel: `+${Math.floor(gpAward)}`,
+          gpCostLabel: `-${Math.floor(gpCost)}`,
           gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
           hasComplication: normalized.complication.length > 0,
           complication: normalized.complication,
@@ -12075,8 +19391,17 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           hasRumorCount: rumorCount > 0,
           itemRewards,
           hasItemRewards: itemRewards.length > 0,
+          itemRewardDrops,
+          hasItemRewardDrops: itemRewardDrops.length > 0,
           gmNotes,
           hasGmNotes: gmNotes.trim().length > 0,
+          socialContract,
+          hasSocialContract: socialContract.hasContract,
+          socialContractLabel: socialContract.label,
+          socialContractSummary: socialContract.summary,
+          socialContractLimitations: socialContract.limitations,
+          socialContractNotes: socialContract.notes,
+          hasSocialContractNotes: socialContract.notes.length > 0,
           isCollected: normalized.collected === true,
           hasClaimableRewards: normalized.hasClaimableRewards === true,
           rewardSummary: rewardParts.length > 0 ? rewardParts.join(" | ") : "No claimable rewards",
@@ -12084,8 +19409,30 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           collectedBy: String(normalized.collectedBy ?? "")
         };
       })
-      .slice(0, 20)
     : [];
+
+  const compareLogResolvedDesc = (a, b) => {
+    const diff = Number(b.resolvedAtValue ?? 0) - Number(a.resolvedAtValue ?? 0);
+    if (diff !== 0) return diff;
+    return a.actorName.localeCompare(b.actorName);
+  };
+  const compareLogResolvedAsc = (a, b) => {
+    const diff = Number(a.resolvedAtValue ?? 0) - Number(b.resolvedAtValue ?? 0);
+    if (diff !== 0) return diff;
+    return a.actorName.localeCompare(b.actorName);
+  };
+  logs.sort((a, b) => {
+    if (logsSort === "resolved-asc") return compareLogResolvedAsc(a, b);
+    if (logsSort === "actor-asc") return a.actorName.localeCompare(b.actorName);
+    if (logsSort === "actor-desc") return b.actorName.localeCompare(a.actorName);
+    if (logsSort === "action-asc") {
+      const actionDiff = a.actionLabel.localeCompare(b.actionLabel);
+      if (actionDiff !== 0) return actionDiff;
+      return compareLogResolvedDesc(a, b);
+    }
+    return compareLogResolvedDesc(a, b);
+  });
+  if (logs.length > 20) logs.length = 20;
 
   const pendingEntries = actorEntries.filter((entry) => entry.pending);
   const pendingOptions = pendingEntries.map((entry, index) => {
@@ -12099,28 +19446,37 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const base = staged
       ? {
           summary: String(staged.summary ?? fallback.summary),
-          gpAward: Math.max(0, Math.floor(Number(staged.gpDelta ?? 0) || 0)),
+          gpAward: Math.max(0, Math.floor(Number(staged.gpAward ?? Math.max(0, Number(staged.gpDelta ?? 0) || 0)) || 0)),
+          gpCost: Math.max(0, Math.floor(Number(staged.gpCost ?? Math.max(0, -(Number(staged.gpDelta ?? 0) || 0))) || 0)),
           rumorCount: Math.max(0, Math.floor(Number(staged.rumorCount ?? 0) || 0)),
           itemRewardsText: Array.isArray(staged.itemRewards) ? staged.itemRewards.join("\n") : "",
+          itemRewardDrops: normalizeDowntimeItemRewardDrops(staged.itemRewardDrops ?? fallback.itemRewardDrops ?? []),
           gmNotes: String(staged.gmNotes ?? ""),
+          socialContract: normalizeDowntimeSocialContract(staged.socialContract ?? fallback.socialContract ?? {}, entry.actionKey),
           hint: `Pre-resolved roll ${Number(staged.rollTotal ?? 0)}. Edit rewards/notes, then Final Resolve to player inbox.`
         }
       : fallback;
     return {
       actorId: entry.actorId,
+      actionKey: String(entry.actionKey ?? ""),
       label: `${entry.actorName} - ${entry.actionLabel} (${entry.hours}h)${staged ? " [Pre-Resolved]" : ""}`,
       selected: index === 0,
       isPreResolved: Boolean(staged),
       preResolvedLabel: staged ? `Pre-resolved ${stagedLabel} by ${stagedBy}.` : "",
       baseSummary: base.summary,
       baseGpAward: base.gpAward,
+      baseGpCost: base.gpCost ?? 0,
       baseRumorCount: base.rumorCount,
       baseItemRewardsText: base.itemRewardsText,
+      baseItemRewardDropsJson: serializeDowntimeItemRewardDrops(base.itemRewardDrops ?? []),
       baseNotes: base.gmNotes,
+      baseSocialContractKey: String(base.socialContract?.key ?? ""),
+      baseSocialContractNotes: String(base.socialContract?.notes ?? ""),
       baseHint: base.hint
     };
   });
   const selectedPending = pendingOptions.find((entry) => entry.selected) ?? null;
+  const selectedPendingItemRewardDrops = parseDowntimeItemRewardDrops(String(selectedPending?.baseItemRewardDropsJson ?? "[]"));
 
   return {
     hoursGranted,
@@ -12147,10 +19503,20 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hours: submitHours,
       note: currentEntry?.note ?? ""
     },
+    entriesSort,
+    entriesSortOptions: DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => ({
+      ...entry,
+      selected: entry.value === entriesSort
+    })),
     entries: actorEntries,
     hasEntries: actorEntries.length > 0,
     pendingCount: actorEntries.filter((entry) => entry.pending).length,
     resolvedCount: actorEntries.filter((entry) => entry.hasResult).length,
+    logsSort,
+    logsSortOptions: DOWNTIME_LOG_SORT_OPTIONS.map((entry) => ({
+      ...entry,
+      selected: entry.value === logsSort
+    })),
     logs,
     logCount: logs.length,
     hasLogs: logs.length > 0,
@@ -12162,9 +19528,16 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       selectedPreResolvedLabel: String(selectedPending?.preResolvedLabel ?? ""),
       summary: String(selectedPending?.baseSummary ?? ""),
       gpAward: Number(selectedPending?.baseGpAward ?? 0),
+      gpCost: Number(selectedPending?.baseGpCost ?? 0),
       rumorCount: Number(selectedPending?.baseRumorCount ?? 0),
       itemRewardsText: String(selectedPending?.baseItemRewardsText ?? ""),
+      itemRewardDrops: selectedPendingItemRewardDrops,
+      hasItemRewardDrops: selectedPendingItemRewardDrops.length > 0,
+      itemRewardDropsJson: String(selectedPending?.baseItemRewardDropsJson ?? "[]"),
       gmNotes: String(selectedPending?.baseNotes ?? ""),
+      socialContractKey: String(selectedPending?.baseSocialContractKey ?? ""),
+      socialContractNotes: String(selectedPending?.baseSocialContractNotes ?? ""),
+      socialContractOptions: buildDowntimeSocialContractOptions(String(selectedPending?.baseSocialContractKey ?? "")),
       hint: String(selectedPending?.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT)
     }
   };
@@ -12628,7 +20001,7 @@ function resolveWeatherFxEffectIdForPreset(preset = {}) {
 }
 
 async function applyWeatherSceneFxForPreset(preset = {}) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const scene = game.scenes?.current;
   if (!scene) return;
   const presetKey = String(preset?.key ?? preset?.weatherId ?? "").trim().toLowerCase();
@@ -12666,6 +20039,7 @@ function ensurePartyHealthState(ledger) {
     ledger.partyHealth = {
       modifierEnabled: {},
       customModifiers: [],
+      stagedModifierQueue: [],
       modifierAddLog: [],
       archivedSyncEffects: [],
       syncToSceneNonParty: true,
@@ -12676,6 +20050,7 @@ function ensurePartyHealthState(ledger) {
     ledger.partyHealth.modifierEnabled = {};
   }
   if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
+  if (!Array.isArray(ledger.partyHealth.stagedModifierQueue)) ledger.partyHealth.stagedModifierQueue = [];
   if (!Array.isArray(ledger.partyHealth.modifierAddLog)) ledger.partyHealth.modifierAddLog = [];
   if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
   ledger.partyHealth.syncToSceneNonParty = ledger.partyHealth.syncToSceneNonParty !== false;
@@ -12695,9 +20070,24 @@ function ensurePartyHealthState(ledger) {
       };
     })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
+  ledger.partyHealth.stagedModifierQueue = ledger.partyHealth.stagedModifierQueue
+    .map((entry) => ({
+      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+      key: String(entry?.key ?? "").trim(),
+      mode: Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
+      value: String(entry?.value ?? "").trim(),
+      note: String(entry?.note ?? ""),
+      createdAt: Number(entry?.createdAt ?? Date.now()) || Date.now(),
+      createdBy: String(entry?.createdBy ?? game.user?.name ?? "GM").trim() || "GM"
+    }))
+    .filter((entry, index, arr) => entry.key && entry.value && entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
+    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
+    .slice(0, 24);
   ledger.partyHealth.modifierAddLog = ledger.partyHealth.modifierAddLog
     .map((entry) => ({
       id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+      customModifierId: String(entry?.customModifierId ?? "").trim(),
       origin: String(entry?.origin ?? "custom").trim() || "custom",
       label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
       key: String(entry?.key ?? "").trim(),
@@ -12737,6 +20127,7 @@ function logAddedPartyHealthModifier(partyHealth, payload = {}) {
   if (!Array.isArray(partyHealth.modifierAddLog)) partyHealth.modifierAddLog = [];
   partyHealth.modifierAddLog.unshift({
     id: foundry.utils.randomID(),
+    customModifierId: String(payload.customModifierId ?? "").trim(),
     origin: String(payload.origin ?? "custom").trim() || "custom",
     label: String(payload.label ?? "Custom Modifier").trim() || "Custom Modifier",
     key: String(payload.key ?? "").trim(),
@@ -12821,7 +20212,7 @@ function ensureSopNotesState(ledger) {
 }
 
 async function setOperationalRole(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can assign operational roles.");
     return;
   }
@@ -12835,7 +20226,7 @@ async function setOperationalRole(element) {
 }
 
 async function clearOperationalRole(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can assign operational roles.");
     return;
   }
@@ -12848,7 +20239,7 @@ async function clearOperationalRole(element) {
 }
 
 async function toggleOperationalSOP(element, options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update SOP status.");
     return;
   }
@@ -12861,7 +20252,7 @@ async function toggleOperationalSOP(element, options = {}) {
 }
 
 async function setOperationalResource(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit resources.");
     return;
   }
@@ -12875,6 +20266,12 @@ async function setOperationalResource(element) {
     "waterMultiplier",
     "torchPerRest"
   ]);
+  const stewardPoolKeys = new Set(STEWARD_POOL_KEYS);
+  const legacyStewardByField = {
+    partyFoodRations: "food",
+    partyWaterRations: "water",
+    torches: "torches"
+  };
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -12912,10 +20309,51 @@ async function setOperationalResource(element) {
       ledger.resources.gather.weatherMods[weatherKey] = value;
       return;
     }
+    if (resourceKey.startsWith("stewardPoolMode:")) {
+      const poolKey = String(resourceKey.split(":")[1] ?? "").trim();
+      if (!stewardPoolKeys.has(poolKey)) return;
+      const pool = getStewardPoolEntry(ledger.resources, poolKey);
+      pool.mode = normalizeStewardPoolMode(element?.value);
+      ledger.resources.stewardPools[poolKey] = pool;
+      ensureStewardPoolsState(ledger.resources);
+      return;
+    }
+    if (resourceKey.startsWith("stewardPoolAmount:")) {
+      const poolKey = String(resourceKey.split(":")[1] ?? "").trim();
+      if (!stewardPoolKeys.has(poolKey)) return;
+      const raw = Number(element?.value ?? 0);
+      const amount = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+      const pool = getStewardPoolEntry(ledger.resources, poolKey);
+      pool.amount = amount;
+      if (pool.mode === STEWARD_POOL_MODES.NONE && amount > 0) pool.mode = STEWARD_POOL_MODES.FINITE;
+      ledger.resources.stewardPools[poolKey] = pool;
+      ensureStewardPoolsState(ledger.resources);
+      return;
+    }
+    if (resourceKey.startsWith("stewardPoolSource:")) {
+      const poolKey = String(resourceKey.split(":")[1] ?? "").trim();
+      if (!stewardPoolKeys.has(poolKey)) return;
+      const pool = getStewardPoolEntry(ledger.resources, poolKey);
+      pool.source = String(element?.value ?? "").trim().slice(0, 180);
+      ledger.resources.stewardPools[poolKey] = pool;
+      ensureStewardPoolsState(ledger.resources);
+      return;
+    }
     if (upkeepNumericKeys.has(resourceKey)) {
       const raw = Number(element?.value ?? 0);
       const value = Number.isFinite(raw) ? Math.max(0, raw) : 0;
       ledger.resources.upkeep[resourceKey] = value;
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(legacyStewardByField, resourceKey)) {
+      const raw = Number(element?.value ?? 0);
+      const amount = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+      const poolKey = legacyStewardByField[resourceKey];
+      const pool = getStewardPoolEntry(ledger.resources, poolKey);
+      pool.amount = amount;
+      pool.mode = amount > 0 ? STEWARD_POOL_MODES.FINITE : STEWARD_POOL_MODES.NONE;
+      ledger.resources.stewardPools[poolKey] = pool;
+      ensureStewardPoolsState(ledger.resources);
       return;
     }
     const value = Number(element?.value ?? 0);
@@ -12993,7 +20431,7 @@ async function submitDowntimeAction(element) {
     return;
   }
 
-  if (game.user.isGM) {
+  if (canAccessAllPlayerOps()) {
     const applied = await applyDowntimeSubmissionForUser(game.user, submission);
     if (!applied) ui.notifications?.warn("Downtime submission failed.");
     else ui.notifications?.info("Downtime action submitted.");
@@ -13002,7 +20440,7 @@ async function submitDowntimeAction(element) {
 
   const actor = game.actors.get(submission.actorId);
   if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
-    ui.notifications?.warn("You can only submit downtime for actors you own.");
+    ui.notifications?.warn("You can only submit downtime for party characters you can access.");
     return;
   }
 
@@ -13023,7 +20461,7 @@ async function clearDowntimeEntry(element) {
     return;
   }
 
-  if (game.user.isGM) {
+  if (canAccessAllPlayerOps()) {
     await updateOperationsLedger((ledger) => {
       const downtime = ensureDowntimeState(ledger);
       if (!downtime.entries) return;
@@ -13034,7 +20472,7 @@ async function clearDowntimeEntry(element) {
   }
 
   if (!canUserManageDowntimeActor(game.user, actor)) {
-    ui.notifications?.warn("You can only clear downtime entries for actors you own.");
+    ui.notifications?.warn("You can only clear downtime entries for party characters you can access.");
     return;
   }
   game.socket.emit(SOCKET_CHANNEL, {
@@ -13046,7 +20484,7 @@ async function clearDowntimeEntry(element) {
 }
 
 async function setDowntimeHoursGranted(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can set downtime hours.");
     return;
   }
@@ -13059,7 +20497,7 @@ async function setDowntimeHoursGranted(element) {
 }
 
 async function setDowntimeTuningField(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit downtime tuning.");
     return;
   }
@@ -13091,7 +20529,125 @@ function parseDowntimeItemRewardsText(value) {
     .split(/\r?\n|,/)
     .map((entry) => String(entry ?? "").trim())
     .filter(Boolean)
-    .slice(0, 10);
+    .slice(0, DOWNTIME_ITEM_REWARD_DROP_LIMIT);
+}
+
+async function addDowntimeResolverItemRewardFromDropEvent(event) {
+  if (!canAccessAllPlayerOps()) return false;
+  let data = null;
+  try {
+    data = TextEditor.getDragEventData(event);
+  } catch {
+    data = null;
+  }
+  if (!data || typeof data !== "object") return false;
+  const document = await resolveLootItemDocumentFromDropData(data);
+  if (!document) {
+    ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
+    return false;
+  }
+  const dropZone = event?.target?.closest?.("[data-downtime-item-dropzone]");
+  const resolverRoot = dropZone?.closest?.(".po-downtime-resolver");
+  const rewardsField = resolverRoot?.querySelector?.("textarea[name='resolveDowntimeItems']");
+  if (!rewardsField) return false;
+
+  const currentRewards = parseDowntimeItemRewardsText(rewardsField.value);
+  const itemName = String(document?.name ?? "Item").trim() || "Item";
+  if (currentRewards.length >= DOWNTIME_ITEM_REWARD_DROP_LIMIT) {
+    ui.notifications?.warn(`Item rewards can include up to ${DOWNTIME_ITEM_REWARD_DROP_LIMIT} entries.`);
+    return false;
+  }
+  currentRewards.push(itemName);
+  rewardsField.value = currentRewards.join("\n");
+  rewardsField.dispatchEvent(new Event("input", { bubbles: true }));
+  ui.notifications?.info(`Added item reward: ${itemName}`);
+  return true;
+}
+
+function getDowntimeResolverItemDropsFromUi(root) {
+  const field = root?.querySelector("input[name='resolveDowntimeItemDrops']");
+  return parseDowntimeItemRewardDrops(field?.value ?? "[]");
+}
+
+function setDowntimeResolverItemDropsInUi(root, drops = []) {
+  const field = root?.querySelector("input[name='resolveDowntimeItemDrops']");
+  if (!field) return;
+  field.value = serializeDowntimeItemRewardDrops(drops);
+}
+
+function renderDowntimeResolverItemDropList(root) {
+  const list = root?.querySelector("[data-downtime-item-drop-list]");
+  if (!list) return;
+  const drops = getDowntimeResolverItemDropsFromUi(root);
+  if (!drops.length) {
+    list.innerHTML = "<div class='po-op-summary'>No direct item grants queued.</div>";
+    return;
+  }
+  list.innerHTML = drops.map((entry) => `
+    <div class="po-op-role-row">
+      <div class="po-op-role-head">
+        <div class="po-op-role-name"><img src="${poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"))}" width="18" height="18" /> ${poEscapeHtml(String(entry.name ?? "Item"))}</div>
+        <div class="po-op-role-status">x${Math.max(1, Math.floor(Number(entry.quantity ?? 1) || 1))}</div>
+      </div>
+      <div class="po-op-summary">${poEscapeHtml(String(entry.uuid ?? "").trim() || "World Item / Snapshot")}</div>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-item-drop" data-drop-id="${poEscapeHtml(String(entry.id ?? ""))}">Remove</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function removeDowntimeResolverItemDropFromUi(element) {
+  const root = getDowntimeResolverRoot(element);
+  if (!root) return false;
+  const dropId = String(element?.dataset?.dropId ?? "").trim();
+  if (!dropId) return false;
+  const current = getDowntimeResolverItemDropsFromUi(root);
+  const next = current.filter((entry) => String(entry?.id ?? "").trim() !== dropId);
+  if (next.length === current.length) return false;
+  setDowntimeResolverItemDropsInUi(root, next);
+  renderDowntimeResolverItemDropList(root);
+  return true;
+}
+
+async function addDowntimeResolverCraftingItemDropFromDropEvent(event) {
+  if (!canAccessAllPlayerOps()) return false;
+  const dropZone = event?.target?.closest?.("[data-downtime-crafting-item-dropzone]");
+  const resolverRoot = dropZone?.closest?.(".po-downtime-resolver");
+  if (!resolverRoot) return false;
+
+  const { selectedOption } = readDowntimeResolverSelection(resolverRoot);
+  const actionKey = String(selectedOption?.dataset?.actionKey ?? "").trim().toLowerCase();
+  if (actionKey !== "crafting") {
+    ui.notifications?.warn("Direct item drops are only applied for Crafting entries.");
+    return false;
+  }
+
+  let data = null;
+  try {
+    data = TextEditor.getDragEventData(event);
+  } catch {
+    data = null;
+  }
+  if (!data || typeof data !== "object") return false;
+  const document = await resolveLootItemDocumentFromDropData(data);
+  if (!document) {
+    ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
+    return false;
+  }
+
+  const nextDrop = buildDowntimeItemRewardDropFromDocument(document);
+  if (!nextDrop) return false;
+  const current = getDowntimeResolverItemDropsFromUi(resolverRoot);
+  if (current.length >= DOWNTIME_ITEM_REWARD_DROP_LIMIT) {
+    ui.notifications?.warn(`Direct item drops are limited to ${DOWNTIME_ITEM_REWARD_DROP_LIMIT}.`);
+    return false;
+  }
+  current.push(nextDrop);
+  setDowntimeResolverItemDropsInUi(resolverRoot, current);
+  renderDowntimeResolverItemDropList(resolverRoot);
+  ui.notifications?.info(`Queued crafted item grant: ${nextDrop.name}`);
+  return true;
 }
 
 function getDowntimeResolverRoot(element) {
@@ -13109,7 +20665,7 @@ function readDowntimeResolverSelection(root) {
 }
 
 function applyDowntimeResolverBaseToUi(element, options = {}) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const root = getDowntimeResolverRoot(element);
   if (!root) return;
   const { selectedOption } = readDowntimeResolverSelection(root);
@@ -13118,17 +20674,26 @@ function applyDowntimeResolverBaseToUi(element, options = {}) {
 
   const summaryInput = root.querySelector("input[name='resolveDowntimeSummary']");
   const gpInput = root.querySelector("input[name='resolveDowntimeGp']");
+  const gpCostInput = root.querySelector("input[name='resolveDowntimeCost']");
   const rumorInput = root.querySelector("input[name='resolveDowntimeRumors']");
   const itemTextarea = root.querySelector("textarea[name='resolveDowntimeItems']");
+  const itemDropsInput = root.querySelector("input[name='resolveDowntimeItemDrops']");
   const notesTextarea = root.querySelector("textarea[name='resolveDowntimeNotes']");
+  const contractSelect = root.querySelector("select[name='resolveDowntimeContractKey']");
+  const contractNotesTextarea = root.querySelector("textarea[name='resolveDowntimeContractNotes']");
   const hintNode = root.querySelector("[data-downtime-resolve-hint]");
 
   if (summaryInput && (force || !String(summaryInput.value ?? "").trim())) summaryInput.value = String(selectedOption.dataset.baseSummary ?? "");
   if (gpInput && (force || !String(gpInput.value ?? "").trim())) gpInput.value = String(selectedOption.dataset.baseGp ?? "0");
+  if (gpCostInput && (force || !String(gpCostInput.value ?? "").trim())) gpCostInput.value = String(selectedOption.dataset.baseCost ?? "0");
   if (rumorInput && (force || !String(rumorInput.value ?? "").trim())) rumorInput.value = String(selectedOption.dataset.baseRumors ?? "0");
   if (itemTextarea && (force || !String(itemTextarea.value ?? "").trim())) itemTextarea.value = String(selectedOption.dataset.baseItems ?? "");
+  if (itemDropsInput && (force || !String(itemDropsInput.value ?? "").trim())) itemDropsInput.value = String(selectedOption.dataset.baseItemDrops ?? "[]");
   if (notesTextarea && (force || !String(notesTextarea.value ?? "").trim())) notesTextarea.value = String(selectedOption.dataset.baseNotes ?? "");
+  if (contractSelect && (force || !String(contractSelect.value ?? "").trim())) contractSelect.value = String(selectedOption.dataset.baseContractKey ?? "");
+  if (contractNotesTextarea && (force || !String(contractNotesTextarea.value ?? "").trim())) contractNotesTextarea.value = String(selectedOption.dataset.baseContractNotes ?? "");
   if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT);
+  renderDowntimeResolverItemDropList(root);
 }
 
 function readDowntimeResolutionFromUi(element) {
@@ -13137,16 +20702,29 @@ function readDowntimeResolutionFromUi(element) {
   const { actorId } = readDowntimeResolverSelection(root);
   const summary = String(root.querySelector("input[name='resolveDowntimeSummary']")?.value ?? "").trim();
   const gpAwardRaw = Number(root.querySelector("input[name='resolveDowntimeGp']")?.value ?? 0);
+  const gpCostRaw = Number(root.querySelector("input[name='resolveDowntimeCost']")?.value ?? 0);
   const rumorRaw = Number(root.querySelector("input[name='resolveDowntimeRumors']")?.value ?? 0);
   const itemRewards = parseDowntimeItemRewardsText(root.querySelector("textarea[name='resolveDowntimeItems']")?.value ?? "");
+  const itemRewardDrops = parseDowntimeItemRewardDrops(root.querySelector("input[name='resolveDowntimeItemDrops']")?.value ?? "[]");
   const gmNotes = String(root.querySelector("textarea[name='resolveDowntimeNotes']")?.value ?? "").trim();
+  const contractKey = String(root.querySelector("select[name='resolveDowntimeContractKey']")?.value ?? "").trim();
+  const contractNotes = String(root.querySelector("textarea[name='resolveDowntimeContractNotes']")?.value ?? "").trim();
+  const selectedOption = root.querySelector("select[name='resolveDowntimeActorId']")?.selectedOptions?.[0];
+  const actionKey = String(selectedOption?.dataset?.actionKey ?? "").trim();
+  const normalizedItemRewardDrops = actionKey.toLowerCase() === "crafting" ? itemRewardDrops : [];
   return {
     actorId,
     summary,
     gpAward: Number.isFinite(gpAwardRaw) ? Math.max(0, Math.floor(gpAwardRaw)) : 0,
+    gpCost: Number.isFinite(gpCostRaw) ? Math.max(0, Math.floor(gpCostRaw)) : 0,
     rumorCount: Number.isFinite(rumorRaw) ? Math.max(0, Math.floor(rumorRaw)) : 0,
     itemRewards,
-    gmNotes
+    itemRewardDrops: normalizedItemRewardDrops,
+    gmNotes,
+    socialContract: normalizeDowntimeSocialContract({
+      key: contractKey,
+      notes: contractNotes
+    }, actionKey)
   };
 }
 
@@ -13163,8 +20741,13 @@ function getDowntimeEntryResolvedHours(entry = {}, hoursGranted = 4) {
 function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {}) {
   const suggestedGp = Math.max(
     0,
-    Math.floor(Number(rolledResult?.gpDelta ?? 0) || 0),
+    Math.floor(Number(rolledResult?.gpAward ?? Math.max(0, Number(rolledResult?.gpDelta ?? 0) || 0)) || 0),
     Math.floor(Number(fallbackBase?.gpAward ?? 0) || 0)
+  );
+  const suggestedCost = Math.max(
+    0,
+    Math.floor(Number(rolledResult?.gpCost ?? Math.max(0, -(Number(rolledResult?.gpDelta ?? 0) || 0))) || 0),
+    Math.floor(Number(fallbackBase?.gpCost ?? 0) || 0)
   );
   const suggestedRumors = Math.max(
     0,
@@ -13174,10 +20757,17 @@ function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {
   return normalizeDowntimeResult({
     ...rolledResult,
     summary: String(rolledResult?.summary ?? fallbackBase.summary ?? "").trim() || String(fallbackBase.summary ?? ""),
-    gpDelta: suggestedGp,
+    gpAward: suggestedGp,
+    gpCost: suggestedCost,
+    gpDelta: suggestedGp - suggestedCost,
     rumorCount: suggestedRumors,
     itemRewards: Array.isArray(fallbackBase?.itemRewards) ? fallbackBase.itemRewards : [],
-    gmNotes: ""
+    itemRewardDrops: normalizeDowntimeItemRewardDrops(rolledResult?.itemRewardDrops ?? fallbackBase?.itemRewardDrops ?? []),
+    gmNotes: "",
+    socialContract: normalizeDowntimeSocialContract(
+      rolledResult?.socialContract ?? fallbackBase?.socialContract ?? {},
+      rolledResult?.actionKey ?? fallbackBase?.actionKey ?? ""
+    )
   });
 }
 
@@ -13224,17 +20814,29 @@ function applyResolvedDowntimeToState(state, {
 function buildDowntimeResolutionDetails({
   stagedResult = null,
   gpAward = 0,
+  gpCost = 0,
   rumorCount = 0,
   itemRewards = [],
-  gmNotes = ""
+  itemRewardDrops = [],
+  gmNotes = "",
+  socialContract = null
 } = {}) {
   const details = [];
   if (Array.isArray(stagedResult?.details) && stagedResult.details.length > 0) {
     details.push(...stagedResult.details);
   }
   if (gpAward > 0) details.push(`Awarded ${gpAward} gp.`);
+  if (gpCost > 0) details.push(`Spent ${gpCost} gp on social costs and obligations.`);
+  if (gpAward > 0 || gpCost > 0) details.push(`Net coin: ${(gpAward - gpCost) >= 0 ? "+" : ""}${gpAward - gpCost} gp.`);
   if (rumorCount > 0) details.push(`Rumor leads awarded: ${rumorCount}.`);
   if (itemRewards.length > 0) details.push(`Item rewards: ${itemRewards.join("; ")}.`);
+  if (itemRewardDrops.length > 0) details.push(`Crafted item grants: ${itemRewardDrops.map((entry) => String(entry?.name ?? "Item")).join("; ")}.`);
+  if (socialContract?.hasContract) {
+    details.push(`Social contract established: ${socialContract.label}.`);
+    if (socialContract.summary) details.push(`Connection scope: ${socialContract.summary}`);
+    if (socialContract.limitations) details.push(`Connection limitations: ${socialContract.limitations}`);
+    if (socialContract.notes) details.push(`Connection notes: ${socialContract.notes}`);
+  }
   if (gmNotes) details.push(`GM Notes: ${gmNotes}`);
   return details;
 }
@@ -13260,7 +20862,7 @@ function getPendingDowntimeResolutionTarget(element) {
 }
 
 async function preResolveSelectedDowntimeEntry(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn(DOWNTIME_GM_ONLY_PRERESOLVE_WARNING);
     return;
   }
@@ -13286,7 +20888,7 @@ async function preResolveSelectedDowntimeEntry(element) {
 }
 
 async function resolveSelectedDowntimeEntry(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn(DOWNTIME_GM_ONLY_RESOLVE_WARNING);
     return;
   }
@@ -13300,9 +20902,12 @@ async function resolveSelectedDowntimeEntry(element) {
   const details = buildDowntimeResolutionDetails({
     stagedResult,
     gpAward: resolution.gpAward,
+    gpCost: resolution.gpCost,
     rumorCount: resolution.rumorCount,
     itemRewards: resolution.itemRewards,
-    gmNotes: resolution.gmNotes
+    itemRewardDrops: resolution.itemRewardDrops,
+    gmNotes: resolution.gmNotes,
+    socialContract: resolution.socialContract
   });
 
   const summary = resolution.summary
@@ -13315,12 +20920,16 @@ async function resolveSelectedDowntimeEntry(element) {
     summary,
     details,
     rollTotal: Number(stagedResult?.rollTotal ?? 0) || 0,
-    gpDelta: resolution.gpAward,
+    gpAward: resolution.gpAward,
+    gpCost: resolution.gpCost,
+    gpDelta: resolution.gpAward - resolution.gpCost,
     progress: Math.max(0, Math.floor(Number(stagedResult?.progress ?? 0) || 0)),
     complication: String(stagedResult?.complication ?? "").trim(),
     rumorCount: resolution.rumorCount,
     itemRewards: resolution.itemRewards,
+    itemRewardDrops: resolution.itemRewardDrops,
     gmNotes: resolution.gmNotes,
+    socialContract: resolution.socialContract,
     collected: false,
     resolvedAt: Date.now(),
     resolvedBy: String(game.user?.name ?? "GM")
@@ -13340,31 +20949,229 @@ async function resolveSelectedDowntimeEntry(element) {
   ui.notifications?.info(`Resolved downtime for ${actorName}.`);
 }
 
-function getActorCurrentGp(actor) {
-  if (!actor) return 0;
-  const gpNode = actor.system?.currency?.gp;
-  const raw = typeof gpNode === "object" ? Number(gpNode?.value) : Number(gpNode);
-  return Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+async function editDowntimeResult(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can edit downtime results.");
+    return;
+  }
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  if (!actorId) {
+    ui.notifications?.warn("Select an actor with a resolved downtime result.");
+    return;
+  }
+
+  const actorName = getDowntimeActorName(actorId);
+  let edited = false;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    const entry = downtime.entries?.[actorId];
+    if (!entry || entry.pending !== false || !entry.lastResult) return;
+    const stagedResult = normalizeDowntimeResult(entry.lastResult);
+    const stagedId = String(stagedResult?.id ?? "").trim();
+    const stagedResolvedAt = Number(stagedResult?.resolvedAt ?? 0);
+
+    entry.pending = true;
+    entry.lastResult = null;
+    entry.stagedResult = stagedResult;
+    entry.stagedAt = Date.now();
+    entry.stagedBy = String(game.user?.name ?? "GM");
+    entry.updatedAt = Date.now();
+    entry.updatedBy = String(game.user?.name ?? "GM");
+    entry.updatedByUserId = String(game.user?.id ?? "");
+
+    if (Array.isArray(downtime.logs)) {
+      downtime.logs = downtime.logs.filter((log) => {
+        if (String(log?.actorId ?? "").trim() !== actorId) return true;
+        const logId = String(log?.id ?? "").trim();
+        const logResolvedAt = Number(log?.resolvedAt ?? 0);
+        if (stagedId && logId === stagedId) return false;
+        if (Number.isFinite(stagedResolvedAt) && stagedResolvedAt > 0 && logResolvedAt === stagedResolvedAt) return false;
+        return true;
+      });
+    }
+    edited = true;
+  });
+
+  if (!edited) {
+    ui.notifications?.warn(`No resolved downtime result found for ${actorName}.`);
+    return;
+  }
+  ui.notifications?.info(`Moved ${actorName} back to pending for editing.`);
 }
 
-async function awardGpToActor(actor, amount) {
-  const gp = Number(amount ?? 0);
-  if (!actor || !Number.isFinite(gp) || gp <= 0) return 0;
-  const gain = Math.max(0, Math.floor(gp));
-  if (gain <= 0) return 0;
-  const next = getActorCurrentGp(actor) + gain;
+function getActorCurrentGp(actor) {
+  return getActorCurrentCurrencyValue(actor, "gp");
+}
+
+async function setActorCurrentGp(actor, amount) {
+  if (!actor) return 0;
+  const next = Math.max(0, Math.floor(Number(amount ?? 0) || 0));
   if (typeof actor.system?.currency?.gp === "object") {
     await actor.update({ "system.currency.gp.value": next });
   } else {
     await actor.update({ "system.currency.gp": next });
   }
-  return gain;
+  return next;
+}
+
+function buildDowntimeSocialContractFeatureName(contract = {}) {
+  const label = String(contract?.label ?? "").trim();
+  return label ? `Connection: ${label}` : "Connection";
+}
+
+function buildDowntimeSocialContractFeatureDescription(contract = {}, result = {}) {
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const scope = String(contract?.summary ?? "").trim();
+  const limitations = String(contract?.limitations ?? "").trim();
+  const notes = String(contract?.notes ?? "").trim();
+  const sourceAction = String(result?.actionLabel ?? "").trim();
+  const sourceSummary = String(result?.summary ?? "").trim();
+  const sourceBits = [sourceAction, sourceSummary].filter(Boolean).join(" - ");
+  const lines = ["<p><strong>Downtime Connection</strong></p>"];
+  if (scope) lines.push(`<p><strong>Scope:</strong> ${escape(scope)}</p>`);
+  if (limitations) lines.push(`<p><strong>Limitations:</strong> ${escape(limitations)}</p>`);
+  if (notes) lines.push(`<p><strong>Notes:</strong> ${escape(notes)}</p>`);
+  if (sourceBits) lines.push(`<p><em>Source:</em> ${escape(sourceBits)}</p>`);
+  return lines.join("");
+}
+
+function getDowntimeConnectionFeatureByResult(actor, resultId = "") {
+  const id = String(resultId ?? "").trim();
+  if (!actor || !id) return null;
+  const items = actor.items?.contents ?? actor.items ?? [];
+  return items.find((item) => {
+    const connection = item?.flags?.[MODULE_ID]?.downtimeConnection;
+    return String(connection?.resultId ?? "").trim() === id;
+  }) ?? null;
+}
+
+function buildDowntimeSocialContractFeatureData(contract = {}, result = {}, options = {}) {
+  const collectedAt = Number(options.collectedAt ?? Date.now());
+  const description = buildDowntimeSocialContractFeatureDescription(contract, result);
+  const resultId = String(result?.id ?? "").trim();
+  const actionKey = String(result?.actionKey ?? "").trim().toLowerCase();
+  return {
+    name: buildDowntimeSocialContractFeatureName(contract),
+    type: "feat",
+    system: {
+      description: {
+        value: description
+      }
+    },
+    flags: {
+      [MODULE_ID]: {
+        downtimeConnection: {
+          resultId,
+          actionKey,
+          contractKey: String(contract?.key ?? "").trim().toLowerCase(),
+          contractLabel: String(contract?.label ?? "").trim(),
+          contractSummary: String(contract?.summary ?? "").trim(),
+          contractLimitations: String(contract?.limitations ?? "").trim(),
+          contractNotes: String(contract?.notes ?? "").trim(),
+          collectedAt
+        }
+      }
+    }
+  };
+}
+
+async function createDowntimeSocialContractFeature(actor, result = {}, options = {}) {
+  const normalizedResult = normalizeDowntimeResult(result);
+  const contract = normalizeDowntimeSocialContract(normalizedResult.socialContract ?? {}, normalizedResult.actionKey);
+  if (!actor || !contract.hasContract) {
+    return { ok: true, created: false, item: null, contract };
+  }
+
+  const existingByResult = getDowntimeConnectionFeatureByResult(actor, normalizedResult.id);
+  if (existingByResult) {
+    return { ok: true, created: false, item: existingByResult, contract };
+  }
+
+  const hintedItemId = String(contract.featureItemId ?? "").trim();
+  if (hintedItemId) {
+    const existingById = actor.items?.get?.(hintedItemId) ?? null;
+    if (existingById) {
+      return { ok: true, created: false, item: existingById, contract };
+    }
+  }
+
+  const itemData = buildDowntimeSocialContractFeatureData(contract, normalizedResult, options);
+  try {
+    const created = await actor.createEmbeddedDocuments("Item", [itemData]);
+    const item = Array.isArray(created) ? (created[0] ?? null) : null;
+    if (!item) return { ok: false, created: false, item: null, contract, message: "No feature was created for the social contract." };
+    return { ok: true, created: true, item, contract };
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to create downtime social contract feature`, error);
+    return { ok: false, created: false, item: null, contract, message: "Failed to add social contract feature to actor." };
+  }
+}
+
+function applyItemRewardDropQuantity(itemData = {}, quantity = 1) {
+  const qty = Math.max(1, Math.floor(Number(quantity ?? 1) || 1));
+  if (qty <= 1) return itemData;
+  const next = foundry.utils.deepClone(itemData ?? {});
+  if (!next.system || typeof next.system !== "object") next.system = {};
+  if (next.system.quantity !== undefined && next.system.quantity !== null) {
+    if (typeof next.system.quantity === "object") next.system.quantity.value = qty;
+    else next.system.quantity = qty;
+  } else {
+    next.system.quantity = qty;
+  }
+  return next;
+}
+
+async function buildDowntimeItemRewardDropDocumentData(drop = {}) {
+  const normalized = normalizeDowntimeItemRewardDrop(drop);
+  let itemData = null;
+  const uuid = String(normalized.uuid ?? "").trim();
+  if (uuid) {
+    const source = await resolveUuidDocument(uuid);
+    if (source?.documentName === "Item" && typeof source.toObject === "function") {
+      itemData = source.toObject();
+    }
+  }
+  if (!itemData || typeof itemData !== "object") {
+    itemData = {
+      name: normalized.name,
+      type: normalized.itemType || "loot",
+      img: normalized.img || "icons/svg/item-bag.svg"
+    };
+  }
+  if (Object.prototype.hasOwnProperty.call(itemData, "_id")) delete itemData._id;
+  if (!itemData.name) itemData.name = normalized.name || "Crafted Item";
+  if (!itemData.type) itemData.type = normalized.itemType || "loot";
+  if (!itemData.img) itemData.img = normalized.img || "icons/svg/item-bag.svg";
+  return applyItemRewardDropQuantity(itemData, normalized.quantity);
+}
+
+async function awardDowntimeItemRewardDropsToActor(actor, drops = []) {
+  const normalizedDrops = normalizeDowntimeItemRewardDrops(drops);
+  if (!actor || normalizedDrops.length === 0) {
+    return { ok: true, createdItems: [], itemNames: [] };
+  }
+  const itemDataBatch = [];
+  for (const drop of normalizedDrops) {
+    const itemData = await buildDowntimeItemRewardDropDocumentData(drop);
+    if (!itemData || typeof itemData !== "object") {
+      return { ok: false, createdItems: [], itemNames: [], message: `Failed to build dropped item reward: ${String(drop?.name ?? "Item")}.` };
+    }
+    itemDataBatch.push(itemData);
+  }
+  try {
+    const createdItems = await actor.createEmbeddedDocuments("Item", itemDataBatch);
+    const itemNames = createdItems.map((entry) => String(entry?.name ?? "Item"));
+    return { ok: true, createdItems, itemNames };
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to grant downtime dropped item rewards`, error);
+    return { ok: false, createdItems: [], itemNames: [], message: "Failed to add crafted item rewards to actor inventory." };
+  }
 }
 
 async function applyDowntimeCollectionForUser(user, actorId) {
   const actor = game.actors.get(String(actorId ?? "").trim());
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own this actor." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access this actor." };
 
   const ledger = getOperationsLedger();
   const downtime = ensureDowntimeState(ledger);
@@ -13375,63 +21182,170 @@ async function applyDowntimeCollectionForUser(user, actorId) {
   if (!result.hasClaimableRewards) return { ok: false, message: "No claimable rewards are attached to this result." };
   if (result.collected) return { ok: false, message: "This downtime reward was already collected." };
 
-  let gpApplied = 0;
-  const gpToAward = Math.max(0, Math.floor(Number(result.gpDelta ?? 0) || 0));
-  if (gpToAward > 0) {
-    try {
-      gpApplied = await awardGpToActor(actor, gpToAward);
-    } catch (error) {
-      console.warn(`${MODULE_ID}: failed to apply downtime GP reward`, error);
-      return { ok: false, message: "Failed to apply GP to actor currency." };
-    }
+  const gpAward = Math.max(0, Math.floor(Number(result.gpAward ?? Math.max(0, Number(result.gpDelta ?? 0) || 0)) || 0));
+  const gpCost = Math.max(0, Math.floor(Number(result.gpCost ?? Math.max(0, -(Number(result.gpDelta ?? 0) || 0))) || 0));
+  const itemRewardDrops = normalizeDowntimeItemRewardDrops(result.itemRewardDrops ?? []);
+  const gpBefore = getActorCurrentGp(actor);
+  if (gpCost > gpBefore) {
+    return {
+      ok: false,
+      message: `${actor.name} needs ${gpCost} gp to collect this result, but only has ${gpBefore} gp.`
+    };
   }
 
+  const socialContract = normalizeDowntimeSocialContract(result.socialContract ?? {}, result.actionKey);
   const now = Date.now();
   const collectorName = String(user?.name ?? "Player");
+  const gpAfter = Math.max(0, gpBefore - gpCost + gpAward);
+  let gpUpdated = false;
+  let featureOutcome = { ok: true, created: false, item: null, contract: socialContract };
+  let itemDropOutcome = { ok: true, createdItems: [], itemNames: [] };
+
+  try {
+    if (gpAfter !== gpBefore) {
+      await setActorCurrentGp(actor, gpAfter);
+      gpUpdated = true;
+    }
+    featureOutcome = socialContract.hasContract
+      ? await createDowntimeSocialContractFeature(actor, result, { collectedAt: now })
+      : { ok: true, created: false, item: null, contract: socialContract };
+    if (!featureOutcome.ok) {
+      throw new Error(featureOutcome.message ?? "Failed to create social contract feature.");
+    }
+    itemDropOutcome = await awardDowntimeItemRewardDropsToActor(actor, itemRewardDrops);
+    if (!itemDropOutcome.ok) {
+      throw new Error(itemDropOutcome.message ?? "Failed to add crafted item rewards to actor inventory.");
+    }
+  } catch (error) {
+    const failureMessage = String(error?.message ?? "Failed to collect downtime result.");
+    if (itemDropOutcome.createdItems.length > 0) {
+      try {
+        for (const item of itemDropOutcome.createdItems) {
+          await item.delete();
+        }
+      } catch (rollbackError) {
+        console.warn(`${MODULE_ID}: failed to rollback downtime crafted item rewards`, rollbackError);
+      }
+    }
+    if (featureOutcome.created && featureOutcome.item) {
+      try {
+        await featureOutcome.item.delete();
+      } catch (rollbackError) {
+        console.warn(`${MODULE_ID}: failed to rollback downtime social contract feature`, rollbackError);
+      }
+    }
+    if (gpUpdated) {
+      try {
+        await setActorCurrentGp(actor, gpBefore);
+      } catch (rollbackError) {
+        console.warn(`${MODULE_ID}: failed to rollback downtime GP transaction`, rollbackError);
+      }
+    }
+    return { ok: false, message: failureMessage };
+  }
+
+  const connectionFeatureId = String(featureOutcome.item?.id ?? "").trim();
+  const connectionFeatureName = String(featureOutcome.item?.name ?? "").trim();
+  const craftedItemRewardNames = Array.isArray(itemDropOutcome.itemNames) ? itemDropOutcome.itemNames : [];
   await updateOperationsLedger((nextLedger) => {
     const state = ensureDowntimeState(nextLedger);
     const currentEntry = state.entries?.[actor.id];
     if (!currentEntry || !currentEntry.lastResult) return;
+    const sourceResult = currentEntry.lastResult;
     const normalizedResult = normalizeDowntimeResult({
-      ...currentEntry.lastResult,
+      ...sourceResult,
+      gpAward,
+      gpCost,
+      gpDelta: gpAward - gpCost,
+      socialContract: {
+        ...(sourceResult?.socialContract ?? result.socialContract ?? {}),
+        featureItemId: connectionFeatureId
+      },
       collected: true,
       collectedAt: now,
       collectedBy: collectorName
     });
-    currentEntry.lastResult = normalizedResult;
+    delete state.entries[actor.id];
     if (Array.isArray(state.logs)) {
+      let replaced = false;
       state.logs = state.logs.map((row) => {
         if (String(row?.id ?? "") !== String(normalizedResult.id ?? "")) return row;
         if (String(row?.actorId ?? "") !== String(actor.id)) return row;
+        replaced = true;
         return normalizeDowntimeResult({
           ...row,
+          gpAward,
+          gpCost,
+          gpDelta: gpAward - gpCost,
+          socialContract: {
+            ...(row?.socialContract ?? result.socialContract ?? {}),
+            featureItemId: connectionFeatureId
+          },
           collected: true,
           collectedAt: now,
           collectedBy: collectorName
         });
       });
+      if (!replaced) {
+        state.logs.unshift({
+          ...normalizedResult,
+          actorId: String(actor.id ?? ""),
+          actorName: String(currentEntry.actorName ?? actor.name ?? "Actor"),
+          hours: getDowntimeEntryResolvedHours(currentEntry, state.hoursGranted)
+        });
+      }
+      state.logs = state.logs
+        .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
+        .slice(0, 80);
     }
   });
 
   return {
     ok: true,
     actorName: String(actor.name ?? "Actor"),
-    gpApplied,
+    gpAwarded: gpAward,
+    gpSpent: gpCost,
+    gpNet: gpAward - gpCost,
+    gpBefore,
+    gpAfter,
     rumorCount: Number(result.rumorCount ?? 0) || 0,
     itemRewards: Array.isArray(result.itemRewards) ? result.itemRewards : [],
-    gmNotes: String(result.gmNotes ?? "").trim()
+    craftedItemRewardNames,
+    craftedItemRewardCount: craftedItemRewardNames.length,
+    gmNotes: String(result.gmNotes ?? "").trim(),
+    socialContract: {
+      hasContract: socialContract.hasContract,
+      key: socialContract.key,
+      label: socialContract.label,
+      summary: socialContract.summary,
+      limitations: socialContract.limitations,
+      notes: socialContract.notes,
+      featureItemId: connectionFeatureId,
+      featureItemName: connectionFeatureName
+    }
   };
 }
 
 function getDowntimeCollectionSummary(outcome = {}) {
   const parts = [];
-  const gp = Math.max(0, Number(outcome?.gpApplied ?? 0) || 0);
+  const gpAwarded = Math.max(0, Number(outcome?.gpAwarded ?? 0) || 0);
+  const gpSpent = Math.max(0, Number(outcome?.gpSpent ?? 0) || 0);
+  const gpNetRaw = Number(outcome?.gpNet);
+  const gpNet = Number.isFinite(gpNetRaw) ? Math.floor(gpNetRaw) : (gpAwarded - gpSpent);
   const rumors = Math.max(0, Number(outcome?.rumorCount ?? 0) || 0);
   const items = Array.isArray(outcome?.itemRewards) ? outcome.itemRewards.filter(Boolean) : [];
+  const craftedItems = Array.isArray(outcome?.craftedItemRewardNames) ? outcome.craftedItemRewardNames.filter(Boolean) : [];
   const hasNotes = String(outcome?.gmNotes ?? "").trim().length > 0;
-  if (gp > 0) parts.push(`${gp} gp added`);
+  const socialContract = outcome?.socialContract && typeof outcome.socialContract === "object" ? outcome.socialContract : null;
+  const socialContractLabel = String(socialContract?.label ?? "").trim();
+  const socialContractFeatureName = String(socialContract?.featureItemName ?? "").trim();
+  if (gpAwarded > 0) parts.push(`${gpAwarded} gp added`);
+  if (gpSpent > 0) parts.push(`${gpSpent} gp spent`);
+  if (gpAwarded > 0 || gpSpent > 0) parts.push(`net ${(gpNet >= 0 ? "+" : "") + gpNet} gp`);
   if (rumors > 0) parts.push(`${rumors} rumor/lead`);
   if (items.length > 0) parts.push(`${items.length} item reward(s)`);
+  if (craftedItems.length > 0) parts.push(`${craftedItems.length} crafted item(s) added`);
+  if (socialContract?.hasContract) parts.push(socialContractFeatureName || `connection added: ${socialContractLabel || "Social Contract"}`);
   if (hasNotes) parts.push("GM notes reviewed");
   if (parts.length === 0) return "Rewards marked as collected.";
   return parts.join(" | ");
@@ -13441,7 +21355,7 @@ async function collectDowntimeResult(element) {
   const actorId = String(element?.dataset?.actorId ?? "").trim();
   if (!actorId) return;
 
-  if (game.user.isGM) {
+  if (canAccessAllPlayerOps()) {
     const outcome = await applyDowntimeCollectionForUser(game.user, actorId);
     if (!outcome.ok) {
       ui.notifications?.warn(outcome.message ?? "Failed to collect downtime rewards.");
@@ -13453,7 +21367,7 @@ async function collectDowntimeResult(element) {
 
   const actor = game.actors.get(actorId);
   if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
-    ui.notifications?.warn("You can only collect downtime rewards for actors you own.");
+    ui.notifications?.warn("You can only collect downtime rewards for party characters you can access.");
     return;
   }
   game.socket.emit(SOCKET_CHANNEL, {
@@ -13465,27 +21379,123 @@ async function collectDowntimeResult(element) {
 }
 
 async function clearDowntimeResults() {
-  if (!game.user.isGM) {
-    ui.notifications?.warn("Only the GM can clear downtime results.");
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear downtime logs.");
     return;
   }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Resolved Logs",
+    content: "<p>Are you sure you want to clear all resolved logs?</p>"
+  });
+  if (!confirmed) return;
+
+  let removedCount = 0;
   await updateOperationsLedger((ledger) => {
     const downtime = ensureDowntimeState(ledger);
-    for (const entry of Object.values(downtime.entries ?? {})) {
-      if (!entry || typeof entry !== "object") continue;
-      entry.pending = true;
-      entry.lastResult = null;
-      entry.stagedResult = null;
-      entry.stagedAt = 0;
-      entry.stagedBy = "";
-    }
+    removedCount = Array.isArray(downtime.logs) ? downtime.logs.length : 0;
     downtime.logs = [];
   });
-  ui.notifications?.info("Downtime results cleared.");
+  if (removedCount <= 0) {
+    ui.notifications?.info("No downtime logs to clear.");
+    return;
+  }
+  ui.notifications?.info(`Cleared ${removedCount} resolved downtime log${removedCount === 1 ? "" : "s"}.`);
+}
+
+async function unarchiveDowntimeLogEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can unarchive downtime logs.");
+    return;
+  }
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) {
+    ui.notifications?.warn("Downtime log entry not found.");
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const source = Array.isArray(downtime.logs)
+    ? downtime.logs.find((entry) => String(entry?.id ?? "").trim() === logId)
+    : null;
+  if (!source) {
+    ui.notifications?.warn("Downtime log entry not found.");
+    return;
+  }
+
+  const actorId = String(source?.actorId ?? "").trim();
+  if (!actorId) {
+    ui.notifications?.warn("Cannot unarchive a log without a valid actor.");
+    return;
+  }
+  const stagedResult = normalizeDowntimeResult(source);
+  const actionDef = getDowntimeActionDefinition(source?.actionKey ?? stagedResult.actionKey);
+  const actorName = getDowntimeActorName(actorId, String(source?.actorName ?? ""));
+  const requestedHours = Math.max(1, Math.floor(Number(source?.hours ?? 4) || 4));
+  let moved = false;
+
+  await updateOperationsLedger((nextLedger) => {
+    const state = ensureDowntimeState(nextLedger);
+    const existingEntry = state.entries?.[actorId] ?? null;
+    if (existingEntry) {
+      return;
+    }
+    const hours = Math.max(1, Math.min(state.hoursGranted, requestedHours));
+    state.entries[actorId] = {
+      actorId,
+      actorName,
+      actionKey: actionDef.key,
+      hours,
+      note: "",
+      pending: true,
+      updatedAt: Date.now(),
+      updatedBy: String(game.user?.name ?? "GM"),
+      updatedByUserId: String(game.user?.id ?? ""),
+      lastResult: null,
+      stagedResult,
+      stagedAt: Date.now(),
+      stagedBy: String(game.user?.name ?? "GM")
+    };
+    if (Array.isArray(state.logs)) {
+      state.logs = state.logs.filter((entry) => String(entry?.id ?? "").trim() !== logId);
+    }
+    moved = true;
+  });
+
+  if (!moved) {
+    ui.notifications?.warn(`${actorName} already has an active downtime entry. Resolve/clear it first before unarchiving.`);
+    return;
+  }
+  ui.notifications?.info(`Unarchived downtime log for ${actorName}. It is back in Pending Resolver for edits.`);
+}
+
+async function clearDowntimeLogEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear downtime logs.");
+    return;
+  }
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) {
+    ui.notifications?.warn("Downtime log entry not found.");
+    return;
+  }
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    const logs = Array.isArray(downtime.logs) ? downtime.logs : [];
+    const nextLogs = logs.filter((entry) => String(entry?.id ?? "").trim() !== logId);
+    removed = nextLogs.length !== logs.length;
+    downtime.logs = nextLogs;
+  });
+  if (!removed) {
+    ui.notifications?.warn("Downtime log entry not found.");
+    return;
+  }
+  ui.notifications?.info("Resolved downtime log cleared.");
 }
 
 async function postDowntimeLogOutcome(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can post downtime outcomes.");
     return;
   }
@@ -13510,9 +21520,18 @@ async function postDowntimeLogOutcome(element) {
     .map((entry) => `<li>${escape(entry)}</li>`)
     .join("");
   const complication = String(result.complication ?? "").trim();
+  const gpAward = Math.max(0, Math.floor(Number(result.gpAward ?? Math.max(0, Number(result.gpDelta ?? 0) || 0)) || 0));
+  const gpCost = Math.max(0, Math.floor(Number(result.gpCost ?? Math.max(0, -(Number(result.gpDelta ?? 0) || 0))) || 0));
+  const gpDelta = gpAward - gpCost;
   const rumorCount = Math.max(0, Number(result.rumorCount ?? 0) || 0);
   const itemRewards = Array.isArray(result.itemRewards) ? result.itemRewards : [];
+  const itemRewardDrops = normalizeDowntimeItemRewardDrops(result.itemRewardDrops ?? []);
   const gmNotes = String(result.gmNotes ?? "").trim();
+  const socialContract = normalizeDowntimeSocialContract(result.socialContract ?? {}, result.actionKey);
+  const socialContractLabel = String(socialContract.label ?? "").trim();
+  const socialContractSummary = String(socialContract.summary ?? "").trim();
+  const socialContractLimitations = String(socialContract.limitations ?? "").trim();
+  const socialContractNotes = String(socialContract.notes ?? "").trim();
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
@@ -13521,9 +21540,16 @@ async function postDowntimeLogOutcome(element) {
       <p><strong>${escape(actorName)}</strong> - ${escape(actionLabel)} (${hours} hour(s))</p>
       <p>${escape(result.summary || "No summary provided.")}</p>
       ${detailsHtml ? `<ul>${detailsHtml}</ul>` : ""}
-      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      <p><strong>GP Award:</strong> +${gpAward}</p>
+      <p><strong>GP Cost:</strong> -${gpCost}</p>
+      <p><strong>GP Net:</strong> ${(gpDelta >= 0 ? "+" : "") + gpDelta}</p>
       ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
       ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      ${itemRewardDrops.length > 0 ? `<p><strong>Crafted Item Grants:</strong> ${escape(itemRewardDrops.map((entry) => entry.name).join("; "))}</p>` : ""}
+      ${socialContract.hasContract ? `<p><strong>Connection:</strong> ${escape(socialContractLabel || "Social Contract")}</p>` : ""}
+      ${socialContractSummary ? `<p><strong>Connection Scope:</strong> ${escape(socialContractSummary)}</p>` : ""}
+      ${socialContractLimitations ? `<p><strong>Connection Limitations:</strong> ${escape(socialContractLimitations)}</p>` : ""}
+      ${socialContractNotes ? `<p><strong>Connection Notes:</strong> ${escape(socialContractNotes)}</p>` : ""}
       ${gmNotes ? `<p><strong>GM Notes:</strong> ${escape(gmNotes)}</p>` : ""}
       ${complication ? `<p><strong>Complication:</strong> ${escape(complication)}</p>` : ""}
       <p><em>Resolved by ${escape(result.resolvedBy)} at ${escape(new Date(Number(result.resolvedAt)).toLocaleString())}</em></p>
@@ -13539,45 +21565,109 @@ async function postDowntimeLogOutcome(element) {
       <p><strong>Actor:</strong> ${buildUuidJournalLink(game.actors.get(String(source.actorId ?? "").trim())?.uuid ?? "", actorName)}</p>
       <p><strong>Summary:</strong> ${escape(result.summary || "No summary provided.")}</p>
       ${detailsHtml ? `<ul>${detailsHtml}</ul>` : ""}
-      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      <p><strong>GP Award:</strong> +${gpAward}</p>
+      <p><strong>GP Cost:</strong> -${gpCost}</p>
+      <p><strong>GP Net:</strong> ${(gpDelta >= 0 ? "+" : "") + gpDelta}</p>
       ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
       ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      ${itemRewardDrops.length > 0 ? `<p><strong>Crafted Item Grants:</strong> ${escape(itemRewardDrops.map((entry) => entry.name).join("; "))}</p>` : ""}
+      ${socialContract.hasContract ? `<p><strong>Connection:</strong> ${escape(socialContractLabel || "Social Contract")}</p>` : ""}
+      ${socialContractSummary ? `<p><strong>Connection Scope:</strong> ${escape(socialContractSummary)}</p>` : ""}
+      ${socialContractLimitations ? `<p><strong>Connection Limitations:</strong> ${escape(socialContractLimitations)}</p>` : ""}
+      ${socialContractNotes ? `<p><strong>Connection Notes:</strong> ${escape(socialContractNotes)}</p>` : ""}
       ${gmNotes ? `<p><strong>GM Notes:</strong> ${escape(gmNotes)}</p>` : ""}
       ${complication ? `<p><strong>Complication:</strong> ${escape(complication)}</p>` : ""}
     `,
     redactedBody: `
       <p><strong>Actor:</strong> ${buildUuidJournalLink(game.actors.get(String(source.actorId ?? "").trim())?.uuid ?? "", actorName)}</p>
       <p><strong>Summary:</strong> ${escape(result.summary || "No summary provided.")}</p>
-      <p><strong>GP:</strong> ${result.gpDelta > 0 ? `+${result.gpDelta}` : String(result.gpDelta)}</p>
+      <p><strong>GP Award:</strong> +${gpAward}</p>
+      <p><strong>GP Cost:</strong> -${gpCost}</p>
+      <p><strong>GP Net:</strong> ${(gpDelta >= 0 ? "+" : "") + gpDelta}</p>
       ${rumorCount > 0 ? `<p><strong>Rumors/Leads:</strong> ${rumorCount}</p>` : ""}
       ${itemRewards.length > 0 ? `<p><strong>Item Rewards:</strong> ${escape(itemRewards.join("; "))}</p>` : ""}
+      ${itemRewardDrops.length > 0 ? `<p><strong>Crafted Item Grants:</strong> ${escape(itemRewardDrops.map((entry) => entry.name).join("; "))}</p>` : ""}
+      ${socialContract.hasContract ? `<p><strong>Connection:</strong> ${escape(socialContractLabel || "Social Contract")}</p>` : ""}
       <p><em>Some GM details are redacted.</em></p>
     `
   });
   ui.notifications?.info(`Posted downtime outcome for ${actorName}.`);
 }
 
-async function setOperationalSopNote(element) {
+async function setOperationalSopNote(element, options = {}) {
+  const suppressUiWarning = Boolean(options?.suppressUiWarning);
+  const notify = Boolean(options?.notify);
   const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
-  const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
-  if (!game.user.isGM) {
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "ops:setSopNote",
-      userId: game.user.id,
-      sopKey,
-      note
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return false;
+  try {
+    const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
+    const existing = clampSocketText(getOperationsLedger()?.sopNotes?.[sopKey] ?? "", SOCKET_NOTE_MAX_LENGTH);
+    if (note === existing) {
+      clearSopCachedNoteEntry(sopKey);
+      if (notify) ui.notifications?.info("No note changes to save.");
+      return false;
+    }
+    if (!game.user?.isGM) {
+      // Always save locally first so players can save/edit SOP notes without an active GM.
+      writeSopCachedNoteEntry(sopKey, note, { pendingSync: true });
+      const activeGm = hasActiveGmClient();
+      if (activeGm) {
+        game.socket.emit(SOCKET_CHANNEL, {
+          type: "ops:setSopNote",
+          userId: game.user.id,
+          sopKey,
+          note
+        });
+        logUiDebug("operations-sop", "queued SOP note save via socket", {
+          sopKey,
+          noteLength: note.length,
+          userId: String(game.user?.id ?? ""),
+          userName: String(game.user?.name ?? "Unknown")
+        });
+      } else {
+        logUiDebug("operations-sop", "saved SOP note locally (pending GM sync)", {
+          sopKey,
+          noteLength: note.length,
+          userId: String(game.user?.id ?? ""),
+          userName: String(game.user?.name ?? "Unknown")
+        });
+      }
+      if (notify) {
+        ui.notifications?.info(activeGm
+          ? "Note saved."
+          : "Note saved locally. It will sync when a GM reconnects.");
+      }
+      refreshOpenApps();
+      schedulePendingSopNoteSync("player-save");
+      return true;
+    }
+    await updateOperationsLedger((ledger) => {
+      const sopNotes = ensureSopNotesState(ledger);
+      sopNotes[sopKey] = note;
     });
-    return;
+    clearSopCachedNoteEntry(sopKey);
+    logUiDebug("operations-sop", "saved SOP note on GM client", {
+      sopKey,
+      noteLength: note.length,
+      userId: String(game.user?.id ?? ""),
+      userName: String(game.user?.name ?? "Unknown")
+    });
+    if (notify) ui.notifications?.info("Note saved.");
+    return true;
+  } catch (error) {
+    logUiFailure("operations", "set SOP note failed", error, {
+      sopKey,
+      isGM: Boolean(game.user?.isGM)
+    });
+    if (!suppressUiWarning) {
+      ui.notifications?.warn("SOP note save failed. Please try again.");
+    }
+    return false;
   }
-  await updateOperationsLedger((ledger) => {
-    const sopNotes = ensureSopNotesState(ledger);
-    sopNotes[sopKey] = note;
-  });
 }
 
 async function setOperationalEnvironmentPreset(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13595,7 +21685,7 @@ async function setOperationalEnvironmentPreset(element) {
 }
 
 async function setOperationalEnvironmentDc(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13608,7 +21698,7 @@ async function setOperationalEnvironmentDc(element) {
 }
 
 async function setOperationalEnvironmentNote(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13620,7 +21710,7 @@ async function setOperationalEnvironmentNote(element) {
 }
 
 async function setOperationalEnvironmentSyncNonParty(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13632,7 +21722,7 @@ async function setOperationalEnvironmentSyncNonParty(element) {
 }
 
 async function setOperationalEnvironmentSuccessive(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13679,7 +21769,7 @@ async function setOperationalEnvironmentSuccessive(element) {
 }
 
 async function resetOperationalEnvironmentSuccessiveDefaults() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
@@ -13695,7 +21785,7 @@ async function resetOperationalEnvironmentSuccessiveDefaults() {
 }
 
 async function toggleOperationalEnvironmentActor(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can assign environment effects.");
     return;
   }
@@ -13712,7 +21802,7 @@ async function toggleOperationalEnvironmentActor(element) {
 }
 
 async function addOperationalEnvironmentLog() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can log environment presets.");
     return;
   }
@@ -13776,7 +21866,7 @@ async function addOperationalEnvironmentLog() {
 }
 
 async function editOperationalEnvironmentLog(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit environment logs.");
     return;
   }
@@ -13814,7 +21904,7 @@ async function editOperationalEnvironmentLogById(logId) {
 }
 
 async function removeOperationalEnvironmentLog(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit environment logs.");
     return;
   }
@@ -13841,7 +21931,7 @@ async function removeOperationalEnvironmentLogById(logId) {
 }
 
 async function clearOperationalEnvironmentEffects() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can clear environment effects.");
     return;
   }
@@ -14122,39 +22212,72 @@ function getGatherWeatherOptions(resourcesState = null) {
   });
 }
 
-function wireGatherDcPreview(dialog, weatherOptions) {
+function wireGatherDcPreview(dialog, config) {
   Hooks.once("renderDialog", (app, html) => {
     if (app !== dialog) return;
     const root = html;
-    const baseDcInput = root.find("input[name=hiddenDc]");
-    const weatherSelect = root.find("select[name=weather]");
+    const environmentSelect = root.find("select[name=environment]");
+    const seasonInput = root.find("input[name=seasonMod]");
+    const weatherInput = root.find("input[name=weatherMod]");
+    const corruptionInput = root.find("input[name=corruptionMod]");
     const previewTarget = root.find("[data-gather-dc-preview]");
+    const baseDcByEnvironment = config?.baseDc ?? GATHER_DEFAULTS.baseDc;
 
     const refresh = () => {
-      const hiddenDcRaw = Number(baseDcInput.val() ?? 15);
-      const hiddenBaseDc = Number.isFinite(hiddenDcRaw) ? Math.max(1, Math.floor(hiddenDcRaw)) : 15;
-      const weatherKey = String(weatherSelect.val() ?? "clear");
-      const weather = weatherOptions.find((entry) => entry.value === weatherKey) ?? weatherOptions[0];
-      const finalDc = hiddenBaseDc + Number(weather?.dcMod ?? 0);
-      previewTarget.text(`${hiddenBaseDc} + ${Number(weather?.dcMod ?? 0)} = ${finalDc}`);
+      const environment = normalizeGatherEnvironmentKey(environmentSelect.val() ?? GATHER_ENVIRONMENT_KEYS[0]);
+      const baseDc = Math.max(1, Math.floor(Number(baseDcByEnvironment?.[environment] ?? 10) || 10));
+      const seasonMod = clampGatherModifier(seasonInput.val() ?? 0, 0);
+      const weatherMod = clampGatherModifier(weatherInput.val() ?? 0, 0);
+      const corruptionMod = clampGatherModifier(corruptionInput.val() ?? 0, 0);
+      const finalDc = Math.max(1, baseDc + seasonMod + weatherMod + corruptionMod);
+      previewTarget.text(`Base ${baseDc} + Season ${seasonMod} + Weather ${weatherMod} + Corruption ${corruptionMod} = DC ${finalDc}`);
     };
 
-    baseDcInput.on("input change", refresh);
-    weatherSelect.on("change", refresh);
+    environmentSelect.on("change", refresh);
+    seasonInput.on("input change", refresh);
+    weatherInput.on("input change", refresh);
+    corruptionInput.on("input change", refresh);
     refresh();
   });
+}
+
+function extractGatherNaturalResult(rollLike) {
+  const roll = rollLike?.roll ?? rollLike;
+  const diceTerms = Array.isArray(roll?.dice)
+    ? roll.dice
+    : (Array.isArray(roll?.terms) ? roll.terms.filter((entry) => Number(entry?.faces ?? 0) === 20) : []);
+  for (const term of diceTerms) {
+    const results = Array.isArray(term?.results) ? term.results : [];
+    if (!results.length) continue;
+    const active = results.filter((entry) => entry?.active !== false);
+    const source = active.length > 0 ? active : results;
+    const values = source
+      .map((entry) => Number(entry?.result))
+      .filter((entry) => Number.isFinite(entry));
+    if (!values.length) continue;
+    return Math.max(...values);
+  }
+  return null;
 }
 
 async function rollWisdomSurvival(actor, options = {}) {
   const dc = Number(options?.dc);
   const flavor = String(options?.flavor ?? "Wisdom (Survival)");
   const rollMode = String(options?.rollMode ?? "prefer-monks");
-  const canUseMonks = Number.isFinite(dc) && isMonksTokenBarActive();
+  const advantage = Boolean(options?.advantage);
+  const preferNative = Boolean(options?.preferNative || advantage);
+  const canUseMonks = Number.isFinite(dc) && isMonksTokenBarActive() && !preferNative;
 
   if ((rollMode === "prefer-monks" || rollMode === "monks-only") && canUseMonks) {
     const monksResult = await requestMonksSurvivalRoll(actor, dc, flavor);
     if (monksResult && Number.isFinite(monksResult.total)) {
-      return { total: Number(monksResult.total), source: "monks", roll: monksResult.response };
+      return {
+        total: Number(monksResult.total),
+        source: "monks",
+        roll: monksResult.response,
+        natural: null,
+        passed: typeof monksResult.passed === "boolean" ? monksResult.passed : (Number(monksResult.total) >= dc)
+      };
     }
     if (monksResult) {
       ui.notifications?.warn("Monk's TokenBar roll request sent, but no roll total was returned to Party Operations. Falling back to direct roll.");
@@ -14164,27 +22287,413 @@ async function rollWisdomSurvival(actor, options = {}) {
     }
   }
 
-  if (rollMode === "monks-only" && !canUseMonks) {
+  if (rollMode === "monks-only" && !canUseMonks && !preferNative) {
     throw new Error("Monk's TokenBar is not available for a DC roll request.");
   }
 
   if (actor && typeof actor.rollSkill === "function") {
     try {
-      const rollResult = await actor.rollSkill("sur", { fastForward: true, chatMessage: false });
+      const rollResult = await actor.rollSkill("sur", {
+        fastForward: true,
+        chatMessage: false,
+        advantage,
+        disadvantage: false
+      });
       const total = Number(rollResult?.total ?? rollResult?.roll?.total);
-      if (Number.isFinite(total)) return { total, source: "native", roll: rollResult };
+      if (Number.isFinite(total)) {
+        const natural = extractGatherNaturalResult(rollResult);
+        return { total, source: "native", roll: rollResult, natural, passed: total >= dc };
+      }
     } catch (error) {
       console.warn("party-operations: rollSkill(sur) failed, using fallback roll", error);
     }
   }
 
   const wisMod = Number(actor?.system?.abilities?.wis?.mod ?? 0);
-  const roll = await (new Roll("1d20 + @mod", { mod: wisMod })).evaluate();
+  const formula = advantage ? "2d20kh + @mod" : "1d20 + @mod";
+  const roll = await (new Roll(formula, { mod: wisMod })).evaluate();
+  const natural = extractGatherNaturalResult(roll);
   await roll.toMessage({
     speaker: ChatMessage.getSpeaker({ actor }),
     flavor
   });
-  return { total: Number(roll.total ?? 0), source: "native", roll };
+  return { total: Number(roll.total ?? 0), source: "native", roll, natural, passed: Number(roll.total ?? 0) >= dc };
+}
+
+async function rollConstitutionSaveForGather(actor, dc, flavor = "Gather Resources: Constitution Save") {
+  const targetDc = Math.max(1, Math.floor(Number(dc ?? 10) || 10));
+  if (actor && typeof actor.rollAbilitySave === "function") {
+    try {
+      const rollResult = await actor.rollAbilitySave("con", { fastForward: true, chatMessage: false });
+      const total = Number(rollResult?.total ?? rollResult?.roll?.total);
+      if (Number.isFinite(total)) return { total, passed: total >= targetDc, source: "native", roll: rollResult };
+    } catch (error) {
+      console.warn(`${MODULE_ID}: con save roll failed, using fallback`, error);
+    }
+  }
+
+  const conMod = Number(actor?.system?.abilities?.con?.mod ?? 0);
+  const roll = await (new Roll("1d20 + @mod", { mod: conMod })).evaluate();
+  await roll.toMessage({
+    speaker: ChatMessage.getSpeaker({ actor }),
+    flavor
+  });
+  const total = Number(roll.total ?? 0);
+  return { total, passed: total >= targetDc, source: "native", roll };
+}
+
+function formatGatherFlagLabel(flag) {
+  switch (String(flag ?? "").trim()) {
+    case "safe-campsite-found": return "Safe campsite found";
+    case "encounter-check-flag": return "Encounter check flagged";
+    case "water-contaminated": return "Water contaminated";
+    case "travel-pace-reduced-one-step": return "Travel pace reduced by one step";
+    case "travel-fell-behind": return "Actor fell behind";
+    default: return String(flag ?? "").trim();
+  }
+}
+
+function formatGatherComplicationLabel(flag) {
+  switch (String(flag ?? "").trim()) {
+    case "fail-by-5-complication": return "Fail by 5+ complication";
+    case "natural-1-danger": return "Natural 1 danger complication";
+    case "travel-con-save-failed": return "Travel Con save failed";
+    case "contaminated-water-save-failed": return "Contaminated water Con save failed";
+    default: return String(flag ?? "").trim();
+  }
+}
+
+function buildGatherResourceChatCard(result) {
+  const outcome = result?.outcome ?? {};
+  const flags = Array.isArray(outcome.resultFlags) ? outcome.resultFlags : [];
+  const complications = Array.isArray(outcome.complications) ? outcome.complications : [];
+  const notes = Array.isArray(outcome.notes) ? outcome.notes : [];
+  const flagText = flags.length > 0 ? flags.map((entry) => formatGatherFlagLabel(entry)).join(", ") : "None";
+  const complicationText = complications.length > 0 ? complications.map((entry) => formatGatherComplicationLabel(entry)).join(", ") : "None";
+  const noteText = notes.length > 0 ? notes.join(" | ") : "None";
+  const saveRows = [];
+  if (result?.corruptionSave && typeof result.corruptionSave === "object") {
+    const total = Number(result?.corruptionSave?.total ?? 0);
+    const passed = Boolean(result?.corruptionSave?.passed);
+    const dc = Number(result?.corruptionSave?.dc ?? 0);
+    saveRows.push(`<p><strong>Corruption Save:</strong> CON ${total} vs DC ${dc} (${passed ? "Pass" : "Fail"})</p>`);
+  }
+  if (result?.travelConSave && typeof result.travelConSave === "object") {
+    const total = Number(result?.travelConSave?.total ?? 0);
+    const passed = Boolean(result?.travelConSave?.passed);
+    const dc = Number(result?.travelConSave?.dc ?? 0);
+    saveRows.push(`<p><strong>Travel Save:</strong> CON ${total} vs DC ${dc} (${passed ? "Pass" : "Fail"})</p>`);
+  }
+  return `
+    <div class="po-chat-card po-chat-card-gather">
+      <p><strong>Gather Resources</strong></p>
+      <p><strong>Actor:</strong> ${poEscapeHtml(String(result?.actorName ?? "Unknown Actor"))}</p>
+      <p><strong>Check:</strong> Wisdom (Survival) ${Number(outcome.checkTotal ?? 0)} vs DC ${Number(outcome.dc ?? 0)} (${outcome.success ? "Success" : "Failure"})</p>
+      <p><strong>Natural:</strong> ${Number(outcome.natural ?? 0) || "-"}</p>
+      <p><strong>Environment:</strong> ${poEscapeHtml(String(result?.environmentLabel ?? "-"))}</p>
+      <p><strong>Resource Type:</strong> ${poEscapeHtml(String(outcome.resourceType ?? "food"))}</p>
+      <p><strong>Rations Gained:</strong> ${Number(outcome.finalRations ?? 0)}${result?.appliedToLedger ? " (Applied)" : " (Preview Only)"}</p>
+      <p><strong>Flags:</strong> ${poEscapeHtml(flagText)}</p>
+      <p><strong>Complications:</strong> ${poEscapeHtml(complicationText)}</p>
+      <p><strong>Notes:</strong> ${poEscapeHtml(noteText)}</p>
+      ${saveRows.join("")}
+    </div>
+  `;
+}
+
+function buildGatherHistoryEntryFromResult(result = {}) {
+  const outcome = (result?.outcome && typeof result.outcome === "object")
+    ? result.outcome
+    : {};
+  const actorId = String(result?.actorId ?? "").trim();
+  const actorName = String(result?.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+  if (!actorId) return null;
+  return {
+    id: foundry.utils.randomID(),
+    timestamp: Date.now(),
+    actorId,
+    actorName,
+    dayKey: String(result?.dayKey ?? getGatherDayKey(getCurrentWorldTimestamp())).trim(),
+    result: outcome.success ? "success" : "fail",
+    success: Boolean(outcome.success),
+    resourceType: normalizeGatherResourceType(outcome.resourceType),
+    rations: Math.max(0, Number(outcome.finalRations ?? 0) || 0),
+    checkTotal: Math.floor(Number(outcome.checkTotal ?? 0) || 0),
+    dc: Math.max(1, Math.floor(Number(outcome.dc ?? result?.effectiveDc ?? 1) || 1)),
+    environment: normalizeGatherEnvironmentKey(result?.environment),
+    flags: Array.isArray(outcome.resultFlags) ? [...outcome.resultFlags] : [],
+    complications: Array.isArray(outcome.complications) ? [...outcome.complications] : [],
+    notes: Array.isArray(outcome.notes) ? [...outcome.notes] : [],
+    gatherMode: String(result?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+    appliedToLedger: Boolean(result?.appliedToLedger),
+    inventoryGainSource: String(result?.inventoryGainSource ?? "").trim(),
+    inventoryGainAmount: Math.max(0, Number(result?.inventoryGainAmount ?? 0) || 0),
+    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
+  };
+}
+
+async function ensureGatherHistoryRecorded(result = {}) {
+  if (!result?.ok || result?.historyRecorded) return Boolean(result?.historyRecorded);
+  if (!canAccessAllPlayerOps()) return false;
+  const entry = buildGatherHistoryEntryFromResult(result);
+  if (!entry) return false;
+
+  let recorded = false;
+  let duplicate = false;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    const history = Array.isArray(ledger.resources.gather?.history)
+      ? ledger.resources.gather.history
+      : [];
+    duplicate = history.some((existing) => {
+      const existingTs = Number(existing?.timestamp ?? 0) || 0;
+      const nearSameTime = Math.abs(existingTs - entry.timestamp) <= 5000;
+      if (!nearSameTime) return false;
+      return String(existing?.actorId ?? "").trim() === entry.actorId
+        && String(existing?.dayKey ?? "").trim() === entry.dayKey
+        && normalizeGatherResourceType(existing?.resourceType) === entry.resourceType
+        && Math.floor(Number(existing?.checkTotal ?? 0) || 0) === entry.checkTotal
+        && Math.max(1, Math.floor(Number(existing?.dc ?? 1) || 1)) === entry.dc;
+    });
+    if (duplicate) return;
+    history.unshift(entry);
+    ledger.resources.gather.history = history;
+    recorded = true;
+  });
+  return recorded || duplicate;
+}
+
+async function executeGatherResourcesAction(options = {}) {
+  const config = getGatherResourceConfig();
+  if (!config.enabled) {
+    return { ok: false, blocked: true, reason: "Gather resources is disabled in module settings." };
+  }
+
+  const actorId = String(options?.actorId ?? options?.actor?.id ?? "").trim();
+  const actor = options?.actor ?? (actorId ? game.actors.get(actorId) : null);
+  if (!actor) return { ok: false, blocked: true, reason: "Actor not found." };
+
+  if (config.disallowCombat && isActorInImmediateDanger(actor)) {
+    return { ok: false, blocked: true, reason: "Gathering is blocked while the actor is in immediate danger/combat." };
+  }
+
+  const minimumHours = Math.max(1, Number(config.minimumHours ?? 4) || 4);
+  const hoursSpent = Math.max(0, Number(options?.hoursSpent ?? minimumHours) || 0);
+  if (hoursSpent < minimumHours) {
+    return { ok: false, blocked: true, reason: `Gathering requires at least ${minimumHours} hour(s).` };
+  }
+
+  const environment = normalizeGatherEnvironmentKey(options?.environment ?? GATHER_ENVIRONMENT_KEYS[0]);
+  const resourceType = normalizeGatherResourceType(options?.resourceType);
+  const seasonMod = clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod);
+  const weatherMod = clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod);
+  const corruptionMod = clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod);
+  const dayKey = getGatherDayKey(getCurrentWorldTimestamp());
+  const environmentSignature = buildGatherEnvironmentSignature({
+    environment,
+    seasonMod,
+    weatherMod,
+    corruptionMod,
+    hostileTerrain: Boolean(options?.hostileTerrain),
+    isCorruptedRegion: Boolean(options?.isCorruptedRegion)
+  });
+  const ignoreDailyLimit = options?.ignoreDailyLimit === true;
+  if (!ignoreDailyLimit && !canAttemptGatherForDay(actor, dayKey, environmentSignature)) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: "This actor already attempted gathering today in this environment."
+    };
+  }
+
+  const baseDc = Math.max(1, Math.floor(Number(config.baseDc?.[environment] ?? 10) || 10));
+  const effectiveDc = Math.max(1, baseDc + seasonMod + weatherMod + corruptionMod);
+  const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase();
+  const herbalismAdvantage = Boolean(config.herbalismAdvantageEnabled && gatherMode === "plant" && options?.enableHerbalismAdvantage !== false);
+  const rollMode = String(options?.rollMode ?? getGatherRollModeSetting() ?? "prefer-monks");
+  const survival = await rollWisdomSurvival(actor, {
+    dc: effectiveDc,
+    flavor: "Gather Resources: Wisdom (Survival)",
+    rollMode,
+    advantage: herbalismAdvantage,
+    preferNative: false
+  });
+  const checkTotal = Math.floor(Number(survival?.total ?? 0) || 0);
+  const natural = clampGatherInteger(survival?.natural, 0, 20, 0);
+
+  let rationDieTotal = null;
+  let nat20BonusDieTotal = null;
+  const waterAutoFound = Boolean(config.waterAutoFoundEnabled && options?.waterAutoFound && resourceType === "water");
+  const success = checkTotal >= effectiveDc;
+  if (success && !waterAutoFound) {
+    const rationRoll = await (new Roll("1d6")).evaluate();
+    rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
+  }
+  if (success && config.nat20BonusEnabled && natural === 20) {
+    const nat20Roll = await (new Roll("1d4")).evaluate();
+    nat20BonusDieTotal = clampGatherInteger(nat20Roll.total, 1, 4, 1);
+  }
+
+  let contaminationRollTotal = null;
+  let corruptionSave = null;
+  if (success && resourceType === "water" && config.corruptionWaterCheckEnabled && options?.isCorruptedRegion) {
+    const contaminationRoll = await (new Roll("1d6")).evaluate();
+    contaminationRollTotal = clampGatherInteger(contaminationRoll.total, 1, 6, 1);
+    if (contaminationRollTotal === 1) {
+      corruptionSave = await rollConstitutionSaveForGather(actor, config.corruptionConSaveDc, "Gather Resources: Corrupted Water CON Save");
+      corruptionSave.dc = config.corruptionConSaveDc;
+    }
+  }
+
+  let travelConSave = null;
+  const duringTravel = Boolean(options?.duringTravel);
+  const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
+  if (duringTravel && config.travelTradeoffEnabled && travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND) {
+    travelConSave = await rollConstitutionSaveForGather(actor, config.travelConSaveDc, "Gather Resources: Fell Behind CON Save");
+    travelConSave.dc = config.travelConSaveDc;
+  }
+
+  const outcome = resolveGatherResourceOutcome({
+    resourceType,
+    checkTotal,
+    dc: effectiveDc,
+    natural,
+    rationDieTotal,
+    nat20BonusDieTotal,
+    waterAutoFound,
+    successBy5DoubleEnabled: config.successBy5DoubleEnabled,
+    nat20BonusEnabled: config.nat20BonusEnabled,
+    nat1ComplicationEnabled: config.nat1ComplicationEnabled,
+    hostileEncounterFlagEnabled: config.hostileEncounterFlagEnabled,
+    failBy5ComplicationEnabled: config.failBy5ComplicationEnabled,
+    hostileTerrain: Boolean(options?.hostileTerrain),
+    corruptionWaterCheckEnabled: config.corruptionWaterCheckEnabled,
+    isCorruptedRegion: Boolean(options?.isCorruptedRegion),
+    contaminationRollTotal,
+    corruptionSavePassed: corruptionSave ? Boolean(corruptionSave.passed) : true,
+    travelTradeoffEnabled: config.travelTradeoffEnabled,
+    duringTravel,
+    travelTradeoff,
+    travelConSavePassed: travelConSave ? Boolean(travelConSave.passed) : true
+  });
+  if (herbalismAdvantage) outcome.notes.push("Herbalism advantage applied for plant gathering mode.");
+
+  const applyToLedgerRequested = options?.applyToLedger !== false;
+  const canWriteLedger = canAccessAllPlayerOps();
+  const applyToLedger = Boolean(applyToLedgerRequested && canWriteLedger);
+  if (applyToLedgerRequested && !applyToLedger) {
+    outcome.notes.push("Rations not applied to party pools (GM permission required).");
+  }
+  let appliedToLedger = false;
+  let historyRecorded = false;
+  let inventoryGainSource = "";
+  let inventoryGainAmount = 0;
+  if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
+    const ledger = getOperationsLedger();
+    const resources = foundry.utils.deepClone(ledger.resources ?? {});
+    ensureOperationalResourceConfig(resources);
+    const selection = resourceType === "water" ? resources.itemSelections?.water : resources.itemSelections?.food;
+    const inventoryGain = await addToSelectedInventoryItem(selection, outcome.finalRations);
+    inventoryGainSource = String(inventoryGain?.source ?? "").trim();
+    inventoryGainAmount = Math.max(0, Number(inventoryGain?.added ?? 0) || 0);
+  }
+
+  const historyEntryBase = {
+    id: foundry.utils.randomID(),
+    timestamp: Date.now(),
+    actorId: actor.id,
+    actorName: String(actor.name ?? "").trim() || "Unknown Actor",
+    dayKey,
+    result: outcome.success ? "success" : "fail",
+    success: Boolean(outcome.success),
+    resourceType,
+    rations: Math.max(0, Number(outcome.finalRations ?? 0) || 0),
+    checkTotal: checkTotal,
+    dc: effectiveDc,
+    environment,
+    flags: Array.isArray(outcome.resultFlags) ? [...outcome.resultFlags] : [],
+    complications: Array.isArray(outcome.complications) ? [...outcome.complications] : [],
+    notes: Array.isArray(outcome.notes) ? [...outcome.notes] : [],
+    gatherMode,
+    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
+  };
+
+  if (canWriteLedger) {
+    const nextCoverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
+    await updateOperationsLedger((nextLedger) => {
+      if (!nextLedger.resources) nextLedger.resources = {};
+      ensureOperationalResourceConfig(nextLedger.resources);
+      if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
+        if (resourceType === "water") {
+          const waterPool = getStewardPoolEntry(nextLedger.resources, "water");
+          if (normalizeStewardPoolMode(waterPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
+            waterPool.mode = STEWARD_POOL_MODES.FINITE;
+            waterPool.amount = Math.max(0, Number(waterPool.amount ?? 0) + outcome.finalRations);
+            nextLedger.resources.stewardPools.water = waterPool;
+            ensureStewardPoolsState(nextLedger.resources);
+          }
+          nextLedger.resources.gather.waterCoverageDueKey = nextCoverageDueKey;
+          nextLedger.resources.gather.waterCoveredNextUpkeep = true;
+        } else {
+          const foodPool = getStewardPoolEntry(nextLedger.resources, "food");
+          if (normalizeStewardPoolMode(foodPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
+            foodPool.mode = STEWARD_POOL_MODES.FINITE;
+            foodPool.amount = Math.max(0, Number(foodPool.amount ?? 0) + outcome.finalRations);
+            nextLedger.resources.stewardPools.food = foodPool;
+            ensureStewardPoolsState(nextLedger.resources);
+          }
+          nextLedger.resources.gather.foodCoverageDueKey = nextCoverageDueKey;
+          nextLedger.resources.gather.foodCoveredNextUpkeep = true;
+        }
+        appliedToLedger = true;
+      }
+
+      nextLedger.resources.gather.history.unshift({
+        ...historyEntryBase,
+        appliedToLedger,
+        inventoryGainSource,
+        inventoryGainAmount
+      });
+    });
+    historyRecorded = true;
+  }
+
+  await setGatherAttemptState(actor, dayKey, environmentSignature);
+
+  const result = {
+    ok: true,
+    blocked: false,
+    actorId: actor.id,
+    actorName: String(actor.name ?? "").trim() || "Unknown Actor",
+    environment,
+    environmentLabel: GATHER_ENVIRONMENT_LABELS[environment] ?? environment,
+    baseDc,
+    effectiveDc,
+    seasonMod,
+    weatherMod,
+    corruptionMod,
+    dayKey,
+    environmentSignature,
+    gatherMode,
+    herbalismAdvantage,
+    outcome,
+    corruptionSave,
+    travelConSave,
+    appliedToLedger,
+    applyToLedgerRequested,
+    historyRecorded,
+    inventoryGainSource,
+    inventoryGainAmount
+  };
+
+  if (options?.suppressChat !== true) {
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      content: buildGatherResourceChatCard(result)
+    });
+  }
+  return result;
 }
 
 function getActorEnvironmentAssignment(actorId) {
@@ -14265,7 +22774,7 @@ async function recordEnvironmentCheckResult(actor, assignment, movementContext =
 }
 
 async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext = null) {
-  if (!game.user.isGM || !tokenDoc || !assignment) return { summary: "" };
+  if (!canAccessAllPlayerOps() || !tokenDoc || !assignment) return { summary: "" };
 
   const rollTotal = Number(movementContext?.rollTotal ?? NaN);
   const dc = Number(movementContext?.dc ?? NaN);
@@ -14546,7 +23055,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
 }
 
 async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
-  if (!game.user.isGM || !actor || !assignment?.preset?.movementCheck) return;
+  if (!canAccessAllPlayerOps() || !actor || !assignment?.preset?.movementCheck) return;
   const preset = assignment.preset;
   const dc = Math.max(1, Math.floor(Number(assignment.movementDc ?? 12) || 12));
   const check = getEnvironmentCheckMeta(preset);
@@ -14624,7 +23133,7 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
 }
 
 async function maybePromptEnvironmentMovementCheck(tokenDoc, changed, options = {}) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   if (options?.poEnvironmentClamp) return;
   if (!changed || (changed.x === undefined && changed.y === undefined)) return;
   const actor = tokenDoc?.actor;
@@ -14648,167 +23157,278 @@ async function maybePromptEnvironmentMovementCheck(tokenDoc, changed, options = 
   await promptEnvironmentMovementCheck(tokenDoc, actor, assignment, { origin, destination });
 }
 
-async function runGatherResourceCheck() {
-  const actors = getResourceSyncActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-  if (actors.length === 0) {
-    ui.notifications?.warn("No eligible party actors found for gather checks.");
-    return;
-  }
+function triggerGatherResourceButtonAnimation(element) {
+  const button = element?.closest?.("[data-action='gather-resource-check']");
+  if (!(button instanceof HTMLElement)) return;
+  button.classList.remove("is-firing");
+  void button.offsetWidth;
+  button.classList.add("is-firing");
+  window.setTimeout(() => {
+    button.classList.remove("is-firing");
+  }, 520);
+}
 
+async function runGatherResourceCheck() {
+  return runGatherResourcesAction({ showDialog: true });
+}
+
+async function runGatherPresetAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can run gather resource presets.");
+    return { ok: false, blocked: true, reason: "GM only." };
+  }
+  const presetId = String(element?.dataset?.presetId ?? "").trim();
+  const preset = getGatherQuickPresetById(presetId);
+  if (!preset) {
+    ui.notifications?.warn("Gather preset not found.");
+    return { ok: false, blocked: true, reason: "Preset not found." };
+  }
+  return runGatherResourcesAction({
+    showDialog: true,
+    ...foundry.utils.deepClone(preset.options ?? {}),
+    applyToLedger: true
+  });
+}
+
+function setGatherHistoryViewFromElement(element) {
+  const filterKey = String(element?.dataset?.filterKey ?? "").trim().toLowerCase();
+  if (!filterKey) return getGatherHistoryViewState();
+  const value = String(element?.value ?? "");
+  switch (filterKey) {
+    case "search":
+      return setGatherHistoryViewState({ search: value });
+    case "result":
+      return setGatherHistoryViewState({ result: value });
+    case "resource":
+      return setGatherHistoryViewState({ resource: value });
+    case "environment":
+      return setGatherHistoryViewState({ environment: value });
+    case "actor":
+      return setGatherHistoryViewState({ actor: value });
+    case "sort":
+      return setGatherHistoryViewState({ sort: value });
+    default:
+      return getGatherHistoryViewState();
+  }
+}
+
+function clearGatherHistoryFilters() {
+  return setGatherHistoryViewState({
+    search: "",
+    result: "all",
+    resource: "all",
+    environment: "all",
+    actor: "all",
+    sort: "newest"
+  });
+}
+
+async function clearGatherHistoryAction() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear gather history.");
+    return false;
+  }
   const ledger = getOperationsLedger();
   const resources = foundry.utils.deepClone(ledger.resources ?? {});
   ensureOperationalResourceConfig(resources);
-  const weatherOptions = getGatherWeatherOptions(resources);
-  const rollMode = getGatherRollModeSetting();
-  const actorOptions = actors.map((actor) => `<option value="${actor.id}">${actor.name}</option>`).join("");
-  const weatherHtml = weatherOptions.map((entry) => `<option value="${entry.value}">${entry.label} (DC +${entry.dcMod})</option>`).join("");
+  const count = Array.isArray(resources.gather?.history) ? resources.gather.history.length : 0;
+  if (count <= 0) {
+    ui.notifications?.info("No gather history to clear.");
+    return false;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Gather History",
+    content: "<p>Are you sure you want to delete all the history?</p>"
+  });
+  if (!confirmed) return false;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    ledger.resources.gather.history = [];
+  });
+  ui.notifications?.info(`Cleared ${count} gather history entr${count === 1 ? "y" : "ies"}.`);
+  return true;
+}
 
+async function removeGatherHistoryEntryAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can remove gather history entries.");
+    return false;
+  }
+  const historyId = String(element?.dataset?.historyId ?? "").trim();
+  if (!historyId) {
+    ui.notifications?.warn("Gather history entry not found.");
+    return false;
+  }
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    const history = Array.isArray(ledger.resources.gather?.history) ? ledger.resources.gather.history : [];
+    const nextHistory = history.filter((entry) => String(entry?.id ?? "").trim() !== historyId);
+    removed = nextHistory.length !== history.length;
+    ledger.resources.gather.history = nextHistory;
+  });
+  if (!removed) {
+    ui.notifications?.warn("Gather history entry not found.");
+    return false;
+  }
+  ui.notifications?.info("Gather history entry removed.");
+  return true;
+}
+
+async function runGatherResourcesAction(options = {}) {
+  const hasActorSelection = Boolean(options?.actorId || options?.actor?.id);
+  const showDialog = options?.showDialog === true || !hasActorSelection;
+  if (showDialog) {
+    return promptGatherResourceDialog(options);
+  }
+
+  const result = await executeGatherResourcesAction(options);
+  if (result?.ok && !result?.historyRecorded) {
+    const historyRecorded = await ensureGatherHistoryRecorded(result);
+    result.historyRecorded = historyRecorded;
+    if (!historyRecorded && options?.silent !== true) {
+      ui.notifications?.warn("Gather check resolved, but the history entry could not be recorded.");
+    }
+  }
+  if (result?.ok) refreshOpenApps();
+  if (!result?.ok && result?.blocked && options?.silent !== true) {
+    ui.notifications?.warn(String(result?.reason ?? "Gather attempt blocked."));
+  }
+  return result;
+}
+
+async function promptGatherResourceDialog(options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can run gather resource checks.");
+    return { ok: false, blocked: true, reason: "GM only." };
+  }
+
+  const actors = getResourceSyncActors().sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  if (actors.length === 0) {
+    ui.notifications?.warn("No eligible party actors found for gather checks.");
+    return { ok: false, blocked: true, reason: "No eligible actors." };
+  }
+
+  const config = getGatherResourceConfig();
+  if (!config.enabled) {
+    ui.notifications?.warn("Gather resources is disabled in module settings.");
+    return { ok: false, blocked: true, reason: "Gather resources disabled." };
+  }
+
+  const actorOptions = actors
+    .map((actor) => `<option value="${actor.id}" ${String(options?.actorId ?? "") === String(actor.id) ? "selected" : ""}>${poEscapeHtml(actor.name)}</option>`)
+    .join("");
+  const environmentOptions = getGatherEnvironmentChoices(config)
+    .map((entry) => `<option value="${entry.value}" ${normalizeGatherEnvironmentKey(options?.environment ?? GATHER_ENVIRONMENT_KEYS[0]) === entry.value ? "selected" : ""}>${poEscapeHtml(entry.label)}</option>`)
+    .join("");
+
+  const resourceType = normalizeGatherResourceType(options?.resourceType);
+  const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
+  const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
   const content = `
     <div class="form-group">
       <label>Gathering Actor</label>
       <select name="actorId">${actorOptions}</select>
     </div>
     <div class="form-group">
-      <label>Gather Target</label>
-      <select name="gatherType">
-        <option value="food">Food</option>
-        <option value="water">Water</option>
-        <option value="both" selected>Food + Water</option>
+      <label>Resource Type</label>
+      <select name="resourceType">
+        <option value="food" ${resourceType === "food" ? "selected" : ""}>Food</option>
+        <option value="water" ${resourceType === "water" ? "selected" : ""}>Water</option>
       </select>
     </div>
     <div class="form-group">
-      <label>Base DC</label>
-      <input type="number" name="hiddenDc" value="15" min="1" step="1" />
+      <label>Gather Environment</label>
+      <select name="environment">${environmentOptions}</select>
     </div>
     <div class="form-group">
-      <label>Weather (D&D 5e modifier)</label>
-      <select name="weather">${weatherHtml}</select>
+      <label>Gather Mode</label>
+      <select name="gatherMode">
+        <option value="standard" ${gatherMode === "standard" ? "selected" : ""}>Standard Search</option>
+        <option value="plant" ${gatherMode === "plant" ? "selected" : ""}>Plant Gathering</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Hours Spent</label>
+      <input type="number" name="hoursSpent" value="${Math.max(1, Number(options?.hoursSpent ?? config.minimumHours) || config.minimumHours)}" min="1" max="24" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Season Modifier</label>
+      <input type="number" name="seasonMod" value="${clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Weather Modifier</label>
+      <input type="number" name="weatherMod" value="${clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Corruption Modifier</label>
+      <input type="number" name="corruptionMod" value="${clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="isCorruptedRegion" ${options?.isCorruptedRegion ? "checked" : ""} /> Corrupted Region</label>
+      <label><input type="checkbox" name="hostileTerrain" ${options?.hostileTerrain ? "checked" : ""} /> Hostile Terrain</label>
+      <label><input type="checkbox" name="waterAutoFound" ${(options?.waterAutoFound ?? config.waterAutoFoundEnabled) ? "checked" : ""} ${config.waterAutoFoundEnabled ? "" : "disabled"} /> Obvious Water Source (auto-found)</label>
+      <label><input type="checkbox" name="duringTravel" ${options?.duringTravel ? "checked" : ""} /> Gather During Travel</label>
+      <label><input type="checkbox" name="applyToLedger" ${(options?.applyToLedger ?? true) ? "checked" : ""} /> Apply Rations To Party Pools</label>
+    </div>
+    <div class="form-group">
+      <label>Travel Tradeoff</label>
+      <select name="travelTradeoff">
+        <option value="${GATHER_TRAVEL_CHOICES.PACE}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.PACE ? "selected" : ""}>Reduce pace by one step</option>
+        <option value="${GATHER_TRAVEL_CHOICES.FELL_BEHIND}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "selected" : ""}>Fell behind + Con save</option>
+      </select>
     </div>
     <div class="form-group">
       <label>Effective DC Preview</label>
-      <div><strong data-gather-dc-preview>15 + 0 = 15</strong></div>
+      <div><strong data-gather-dc-preview>-</strong></div>
     </div>
   `;
 
   const dialog = new Dialog({
-    title: "Gather Resources Check",
+    title: "Gather Resources",
     content,
     buttons: {
       roll: {
-        label: "Roll Wisdom (Survival)",
+        label: "Run Gather Check",
         callback: async (html) => {
-          try {
-            const actorId = String(html.find("select[name=actorId]").val() ?? "");
-            const gatherType = String(html.find("select[name=gatherType]").val() ?? "both");
-            const hiddenDcRaw = Number(html.find("input[name=hiddenDc]").val() ?? 15);
-            const hiddenBaseDc = Number.isFinite(hiddenDcRaw) ? Math.max(1, Math.floor(hiddenDcRaw)) : 15;
-            const weatherKey = String(html.find("select[name=weather]").val() ?? "clear");
-
-            const actor = game.actors.get(actorId);
-            if (!actor) {
-              ui.notifications?.warn("Select a valid actor for the gather check.");
-              return;
-            }
-
-            const weather = weatherOptions.find((entry) => entry.value === weatherKey) ?? weatherOptions[0];
-            const targetDc = hiddenBaseDc + weather.dcMod;
-            let survival;
-            try {
-              survival = await rollWisdomSurvival(actor, {
-                dc: targetDc,
-                flavor: "Gathering Check: Wisdom (Survival)",
-                rollMode
-              });
-            } catch (error) {
-              ui.notifications?.warn(error?.message ?? "Gather check roll could not be resolved.");
-              return;
-            }
-            const success = typeof survival.passed === "boolean"
-              ? survival.passed
-              : Number(survival.total ?? 0) >= targetDc;
-            const wisMod = Number(actor.system?.abilities?.wis?.mod ?? 0);
-
-            let gainedFood = 0;
-            let gainedWater = 0;
-            let appliedGatherGain = false;
-            let foodInventoryGainSource = "";
-            let waterInventoryGainSource = "";
-
-            if (success) {
-              const coverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
-              if (gatherType === "food" || gatherType === "both") {
-                const foodRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
-                gainedFood = Math.max(0, Math.floor(Number(foodRoll.total ?? 0)));
-              }
-              if (gatherType === "water" || gatherType === "both") {
-                const waterRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
-                gainedWater = Math.max(0, Math.floor(Number(waterRoll.total ?? 0)));
-              }
-
-              const applyGain = game.user.isGM
-                ? await Dialog.confirm({
-                  title: "Approve Gather Recovery",
-                  content: `<p><strong>Actor:</strong> ${actor.name}</p><p><strong>Result:</strong> Success (${survival.total} vs DC ${targetDc})</p><p><strong>Gather Gain:</strong> Food +${gainedFood}, Water +${gainedWater}</p><p>Apply these gains to Party Food/Water pools and linked inventory selections?</p>`,
-                  yes: () => true,
-                  no: () => false,
-                  defaultYes: true
-                })
-                : false;
-
-              if (!game.user.isGM) {
-                ui.notifications?.warn("Gather gains require GM approval before applying resources.");
-              }
-
-              if (applyGain) {
-                const foodItemGain = await addToSelectedInventoryItem(resources.itemSelections?.food, gainedFood);
-                const waterItemGain = await addToSelectedInventoryItem(resources.itemSelections?.water, gainedWater);
-                foodInventoryGainSource = foodItemGain.source;
-                waterInventoryGainSource = waterItemGain.source;
-
-                await updateOperationsLedger((ledger) => {
-                  if (!ledger.resources) ledger.resources = {};
-                  ensureOperationalResourceConfig(ledger.resources);
-                  if (gainedFood > 0) {
-                    ledger.resources.partyFoodRations = Math.max(0, Number(ledger.resources.partyFoodRations ?? 0) + gainedFood);
-                  }
-                  if (gainedWater > 0) {
-                    ledger.resources.partyWaterRations = Math.max(0, Number(ledger.resources.partyWaterRations ?? 0) + gainedWater);
-                  }
-                  if (gatherType === "food" || gatherType === "both") {
-                    ledger.resources.gather.foodCoverageDueKey = coverageDueKey;
-                    ledger.resources.gather.foodCoveredNextUpkeep = true;
-                  }
-                  if (gatherType === "water" || gatherType === "both") {
-                    ledger.resources.gather.waterCoverageDueKey = coverageDueKey;
-                    ledger.resources.gather.waterCoveredNextUpkeep = true;
-                  }
-                });
-                appliedGatherGain = true;
-              }
-            }
-
-            await ChatMessage.create({
-              speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-              content: `<p><strong>Gathering Check</strong></p><p><strong>Actor:</strong> ${actor.name}</p><p><strong>Check:</strong> Wisdom (Survival) = ${survival.total}</p><p><strong>Roll Source:</strong> ${survival.source === "monks" ? "Monk's TokenBar" : "Foundry"}</p><p><strong>Weather:</strong> ${weather.label}</p><p><strong>Result:</strong> ${success ? "Success" : "Failure"}</p>${success ? `<p><strong>Resources Gained:</strong> Food Rations +${gainedFood}, Water Rations +${gainedWater}${appliedGatherGain ? " (Approved)" : " (Not Applied)"}</p>${foodInventoryGainSource ? `<p><strong>Food Inventory Increased:</strong> ${foodInventoryGainSource} +${gainedFood}</p>` : ""}${waterInventoryGainSource ? `<p><strong>Water Inventory Increased:</strong> ${waterInventoryGainSource} +${gainedWater}</p>` : ""}<p><strong>Usage Reduction:</strong> ${(gatherType === "both") ? "Food and water" : (gatherType === "food" ? "Food" : "Water")} usage will be reduced for the next upkeep day.</p>` : ""}`
-            });
-          } catch (error) {
-            const actorId = String(html.find("select[name=actorId]").val() ?? "");
-            const gatherType = String(html.find("select[name=gatherType]").val() ?? "both");
-            logUiFailure("resources", "gather resource check failed", error, { actorId, gatherType });
-            ui.notifications?.error("Gather resource check failed. Check the console for details.");
+          const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+          const payload = {
+            actorId,
+            resourceType: String(html.find("select[name=resourceType]").val() ?? "food"),
+            environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
+            gatherMode: String(html.find("select[name=gatherMode]").val() ?? "standard"),
+            hoursSpent: Number(html.find("input[name=hoursSpent]").val() ?? config.minimumHours),
+            seasonMod: Number(html.find("input[name=seasonMod]").val() ?? config.seasonMod),
+            weatherMod: Number(html.find("input[name=weatherMod]").val() ?? config.weatherMod),
+            corruptionMod: Number(html.find("input[name=corruptionMod]").val() ?? config.corruptionMod),
+            isCorruptedRegion: Boolean(html.find("input[name=isCorruptedRegion]").is(":checked")),
+            hostileTerrain: Boolean(html.find("input[name=hostileTerrain]").is(":checked")),
+            waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
+            duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
+            travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
+            applyToLedger: Boolean(html.find("input[name=applyToLedger]").is(":checked"))
+          };
+          const result = await runGatherResourcesAction(payload);
+          if (!result?.ok && result?.blocked) {
+            ui.notifications?.warn(String(result?.reason ?? "Gather attempt blocked."));
+            return;
           }
+          ui.notifications?.info(`Gather check resolved for ${result?.actorName ?? "actor"}.`);
         }
       },
       cancel: { label: "Cancel" }
     },
     default: "roll"
   });
-  wireGatherDcPreview(dialog, weatherOptions);
+  wireGatherDcPreview(dialog, config);
   dialog.render(true);
+  return { ok: true, blocked: false, prompted: true };
 }
 
 async function setReconField(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update recon planning.");
     return;
   }
@@ -14849,7 +23469,7 @@ async function setReconField(element) {
 }
 
 async function runReconCheck() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can run recon checks.");
     return;
   }
@@ -14898,21 +23518,21 @@ async function runReconCheck() {
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Recon Check</strong></p><p><strong>Actor:</strong> ${foundry.utils.escapeHTML(reconActor.name)}</p><p><strong>Result:</strong> ${passed ? "Success" : "Failure"} (${Math.floor(Number(total) || 0)} vs DC ${dc})</p><p>${foundry.utils.escapeHTML(insight)}</p>`
+    content: `<p><strong>Recon Check</strong></p><p><strong>Actor:</strong> ${poEscapeHtml(reconActor.name)}</p><p><strong>Result:</strong> ${passed ? "Success" : "Failure"} (${Math.floor(Number(total) || 0)} vs DC ${dc})</p><p>${poEscapeHtml(insight)}</p>`
   });
 }
 
 async function showReconBrief() {
   const recon = buildOperationsContext().recon;
-  const recommendationRows = recon.recommendations.map((entry) => `<li>${foundry.utils.escapeHTML(entry)}</li>`).join("");
+  const recommendationRows = recon.recommendations.map((entry) => `<li>${poEscapeHtml(entry)}</li>`).join("");
   const content = `
     <div class="po-help">
-      <p><strong>Readiness:</strong> ${foundry.utils.escapeHTML(recon.readinessLabel)} (score ${recon.readinessScore})</p>
+      <p><strong>Readiness:</strong> ${poEscapeHtml(recon.readinessLabel)} (score ${recon.readinessScore})</p>
       <p><strong>Suggested Recon DC:</strong> ${recon.suggestedDc}</p>
-      <p><strong>Objective:</strong> ${foundry.utils.escapeHTML(recon.objective || "-")}</p>
-      <p><strong>Region:</strong> ${foundry.utils.escapeHTML(recon.region || "-")}</p>
-      <p><strong>Source:</strong> ${foundry.utils.escapeHTML(recon.intelSource || "-")}</p>
-      <p><strong>Recent Findings:</strong> ${foundry.utils.escapeHTML(recon.recentFindings || "-")}</p>
+      <p><strong>Objective:</strong> ${poEscapeHtml(recon.objective || "-")}</p>
+      <p><strong>Region:</strong> ${poEscapeHtml(recon.region || "-")}</p>
+      <p><strong>Source:</strong> ${poEscapeHtml(recon.intelSource || "-")}</p>
+      <p><strong>Recent Findings:</strong> ${poEscapeHtml(recon.recentFindings || "-")}</p>
       <ul>${recommendationRows || "<li>No recommendations.</li>"}</ul>
     </div>
   `;
@@ -14925,7 +23545,7 @@ async function showReconBrief() {
 }
 
 async function setCommunicationToggle(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update communication discipline.");
     return;
   }
@@ -14938,7 +23558,7 @@ async function setCommunicationToggle(element) {
 }
 
 async function setCommunicationText(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update communication discipline.");
     return;
   }
@@ -14977,7 +23597,7 @@ async function showCommunicationBrief() {
 }
 
 async function setReputationScore(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -14994,7 +23614,7 @@ async function setReputationScore(element) {
 }
 
 async function adjustReputationScore(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15012,7 +23632,7 @@ async function adjustReputationScore(element) {
 }
 
 async function setReputationNote(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15033,10 +23653,10 @@ function buildReputationCalendarPayload(faction, logEntry) {
   const signedScore = score > 0 ? `+${score}` : String(score);
   const title = `Reputation Update: ${String(faction?.label ?? "Faction")}`;
   const body = [
-    `<p><strong>Faction:</strong> ${foundry.utils.escapeHTML(String(faction?.label ?? "Faction"))}</p>`,
-    `<p><strong>Reputation:</strong> ${signedScore} (${foundry.utils.escapeHTML(getReputationAccessLabel(score))})</p>`,
-    `<p><strong>Logged:</strong> ${foundry.utils.escapeHTML(String(logEntry?.dayLabel ?? formatRecoveryDueLabel(now)))}</p>`,
-    `<p><strong>Note:</strong> ${foundry.utils.escapeHTML(String(logEntry?.note ?? ""))}</p>`
+    `<p><strong>Faction:</strong> ${poEscapeHtml(String(faction?.label ?? "Faction"))}</p>`,
+    `<p><strong>Reputation:</strong> ${signedScore} (${poEscapeHtml(getReputationAccessLabel(score))})</p>`,
+    `<p><strong>Logged:</strong> ${poEscapeHtml(String(logEntry?.dayLabel ?? formatRecoveryDueLabel(now)))}</p>`,
+    `<p><strong>Note:</strong> ${poEscapeHtml(String(logEntry?.note ?? ""))}</p>`
   ].join("");
   return {
     title,
@@ -15053,7 +23673,7 @@ function buildReputationCalendarPayload(faction, logEntry) {
 }
 
 async function syncReputationLogToSimpleCalendar(faction, logEntry) {
-  if (!game.user.isGM || !isSimpleCalendarActive()) return "";
+  if (!canAccessAllPlayerOps() || !isSimpleCalendarActive()) return "";
   const api = getSimpleCalendarMutationApi();
   if (!api) return "";
   const created = await createSimpleCalendarEntry(api, buildReputationCalendarPayload(faction, logEntry));
@@ -15061,7 +23681,7 @@ async function syncReputationLogToSimpleCalendar(faction, logEntry) {
 }
 
 async function logReputationNote(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15097,10 +23717,12 @@ async function logReputationNote(element) {
     });
     entry.noteLogs.unshift(logEntry);
     if (entry.noteLogs.length > 100) entry.noteLogs = entry.noteLogs.slice(0, 100);
+    entry.note = "";
     createdLog = logEntry;
   });
 
   if (!createdLog) return;
+  setReputationNoteLogSelection(factionId, "");
   const calendarEntryId = await syncReputationLogToSimpleCalendar({ label: factionLabel }, createdLog);
   if (calendarEntryId) {
     await updateOperationsLedger((ledger) => {
@@ -15117,7 +23739,7 @@ async function logReputationNote(element) {
   const signedScore = Number(createdLog.score ?? 0) > 0 ? `+${Number(createdLog.score)}` : String(Number(createdLog.score ?? 0));
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Reputation Log:</strong> ${foundry.utils.escapeHTML(factionLabel)} - ${signedScore}</p><p>${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p><p>${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>`
+    content: `<p><strong>Reputation Log:</strong> ${poEscapeHtml(factionLabel)} - ${signedScore}</p><p>${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p><p>${poEscapeHtml(String(createdLog.note ?? ""))}</p>`
   });
   await createOperationsJournalEntry({
     category: "reputation",
@@ -15126,28 +23748,39 @@ async function logReputationNote(element) {
     summary: `Score ${signedScore} (${String(createdLog.dayLabel ?? "").trim() || "No date"})`,
     redactedSummary: `Reputation update logged for ${factionLabel}.`,
     body: `
-      <p><strong>Faction:</strong> ${foundry.utils.escapeHTML(factionLabel)}</p>
-      <p><strong>Score:</strong> ${foundry.utils.escapeHTML(signedScore)}</p>
-      <p><strong>Day:</strong> ${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p>
-      <p><strong>Note:</strong> ${foundry.utils.escapeHTML(String(createdLog.note ?? ""))}</p>
+      <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
+      <p><strong>Score:</strong> ${poEscapeHtml(signedScore)}</p>
+      <p><strong>Day:</strong> ${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p>
+      <p><strong>Note:</strong> ${poEscapeHtml(String(createdLog.note ?? ""))}</p>
     `,
     redactedBody: `
-      <p><strong>Faction:</strong> ${foundry.utils.escapeHTML(factionLabel)}</p>
-      <p><strong>Score:</strong> ${foundry.utils.escapeHTML(signedScore)}</p>
-      <p><strong>Day:</strong> ${foundry.utils.escapeHTML(String(createdLog.dayLabel ?? ""))}</p>
+      <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
+      <p><strong>Score:</strong> ${poEscapeHtml(signedScore)}</p>
+      <p><strong>Day:</strong> ${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p>
       <p><em>Detailed notes are redacted.</em></p>
     `
   });
 }
 
 async function loadReputationNoteLog(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
   const factionId = String(element?.dataset?.faction ?? "").trim();
   const logId = String(element?.value ?? "").trim();
-  if (!factionId || !logId) return;
+  if (!factionId) return;
+
+  if (!logId) {
+    setReputationNoteLogSelection(factionId, "");
+    await updateOperationsLedger((ledger) => {
+      const reputation = ensureReputationState(ledger);
+      const entry = reputation.factions.find((row) => row.id === factionId);
+      if (!entry) return;
+      entry.note = "";
+    });
+    return;
+  }
 
   let loaded = false;
   await updateOperationsLedger((ledger) => {
@@ -15159,11 +23792,12 @@ async function loadReputationNoteLog(element) {
     entry.note = String(logRow.note ?? "");
     loaded = true;
   });
+  if (loaded) setReputationNoteLogSelection(factionId, logId);
   if (loaded) ui.notifications?.info("Loaded historical reputation note into editor.");
 }
 
 async function clearReputationNote(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15182,7 +23816,7 @@ async function clearReputationNote(element) {
 }
 
 async function removeReputationNoteLog(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15191,7 +23825,9 @@ async function removeReputationNoteLog(element) {
   const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
   const logSelect = root?.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${factionId}']`)
     ?? root?.querySelector("select[data-action='load-reputation-note-log']");
-  const logId = String(logSelect?.value ?? "").trim();
+  const selectedFromUi = String(logSelect?.value ?? "").trim();
+  const selectedFromState = getReputationNoteLogSelection(factionId);
+  const logId = selectedFromUi || selectedFromState;
   if (!logId) {
     ui.notifications?.warn("Select a logged note to delete.");
     return;
@@ -15216,11 +23852,85 @@ async function removeReputationNoteLog(element) {
       await removeSimpleCalendarEntry(api, removedCalendarEntryId);
     }
   }
+  if (removed) setReputationNoteLogSelection(factionId, "");
   if (removed) ui.notifications?.info("Logged reputation note deleted.");
 }
 
+async function postReputationNoteLog(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can post reputation notes.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  if (!factionId) return;
+  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
+  const logSelect = root?.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${factionId}']`)
+    ?? root?.querySelector("select[data-action='load-reputation-note-log']");
+  const selectedFromUi = String(logSelect?.value ?? "").trim();
+  const selectedFromState = getReputationNoteLogSelection(factionId);
+  const logId = selectedFromUi || selectedFromState;
+  if (!logId) {
+    ui.notifications?.warn("Select a logged note to post.");
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const reputation = ensureReputationState(ledger);
+  const entry = reputation.factions.find((row) => String(row?.id ?? "").trim() === factionId);
+  if (!entry || !Array.isArray(entry.noteLogs)) {
+    ui.notifications?.warn("Faction note log not found.");
+    return;
+  }
+  const logRowRaw = entry.noteLogs.find((row) => String(row?.id ?? "").trim() === logId);
+  if (!logRowRaw) {
+    ui.notifications?.warn("Select a logged note to post.");
+    return;
+  }
+
+  const logRow = normalizeReputationNoteLog(logRowRaw);
+  setReputationNoteLogSelection(factionId, logId);
+  const factionLabel = String(entry.label ?? "Faction").trim() || "Faction";
+  const score = Math.max(-5, Math.min(5, Math.floor(Number(logRow.score ?? 0) || 0)));
+  const scoreLabel = score > 0 ? `+${score}` : String(score);
+  const dayLabel = String(logRow.dayLabel ?? "").trim() || formatRecoveryDueLabel(Number(logRow.loggedAt ?? Date.now()));
+  const postedBy = String(game.user?.name ?? "GM").trim() || "GM";
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Faction Update:</strong> ${poEscapeHtml(factionLabel)} - Rep ${poEscapeHtml(scoreLabel)} (${poEscapeHtml(getReputationAccessLabel(score))})</p>
+      <p><strong>Logged:</strong> ${poEscapeHtml(dayLabel)}</p>
+      <p>${poEscapeHtml(String(logRow.note ?? ""))}</p>
+      <p><em>Posted by ${poEscapeHtml(postedBy)}</em></p>
+    `
+  });
+
+  await createOperationsJournalEntry({
+    category: "reputation",
+    sensitivity: "player",
+    title: `Faction Update - ${factionLabel}`,
+    summary: `${factionLabel}: Rep ${scoreLabel} (${dayLabel})`,
+    redactedSummary: `${factionLabel} reputation update posted.`,
+    body: `
+      <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
+      <p><strong>Score:</strong> ${poEscapeHtml(scoreLabel)} (${poEscapeHtml(getReputationAccessLabel(score))})</p>
+      <p><strong>Logged:</strong> ${poEscapeHtml(dayLabel)}</p>
+      <p><strong>Note:</strong> ${poEscapeHtml(String(logRow.note ?? ""))}</p>
+      <p><strong>Posted by:</strong> ${poEscapeHtml(postedBy)}</p>
+    `,
+    redactedBody: `
+      <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
+      <p><strong>Score:</strong> ${poEscapeHtml(scoreLabel)} (${poEscapeHtml(getReputationAccessLabel(score))})</p>
+      <p><strong>Logged:</strong> ${poEscapeHtml(dayLabel)}</p>
+      <p><strong>Posted by:</strong> ${poEscapeHtml(postedBy)}</p>
+    `
+  });
+
+  ui.notifications?.info(`Posted selected note for ${factionLabel}.`);
+}
+
 async function setReputationLabel(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15236,7 +23946,7 @@ async function setReputationLabel(element) {
 }
 
 async function addReputationFaction(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15260,7 +23970,7 @@ async function addReputationFaction(element) {
 }
 
 async function removeReputationFaction(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -15272,6 +23982,7 @@ async function removeReputationFaction(element) {
     if (!entry || entry.isCore) return;
     reputation.factions = reputation.factions.filter((row) => row.id !== faction);
   });
+  setReputationNoteLogSelection(faction, "");
 }
 
 async function showReputationBrief() {
@@ -15308,7 +24019,7 @@ function getLootTableSourceMetaById(tableId) {
 }
 
 async function setLootManifestPack(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15322,7 +24033,7 @@ async function setLootManifestPack(element) {
 }
 
 async function setLootKeywordIncludeTags(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15334,7 +24045,7 @@ async function setLootKeywordIncludeTags(element) {
 }
 
 async function setLootKeywordExcludeTags(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15346,7 +24057,7 @@ async function setLootKeywordExcludeTags(element) {
 }
 
 async function toggleLootPackSource(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15377,7 +24088,7 @@ async function toggleLootPackSource(element) {
 }
 
 async function setLootPackWeight(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15408,7 +24119,7 @@ async function setLootPackWeight(element) {
 }
 
 async function toggleLootTableSource(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15439,7 +24150,7 @@ async function toggleLootTableSource(element) {
 }
 
 async function setLootTableType(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15471,7 +24182,7 @@ async function setLootTableType(element) {
 }
 
 async function toggleLootItemType(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15491,7 +24202,7 @@ async function toggleLootItemType(element) {
 }
 
 async function setLootRarityFloor(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15503,7 +24214,7 @@ async function setLootRarityFloor(element) {
 }
 
 async function setLootRarityCeiling(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15515,7 +24226,7 @@ async function setLootRarityCeiling(element) {
 }
 
 async function resetLootSourceConfig() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
@@ -15529,7 +24240,7 @@ async function resetLootSourceConfig() {
 }
 
 function setLootPreviewField(element) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const field = String(element?.dataset?.field ?? "").trim();
   if (!field) return;
   const normalizedField = field === "actorCount" ? "creatures" : field;
@@ -15606,7 +24317,7 @@ function readLootPreviewDraftFromUi(element) {
 }
 
 async function rollLootPreview(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can generate loot builder output.");
     return;
   }
@@ -15618,7 +24329,7 @@ async function rollLootPreview(element) {
 }
 
 function clearLootPreviewResult() {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   setLootPreviewResult(null);
 }
 
@@ -15758,7 +24469,7 @@ async function addLootPreviewItemByUuid(uuidInput = "") {
 }
 
 async function addLootPreviewItemByPicker() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can curate loot builder items.");
     return false;
   }
@@ -15766,7 +24477,7 @@ async function addLootPreviewItemByPicker() {
     .filter((entry) => entry?.documentName === "Item")
     .sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")));
 
-  const optionsHtml = worldItems.map((item) => `<option value="${foundry.utils.escapeHTML(String(item.id))}">${foundry.utils.escapeHTML(String(item.name ?? item.id))}</option>`).join("");
+  const optionsHtml = worldItems.map((item) => `<option value="${poEscapeHtml(String(item.id))}">${poEscapeHtml(String(item.name ?? item.id))}</option>`).join("");
   const canPickWorld = optionsHtml.length > 0;
 
   const choice = await new Promise((resolve) => {
@@ -15826,7 +24537,7 @@ async function addLootPreviewItemByPicker() {
 }
 
 async function addLootPreviewItemFromDropEvent(event) {
-  if (!game.user.isGM) return false;
+  if (!canAccessAllPlayerOps()) return false;
   let data = null;
   try {
     data = TextEditor.getDragEventData(event);
@@ -15844,7 +24555,7 @@ async function addLootPreviewItemFromDropEvent(event) {
 }
 
 async function removeLootPreviewItem(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can curate loot builder items.");
     return false;
   }
@@ -15878,7 +24589,7 @@ function getLootPreviewCurrencyGpEquivalent(currency = {}) {
 }
 
 function adjustLootPreviewCurrency(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can curate loot builder currency.");
     return false;
   }
@@ -15914,8 +24625,104 @@ function adjustLootPreviewCurrency(element) {
   return true;
 }
 
+function getConnectedNonGmUsers() {
+  return (game.users?.contents ?? [])
+    .filter((user) => Boolean(user?.active) && !Boolean(user?.isGM));
+}
+
+function formatLootCurrencyRemainingLabel(currency = {}) {
+  const pp = Math.max(0, Math.floor(Number(currency?.pp ?? 0) || 0));
+  const gp = Math.max(0, Math.floor(Number(currency?.gp ?? 0) || 0));
+  const sp = Math.max(0, Math.floor(Number(currency?.sp ?? 0) || 0));
+  const cp = Math.max(0, Math.floor(Number(currency?.cp ?? 0) || 0));
+  return `${pp} pp - ${gp} gp - ${sp} sp - ${cp} cp`;
+}
+
+function openOperationsLootClaimsTabForPlayer(options = {}) {
+  setActiveOperationsPage("planning");
+  setActiveOperationsPlanningTab("loot");
+  const app = openMainTab("operations", {
+    force: options?.force !== false,
+    suppressHistory: Boolean(options?.suppressHistory)
+  });
+  app?.render?.({ force: true, parts: ["main"], focus: true });
+  app?.bringToTop?.();
+  return app;
+}
+
+async function promptLootClaimsDialogForPlayer(options = {}) {
+  if (game.user?.isGM) return true;
+  const lootClaims = options?.lootClaims && typeof options.lootClaims === "object"
+    ? options.lootClaims
+    : buildLootClaimsContext(game.user);
+  const itemCount = Math.max(0, Number(options?.itemCount ?? lootClaims?.itemCount ?? 0) || 0);
+  const currencyRemaining = options?.currencyRemaining && typeof options.currencyRemaining === "object"
+    ? options.currencyRemaining
+    : (lootClaims?.currencyRemaining ?? {});
+  const publishedBy = String(options?.publishedBy ?? lootClaims?.publishedBy ?? "GM").trim() || "GM";
+  const publishedAt = Math.max(0, Number(options?.publishedAt ?? 0) || 0);
+  const publishedAtLabel = publishedAt > 0
+    ? new Date(publishedAt).toLocaleString()
+    : String(lootClaims?.publishedAtLabel ?? "-");
+  const content = `
+    <div class="po-help">
+      <p><strong>New loot is ready to claim.</strong></p>
+      <p><strong>Published:</strong> ${poEscapeHtml(publishedAtLabel)} by ${poEscapeHtml(publishedBy)}</p>
+      <p><strong>Items:</strong> ${itemCount}</p>
+      <p><strong>Currency:</strong> ${poEscapeHtml(formatLootCurrencyRemainingLabel(currencyRemaining))}</p>
+      <p>Open the Planning <strong>Loot</strong> tab now?</p>
+    </div>
+  `;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(Boolean(value));
+    };
+    const dialog = new Dialog({
+      title: "Loot Ready To Claim",
+      content,
+      buttons: {
+        open: {
+          label: "Open Loot Claims",
+          callback: () => finish(true)
+        },
+        later: {
+          label: "Later",
+          callback: () => finish(false)
+        }
+      },
+      default: "open",
+      close: () => finish(false)
+    });
+    dialog.render(true);
+  });
+}
+
+async function waitForLootClaimsPublished(expectedPublishedAtInput, timeoutMs = 1800) {
+  const expectedPublishedAt = Math.max(0, Number(expectedPublishedAtInput ?? 0) || 0);
+  if (expectedPublishedAt <= 0) return;
+  const timeout = Math.max(100, Math.floor(Number(timeoutMs) || 1800));
+  const startedAt = Date.now();
+  while ((Date.now() - startedAt) < timeout) {
+    const ledger = getOperationsLedger();
+    const claims = ensureLootClaimsState(ledger);
+    const publishedAt = Math.max(0, Number(claims?.publishedAt ?? 0) || 0);
+    if (publishedAt >= expectedPublishedAt) return;
+    const boardMatch = Array.isArray(claims?.boards)
+      && claims.boards.some((board) => Math.max(0, Number(board?.publishedAt ?? 0) || 0) >= expectedPublishedAt);
+    if (boardMatch) return;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+  logUiDebug("loot-claims", "timed out waiting for published loot claims sync", {
+    expectedPublishedAt,
+    observedPublishedAt: Math.max(0, Number(getOperationsLedger()?.lootClaims?.publishedAt ?? 0) || 0)
+  });
+}
+
 async function publishLootPreviewToClaims() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can publish loot claims.");
     return;
   }
@@ -15930,64 +24737,146 @@ async function publishLootPreviewToClaims() {
     return;
   }
 
+  let publishedAt = 0;
+  let publishedRunId = "";
+  const publishedCurrency = {
+    pp: Math.max(0, Math.floor(Number(result?.currency?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(result?.currency?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(result?.currency?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(result?.currency?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0)
+  };
+  const publishedTableRolls = Array.isArray(result?.tableRolls)
+    ? result.tableRolls.map((entry) => ({
+      sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
+      sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
+      tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
+      formula: String(entry?.formula ?? "").trim(),
+      total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
+      result: String(entry?.result ?? "No result").trim() || "No result"
+    }))
+    : [];
+
   await updateOperationsLedger((ledger) => {
     const claims = ensureLootClaimsState(ledger);
-    claims.publishedAt = Date.now();
-    claims.publishedBy = String(game.user?.name ?? "GM");
-    claims.currency = {
-      pp: Math.max(0, Math.floor(Number(result?.currency?.pp ?? 0) || 0)),
-      gp: Math.max(0, Math.floor(Number(result?.currency?.gp ?? 0) || 0)),
-      sp: Math.max(0, Math.floor(Number(result?.currency?.sp ?? 0) || 0)),
-      cp: Math.max(0, Math.floor(Number(result?.currency?.cp ?? 0) || 0)),
-      gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0)
-    };
-    claims.currencyRemaining = foundry.utils.deepClone(claims.currency);
-    claims.currencyClaimedActorIds = [];
-    claims.items = items.map((entry) => ({
+    const nextPublishedAt = Date.now();
+    const board = normalizeLootClaimBoardRecord({
       id: foundry.utils.randomID(),
-      uuid: String(entry?.uuid ?? "").trim(),
-      name: String(entry?.name ?? "Item").trim() || "Item",
-      img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
-      itemType: String(entry?.itemType ?? "").trim(),
-      rarity: String(entry?.rarity ?? "").trim(),
-      sourceLabel: String(entry?.sourceLabel ?? "").trim(),
-      majorItem: isLootItemLikelyMajor(entry),
-      vouchedByActorIds: []
-    }));
-    claims.tableRolls = Array.isArray(result?.tableRolls)
-      ? result.tableRolls.map((entry) => ({
-        sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
-        sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
-        tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
-        formula: String(entry?.formula ?? "").trim(),
-        total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
-        result: String(entry?.result ?? "No result").trim() || "No result"
-      }))
-      : [];
-    claims.claimsLog = [];
+      status: "open",
+      publishedAt: nextPublishedAt,
+      publishedBy: String(game.user?.name ?? "GM"),
+      currency: publishedCurrency,
+      currencyRemaining: publishedCurrency,
+      currencyClaimedActorIds: [],
+      items: items.map((entry) => ({
+        id: foundry.utils.randomID(),
+        uuid: String(entry?.uuid ?? "").trim(),
+        name: String(entry?.name ?? "Item").trim() || "Item",
+        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        itemType: String(entry?.itemType ?? "").trim(),
+        rarity: String(entry?.rarity ?? "").trim(),
+        sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+        majorItem: isLootItemLikelyMajor(entry),
+        vouchedByActorIds: []
+      })),
+      tableRolls: publishedTableRolls,
+      claimsLog: []
+    });
+    if (!Array.isArray(claims.boards)) claims.boards = [];
+    claims.boards.unshift(board);
+    claims.activeBoardId = String(board.id ?? "");
+    publishedAt = nextPublishedAt;
+    publishedRunId = String(board.id ?? "");
   });
-  game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
-  if (game.user?.isGM) openGmLootClaimsBoard({ force: true });
-  ui.notifications?.info(`Published ${items.length} loot item(s) to player claims.`);
+  if (publishedRunId) setLootClaimRunSelection(publishedRunId);
+  const playerUsers = getConnectedNonGmUsers();
+  if (playerUsers.length === 0) {
+    ui.notifications?.warn("No active non-GM players are connected to receive the loot claims popup.");
+  }
+  logUiDebug("loot-claims", "publishing loot claims to players", {
+    publishedAt,
+    runId: publishedRunId,
+    itemCount: items.length,
+    recipients: playerUsers.map((user) => ({
+      id: String(user?.id ?? ""),
+      name: String(user?.name ?? "Player"),
+      actorId: String(user?.character?.id ?? "").trim()
+    }))
+  });
+  for (const user of playerUsers) {
+    const actorId = String(user?.character?.id ?? "").trim();
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "players:openLootClaims",
+      userId: String(user?.id ?? ""),
+      actorId,
+      runId: publishedRunId,
+      publishedAt,
+      publishedBy: String(game.user?.name ?? "GM"),
+      itemCount: items.length,
+      currencyRemaining: {
+        pp: publishedCurrency.pp,
+        gp: publishedCurrency.gp,
+        sp: publishedCurrency.sp,
+        cp: publishedCurrency.cp
+      }
+    });
+  }
+  if (canAccessAllPlayerOps()) openGmLootClaimsBoard({ force: true, runId: publishedRunId });
+  ui.notifications?.info(
+    `Published ${items.length} loot item(s) to player claims${playerUsers.length > 0 ? ` and prompted ${playerUsers.length} player(s).` : "."}`
+  );
 }
 
-async function clearLootClaimsPool() {
-  if (!game.user.isGM) {
+function getLootClaimBoardFromState(claims, runIdInput = "", options = {}) {
+  const boards = Array.isArray(claims?.boards) ? claims.boards : [];
+  if (boards.length === 0) return null;
+  const requestedRunId = normalizeLootClaimRunId(runIdInput);
+  let board = requestedRunId ? boards.find((entry) => String(entry?.id ?? "") === requestedRunId) : null;
+  if (!board) {
+    const storedRunId = normalizeLootClaimRunId(options?.storedRunId ?? getLootClaimRunSelection());
+    if (storedRunId) board = boards.find((entry) => String(entry?.id ?? "") === storedRunId) ?? null;
+  }
+  if (!board) {
+    const activeBoardId = normalizeLootClaimRunId(claims?.activeBoardId);
+    if (activeBoardId) board = boards.find((entry) => String(entry?.id ?? "") === activeBoardId) ?? null;
+  }
+  if (!board) board = boards.find((entry) => String(entry?.status ?? "open") !== "archived") ?? null;
+  if (!board) board = boards[0] ?? null;
+  const requireOpen = Boolean(options?.requireOpen);
+  if (requireOpen && String(board?.status ?? "open") === "archived") return null;
+  return board;
+}
+
+async function clearLootClaimsPool(runIdInput = "") {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can clear loot claims.");
     return;
   }
+  const runId = normalizeLootClaimRunId(runIdInput);
+  let archivedBoardId = "";
+  let archivedItemCount = 0;
   await updateOperationsLedger((ledger) => {
     const claims = ensureLootClaimsState(ledger);
-    claims.publishedAt = 0;
-    claims.publishedBy = "";
-    claims.currency = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
-    claims.currencyRemaining = { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
-    claims.currencyClaimedActorIds = [];
-    claims.items = [];
-    claims.tableRolls = [];
-    claims.claimsLog = [];
+    const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+    if (!board) return;
+    board.status = "archived";
+    board.archivedAt = Date.now();
+    board.archivedBy = String(game.user?.name ?? "GM");
+    archivedBoardId = String(board.id ?? "");
+    archivedItemCount = Array.isArray(board.items) ? board.items.length : 0;
+    if (String(claims.activeBoardId ?? "") === archivedBoardId) {
+      const nextOpenBoard = claims.boards.find((entry) => String(entry?.status ?? "open") !== "archived");
+      claims.activeBoardId = String(nextOpenBoard?.id ?? "");
+    }
   });
-  ui.notifications?.info("Cleared the player loot claim board.");
+  if (!archivedBoardId) {
+    ui.notifications?.warn("No open loot claim board is available to archive.");
+    return;
+  }
+  const refreshedClaims = ensureLootClaimsState(getOperationsLedger());
+  const nextSelection = normalizeLootClaimRunId(refreshedClaims.activeBoardId) || normalizeLootClaimRunId(refreshedClaims.boards?.[0]?.id);
+  setLootClaimRunSelection(nextSelection);
+  ui.notifications?.info(`Archived loot claim board (${archivedItemCount} item(s)).`);
 }
 
 function getLootClaimActorIdFromElement(element) {
@@ -16000,6 +24889,21 @@ function getLootClaimActorIdFromElement(element) {
   return getLootClaimActorSelection();
 }
 
+function getLootClaimRunIdFromElement(element) {
+  const explicitRunId = normalizeLootClaimRunId(element?.dataset?.claimRunId);
+  if (explicitRunId) {
+    setLootClaimRunSelection(explicitRunId);
+    return explicitRunId;
+  }
+  const root = element?.closest(".po-loot-claims-panel");
+  const selectedRunId = normalizeLootClaimRunId(root?.querySelector("select[name='lootClaimRunId']")?.value);
+  if (selectedRunId) {
+    setLootClaimRunSelection(selectedRunId);
+    return selectedRunId;
+  }
+  return getLootClaimRunSelection();
+}
+
 function getLootClaimVouchIntentFromElement(element) {
   const explicit = String(element?.dataset?.shouldVouch ?? "").trim().toLowerCase();
   if (explicit === "true") return true;
@@ -16007,15 +24911,20 @@ function getLootClaimVouchIntentFromElement(element) {
   return true;
 }
 
-async function setLootClaimItemMajor(itemIdInput, majorItemInput) {
+async function setLootClaimItemMajor(itemIdInput, majorItemInput, runIdInput = "") {
   const itemId = String(itemIdInput ?? "").trim();
   if (!itemId) return { ok: false, message: "Missing item id." };
-  if (!game.user?.isGM) return { ok: false, message: "Only the GM can update major-item status." };
+  if (!canAccessAllPlayerOps()) return { ok: false, message: "Only the GM can update major-item status." };
+  const runId = normalizeLootClaimRunId(runIdInput);
   const majorItem = Boolean(majorItemInput);
   let updated = false;
   await updateOperationsLedger((ledger) => {
     const claims = ensureLootClaimsState(ledger);
-    const item = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+    const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+    if (!board) return;
+    const item = Array.isArray(board.items)
+      ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
+      : null;
     if (!item) return;
     item.majorItem = majorItem;
     updated = true;
@@ -16024,24 +24933,32 @@ async function setLootClaimItemMajor(itemIdInput, majorItemInput) {
   return { ok: true };
 }
 
-async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouchInput = true) {
+async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouchInput = true, runIdInput = "") {
   const actorId = String(actorIdInput ?? "").trim();
   const itemId = String(itemIdInput ?? "").trim();
+  const runId = normalizeLootClaimRunId(runIdInput);
   const shouldVouch = Boolean(shouldVouchInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
   const eligibleActorIds = new Set(getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
   if (!eligibleActorIds.has(actorId)) return { ok: false, message: "Actor is not eligible for claim vouchers." };
 
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
-  const claimItem = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+  const claimItem = Array.isArray(board.items)
+    ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
+    : null;
   if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
 
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
-    const nextItem = nextClaims.items.find((entry) => String(entry?.id ?? "") === itemId);
+    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
+    const nextItem = Array.isArray(nextBoard?.items)
+      ? nextBoard.items.find((entry) => String(entry?.id ?? "") === itemId)
+      : null;
     if (!nextItem) return;
     if (!Array.isArray(nextItem.vouchedByActorIds)) nextItem.vouchedByActorIds = [];
     const filtered = nextItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean);
@@ -16058,6 +24975,7 @@ async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouc
     ok: true,
     actorName: String(actor.name ?? "Actor"),
     itemName: String(claimItem.name ?? "Item"),
+    runId: String(board.id ?? ""),
     shouldVouch
   };
 }
@@ -16083,13 +25001,18 @@ async function postLootRollOffToChat(itemName, winnerActorName, rollRows = [], t
   });
 }
 
-async function runLootItemRollOff(itemIdInput) {
+async function runLootItemRollOff(itemIdInput, runIdInput = "") {
   const itemId = String(itemIdInput ?? "").trim();
+  const runId = normalizeLootClaimRunId(runIdInput);
   if (!itemId) return { ok: false, message: "Missing item id." };
-  if (!game.user?.isGM) return { ok: false, message: "Only the GM can run roll-offs." };
+  if (!canAccessAllPlayerOps()) return { ok: false, message: "Only the GM can run roll-offs." };
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
-  const item = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+  const item = Array.isArray(board.items)
+    ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
+    : null;
   if (!item) return { ok: false, message: "Loot item no longer exists." };
   const voucherActorIds = Array.isArray(item.vouchedByActorIds)
     ? item.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
@@ -16115,7 +25038,7 @@ async function runLootItemRollOff(itemIdInput) {
     ? `Tie at ${topTotal}; winner selected by tiebreak among tied contenders.`
     : "";
 
-  const claimOutcome = await applyLootClaimForUser(game.user, winner.actorId, itemId);
+  const claimOutcome = await applyLootClaimForUser(game.user, winner.actorId, itemId, board.id);
   if (!claimOutcome.ok) return { ok: false, message: claimOutcome.message ?? "Failed to apply roll-off claim." };
 
   await postLootRollOffToChat(item.name, winner.actorName, rollRows, tieNote);
@@ -16155,7 +25078,7 @@ async function ensureOperationsJournalRootFolder() {
   const existing = findOperationsJournalRootFolder();
   if (existing) {
     const existingName = String(existing.name ?? "").trim();
-    if (existingName !== OPERATIONS_JOURNAL_ROOT_NAME && game.user?.isGM) {
+    if (existingName !== OPERATIONS_JOURNAL_ROOT_NAME && canAccessAllPlayerOps()) {
       try {
         await existing.update({ name: OPERATIONS_JOURNAL_ROOT_NAME });
       } catch {
@@ -16180,7 +25103,7 @@ async function setJournalFolderCacheState(patch = {}) {
     insertKeys: true,
     insertValues: true
   });
-  await game.settings.set(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE, next);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.JOURNAL_FOLDER_CACHE, next);
 }
 
 async function ensureJournalFolderByName(name, parentId = "") {
@@ -16197,14 +25120,14 @@ async function ensureJournalFolderByName(name, parentId = "") {
       const cachedParentId = getJournalFolderParentId(cachedFolder);
       if (cachedName === normalizedName.toLowerCase() && cachedParentId === normalizedParentId) return cachedFolder;
     }
-    if (game.user?.isGM) {
+    if (canAccessAllPlayerOps()) {
       await setJournalFolderCacheState({ folders: { [key]: "" } });
     }
   }
 
   const existing = findJournalFolderByName(normalizedName, normalizedParentId);
   if (existing) {
-    if (game.user?.isGM) {
+    if (canAccessAllPlayerOps()) {
       await setJournalFolderCacheState({ folders: { [key]: String(existing.id ?? "") } });
     }
     return existing;
@@ -16219,7 +25142,7 @@ async function ensureJournalFolderByName(name, parentId = "") {
       type: "JournalEntry",
       folder: normalizedParentId || null
     });
-    if (game.user?.isGM && created?.id) {
+    if (canAccessAllPlayerOps() && created?.id) {
       await setJournalFolderCacheState({ folders: { [key]: String(created.id) } });
     }
     return created;
@@ -16244,7 +25167,7 @@ async function ensureOperationsJournalFolder(categoryKey = "session") {
 }
 
 async function ensureOperationsJournalFolderTree() {
-  if (!game.user?.isGM) return null;
+  if (!canAccessAllPlayerOps()) return null;
   const root = await ensureOperationsJournalRootFolder();
   const categories = [];
   for (const [categoryKey, categoryLabel] of Object.entries(OPERATIONS_JOURNAL_CATEGORIES)) {
@@ -16270,7 +25193,7 @@ function journalFolderIsUnderRoot(folderId, rootId) {
 }
 
 async function createOperationsJournalEntry(options = {}) {
-  if (!game.user?.isGM) return null;
+  if (!canAccessAllPlayerOps()) return null;
 
   const categoryRaw = String(options?.category ?? options?.categoryKey ?? "session").trim().toLowerCase();
   const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw)
@@ -16359,16 +25282,21 @@ async function buildLootClaimItemDocumentData(itemEntry = {}) {
   return data;
 }
 
-async function applyLootClaimForUser(user, actorIdInput, itemIdInput) {
+async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput = "") {
   const actorId = String(actorIdInput ?? "").trim();
   const itemId = String(itemIdInput ?? "").trim();
+  const runId = normalizeLootClaimRunId(runIdInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
 
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
-  const claimItem = claims.items.find((entry) => String(entry?.id ?? "") === itemId);
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+  const claimItem = Array.isArray(board.items)
+    ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
+    : null;
   if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
   const voucherActorIds = Array.isArray(claimItem.vouchedByActorIds)
     ? claimItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
@@ -16388,9 +25316,14 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput) {
 
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
-    const index = nextClaims.items.findIndex((entry) => String(entry?.id ?? "") === itemId);
-    if (index >= 0) nextClaims.items.splice(index, 1);
-    nextClaims.claimsLog.unshift({
+    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
+    if (!nextBoard) return;
+    const index = Array.isArray(nextBoard.items)
+      ? nextBoard.items.findIndex((entry) => String(entry?.id ?? "") === itemId)
+      : -1;
+    if (index >= 0) nextBoard.items.splice(index, 1);
+    if (!Array.isArray(nextBoard.claimsLog)) nextBoard.claimsLog = [];
+    nextBoard.claimsLog.unshift({
       id: foundry.utils.randomID(),
       itemId,
       itemName: String(claimItem.name ?? "Item"),
@@ -16400,13 +25333,14 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput) {
       claimedByName: String(user?.name ?? "Player"),
       claimedAt: Date.now()
     });
-    nextClaims.claimsLog = nextClaims.claimsLog
+    nextBoard.claimsLog = nextBoard.claimsLog
       .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
       .slice(0, 120);
   });
 
   return {
     ok: true,
+    runId: String(board.id ?? ""),
     actorName: String(actor.name ?? "Actor"),
     itemName: String(claimItem.name ?? "Item"),
     actorId: String(actor.id ?? ""),
@@ -16437,19 +25371,22 @@ function computeCurrencyShareForActor(remaining = {}, actorId = "", unclaimedAct
   return { ...share, gpEquivalent };
 }
 
-async function applyLootCurrencyClaimForUser(user, actorIdInput) {
+async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = "") {
   const actorId = String(actorIdInput ?? "").trim();
+  const runId = normalizeLootClaimRunId(runIdInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You do not own that actor." };
+  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
   const eligibleActorIds = getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean);
   if (!eligibleActorIds.includes(actorId)) return { ok: false, message: "Actor is not in the player-character claim pool." };
 
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
-  const claimedSet = new Set((claims.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+  const claimedSet = new Set((board.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
   if (claimedSet.has(actorId)) return { ok: false, message: "This actor already claimed a currency share from this board." };
-  const remaining = claims.currencyRemaining ?? claims.currency ?? {};
+  const remaining = board.currencyRemaining ?? board.currency ?? {};
   const hasRemaining = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Math.floor(Number(remaining?.[denom] ?? 0) || 0)) > 0);
   if (!hasRemaining) return { ok: false, message: "No currency remains to claim." };
   const unclaimed = eligibleActorIds.filter((id) => !claimedSet.has(id));
@@ -16469,7 +25406,9 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput) {
 
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
-    const currentRemaining = nextClaims.currencyRemaining ?? nextClaims.currency ?? {};
+    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
+    if (!nextBoard) return;
+    const currentRemaining = nextBoard.currencyRemaining ?? nextBoard.currency ?? {};
     const nextRemaining = {
       pp: Math.max(0, Math.floor(Number(currentRemaining.pp ?? 0) || 0) - share.pp),
       gp: Math.max(0, Math.floor(Number(currentRemaining.gp ?? 0) || 0) - share.gp),
@@ -16477,11 +25416,11 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput) {
       cp: Math.max(0, Math.floor(Number(currentRemaining.cp ?? 0) || 0) - share.cp),
       gpEquivalent: Math.max(0, Number(currentRemaining.gpEquivalent ?? 0) - Number(share.gpEquivalent ?? 0))
     };
-    nextClaims.currencyRemaining = nextRemaining;
-    if (!Array.isArray(nextClaims.currencyClaimedActorIds)) nextClaims.currencyClaimedActorIds = [];
-    if (!nextClaims.currencyClaimedActorIds.includes(actorId)) nextClaims.currencyClaimedActorIds.push(actorId);
-    if (!Array.isArray(nextClaims.claimsLog)) nextClaims.claimsLog = [];
-    nextClaims.claimsLog.unshift({
+    nextBoard.currencyRemaining = nextRemaining;
+    if (!Array.isArray(nextBoard.currencyClaimedActorIds)) nextBoard.currencyClaimedActorIds = [];
+    if (!nextBoard.currencyClaimedActorIds.includes(actorId)) nextBoard.currencyClaimedActorIds.push(actorId);
+    if (!Array.isArray(nextBoard.claimsLog)) nextBoard.claimsLog = [];
+    nextBoard.claimsLog.unshift({
       id: foundry.utils.randomID(),
       itemId: `currency:${Date.now()}`,
       itemName: `Currency Share (${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp)`,
@@ -16491,13 +25430,14 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput) {
       claimedByName: String(user?.name ?? "Player"),
       claimedAt: Date.now()
     });
-    nextClaims.claimsLog = nextClaims.claimsLog
+    nextBoard.claimsLog = nextBoard.claimsLog
       .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
       .slice(0, 120);
   });
 
   return {
     ok: true,
+    runId: String(board.id ?? ""),
     actorName: String(actor.name ?? "Actor"),
     actorId: String(actor.id ?? ""),
     actorUuid: String(actor.uuid ?? ""),
@@ -16509,6 +25449,7 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput) {
 
 async function claimLootItemForPlayer(element) {
   const itemId = String(element?.dataset?.itemId ?? "").trim();
+  const runId = getLootClaimRunIdFromElement(element);
   if (!itemId) return;
   const actorId = getLootClaimActorIdFromElement(element);
   if (!actorId) {
@@ -16516,8 +25457,8 @@ async function claimLootItemForPlayer(element) {
     return;
   }
 
-  if (game.user.isGM) {
-    const outcome = await applyLootClaimForUser(game.user, actorId, itemId);
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
     if (!outcome.ok) {
       ui.notifications?.warn(outcome.message ?? "Loot claim failed.");
       return;
@@ -16531,13 +25472,15 @@ async function claimLootItemForPlayer(element) {
     type: "ops:loot-claim",
     userId: game.user.id,
     actorId,
-    itemId
+    itemId,
+    runId
   });
   ui.notifications?.info("Loot claim request sent to GM.");
 }
 
 async function toggleLootItemVouchForPlayer(element) {
   const itemId = String(element?.dataset?.itemId ?? "").trim();
+  const runId = getLootClaimRunIdFromElement(element);
   if (!itemId) return;
   const actorId = getLootClaimActorIdFromElement(element);
   if (!actorId) {
@@ -16546,8 +25489,8 @@ async function toggleLootItemVouchForPlayer(element) {
   }
   const shouldVouch = getLootClaimVouchIntentFromElement(element);
 
-  if (game.user.isGM) {
-    const outcome = await applyLootVouchForUser(game.user, actorId, itemId, shouldVouch);
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootVouchForUser(game.user, actorId, itemId, shouldVouch, runId);
     if (!outcome.ok) {
       ui.notifications?.warn(outcome.message ?? "Vouch update failed.");
       return;
@@ -16561,24 +25504,27 @@ async function toggleLootItemVouchForPlayer(element) {
     userId: game.user.id,
     actorId,
     itemId,
+    runId,
     shouldVouch
   });
   ui.notifications?.info(shouldVouch ? "Voucher request sent to GM." : "Voucher removal request sent to GM.");
 }
 
 async function setLootItemMajorFromElement(element) {
-  if (!game.user?.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const itemId = String(element?.dataset?.itemId ?? "").trim();
+  const runId = getLootClaimRunIdFromElement(element);
   if (!itemId) return;
-  const outcome = await setLootClaimItemMajor(itemId, Boolean(element?.checked));
+  const outcome = await setLootClaimItemMajor(itemId, Boolean(element?.checked), runId);
   if (!outcome.ok) ui.notifications?.warn(outcome.message ?? "Unable to update major-item status.");
 }
 
 async function runLootRollOffFromElement(element) {
-  if (!game.user?.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const itemId = String(element?.dataset?.itemId ?? "").trim();
+  const runId = getLootClaimRunIdFromElement(element);
   if (!itemId) return;
-  const outcome = await runLootItemRollOff(itemId);
+  const outcome = await runLootItemRollOff(itemId, runId);
   if (!outcome.ok) {
     ui.notifications?.warn(outcome.message ?? "Roll-off failed.");
     return;
@@ -16587,13 +25533,14 @@ async function runLootRollOffFromElement(element) {
 }
 
 async function claimLootCurrencyForPlayer(element) {
+  const runId = getLootClaimRunIdFromElement(element);
   const actorId = getLootClaimActorIdFromElement(element);
   if (!actorId) {
     ui.notifications?.warn("Select a character to receive currency.");
     return;
   }
-  if (game.user.isGM) {
-    const outcome = await applyLootCurrencyClaimForUser(game.user, actorId);
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootCurrencyClaimForUser(game.user, actorId, runId);
     if (!outcome.ok) {
       ui.notifications?.warn(outcome.message ?? "Currency claim failed.");
       return;
@@ -16606,7 +25553,8 @@ async function claimLootCurrencyForPlayer(element) {
   game.socket.emit(SOCKET_CHANNEL, {
     type: "ops:loot-claim-currency",
     userId: game.user.id,
-    actorId
+    actorId,
+    runId
   });
   ui.notifications?.info("Currency claim request sent to GM.");
 }
@@ -16681,7 +25629,7 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
 }
 
 async function gmQuickAddFaction() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -16725,7 +25673,7 @@ async function gmQuickAddFaction() {
 }
 
 async function gmQuickSubmitFaction(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
@@ -16773,7 +25721,7 @@ function getDaeModifierCategoryOptions() {
 }
 
 async function gmQuickAddModifier() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
     return;
   }
@@ -16782,47 +25730,272 @@ async function gmQuickAddModifier() {
 }
 
 async function gmQuickSubmitModifier(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
     return;
   }
   const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const label = String(root?.querySelector("input[name='quickGlobalModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const keySelect = String(root?.querySelector("select[name='quickGlobalModifierKey']")?.value ?? "").trim();
-  const key = keySelect;
-  const value = String(root?.querySelector("input[name='quickGlobalModifierValue']")?.value ?? "").trim();
-  const note = String(root?.querySelector("textarea[name='quickGlobalModifierNote']")?.value ?? "");
-  const rawMode = Math.floor(Number(root?.querySelector("select[name='quickGlobalModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
-  const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
+  const payload = readQuickModifierDraftFromRoot(root);
+  if (!payload) return;
+  const { label, key, value, note, mode } = payload;
 
   if (!key || !value) {
-    ui.notifications?.warn("Select a key preset and provide a value to add a global modifier.");
+    ui.notifications?.warn("Select a key preset and provide a value to add a drafted modifier.");
     return;
   }
 
   await updateOperationsLedger((ledger) => {
     const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.customModifiers.push({
+    partyHealth.stagedModifierQueue.unshift({
       id: foundry.utils.randomID(),
       label,
       key,
       mode,
       value,
       note,
-      enabled: true
+      createdAt: Date.now(),
+      createdBy: String(game.user?.name ?? "GM").trim() || "GM"
     });
-    logAddedPartyHealthModifier(partyHealth, {
-      origin: "quick",
-      label,
-      key,
-      mode,
-      value,
-      note
-    });
+    partyHealth.stagedModifierQueue = partyHealth.stagedModifierQueue.slice(0, 24);
   });
+}
+
+function readQuickModifierDraftFromRoot(root) {
+  if (!root) return null;
+  const label = String(root.querySelector("input[name='quickGlobalModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
+  const key = String(root.querySelector("select[name='quickGlobalModifierKey']")?.value ?? "").trim();
+  const value = String(root.querySelector("input[name='quickGlobalModifierValue']")?.value ?? "").trim();
+  const note = String(root.querySelector("textarea[name='quickGlobalModifierNote']")?.value ?? "");
+  const rawMode = Math.floor(Number(root.querySelector("select[name='quickGlobalModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
+  const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
+  return { label, key, value, note, mode };
+}
+
+async function gmQuickSaveModifier(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
+  const groupedEntries = new Map();
+  let publishedCount = 0;
+  let skippedCount = 0;
+
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    const stagedQueue = Array.isArray(partyHealth.stagedModifierQueue) ? partyHealth.stagedModifierQueue : [];
+    if (stagedQueue.length === 0) return;
+
+    for (const row of stagedQueue) {
+      const stagedId = String(row?.id ?? "").trim();
+      const key = String(row?.key ?? "").trim();
+      const value = String(row?.value ?? "").trim();
+      const mode = Math.floor(Number(row?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      if (!stagedId || !key || !value) continue;
+      const groupKey = `${key}::${mode}`;
+      if (!groupedEntries.has(groupKey)) groupedEntries.set(groupKey, []);
+      groupedEntries.get(groupKey).push({
+        stagedId,
+        key,
+        mode,
+        label: String(row?.label ?? "Custom Modifier").trim() || "Custom Modifier",
+        value,
+        note: String(row?.note ?? "")
+      });
+    }
+
+    const consumedIds = new Set();
+    for (const rows of groupedEntries.values()) {
+      if (!Array.isArray(rows) || rows.length === 0) continue;
+      const numericValues = rows.map((row) => Number(row.value));
+      const hasNonNumeric = numericValues.some((value) => !Number.isFinite(value));
+      if (hasNonNumeric && rows.length > 1) {
+        skippedCount += rows.length;
+        continue;
+      }
+
+      const key = rows[0].key;
+      const mode = rows[0].mode;
+      const mergedValue = hasNonNumeric
+        ? rows[0].value
+        : String(numericValues.reduce((total, entry) => total + entry, 0));
+      const labels = [...new Set(rows.map((row) => String(row.label ?? "").trim()).filter(Boolean))];
+      const baseLabel = labels[0] || getDaeKeyLabel(key) || "Custom Modifier";
+      const mergedLabel = labels.length <= 1 ? baseLabel : `${baseLabel} (Stacked ${rows.length})`;
+      const noteParts = rows.map((row) => String(row.note ?? "").trim()).filter(Boolean);
+      const mergedNote = noteParts.join(" | ");
+
+      const customModifierId = foundry.utils.randomID();
+      partyHealth.customModifiers.push({
+        id: customModifierId,
+        label: mergedLabel,
+        key,
+        mode,
+        value: mergedValue,
+        note: mergedNote,
+        enabled: true
+      });
+      logAddedPartyHealthModifier(partyHealth, {
+        customModifierId,
+        origin: "quick",
+        label: mergedLabel,
+        key,
+        mode,
+        value: mergedValue,
+        note: mergedNote
+      });
+      rows.forEach((row) => consumedIds.add(row.stagedId));
+      publishedCount += 1;
+    }
+
+    partyHealth.stagedModifierQueue = stagedQueue
+      .filter((row) => !consumedIds.has(String(row?.id ?? "").trim()));
+  });
+
+  if (groupedEntries.size === 0) {
+    ui.notifications?.warn("Draft stack is empty. Add at least one modifier before saving.");
+    return;
+  }
+  if (publishedCount === 0) {
+    ui.notifications?.warn("No drafted modifiers were published. Check drafted values and try again.");
+    return;
+  }
+
   resetQuickModifierForm(root);
-  setActiveGmQuickPanel("none");
+  if (skippedCount > 0) {
+    ui.notifications?.info(`Published ${publishedCount} modifier group(s); ${skippedCount} drafted entr${skippedCount === 1 ? "y was" : "ies were"} skipped for manual cleanup.`);
+    return;
+  }
+  ui.notifications?.info(`Published ${publishedCount} modifier group${publishedCount === 1 ? "" : "s"} from the draft stack.`);
+}
+
+async function gmQuickSetStagedModifierField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const stagedId = String(element?.dataset?.stagedId ?? "").trim();
+  const field = String(element?.dataset?.stagedField ?? "").trim();
+  if (!stagedId || !field) return;
+  const editableFields = new Set(["label", "key", "mode", "value", "note"]);
+  if (!editableFields.has(field)) return;
+
+  const rawValue = String(element?.value ?? "");
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    const stagedEntry = (partyHealth.stagedModifierQueue ?? [])
+      .find((entry) => String(entry?.id ?? "").trim() === stagedId);
+    if (!stagedEntry) return;
+
+    if (field === "label") {
+      stagedEntry.label = String(rawValue).trim() || "Custom Modifier";
+      return;
+    }
+    if (field === "key") {
+      stagedEntry.key = String(rawValue).trim();
+      return;
+    }
+    if (field === "mode") {
+      const rawMode = Math.floor(Number(rawValue ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
+      stagedEntry.mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
+      return;
+    }
+    if (field === "value") {
+      stagedEntry.value = String(rawValue).trim();
+      return;
+    }
+    if (field === "note") {
+      stagedEntry.note = String(rawValue ?? "");
+    }
+  });
+}
+
+async function gmQuickDeleteStagedModifier(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const stagedId = String(element?.dataset?.stagedId ?? "").trim();
+  if (!stagedId) {
+    ui.notifications?.warn("No queued modifier id was provided.");
+    return;
+  }
+
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    const before = partyHealth.stagedModifierQueue.length;
+    partyHealth.stagedModifierQueue = partyHealth.stagedModifierQueue
+      .filter((entry) => String(entry?.id ?? "").trim() !== stagedId);
+    removed = partyHealth.stagedModifierQueue.length < before;
+  });
+
+  if (!removed) ui.notifications?.warn("Queued modifier was already removed.");
+}
+
+async function gmQuickDeleteSavedModifier(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
+    return;
+  }
+  const customIdRaw = String(element?.dataset?.customId ?? "").trim();
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!customIdRaw && !logId) {
+    ui.notifications?.warn("No saved modifier id was provided.");
+    return;
+  }
+
+  let removedCustom = false;
+  let removedLog = false;
+
+  await updateOperationsLedger((ledger) => {
+    const partyHealth = ensurePartyHealthState(ledger);
+    const logEntry = logId
+      ? partyHealth.modifierAddLog.find((entry) => String(entry?.id ?? "").trim() === logId)
+      : null;
+    let customId = customIdRaw || String(logEntry?.customModifierId ?? "").trim();
+    if (!customId && logEntry) {
+      const logLabel = String(logEntry?.label ?? "").trim();
+      const logKey = String(logEntry?.key ?? "").trim();
+      const logValue = String(logEntry?.value ?? "").trim();
+      const logNote = String(logEntry?.note ?? "");
+      const logMode = Math.floor(Number(logEntry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      const matchedEntry = partyHealth.customModifiers.find((entry) =>
+        String(entry?.key ?? "").trim() === logKey
+        && String(entry?.value ?? "").trim() === logValue
+        && Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)) === logMode
+        && (!logLabel || String(entry?.label ?? "").trim() === logLabel)
+        && (!logNote || String(entry?.note ?? "") === logNote)
+      );
+      customId = String(matchedEntry?.id ?? "").trim();
+    }
+
+    if (customId) {
+      const beforeCustomCount = partyHealth.customModifiers.length;
+      partyHealth.customModifiers = partyHealth.customModifiers
+        .filter((entry) => String(entry?.id ?? "").trim() !== customId);
+      removedCustom = partyHealth.customModifiers.length < beforeCustomCount;
+      if (partyHealth.modifierEnabled && typeof partyHealth.modifierEnabled === "object") {
+        delete partyHealth.modifierEnabled[`custom:${customId}`];
+      }
+    }
+
+    const beforeLogCount = partyHealth.modifierAddLog.length;
+    if (logId) {
+      partyHealth.modifierAddLog = partyHealth.modifierAddLog
+        .filter((entry) => String(entry?.id ?? "").trim() !== logId);
+    } else if (customId) {
+      partyHealth.modifierAddLog = partyHealth.modifierAddLog
+        .filter((entry) => String(entry?.customModifierId ?? "").trim() !== customId);
+    }
+    removedLog = partyHealth.modifierAddLog.length < beforeLogCount;
+  });
+
+  if (!removedCustom && !removedLog) {
+    ui.notifications?.warn("Saved modifier was already removed.");
+  }
 }
 
 function gmQuickApplyModifierKeyPreset(element) {
@@ -16862,7 +26035,7 @@ function getWeatherPresetByKey(weatherState, sceneSnapshot, key) {
 }
 
 async function gmQuickLogCurrentWeather() {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can log weather.");
     return;
   }
@@ -17044,7 +26217,7 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
 }
 
 async function gmQuickSubmitWeather(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can log weather.");
     return;
   }
@@ -17137,7 +26310,7 @@ async function removeWeatherLogById(logId) {
 }
 
 async function setBaseOperationsConfig(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage base operations.");
     return;
   }
@@ -17152,7 +26325,7 @@ async function setBaseOperationsConfig(element) {
 }
 
 async function upsertBaseOperationsSite(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage base operations.");
     return;
   }
@@ -17211,7 +26384,7 @@ async function upsertBaseOperationsSite(element) {
 }
 
 async function clearBaseOperationsSite(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage base operations.");
     return;
   }
@@ -17241,22 +26414,22 @@ function buildBaseSiteStorageDialogContent(site) {
   const spaceUsed = items.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity ?? 0) || 0), 0);
 
   const itemRows = items.map((entry) => {
-    const icon = foundry.utils.escapeHTML(String(entry.img ?? "icons/svg/item-bag.svg"));
-    const name = foundry.utils.escapeHTML(String(entry.name ?? "Stored Item"));
-    const note = foundry.utils.escapeHTML(String(entry.note ?? ""));
+    const icon = poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"));
+    const name = poEscapeHtml(String(entry.name ?? "Stored Item"));
+    const note = poEscapeHtml(String(entry.note ?? ""));
     const qty = Math.max(1, Number(entry.quantity ?? 1) || 1);
     const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
     return `
-      <div class="po-op-role-row" data-storage-item-id="${foundry.utils.escapeHTML(entry.id)}">
+      <div class="po-op-role-row" data-storage-item-id="${poEscapeHtml(entry.id)}">
         <div class="po-op-role-head">
           <div class="po-op-role-name"><img src="${icon}" width="18" height="18" /> ${name}</div>
           <div class="po-op-role-status">Qty ${qty} - ${weight.toFixed(1)} wt each</div>
         </div>
         ${note ? `<div class="po-op-summary">${note}</div>` : ""}
         <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-storage-action="dec" data-item-id="${foundry.utils.escapeHTML(entry.id)}">-1</button>
-          <button type="button" class="po-btn po-btn-sm" data-storage-action="inc" data-item-id="${foundry.utils.escapeHTML(entry.id)}">+1</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-storage-action="remove" data-item-id="${foundry.utils.escapeHTML(entry.id)}">Remove</button>
+          <button type="button" class="po-btn po-btn-sm" data-storage-action="dec" data-item-id="${poEscapeHtml(entry.id)}">-1</button>
+          <button type="button" class="po-btn po-btn-sm" data-storage-action="inc" data-item-id="${poEscapeHtml(entry.id)}">+1</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-storage-action="remove" data-item-id="${poEscapeHtml(entry.id)}">Remove</button>
         </div>
       </div>
     `;
@@ -17264,7 +26437,7 @@ function buildBaseSiteStorageDialogContent(site) {
 
   return `
     <div class="po-help po-base-storage-dialog">
-      <div class="po-op-summary"><strong>${foundry.utils.escapeHTML(String(site.name ?? "Storage Site"))}</strong> - ${foundry.utils.escapeHTML(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
+      <div class="po-op-summary"><strong>${poEscapeHtml(String(site.name ?? "Storage Site"))}</strong> - ${poEscapeHtml(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
       <div class="po-op-summary">Weight: ${weightUsed.toFixed(1)} / ${Math.max(0, Number(storage.maxWeight ?? 0) || 0).toFixed(1)} - Space: ${spaceUsed} / ${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}</div>
 
       <label class="po-resource-row">
@@ -17326,7 +26499,7 @@ function buildStorageItemFromDocument(itemDoc, quantity = 1) {
 }
 
 async function showBaseSiteStorageManager(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage base site storage.");
     return;
   }
@@ -17512,11 +26685,16 @@ async function showBaseOperationsBrief() {
 
 async function applyOperationalUpkeep(options = {}) {
   const before = getOperationsLedger();
+  if (!before.resources) before.resources = {};
+  ensureOperationalResourceConfig(before.resources);
   const currentTimestamp = getCurrentWorldTimestamp();
   const upkeep = before.resources?.upkeep ?? {};
   const isAutomatic = Boolean(options?.automatic);
   const silent = Boolean(options?.silent);
   const suppressChat = Boolean(options?.suppressChat);
+  const beforeFoodPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.food?.mode);
+  const beforeWaterPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.water?.mode);
+  const beforeTorchPoolMode = normalizeStewardPoolMode(before.resources?.stewardPools?.torches?.mode);
 
   if (isAutomatic && !Number.isFinite(Number(before.resources?.upkeepLastAppliedTs))) {
     await updateOperationsLedger((ledger) => {
@@ -17568,38 +26746,69 @@ async function applyOperationalUpkeep(options = {}) {
   let waterRationUsed = 0;
   let waterStoreUsed = 0;
   let waterTargetedUsed = 0;
+  let torchPoolUsed = 0;
+  let torchTargetedUsed = 0;
   let unmetFoodDrain = 0;
   let unmetWaterDrain = 0;
+  let unmetTorchDrain = 0;
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
     ensureOperationalResourceConfig(ledger.resources);
-    const currentPartyFoodRations = Math.max(0, Number(ledger.resources.partyFoodRations ?? 0));
+    const foodPool = getStewardPoolEntry(ledger.resources, "food");
+    const waterPool = getStewardPoolEntry(ledger.resources, "water");
+    const torchPool = getStewardPoolEntry(ledger.resources, "torches");
+    const foodPoolMode = normalizeStewardPoolMode(foodPool.mode);
+    const waterPoolMode = normalizeStewardPoolMode(waterPool.mode);
+    const torchPoolMode = normalizeStewardPoolMode(torchPool.mode);
+    const currentPartyFoodRations = Math.max(0, Number(foodPool.amount ?? 0));
     const currentWater = Math.max(0, Number(ledger.resources.water ?? 0));
-    const currentPartyWaterRations = Math.max(0, Number(ledger.resources.partyWaterRations ?? 0));
-    const currentTorches = Math.max(0, Number(ledger.resources.torches ?? 0));
+    const currentPartyWaterRations = Math.max(0, Number(waterPool.amount ?? 0));
+    const currentTorches = Math.max(0, Number(torchPool.amount ?? 0));
 
     let remainingFoodDrain = effectiveFoodDrain;
-    foodRationUsed = Math.min(currentPartyFoodRations, remainingFoodDrain);
-    remainingFoodDrain -= foodRationUsed;
+    if (foodPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      foodRationUsed = remainingFoodDrain;
+      remainingFoodDrain = 0;
+    } else {
+      foodRationUsed = Math.min(currentPartyFoodRations, remainingFoodDrain);
+      remainingFoodDrain -= foodRationUsed;
+    }
     unmetFoodDrain = Math.max(0, remainingFoodDrain);
 
     let remainingWaterDrain = effectiveWaterDrain;
-    waterRationUsed = Math.min(currentPartyWaterRations, remainingWaterDrain);
-    remainingWaterDrain -= waterRationUsed;
+    if (waterPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      waterRationUsed = remainingWaterDrain;
+      remainingWaterDrain = 0;
+    } else {
+      waterRationUsed = Math.min(currentPartyWaterRations, remainingWaterDrain);
+      remainingWaterDrain -= waterRationUsed;
+    }
     waterStoreUsed = Math.min(currentWater, remainingWaterDrain);
     remainingWaterDrain -= waterStoreUsed;
     unmetWaterDrain = Math.max(0, remainingWaterDrain);
 
+    if (torchPoolMode === STEWARD_POOL_MODES.INFINITE) {
+      torchPoolUsed = torchDrain;
+      unmetTorchDrain = 0;
+    } else {
+      torchPoolUsed = Math.min(currentTorches, torchDrain);
+      unmetTorchDrain = Math.max(0, torchDrain - torchPoolUsed);
+    }
+
     afterPartyFoodRations = Math.max(0, currentPartyFoodRations - foodRationUsed);
     afterPartyWaterRations = Math.max(0, currentPartyWaterRations - waterRationUsed);
     afterWater = Math.max(0, currentWater - waterStoreUsed);
-    afterTorches = Math.max(0, currentTorches - torchDrain);
+    afterTorches = Math.max(0, currentTorches - torchPoolUsed);
 
-    ledger.resources.partyFoodRations = afterPartyFoodRations;
-    ledger.resources.partyWaterRations = afterPartyWaterRations;
+    if (foodPoolMode === STEWARD_POOL_MODES.FINITE) foodPool.amount = afterPartyFoodRations;
+    if (waterPoolMode === STEWARD_POOL_MODES.FINITE) waterPool.amount = afterPartyWaterRations;
+    if (torchPoolMode === STEWARD_POOL_MODES.FINITE) torchPool.amount = afterTorches;
+    ledger.resources.stewardPools.food = foodPool;
+    ledger.resources.stewardPools.water = waterPool;
+    ledger.resources.stewardPools.torches = torchPool;
+    ensureStewardPoolsState(ledger.resources);
     ledger.resources.water = afterWater;
-    ledger.resources.torches = afterTorches;
     ledger.resources.gather.foodCoveredNextUpkeep = false;
     ledger.resources.gather.waterCoveredNextUpkeep = false;
     if (Number.isFinite(foodCoverageDueKey) && foodCoverageDueKey <= currentDueCount) ledger.resources.gather.foodCoverageDueKey = null;
@@ -17609,34 +26818,46 @@ async function applyOperationalUpkeep(options = {}) {
 
   let itemResults = [];
   try {
-    itemResults = await depleteLinkedResourceItems({ foodDrain: unmetFoodDrain, waterDrain: unmetWaterDrain, torchDrain }, itemSelections);
+    itemResults = await depleteLinkedResourceItems({
+      foodDrain: unmetFoodDrain,
+      waterDrain: unmetWaterDrain,
+      torchDrain: unmetTorchDrain
+    }, itemSelections);
   } catch (error) {
     logUiFailure("resources", "linked resource depletion failed during upkeep", error, {
       foodDrain: unmetFoodDrain,
       waterDrain: unmetWaterDrain,
-      torchDrain
+      torchDrain: unmetTorchDrain
     });
     throw error;
   }
   const foodItemResult = itemResults.find((entry) => entry.key === "food");
   const waterItemResult = itemResults.find((entry) => entry.key === "water");
+  const torchItemResult = itemResults.find((entry) => entry.key === "torches");
   foodTargetedUsed = Math.max(0, Number(foodItemResult?.consumed ?? 0));
   waterTargetedUsed = Math.max(0, Number(waterItemResult?.consumed ?? 0));
+  torchTargetedUsed = Math.max(0, Number(torchItemResult?.consumed ?? 0));
   unmetFoodDrain = Math.max(0, unmetFoodDrain - foodTargetedUsed);
   unmetWaterDrain = Math.max(0, unmetWaterDrain - waterTargetedUsed);
+  unmetTorchDrain = Math.max(0, unmetTorchDrain - torchTargetedUsed);
 
   const shortages = [];
   if (unmetFoodDrain > 0) shortages.push(`food short by ${unmetFoodDrain}`);
   if (unmetWaterDrain > 0) shortages.push(`water short by ${unmetWaterDrain}`);
-  if (afterTorches === 0 && torchDrain > 0) shortages.push("torches depleted");
+  if (unmetTorchDrain > 0) shortages.push(`torches short by ${unmetTorchDrain}`);
+  if (beforeTorchPoolMode !== STEWARD_POOL_MODES.INFINITE && afterTorches === 0 && torchPoolUsed > 0) shortages.push("torches depleted");
 
+  const foodPoolLabel = beforeFoodPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Food Surplus" : "Steward Food Stock";
+  const waterPoolLabel = beforeWaterPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Water Surplus" : "Steward Water Stock";
+  const torchPoolLabel = beforeTorchPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Torch Surplus" : "Steward Torch Stock";
   const foodSummary = foodCoveredDays > 0
-    ? `Food -${effectiveFoodDrain} (${foodCoveredDays} day covered by successful gather check; Food Rations -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
-    : `Food -${effectiveFoodDrain} (Food Rations -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
+    ? `Food -${effectiveFoodDrain} (${foodCoveredDays} day covered by successful gather check; ${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
+    : `Food -${effectiveFoodDrain} (${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
   const waterSummary = waterCoveredDays > 0
-    ? `Water -${effectiveWaterDrain} (${waterCoveredDays} day covered by successful gather check; Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
-    : `Water -${effectiveWaterDrain} (Water Rations -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
-  const summary = `Daily upkeep applied for ${upkeepDays} day(s): ${foodSummary}, ${waterSummary}, Torches -${torchDrain}.`;
+    ? `Water -${effectiveWaterDrain} (${waterCoveredDays} day covered by successful gather check; ${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
+    : `Water -${effectiveWaterDrain} (${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
+  const torchSummary = `Torches -${torchDrain} (${torchPoolLabel} -${torchPoolUsed}, Targeted Torch Item -${torchTargetedUsed})`;
+  const summary = `Daily upkeep applied for ${upkeepDays} day(s): ${foodSummary}, ${waterSummary}, ${torchSummary}.`;
   const itemSummary = itemResults
     .filter((entry) => entry.needed > 0)
     .map((entry) => `${entry.name}: ${entry.consumed}/${entry.needed}${entry.missing > 0 ? ` (missing ${entry.missing})` : ""}`)
@@ -17692,7 +26913,7 @@ function buildSessionAutopilotSnapshot() {
 }
 
 async function logCurrentSceneWeatherSnapshot(options = {}) {
-  if (!game.user.isGM) return { logged: false, reason: "gm-only" };
+  if (!canAccessAllPlayerOps()) return { logged: false, reason: "gm-only" };
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
   const weatherState = ensureWeatherState(getOperationsLedger());
   const previous = weatherState.current ?? null;
@@ -17719,7 +26940,7 @@ async function logCurrentSceneWeatherSnapshot(options = {}) {
 }
 
 async function runSessionAutopilot(options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can run session autopilot.");
     return null;
   }
@@ -17743,7 +26964,7 @@ async function runSessionAutopilot(options = {}) {
   }
 
   const snapshot = buildSessionAutopilotSnapshot();
-  await game.settings.set(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, snapshot);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, snapshot);
 
   const notes = [];
   const upkeepResult = await applyOperationalUpkeep({ silent: true, suppressChat: true });
@@ -17779,7 +27000,7 @@ async function runSessionAutopilot(options = {}) {
   const stamp = new Date().toLocaleString();
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Session Autopilot</strong></p><p>${notes.map((line) => foundry.utils.escapeHTML(line)).join("<br>")}</p><p><em>${foundry.utils.escapeHTML(stamp)}</em></p>`
+    content: `<p><strong>Session Autopilot</strong></p><p>${notes.map((line) => poEscapeHtml(line)).join("<br>")}</p><p><em>${poEscapeHtml(stamp)}</em></p>`
   });
   ui.notifications?.info("Session Autopilot complete. Snapshot saved for undo.");
   return {
@@ -17790,7 +27011,7 @@ async function runSessionAutopilot(options = {}) {
 }
 
 async function undoLastSessionAutopilot(options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can undo session autopilot.");
     return false;
   }
@@ -17806,7 +27027,7 @@ async function undoLastSessionAutopilot(options = {}) {
       title: "Undo Session Autopilot?",
       content: `
         <p>This restores the snapshot saved before the last autopilot run.</p>
-        <p><strong>Snapshot:</strong> ${foundry.utils.escapeHTML(createdAt)} by ${foundry.utils.escapeHTML(String(snapshot.createdBy ?? "GM"))}</p>
+        <p><strong>Snapshot:</strong> ${poEscapeHtml(createdAt)} by ${poEscapeHtml(String(snapshot.createdBy ?? "GM"))}</p>
         <p>It will restore Rest Watch, Marching Order, Activities, Operations, and Injury Recovery states.</p>
       `
     });
@@ -17822,11 +27043,10 @@ async function undoLastSessionAutopilot(options = {}) {
   ];
 
   for (const [settingKey, value] of writes) {
-    suppressNextSettingRefresh(`${MODULE_ID}.${settingKey}`);
-    await game.settings.set(MODULE_ID, settingKey, value);
+    await setModuleSettingWithLocalRefreshSuppressed(settingKey, value);
   }
 
-  await game.settings.set(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
     ...snapshot,
     undoneAt: Date.now(),
     undoneBy: String(game.user?.name ?? "GM")
@@ -17837,7 +27057,7 @@ async function undoLastSessionAutopilot(options = {}) {
   emitSocketRefresh();
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Session Autopilot Undo</strong></p><p>Restored snapshot from ${foundry.utils.escapeHTML(new Date(Number(snapshot.createdAt)).toLocaleString())}.</p>`
+    content: `<p><strong>Session Autopilot Undo</strong></p><p>Restored snapshot from ${poEscapeHtml(new Date(Number(snapshot.createdAt)).toLocaleString())}.</p>`
   });
   ui.notifications?.info("Session Autopilot snapshot restored.");
   return true;
@@ -17988,7 +27208,7 @@ function getInjuryRecoveryState() {
 
 async function updateInjuryRecoveryState(mutator) {
   if (typeof mutator !== "function") return;
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update injury recovery.");
     return;
   }
@@ -17996,9 +27216,9 @@ async function updateInjuryRecoveryState(mutator) {
   mutator(state);
 
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
-  scheduleIntegrationSync("injury-recovery");
+  if (game.user?.isGM) scheduleIntegrationSync("injury-recovery");
   refreshOpenApps();
-  emitSocketRefresh();
+  if (game.user?.isGM) emitSocketRefresh();
 }
 
 function buildInjuryActorOptions(selectedActorId = "") {
@@ -18428,7 +27648,7 @@ async function persistInjuryCalendarMetadata(actorId, fields) {
 }
 
 async function syncInjuryWithSimpleCalendar(actorId) {
-  if (!game.user.isGM || !isSimpleCalendarActive()) return { synced: false, reason: "Simple Calendar inactive or user is not GM.", entryId: "" };
+  if (!canAccessAllPlayerOps() || !isSimpleCalendarActive()) return { synced: false, reason: "Simple Calendar inactive or user is not GM.", entryId: "" };
   const api = getSimpleCalendarMutationApi();
   if (!api) {
     logSimpleCalendarSyncDebug("Simple Calendar API missing during injury sync", { actorId });
@@ -18489,14 +27709,14 @@ async function syncInjuryWithSimpleCalendar(actorId) {
 }
 
 async function clearInjuryFromSimpleCalendar(entryId) {
-  if (!game.user.isGM || !isSimpleCalendarActive() || !entryId) return false;
+  if (!canAccessAllPlayerOps() || !isSimpleCalendarActive() || !entryId) return false;
   const api = getSimpleCalendarMutationApi();
   if (!api) return false;
   return removeSimpleCalendarEntry(api, entryId);
 }
 
 async function syncAllInjuriesToSimpleCalendar() {
-  if (!game.user.isGM) return { synced: 0, total: 0 };
+  if (!canAccessAllPlayerOps()) return { synced: 0, total: 0 };
   const injuries = Object.keys(getInjuryRecoveryState().injuries ?? {});
   let synced = 0;
   for (const actorId of injuries) {
@@ -18506,7 +27726,7 @@ async function syncAllInjuriesToSimpleCalendar() {
 }
 
 async function setInjuryRecoveryConfig(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
     return;
   }
@@ -18650,7 +27870,7 @@ async function rollTreatmentCheck(injuredActorId, treatmentSkill, dc) {
 }
 
 async function upsertInjuryEntry(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
     return;
   }
@@ -18704,7 +27924,7 @@ async function upsertInjuryEntry(element) {
     };
   });
 
-  if (game.user.isGM) {
+  if (canAccessAllPlayerOps()) {
     const hasMutationApi = Boolean(getSimpleCalendarMutationApi());
     const syncResult = await syncInjuryWithSimpleCalendar(actorId);
     if (isSimpleCalendarActive() && hasMutationApi && !syncResult.synced) {
@@ -18749,11 +27969,11 @@ async function notifyDailyInjuryReminders() {
     ui.notifications?.warn(`Injury Reminder: ${summary}${suffix}`);
   }
 
-  await game.settings.set(MODULE_ID, SETTINGS.INJURY_REMINDER_DAY, dayKey);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_REMINDER_DAY, dayKey);
 }
 
 async function stabilizeInjuryEntry(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
     return;
   }
@@ -18831,7 +28051,7 @@ async function stabilizeInjuryEntry(element) {
 }
 
 async function clearInjuryEntry(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
     return;
   }
@@ -18849,7 +28069,7 @@ async function clearInjuryEntry(element) {
 }
 
 async function applyRecoveryCycle(options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can manage injury recovery.");
     return { applied: false, total: 0, reason: "gm-only" };
   }
@@ -19140,7 +28360,7 @@ function getOrderedMarchingActors(state) {
 
 async function applyMarchingFormation({ front, middle, type }) {
   const state = getMarchingOrderState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Marching order is locked by the GM.");
     return;
   }
@@ -19163,7 +28383,7 @@ async function applyMarchingFormation({ front, middle, type }) {
 }
 
 async function updateRestWatchState(mutatorOrRequest, options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest);
     if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
@@ -19184,13 +28404,13 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
   }
   stampUpdate(state);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
-  scheduleIntegrationSync("rest-watch");
+  if (game.user?.isGM) scheduleIntegrationSync("rest-watch");
   if (!options.skipLocalRefresh) refreshOpenApps();
-  emitSocketRefresh();
+  if (game.user?.isGM) emitSocketRefresh();
 }
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest);
     if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
@@ -19213,9 +28433,9 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   }
   stampUpdate(state);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
-  scheduleIntegrationSync("marching-order");
+  if (game.user?.isGM) scheduleIntegrationSync("marching-order");
   if (!options.skipLocalRefresh) refreshOpenApps();
-  emitSocketRefresh();
+  if (game.user?.isGM) emitSocketRefresh();
 }
 
 function stampUpdate(state, user = game.user) {
@@ -19225,7 +28445,7 @@ function stampUpdate(state, user = game.user) {
 
 async function assignSlotToUser(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Rest watch is locked by the GM.");
     return;
   }
@@ -19235,7 +28455,7 @@ async function assignSlotToUser(element) {
     return;
   }
   
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     const slotId = element?.closest(".po-card")?.dataset?.slotId;
     const clicked = state.slots.find((s) => s.id === slotId);
     const clickedHasEntries = (clicked?.entries?.length ?? 0) > 0 || Boolean(clicked?.actorId);
@@ -19328,7 +28548,7 @@ async function assignSlotByPicker(element, config = {}) {
             slot.actorId = null;
             slot.notes = "";
           });
-          if (game.user.isGM) refreshOpenApps();
+          if (canAccessAllPlayerOps()) refreshOpenApps();
         }
       },
       cancel: { label: "Cancel" }
@@ -19340,7 +28560,7 @@ async function assignSlotByPicker(element, config = {}) {
 
 async function clearSlotEntry(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Rest watch is locked by the GM.");
     return;
   }
@@ -19348,9 +28568,11 @@ async function clearSlotEntry(element) {
   const slotId = card?.dataset?.slotId;
   const actorId = element?.closest(".po-watch-entry")?.dataset?.actorId;
   if (!slotId || !actorId) return;
+  const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+    clearNoteDraftCacheValue(cacheKey);
     return;
   }
   
@@ -19371,11 +28593,12 @@ async function clearSlotEntry(element) {
       slot.notes = "";
     }
   });
+  clearNoteDraftCacheValue(cacheKey);
 }
 
 async function swapSlots(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Rest watch is locked by the GM.");
     return;
   }
@@ -19438,7 +28661,7 @@ async function updateVisibility(element) {
 }
 
 async function updateTimeRange(element) {
-  if (!game.user.isGM) return; // GM only
+  if (!canAccessAllPlayerOps()) return; // GM only
   const slotId = element?.dataset?.slotId;
   const timeRange = element?.value ?? "";
   if (!slotId) return;
@@ -19451,7 +28674,7 @@ async function updateTimeRange(element) {
 
 async function autofillFromParty() {
   const state = getRestWatchState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Rest watch is locked by the GM.");
     return;
   }
@@ -19490,7 +28713,7 @@ async function restoreRestCommitted() {
 
 async function commitRestWatchState() {
   const state = getRestWatchState();
-  await game.settings.set(MODULE_ID, SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
   ui.notifications?.info("Rest watch snapshot saved.");
 }
 
@@ -19509,7 +28732,7 @@ async function writeClipboardText(text) {
 
 async function copyRestWatchText(asMarkdown) {
   const state = getRestWatchState();
-  const isGM = game.user.isGM;
+  const isGM = canAccessAllPlayerOps();
   let text = "";
 
   if (asMarkdown && isGM) {
@@ -19561,11 +28784,11 @@ async function copyRestWatchText(asMarkdown) {
 
 async function clearRestWatchAll() {
   const state = getRestWatchState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Rest watch is locked by the GM.");
     return;
   }
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can clear all.");
     return;
   }
@@ -19580,7 +28803,7 @@ async function clearRestWatchAll() {
 }
 
 async function runDoctrineCheckPrompt() {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
   const formation = normalizeMarchingFormation(state.formation ?? "default");
   const effects = getDoctrineEffects(formation);
@@ -19639,13 +28862,12 @@ async function runDoctrineCheckPrompt() {
 
 function refreshSingleAppPreservingView(app) {
   if (!app?.render) return;
-  const uiState = captureUiState(app);
-  if (uiState) pendingUiRestore.set(app, uiState);
-  const scrollState = captureScrollState(app);
-  if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
   const windowState = captureWindowState(app);
   if (windowState) pendingWindowRestore.set(app, windowState);
-  app.render({ force: true, parts: ["main"], focus: false });
+  renderAppWithPreservedState(app, { force: true, parts: ["main"], focus: false }, {
+    action: "refresh-single-app",
+    eventType: "refresh"
+  });
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
@@ -19670,7 +28892,7 @@ function moveActorEntryToRankDom(rankId, actorId) {
 }
 
 async function assignActorToRank(element) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
   if (isLockedForUser(state, true)) {
     ui.notifications?.warn("Marching order is locked by the GM.");
@@ -19715,7 +28937,7 @@ async function assignActorToRank(element) {
 }
 
 async function removeActorFromRanks(element) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
   if (isLockedForUser(state, true)) {
     ui.notifications?.warn("Marching order is locked by the GM.");
@@ -19732,11 +28954,12 @@ async function removeActorFromRanks(element) {
     if (state.light) delete state.light[actorId];
     if (state.lightRanges) delete state.lightRanges[actorId];
   });
+  clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
 }
 
 async function joinRank(element) {
   const state = getMarchingOrderState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Marching order is locked by the GM.");
     return;
   }
@@ -19753,7 +28976,7 @@ async function joinRank(element) {
     return;
   }
   
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     await updateMarchingOrderState({ op: "joinRank", rankId, actorId: actor.id });
     return;
   }
@@ -19787,7 +29010,7 @@ async function toggleLight(element) {
 }
 
 async function setLightRange(element) {
-  if (!game.user.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const rangeKey = String(element?.dataset?.range ?? "").trim().toLowerCase();
   if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
@@ -19839,7 +29062,7 @@ async function copyMarchingText(asMarkdown) {
 
 async function clearMarchingAll() {
   const state = getMarchingOrderState();
-  if (isLockedForUser(state, game.user.isGM)) {
+  if (isLockedForUser(state, canAccessAllPlayerOps())) {
     ui.notifications?.warn("Marching order is locked by the GM.");
     return;
   }
@@ -19859,7 +29082,7 @@ async function clearMarchingAll() {
 
 async function commitMarchingOrderState() {
   const state = getMarchingOrderState();
-  await game.settings.set(MODULE_ID, SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
   ui.notifications?.info("Marching order snapshot saved.");
 }
 
@@ -19890,9 +29113,7 @@ async function pingActorFromElement(element) {
 }
 
 function canUserOpenActorSheet(actor, user = game.user) {
-  if (!actor || !user) return false;
-  if (user.isGM) return true;
-  return Boolean(actor.testUserPermission?.(user, "OBSERVER") || actor.isOwner);
+  return canUserControlActor(actor, user);
 }
 
 function openActorSheetFromElement(element) {
@@ -20031,7 +29252,7 @@ async function switchActiveCharacter(element) {
 }
 
 async function updateExhaustion(element) {
-  if (!game.user.isGM) return; // GM only
+  if (!canAccessAllPlayerOps()) return; // GM only
   const actorId = element?.dataset?.actorId;
   const level = parseInt(element?.dataset?.level) ?? 0;
   if (!actorId) return;
@@ -20050,7 +29271,7 @@ async function updateActivity(element, options = {}) {
   const activityType = normalizeSocketActivityType(element?.value ?? element?.dataset?.activity);
   if (!actorId || !activityType) return;
 
-  if (game.user.isGM) {
+  if (canAccessAllPlayerOps()) {
     // GM updates directly
     const activities = getRestActivities();
     if (!activities.activities[actorId]) activities.activities[actorId] = {};
@@ -20071,7 +29292,7 @@ async function updateActivity(element, options = {}) {
 }
 
 async function resetAllActivities() {
-  if (!game.user.isGM) return; // GM only
+  if (!canAccessAllPlayerOps()) return; // GM only
   const confirmed = await Dialog.confirm({
     title: "Reset Activities for New Day",
     content: "<p>This will reset all party members' exhaustion levels to 0 and activities to 'Rested'.</p><p><strong>This action cannot be undone.</strong></p>",
@@ -20867,7 +30088,25 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
 }
 
 function userOwnsActor(actor) {
-  return actor?.testUserPermission?.(game.user, "OWNER") ?? false;
+  return canUserControlActor(actor, game.user);
+}
+
+function canUserControlActor(actor, user = game.user) {
+  if (!actor || !user) return false;
+  if (canAccessAllPlayerOps(user)) return true;
+  try {
+    if (typeof actor.testUserPermission === "function") {
+      return Boolean(
+        actor.testUserPermission(user, "OWNER")
+        || actor.testUserPermission(user, "OBSERVER")
+      );
+    }
+  } catch {
+    // Fall through to conservative checks.
+  }
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
 }
 
 function canDragEntry(actorId, isGM, locked) {
@@ -21067,7 +30306,7 @@ function buildQuickNotes(state) {
 
 function setupMarchingDragAndDrop(html) {
   const state = getMarchingOrderState();
-  const isGM = game.user.isGM;
+  const isGM = canAccessAllPlayerOps();
   const locked = state.locked;
 
   html.querySelectorAll(".po-entry").forEach((entry) => {
@@ -21314,7 +30553,7 @@ function queueInventoryRefresh(actor, reason = "inventory-update") {
   const timeoutId = window.setTimeout(() => {
     pendingInventoryRefreshByActor.delete(actorId);
     refreshOpenApps();
-    if (hookMode === INVENTORY_HOOK_MODES.SYNC && game.user?.isGM) {
+    if (hookMode === INVENTORY_HOOK_MODES.SYNC && canAccessAllPlayerOps()) {
       scheduleIntegrationSync(reason);
     }
   }, 120);
@@ -21336,7 +30575,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     tabId,
     normalized,
     template: getTemplateForMainTab(normalized),
-    isGM: Boolean(game.user?.isGM)
+    isGM: Boolean(canAccessAllPlayerOps())
   });
 
   if (normalized === "marching-order") {
@@ -21348,7 +30587,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     }
     const app = marchingOrderAppInstance?.element?.isConnected
       ? marchingOrderAppInstance
-      : new MarchingOrderApp();
+      : new MarchingOrderApp(getResponsiveWindowOptions("marching-order"));
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "marching-order" });
     return app;
@@ -21357,16 +30596,19 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   if (marchingOrderAppInstance?.element?.isConnected) {
     void marchingOrderAppInstance.close();
   }
+  if (restWatchPlayerAppInstance?.element?.isConnected) {
+    void restWatchPlayerAppInstance.close();
+  }
 
   if (normalized === "gm") {
-    if (!game.user?.isGM) {
+    if (!canAccessAllPlayerOps()) {
       ui.notifications?.warn("GM permissions are required for the GM section.");
       return null;
     }
     setActiveRestMainTab("gm");
     const app = restWatchAppInstance?.element?.isConnected
       ? restWatchAppInstance
-      : new RestWatchApp();
+      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "gm";
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "gm" });
@@ -21377,7 +30619,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     setActiveRestMainTab("operations");
     const app = restWatchAppInstance?.element?.isConnected
       ? restWatchAppInstance
-      : new RestWatchApp();
+      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "operations";
     app.render(renderOptions);
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "operations" });
@@ -21385,10 +30627,10 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   }
 
   setActiveRestMainTab("rest-watch");
-  const app = game.user?.isGM
-    ? (restWatchAppInstance?.element?.isConnected ? restWatchAppInstance : new RestWatchApp())
-    : (restWatchPlayerAppInstance?.element?.isConnected ? restWatchPlayerAppInstance : new RestWatchPlayerApp());
-  if (game.user?.isGM) app._activePanel = "rest-watch";
+  const app = restWatchAppInstance?.element?.isConnected
+    ? restWatchAppInstance
+    : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
+  app._activePanel = "rest-watch";
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "rest-watch" });
   return app;
@@ -21445,7 +30687,7 @@ function removeSidebarLauncher() {
 
 async function setLauncherPlacement(placement) {
   const normalized = normalizeLauncherPlacement(placement);
-  await game.settings.set(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT, normalized);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LAUNCHER_PLACEMENT, normalized);
   return normalized;
 }
 
@@ -21587,8 +30829,10 @@ function buildPartyOperationsApi() {
     marchingOrder: () => openMainTab("marching-order", { force: true }),
     operations: () => openMainTab("operations", { force: true }),
     gm: () => openMainTab("gm", { force: true }),
+    gmMerchants: () => openGmMerchantsPage({ force: true }),
     refreshAll: () => refreshOpenApps(),
     getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
+    gatherResources: (options = {}) => runGatherResourcesAction(options),
     applyUpkeep: () => applyOperationalUpkeep(),
     getInjuryRecovery: () => foundry.utils.deepClone(getInjuryRecoveryState()),
     applyRecoveryCycle: () => applyRecoveryCycle(),
@@ -21616,9 +30860,9 @@ function buildPartyOperationsApi() {
     launcherStatus: () => getLauncherStatusSnapshot(),
     apiStatus: () => ({
       moduleActive: Boolean(game.modules?.get?.(MODULE_ID)?.active),
-      hasGameApi: Boolean(game.partyOperations),
+      hasGameApi: Boolean(game.partyOperations || game.partyops),
       hasModuleApi: Boolean(game.modules?.get?.(MODULE_ID)?.api),
-      hasGlobalApi: Boolean(globalThis.partyOperations || globalThis.PartyOperations),
+      hasGlobalApi: Boolean(globalThis.partyOperations || globalThis.PartyOperations || globalThis.partyops),
       launcher: ensureLauncherUi()
     })
   };
@@ -21628,6 +30872,8 @@ function buildPartyOperationsApi() {
   api.openMarchingOrder = api.marchingOrder;
   api.openOperations = api.operations;
   api.openGM = api.gm;
+  api.openGmMerchants = api.gmMerchants;
+  api.gather = api.gatherResources;
   api.launcher = api.ensureLauncher;
 
   return api;
@@ -21636,8 +30882,10 @@ function buildPartyOperationsApi() {
 function registerPartyOperationsApi() {
   const api = buildPartyOperationsApi();
   game.partyOperations = api;
+  game.partyops = api;
   globalThis.partyOperations = api;
   globalThis.PartyOperations = api;
+  globalThis.partyops = api;
 
   try {
     Object.defineProperty(globalThis, "partyOperations", {
@@ -21645,6 +30893,7 @@ function registerPartyOperationsApi() {
       get: () => game.partyOperations ?? api,
       set: (value) => {
         game.partyOperations = value;
+        game.partyops = value;
       }
     });
   } catch {
@@ -21657,6 +30906,20 @@ function registerPartyOperationsApi() {
       get: () => game.partyOperations ?? api,
       set: (value) => {
         game.partyOperations = value;
+        game.partyops = value;
+      }
+    });
+  } catch {
+    // Ignore if runtime prevents redefining globals.
+  }
+
+  try {
+    Object.defineProperty(globalThis, "partyops", {
+      configurable: true,
+      get: () => game.partyops ?? game.partyOperations ?? api,
+      set: (value) => {
+        game.partyOperations = value;
+        game.partyops = value;
       }
     });
   } catch {
@@ -21718,7 +30981,7 @@ function ensureSidebarLauncher() {
 
   const setLauncherMarkup = (target) => {
     const buttonsMarkup = PO_SIDEBAR_VIEW_ITEMS
-      .filter((item) => !item.gmOnly || game.user?.isGM)
+      .filter((item) => !item.gmOnly || canAccessAllPlayerOps())
       .map((item) => {
         const gmClass = item.gmOnly ? " po-sidebar-gm" : "";
         return `
@@ -21741,7 +31004,7 @@ function ensureSidebarLauncher() {
     `;
     logUiDebug("sidebar-launcher", "rebuilt sidebar launcher", {
       items: PO_SIDEBAR_VIEW_ITEMS
-        .filter((item) => !item.gmOnly || game.user?.isGM)
+        .filter((item) => !item.gmOnly || canAccessAllPlayerOps())
         .map((item) => ({ id: item.id, action: item.action, target: item.target }))
     });
   };
@@ -21749,7 +31012,7 @@ function ensureSidebarLauncher() {
   const hasRestBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="rest-watch"]'));
   const hasOperationsBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="operations"]'));
   const hasMarchBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="marching-order"]'));
-  const hasGmBtn = !game.user?.isGM || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
+  const hasGmBtn = !canAccessAllPlayerOps() || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
   const hasDockBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-action="dock-floating"]'));
   if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
     setLauncherMarkup(launcher);
@@ -21773,7 +31036,7 @@ function ensureSidebarLauncher() {
   }
 
   const gmButton = launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]');
-  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
+  if (gmButton) gmButton.style.display = canAccessAllPlayerOps() ? "" : "none";
   return launcher;
 }
 
@@ -21896,7 +31159,7 @@ function ensureFloatingLauncher() {
   }
 
   const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
-  if (gmButton) gmButton.style.display = game.user?.isGM ? "" : "none";
+  if (gmButton) gmButton.style.display = canAccessAllPlayerOps() ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
   applyFloatingLauncherInlineStyles(launcher, pos);
@@ -21938,7 +31201,7 @@ function isValidAsyncScript(source) {
 }
 
 async function diagnoseWorldData(options = {}) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can diagnose world data.");
     return null;
   }
@@ -22080,7 +31343,7 @@ function setupPartyOperationsUI() {
       }
     ];
 
-    if (game.user?.isGM) {
+    if (canAccessAllPlayerOps()) {
       tools.push({
         name: "po-gm",
         title: "Open GM",
@@ -22122,95 +31385,167 @@ function setupPartyOperationsUI() {
   });
 }
 
+function registerHookModule(module) {
+  const registrations = Array.isArray(module?.registrations) ? module.registrations : [];
+  for (const registration of registrations) {
+    if (!Array.isArray(registration) || registration.length < 2) continue;
+    const eventName = String(registration[0] ?? "").trim();
+    const handler = registration[1];
+    if (!eventName || typeof handler !== "function") continue;
+    Hooks.on(eventName, handler);
+  }
+}
+
+function buildTimeHookModule() {
+  return {
+    id: "time",
+    registrations: [
+      ["updateWorldTime", async () => {
+        // World time may tick frequently (for example every few seconds with calendar modules),
+        // so avoid forcing a full app rerender on every tick.
+        await notifyDailyInjuryReminders();
+        if (!game.user?.isGM) return;
+        await applyOperationalUpkeep({ automatic: true });
+      }]
+    ]
+  };
+}
+
+function buildUserPresenceHookModule() {
+  return {
+    id: "user-presence",
+    registrations: [
+      ["updateUser", (user, changed) => {
+        if (!user || !changed || game.user?.isGM) return;
+        if (!Object.prototype.hasOwnProperty.call(changed, "active")) return;
+        if (!user.isGM || !user.active) return;
+        schedulePendingSopNoteSync("gm-activated");
+      }]
+    ]
+  };
+}
+
+function buildTokenHookModule() {
+  return {
+    id: "tokens",
+    registrations: [
+      ["createToken", async (tokenDoc, options, userId) => {
+        await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
+      }],
+      ["preUpdateToken", (tokenDoc, changed, options) => {
+        if (options?.poEnvironmentClamp) return;
+        if (!changed || (changed.x === undefined && changed.y === undefined)) return;
+        environmentMoveOriginByToken.set(tokenDoc.id, {
+          x: Number(tokenDoc.x ?? 0),
+          y: Number(tokenDoc.y ?? 0)
+        });
+      }],
+      ["updateToken", async (tokenDoc, changed, options) => {
+        await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
+      }]
+    ]
+  };
+}
+
+function buildInventoryHookModule() {
+  return {
+    id: "inventory",
+    registrations: [
+      ["updateActor", (actor, changed) => {
+        if (!hasInventoryDelta(changed)) return;
+        queueInventoryRefresh(actor, "inventory-update-actor");
+      }],
+      ["createItem", (item) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        queueInventoryRefresh(actor, "inventory-create-item");
+      }],
+      ["updateItem", (item, changed) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        if (!changed || typeof changed !== "object") return;
+
+        const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
+        const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
+        const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
+        const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
+        const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
+
+        if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
+        queueInventoryRefresh(actor, "inventory-update-item");
+      }],
+      ["deleteItem", (item) => {
+        const actor = item?.parent;
+        if (!actor || actor.documentName !== "Actor") return;
+        queueInventoryRefresh(actor, "inventory-delete-item");
+      }]
+    ]
+  };
+}
+
+function buildSettingHookModule() {
+  const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
+  const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
+  const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
+  const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
+  const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
+  const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
+  const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
+  const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
+  const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
+  const refreshKeys = new Set([restKey, marchKey, actKey, opsKey, injuryKey, lootSourceKey, journalVisibilityKey, sessionSummaryRangeKey]);
+  const integrationSyncKeys = new Set([restKey, marchKey, opsKey, injuryKey, integrationModeKey]);
+
+  return {
+    id: "settings",
+    registrations: [
+      ["updateSetting", (setting) => {
+        const settingKey = String(setting?.key ?? "").trim();
+        if (!settingKey) return;
+        if (consumeSuppressedSettingRefresh(settingKey)) return;
+        if (refreshKeys.has(settingKey)) refreshOpenApps();
+        if (game.user?.isGM && integrationSyncKeys.has(settingKey)) {
+          scheduleIntegrationSync("update-setting");
+        }
+      }]
+    ]
+  };
+}
+
+function buildIntegrationHookModule() {
+  return {
+    id: "integration",
+    registrations: [
+      ["canvasReady", () => {
+        if (!game.user?.isGM) return;
+        scheduleIntegrationSync("canvas-ready");
+      }]
+    ]
+  };
+}
+
+function getPartyOpsHookModules() {
+  return [
+    buildTimeHookModule(),
+    buildUserPresenceHookModule(),
+    buildTokenHookModule(),
+    buildInventoryHookModule(),
+    buildSettingHookModule(),
+    buildIntegrationHookModule()
+  ];
+}
+
 function registerPartyOpsHooks() {
   if (partyOpsHooksRegistered) return;
   partyOpsHooksRegistered = true;
-
-  Hooks.on("updateWorldTime", async () => {
-    refreshOpenApps();
-    await notifyDailyInjuryReminders();
-    if (!game.user.isGM) return;
-    await applyOperationalUpkeep({ automatic: true });
-  });
-
-  Hooks.on("createToken", async (tokenDoc, options, userId) => {
-    await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
-  });
-
-  Hooks.on("preUpdateToken", (tokenDoc, changed, options) => {
-    if (options?.poEnvironmentClamp) return;
-    if (!changed || (changed.x === undefined && changed.y === undefined)) return;
-    environmentMoveOriginByToken.set(tokenDoc.id, {
-      x: Number(tokenDoc.x ?? 0),
-      y: Number(tokenDoc.y ?? 0)
-    });
-  });
-
-  Hooks.on("updateToken", async (tokenDoc, changed, options) => {
-    await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
-  });
-
-  Hooks.on("updateActor", (actor, changed) => {
-    if (!hasInventoryDelta(changed)) return;
-    queueInventoryRefresh(actor, "inventory-update-actor");
-  });
-
-  Hooks.on("createItem", (item) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    queueInventoryRefresh(actor, "inventory-create-item");
-  });
-
-  Hooks.on("updateItem", (item, changed) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    if (!changed || typeof changed !== "object") return;
-
-    const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
-    const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
-    const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
-    const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
-    const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
-
-    if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
-    queueInventoryRefresh(actor, "inventory-update-item");
-  });
-
-  Hooks.on("deleteItem", (item) => {
-    const actor = item?.parent;
-    if (!actor || actor.documentName !== "Actor") return;
-    queueInventoryRefresh(actor, "inventory-delete-item");
-  });
-
-  Hooks.on("updateSetting", (setting) => {
-    const settingKey = setting?.key ?? "";
-    if (!settingKey) return;
-    if (consumeSuppressedSettingRefresh(settingKey)) return;
-    const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
-    const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
-    const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
-    const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
-    const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
-    const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
-    const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-    const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
-    const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
-    if (settingKey === restKey || settingKey === marchKey || settingKey === actKey || settingKey === opsKey || settingKey === injuryKey || settingKey === lootSourceKey || settingKey === journalVisibilityKey || settingKey === sessionSummaryRangeKey) {
-      refreshOpenApps();
-    }
-    if (game.user.isGM && (settingKey === restKey || settingKey === marchKey || settingKey === opsKey || settingKey === injuryKey || settingKey === integrationModeKey)) {
-      scheduleIntegrationSync("update-setting");
-    }
-  });
-
-  Hooks.on("canvasReady", () => {
-    if (!game.user.isGM) return;
-    scheduleIntegrationSync("canvas-ready");
-  });
+  for (const hookModule of getPartyOpsHookModules()) {
+    registerHookModule(hookModule);
+  }
 }
 
 Hooks.once("init", () => {
   registerPartyOperationsApi();
+  registerFeatureModules();
   registerPartyOpsSettings((key) => {
     if (key === SETTINGS.DEBUG_ENABLED) return;
     refreshOpenApps();
@@ -22428,6 +31763,232 @@ Hooks.once("init", () => {
     default: "prefer-monks"
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLED, {
+    name: "Gather Resources Enabled",
+    hint: "Enable or disable gather resource actions in Party Operations.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.enabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_MIN_HOURS, {
+    name: "Gather Minimum Hours",
+    hint: "Minimum hours required for one gather attempt.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: {
+      min: 1,
+      max: 24,
+      step: 1
+    },
+    default: GATHER_DEFAULTS.minimumHours
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DISALLOW_COMBAT, {
+    name: "Disallow Gather In Combat",
+    hint: "Prevent gather attempts when the actor is an active combatant.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.disallowCombat
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_LUSH, {
+    name: "Gather DC: Lush Forest / River Valley",
+    hint: "Base DC for lush forest or river valley gather attempts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_TEMPERATE, {
+    name: "Gather DC: Temperate Hills / Light Woodland",
+    hint: "Base DC for temperate hills or light woodland gather attempts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_SPARSE, {
+    name: "Gather DC: Sparse Plains / Rocky",
+    hint: "Base DC for sparse plains or rocky terrain gather attempts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_COLD, {
+    name: "Gather DC: Cold Mountains / Swamp",
+    hint: "Base DC for cold mountains or swamp gather attempts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_DESERT, {
+    name: "Gather DC: Desert / Blighted Wasteland",
+    hint: "Base DC for desert or blighted wasteland gather attempts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.baseDc.desert_blighted_wasteland
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_SEASON_MOD, {
+    name: "Gather Default Season Modifier",
+    hint: "Default DC modifier from season shifts.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: -10, max: 10, step: 1 },
+    default: GATHER_DEFAULTS.seasonMod
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_WEATHER_MOD, {
+    name: "Gather Default Weather Modifier",
+    hint: "Default DC modifier from weather conditions.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: -10, max: 10, step: 1 },
+    default: GATHER_DEFAULTS.weatherMod
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_CORRUPTION_MOD, {
+    name: "Gather Default Corruption Modifier",
+    hint: "Default DC modifier from corruption effects.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: -10, max: 10, step: 1 },
+    default: GATHER_DEFAULTS.corruptionMod
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_HERBALISM_ADVANTAGE, {
+    name: "Gather: Herbalism Advantage",
+    hint: "Allow advantage for plant gathering mode when enabled by the GM.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.herbalismAdvantageEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_HOSTILE_FAIL_FLAG, {
+    name: "Gather: Hostile Terrain Encounter Flag",
+    hint: "On failure in hostile terrain, flag for encounter checks.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.hostileEncounterFlagEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_FAIL_BY5_COMPLICATION, {
+    name: "Gather: Fail by 5+ Complication",
+    hint: "Apply optional complications when the check fails by 5 or more.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.failBy5ComplicationEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, {
+    name: "Gather: Success by 5+ Doubles Rations",
+    hint: "Double rations on checks that succeed by 5 or more.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.successBy5DoubleEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_NAT20_BONUS, {
+    name: "Gather: Natural 20 Bonus",
+    hint: "Natural 20 grants +1d4 rations and safe campsite flag.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.nat20BonusEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_NAT1_FLAG, {
+    name: "Gather: Natural 1 Complication",
+    hint: "Natural 1 triggers spoiled/poison/attract-danger complication flag.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.nat1ComplicationEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_CORRUPTION_WATER_CHECK, {
+    name: "Gather: Corruption Water Check",
+    hint: "When gathering water in corrupted regions, run contamination check.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.corruptionWaterCheckEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_CORRUPTION_SAVE_DC, {
+    name: "Gather: Corruption Water Con Save DC",
+    hint: "Constitution save DC used when contaminated water is found.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.corruptionConSaveDc
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_WATER_AUTO_FOUND, {
+    name: "Gather: Water Auto-Found Toggle",
+    hint: "Allow the obvious-water-source toggle to auto-find water.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.waterAutoFoundEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_TRAVEL_TRADEOFF, {
+    name: "Gather: Travel Tradeoff Enabled",
+    hint: "Apply travel tradeoff when gathering during travel.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: GATHER_DEFAULTS.travelTradeoffEnabled
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_TRAVEL_TRADEOFF_DEFAULT, {
+    name: "Gather: Default Travel Tradeoff",
+    hint: "Default tradeoff used when gathering during travel.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [GATHER_TRAVEL_CHOICES.PACE]: "Reduce pace one step",
+      [GATHER_TRAVEL_CHOICES.FELL_BEHIND]: "Fell behind + Con save"
+    },
+    default: GATHER_DEFAULTS.travelTradeoffDefault
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.GATHER_TRAVEL_CON_SAVE_DC, {
+    name: "Gather: Travel Con Save DC",
+    hint: "Constitution save DC when the actor falls behind during travel gathering.",
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: 1, max: 30, step: 1 },
+    default: GATHER_DEFAULTS.travelConSaveDc
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT, {
     name: "Launcher Placement",
     hint: "Choose whether the Party Operations launcher is on-screen, in the sidebar, or both.",
@@ -22485,6 +32046,16 @@ Hooks.once("init", () => {
     config: true,
     type: Boolean,
     default: false
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.SHARED_GM_PERMISSIONS, {
+    name: "Shared GM Permissions (Module)",
+    hint: "When enabled, all players can use GM-level Party Operations controls. Changes still execute through the active GM client.",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => refreshOpenApps()
   });
 
   game.settings.register(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY, {
@@ -22555,7 +32126,7 @@ Hooks.once("init", () => {
     name: "Open Marching Order",
     editable: [],
     onDown: () => {
-      new MarchingOrderApp().render({ force: true });
+      openMainTab("marching-order", { force: true });
       return true;
     }
   });
@@ -22580,19 +32151,63 @@ Hooks.once("ready", () => {
   notifyDailyInjuryReminders();
 
   // Auto-open player UI for non-GM players
-  if (!game.user.isGM) {
+  if (!game.user?.isGM) {
     // Intentionally do not auto-open UI on ready.
+    schedulePendingSopNoteSync("ready");
   } else {
     scheduleIntegrationSync("ready");
     ensureOperationsJournalFolderTree().catch((error) => {
       console.warn(`${MODULE_ID}: failed to initialize operations journal folder tree`, error);
+    });
+    scheduleLootManifestCompendiumTypeFolderSync("ready").catch((error) => {
+      console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
     });
   }
 
   game.socket.on(SOCKET_CHANNEL, async (message) => {
     if (!message || typeof message !== "object") return;
 
-    if (message.type === "players:openRest" && !game.user.isGM) {
+    if (message.type === "players:openLootClaims") {
+      const currentUserId = String(game.user?.id ?? "").trim();
+      const targetUserId = String(message.userId ?? "").trim();
+      const broadcast = !targetUserId || targetUserId === "*" || targetUserId.toLowerCase() === "all";
+      if (!broadcast && targetUserId !== currentUserId) return;
+      if (game.user?.isGM) return;
+
+      const actorIdByUserId = message?.actorIdByUserId && typeof message.actorIdByUserId === "object"
+        ? message.actorIdByUserId
+        : null;
+      const preferredActorId = actorIdByUserId
+        ? normalizeLootClaimActorId(actorIdByUserId[currentUserId])
+        : "";
+      const selectedActorId = preferredActorId || normalizeLootClaimActorId(message.actorId);
+      if (selectedActorId) setLootClaimActorSelection(selectedActorId);
+      const selectedRunId = normalizeLootClaimRunId(message.runId);
+      if (selectedRunId) setLootClaimRunSelection(selectedRunId);
+      await waitForLootClaimsPublished(message?.publishedAt);
+      const lootClaims = buildLootClaimsContext(game.user);
+      logUiDebug("loot-claims", "prompting player loot claims UI", {
+        currentUserId,
+        targetUserId,
+        broadcast,
+        selectedActorId,
+        selectedRunId,
+        itemCount: Math.max(0, Number(message?.itemCount ?? lootClaims?.itemCount ?? 0) || 0),
+        publishedAt: Math.max(0, Number(message?.publishedAt ?? 0) || 0)
+      });
+      const shouldOpen = await promptLootClaimsDialogForPlayer({
+        itemCount: message?.itemCount,
+        publishedBy: message?.publishedBy,
+        publishedAt: message?.publishedAt,
+        currencyRemaining: message?.currencyRemaining,
+        lootClaims
+      });
+      if (!shouldOpen) return;
+      openOperationsLootClaimsTabForPlayer({ force: true });
+      return;
+    }
+
+    if (message.type === "players:openRest" && !game.user?.isGM) {
       openRestWatchUiForCurrentUser({ force: true });
       return;
     }
@@ -22601,10 +32216,23 @@ Hooks.once("ready", () => {
       if (message.userId && message.userId === game.user.id) return;
       // Small delay helps ensure settings updates have propagated before re-rendering
       setTimeout(() => refreshOpenApps(), 75);
+      if (!game.user?.isGM) schedulePendingSopNoteSync("socket-refresh");
       return;
     }
 
-    if (!game.user.isGM) return; // only GM applies mutations
+    if (message.type === "ops:merchant-barter-result") {
+      syncMerchantBarterStatusForOpenDialogs(message);
+      return;
+    }
+
+    if (!game.user?.isGM) return; // only GM applies mutations
+
+    if (message.type === "ops:setting-write") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerSettingWriteRequest(message, requester);
+      return;
+    }
 
     if (message.type === "activity:update") {
       const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
@@ -22645,6 +32273,12 @@ Hooks.once("ready", () => {
       await applyPlayerSopNoteRequest(message, requester);
       return;
     }
+    if (message.type === "ops:ledger-write") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerOperationsLedgerWriteRequest(message, requester);
+      return;
+    }
     if (message.type === "ops:downtime-submit") {
       const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
       if (!requester) return;
@@ -22661,6 +32295,18 @@ Hooks.once("ready", () => {
       const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
       if (!requester) return;
       await applyPlayerDowntimeCollectRequest(message, requester);
+      return;
+    }
+    if (message.type === "ops:merchant-barter-request") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerMerchantBarterRequest(message, requester);
+      return;
+    }
+    if (message.type === "ops:merchant-trade") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerMerchantTradeRequest(message, requester);
       return;
     }
     if (message.type === "ops:loot-claim") {
@@ -22686,6 +32332,31 @@ Hooks.once("ready", () => {
   registerPartyOpsHooks();
 });
 
+async function applyPlayerSettingWriteRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  if (!canAccessAllPlayerOps(requester)) return;
+
+  const settingKey = String(message?.settingKey ?? "").trim();
+  if (!isWritableModuleSettingKey(settingKey)) return;
+  const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${settingKey}`) ?? null;
+  if (String(settingRecord?.scope ?? "").trim().toLowerCase() === "client") return;
+
+  try {
+    const fullSettingKey = `${MODULE_ID}.${settingKey}`;
+    suppressNextSettingRefresh(fullSettingKey);
+    await game.settings.set(MODULE_ID, settingKey, foundry.utils.deepClone(message?.value));
+    refreshOpenApps();
+    emitSocketRefresh();
+  } catch (error) {
+    logUiFailure("settings-proxy", "failed player-proxy setting write", error, {
+      requesterId: String(requester?.id ?? ""),
+      requesterName: String(requester?.name ?? "Player"),
+      settingKey
+    });
+  }
+}
+
 async function applyPlayerSopNoteRequest(message, requesterRef = null) {
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
@@ -22698,6 +32369,25 @@ async function applyPlayerSopNoteRequest(message, requesterRef = null) {
     const sopNotes = ensureSopNotesState(ledger);
     sopNotes[sopKey] = note;
   });
+}
+
+async function applyPlayerOperationsLedgerWriteRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const incomingLedger = message?.ledger;
+  if (!incomingLedger || typeof incomingLedger !== "object" || Array.isArray(incomingLedger)) return;
+
+  const defaults = buildDefaultOperationsLedger();
+  const mergedLedger = foundry.utils.mergeObject(defaults, incomingLedger, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, mergedLedger);
+  scheduleIntegrationSync("operations-ledger");
+  refreshOpenApps();
+  emitSocketRefresh();
 }
 
 async function applyPlayerDowntimeSubmitRequest(message, requesterRef = null) {
@@ -22736,7 +32426,95 @@ async function applyPlayerDowntimeCollectRequest(message, requesterRef = null) {
     ui.notifications?.warn(`Downtime collect failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
   }
-  ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}.`);
+  ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`);
+}
+
+async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
+  if (!merchantId || !actorId) return;
+
+  const resolved = await resolveMerchantBarterForUser(requester, { merchantId, actorId, settlement });
+  const resolutionPayload = resolved?.ok && resolved?.resolution
+    ? {
+      applied: true,
+      source: String(resolved.resolution?.source ?? "resolved"),
+      ability: String(resolved.resolution?.ability ?? "cha"),
+      abilityLabel: String(resolved.resolution?.abilityLabel ?? "Charisma"),
+      checkTotal: Number(resolved.resolution?.checkTotal ?? 0),
+      margin: Number(resolved.resolution?.margin ?? 0),
+      success: Boolean(resolved.resolution?.success),
+      delta: Number(resolved.resolution?.delta ?? 0),
+      buyMarkupDelta: Number(resolved.resolution?.buyMarkupDelta ?? 0),
+      sellRateDelta: Number(resolved.resolution?.sellRateDelta ?? 0),
+      createdAt: Number(resolved.resolution?.createdAt ?? Date.now())
+    }
+    : null;
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:merchant-barter-result",
+    userId: String(requester?.id ?? ""),
+    merchantId,
+    actorId,
+    settlement,
+    ok: Boolean(resolved?.ok),
+    summary: resolved?.ok
+      ? String(resolved?.summary ?? "Barter resolved.")
+      : String(resolved?.message ?? "Barter request failed."),
+    resolution: resolutionPayload
+  });
+
+  if (!resolved?.ok) {
+    ui.notifications?.warn(`Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`);
+    return;
+  }
+  ui.notifications?.info(`Resolved barter for ${requester.name}: ${resolved.summary}`);
+}
+
+async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
+  if (!merchantId || !actorId) return;
+  const normalizeLines = (raw) => {
+    const source = Array.isArray(raw) ? raw : [];
+    const rows = [];
+    for (const entry of source) {
+      const itemId = sanitizeSocketIdentifier(entry?.itemId, { maxLength: 64 });
+      const qtyRaw = Number(entry?.qty ?? entry?.quantity ?? 0);
+      const qty = Number.isFinite(qtyRaw) ? Math.max(0, Math.min(999, Math.floor(qtyRaw))) : 0;
+      if (!itemId || qty <= 0) continue;
+      rows.push({ itemId, qty });
+    }
+    return rows;
+  };
+  const tradePayload = {
+    merchantId,
+    actorId,
+    settlement,
+    buyItems: normalizeLines(message?.buyItems),
+    sellItems: normalizeLines(message?.sellItems)
+  };
+  const barterKey = getMerchantBarterResolutionKey({
+    userId: String(requester?.id ?? "").trim(),
+    actorId,
+    merchantId,
+    settlement
+  });
+  const cachedBarterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
+  if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
+  const outcome = await applyMerchantTradeForUser(requester, tradePayload);
+  if (!outcome.ok) {
+    ui.notifications?.warn(`Merchant trade failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+    return;
+  }
+  clearMerchantBarterResolutionEntryByKey(barterKey);
+  ui.notifications?.info(`${requester.name} completed merchant trade for ${outcome.actorName}.`);
 }
 
 async function applyPlayerLootClaimRequest(message, requesterRef = null) {
@@ -22744,8 +32522,9 @@ async function applyPlayerLootClaimRequest(message, requesterRef = null) {
   if (!requester) return;
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
   const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
+  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
   if (!actorId || !itemId) return;
-  const outcome = await applyLootClaimForUser(requester, actorId, itemId);
+  const outcome = await applyLootClaimForUser(requester, actorId, itemId, runId);
   if (!outcome.ok) {
     ui.notifications?.warn(`Loot claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
@@ -22758,8 +32537,9 @@ async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null)
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
   if (!actorId) return;
-  const outcome = await applyLootCurrencyClaimForUser(requester, actorId);
+  const outcome = await applyLootCurrencyClaimForUser(requester, actorId, runId);
   if (!outcome.ok) {
     ui.notifications?.warn(`Currency claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
@@ -22774,9 +32554,10 @@ async function applyPlayerLootVouchRequest(message, requesterRef = null) {
   if (!requester) return;
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
   const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
+  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
   if (!actorId || !itemId) return;
   const shouldVouch = message?.shouldVouch !== false;
-  const outcome = await applyLootVouchForUser(requester, actorId, itemId, shouldVouch);
+  const outcome = await applyLootVouchForUser(requester, actorId, itemId, shouldVouch, runId);
   if (!outcome.ok) {
     ui.notifications?.warn(`Loot voucher failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
     return;
@@ -22851,10 +32632,34 @@ async function applyRestRequest(request, requesterRef) {
       slot.notes = "";
     }
     if (!slot.entries) slot.entries = [];
-    // Only allow notes edits for own entry
+    // Only allow notes edits for entry actor the requester can control.
     const entry = slot.entries.find((e) => e.actorId === request.actorId);
-    if (!entry || !requesterActor || entry.actorId !== requesterActor.id) return;
+    if (!entry) {
+      logUiDebug("rest-watch-notes", "socket reject setEntryNotes (entry not found)", {
+        slotId: request.slotId,
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? "")
+      });
+      return;
+    }
+    const entryActor = game.actors.get(request.actorId);
+    if (!entryActor || !canUserControlActor(entryActor, requester)) {
+      logUiDebug("rest-watch-notes", "socket reject setEntryNotes (permission denied)", {
+        slotId: request.slotId,
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
     entry.notes = String(request.text ?? "");
+    logUiDebug("rest-watch-notes", "socket apply setEntryNotes", {
+      slotId: request.slotId,
+      actorId: request.actorId,
+      requesterId: String(requester?.id ?? ""),
+      requesterName: String(requester?.name ?? "Unknown"),
+      textLength: String(request.text ?? "").length
+    });
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");
@@ -22887,11 +32692,36 @@ async function applyMarchRequest(request, requesterRef) {
     return;
   }
 
-  // setActorNote: only for requester's own actor
+  // setActorNote: requester must be permitted for actor and actor must be in formation
   if (request.op === "setNote") {
-    if (!requesterActor || requesterActor.id !== request.actorId) return;
+    const targetActor = game.actors.get(request.actorId);
+    if (!targetActor || !canUserControlActor(targetActor, requester)) {
+      logUiDebug("march-notes", "socket reject setNote (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
+      Array.isArray(actorIds) && actorIds.includes(request.actorId)
+    ));
+    if (!inFormation) {
+      logUiDebug("march-notes", "socket reject setNote (actor not in formation)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
     if (!state.notes) state.notes = {};
     state.notes[request.actorId] = String(request.text ?? "");
+    logUiDebug("march-notes", "socket apply setNote", {
+      actorId: request.actorId,
+      requesterId: String(requester?.id ?? ""),
+      requesterName: String(requester?.name ?? "Unknown"),
+      textLength: String(request.text ?? "").length
+    });
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
@@ -22915,7 +32745,7 @@ function toggleCardNotes(element) {
 }
 
 async function toggleCampfire(element) {
-  if (!game.user.isGM) {
+  if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can toggle campfire.");
     return;
   }
@@ -22933,57 +32763,71 @@ function refreshOpenApps() {
   refreshOpenAppsQueued = true;
   requestAnimationFrame(() => {
     refreshOpenAppsQueued = false;
-  const ids = new Set([
-    "rest-watch-app",
-    "marching-order-app",
-    "rest-watch-player-app",
-    "party-operations-global-modifier-summary",
-    "party-operations-gm-environment-page",
-    "party-operations-gm-loot-page",
-    "party-operations-gm-loot-claims-board"
-  ]);
-  const knownInstances = [
-    restWatchAppInstance,
-    marchingOrderAppInstance,
-    restWatchPlayerAppInstance,
-    globalModifierSummaryAppInstance,
-    gmEnvironmentPageAppInstance,
-    gmLootPageAppInstance,
-    gmLootClaimsBoardAppInstance
-  ]
-    .filter((app) => app?.element?.isConnected);
-  const apps = Object.values(ui.windows).filter((app) =>
-    app instanceof RestWatchApp ||
-    app instanceof MarchingOrderApp ||
-    app instanceof RestWatchPlayerApp ||
-    app instanceof GlobalModifierSummaryApp ||
-    app instanceof GmEnvironmentPageApp ||
-    app instanceof GmLootPageApp ||
-    app instanceof GmLootClaimsBoardApp ||
-    ids.has(app?.id ?? app?.options?.id)
-  );
-  const unique = Array.from(new Set([...apps, ...knownInstances]));
-  for (const app of unique) {
-    // Force re-prepare context and re-render for v12 ApplicationV2
-    if (!app?.render) continue;
-    const uiState = captureUiState(app);
-    if (uiState) pendingUiRestore.set(app, uiState);
-    const state = captureScrollState(app);
-    if (state.length > 0) {
-      pendingScrollRestore.set(app, state);
+    const canvasSnapshot = captureCanvasViewState();
+    const ids = new Set([
+      "rest-watch-app",
+      "marching-order-app",
+      "rest-watch-player-app",
+      "party-operations-global-modifier-summary",
+      "party-operations-gm-environment-page",
+      "party-operations-gm-downtime-page",
+      "party-operations-gm-merchants-page",
+      "party-operations-gm-loot-page",
+      "party-operations-gm-loot-claims-board"
+    ]);
+    const knownInstances = [
+      restWatchAppInstance,
+      marchingOrderAppInstance,
+      restWatchPlayerAppInstance,
+      globalModifierSummaryAppInstance,
+      gmEnvironmentPageAppInstance,
+      gmDowntimePageAppInstance,
+      gmMerchantsPageAppInstance,
+      gmLootPageAppInstance,
+      gmLootClaimsBoardAppInstance
+    ]
+      .filter((app) => app?.element?.isConnected);
+    const apps = Object.values(ui.windows).filter((app) =>
+      app instanceof RestWatchApp ||
+      app instanceof MarchingOrderApp ||
+      app instanceof RestWatchPlayerApp ||
+      app instanceof GlobalModifierSummaryApp ||
+      app instanceof GmEnvironmentPageApp ||
+      app instanceof GmDowntimePageApp ||
+      app instanceof GmMerchantsPageApp ||
+      app instanceof GmLootPageApp ||
+      app instanceof GmLootClaimsBoardApp ||
+      ids.has(app?.id ?? app?.options?.id)
+    );
+    const unique = Array.from(new Set([...apps, ...knownInstances]));
+    for (const app of unique) {
+      // Force re-prepare context and re-render for v12 ApplicationV2
+      if (!app?.render) continue;
+      if (appHasFocusedTypingInput(app)) {
+        logUiDebug("refresh", "skipping rerender for app with focused text input", {
+          appId: String(app?.id ?? app?.options?.id ?? ""),
+          appClass: String(app?.constructor?.name ?? "Application")
+        });
+        continue;
+      }
+      const windowState = captureWindowState(app);
+      if (windowState) {
+        pendingWindowRestore.set(app, windowState);
+      }
+      renderAppWithPreservedState(app, { force: true, parts: ["main"], focus: false }, {
+        preserveCanvas: false
+      });
     }
-    const windowState = captureWindowState(app);
-    if (windowState) {
-      pendingWindowRestore.set(app, windowState);
-    }
-    app.render({ force: true, parts: ["main"], focus: false });
-  }
+    queueCanvasViewRestore(canvasSnapshot, {
+      action: "refresh-open-apps",
+      eventType: "refresh"
+    });
   });
 }
 
 function setupRestWatchDragAndDrop(html) {
   const state = getRestWatchState();
-  const isGM = game.user.isGM;
+  const isGM = canAccessAllPlayerOps();
   if (!isGM || isLockedForUser(state, isGM)) return;
 
   html.querySelectorAll(".po-watch-entry").forEach((entry) => {
@@ -23056,12 +32900,17 @@ function setupRestWatchDragAndDrop(html) {
 }
 
 function openRestWatchPlayerApp() {
+  if (canAccessAllPlayerOps()) {
+    const app = openMainTab("rest-watch", { force: true });
+    app?.bringToTop?.();
+    return app;
+  }
   const existing = Object.values(ui.windows).find((app) => app instanceof RestWatchPlayerApp);
   if (existing) {
     existing.bringToTop?.();
     return existing;
   }
-  const app = new RestWatchPlayerApp();
+  const app = new RestWatchPlayerApp(getResponsiveWindowOptions("rest-watch-player"));
   app.render({ force: true });
   return app;
 }
@@ -23073,7 +32922,3 @@ export function emitSocketRefresh() {
 function emitOpenRestPlayers() {
   game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
 }
-
-
-
-
