@@ -196,6 +196,7 @@ let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
+let latestCanvasRestoreRequestId = 0;
 const journalFilterDebounceTimers = new WeakMap();
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
@@ -600,9 +601,12 @@ function restoreCanvasViewState(snapshot, options = {}) {
 
 function queueCanvasViewRestore(snapshot, options = {}) {
   if (!snapshot) return;
+  const latestOnly = options?.latestOnly !== false;
+  const requestId = latestOnly ? ++latestCanvasRestoreRequestId : 0;
   const maxAgeMs = Math.max(80, Math.floor(Number(options.maxAgeMs ?? 1500)));
   const runRestore = () => {
     if ((Date.now() - Number(snapshot.capturedAt ?? 0)) > maxAgeMs) return;
+    if (latestOnly && requestId !== latestCanvasRestoreRequestId) return;
     restoreCanvasViewState(snapshot, options);
   };
   requestAnimationFrame(() => {
@@ -631,6 +635,11 @@ function renderAppWithPreservedState(app, renderOptions = { force: true, parts: 
   if (uiState) pendingUiRestore.set(app, uiState);
   const scrollState = captureScrollState(app);
   if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
+  const preserveWindow = options?.preserveWindow !== false;
+  if (preserveWindow) {
+    const windowState = captureWindowState(app);
+    if (windowState) pendingWindowRestore.set(app, windowState);
+  }
   const normalizedOptions = normalizePreservedRenderOptions(renderOptions);
   const preserveCanvas = options?.preserveCanvas !== false;
   const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
@@ -6041,38 +6050,86 @@ function restorePendingScrollState(app) {
   requestAnimationFrame(apply);
 }
 
-function captureWindowState(app) {
-  const pos = app?.position;
-  if (!pos) return null;
+function parseInlinePixelValue(value) {
+  if (value === null || value === undefined) return NaN;
+  const parsed = Number.parseFloat(String(value).replace("px", "").trim());
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function normalizeWindowStateLike(state) {
+  if (!state || typeof state !== "object") return null;
+  const left = Number(state.left);
+  const top = Number(state.top);
+  const width = Number(state.width);
+  const height = Number(state.height);
+  if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width) || !Number.isFinite(height)) return null;
+  if (width < 120 || height < 120) return null;
   return {
-    left: Number(pos.left ?? 0),
-    top: Number(pos.top ?? 0),
-    width: Number(pos.width ?? 0),
-    height: Number(pos.height ?? 0)
+    left,
+    top,
+    width,
+    height
   };
+}
+
+function captureWindowState(app) {
+  const frame = getAppRootElement(app)?.closest?.(".window-app, .application");
+  if (frame instanceof HTMLElement && frame.isConnected) {
+    const rect = frame.getBoundingClientRect();
+    const stateFromRect = normalizeWindowStateLike({
+      left: Number.isFinite(parseInlinePixelValue(frame.style.left)) ? parseInlinePixelValue(frame.style.left) : Number(rect.left),
+      top: Number.isFinite(parseInlinePixelValue(frame.style.top)) ? parseInlinePixelValue(frame.style.top) : Number(rect.top),
+      width: Number(rect.width),
+      height: Number(rect.height)
+    });
+    if (stateFromRect) return stateFromRect;
+  }
+  const pos = app?.position;
+  return normalizeWindowStateLike({
+    left: Number(pos?.left),
+    top: Number(pos?.top),
+    width: Number(pos?.width),
+    height: Number(pos?.height)
+  });
+}
+
+function areWindowStatesEquivalent(leftState, rightState, options = {}) {
+  const a = normalizeWindowStateLike(leftState);
+  const b = normalizeWindowStateLike(rightState);
+  if (!a || !b) return false;
+  const tolerance = Math.max(0.5, Number(options.tolerance ?? 1.25));
+  return Math.abs(a.left - b.left) <= tolerance
+    && Math.abs(a.top - b.top) <= tolerance
+    && Math.abs(a.width - b.width) <= tolerance
+    && Math.abs(a.height - b.height) <= tolerance;
 }
 
 function restorePendingWindowState(app) {
   const state = pendingWindowRestore.get(app);
   if (!state) return;
   pendingWindowRestore.delete(app);
+  const normalizedState = normalizeWindowStateLike(state);
+  if (!normalizedState || typeof app?.setPosition !== "function") return;
   const profileId = normalizeWindowProfileId(app);
   const restoredSize = getResponsiveWindowPosition(profileId, {
-    width: Number.isFinite(state.width) && state.width > 100 ? state.width : undefined,
-    height: Number.isFinite(state.height) && state.height > 100 ? state.height : undefined
+    width: normalizedState.width,
+    height: normalizedState.height
   });
   const clampedPlacement = clampWindowPositionToViewport({
-    left: Number.isFinite(state.left) ? state.left : undefined,
-    top: Number.isFinite(state.top) ? state.top : undefined,
+    left: normalizedState.left,
+    top: normalizedState.top,
     width: restoredSize.width,
     height: restoredSize.height
   });
+  if (!Number.isFinite(clampedPlacement.left) || !Number.isFinite(clampedPlacement.top)) return;
   const position = {
     left: clampedPlacement.left,
     top: clampedPlacement.top,
     width: restoredSize.width,
     height: restoredSize.height
   };
+  const currentState = captureWindowState(app);
+  if (areWindowStatesEquivalent(currentState, position)) return;
   const apply = () => app.setPosition(position);
   apply();
   requestAnimationFrame(apply);
@@ -29241,13 +29298,7 @@ async function switchActiveCharacter(element) {
     app instanceof RestWatchApp || app instanceof RestWatchPlayerApp
   );
   for (const app of apps) {
-    const uiState = captureUiState(app);
-    if (uiState) pendingUiRestore.set(app, uiState);
-    const state = captureScrollState(app);
-    if (state.length > 0) pendingScrollRestore.set(app, state);
-    const windowState = captureWindowState(app);
-    if (windowState) pendingWindowRestore.set(app, windowState);
-    app.render({ force: true });
+    refreshSingleAppPreservingView(app);
   }
 }
 
