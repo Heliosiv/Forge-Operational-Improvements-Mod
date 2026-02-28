@@ -23,11 +23,27 @@ interface PartyOpsAppData {
   tabRestWatch: boolean;
   tabMarchingOrder: boolean;
   tabLoot: boolean;
+  isGeneratingLoot: boolean;
+  lootError: string | null;
+  hasLootError: boolean;
+  lootStatus: string;
   settings: PartyOpsConfig;
   snapshots: PartyOpsSnapshots;
   snapshotsText: {
     restWatch: string;
     marchingOrder: string;
+  };
+  lootDraft: {
+    cr: number;
+    scarcity: ScarcityLevel;
+    target: LootGenerationInput["target"];
+  };
+  lootDraftView: {
+    scarcityAbundant: boolean;
+    scarcityNormal: boolean;
+    scarcityScarce: boolean;
+    targetPocket: boolean;
+    targetHorde: boolean;
   };
   lootResult: LootGenerationOutput | null;
 }
@@ -97,6 +113,13 @@ class PartyOpsDefaultUiServices implements PartyOpsUiServices {
 export class PartyOperationsApp extends Application {
   private activeTab: PartyOpsTab = "rest-watch";
   private lootResult: LootGenerationOutput | null = null;
+  private lootDraft: PartyOpsAppData["lootDraft"] = {
+    cr: 5,
+    scarcity: "normal",
+    target: "pocket"
+  };
+  private isGeneratingLoot = false;
+  private lootError: string | null = null;
   private readonly services: PartyOpsUiServices;
 
   constructor(options: Partial<ApplicationOptions> = {}, services: PartyOpsUiServices = new PartyOpsDefaultUiServices()) {
@@ -109,6 +132,7 @@ export class PartyOperationsApp extends Application {
     return {
       ...base,
       id: "party-operations-app",
+      classes: [...(base.classes ?? []), "party-operations", "party-operations-app"],
       title: "Party Operations",
       template: "modules/party-operations/templates/party-operations-app.hbs",
       width: 980,
@@ -125,6 +149,10 @@ export class PartyOperationsApp extends Application {
       tabRestWatch: this.activeTab === "rest-watch",
       tabMarchingOrder: this.activeTab === "marching-order",
       tabLoot: this.activeTab === "loot",
+      isGeneratingLoot: this.isGeneratingLoot,
+      lootError: this.lootError,
+      hasLootError: Boolean(this.lootError),
+      lootStatus: this.isGeneratingLoot ? "Generating loot…" : this.lootResult ? "Loot generated." : "Ready.",
       settings: this.services.getSettingsSnapshot(),
       snapshots: {
         restWatch,
@@ -133,6 +161,16 @@ export class PartyOperationsApp extends Application {
       snapshotsText: {
         restWatch: JSON.stringify(restWatch ?? {}, null, 2),
         marchingOrder: JSON.stringify(marchingOrder ?? {}, null, 2)
+      },
+      lootDraft: {
+        ...this.lootDraft
+      },
+      lootDraftView: {
+        scarcityAbundant: this.lootDraft.scarcity === "abundant",
+        scarcityNormal: this.lootDraft.scarcity === "normal",
+        scarcityScarce: this.lootDraft.scarcity === "scarce",
+        targetPocket: this.lootDraft.target === "pocket",
+        targetHorde: this.lootDraft.target === "horde"
       },
       lootResult: this.lootResult
     };
@@ -162,12 +200,27 @@ export class PartyOperationsApp extends Application {
     const scarcityInput = root.querySelector("select[name='lootScarcity']") as HTMLSelectElement | null;
     const targetInput = root.querySelector("select[name='lootTarget']") as HTMLSelectElement | null;
 
-    const cr = Number(crInput?.value ?? 1);
-    const scarcity = String(scarcityInput?.value ?? "normal") as ScarcityLevel;
-    const target = String(targetInput?.value ?? "pocket") as LootGenerationInput["target"];
+    const crRaw = Number(crInput?.value ?? this.lootDraft.cr);
+    const cr = Number.isFinite(crRaw) ? Math.min(30, Math.max(0, Math.floor(crRaw))) : this.lootDraft.cr;
+    const scarcity = String(scarcityInput?.value ?? this.lootDraft.scarcity) as ScarcityLevel;
+    const target = String(targetInput?.value ?? this.lootDraft.target) as LootGenerationInput["target"];
 
-    this.lootResult = await this.services.generateLoot({ cr, scarcity, target });
+    this.lootDraft = { cr, scarcity, target };
+    this.isGeneratingLoot = true;
+    this.lootError = null;
     void this.render(false);
+
+    try {
+      this.lootResult = await this.services.generateLoot(this.lootDraft);
+    } catch (error) {
+      this.lootResult = null;
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      this.lootError = `Loot generation failed: ${message}`;
+      ui?.notifications?.error?.(this.lootError);
+    } finally {
+      this.isGeneratingLoot = false;
+      void this.render(false);
+    }
   }
 }
 

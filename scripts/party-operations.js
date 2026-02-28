@@ -359,87 +359,26 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
 
+const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
+  width: 9999,
+  height: 9999,
+  minWidth: 920,
+  minHeight: 640,
+  maxWidthRatio: 0.98,
+  maxHeightRatio: 0.96
+});
+
 const APP_WINDOW_SIZE_PROFILES = Object.freeze({
-  default: Object.freeze({
-    width: 980,
-    height: 760,
-    minWidth: 700,
-    minHeight: 520,
-    maxWidthRatio: 0.95,
-    maxHeightRatio: 0.92
-  }),
-  "rest-watch": Object.freeze({
-    width: 1020,
-    height: 820,
-    minWidth: 760,
-    minHeight: 560,
-    maxWidthRatio: 0.96,
-    maxHeightRatio: 0.94
-  }),
-  "rest-watch-player": Object.freeze({
-    width: 760,
-    height: 620,
-    minWidth: 620,
-    minHeight: 500,
-    maxWidthRatio: 0.9,
-    maxHeightRatio: 0.88
-  }),
-  "marching-order": Object.freeze({
-    width: 1320,
-    height: 920,
-    minWidth: 880,
-    minHeight: 620,
-    maxWidthRatio: 0.97,
-    maxHeightRatio: 0.95
-  }),
-  "global-modifiers": Object.freeze({
-    width: 900,
-    height: 720,
-    minWidth: 700,
-    minHeight: 520,
-    maxWidthRatio: 0.92,
-    maxHeightRatio: 0.9
-  }),
-  "gm-environment": Object.freeze({
-    width: 980,
-    height: 760,
-    minWidth: 760,
-    minHeight: 560,
-    maxWidthRatio: 0.95,
-    maxHeightRatio: 0.93
-  }),
-  "gm-downtime": Object.freeze({
-    width: 980,
-    height: 760,
-    minWidth: 760,
-    minHeight: 560,
-    maxWidthRatio: 0.95,
-    maxHeightRatio: 0.93
-  }),
-  "gm-merchants": Object.freeze({
-    width: 1120,
-    height: 920,
-    minWidth: 860,
-    minHeight: 620,
-    maxWidthRatio: 0.97,
-    maxHeightRatio: 0.95
-  }),
-  "gm-loot": Object.freeze({
-    width: 9999,
-    height: 9999,
-    minWidth: 980,
-    minHeight: 680,
-    maxWidthRatio: 0.99,
-    maxHeightRatio: 0.99
-  }),
-  "gm-loot-claims-board": Object.freeze({
-    width: 920,
-    height: 760,
-    minWidth: 720,
-    minHeight: 560,
-    maxWidthRatio: 0.94,
-    maxHeightRatio: 0.92
-  })
+  default: NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "rest-watch": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "marching-order": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "global-modifiers": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-environment": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-downtime": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-merchants": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-loot": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-loot-claims-board": NEAR_FULLSCREEN_WINDOW_PROFILE
 });
 
 const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
@@ -855,6 +794,7 @@ const ENVIRONMENT_EFFECT_NAME_PREFIX = "Environment:";
 
 const SCROLL_STATE_MAIN_SELECTOR = ".window-content";
 const SCROLL_STATE_BODY_SELECTOR = ".po-body";
+const SCROLL_STATE_PRESERVE_SELECTOR = "[data-po-scroll-preserve]";
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const STEWARD_POOL_KEYS = ["food", "water", "torches"];
@@ -6245,6 +6185,20 @@ function captureScrollState(app) {
       });
     }
   }
+  const preservedScrollNodes = Array.from(root.querySelectorAll(SCROLL_STATE_PRESERVE_SELECTOR))
+    .filter((entry) => entry instanceof HTMLElement);
+  for (const node of preservedScrollNodes) {
+    const keySuffix = String(node?.dataset?.poScrollPreserve ?? "").trim();
+    if (!keySuffix) continue;
+    const canScrollY = node.scrollHeight > node.clientHeight;
+    const canScrollX = node.scrollWidth > node.clientWidth;
+    if (!canScrollY && !canScrollX) continue;
+    states.push({
+      key: `__custom:${keySuffix}`,
+      top: node.scrollTop,
+      left: node.scrollLeft
+    });
+  }
   return states;
 }
 
@@ -6272,6 +6226,23 @@ function applyScrollState(root, states) {
     const left = Number(bodyState?.left ?? 0);
     pageBody.scrollTop = Number.isFinite(top) ? top : 0;
     pageBody.scrollLeft = Number.isFinite(left) ? left : 0;
+  }
+  const preservedScrollNodes = Array.from(root.querySelectorAll(SCROLL_STATE_PRESERVE_SELECTOR))
+    .filter((entry) => entry instanceof HTMLElement);
+  const preserveNodeByKey = new Map();
+  for (const node of preservedScrollNodes) {
+    const keySuffix = String(node?.dataset?.poScrollPreserve ?? "").trim();
+    if (!keySuffix) continue;
+    preserveNodeByKey.set(`__custom:${keySuffix}`, node);
+  }
+  for (const [key, state] of stateByKey.entries()) {
+    if (!String(key).startsWith("__custom:")) continue;
+    const node = preserveNodeByKey.get(key);
+    if (!(node instanceof HTMLElement)) continue;
+    const top = Number(state?.top ?? 0);
+    const left = Number(state?.left ?? 0);
+    node.scrollTop = Number.isFinite(top) ? top : 0;
+    node.scrollLeft = Number.isFinite(left) ? left : 0;
   }
 }
 
@@ -8532,45 +8503,55 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
-    if (this.element && !this.element.dataset.poBoundGlobalModifiers) {
-      this.element.dataset.poBoundGlobalModifiers = "1";
-      this.element.addEventListener("click", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (!action) return;
-        if (action === "global-modifier-set-excluded") {
-          event.stopPropagation();
-          return;
+    if (this.element) {
+      const bindClickOnce = (selector, handler) => {
+        const elements = Array.from(this.element.querySelectorAll(selector));
+        for (const element of elements) {
+          if (element.dataset.poBoundClick === "1") continue;
+          element.dataset.poBoundClick = "1";
+          element.addEventListener("click", (event) => {
+            void handler(event, element);
+          });
         }
-        if (action === "global-modifiers-back") {
-          event.preventDefault();
-          event.stopPropagation();
-          await this.close();
-          openMainTab("gm", { force: true });
-          return;
+      };
+
+      const bindChangeOnce = (selector, handler) => {
+        const elements = Array.from(this.element.querySelectorAll(selector));
+        for (const element of elements) {
+          if (element.dataset.poBoundChange === "1") continue;
+          element.dataset.poBoundChange = "1";
+          element.addEventListener("change", (event) => {
+            void handler(event, element);
+          });
         }
-        if (action === "gm-panel-tab") {
-          event.preventDefault();
-          event.stopPropagation();
-          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
-          if (panelKey === "global-modifiers") return;
-          openGmPanelByKey(panelKey, { force: false });
-          return;
-        }
-        if (action === "global-modifiers-refresh") {
-          event.preventDefault();
-          event.stopPropagation();
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        }
-      });
-      this.element.addEventListener("change", async (event) => {
-        const actionElement = event.target?.closest?.("[data-action]");
-        const action = String(actionElement?.dataset?.action ?? "").trim();
-        if (action !== "global-modifier-set-excluded") return;
+      };
+
+      bindClickOnce("[data-action='global-modifiers-back']", async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const modifierId = String(actionElement?.dataset?.modifierId ?? "").trim();
-        const excluded = Boolean(actionElement?.checked);
+        await this.close();
+        openMainTab("gm", { force: true });
+      });
+
+      bindClickOnce("[data-action='global-modifiers-refresh']", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindClickOnce("[data-action='gm-panel-tab']", (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const panelKey = String(element?.dataset?.panel ?? "").trim().toLowerCase();
+        if (!panelKey || panelKey === "global-modifiers") return;
+        openGmPanelByKey(panelKey, { force: true });
+      });
+
+      bindChangeOnce("[data-action='global-modifier-set-excluded']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const modifierId = String(element?.dataset?.modifierId ?? "").trim();
+        const excluded = Boolean(element?.checked);
         await setGlobalModifierExcluded(modifierId, excluded, { skipLocalRefresh: true });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
@@ -8777,22 +8758,6 @@ function openGmLootPage(renderOptions = { force: true }) {
     ? gmLootPageAppInstance
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
-  if (typeof app?.setPosition === "function") {
-    const expandedSize = getResponsiveWindowPosition("gm-loot", { width: 9999, height: 9999 });
-    const currentLeft = Number(app?.position?.left);
-    const currentTop = Number(app?.position?.top);
-    const clampedPlacement = clampWindowPositionToViewport({
-      left: Number.isFinite(currentLeft) ? currentLeft : 8,
-      top: Number.isFinite(currentTop) ? currentTop : 8,
-      width: expandedSize.width,
-      height: expandedSize.height
-    }, { padding: 6 });
-    app.setPosition({
-      ...expandedSize,
-      left: Number.isFinite(clampedPlacement.left) ? clampedPlacement.left : undefined,
-      top: Number.isFinite(clampedPlacement.top) ? clampedPlacement.top : undefined
-    });
-  }
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
   return app;
 }
@@ -9038,6 +9003,8 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   refreshAllMerchantStocksFromElement,
   setMerchantGmCollectionFilterFromElement,
   resetMerchantGmCollectionFilterFromElement,
+  selectAllMerchantTagsFromElement,
+  deselectAllMerchantTagsFromElement,
   setMerchantShopRestrictionFromElement,
   setMerchantShopPlayerAllowedFromElement,
   setMerchantShopPlayersAllFromElement,
@@ -19946,6 +19913,41 @@ function resetMerchantGmCollectionFilterFromElement(_element) {
   }
   resetMerchantGmCollectionFilterState();
   return true;
+}
+
+function setMerchantTagSelectionModeFromElement(element, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage merchant tags.");
+    return false;
+  }
+  const mode = String(options?.mode ?? element?.dataset?.tagMode ?? "").trim().toLowerCase() === "exclude"
+    ? "exclude"
+    : "include";
+  const shouldSelect = options?.selected !== false;
+  const root = getMerchantEditorRootFromElement(element);
+  if (!root) return false;
+  const inputName = mode === "exclude" ? "merchantExcludeTags" : "merchantIncludeTags";
+  const tagNodes = Array.from(root.querySelectorAll(`input[name='${inputName}']`))
+    .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox" && !entry.disabled);
+  if (tagNodes.length <= 0) return false;
+  let changed = false;
+  for (const node of tagNodes) {
+    const nextChecked = Boolean(shouldSelect);
+    if (Boolean(node.checked) === nextChecked) continue;
+    node.checked = nextChecked;
+    changed = true;
+  }
+  if (!changed) return false;
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true });
+  return Boolean(draft);
+}
+
+function selectAllMerchantTagsFromElement(element) {
+  return setMerchantTagSelectionModeFromElement(element, { selected: true });
+}
+
+function deselectAllMerchantTagsFromElement(element) {
+  return setMerchantTagSelectionModeFromElement(element, { selected: false });
 }
 
 async function updateMerchantShopSessionState(patch = {}) {
@@ -31793,6 +31795,7 @@ function isLockedForUser(state, isGM) {
 }
 
 function buildActorView(actor, isGM, visibility) {
+  const languageData = getLanguages(actor);
   const data = {
     id: actor.id,
     name: actor.name,
@@ -31803,7 +31806,8 @@ function buildActorView(actor, isGM, visibility) {
     darkvision: getDarkvision(actor),
     stealthDisadv: getStealthDisadv(actor),
     ac: getArmorClass(actor),
-    languages: getLanguages(actor)
+    languages: languageData?.display ?? null,
+    languagesTooltip: languageData?.tooltip ?? ""
   };
 
   if (isGM) return data;
@@ -31897,8 +31901,17 @@ function getLanguages(actor) {
     .filter((entry, index, arr) => entry && entry.toLowerCase() !== "undefined" && arr.indexOf(entry) === index);
 
   if (labels.length === 0) return null;
-  if (labels.length <= 3) return labels.join(", ");
-  return `${labels.length} langs`;
+  const full = labels.join(", ");
+  if (labels.length <= 3) {
+    return {
+      display: full,
+      tooltip: ""
+    };
+  }
+  return {
+    display: `${labels.length} langs`,
+    tooltip: full
+  };
 }
 
 function computeHighestPP(slots) {

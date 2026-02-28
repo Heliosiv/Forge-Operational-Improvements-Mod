@@ -170,14 +170,27 @@
             <div class="po-resource-row po-merchant-source-row">
               <span>Tag Include</span>
               <div class="po-merchant-source-picker po-merchant-filter-picker">
-                <div class="po-op-summary">Require all selected tags. {{merchants.gm.includeTagSelectedCount}} selected from {{merchants.gm.tagCatalogCount}}.</div>
+                <div class="po-op-summary">
+                  Require all selected tags.
+                  <span data-merchant-tag-selected-count="include">{{merchants.gm.includeTagSelectedCount}}</span>
+                  selected from
+                  <span data-merchant-tag-total-count="include">{{merchants.gm.tagCatalogCount}}</span>.
+                </div>
+                <div class="po-op-action-row po-merchant-tag-bulk-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="include">Select All</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="include">Deselect All</button>
+                </div>
                 {{#if merchants.gm.hasIncludeTagGroups}}
-                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups">
+                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-include-tag-groups">
                   {{#each merchants.gm.includeTagGroups}}
-                  <details class="po-merchant-tag-group" {{#if open}}open{{/if}}>
+                  <details class="po-merchant-tag-group" data-tag-mode="include" {{#if open}}open{{/if}}>
                     <summary class="po-merchant-tag-group-summary">
                       <span class="po-merchant-tag-group-title">{{label}}</span>
-                      <span class="po-merchant-tag-group-meta">{{selectedCount}} / {{optionCount}}</span>
+                      <span class="po-merchant-tag-group-meta">
+                        <span data-merchant-tag-group-selected>{{selectedCount}}</span>
+                        /
+                        <span data-merchant-tag-group-total>{{optionCount}}</span>
+                      </span>
                     </summary>
                     <div class="po-merchant-tag-group-options">
                       {{#each options}}
@@ -198,14 +211,27 @@
             <div class="po-resource-row po-merchant-source-row">
               <span>Tag Exclude</span>
               <div class="po-merchant-source-picker po-merchant-filter-picker">
-                <div class="po-op-summary">Block any selected tags. {{merchants.gm.excludeTagSelectedCount}} selected from {{merchants.gm.tagCatalogCount}}.</div>
+                <div class="po-op-summary">
+                  Block any selected tags.
+                  <span data-merchant-tag-selected-count="exclude">{{merchants.gm.excludeTagSelectedCount}}</span>
+                  selected from
+                  <span data-merchant-tag-total-count="exclude">{{merchants.gm.tagCatalogCount}}</span>.
+                </div>
+                <div class="po-op-action-row po-merchant-tag-bulk-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="exclude">Select All</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="exclude">Deselect All</button>
+                </div>
                 {{#if merchants.gm.hasExcludeTagGroups}}
-                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups">
+                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-exclude-tag-groups">
                   {{#each merchants.gm.excludeTagGroups}}
-                  <details class="po-merchant-tag-group" {{#if open}}open{{/if}}>
+                  <details class="po-merchant-tag-group" data-tag-mode="exclude" {{#if open}}open{{/if}}>
                     <summary class="po-merchant-tag-group-summary">
                       <span class="po-merchant-tag-group-title">{{label}}</span>
-                      <span class="po-merchant-tag-group-meta">{{selectedCount}} / {{optionCount}}</span>
+                      <span class="po-merchant-tag-group-meta">
+                        <span data-merchant-tag-group-selected>{{selectedCount}}</span>
+                        /
+                        <span data-merchant-tag-group-total>{{optionCount}}</span>
+                      </span>
                     </summary>
                     <div class="po-merchant-tag-group-options">
                       {{#each options}}

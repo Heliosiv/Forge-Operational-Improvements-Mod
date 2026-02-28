@@ -1,3 +1,5 @@
+import { createPageActionHelpers } from "./page-action-helpers.js";
+
 export function createGmDowntimePageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -31,7 +33,7 @@ export function createGmDowntimePageApp(deps) {
       id: "party-operations-gm-downtime-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Downtime" },
-      position: getResponsiveWindowPosition?.("gm-downtime") ?? { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-downtime") ?? { width: 1600, height: 900 },
       resizable: true
     });
 
@@ -60,7 +62,7 @@ export function createGmDowntimePageApp(deps) {
     }
 
     _getActionHandlers() {
-      const rerender = () => this._renderWithPreservedState({ force: true, parts: ["main"] });
+      const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
       return {
         "gm-downtime-page-back": async () => {
           this.close();
@@ -69,12 +71,7 @@ export function createGmDowntimePageApp(deps) {
         "gm-downtime-page-refresh": async () => {
           rerender();
         },
-        "gm-panel-tab": async (actionElement) => {
-          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
-          if (!panelKey) return;
-          if (panelKey === "downtime") return;
-          openGmPanelByKey(panelKey, { force: false });
-        },
+        "gm-panel-tab": openPanelTab("downtime", openGmPanelByKey),
         "set-downtime-entry-sort": async (actionElement) => {
           setGmDowntimeViewState({ entriesSort: String(actionElement?.value ?? "") });
           rerender();
@@ -83,60 +80,24 @@ export function createGmDowntimePageApp(deps) {
           setGmDowntimeViewState({ logsSort: String(actionElement?.value ?? "") });
           rerender();
         },
-        "set-downtime-hours": async (actionElement) => {
-          await setDowntimeHoursGranted(actionElement);
-          rerender();
-        },
-        "set-downtime-tuning": async (actionElement) => {
-          await setDowntimeTuningField(actionElement);
-          rerender();
-        },
+        "set-downtime-hours": rerenderAlways(setDowntimeHoursGranted),
+        "set-downtime-tuning": rerenderAlways(setDowntimeTuningField),
         "set-downtime-resolve-target": async (actionElement) => {
           applyDowntimeResolverBaseToUi(actionElement, { force: true });
         },
         "prefill-downtime-resolution": async (actionElement) => {
           applyDowntimeResolverBaseToUi(actionElement, { force: true });
         },
-        "pre-resolve-selected-downtime-entry": async (actionElement) => {
-          await preResolveSelectedDowntimeEntry(actionElement);
-          rerender();
-        },
-        "resolve-selected-downtime-entry": async (actionElement) => {
-          await resolveSelectedDowntimeEntry(actionElement);
-          rerender();
-        },
-        "edit-downtime-result": async (actionElement) => {
-          await editDowntimeResult(actionElement);
-          rerender();
-        },
-        "submit-downtime-action": async (actionElement) => {
-          await submitDowntimeAction(actionElement);
-          rerender();
-        },
-        "clear-downtime-entry": async (actionElement) => {
-          await clearDowntimeEntry(actionElement);
-          rerender();
-        },
-        "clear-downtime-results": async () => {
-          await clearDowntimeResults();
-          rerender();
-        },
-        "unarchive-downtime-log": async (actionElement) => {
-          await unarchiveDowntimeLogEntry(actionElement);
-          rerender();
-        },
-        "clear-downtime-log": async (actionElement) => {
-          await clearDowntimeLogEntry(actionElement);
-          rerender();
-        },
-        "post-downtime-log": async (actionElement) => {
-          await postDowntimeLogOutcome(actionElement);
-          rerender();
-        },
-        "collect-downtime-result": async (actionElement) => {
-          await collectDowntimeResult(actionElement);
-          rerender();
-        },
+        "pre-resolve-selected-downtime-entry": rerenderAlways(preResolveSelectedDowntimeEntry),
+        "resolve-selected-downtime-entry": rerenderAlways(resolveSelectedDowntimeEntry),
+        "edit-downtime-result": rerenderAlways(editDowntimeResult),
+        "submit-downtime-action": rerenderAlways(submitDowntimeAction),
+        "clear-downtime-entry": rerenderAlways(clearDowntimeEntry),
+        "clear-downtime-results": rerenderAlways(() => clearDowntimeResults()),
+        "unarchive-downtime-log": rerenderAlways(unarchiveDowntimeLogEntry),
+        "clear-downtime-log": rerenderAlways(clearDowntimeLogEntry),
+        "post-downtime-log": rerenderAlways(postDowntimeLogOutcome),
+        "collect-downtime-result": rerenderAlways(collectDowntimeResult),
         "remove-downtime-item-drop": async (actionElement) => {
           removeDowntimeResolverItemDropFromUi(actionElement);
         }

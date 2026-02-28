@@ -1,3 +1,5 @@
+import { createPageActionHelpers } from "./page-action-helpers.js";
+
 export function createGmLootPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -39,7 +41,7 @@ export function createGmLootPageApp(deps) {
       id: "party-operations-gm-loot-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Loot" },
-      position: getResponsiveWindowPosition?.("gm-loot", { width: 9999, height: 9999 }) ?? { width: 1800, height: 980 },
+      position: getResponsiveWindowPosition?.("gm-loot") ?? { width: 1600, height: 900 },
       resizable: true
     });
 
@@ -77,7 +79,11 @@ export function createGmLootPageApp(deps) {
     }
 
     _getActionHandlers() {
-      const rerender = () => this._renderWithPreservedState({ force: true, parts: ["main"] });
+      const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
+      const rerenderUnlessInput = (operation) => async (actionElement, event) => {
+        await operation(actionElement, event);
+        if (event?.type !== "input") rerender();
+      };
       return {
         "gm-loot-page-back": async () => {
           this.close();
@@ -86,12 +92,7 @@ export function createGmLootPageApp(deps) {
         "gm-loot-page-refresh": async () => {
           rerender();
         },
-        "gm-panel-tab": async (actionElement) => {
-          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
-          if (!panelKey) return;
-          if (panelKey === "loot") return;
-          openGmPanelByKey(panelKey, { force: false });
-        },
+        "gm-panel-tab": openPanelTab("loot", openGmPanelByKey),
         "open-gm-loot-claims-board": async (actionElement) => {
           openGmLootClaimsBoard({
             force: true,
@@ -106,90 +107,34 @@ export function createGmLootPageApp(deps) {
           setActiveLootSettingsTab(String(actionElement?.dataset?.tab ?? "sources"));
           rerender();
         },
-        "set-loot-pack-filter": async (actionElement, event) => {
+        "set-loot-pack-filter": rerenderUnlessInput((actionElement) => {
           setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-          if (event?.type !== "input") rerender();
-        },
+        }),
         "clear-loot-pack-filter": async () => {
           setLootPackSourcesUiState({ filter: "" });
           rerender();
         },
-        "toggle-loot-pack-source": async (actionElement) => {
-          await toggleLootPackSource(actionElement);
-          rerender();
-        },
-        "set-loot-pack-weight": async (actionElement) => {
-          await setLootPackWeight(actionElement);
-          rerender();
-        },
-        "toggle-loot-table-source": async (actionElement) => {
-          await toggleLootTableSource(actionElement);
-          rerender();
-        },
-        "set-loot-table-type": async (actionElement) => {
-          await setLootTableType(actionElement);
-          rerender();
-        },
-        "toggle-loot-item-type": async (actionElement) => {
-          await toggleLootItemType(actionElement);
-          rerender();
-        },
-        "set-loot-rarity-floor": async (actionElement) => {
-          await setLootRarityFloor(actionElement);
-          rerender();
-        },
-        "set-loot-rarity-ceiling": async (actionElement) => {
-          await setLootRarityCeiling(actionElement);
-          rerender();
-        },
-        "set-loot-manifest-pack": async (actionElement) => {
-          await setLootManifestPack(actionElement);
-          rerender();
-        },
-        "set-loot-keyword-include-tags": async (actionElement) => {
-          await setLootKeywordIncludeTags(actionElement);
-          rerender();
-        },
-        "set-loot-keyword-exclude-tags": async (actionElement) => {
-          await setLootKeywordExcludeTags(actionElement);
-          rerender();
-        },
-        "reset-loot-source-config": async () => {
-          await resetLootSourceConfig();
-          rerender();
-        },
-        "set-loot-preview-field": async (actionElement, event) => {
+        "toggle-loot-pack-source": rerenderAlways(toggleLootPackSource),
+        "set-loot-pack-weight": rerenderAlways(setLootPackWeight),
+        "toggle-loot-table-source": rerenderAlways(toggleLootTableSource),
+        "set-loot-table-type": rerenderAlways(setLootTableType),
+        "toggle-loot-item-type": rerenderAlways(toggleLootItemType),
+        "set-loot-rarity-floor": rerenderAlways(setLootRarityFloor),
+        "set-loot-rarity-ceiling": rerenderAlways(setLootRarityCeiling),
+        "set-loot-manifest-pack": rerenderAlways(setLootManifestPack),
+        "set-loot-keyword-include-tags": rerenderAlways(setLootKeywordIncludeTags),
+        "set-loot-keyword-exclude-tags": rerenderAlways(setLootKeywordExcludeTags),
+        "reset-loot-source-config": rerenderAlways(() => resetLootSourceConfig()),
+        "set-loot-preview-field": rerenderUnlessInput((actionElement) => {
           setLootPreviewField(actionElement);
-          if (event?.type !== "input") rerender();
-        },
-        "roll-loot-preview": async (actionElement) => {
-          await rollLootPreview(actionElement);
-          rerender();
-        },
-        "add-loot-preview-item": async () => {
-          const added = await addLootPreviewItemByPicker();
-          if (added) rerender();
-        },
-        "remove-loot-preview-item": async (actionElement) => {
-          const removed = await removeLootPreviewItem(actionElement);
-          if (removed) rerender();
-        },
-        "adjust-loot-preview-currency": async (actionElement) => {
-          const adjusted = adjustLootPreviewCurrency(actionElement);
-          if (adjusted) rerender();
-        },
-        "clear-loot-preview": async () => {
-          clearLootPreviewResult();
-          rerender();
-        },
-        "publish-loot-claims": async () => {
-          await publishLootPreviewToClaims();
-          rerender();
-        },
-        "clear-loot-claims": async () => {
-          await clearLootClaimsPool();
-          rerender();
-        },
+        }),
+        "roll-loot-preview": rerenderAlways(rollLootPreview),
+        "add-loot-preview-item": rerenderIfTruthy(() => addLootPreviewItemByPicker()),
+        "remove-loot-preview-item": rerenderIfTruthy(removeLootPreviewItem),
+        "adjust-loot-preview-currency": rerenderIfTruthy(adjustLootPreviewCurrency),
+        "clear-loot-preview": rerenderAlways(() => clearLootPreviewResult()),
+        "publish-loot-claims": rerenderAlways(() => publishLootPreviewToClaims()),
+        "clear-loot-claims": rerenderAlways(() => clearLootClaimsPool()),
         "open-loot-item": async (actionElement) => {
           await openLootItemFromElement(actionElement);
         }

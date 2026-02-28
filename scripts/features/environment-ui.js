@@ -1,3 +1,5 @@
+import { createPageActionHelpers } from "./page-action-helpers.js";
+
 export function createGmEnvironmentPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -32,7 +34,7 @@ export function createGmEnvironmentPageApp(deps) {
       id: "party-operations-gm-environment-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Environment" },
-      position: getResponsiveWindowPosition?.("gm-environment") ?? { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-environment") ?? { width: 1600, height: 900 },
       resizable: true
     });
 
@@ -65,7 +67,11 @@ export function createGmEnvironmentPageApp(deps) {
     }
 
     _getActionHandlers() {
-      const rerender = () => this._renderWithPreservedState({ force: true, parts: ["main"] });
+      const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
+      const rerenderUnlessInput = (operation) => async (actionElement, event) => {
+        await operation(actionElement, event);
+        if (event?.type !== "input") rerender();
+      };
       return {
         "gm-environment-page-back": async () => {
           this.close();
@@ -74,79 +80,26 @@ export function createGmEnvironmentPageApp(deps) {
         "gm-environment-page-refresh": async () => {
           rerender();
         },
-        "gm-panel-tab": async (actionElement) => {
-          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
-          if (!panelKey) return;
-          if (panelKey === "environment") return;
-          openGmPanelByKey(panelKey, { force: false });
-        },
-        "set-environment-sync-non-party": async (actionElement) => {
-          await setOperationalEnvironmentSyncNonParty(actionElement);
-          rerender();
-        },
-        "set-environment-preset": async (actionElement) => {
-          await setOperationalEnvironmentPreset(actionElement);
-          rerender();
-        },
-        "set-environment-dc": async (actionElement) => {
-          await setOperationalEnvironmentDc(actionElement);
-          rerender();
-        },
-        "set-environment-successive": async (actionElement, event) => {
-          await setOperationalEnvironmentSuccessive(actionElement);
-          if (event?.type !== "input") rerender();
-        },
-        "set-environment-note": async (actionElement, event) => {
-          await setOperationalEnvironmentNote(actionElement);
-          if (event?.type !== "input") rerender();
-        },
-        "toggle-environment-actor": async (actionElement) => {
-          await toggleOperationalEnvironmentActor(actionElement);
-          rerender();
-        },
-        "reset-environment-successive-defaults": async () => {
-          await resetOperationalEnvironmentSuccessiveDefaults();
-          rerender();
-        },
-        "add-environment-log": async () => {
-          await addOperationalEnvironmentLog();
-          rerender();
-        },
-        "clear-environment-effects": async () => {
-          await clearOperationalEnvironmentEffects();
-          rerender();
-        },
+        "gm-panel-tab": openPanelTab("environment", openGmPanelByKey),
+        "set-environment-sync-non-party": rerenderAlways(setOperationalEnvironmentSyncNonParty),
+        "set-environment-preset": rerenderAlways(setOperationalEnvironmentPreset),
+        "set-environment-dc": rerenderAlways(setOperationalEnvironmentDc),
+        "set-environment-successive": rerenderUnlessInput(setOperationalEnvironmentSuccessive),
+        "set-environment-note": rerenderUnlessInput(setOperationalEnvironmentNote),
+        "toggle-environment-actor": rerenderAlways(toggleOperationalEnvironmentActor),
+        "reset-environment-successive-defaults": rerenderAlways(() => resetOperationalEnvironmentSuccessiveDefaults()),
+        "add-environment-log": rerenderAlways(() => addOperationalEnvironmentLog()),
+        "clear-environment-effects": rerenderAlways(() => clearOperationalEnvironmentEffects()),
         "show-environment-brief": async () => {
           await showOperationalEnvironmentBrief();
         },
-        "gm-quick-log-weather": async () => {
-          await gmQuickLogCurrentWeather();
-          rerender();
-        },
-        "gm-quick-weather-add-dae": async (actionElement) => {
-          await gmQuickAddWeatherDaeChange(actionElement);
-          rerender();
-        },
-        "gm-quick-weather-remove-dae": async (actionElement) => {
-          await gmQuickRemoveWeatherDaeChange(actionElement);
-          rerender();
-        },
-        "gm-quick-weather-save-preset": async (actionElement) => {
-          await gmQuickSaveWeatherPreset(actionElement);
-          rerender();
-        },
-        "gm-quick-weather-delete-preset": async (actionElement) => {
-          await gmQuickDeleteWeatherPreset(actionElement);
-          rerender();
-        },
-        "gm-quick-submit-weather": async (actionElement) => {
-          await gmQuickSubmitWeather(actionElement);
-          rerender();
-        },
-        "gm-quick-weather-select": async (actionElement) => {
-          await gmQuickSelectWeatherPreset(actionElement);
-          rerender();
-        },
+        "gm-quick-log-weather": rerenderAlways(() => gmQuickLogCurrentWeather()),
+        "gm-quick-weather-add-dae": rerenderAlways(gmQuickAddWeatherDaeChange),
+        "gm-quick-weather-remove-dae": rerenderAlways(gmQuickRemoveWeatherDaeChange),
+        "gm-quick-weather-save-preset": rerenderAlways(gmQuickSaveWeatherPreset),
+        "gm-quick-weather-delete-preset": rerenderAlways(gmQuickDeleteWeatherPreset),
+        "gm-quick-submit-weather": rerenderAlways(gmQuickSubmitWeather),
+        "gm-quick-weather-select": rerenderAlways(gmQuickSelectWeatherPreset),
         "gm-quick-weather-set": async (actionElement) => {
           gmQuickUpdateWeatherDraftField(actionElement);
         },

@@ -1,3 +1,58 @@
+import { createPageActionHelpers } from "./page-action-helpers.js";
+
+function getTagModeFromElement(element) {
+  const mode = String(element?.dataset?.tagMode ?? "").trim().toLowerCase();
+  return mode === "exclude" ? "exclude" : "include";
+}
+
+function getTagInputName(tagMode) {
+  return tagMode === "exclude" ? "merchantExcludeTags" : "merchantIncludeTags";
+}
+
+function getTagCheckboxes(root, tagMode) {
+  if (!root?.querySelectorAll) return [];
+  const inputName = getTagInputName(tagMode);
+  return Array.from(root.querySelectorAll(`input[name='${inputName}']`))
+    .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+}
+
+function syncMerchantTagGroupCounts(root, tagMode) {
+  if (!root?.querySelectorAll) return;
+  const groups = Array.from(root.querySelectorAll(`details.po-merchant-tag-group[data-tag-mode='${tagMode}']`));
+  for (const group of groups) {
+    if (!(group instanceof HTMLElement)) continue;
+    const inputs = Array.from(group.querySelectorAll(`input[name='${getTagInputName(tagMode)}']`))
+      .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+    const selectedCount = inputs.filter((entry) => Boolean(entry.checked)).length;
+    const totalCount = inputs.length;
+    const selectedNode = group.querySelector("[data-merchant-tag-group-selected]");
+    const totalNode = group.querySelector("[data-merchant-tag-group-total]");
+    if (selectedNode) selectedNode.textContent = String(selectedCount);
+    if (totalNode) totalNode.textContent = String(totalCount);
+  }
+}
+
+function syncMerchantTagSelectionUi(root, tagModeInput = "include") {
+  if (!root?.querySelectorAll) return;
+  const tagMode = tagModeInput === "exclude" ? "exclude" : "include";
+  const inputs = getTagCheckboxes(root, tagMode);
+  const selectedCount = inputs.filter((entry) => Boolean(entry.checked)).length;
+  const totalCount = inputs.length;
+  for (const node of root.querySelectorAll(`[data-merchant-tag-selected-count='${tagMode}']`)) {
+    node.textContent = String(selectedCount);
+  }
+  for (const node of root.querySelectorAll(`[data-merchant-tag-total-count='${tagMode}']`)) {
+    node.textContent = String(totalCount);
+  }
+  syncMerchantTagGroupCounts(root, tagMode);
+}
+
+function syncAllMerchantTagSelectionUi(root) {
+  if (!root?.querySelectorAll) return;
+  syncMerchantTagSelectionUi(root, "include");
+  syncMerchantTagSelectionUi(root, "exclude");
+}
+
 export function createGmMerchantsPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -26,6 +81,8 @@ export function createGmMerchantsPageApp(deps) {
     setMerchantAssignmentAllDisabledFromElement,
     setMerchantGmCollectionFilterFromElement,
     resetMerchantGmCollectionFilterFromElement,
+    selectAllMerchantTagsFromElement,
+    deselectAllMerchantTagsFromElement,
     setMerchantShopRestrictionFromElement,
     setMerchantShopPlayerAllowedFromElement,
     setMerchantShopPlayersAllFromElement,
@@ -44,7 +101,7 @@ export function createGmMerchantsPageApp(deps) {
       id: "party-operations-gm-merchants-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Merchants" },
-      position: getResponsiveWindowPosition?.("gm-merchants") ?? { width: 1120, height: 920 },
+      position: getResponsiveWindowPosition?.("gm-merchants") ?? { width: 1600, height: 900 },
       resizable: true
     });
 
@@ -73,7 +130,7 @@ export function createGmMerchantsPageApp(deps) {
     }
 
     _getActionHandlers() {
-      const rerender = () => this._renderWithPreservedState({ force: true, parts: ["main"] });
+      const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
       return {
         "gm-merchants-page-back": async () => {
           this.close();
@@ -82,18 +139,31 @@ export function createGmMerchantsPageApp(deps) {
         "gm-merchants-page-refresh": async () => {
           rerender();
         },
-        "gm-panel-tab": async (actionElement) => {
-          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
-          if (!panelKey) return;
-          if (panelKey === "merchants") return;
-          openGmPanelByKey(panelKey, { force: false });
-        },
+        "gm-panel-tab": openPanelTab("merchants", openGmPanelByKey),
         "merchant-editor-draft-change": async (actionElement) => {
-          if (cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true })) rerender();
+          const draft = cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
+          if (!draft) return;
+          const inputName = String(actionElement?.name ?? "").trim();
+          const isTagCheckbox = actionElement instanceof HTMLInputElement
+            && String(actionElement.type ?? "").toLowerCase() === "checkbox"
+            && (inputName === "merchantIncludeTags" || inputName === "merchantExcludeTags");
+          if (isTagCheckbox) {
+            syncMerchantTagSelectionUi(this.element, inputName === "merchantExcludeTags" ? "exclude" : "include");
+            return;
+          }
+          rerender();
         },
-        "merchant-editor-view-tab": async (actionElement) => {
-          if (setMerchantEditorViewTabFromElement(actionElement)) rerender();
+        "merchant-select-all-tags": async (actionElement) => {
+          const changed = await selectAllMerchantTagsFromElement(actionElement);
+          if (!changed) return;
+          syncMerchantTagSelectionUi(this.element, getTagModeFromElement(actionElement));
         },
+        "merchant-deselect-all-tags": async (actionElement) => {
+          const changed = await deselectAllMerchantTagsFromElement(actionElement);
+          if (!changed) return;
+          syncMerchantTagSelectionUi(this.element, getTagModeFromElement(actionElement));
+        },
+        "merchant-editor-view-tab": rerenderIfTruthy(setMerchantEditorViewTabFromElement),
         "merchant-gm-view-tab": async (actionElement) => {
           cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
           if (setMerchantGmViewTabFromElement(actionElement)) rerender();
@@ -103,93 +173,44 @@ export function createGmMerchantsPageApp(deps) {
           setMerchantGmViewTab?.("editor");
           rerender();
         },
-        "merchant-create-starters": async () => {
-          await createStarterMerchants();
-          rerender();
-        },
-        "merchant-save-city-catalog": async (actionElement) => {
-          if (await saveMerchantCityCatalogFromElement(actionElement)) rerender();
-        },
-        "merchant-assign-city": async (actionElement) => {
-          if (await assignMerchantCityFromElement(actionElement)) rerender();
-        },
-        "merchant-set-access-mode": async (actionElement) => {
-          if (await setMerchantAccessModeFromElement(actionElement)) rerender();
-        },
-        "merchant-assign-toggle": async (actionElement) => {
-          if (await setMerchantAssignmentFromElement(actionElement)) rerender();
-        },
-        "merchant-assign-all": async (actionElement) => {
-          if (await setMerchantAssignmentAllEnabledFromElement(actionElement)) rerender();
-        },
-        "merchant-assign-none": async (actionElement) => {
-          if (await setMerchantAssignmentAllDisabledFromElement(actionElement)) rerender();
-        },
-        "merchant-randomize-name": async (actionElement) => {
-          if (randomizeMerchantNameFromElement(actionElement)) rerender();
-        },
-        "merchant-randomize-race": async (actionElement) => {
-          if (randomizeMerchantRaceFromElement(actionElement)) rerender();
-        },
+        "merchant-create-starters": rerenderAlways(() => createStarterMerchants()),
+        "merchant-save-city-catalog": rerenderIfTruthy(saveMerchantCityCatalogFromElement),
+        "merchant-assign-city": rerenderIfTruthy(assignMerchantCityFromElement),
+        "merchant-set-access-mode": rerenderIfTruthy(setMerchantAccessModeFromElement),
+        "merchant-assign-toggle": rerenderIfTruthy(setMerchantAssignmentFromElement),
+        "merchant-assign-all": rerenderIfTruthy(setMerchantAssignmentAllEnabledFromElement),
+        "merchant-assign-none": rerenderIfTruthy(setMerchantAssignmentAllDisabledFromElement),
+        "merchant-randomize-name": rerenderIfTruthy(randomizeMerchantNameFromElement),
+        "merchant-randomize-race": rerenderIfTruthy(randomizeMerchantRaceFromElement),
         "merchant-edit": async (actionElement) => {
           if (setMerchantEditorSelectionFromElement(actionElement)) {
             setMerchantGmViewTab?.("editor");
             rerender();
           }
         },
-        "merchant-save": async (actionElement) => {
-          await saveMerchantFromElement(actionElement);
-          rerender();
-        },
-        "merchant-delete": async (actionElement) => {
-          await deleteMerchantFromElement(actionElement);
-          rerender();
-        },
-        "merchant-refresh-stock": async (actionElement) => {
-          await refreshMerchantStockFromElement(actionElement);
-          rerender();
-        },
-        "merchant-refresh-all-stock": async (actionElement) => {
-          await refreshAllMerchantStocksFromElement(actionElement);
-          rerender();
-        },
-        "merchant-gm-filter-change": async (actionElement) => {
-          if (setMerchantGmCollectionFilterFromElement(actionElement)) rerender();
-        },
-        "merchant-gm-filter-reset": async (actionElement) => {
-          if (resetMerchantGmCollectionFilterFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-restrict-toggle": async (actionElement) => {
-          if (await setMerchantShopRestrictionFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-player-toggle": async (actionElement) => {
-          if (await setMerchantShopPlayerAllowedFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-player-all": async (actionElement) => {
-          if (await setMerchantShopPlayersAllFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-player-none": async (actionElement) => {
-          if (await setMerchantShopPlayersNoneFromElement(actionElement)) rerender();
-        },
-        "merchant-toggle-shop-tradable": async (actionElement) => {
-          if (await setMerchantShopTradableFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-tradable-all": async (actionElement) => {
-          if (await setMerchantShopTradableAllFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-tradable-none": async (actionElement) => {
-          if (await setMerchantShopTradableNoneFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-bell": async (actionElement) => {
-          if (await ringMerchantShopBellFromElement(actionElement)) rerender();
-        },
-        "merchant-shop-close": async (actionElement) => {
-          if (await closeMerchantShopsFromElement(actionElement)) rerender();
-        },
+        "merchant-save": rerenderAlways(saveMerchantFromElement),
+        "merchant-delete": rerenderAlways(deleteMerchantFromElement),
+        "merchant-refresh-stock": rerenderAlways(refreshMerchantStockFromElement),
+        "merchant-refresh-all-stock": rerenderAlways(refreshAllMerchantStocksFromElement),
+        "merchant-gm-filter-change": rerenderIfTruthy(setMerchantGmCollectionFilterFromElement),
+        "merchant-gm-filter-reset": rerenderIfTruthy(resetMerchantGmCollectionFilterFromElement),
+        "merchant-shop-restrict-toggle": rerenderIfTruthy(setMerchantShopRestrictionFromElement),
+        "merchant-shop-player-toggle": rerenderIfTruthy(setMerchantShopPlayerAllowedFromElement),
+        "merchant-shop-player-all": rerenderIfTruthy(setMerchantShopPlayersAllFromElement),
+        "merchant-shop-player-none": rerenderIfTruthy(setMerchantShopPlayersNoneFromElement),
+        "merchant-toggle-shop-tradable": rerenderIfTruthy(setMerchantShopTradableFromElement),
+        "merchant-shop-tradable-all": rerenderIfTruthy(setMerchantShopTradableAllFromElement),
+        "merchant-shop-tradable-none": rerenderIfTruthy(setMerchantShopTradableNoneFromElement),
+        "merchant-shop-bell": rerenderIfTruthy(ringMerchantShopBellFromElement),
+        "merchant-shop-close": rerenderIfTruthy(closeMerchantShopsFromElement),
         "merchant-open-actor": async (actionElement) => {
           await openMerchantActorFromElement(actionElement);
         }
       };
+    }
+
+    async _onPostRender() {
+      syncAllMerchantTagSelectionUi(this.element);
     }
   };
 }

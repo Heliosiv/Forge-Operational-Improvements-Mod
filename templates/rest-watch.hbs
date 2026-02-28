@@ -131,7 +131,7 @@
                       {{#if actor.languages}}
                       <div class="po-stat">
                         <span class="po-stat-label">Lang</span>
-                        <span class="po-stat-value">{{actor.languages}}</span>
+                        <span class="po-stat-value" {{#if actor.languagesTooltip}}title="{{actor.languagesTooltip}}"{{/if}}>{{actor.languages}}</span>
                       </div>
                       {{/if}}
                     </div>

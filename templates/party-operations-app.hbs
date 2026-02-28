@@ -1,55 +1,47 @@
-<section class="party-operations-app">
-  <header class="po-app-header">
-    <nav class="po-app-tabs" aria-label="Party Operations Tabs">
-      <button type="button" data-action="switch-tab" data-tab="rest-watch" class="{{#if tabRestWatch}}is-active{{/if}}">Rest Watch</button>
-      <button type="button" data-action="switch-tab" data-tab="marching-order" class="{{#if tabMarchingOrder}}is-active{{/if}}">Marching Order</button>
-      <button type="button" data-action="switch-tab" data-tab="loot" class="{{#if tabLoot}}is-active{{/if}}">Loot</button>
-    </nav>
+<div class="po-window" data-tool="party-operations-app" role="region" aria-label="Party Operations App">
+  <header class="po-header">
+    <h1 class="po-title">Party Operations</h1>
+    <div class="po-subtitle" aria-live="polite">{{lootStatus}}</div>
   </header>
 
-  <section class="po-app-body">
+  <div class="po-body">
+    <div class="po-tabs po-tabs-sub" role="tablist" aria-label="Party Operations Tabs">
+      <button type="button" class="po-tab {{#if tabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest-watch" role="tab" aria-selected="{{#if tabRestWatch}}true{{else}}false{{/if}}">Rest Watch</button>
+      <button type="button" class="po-tab {{#if tabMarchingOrder}}is-active{{/if}}" data-action="switch-tab" data-tab="marching-order" role="tab" aria-selected="{{#if tabMarchingOrder}}true{{else}}false{{/if}}">Marching Order</button>
+      <button type="button" class="po-tab {{#if tabLoot}}is-active{{/if}}" data-action="switch-tab" data-tab="loot" role="tab" aria-selected="{{#if tabLoot}}true{{else}}false{{/if}}">Loot</button>
+    </div>
+
     {{#if tabRestWatch}}
-      <article class="po-tab-panel" data-tab="rest-watch">
-        <h3>Rest Watch Snapshot</h3>
+      <article class="po-gm-section" data-tab="rest-watch">
+        <h3 class="po-section-title">Rest Watch Snapshot</h3>
         <pre>{{snapshotsText.restWatch}}</pre>
       </article>
     {{/if}}
 
     {{#if tabMarchingOrder}}
-      <article class="po-tab-panel" data-tab="marching-order">
-        <h3>Marching Order Snapshot</h3>
+      <article class="po-gm-section" data-tab="marching-order">
+        <h3 class="po-section-title">Marching Order Snapshot</h3>
         <pre>{{snapshotsText.marchingOrder}}</pre>
       </article>
     {{/if}}
 
     {{#if tabLoot}}
-      <article class="po-tab-panel" data-tab="loot">
-        <h3>Generate Suggested Loot</h3>
-        <div class="po-form-row">
-          <label>CR</label>
-          <input type="number" name="lootCr" min="0" max="30" step="1" value="5" />
+      <article class="po-gm-section" data-tab="loot">
+        <h3 class="po-section-title">Generate Suggested Loot</h3>
+        <label class="po-resource-row"><span>CR</span><input class="po-input" type="number" name="lootCr" min="0" max="30" step="1" value="{{lootDraft.cr}}" /></label>
+        <label class="po-resource-row"><span>Scarcity</span><select class="po-select" name="lootScarcity"><option value="abundant" {{#if lootDraftView.scarcityAbundant}}selected{{/if}}>Abundant</option><option value="normal" {{#if lootDraftView.scarcityNormal}}selected{{/if}}>Normal</option><option value="scarce" {{#if lootDraftView.scarcityScarce}}selected{{/if}}>Scarce</option></select></label>
+        <label class="po-resource-row"><span>Target</span><select class="po-select" name="lootTarget"><option value="pocket" {{#if lootDraftView.targetPocket}}selected{{/if}}>Pocket</option><option value="horde" {{#if lootDraftView.targetHorde}}selected{{/if}}>Horde</option></select></label>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="generate-loot" {{#if isGeneratingLoot}}disabled{{/if}}>Generate Loot</button>
         </div>
-        <div class="po-form-row">
-          <label>Scarcity</label>
-          <select name="lootScarcity">
-            <option value="abundant">Abundant</option>
-            <option value="normal" selected>Normal</option>
-            <option value="scarce">Scarce</option>
-          </select>
-        </div>
-        <div class="po-form-row">
-          <label>Target</label>
-          <select name="lootTarget">
-            <option value="pocket" selected>Pocket</option>
-            <option value="horde">Horde</option>
-          </select>
-        </div>
-        <button type="button" data-action="generate-loot">Generate Loot</button>
+
+        {{#if hasLootError}}
+          <div class="po-op-summary is-warn" aria-live="assertive">{{lootError}}</div>
+        {{/if}}
 
         {{#if lootResult}}
-          <hr />
-          <p><strong>Gold:</strong> {{lootResult.gold}}</p>
-          <ul>
+          <div class="po-op-summary"><strong>Gold:</strong> {{lootResult.gold}}</div>
+          <ul class="po-help-list">
             {{#each lootResult.items as |entry|}}
               <li>{{entry.name}} (x{{entry.qty}}) - {{entry.uuid}}</li>
             {{/each}}
@@ -57,5 +49,5 @@
         {{/if}}
       </article>
     {{/if}}
-  </section>
-</section>
+  </div>
+</div>
