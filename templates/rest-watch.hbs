@@ -271,7 +271,6 @@
         {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
-          <button type="button" class="po-tab {{#if operationsPageReadiness}}is-active{{/if}}" data-action="operations-page" data-page="readiness" title="Review risk tier, readiness level, and current edges">Readiness</button>
           <button type="button" class="po-tab {{#if operationsPageComms}}is-active{{/if}}" data-action="operations-page" data-page="comms" title="Configure communication discipline and emergency signaling">Comms</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
@@ -767,25 +766,6 @@
 
         {{/if}}
 
-        {{#if operationsPageReadiness}}
-
-        <div id="po-ops-readiness" class="po-gm-section">
-          <div class="po-section-title">Operational Readiness</div>
-          <div class="po-hint">Quick read of risk, coverage, and active operational edges.</div>
-          <div class="po-op-summary">Roles: {{operations.summary.roleCoverage}} / {{operations.summary.roleTotal}}</div>
-          <div class="po-op-summary">SOPs: {{operations.summary.activeSops}} / {{operations.summary.sopTotal}}</div>
-          {{#if operations.summary.prepEdge}}
-          <div class="po-op-summary is-good">Preparation Edge: Active</div>
-          {{else}}
-          <div class="po-op-summary is-warn">Preparation Edge: Inactive</div>
-          {{/if}}
-          <div class="po-op-summary">Risk Tier: {{operations.summary.effects.riskTier}}</div>
-          <div class="po-op-summary">Disorder Risk: {{operations.summary.disorderRisk}}</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-operational-brief">Show Operational Brief</button>
-        </div>
-
-        {{/if}}
-
         {{#if operationsPageComms}}
 
         <div id="po-ops-comms" class="po-gm-section">
@@ -1043,6 +1023,11 @@
               </label>
               <div class="po-op-summary">Viewer: {{operations.merchants.viewerName}}</div>
               <div class="po-op-summary">Last Access Logged: {{operations.merchants.viewerLastAccessLabel}}</div>
+              <div class="po-op-summary">Shop Status: {{operations.merchants.shopStatusLabel}}</div>
+              <div class="po-op-summary">Access: {{operations.merchants.shopAccessSummary}}</div>
+              {{#unless operations.merchants.shopViewerAllowed}}
+              <div class="po-op-summary">{{operations.merchants.shopViewerMessage}}</div>
+              {{/unless}}
             </div>
 
             <div class="po-merchant-showcase-main">
@@ -1071,6 +1056,7 @@
                   data-merchant-id="{{operations.merchants.activeMerchantId}}"
                   data-actor-id="{{operations.merchants.activeActorId}}"
                   data-settlement="{{operations.merchants.selectedSettlement}}"
+                  title="{{operations.merchants.activeMerchantOpenShopHint}}"
                   {{#unless operations.merchants.activeMerchantCanOpenShop}}disabled{{/unless}}
                 >
                   Open Shop
@@ -1095,7 +1081,7 @@
                   {{/each}}
                 </div>
                 {{else}}
-                <div class="po-op-summary">No merchants are currently available for this actor/city combination.</div>
+                <div class="po-op-summary">{{operations.merchants.emptyStateMessage}}</div>
                 {{/if}}
               </div>
             </div>
@@ -1108,7 +1094,13 @@
               {{#if operations.merchants.hasInventoryRows}}
               <div class="po-merchant-stock-list">
                 {{#each operations.merchants.inventoryRows}}
-                <div class="po-merchant-stock-row">
+                <div
+                  class="po-merchant-stock-row"
+                  data-item-id="{{itemId}}"
+                  data-item-uuid="{{itemUuid}}"
+                  data-merchant-item-id="{{itemId}}"
+                  data-merchant-item-uuid="{{itemUuid}}"
+                >
                   <img class="po-merchant-stock-image" src="{{img}}" alt="{{name}}" loading="lazy" />
                   <div class="po-merchant-stock-main">
                     <div class="po-merchant-stock-name">{{name}}</div>
@@ -1498,13 +1490,13 @@
               <div class="po-op-summary"><strong>Tip:</strong> Use <em>Cancel</em> inside any quick panel to close it without saving.</div>
             </div>
           </details>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm po-btn-expands {{#if operations.gmQuickTools.showFactionPanel}}is-open{{/if}}" data-action="gm-quick-add-faction">+ Faction</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-add-modifier">Global Modifiers</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-environment">Environment</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-downtime">Downtime</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-merchants">Merchants</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-open-loot">Loot</button>
+          <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
+            <button type="button" class="po-tab {{#if operations.gmQuickTools.showFactionPanel}}is-active{{/if}}" data-action="gm-quick-add-faction">+ Faction</button>
+            <button type="button" class="po-tab {{#if operations.gmQuickTools.showModifierPanel}}is-active{{/if}}" data-action="gm-quick-add-modifier">Global Modifiers</button>
+            <button type="button" class="po-tab" data-action="gm-quick-open-environment">Environment</button>
+            <button type="button" class="po-tab" data-action="gm-quick-open-downtime">Downtime</button>
+            <button type="button" class="po-tab" data-action="gm-quick-open-merchants">Merchants</button>
+            <button type="button" class="po-tab" data-action="gm-quick-open-loot">Loot</button>
           </div>
           <div class="po-two-col po-gm-quick-panels">
           <div class="po-col">
@@ -1677,7 +1669,7 @@
           <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showWeatherPanel}}open{{/if}}>
             <summary class="po-panel-disclosure-summary">
               <span class="po-section-title">Quick Weather Presets</span>
-              <span class="po-op-summary">Current: {{operations.gmQuickTools.weatherSceneSnapshot.label}}</span>
+              <span class="po-op-summary">Current: {{operations.weather.currentLabel}}</span>
             </summary>
             <div class="po-panel-disclosure-body">
             <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} - Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>

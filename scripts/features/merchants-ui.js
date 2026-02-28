@@ -6,6 +6,8 @@ export function createGmMerchantsPageApp(deps) {
     buildContext,
     openMainTab,
     cacheMerchantEditorDraftFromElement,
+    setMerchantGmViewTab,
+    setMerchantGmViewTabFromElement,
     setMerchantEditorViewTabFromElement,
     resetMerchantEditorSelection,
     createStarterMerchants,
@@ -22,7 +24,19 @@ export function createGmMerchantsPageApp(deps) {
     setMerchantAssignmentFromElement,
     setMerchantAssignmentAllEnabledFromElement,
     setMerchantAssignmentAllDisabledFromElement,
-    openMerchantActorFromElement
+    setMerchantGmCollectionFilterFromElement,
+    resetMerchantGmCollectionFilterFromElement,
+    setMerchantShopRestrictionFromElement,
+    setMerchantShopPlayerAllowedFromElement,
+    setMerchantShopPlayersAllFromElement,
+    setMerchantShopPlayersNoneFromElement,
+    setMerchantShopTradableFromElement,
+    setMerchantShopTradableAllFromElement,
+    setMerchantShopTradableNoneFromElement,
+    ringMerchantShopBellFromElement,
+    closeMerchantShopsFromElement,
+    openMerchantActorFromElement,
+    openGmPanelByKey
   } = deps;
 
   return class GmMerchantsPageApp extends BaseStatefulPageApp {
@@ -68,14 +82,25 @@ export function createGmMerchantsPageApp(deps) {
         "gm-merchants-page-refresh": async () => {
           rerender();
         },
+        "gm-panel-tab": async (actionElement) => {
+          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
+          if (!panelKey) return;
+          if (panelKey === "merchants") return;
+          openGmPanelByKey(panelKey, { force: false });
+        },
         "merchant-editor-draft-change": async (actionElement) => {
           if (cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true })) rerender();
         },
         "merchant-editor-view-tab": async (actionElement) => {
           if (setMerchantEditorViewTabFromElement(actionElement)) rerender();
         },
+        "merchant-gm-view-tab": async (actionElement) => {
+          cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
+          if (setMerchantGmViewTabFromElement(actionElement)) rerender();
+        },
         "merchant-new": async () => {
           resetMerchantEditorSelection();
+          setMerchantGmViewTab?.("editor");
           rerender();
         },
         "merchant-create-starters": async () => {
@@ -107,7 +132,10 @@ export function createGmMerchantsPageApp(deps) {
           if (randomizeMerchantRaceFromElement(actionElement)) rerender();
         },
         "merchant-edit": async (actionElement) => {
-          if (setMerchantEditorSelectionFromElement(actionElement)) rerender();
+          if (setMerchantEditorSelectionFromElement(actionElement)) {
+            setMerchantGmViewTab?.("editor");
+            rerender();
+          }
         },
         "merchant-save": async (actionElement) => {
           await saveMerchantFromElement(actionElement);
@@ -124,6 +152,39 @@ export function createGmMerchantsPageApp(deps) {
         "merchant-refresh-all-stock": async (actionElement) => {
           await refreshAllMerchantStocksFromElement(actionElement);
           rerender();
+        },
+        "merchant-gm-filter-change": async (actionElement) => {
+          if (setMerchantGmCollectionFilterFromElement(actionElement)) rerender();
+        },
+        "merchant-gm-filter-reset": async (actionElement) => {
+          if (resetMerchantGmCollectionFilterFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-restrict-toggle": async (actionElement) => {
+          if (await setMerchantShopRestrictionFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-player-toggle": async (actionElement) => {
+          if (await setMerchantShopPlayerAllowedFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-player-all": async (actionElement) => {
+          if (await setMerchantShopPlayersAllFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-player-none": async (actionElement) => {
+          if (await setMerchantShopPlayersNoneFromElement(actionElement)) rerender();
+        },
+        "merchant-toggle-shop-tradable": async (actionElement) => {
+          if (await setMerchantShopTradableFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-tradable-all": async (actionElement) => {
+          if (await setMerchantShopTradableAllFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-tradable-none": async (actionElement) => {
+          if (await setMerchantShopTradableNoneFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-bell": async (actionElement) => {
+          if (await ringMerchantShopBellFromElement(actionElement)) rerender();
+        },
+        "merchant-shop-close": async (actionElement) => {
+          if (await closeMerchantShopsFromElement(actionElement)) rerender();
         },
         "merchant-open-actor": async (actionElement) => {
           await openMerchantActorFromElement(actionElement);

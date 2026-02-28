@@ -214,6 +214,9 @@ const activeEffectDeleteLocks = new Set();
 let launcherRecoveryScheduled = false;
 let partyOpsHooksRegistered = false;
 let lootManifestFolderSyncPromise = null;
+let lootManifestFolderSyncDisabledReason = "";
+let lootManifestFolderSyncDisabledNotified = false;
+let lootManifestMonksCompatNotified = false;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
 const merchantUiAccessThrottleByKey = new Map();
@@ -422,12 +425,12 @@ const APP_WINDOW_SIZE_PROFILES = Object.freeze({
     maxHeightRatio: 0.95
   }),
   "gm-loot": Object.freeze({
-    width: 980,
-    height: 760,
-    minWidth: 760,
-    minHeight: 560,
-    maxWidthRatio: 0.95,
-    maxHeightRatio: 0.93
+    width: 9999,
+    height: 9999,
+    minWidth: 980,
+    minHeight: 680,
+    maxWidthRatio: 0.99,
+    maxHeightRatio: 0.99
   }),
   "gm-loot-claims-board": Object.freeze({
     width: 920,
@@ -850,16 +853,8 @@ const INJURY_EFFECT_NAME_PREFIX = "Injury:";
 const ENVIRONMENT_EFFECT_ORIGIN = `module.${MODULE_ID}.environment`;
 const ENVIRONMENT_EFFECT_NAME_PREFIX = "Environment:";
 
-const SCROLL_STATE_SELECTORS = [
-  ".po-body",
-  ".po-window",
-  ".window-content",
-  ".po-content",
-  ".po-grid",
-  ".po-cards",
-  ".po-ranks",
-  ".po-gm-panel"
-];
+const SCROLL_STATE_MAIN_SELECTOR = ".window-content";
+const SCROLL_STATE_BODY_SELECTOR = ".po-body";
 
 const RESOURCE_TRACK_KEYS = ["food", "water", "torches"];
 const STEWARD_POOL_KEYS = ["food", "water", "torches"];
@@ -882,6 +877,8 @@ const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
 const DEFAULT_MARCH_LIGHT_DIM = 40;
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
 const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
+const LOOT_WORLD_ITEMS_SOURCE_LABEL = "Imported World Items";
+const LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX = "world-folder:";
 const LOOT_MANIFEST_PACK_NAME = "party-operations-loot-manifest";
 const LOOT_MANIFEST_PACK_LABEL = "Party Operations Built Items";
 const LOOT_DEFAULT_ITEM_TYPES = ["weapon", "equipment", "consumable", "loot"];
@@ -1292,6 +1289,17 @@ const MERCHANT_ACCESS_MODES = Object.freeze({
   ALL: "all",
   ASSIGNED: "assigned"
 });
+const MERCHANT_SHOP_BELL_SOUND_SRC = "sounds/notify.wav";
+const MERCHANT_GM_FILTER_ACCESS_VALUES = Object.freeze({
+  ALL: "all",
+  PUBLIC: "public",
+  ASSIGNED: "assigned"
+});
+const MERCHANT_GM_FILTER_STOCK_VALUES = Object.freeze({
+  ALL: "all",
+  STOCKED: "stocked",
+  EMPTY: "empty"
+});
 const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
   str: "Strength",
   dex: "Dexterity",
@@ -1367,6 +1375,9 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "merchant-remove-curated-item",
   "merchant-clear-curated-items",
   "merchant-open-actor",
+  "merchant-toggle-shop-tradable",
+  "merchant-shop-tradable-all",
+  "merchant-shop-tradable-none",
   "toggle-loot-pack-source",
   "set-loot-pack-weight",
   "toggle-loot-table-source",
@@ -4199,16 +4210,18 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
+  const allowed = new Set(["planning", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
+  if (stored === "readiness") return "planning";
   if (stored === "gm" && !canAccessAllPlayerOps()) return "planning";
   return allowed.has(stored) ? stored : "planning";
 }
 
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
-  const allowed = new Set(["planning", "readiness", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
+  if (page === "readiness") page = "planning";
+  const allowed = new Set(["planning", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
   if (page === "gm" && !canAccessAllPlayerOps()) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
@@ -4665,6 +4678,46 @@ function setMerchantEditorViewTabFromElement(element) {
   return true;
 }
 
+const MERCHANT_GM_VIEW_TABS = Object.freeze({
+  CITY: "city-editor",
+  EDITOR: "editor",
+  SETTINGS: "settings",
+  CONFIGURED: "configured-merchants",
+  SHOP: "shop-session"
+});
+
+function getMerchantGmViewTabStorageKey() {
+  return `po-merchant-gm-view-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantGmViewTab(value, fallback = MERCHANT_GM_VIEW_TABS.EDITOR) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === MERCHANT_GM_VIEW_TABS.CITY || normalized === "city") return MERCHANT_GM_VIEW_TABS.CITY;
+  if (normalized === MERCHANT_GM_VIEW_TABS.EDITOR) return MERCHANT_GM_VIEW_TABS.EDITOR;
+  if (normalized === MERCHANT_GM_VIEW_TABS.SETTINGS) return MERCHANT_GM_VIEW_TABS.SETTINGS;
+  if (normalized === MERCHANT_GM_VIEW_TABS.CONFIGURED || normalized === "configured") return MERCHANT_GM_VIEW_TABS.CONFIGURED;
+  if (normalized === MERCHANT_GM_VIEW_TABS.SHOP || normalized === "shop") return MERCHANT_GM_VIEW_TABS.SHOP;
+  return normalizeMerchantGmViewTab(fallback, MERCHANT_GM_VIEW_TABS.EDITOR);
+}
+
+function getMerchantGmViewTab() {
+  return normalizeMerchantGmViewTab(sessionStorage.getItem(getMerchantGmViewTabStorageKey()), MERCHANT_GM_VIEW_TABS.EDITOR);
+}
+
+function setMerchantGmViewTab(value) {
+  const next = normalizeMerchantGmViewTab(value, MERCHANT_GM_VIEW_TABS.EDITOR);
+  sessionStorage.setItem(getMerchantGmViewTabStorageKey(), next);
+  return next;
+}
+
+function setMerchantGmViewTabFromElement(element) {
+  const next = normalizeMerchantGmViewTab(element?.dataset?.tab ?? element?.value, MERCHANT_GM_VIEW_TABS.EDITOR);
+  const current = getMerchantGmViewTab();
+  if (next === current) return false;
+  setMerchantGmViewTab(next);
+  return true;
+}
+
 function getMerchantEditorPackFilterStorageKey() {
   return `po-merchant-pack-filter-${game.user?.id ?? "anon"}`;
 }
@@ -4697,6 +4750,127 @@ function setMerchantEditorItemFilter(value) {
   return normalized;
 }
 
+function getMerchantGmCollectionFilterStorageKey() {
+  return `po-merchant-gm-collection-filter-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeMerchantGmCollectionSearch(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+function normalizeMerchantGmCollectionCity(value) {
+  return normalizeMerchantSettlementSelection(value);
+}
+
+function normalizeMerchantGmCollectionAccess(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC) return MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC;
+  if (normalized === MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED) return MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED;
+  return MERCHANT_GM_FILTER_ACCESS_VALUES.ALL;
+}
+
+function normalizeMerchantGmCollectionStock(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED) return MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED;
+  if (normalized === MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY) return MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY;
+  return MERCHANT_GM_FILTER_STOCK_VALUES.ALL;
+}
+
+function normalizeMerchantGmCollectionFilterState(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  return {
+    search: normalizeMerchantGmCollectionSearch(source.search),
+    city: normalizeMerchantGmCollectionCity(source.city),
+    access: normalizeMerchantGmCollectionAccess(source.access),
+    stock: normalizeMerchantGmCollectionStock(source.stock)
+  };
+}
+
+function getMerchantGmCollectionFilterState() {
+  const raw = sessionStorage.getItem(getMerchantGmCollectionFilterStorageKey());
+  if (!raw) {
+    return normalizeMerchantGmCollectionFilterState({
+      search: "",
+      city: "",
+      access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
+      stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
+    });
+  }
+  try {
+    return normalizeMerchantGmCollectionFilterState(JSON.parse(raw));
+  } catch (_error) {
+    return normalizeMerchantGmCollectionFilterState({
+      search: "",
+      city: "",
+      access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
+      stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
+    });
+  }
+}
+
+function setMerchantGmCollectionFilterState(stateInput = {}) {
+  const current = getMerchantGmCollectionFilterState();
+  const normalized = normalizeMerchantGmCollectionFilterState({
+    ...current,
+    ...(stateInput && typeof stateInput === "object" ? stateInput : {})
+  });
+  sessionStorage.setItem(getMerchantGmCollectionFilterStorageKey(), JSON.stringify(normalized));
+  return normalized;
+}
+
+function resetMerchantGmCollectionFilterState() {
+  const normalized = normalizeMerchantGmCollectionFilterState({
+    search: "",
+    city: "",
+    access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
+    stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
+  });
+  sessionStorage.setItem(getMerchantGmCollectionFilterStorageKey(), JSON.stringify(normalized));
+  return normalized;
+}
+
+function setMerchantGmCollectionFilterStateFromElement(element) {
+  const filterKey = String(element?.dataset?.filterKey ?? "").trim().toLowerCase();
+  if (!filterKey) return false;
+  const current = getMerchantGmCollectionFilterState();
+  const isCheckbox = typeof HTMLInputElement !== "undefined"
+    && element instanceof HTMLInputElement
+    && String(element.type ?? "").toLowerCase() === "checkbox";
+  const rawValue = isCheckbox ? element.checked : element?.value;
+  let next = current;
+  if (filterKey === "search") {
+    next = {
+      ...current,
+      search: normalizeMerchantGmCollectionSearch(rawValue)
+    };
+  } else if (filterKey === "city") {
+    next = {
+      ...current,
+      city: normalizeMerchantGmCollectionCity(rawValue)
+    };
+  } else if (filterKey === "access") {
+    next = {
+      ...current,
+      access: normalizeMerchantGmCollectionAccess(rawValue)
+    };
+  } else if (filterKey === "stock") {
+    next = {
+      ...current,
+      stock: normalizeMerchantGmCollectionStock(rawValue)
+    };
+  }
+  if (
+    next.search === current.search
+    && next.city === current.city
+    && next.access === current.access
+    && next.stock === current.stock
+  ) {
+    return false;
+  }
+  setMerchantGmCollectionFilterState(next);
+  return true;
+}
+
 function setLootClaimRunSelectionFromElement(element) {
   const nextRunId = normalizeLootClaimRunId(element?.value);
   const currentRunId = getLootClaimRunSelection();
@@ -4717,6 +4891,37 @@ function getActiveLootRegistryTab() {
 function setActiveLootRegistryTab(tab) {
   const value = String(tab ?? "preview").trim().toLowerCase();
   sessionStorage.setItem(getLootRegistryTabStorageKey(), value === "settings" ? "settings" : "preview");
+}
+
+const LOOT_SETTINGS_TABS = Object.freeze({
+  SOURCES: "sources",
+  TABLES: "tables",
+  FILTERS: "filters"
+});
+
+function getLootSettingsTabStorageKey() {
+  return `po-loot-settings-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizeLootSettingsTab(tab, fallback = LOOT_SETTINGS_TABS.SOURCES) {
+  const normalized = String(tab ?? "").trim().toLowerCase();
+  if (normalized === LOOT_SETTINGS_TABS.SOURCES) return LOOT_SETTINGS_TABS.SOURCES;
+  if (normalized === LOOT_SETTINGS_TABS.TABLES) return LOOT_SETTINGS_TABS.TABLES;
+  if (normalized === LOOT_SETTINGS_TABS.FILTERS) return LOOT_SETTINGS_TABS.FILTERS;
+  return normalizeLootSettingsTab(fallback, LOOT_SETTINGS_TABS.SOURCES);
+}
+
+function getActiveLootSettingsTab() {
+  return normalizeLootSettingsTab(
+    sessionStorage.getItem(getLootSettingsTabStorageKey()),
+    LOOT_SETTINGS_TABS.SOURCES
+  );
+}
+
+function setActiveLootSettingsTab(tab) {
+  const value = normalizeLootSettingsTab(tab, LOOT_SETTINGS_TABS.SOURCES);
+  sessionStorage.setItem(getLootSettingsTabStorageKey(), value);
+  return value;
 }
 
 function getGmDowntimeViewStorageKey() {
@@ -5817,6 +6022,36 @@ function getElementStatePath(node, root) {
   return segments.join(">");
 }
 
+function supportsTextSelectionRange(element) {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  if (element instanceof HTMLTextAreaElement) return true;
+  if (element instanceof HTMLInputElement) {
+    const type = String(element.type ?? "").trim().toLowerCase();
+    return type === "text"
+      || type === "search"
+      || type === "url"
+      || type === "tel"
+      || type === "password";
+  }
+  return false;
+}
+
+function supportsFocusedInputRestore(element) {
+  if (!element || !(element instanceof HTMLElement)) return false;
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement) return true;
+  if (element instanceof HTMLInputElement) {
+    const type = String(element.type ?? "").trim().toLowerCase();
+    return type === "text"
+      || type === "search"
+      || type === "url"
+      || type === "tel"
+      || type === "password"
+      || type === "number"
+      || type === "email";
+  }
+  return false;
+}
+
 function captureDisclosureState(root) {
   if (!root) return [];
   return Array.from(root.querySelectorAll("details"))
@@ -5857,13 +6092,15 @@ function captureUiState(app) {
     if (!root.contains(active)) return null;
     const tag = String(active.tagName ?? "").toUpperCase();
     if (!(["INPUT", "TEXTAREA", "SELECT"].includes(tag))) return null;
+    if (!supportsFocusedInputRestore(active)) return null;
     const action = String(active.dataset?.action ?? "").trim();
     const name = String(active.getAttribute?.("name") ?? "").trim();
     if (!action && !name) return null;
     const statePath = getElementStatePath(active, root);
     const value = "value" in active ? String(active.value ?? "") : "";
-    const selectionStart = typeof active.selectionStart === "number" ? active.selectionStart : null;
-    const selectionEnd = typeof active.selectionEnd === "number" ? active.selectionEnd : null;
+    const canSelect = supportsTextSelectionRange(active);
+    const selectionStart = canSelect && typeof active.selectionStart === "number" ? active.selectionStart : null;
+    const selectionEnd = canSelect && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
     return { action, name, statePath, value, selectionStart, selectionEnd };
   };
 
@@ -5934,8 +6171,12 @@ function applyUiState(app, state) {
     }
     const start = Number.isFinite(Number(focusedInput.selectionStart)) ? Number(focusedInput.selectionStart) : null;
     const end = Number.isFinite(Number(focusedInput.selectionEnd)) ? Number(focusedInput.selectionEnd) : null;
-    if (typeof target.setSelectionRange === "function" && start !== null) {
-      target.setSelectionRange(start, end ?? start);
+    if (start !== null && supportsTextSelectionRange(target) && typeof target.setSelectionRange === "function") {
+      try {
+        target.setSelectionRange(start, end ?? start);
+      } catch {
+        // Ignore selection restore errors for non-text controls.
+      }
     }
   };
 
@@ -5968,74 +6209,69 @@ function restorePendingUiState(app) {
   const state = pendingUiRestore.get(app);
   if (!state) return;
   pendingUiRestore.delete(app);
-  applyUiState(app, state);
+  try {
+    applyUiState(app, state);
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to restore pending UI state`, error);
+  }
 }
 
 function captureScrollState(app) {
   const root = getAppRootElement(app);
   if (!root) return [];
   const states = [];
-
-  const getNodeStateKey = (node) => {
-    if (node === root) return "root";
-    const key = getElementStatePath(node, root);
-    return key || "";
-  };
-
-  const collectNodes = () => {
-    const nodes = [];
-    const seen = new Set();
-    for (const selector of SCROLL_STATE_SELECTORS) {
-      const matched = Array.from(root.querySelectorAll(selector));
-      if (root.matches?.(selector)) matched.unshift(root);
-      for (const node of matched) {
-        if (!(node instanceof HTMLElement) || seen.has(node)) continue;
-        seen.add(node);
-        nodes.push(node);
-      }
+  const windowContent = root.closest?.(SCROLL_STATE_MAIN_SELECTOR)
+    ?? (root.matches?.(SCROLL_STATE_MAIN_SELECTOR) ? root : null);
+  if (windowContent instanceof HTMLElement) {
+    const canScrollY = windowContent.scrollHeight > windowContent.clientHeight;
+    const canScrollX = windowContent.scrollWidth > windowContent.clientWidth;
+    if (canScrollY || canScrollX) {
+      states.push({
+        key: "__window-content",
+        top: windowContent.scrollTop,
+        left: windowContent.scrollLeft
+      });
     }
-    return nodes;
-  };
-
-  for (const node of collectNodes()) {
-    const canScrollY = node.scrollHeight > node.clientHeight;
-    const canScrollX = node.scrollWidth > node.clientWidth;
-    if (!canScrollY && !canScrollX) continue;
-    const key = getNodeStateKey(node);
-    if (!key) continue;
-    states.push({ key, top: node.scrollTop, left: node.scrollLeft });
+  }
+  const pageBody = root.querySelector?.(SCROLL_STATE_BODY_SELECTOR);
+  if (pageBody instanceof HTMLElement && pageBody !== windowContent) {
+    const canScrollY = pageBody.scrollHeight > pageBody.clientHeight;
+    const canScrollX = pageBody.scrollWidth > pageBody.clientWidth;
+    if (canScrollY || canScrollX) {
+      states.push({
+        key: "__po-body",
+        top: pageBody.scrollTop,
+        left: pageBody.scrollLeft
+      });
+    }
   }
   return states;
 }
 
 function applyScrollState(root, states) {
-  if (!root || !Array.isArray(states)) return;
-
-  const getNodeStateKey = (node) => {
-    if (node === root) return "root";
-    const key = getElementStatePath(node, root);
-    return key || "";
-  };
-
-  const lookup = new Map();
-  for (const selector of SCROLL_STATE_SELECTORS) {
-    const matched = Array.from(root.querySelectorAll(selector));
-    if (root.matches?.(selector)) matched.unshift(root);
-    for (const node of matched) {
-      if (!(node instanceof HTMLElement)) continue;
-      const key = getNodeStateKey(node);
-      if (!key || lookup.has(key)) continue;
-      lookup.set(key, node);
-    }
-  }
-
-  for (const state of states) {
-    const key = String(state?.key ?? "").trim();
+  if (!root || !Array.isArray(states) || states.length < 1) return;
+  const windowContent = root.closest?.(SCROLL_STATE_MAIN_SELECTOR)
+    ?? (root.matches?.(SCROLL_STATE_MAIN_SELECTOR) ? root : null);
+  const pageBody = root.querySelector?.(SCROLL_STATE_BODY_SELECTOR);
+  const stateByKey = new Map();
+  for (const entry of states) {
+    const key = String(entry?.key ?? "").trim();
     if (!key) continue;
-    const node = lookup.get(key);
-    if (!node) continue;
-    node.scrollTop = state.top ?? 0;
-    node.scrollLeft = state.left ?? 0;
+    stateByKey.set(key, entry);
+  }
+  const windowState = stateByKey.get("__window-content");
+  if (windowState && windowContent instanceof HTMLElement) {
+    const top = Number(windowState?.top ?? 0);
+    const left = Number(windowState?.left ?? 0);
+    windowContent.scrollTop = Number.isFinite(top) ? top : 0;
+    windowContent.scrollLeft = Number.isFinite(left) ? left : 0;
+  }
+  const bodyState = stateByKey.get("__po-body");
+  if (bodyState && pageBody instanceof HTMLElement) {
+    const top = Number(bodyState?.top ?? 0);
+    const left = Number(bodyState?.left ?? 0);
+    pageBody.scrollTop = Number.isFinite(top) ? top : 0;
+    pageBody.scrollLeft = Number.isFinite(left) ? left : 0;
   }
 }
 
@@ -6048,6 +6284,12 @@ function restorePendingScrollState(app) {
   const apply = () => applyScrollState(root, states);
   apply();
   requestAnimationFrame(apply);
+  requestAnimationFrame(() => requestAnimationFrame(apply));
+  try {
+    window.setTimeout(apply, 96);
+  } catch {
+    // Ignore timer failures in non-browser execution contexts.
+  }
 }
 
 function parseInlinePixelValue(value) {
@@ -6481,8 +6723,20 @@ function buildOperationsContextFallback() {
       activeActorName: "",
       hasActiveActor: false,
       activeActorSocialScore: 0,
+      shopOpen: false,
+      shopStatusLabel: "Closed",
+      shopAccessSummary: "All players",
+      shopViewerAllowed: false,
+      shopViewerMessage: "Shops are currently unavailable.",
+      shopRestrictToSelected: false,
+      shopSelectedSummary: "All players",
+      shopLastOpenedAtLabel: "-",
+      shopLastOpenedBy: "-",
+      shopLastClosedAtLabel: "-",
+      shopLastClosedBy: "-",
       availableMerchants: [],
       hasAvailableMerchants: false,
+      emptyStateMessage: "No merchants are currently available for this actor/city combination.",
       activeMerchantId: "",
       hasActiveMerchant: false,
       activeMerchantName: "No Merchant Selected",
@@ -6492,6 +6746,7 @@ function buildOperationsContextFallback() {
       activeMerchantStockCount: 0,
       activeMerchantBuyMarkupLabel: "1.00",
       activeMerchantCanOpenShop: false,
+      activeMerchantOpenShopHint: "Select an available merchant and actor first.",
       inventoryRows: [],
       hasInventoryRows: false,
       inventoryItemCount: 0,
@@ -6502,6 +6757,39 @@ function buildOperationsContextFallback() {
       gm: {
         definitions: [],
         hasDefinitions: false,
+        hasFilteredDefinitions: false,
+        totalDefinitionCount: 0,
+        filteredDefinitionCount: 0,
+        collectionFilterSearch: "",
+        collectionFilterCity: "",
+        collectionFilterAccess: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
+        collectionFilterStock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL,
+        collectionFilterCityOptions: [{ value: "", label: "All Cities", selected: true }],
+        collectionFilterAccessOptions: [
+          { value: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL, label: "Any Access", selected: true },
+          { value: MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC, label: "All Players", selected: false },
+          { value: MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED, label: "Assigned Only", selected: false }
+        ],
+        collectionFilterStockOptions: [
+          { value: MERCHANT_GM_FILTER_STOCK_VALUES.ALL, label: "Any Stock", selected: true },
+          { value: MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED, label: "In Stock", selected: false },
+          { value: MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY, label: "Out of Stock", selected: false }
+        ],
+        shopSession: {
+          isOpen: false,
+          statusLabel: "Closed",
+          restrictToSelected: false,
+          accessSummary: "All players",
+          selectedSummary: "All players",
+          selectedCount: 0,
+          totalCount: 0,
+          playerRows: [],
+          hasPlayerRows: false,
+          lastOpenedAtLabel: "-",
+          lastOpenedBy: "-",
+          lastClosedAtLabel: "-",
+          lastClosedBy: "-"
+        },
         editorViewTab: "editor",
         editorViewTabEditor: true,
         editorViewTabSettings: false,
@@ -6579,6 +6867,14 @@ function buildOperationsContextFallback() {
         hasTagCatalog: false,
         includeTagOptions: [],
         excludeTagOptions: [],
+        includeTagGroups: [],
+        excludeTagGroups: [],
+        hasIncludeTagOptions: false,
+        hasExcludeTagOptions: false,
+        hasIncludeTagGroups: false,
+        hasExcludeTagGroups: false,
+        includeTagSelectedCount: 0,
+        excludeTagSelectedCount: 0,
         keywordCatalogCount: 0,
         hasKeywordCatalog: false,
         keywordIncludeOptions: [],
@@ -6824,7 +7120,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmPanelTabCore: mainTab === "rest-watch",
         gmPanelTabOperations: operationsTabActive,
         operationsPagePlanning: operationsPageValue === "planning",
-        operationsPageReadiness: operationsPageValue === "readiness",
         operationsPageComms: operationsPageValue === "comms",
         operationsPageReputation: operationsPageValue === "reputation",
         operationsPageSupply: false,
@@ -6916,7 +7211,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmPanelTabCore: mainTab === "rest-watch",
         gmPanelTabOperations: operationsTabActive,
         operationsPagePlanning: fallbackOpsPage === "planning",
-        operationsPageReadiness: fallbackOpsPage === "readiness",
         operationsPageComms: fallbackOpsPage === "comms",
         operationsPageReputation: fallbackOpsPage === "reputation",
         operationsPageSupply: false,
@@ -8240,7 +8534,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
     ensurePartyOperationsClass(this);
     if (this.element && !this.element.dataset.poBoundGlobalModifiers) {
       this.element.dataset.poBoundGlobalModifiers = "1";
-      this.element.addEventListener("click", (event) => {
+      this.element.addEventListener("click", async (event) => {
         const actionElement = event.target?.closest?.("[data-action]");
         const action = String(actionElement?.dataset?.action ?? "").trim();
         if (!action) return;
@@ -8251,8 +8545,16 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         if (action === "global-modifiers-back") {
           event.preventDefault();
           event.stopPropagation();
-          this.close();
+          await this.close();
           openMainTab("gm", { force: true });
+          return;
+        }
+        if (action === "gm-panel-tab") {
+          event.preventDefault();
+          event.stopPropagation();
+          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
+          if (panelKey === "global-modifiers") return;
+          openGmPanelByKey(panelKey, { force: false });
           return;
         }
         if (action === "global-modifiers-refresh") {
@@ -8361,6 +8663,11 @@ function buildGmMerchantsPageContext() {
 function buildGmLootPageContext() {
   const operations = getStandaloneOpsContext();
   const lootSources = operations?.lootSources ?? {};
+  const lootSettingsTab = getActiveLootSettingsTab();
+  lootSources.settingsTab = lootSettingsTab;
+  lootSources.settingsTabSources = lootSettingsTab === LOOT_SETTINGS_TABS.SOURCES;
+  lootSources.settingsTabTables = lootSettingsTab === LOOT_SETTINGS_TABS.TABLES;
+  lootSources.settingsTabFilters = lootSettingsTab === LOOT_SETTINGS_TABS.FILTERS;
   const preview = lootSources.preview ?? {
     hasResult: false,
     generatedAtLabel: "-",
@@ -8470,8 +8777,54 @@ function openGmLootPage(renderOptions = { force: true }) {
     ? gmLootPageAppInstance
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
+  if (typeof app?.setPosition === "function") {
+    const expandedSize = getResponsiveWindowPosition("gm-loot", { width: 9999, height: 9999 });
+    const currentLeft = Number(app?.position?.left);
+    const currentTop = Number(app?.position?.top);
+    const clampedPlacement = clampWindowPositionToViewport({
+      left: Number.isFinite(currentLeft) ? currentLeft : 8,
+      top: Number.isFinite(currentTop) ? currentTop : 8,
+      width: expandedSize.width,
+      height: expandedSize.height
+    }, { padding: 6 });
+    app.setPosition({
+      ...expandedSize,
+      left: Number.isFinite(clampedPlacement.left) ? clampedPlacement.left : undefined,
+      top: Number.isFinite(clampedPlacement.top) ? clampedPlacement.top : undefined
+    });
+  }
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
   return app;
+}
+
+function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
+  const key = String(panelKey ?? "").trim().toLowerCase();
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view GM panels.");
+    return null;
+  }
+
+  if (key === "faction") {
+    setActiveGmQuickPanel("faction");
+    return openMainTab("gm", { ...renderOptions, suppressHistory });
+  }
+  if (key === "global-modifiers") {
+    return openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
+  }
+  if (key === "environment") {
+    return openGmEnvironmentPage({ ...renderOptions, suppressHistory });
+  }
+  if (key === "downtime") {
+    return openGmDowntimePage({ ...renderOptions, suppressHistory });
+  }
+  if (key === "merchants") {
+    return openGmMerchantsPage({ ...renderOptions, suppressHistory });
+  }
+  if (key === "loot") {
+    return openGmLootPage({ ...renderOptions, suppressHistory });
+  }
+  return null;
 }
 
 function openGmLootClaimsBoard(renderOptions = { force: true }) {
@@ -8627,7 +8980,8 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   gmQuickSubmitWeather,
   gmQuickSelectWeatherPreset,
   gmQuickUpdateWeatherDraftField,
-  gmQuickApplyWeatherDaeKeyPreset
+  gmQuickApplyWeatherDaeKeyPreset,
+  openGmPanelByKey
 });
 
 export const GmDowntimePageApp = createGmDowntimePageApp({
@@ -8655,7 +9009,8 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   removeDowntimeResolverItemDropFromUi,
   addDowntimeResolverCraftingItemDropFromDropEvent,
   addDowntimeResolverItemRewardFromDropEvent,
-  renderDowntimeResolverItemDropList
+  renderDowntimeResolverItemDropList,
+  openGmPanelByKey
 });
 
 export const GmMerchantsPageApp = createGmMerchantsPageApp({
@@ -8667,6 +9022,8 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   buildContext: buildGmMerchantsPageContext,
   openMainTab,
   cacheMerchantEditorDraftFromElement,
+  setMerchantGmViewTab,
+  setMerchantGmViewTabFromElement,
   setMerchantEditorViewTabFromElement,
   resetMerchantEditorSelection,
   createStarterMerchants,
@@ -8679,11 +9036,23 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   deleteMerchantFromElement,
   refreshMerchantStockFromElement,
   refreshAllMerchantStocksFromElement,
+  setMerchantGmCollectionFilterFromElement,
+  resetMerchantGmCollectionFilterFromElement,
+  setMerchantShopRestrictionFromElement,
+  setMerchantShopPlayerAllowedFromElement,
+  setMerchantShopPlayersAllFromElement,
+  setMerchantShopPlayersNoneFromElement,
+  setMerchantShopTradableFromElement,
+  setMerchantShopTradableAllFromElement,
+  setMerchantShopTradableNoneFromElement,
+  ringMerchantShopBellFromElement,
+  closeMerchantShopsFromElement,
   setMerchantAccessModeFromElement,
   setMerchantAssignmentFromElement,
   setMerchantAssignmentAllEnabledFromElement,
   setMerchantAssignmentAllDisabledFromElement,
-  openMerchantActorFromElement
+  openMerchantActorFromElement,
+  openGmPanelByKey
 });
 
 export const GmLootPageApp = createGmLootPageApp({
@@ -8697,6 +9066,7 @@ export const GmLootPageApp = createGmLootPageApp({
   openGmLootClaimsBoard,
   getLootClaimRunIdFromElement,
   setActiveLootRegistryTab,
+  setActiveLootSettingsTab,
   setLootPackSourcesUiState,
   toggleLootPackSource,
   setLootPackWeight,
@@ -8718,7 +9088,8 @@ export const GmLootPageApp = createGmLootPageApp({
   publishLootPreviewToClaims,
   clearLootClaimsPool,
   openLootItemFromElement,
-  addLootPreviewItemFromDropEvent
+  addLootPreviewItemFromDropEvent,
+  openGmPanelByKey
 });
 
 export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -9636,17 +10007,169 @@ function buildDefaultActivityState() {
   };
 }
 
+function buildLootWorldItemSourceEntry(input = {}) {
+  const weightRaw = Number(input?.weight ?? 1);
+  return {
+    id: LOOT_WORLD_ITEMS_SOURCE_ID,
+    label: String(input?.label ?? LOOT_WORLD_ITEMS_SOURCE_LABEL).trim() || LOOT_WORLD_ITEMS_SOURCE_LABEL,
+    sourceKind: "world-items",
+    enabled: input?.enabled !== false,
+    weight: Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1
+  };
+}
+
+function getLootGenerationItemPackSources() {
+  return [{
+    id: LOOT_WORLD_ITEMS_SOURCE_ID,
+    label: LOOT_WORLD_ITEMS_SOURCE_LABEL,
+    sourceKind: "world-items"
+  }];
+}
+
+function buildLootWorldItemsFolderFilterId(folderId = "") {
+  const id = String(folderId ?? "").trim();
+  return id ? `${LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX}${id}` : "";
+}
+
+function parseLootWorldItemsFolderFilterId(selectionId = "") {
+  const id = String(selectionId ?? "").trim();
+  if (!id.startsWith(LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX)) return "";
+  const folderId = id.slice(LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX.length).trim();
+  return folderId || "";
+}
+
+function getLootWorldItemFolderParentId(folder) {
+  return String(folder?.folder?.id ?? folder?.folder ?? folder?.parent?.id ?? "").trim();
+}
+
+function getLootWorldItemFolderRows() {
+  const rows = (game.folders?.contents ?? [])
+    .filter((folder) => {
+      const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+      return type === "item";
+    })
+    .map((folder) => {
+      const id = String(folder?.id ?? "").trim();
+      const name = String(folder?.name ?? id).trim() || id;
+      const parentId = getLootWorldItemFolderParentId(folder);
+      return { id, name, parentId };
+    })
+    .filter((entry) => entry.id);
+
+  const byId = new Map(rows.map((entry) => [entry.id, entry]));
+  return rows
+    .map((entry) => {
+      const parts = [entry.name];
+      const visited = new Set([entry.id]);
+      let parentId = entry.parentId;
+      let depth = 0;
+      while (parentId && depth < 30) {
+        if (visited.has(parentId)) break;
+        visited.add(parentId);
+        const parent = byId.get(parentId);
+        if (!parent) break;
+        parts.unshift(parent.name);
+        parentId = parent.parentId;
+        depth += 1;
+      }
+      return {
+        ...entry,
+        pathLabel: parts.join(" / ")
+      };
+    })
+    .sort((a, b) => String(a.pathLabel ?? "").localeCompare(String(b.pathLabel ?? "")));
+}
+
+function buildLootWorldItemFolderScopeIds(folderId = "") {
+  const rootId = String(folderId ?? "").trim();
+  if (!rootId) return new Set();
+
+  const rows = getLootWorldItemFolderRows();
+  const childrenByParent = new Map();
+  for (const row of rows) {
+    const parentId = String(row?.parentId ?? "").trim();
+    if (!parentId) continue;
+    if (!childrenByParent.has(parentId)) childrenByParent.set(parentId, []);
+    childrenByParent.get(parentId).push(String(row?.id ?? "").trim());
+  }
+
+  const scopedIds = new Set([rootId]);
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const currentId = queue.shift();
+    const children = childrenByParent.get(currentId) ?? [];
+    for (const childId of children) {
+      if (!childId || scopedIds.has(childId)) continue;
+      scopedIds.add(childId);
+      queue.push(childId);
+    }
+  }
+  return scopedIds;
+}
+
+function isValidLootManifestPackSelectionId(selectionId = "") {
+  const id = String(selectionId ?? "").trim();
+  if (!id) return false;
+
+  const validPackIds = new Set(
+    getLootGenerationItemPackSources()
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  if (validPackIds.has(id)) return true;
+
+  const folderId = parseLootWorldItemsFolderFilterId(id);
+  if (!folderId) return false;
+
+  const folder = game.folders?.get?.(folderId) ?? null;
+  if (!folder) return true;
+  const folderType = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+  return folderType === "item";
+}
+
+function buildLootManifestPackOptions(manifestPackId = "", itemPackOptions = []) {
+  const selectedId = String(manifestPackId ?? "").trim();
+  const options = [{
+    value: "",
+    label: "Any enabled item source",
+    selected: !selectedId
+  }];
+
+  options.push(
+    ...(Array.isArray(itemPackOptions) ? itemPackOptions : []).map((entry) => ({
+      value: String(entry?.id ?? "").trim(),
+      label: String(entry?.label ?? entry?.id ?? "").trim() || String(entry?.id ?? "").trim(),
+      selected: String(entry?.id ?? "").trim() === selectedId
+    }))
+  );
+
+  const folderOptions = getLootWorldItemFolderRows().map((folder) => {
+    const value = buildLootWorldItemsFolderFilterId(folder.id);
+    return {
+      value,
+      label: `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${folder.pathLabel}`,
+      selected: value === selectedId
+    };
+  });
+  options.push(...folderOptions);
+
+  if (selectedId && !options.some((entry) => String(entry?.value ?? "").trim() === selectedId)) {
+    const selectedFolderId = parseLootWorldItemsFolderFilterId(selectedId);
+    options.push({
+      value: selectedId,
+      label: selectedFolderId
+        ? `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${selectedFolderId} (Unavailable)`
+        : `${selectedId} (Unavailable)`,
+      selected: true
+    });
+  }
+
+  return options;
+}
+
 function buildDefaultLootSourceConfig() {
   return {
-    packs: [
-      {
-        id: LOOT_WORLD_ITEMS_SOURCE_ID,
-        label: "World Item Directory",
-        sourceKind: "world-items",
-        enabled: true,
-        weight: 1
-      }
-    ],
+    packs: [buildLootWorldItemSourceEntry()],
     tables: [],
     filters: {
       allowedTypes: [...LOOT_DEFAULT_ITEM_TYPES],
@@ -9745,15 +10268,34 @@ function normalizeLootSourceConfig(config = {}) {
   const fallback = buildDefaultLootSourceConfig();
   const rawPacks = Array.isArray(config?.packs) ? config.packs : fallback.packs;
   const rawTables = Array.isArray(config?.tables) ? config.tables : fallback.tables;
+  const validLootGenerationSourceIds = new Set(
+    getLootGenerationItemPackSources()
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
   const packs = rawPacks
     .map((entry) => normalizeLootSourcePackEntry(entry))
-    .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
+    .filter((entry, index, rows) => {
+      if (!entry) return false;
+      if (!validLootGenerationSourceIds.has(String(entry.id ?? "").trim())) return false;
+      return rows.findIndex((candidate) => candidate?.id === entry.id) === index;
+    });
+  if (!packs.some((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID)) {
+    packs.unshift(buildLootWorldItemSourceEntry());
+  } else {
+    for (const entry of packs) {
+      if (String(entry?.id ?? "").trim() !== LOOT_WORLD_ITEMS_SOURCE_ID) continue;
+      entry.sourceKind = "world-items";
+      if (!String(entry?.label ?? "").trim()) entry.label = LOOT_WORLD_ITEMS_SOURCE_LABEL;
+      entry.weight = Math.max(1, Math.floor(Number(entry?.weight ?? 1) || 1));
+    }
+  }
   const tables = rawTables
     .map((entry) => normalizeLootSourceTableEntry(entry))
     .filter((entry, index, rows) => entry && rows.findIndex((candidate) => candidate.id === entry.id) === index);
 
   const itemTypeCatalog = new Set(buildLootItemTypeCatalog().map((entry) => entry.value));
-  const validPackIds = new Set(getAvailableLootItemPackSources().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
+  const validPackIds = new Set(getLootGenerationItemPackSources().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
   const rawAllowedTypes = Array.isArray(config?.filters?.allowedTypes)
     ? config.filters.allowedTypes
     : fallback.filters.allowedTypes;
@@ -9772,7 +10314,9 @@ function normalizeLootSourceConfig(config = {}) {
       manifestPackId: (() => {
         const id = String(config?.filters?.manifestPackId ?? "").trim();
         if (!id) return "";
-        return validPackIds.has(id) ? id : "";
+        if (validPackIds.has(id)) return id;
+        const selectedFolderId = parseLootWorldItemsFolderFilterId(id);
+        return selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : "";
       })(),
       keywordIncludeTags: normalizeLootKeywordTagList(config?.filters?.keywordIncludeTags ?? []),
       keywordExcludeTags: normalizeLootKeywordTagList(config?.filters?.keywordExcludeTags ?? [])
@@ -9930,7 +10474,63 @@ async function getLootManifestPackItemRows(pack) {
   return [];
 }
 
+function isLockedCompendiumMutationError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  if (!message) return false;
+  if (!message.includes("compendium")) return false;
+  if (!message.includes("locked")) return false;
+  return message.includes("may not modify")
+    || message.includes("cannot modify")
+    || message.includes("you may not modify");
+}
+
+function getCompendiumPackageType(pack) {
+  return String(pack?.metadata?.packageType ?? "").trim().toLowerCase();
+}
+
+function isReadOnlyCompendiumPackForFolderSync(pack) {
+  const packageType = getCompendiumPackageType(pack);
+  if (packageType && packageType !== "world") return true;
+  const collection = String(pack?.collection ?? "").trim().toLowerCase();
+  if (collection.startsWith(`${String(MODULE_ID).trim().toLowerCase()}.`)) return true;
+  if (Boolean(pack?.locked) && typeof pack?.configure !== "function") return true;
+  return false;
+}
+
+function isMonksTokenBarCompendiumUpdateCompatibilityMode(pack) {
+  const monksTokenBarActive = game.modules?.get("monks-tokenbar")?.active === true;
+  if (!monksTokenBarActive) return false;
+  const packageType = getCompendiumPackageType(pack);
+  return packageType === "module" || packageType === "system";
+}
+
+function disableLootManifestFolderSync(reason = "pack-locked", error = null) {
+  if (!lootManifestFolderSyncDisabledReason) {
+    lootManifestFolderSyncDisabledReason = String(reason ?? "").trim() || "pack-locked";
+  }
+  if (!lootManifestFolderSyncDisabledNotified) {
+    lootManifestFolderSyncDisabledNotified = true;
+    ui.notifications?.warn("Party Operations: loot manifest folder sync disabled because the compendium is locked or read-only.");
+  }
+  if (error) {
+    console.warn(`${MODULE_ID}: loot manifest folder sync disabled (${lootManifestFolderSyncDisabledReason})`, error);
+  } else {
+    console.warn(`${MODULE_ID}: loot manifest folder sync disabled (${lootManifestFolderSyncDisabledReason})`);
+  }
+}
+
 async function updateLootManifestPackItemFolders(pack, updates = []) {
+  if (isMonksTokenBarCompendiumUpdateCompatibilityMode(pack)) {
+    if (!lootManifestMonksCompatNotified) {
+      lootManifestMonksCompatNotified = true;
+      ui.notifications?.warn("Party Operations: skipped manifest item-folder updates while Monks TokenBar is active (compatibility workaround).");
+      console.warn(`${MODULE_ID}: skipping loot manifest item-folder updates while monks-tokenbar is active`, {
+        packId: String(pack?.collection ?? "")
+      });
+    }
+    return 0;
+  }
+
   const normalizedUpdates = (Array.isArray(updates) ? updates : [])
     .map((entry) => {
       const id = String(entry?._id ?? entry?.id ?? "").trim();
@@ -9942,7 +10542,15 @@ async function updateLootManifestPackItemFolders(pack, updates = []) {
   if (normalizedUpdates.length <= 0) return 0;
 
   if (typeof Item?.updateDocuments === "function") {
-    await Item.updateDocuments(normalizedUpdates, { pack: pack.collection });
+    try {
+      await Item.updateDocuments(normalizedUpdates, { pack: pack.collection });
+    } catch (error) {
+      if (isLockedCompendiumMutationError(error)) {
+        disableLootManifestFolderSync("pack-locked", error);
+        return 0;
+      }
+      throw error;
+    }
     return normalizedUpdates.length;
   }
 
@@ -9954,6 +10562,10 @@ async function updateLootManifestPackItemFolders(pack, updates = []) {
       await document.update({ folder: entry.folder });
       applied += 1;
     } catch (error) {
+      if (isLockedCompendiumMutationError(error)) {
+        disableLootManifestFolderSync("pack-locked", error);
+        return applied;
+      }
       console.warn(`${MODULE_ID}: failed to update loot manifest item folder`, entry?._id, error);
     }
   }
@@ -9962,6 +10574,9 @@ async function updateLootManifestPackItemFolders(pack, updates = []) {
 
 async function ensureLootManifestCompendiumTypeFolders(options = {}) {
   if (!game.user?.isGM) return { ok: false, reason: "not-gm" };
+  if (lootManifestFolderSyncDisabledReason) {
+    return { ok: false, reason: lootManifestFolderSyncDisabledReason };
+  }
   const pack = getLootManifestCompendiumPack();
   if (!pack) return { ok: false, reason: "pack-missing" };
 
@@ -9972,13 +10587,29 @@ async function ensureLootManifestCompendiumTypeFolders(options = {}) {
     updatedItems: 0
   };
 
+  if (isReadOnlyCompendiumPackForFolderSync(pack)) {
+    report.ok = false;
+    report.reason = "pack-read-only";
+    disableLootManifestFolderSync("pack-read-only");
+    return report;
+  }
+
   const originalLocked = Boolean(pack?.locked);
   const mustUnlock = originalLocked && typeof pack?.configure === "function";
   try {
     if (mustUnlock) await pack.configure({ locked: false });
+    if (mustUnlock && Boolean(pack?.locked)) {
+      report.ok = false;
+      report.reason = "pack-locked";
+      disableLootManifestFolderSync("pack-locked");
+      return report;
+    }
   } catch (error) {
     report.ok = false;
     report.reason = "unlock-failed";
+    if (isLockedCompendiumMutationError(error)) {
+      disableLootManifestFolderSync("unlock-failed", error);
+    }
     console.warn(`${MODULE_ID}: unable to unlock loot manifest compendium for folder sync`, error);
     return report;
   }
@@ -10025,11 +10656,31 @@ async function ensureLootManifestCompendiumTypeFolders(options = {}) {
 
     if (foldersToCreate.length > 0) {
       if (typeof Folder?.createDocuments === "function") {
-        await Folder.createDocuments(foldersToCreate, { pack: pack.collection });
+        try {
+          await Folder.createDocuments(foldersToCreate, { pack: pack.collection });
+        } catch (error) {
+          if (isLockedCompendiumMutationError(error)) {
+            report.ok = false;
+            report.reason = "pack-locked";
+            disableLootManifestFolderSync("pack-locked", error);
+            return report;
+          }
+          throw error;
+        }
         report.createdFolders = foldersToCreate.length;
       } else if (typeof pack?.createFolder === "function") {
         for (const folderData of foldersToCreate) {
-          await pack.createFolder(folderData);
+          try {
+            await pack.createFolder(folderData);
+          } catch (error) {
+            if (isLockedCompendiumMutationError(error)) {
+              report.ok = false;
+              report.reason = "pack-locked";
+              disableLootManifestFolderSync("pack-locked", error);
+              return report;
+            }
+            throw error;
+          }
           report.createdFolders += 1;
         }
       }
@@ -10087,6 +10738,9 @@ async function ensureLootManifestCompendiumTypeFolders(options = {}) {
 
 function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
   if (!game.user?.isGM) return Promise.resolve({ ok: false, reason: "not-gm" });
+  if (lootManifestFolderSyncDisabledReason) {
+    return Promise.resolve({ ok: false, reason: lootManifestFolderSyncDisabledReason });
+  }
   if (lootManifestFolderSyncPromise) return lootManifestFolderSyncPromise;
 
   lootManifestFolderSyncPromise = ensureLootManifestCompendiumTypeFolders({ reason })
@@ -10242,7 +10896,7 @@ function matchesLootSourceSearchQuery(query, source = {}) {
 
 function buildLootSourceRegistryContext() {
   const config = getLootSourceConfig();
-  const availablePacks = getAvailableLootItemPackSources();
+  const availablePacks = getLootGenerationItemPackSources();
   const availableTables = getAvailableLootTableSources();
   const packLookup = new Map((config.packs ?? []).map((entry) => [entry.id, entry]));
   const tableLookup = new Map((config.tables ?? []).map((entry) => [entry.id, entry]));
@@ -10335,12 +10989,7 @@ function buildLootSourceRegistryContext() {
   const rarityFloor = normalizeLootRarityValue(config.filters?.rarityFloor);
   const rarityCeiling = normalizeLootRarityValue(config.filters?.rarityCeiling);
   const manifestPackId = String(config.filters?.manifestPackId ?? "").trim();
-  const manifestPackOptions = [{ value: "", label: "Any enabled item source", selected: !manifestPackId }]
-    .concat(itemPackOptions.map((entry) => ({
-      value: entry.id,
-      label: entry.label,
-      selected: entry.id === manifestPackId
-    })));
+  const manifestPackOptions = buildLootManifestPackOptions(manifestPackId, itemPackOptions);
   const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
   const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
   const updatedAt = Number(config.updatedAt ?? 0);
@@ -12099,12 +12748,25 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const floor = String(sourceConfig?.filters?.rarityFloor ?? "");
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
   const manifestPackId = String(sourceConfig?.filters?.manifestPackId ?? "").trim();
+  const manifestFolderId = parseLootWorldItemsFolderFilterId(manifestPackId);
+  const manifestFolderScopeIds = manifestFolderId ? buildLootWorldItemFolderScopeIds(manifestFolderId) : null;
+  const manifestFolder = manifestFolderId ? game.folders?.get?.(manifestFolderId) ?? null : null;
+  const manifestFolderLabel = manifestFolderId
+    ? String(manifestFolder?.name ?? manifestFolderId).trim() || manifestFolderId
+    : "";
   const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
   const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
   let enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
   if (manifestPackId) {
-    const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === manifestPackId)
-      ?? normalizeLootSourcePackEntry({ id: manifestPackId, label: manifestPackId, sourceKind: "compendium-pack", enabled: true, weight: 1 });
+    const selectedSourceId = manifestFolderId ? LOOT_WORLD_ITEMS_SOURCE_ID : manifestPackId;
+    const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === selectedSourceId)
+      ?? normalizeLootSourcePackEntry({
+        id: selectedSourceId,
+        label: selectedSourceId,
+        sourceKind: selectedSourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? "world-items" : "compendium-pack",
+        enabled: true,
+        weight: 1
+      });
     enabledSources = source ? [source] : [];
   }
   const candidates = [];
@@ -12114,37 +12776,29 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   for (const source of enabledSources) {
     try {
       const sourceId = String(source?.id ?? "").trim();
-      const sourceLabel = String(source?.label ?? sourceId).trim() || sourceId;
+      const sourceLabelBase = String(source?.label ?? sourceId).trim() || sourceId;
+      const sourceLabel = manifestFolderId && sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
+        ? `${sourceLabelBase}: ${manifestFolderLabel}`
+        : sourceLabelBase;
       const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
       if (!sourceId) continue;
-      if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) {
-        const worldItems = filterItems(game.items?.contents ?? [], baseFilterOptions);
-        for (const item of worldItems) {
-          const candidate = buildLootCandidateFromSourceItem(item, {
-            sourceId,
-            sourceLabel,
-            sourceWeight,
-            fallbackUuidPrefix: "World.Item"
-          }, draft, {
-            includeTags,
-            excludeTags,
-            floor,
-            ceiling
-          });
-          if (!candidate) continue;
-          candidates.push(candidate);
-        }
+      if (sourceId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
+        logLootBuilderDebug("ignoring non-world loot item source", { sourceId, sourceLabel });
         continue;
       }
-
-      const packItems = await loadItemsFromPack(sourceId, { sourceLabel, warnings });
-      const filteredPackItems = filterItems(packItems, baseFilterOptions);
-      for (const item of filteredPackItems) {
+      let worldItems = filterItems(game.items?.contents ?? [], baseFilterOptions);
+      if (manifestFolderId && manifestFolderScopeIds?.size) {
+        worldItems = worldItems.filter((item) => {
+          const itemFolderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
+          return itemFolderId && manifestFolderScopeIds.has(itemFolderId);
+        });
+      }
+      for (const item of worldItems) {
         const candidate = buildLootCandidateFromSourceItem(item, {
           sourceId,
           sourceLabel,
           sourceWeight,
-          fallbackUuidPrefix: `Compendium.${sourceId}`
+          fallbackUuidPrefix: "World.Item"
         }, draft, {
           includeTags,
           excludeTags,
@@ -12917,7 +13571,7 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
     const cr = Math.max(0, Math.floor(Number(input?.cr ?? 1) || 1));
 
     logLootBuilderDebug("generateLootFromPackIds start", {
-      packCount: normalizedPackIds.length,
+      requestedSourceCount: normalizedPackIds.length,
       target,
       scarcity,
       cr,
@@ -12927,7 +13581,7 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
 
     const gold = estimateSuggestedLootGold(cr, target, scarcity);
     const desiredItemCount = estimateSuggestedLootItemCount(cr, target, scarcity);
-    if (normalizedPackIds.length === 0 || desiredItemCount <= 0) {
+    if (desiredItemCount <= 0) {
       return { gold, items: [] };
     }
 
@@ -12937,32 +13591,26 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
       rarityKeywords: Array.isArray(options?.rarityKeywords) ? options.rarityKeywords : undefined
     };
 
+    const sourceItems = filterItems(game.items?.contents ?? [], sourceFilter);
     const candidates = [];
-    for (const packId of normalizedPackIds) {
-      const sourceItems = await loadItemsFromPack(packId, {
-        sourceLabel: packId,
-        warnings: []
+    for (const item of sourceItems) {
+      const candidate = buildLootCandidateFromSourceItem(item, {
+        sourceId: LOOT_WORLD_ITEMS_SOURCE_ID,
+        sourceLabel: LOOT_WORLD_ITEMS_SOURCE_LABEL,
+        sourceWeight: 1,
+        fallbackUuidPrefix: "World.Item"
+      }, {
+        profile: "standard",
+        mode: target,
+        challenge: cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic"
+      }, {
+        includeTags: [],
+        excludeTags: [],
+        floor: "",
+        ceiling: ""
       });
-      const filteredItems = filterItems(sourceItems, sourceFilter);
-      for (const item of filteredItems) {
-        const candidate = buildLootCandidateFromSourceItem(item, {
-          sourceId: packId,
-          sourceLabel: packId,
-          sourceWeight: 1,
-          fallbackUuidPrefix: `Compendium.${packId}`
-        }, {
-          profile: "standard",
-          mode: target,
-          challenge: cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic"
-        }, {
-          includeTags: [],
-          excludeTags: [],
-          floor: "",
-          ceiling: ""
-        });
-        if (!candidate) continue;
-        candidates.push(candidate);
-      }
+      if (!candidate) continue;
+      candidates.push(candidate);
     }
 
     if (candidates.length === 0) return { gold, items: [] };
@@ -13410,7 +14058,16 @@ function buildDefaultOperationsLedger() {
       cityCatalog: [],
       definitions: [],
       stockStateById: {},
-      accessLog: []
+      accessLog: [],
+      shopSession: {
+        isOpen: false,
+        restrictToSelected: false,
+        allowedUserIds: [],
+        lastOpenedAt: 0,
+        lastOpenedBy: "",
+        lastClosedAt: 0,
+        lastClosedBy: ""
+      }
     },
     downtime: {
       hoursGranted: 4,
@@ -15338,6 +15995,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const img = String(source.img ?? "").trim() || "icons/svg/item-bag.svg";
   const settlement = String(source.settlement ?? MERCHANT_DEFAULTS.settlement).trim().slice(0, 120);
   const accessMode = normalizeMerchantAccessMode(source?.accessMode ?? source?.access?.mode ?? MERCHANT_ACCESS_MODES.ALL);
+  const shopTradable = source.shopTradable !== false;
   const isHidden = false;
   const requiresContract = false;
   const contractKey = "";
@@ -15415,6 +16073,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     img,
     settlement,
     accessMode,
+    shopTradable,
     isHidden,
     requiresContract,
     contractKey,
@@ -15481,13 +16140,107 @@ function normalizeMerchantAccessLogEntry(raw = {}) {
   };
 }
 
+function getMerchantShopPlayerUsers() {
+  const users = Array.from(game.users?.contents ?? []);
+  return users
+    .filter((user) => user && !Boolean(user?.isGM) && String(user?.id ?? "").trim())
+    .sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+}
+
+function normalizeMerchantShopAllowedUserIds(values = [], users = null) {
+  const source = Array.isArray(values) ? values : [];
+  const allowedById = new Set(
+    (Array.isArray(users) ? users : getMerchantShopPlayerUsers())
+      .map((user) => String(user?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  const rows = [];
+  for (const raw of source) {
+    const userId = String(raw ?? "").trim();
+    if (!userId || rows.includes(userId)) continue;
+    if (allowedById.size > 0 && !allowedById.has(userId)) continue;
+    rows.push(userId);
+  }
+  return rows;
+}
+
+function normalizeMerchantShopSession(raw = {}, options = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const playerUsers = Array.isArray(options?.playerUsers) ? options.playerUsers : getMerchantShopPlayerUsers();
+  const allowedUserIds = normalizeMerchantShopAllowedUserIds(source.allowedUserIds ?? [], playerUsers);
+  const lastOpenedAtRaw = Number(source.lastOpenedAt ?? source.openedAt ?? 0);
+  const lastClosedAtRaw = Number(source.lastClosedAt ?? source.closedAt ?? 0);
+  return {
+    isOpen: source.isOpen === true,
+    restrictToSelected: source.restrictToSelected === true,
+    allowedUserIds,
+    lastOpenedAt: Number.isFinite(lastOpenedAtRaw) ? Math.max(0, Math.floor(lastOpenedAtRaw)) : 0,
+    lastOpenedBy: String(source.lastOpenedBy ?? source.openedBy ?? "").trim(),
+    lastClosedAt: Number.isFinite(lastClosedAtRaw) ? Math.max(0, Math.floor(lastClosedAtRaw)) : 0,
+    lastClosedBy: String(source.lastClosedBy ?? source.closedBy ?? "").trim()
+  };
+}
+
+function getMerchantShopAccessStateForUser(user = game.user, merchantsState = null) {
+  const requestUser = user ?? game.user;
+  if (canAccessAllPlayerOps(requestUser)) {
+    return {
+      canTrade: true,
+      reason: "gm",
+      message: "",
+      session: normalizeMerchantShopSession(merchantsState?.shopSession ?? {})
+    };
+  }
+  const state = merchantsState && typeof merchantsState === "object"
+    ? merchantsState
+    : ensureMerchantsState(getOperationsLedger());
+  const session = normalizeMerchantShopSession(state?.shopSession ?? {});
+  if (!session.isOpen) {
+    return {
+      canTrade: false,
+      reason: "closed",
+      message: "Shops are currently closed. Wait for the GM to ring the bell.",
+      session
+    };
+  }
+  if (!session.restrictToSelected) {
+    return {
+      canTrade: true,
+      reason: "open",
+      message: "",
+      session
+    };
+  }
+  const userId = String(requestUser?.id ?? "").trim();
+  if (!userId || !session.allowedUserIds.includes(userId)) {
+    return {
+      canTrade: false,
+      reason: "restricted",
+      message: "Shopping is currently limited to selected players.",
+      session
+    };
+  }
+  return {
+    canTrade: true,
+    reason: "open",
+    message: "",
+    session
+  };
+}
+
+function getMerchantShopSessionState(ledger = getOperationsLedger()) {
+  const merchants = ensureMerchantsState(ledger);
+  return normalizeMerchantShopSession(merchants?.shopSession ?? {});
+}
+
 function ensureMerchantsState(ledger) {
   if (!ledger || typeof ledger !== "object") return {
     currentSettlement: "",
     cityCatalog: [],
     definitions: [],
     stockStateById: {},
-    accessLog: []
+    accessLog: [],
+    shopSession: normalizeMerchantShopSession()
   };
   if (!ledger.merchants || typeof ledger.merchants !== "object" || Array.isArray(ledger.merchants)) {
     ledger.merchants = {};
@@ -15501,6 +16254,7 @@ function ensureMerchantsState(ledger) {
     merchants.stockStateById = {};
   }
   if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
+  merchants.shopSession = normalizeMerchantShopSession(merchants.shopSession ?? {});
   const seenIds = new Set();
   merchants.definitions = merchants.definitions
     .map((entry, index) => normalizeMerchantDefinition(entry, index))
@@ -15728,6 +16482,7 @@ function isMerchantSettlementMatch(merchant, currentSettlementInput) {
 function isMerchantAvailableToActor(merchant, actor, currentSettlement, options = {}) {
   if (!merchant || !actor) return false;
   if (options?.isGM) return true;
+  if (merchant?.shopTradable === false) return false;
   if (!isMerchantSettlementMatch(merchant, currentSettlement)) return false;
   const contracts = getActorMerchantContracts(actor);
   const hasContract = Boolean(contracts[merchant.id] || (merchant.contractKey && contracts[merchant.contractKey]));
@@ -15875,11 +16630,13 @@ function setMerchantItemDataQuantity(itemData = {}, quantity = 1) {
 }
 
 function getMerchantItemTagsFromData(itemData = {}) {
-  return normalizeMerchantTagList(
+  const explicitTags = normalizeMerchantTagList(
     itemData?.flags?.[MODULE_ID]?.tags
     ?? itemData?.flags?.["party-operations"]?.tags
     ?? []
   );
+  if (explicitTags.length > 0) return explicitTags;
+  return normalizeMerchantTagList(getLootKeywordsFromData(itemData));
 }
 
 function getMerchantItemKeywordTokensFromData(itemData = {}) {
@@ -16158,6 +16915,79 @@ function buildMerchantTagOptionsForEditor(tagCatalog = [], selectedTags = []) {
   return options.sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
 }
 
+function getMerchantTagGroupKey(tagValue = "") {
+  const normalized = String(tagValue ?? "").trim().toLowerCase();
+  if (!normalized) return "other";
+  const separatorMatch = normalized.match(/[.:/]/);
+  if (separatorMatch && Number(separatorMatch.index) > 0) {
+    return normalized.slice(0, Number(separatorMatch.index));
+  }
+  return "other";
+}
+
+function formatMerchantTagGroupLabel(groupKey = "") {
+  const normalized = String(groupKey ?? "").trim().toLowerCase();
+  if (!normalized || normalized === "other") return "Other";
+  return normalized
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map((entry) => entry.charAt(0).toUpperCase() + entry.slice(1))
+    .join(" ");
+}
+
+function buildMerchantTagGroupsForEditor(tagOptions = []) {
+  const groupsByKey = new Map();
+  const options = Array.isArray(tagOptions) ? tagOptions : [];
+  for (const option of options) {
+    const value = String(option?.value ?? "").trim().toLowerCase();
+    if (!value) continue;
+    const key = getMerchantTagGroupKey(value);
+    let group = groupsByKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: formatMerchantTagGroupLabel(key),
+        selectedCount: 0,
+        options: []
+      };
+      groupsByKey.set(key, group);
+    }
+    const normalizedOption = {
+      value,
+      label: String(option?.label ?? value).trim() || value,
+      selected: Boolean(option?.selected)
+    };
+    group.options.push(normalizedOption);
+    if (normalizedOption.selected) group.selectedCount += 1;
+  }
+
+  const groups = Array.from(groupsByKey.values())
+    .map((group) => {
+      const sortedOptions = [...group.options].sort((left, right) =>
+        String(left?.label ?? "").localeCompare(String(right?.label ?? ""))
+      );
+      const optionCount = sortedOptions.length;
+      return {
+        key: group.key,
+        label: group.label,
+        optionCount,
+        selectedCount: group.selectedCount,
+        hasSelected: group.selectedCount > 0,
+        open: group.selectedCount > 0,
+        options: sortedOptions
+      };
+    })
+    .sort((left, right) => {
+      if (left.hasSelected !== right.hasSelected) return left.hasSelected ? -1 : 1;
+      return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+    });
+
+  if (groups.length > 0 && !groups.some((entry) => entry.open)) {
+    groups[0].open = true;
+  }
+  return groups;
+}
+
 function buildMerchantKeywordCatalogForEditor(merchant = {}) {
   const keywords = new Set();
   const documents = getMerchantSourceDocumentsSync(merchant);
@@ -16390,6 +17220,8 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         : "-";
       return {
         id: String(item?.id ?? ""),
+        itemId: String(item?.id ?? ""),
+        itemUuid: String(item?.uuid ?? ""),
         name: String(item?.name ?? "Item").trim() || "Item",
         img: String(item?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
         quantity,
@@ -16451,6 +17283,63 @@ async function logMerchantUiAccess(payload = {}) {
   return true;
 }
 
+function buildMerchantGmCollectionCityOptions(definitions = [], selectedCityInput = "") {
+  const selectedCity = normalizeMerchantSettlementSelection(selectedCityInput);
+  const cityMap = new Map();
+  for (const merchant of (Array.isArray(definitions) ? definitions : [])) {
+    const city = normalizeMerchantSettlementSelection(merchant?.settlement ?? "");
+    if (!city) continue;
+    const key = city.toLowerCase();
+    if (!cityMap.has(key)) cityMap.set(key, city);
+  }
+  if (selectedCity && !cityMap.has(selectedCity.toLowerCase())) cityMap.set(selectedCity.toLowerCase(), selectedCity);
+  const options = [
+    { value: "", label: "All Cities", selected: !selectedCity },
+    ...Array.from(cityMap.values())
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({
+        value,
+        label: getMerchantSettlementLabel(value),
+        selected: value.toLowerCase() === selectedCity.toLowerCase()
+      }))
+  ];
+  if (!options.some((entry) => entry.selected)) options[0].selected = true;
+  return options;
+}
+
+function filterMerchantDefinitionsForGm(definitions = [], filterState = {}) {
+  const search = normalizeMerchantGmCollectionSearch(filterState?.search ?? "");
+  const city = normalizeMerchantGmCollectionCity(filterState?.city ?? "");
+  const access = normalizeMerchantGmCollectionAccess(filterState?.access);
+  const stock = normalizeMerchantGmCollectionStock(filterState?.stock);
+  const searchLower = search.toLowerCase();
+  return (Array.isArray(definitions) ? definitions : []).filter((merchant) => {
+    const merchantCity = normalizeMerchantSettlementSelection(merchant?.settlement ?? "");
+    if (city && merchantCity.toLowerCase() !== city.toLowerCase()) return false;
+    const merchantAccess = normalizeMerchantAccessMode(merchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
+    if (access === MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC && merchantAccess !== MERCHANT_ACCESS_MODES.ALL) return false;
+    if (access === MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED && merchantAccess !== MERCHANT_ACCESS_MODES.ASSIGNED) return false;
+    const stockCount = Math.max(0, Number(merchant?.stockItemCount ?? 0) || 0);
+    if (stock === MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED && stockCount <= 0) return false;
+    if (stock === MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY && stockCount > 0) return false;
+    if (!searchLower) return true;
+    const searchable = [
+      merchant?.name,
+      merchant?.title,
+      merchant?.raceLabel,
+      merchant?.settlementLabel,
+      merchant?.sourceTypeLabel,
+      merchant?.sourceRefLabel,
+      merchant?.offerTagSummary,
+      merchant?.buybackTypeSummary
+    ]
+      .map((entry) => String(entry ?? "").trim().toLowerCase())
+      .filter(Boolean)
+      .join(" ");
+    return searchable.includes(searchLower);
+  });
+}
+
 function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const user = options?.user ?? game.user;
   const merchantsState = ensureMerchantsState(ledger);
@@ -16476,6 +17365,30 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const assignmentActors = getOwnedPcActors().sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
   const storedSettlement = getSelectedMerchantSettlement();
   const hasStoredSettlement = hasSelectedMerchantSettlementPreference();
+  const isGmViewer = canAccessAllPlayerOps(user);
+  const shopPlayerUsers = getMerchantShopPlayerUsers();
+  const shopSession = normalizeMerchantShopSession(merchantsState?.shopSession ?? {}, { playerUsers: shopPlayerUsers });
+  const shopAllowedUserSet = new Set(shopSession.allowedUserIds);
+  const shopPlayerRows = shopPlayerUsers.map((shopUser) => {
+    const userId = String(shopUser?.id ?? "").trim();
+    return {
+      userId,
+      userName: String(shopUser?.name ?? "Player").trim() || "Player",
+      isActive: Boolean(shopUser?.active),
+      selected: Boolean(userId && shopAllowedUserSet.has(userId))
+    };
+  });
+  const shopSelectedRows = shopPlayerRows.filter((row) => row.selected);
+  const shopSelectedNames = shopSelectedRows.map((row) => row.userName);
+  const shopSelectedSummary = shopSession.restrictToSelected
+    ? (shopSelectedNames.length > 0 ? shopSelectedNames.join(", ") : "None selected")
+    : "All players";
+  const shopAccessSummary = shopSession.restrictToSelected
+    ? `Selected players (${shopSelectedRows.length}/${shopPlayerRows.length})`
+    : "All players";
+  const viewerShopAccess = getMerchantShopAccessStateForUser(user, merchantsState);
+  const viewerCanUseShop = isGmViewer || viewerShopAccess.canTrade;
+  const gmCollectionFilterState = getMerchantGmCollectionFilterState();
 
   const definitionsForDisplay = definitions.map((merchant) => {
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
@@ -16537,6 +17450,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     const assignedCount = assignmentRows.reduce((sum, row) => sum + (row.assigned ? 1 : 0), 0);
     return {
       ...merchant,
+      shopTradable: merchant?.shopTradable !== false,
+      shopTradableLabel: merchant?.shopTradable === false ? "Off" : "On",
       accessMode,
       accessModeIsAssigned: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED,
       accessModeIsAll: accessMode === MERCHANT_ACCESS_MODES.ALL,
@@ -16591,6 +17506,55 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       accessModeOptions: getMerchantAccessModeOptions(accessMode)
     };
   });
+  const gmCollectionCityOptions = buildMerchantGmCollectionCityOptions(definitionsForDisplay, gmCollectionFilterState.city);
+  const gmCollectionCity = normalizeMerchantSettlementSelection(
+    gmCollectionCityOptions.find((entry) => entry.selected)?.value ?? ""
+  );
+  const gmCollectionFilter = {
+    search: normalizeMerchantGmCollectionSearch(gmCollectionFilterState.search),
+    city: gmCollectionCity,
+    access: normalizeMerchantGmCollectionAccess(gmCollectionFilterState.access),
+    stock: normalizeMerchantGmCollectionStock(gmCollectionFilterState.stock)
+  };
+  const gmCollectionAccessOptions = [
+    {
+      value: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
+      label: "Any Access",
+      selected: gmCollectionFilter.access === MERCHANT_GM_FILTER_ACCESS_VALUES.ALL
+    },
+    {
+      value: MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC,
+      label: "All Players",
+      selected: gmCollectionFilter.access === MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC
+    },
+    {
+      value: MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED,
+      label: "Assigned Only",
+      selected: gmCollectionFilter.access === MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED
+    }
+  ];
+  const gmCollectionStockOptions = [
+    {
+      value: MERCHANT_GM_FILTER_STOCK_VALUES.ALL,
+      label: "Any Stock",
+      selected: gmCollectionFilter.stock === MERCHANT_GM_FILTER_STOCK_VALUES.ALL
+    },
+    {
+      value: MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED,
+      label: "In Stock",
+      selected: gmCollectionFilter.stock === MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED
+    },
+    {
+      value: MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY,
+      label: "Out of Stock",
+      selected: gmCollectionFilter.stock === MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY
+    }
+  ];
+  const gmFilteredDefinitions = filterMerchantDefinitionsForGm(definitionsForDisplay, gmCollectionFilter);
+  const tradableMerchantCount = definitionsForDisplay.reduce(
+    (sum, merchant) => sum + ((merchant?.shopTradable === false) ? 0 : 1),
+    0
+  );
   const cityCatalogRows = buildMerchantCityCatalogRows(merchantsState, definitionsForDisplay);
   const settlementView = buildMerchantSettlementOptions(
     definitionsForDisplay,
@@ -16599,16 +17563,20 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   );
   if (hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
 
-  const availableMerchants = (!activeActor)
+  const availableMerchants = (!activeActor || !viewerCanUseShop)
     ? []
     : definitionsForDisplay
       .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: false }))
       .map((merchant) => {
-        const canOpenShop = Boolean(activeActorId)
-          && Boolean(merchant.actorId && game.actors.get(merchant.actorId));
+        const hasMerchantActor = Boolean(merchant.actorId && game.actors.get(merchant.actorId));
+        const canOpenShop = Boolean(activeActorId) && hasMerchantActor;
+        const openShopHint = !activeActorId
+          ? "Select an actor first."
+          : (hasMerchantActor ? "" : "Merchant stock actor is unavailable. Ask the GM to refresh stock.");
         return {
           ...merchant,
-          canOpenShop
+          canOpenShop,
+          openShopHint
         };
       });
   const storedMerchantTabId = getSelectedMerchantTabId();
@@ -16623,6 +17591,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   }));
   const activeMerchant = availableMerchantsWithTabs.find((entry) => entry.id === activeMerchantId) ?? null;
   const activeMerchantInventory = buildMerchantInventoryRowsForDisplay(activeMerchant ?? {});
+  const hasTradableMerchants = tradableMerchantCount > 0;
+  const emptyStateMessage = !viewerCanUseShop
+    ? (viewerShopAccess.message || "Shops are currently unavailable.")
+    : (hasTradableMerchants
+      ? "No merchants are currently available for this actor/city combination."
+      : "No merchants are marked as tradable while shops are open.");
   const userId = String(user?.id ?? "").trim();
   const accessLog = (merchantsState.accessLog ?? [])
     .map((entry) => normalizeMerchantAccessLogEntry(entry))
@@ -16697,8 +17671,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     .filter((entry) => Boolean(entry?.selected))
     .length;
   const editorAllowedTypes = normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []);
-  const editorOfferTagOptions = buildMerchantOfferTagOptions(editorAllowedTypes);
   const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
+  const gmViewTab = getMerchantGmViewTab();
   const editorViewTab = getMerchantEditorViewTab();
   const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
   const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
@@ -16743,6 +17717,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
   const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
   const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
+  const editorIncludeTagGroups = buildMerchantTagGroupsForEditor(editorIncludeTagOptions);
+  const editorExcludeTagGroups = buildMerchantTagGroupsForEditor(editorExcludeTagOptions);
+  const editorIncludeTagSelectedCount = editorIncludeTagOptions.filter((entry) => entry?.selected).length;
+  const editorExcludeTagSelectedCount = editorExcludeTagOptions.filter((entry) => entry?.selected).length;
   const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
   const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
   const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
@@ -16764,8 +17742,20 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     activeActorName: String(activeActor?.name ?? "").trim(),
     hasActiveActor: Boolean(activeActor),
     activeActorSocialScore,
+    shopOpen: shopSession.isOpen,
+    shopStatusLabel: shopSession.isOpen ? "Open" : "Closed",
+    shopAccessSummary,
+    shopViewerAllowed: viewerCanUseShop,
+    shopViewerMessage: viewerCanUseShop ? "" : (viewerShopAccess.message || "Shops are currently unavailable."),
+    shopRestrictToSelected: shopSession.restrictToSelected,
+    shopSelectedSummary,
+    shopLastOpenedAtLabel: formatMerchantTimestampLabel(shopSession.lastOpenedAt),
+    shopLastOpenedBy: String(shopSession.lastOpenedBy ?? "").trim() || "-",
+    shopLastClosedAtLabel: formatMerchantTimestampLabel(shopSession.lastClosedAt),
+    shopLastClosedBy: String(shopSession.lastClosedBy ?? "").trim() || "-",
     availableMerchants: availableMerchantsWithTabs,
     hasAvailableMerchants: availableMerchantsWithTabs.length > 0,
+    emptyStateMessage,
     activeMerchantId,
     hasActiveMerchant: Boolean(activeMerchant),
     activeMerchantName: String(activeMerchant?.name ?? "").trim() || "No Merchant Selected",
@@ -16775,6 +17765,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     activeMerchantStockCount: Math.max(0, Number(activeMerchant?.stockItemCount ?? 0) || 0),
     activeMerchantBuyMarkupLabel: String(activeMerchantInventory?.buyMarkupLabel ?? "1.00"),
     activeMerchantCanOpenShop: Boolean(activeMerchant?.canOpenShop),
+    activeMerchantOpenShopHint: String(
+      activeMerchant?.openShopHint
+      ?? (viewerCanUseShop
+        ? "Select an available merchant and actor first."
+        : (viewerShopAccess.message || "Shops are currently unavailable."))
+    ).trim(),
     inventoryRows: activeMerchantInventory.rows,
     hasInventoryRows: activeMerchantInventory.hasRows,
     inventoryItemCount: Math.max(0, Number(activeMerchantInventory.itemCount ?? 0) || 0),
@@ -16783,12 +17779,46 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     shouldLogAccess: true,
     accessLogPayload,
     gm: {
-      definitions: definitionsForDisplay.map((merchant) => ({
+      viewTab: gmViewTab,
+      viewTabCityEditor: gmViewTab === MERCHANT_GM_VIEW_TABS.CITY,
+      viewTabEditor: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR,
+      viewTabSettings: gmViewTab === MERCHANT_GM_VIEW_TABS.SETTINGS,
+      viewTabConfiguredMerchants: gmViewTab === MERCHANT_GM_VIEW_TABS.CONFIGURED,
+      viewTabShopSession: gmViewTab === MERCHANT_GM_VIEW_TABS.SHOP,
+      viewTabHasEditorToolbar: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR || gmViewTab === MERCHANT_GM_VIEW_TABS.SETTINGS,
+      definitions: gmFilteredDefinitions.map((merchant) => ({
         ...merchant,
         cityOptions: buildMerchantCityOptions(cityCatalogRows, merchant?.settlement ?? ""),
         selectedForEdit: merchant.id === activeEditorId
       })),
       hasDefinitions: definitionsForDisplay.length > 0,
+      hasFilteredDefinitions: gmFilteredDefinitions.length > 0,
+      totalDefinitionCount: definitionsForDisplay.length,
+      filteredDefinitionCount: gmFilteredDefinitions.length,
+      collectionFilterSearch: gmCollectionFilter.search,
+      collectionFilterCity: gmCollectionFilter.city,
+      collectionFilterAccess: gmCollectionFilter.access,
+      collectionFilterStock: gmCollectionFilter.stock,
+      collectionFilterCityOptions: gmCollectionCityOptions,
+      collectionFilterAccessOptions: gmCollectionAccessOptions,
+      collectionFilterStockOptions: gmCollectionStockOptions,
+      shopSession: {
+        isOpen: shopSession.isOpen,
+        statusLabel: shopSession.isOpen ? "Open" : "Closed",
+        restrictToSelected: shopSession.restrictToSelected,
+        accessSummary: shopAccessSummary,
+        selectedSummary: shopSelectedSummary,
+        selectedCount: shopSelectedRows.length,
+        totalCount: shopPlayerRows.length,
+        tradableCount: tradableMerchantCount,
+        totalMerchantCount: definitionsForDisplay.length,
+        playerRows: shopPlayerRows,
+        hasPlayerRows: shopPlayerRows.length > 0,
+        lastOpenedAtLabel: formatMerchantTimestampLabel(shopSession.lastOpenedAt),
+        lastOpenedBy: String(shopSession.lastOpenedBy ?? "").trim() || "-",
+        lastClosedAtLabel: formatMerchantTimestampLabel(shopSession.lastClosedAt),
+        lastClosedBy: String(shopSession.lastClosedBy ?? "").trim() || "-"
+      },
       editorViewTab,
       editorViewTabEditor: editorViewTab !== "settings",
       editorViewTabSettings: editorViewTab === "settings",
@@ -16845,7 +17875,6 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       barterAbilityOptions: getMerchantBarterAbilityOptions(editorBarterAbility),
       raceOptions: getMerchantEditorRaceOptions(editorDraft?.race ?? ""),
       cityOptions: editorCityOptions,
-      offerTagOptions: editorOfferTagOptions,
       scarcityOptions: getMerchantScarcityOptions(editorScarcity),
       actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
       sourceRefOptions: editorSourceRefOptions,
@@ -16863,6 +17892,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       hasTagCatalog: editorTagCatalog.length > 0,
       includeTagOptions: editorIncludeTagOptions,
       excludeTagOptions: editorExcludeTagOptions,
+      includeTagGroups: editorIncludeTagGroups,
+      excludeTagGroups: editorExcludeTagGroups,
+      hasIncludeTagOptions: editorIncludeTagOptions.length > 0,
+      hasExcludeTagOptions: editorExcludeTagOptions.length > 0,
+      hasIncludeTagGroups: editorIncludeTagGroups.length > 0,
+      hasExcludeTagGroups: editorExcludeTagGroups.length > 0,
+      includeTagSelectedCount: editorIncludeTagSelectedCount,
+      excludeTagSelectedCount: editorExcludeTagSelectedCount,
       keywordCatalogCount: editorKeywordCatalog.length,
       hasKeywordCatalog: editorKeywordCatalog.length > 0,
       keywordIncludeOptions: editorKeywordIncludeOptions,
@@ -16903,8 +17940,19 @@ function readMerchantDefinitionPatchFromElement(element) {
     return Boolean(node.checked);
   };
   const getList = (selector, normalizer = normalizeMerchantTagList) => {
-    const node = pageRoot.querySelector(selector);
-    if (!node) return undefined;
+    const nodes = Array.from(pageRoot.querySelectorAll(selector));
+    if (nodes.length <= 0) return undefined;
+    const checkboxNodes = nodes.filter(
+      (entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox"
+    );
+    if (checkboxNodes.length > 0) {
+      const values = checkboxNodes
+        .filter((entry) => Boolean(entry?.checked))
+        .map((entry) => String(entry?.value ?? "").trim())
+        .filter(Boolean);
+      return normalizer(values);
+    }
+    const [node] = nodes;
     const text = String(node?.value ?? "").trim();
     if (!text) return [];
     return normalizer(text.split(/[\n,;]+/));
@@ -16939,17 +17987,35 @@ function readMerchantDefinitionPatchFromElement(element) {
   };
   const merchantId = getText("input[name='merchantId']");
   const existingMerchant = merchantId ? getMerchantById(merchantId) : null;
-  const existingStock = existingMerchant?.stock ?? {};
-  const existingPricing = existingMerchant?.pricing ?? {};
-  const existingAllowedTypes = normalizeMerchantAllowedItemTypes(existingMerchant?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
-  const raceInput = (
-    getText("select[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
-    || getText("input[name='merchantRace']", { missing: existingMerchant?.race ?? "" })
+  const draftState = getMerchantEditorDraftState();
+  const selectionKey = normalizeMerchantEditorSelectionKey(getMerchantEditorSelection());
+  const draftBaseline = (draftState && draftState.selectionKey === selectionKey && draftState.draft)
+    ? getMerchantDefinitionDraftSource(draftState.draft)
+    : null;
+  const editorBaseline = getMerchantDefinitionDraftSource(
+    draftBaseline
+      ? {
+        ...foundry.utils.deepClone(existingMerchant ?? {}),
+        ...foundry.utils.deepClone(draftBaseline),
+        pricing: {
+          ...foundry.utils.deepClone(existingMerchant?.pricing ?? {}),
+          ...foundry.utils.deepClone(draftBaseline?.pricing ?? {})
+        },
+        stock: {
+          ...foundry.utils.deepClone(existingMerchant?.stock ?? {}),
+          ...foundry.utils.deepClone(draftBaseline?.stock ?? {})
+        }
+      }
+      : (existingMerchant ?? {})
   );
-  const selectedOfferTags = Array.from(pageRoot.querySelectorAll("input[name='merchantOfferTag']:checked"))
-    .map((entry) => String(entry?.value ?? "").trim().toLowerCase())
-    .filter(Boolean);
-  const accessMode = getText("select[name='merchantAccessMode']", { missing: existingMerchant?.accessMode ?? MERCHANT_ACCESS_MODES.ALL });
+  const existingStock = editorBaseline?.stock ?? {};
+  const existingPricing = editorBaseline?.pricing ?? {};
+  const existingAllowedTypes = normalizeMerchantAllowedItemTypes(editorBaseline?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
+  const raceInput = (
+    getText("select[name='merchantRace']", { missing: editorBaseline?.race ?? "" })
+    || getText("input[name='merchantRace']", { missing: editorBaseline?.race ?? "" })
+  );
+  const accessMode = getText("select[name='merchantAccessMode']", { missing: editorBaseline?.accessMode ?? MERCHANT_ACCESS_MODES.ALL });
   const sellRatePercent = getNumber(
     "input[name='merchantSellRatePercent']",
     Number(existingPricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100
@@ -16973,18 +18039,13 @@ function readMerchantDefinitionPatchFromElement(element) {
     getText("select[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
     || getText("input[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
   );
-  const allowedTypes = resolveMerchantAllowedTypesFromOfferTags(selectedOfferTags, existingAllowedTypes);
+  const allowedTypes = existingAllowedTypes;
   const markupPercent = getNumber(
     "input[name='merchantMarkupPercent']",
     Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
   );
   const sourceType = getText("select[name='merchantSourceType']", { missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER });
-  const previousDraft = getMerchantEditorDraftState()?.draft ?? {};
-  const previousSourceType = normalizeMerchantSourceType(
-    previousDraft?.stock?.sourceType
-    ?? existingStock?.sourceType
-    ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-  );
+  const previousSourceType = normalizeMerchantSourceType(existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
   const existingSourceRefs = getMerchantSourceRefIdsFromStock(existingStock);
   const hasSourceRefCheckboxes = pageRoot.querySelectorAll("input[name='merchantSourceRef']").length > 0;
   const sourceRefsFromSelect = normalizeMerchantSourceType(sourceType) === previousSourceType
@@ -17008,16 +18069,16 @@ function readMerchantDefinitionPatchFromElement(element) {
   }, existingStock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
   return buildMerchantDefinitionPatchFromEditorFormDomain({
     id: merchantId,
-    name: getText("input[name='merchantName']", { missing: existingMerchant?.name ?? "" }),
-    title: getText("input[name='merchantTitle']", { missing: existingMerchant?.title ?? "" }),
+    name: getText("input[name='merchantName']", { missing: editorBaseline?.name ?? "" }),
+    title: getText("input[name='merchantTitle']", { missing: editorBaseline?.title ?? "" }),
     race: normalizeMerchantRace(raceInput),
-    img: getText("input[name='merchantImg']", { missing: existingMerchant?.img ?? "" }),
-    settlement: getText("select[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }) || getText("input[name='merchantSettlement']", { missing: existingMerchant?.settlement ?? "" }),
+    img: getText("input[name='merchantImg']", { missing: editorBaseline?.img ?? "" }),
+    settlement: getText("select[name='merchantSettlement']", { missing: editorBaseline?.settlement ?? "" }) || getText("input[name='merchantSettlement']", { missing: editorBaseline?.settlement ?? "" }),
     accessMode,
     sourceType,
     sourceRef: sourceRef || getText("input[name='merchantSourceRef']", { missing: "" }),
     sourceRefs: selectedSourceRefs,
-    actorId: getText("select[name='merchantActorId']") || String(existingMerchant?.actorId ?? ""),
+    actorId: getText("select[name='merchantActorId']") || String(editorBaseline?.actorId ?? ""),
     scarcity: getText("select[name='merchantScarcity']", { missing: existingStock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity }),
     includeTags: getList("input[name='merchantIncludeTags']", normalizeMerchantTagList) ?? existingStock?.includeTags ?? [],
     excludeTags: getList("input[name='merchantExcludeTags']", normalizeMerchantTagList) ?? existingStock?.excludeTags ?? [],
@@ -17097,6 +18158,119 @@ function selectMerchantStockRows(candidates = [], merchant = {}) {
   });
 }
 
+const MERCHANT_STOCK_VALUE_FALLBACK_BY_RARITY = Object.freeze({
+  common: 5,
+  uncommon: 75,
+  rare: 750,
+  "very-rare": 7500,
+  legendary: 25000
+});
+
+function getMerchantStockTargetValueGp(merchant = {}) {
+  const raw = Number(merchant?.stock?.targetValueGp ?? 0);
+  return Number.isFinite(raw) ? Math.max(0, raw) : 0;
+}
+
+function getMerchantStockBudgetValueForCandidate(candidate = {}) {
+  const directValue = Number(candidate?.gpValue ?? 0);
+  if (Number.isFinite(directValue) && directValue > 0) return Math.max(0, directValue);
+  const itemData = getMerchantItemData(candidate?.data ?? candidate);
+  const itemGpValue = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
+  if (itemGpValue > 0) return itemGpValue;
+  const rarityBucket = getMerchantRarityBucket(
+    candidate?.rarityBucket
+    ?? candidate?.rarity
+    ?? getLootRarityFromData(itemData)
+  );
+  const fallbackValue = Number(
+    MERCHANT_STOCK_VALUE_FALLBACK_BY_RARITY[rarityBucket]
+    ?? MERCHANT_STOCK_VALUE_FALLBACK_BY_RARITY.common
+  );
+  return Number.isFinite(fallbackValue) ? Math.max(0.01, fallbackValue) : 0.01;
+}
+
+function constrainMerchantStockSelectionByBudget(selectedRowsInput = [], merchant = {}) {
+  const selectedRows = Array.isArray(selectedRowsInput) ? selectedRowsInput : [];
+  const targetValueGp = getMerchantStockTargetValueGp(merchant);
+  const buildTotals = (rows) => rows.reduce((sum, row) => {
+    const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
+    return sum + (getMerchantStockBudgetValueForCandidate(row) * quantity);
+  }, 0);
+  if (selectedRows.length <= 0 || targetValueGp <= 0) {
+    return {
+      rows: selectedRows,
+      targetValueGp,
+      hardCapGp: targetValueGp > 0 ? (targetValueGp + Math.max(25, targetValueGp * 0.1)) : 0,
+      totalValueGp: buildTotals(selectedRows),
+      constrained: false
+    };
+  }
+
+  const tolerance = Math.max(25, targetValueGp * 0.1);
+  const hardCapGp = targetValueGp + tolerance;
+  const unitRows = [];
+  for (const row of selectedRows) {
+    const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
+    const unitValue = getMerchantStockBudgetValueForCandidate(row);
+    for (let index = 0; index < quantity; index += 1) {
+      unitRows.push({ row, unitValue });
+    }
+  }
+  if (unitRows.length <= 0) {
+    return { rows: selectedRows, targetValueGp, hardCapGp, totalValueGp: 0, constrained: false };
+  }
+
+  const constrainedRows = [];
+  const constrainedMap = new Map();
+  let runningValueGp = 0;
+  const addRowUnit = (sourceRow) => {
+    const key = String(sourceRow?.key ?? "").trim();
+    if (!key) return false;
+    const existing = constrainedMap.get(key);
+    if (existing) {
+      existing.quantity = Math.max(1, Number(existing.quantity ?? 1) + 1);
+      return true;
+    }
+    const created = {
+      ...sourceRow,
+      quantity: 1
+    };
+    constrainedRows.push(created);
+    constrainedMap.set(key, created);
+    return true;
+  };
+
+  for (const unit of unitRows) {
+    const projected = runningValueGp + Math.max(0, Number(unit?.unitValue ?? 0) || 0);
+    if (projected > hardCapGp) continue;
+    if (!addRowUnit(unit.row)) continue;
+    runningValueGp = projected;
+  }
+
+  if (constrainedRows.length <= 0) {
+    const cheapest = [...unitRows]
+      .sort((left, right) => Number(left?.unitValue ?? 0) - Number(right?.unitValue ?? 0))[0];
+    if (cheapest?.row) {
+      addRowUnit(cheapest.row);
+      runningValueGp = Math.max(0, Number(cheapest?.unitValue ?? 0) || 0);
+    }
+  }
+
+  const totalValueGp = Math.max(0, Number(runningValueGp || 0));
+  const constrained = JSON.stringify(
+    selectedRows.map((row) => [String(row?.key ?? ""), Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1))])
+  ) !== JSON.stringify(
+    constrainedRows.map((row) => [String(row?.key ?? ""), Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1))])
+  );
+  return {
+    rows: constrainedRows.length > 0 ? constrainedRows : selectedRows,
+    targetValueGp,
+    hardCapGp,
+    totalValueGp,
+    constrained
+  };
+}
+
 function createMerchantOwnershipDefaults() {
   const ownership = {
     default: CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0
@@ -17160,6 +18334,8 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
   const sourceDocuments = await getMerchantSourceDocuments(merchant);
   const candidates = buildMerchantCandidateRows(sourceDocuments, merchant);
   const selected = selectMerchantStockRows(candidates, merchant);
+  const budgetedSelection = constrainMerchantStockSelectionByBudget(selected, merchant);
+  const selectedRows = Array.isArray(budgetedSelection?.rows) ? budgetedSelection.rows : selected;
   const generatedItemIds = (merchantActor.items?.contents ?? [])
     .filter((item) => item?.flags?.[MODULE_ID]?.merchantGenerated === true)
     .map((item) => String(item?.id ?? ""))
@@ -17169,7 +18345,7 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
   }
 
   const createData = [];
-  for (const candidate of selected) {
+  for (const candidate of selectedRows) {
     const data = foundry.utils.deepClone(candidate.data ?? {});
     if (!data || typeof data !== "object") continue;
     if (Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
@@ -17203,7 +18379,12 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
 
   const createdCount = createData.length;
   if (!options?.silent) {
-    ui.notifications?.info(`Refreshed stock for ${merchant.name} (${createdCount} item${createdCount === 1 ? "" : "s"}).`);
+    const targetValueGp = Math.max(0, Number(budgetedSelection?.targetValueGp ?? 0) || 0);
+    const stockValueGp = Math.max(0, Number(budgetedSelection?.totalValueGp ?? 0) || 0);
+    const budgetLabel = targetValueGp > 0
+      ? ` | Est Value ${stockValueGp.toFixed(0)} gp / Target ${targetValueGp.toFixed(0)} gp`
+      : "";
+    ui.notifications?.info(`Refreshed stock for ${merchant.name} (${createdCount} item${createdCount === 1 ? "" : "s"}${budgetLabel}).`);
   }
   return {
     ok: true,
@@ -17211,6 +18392,9 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     merchantName: String(merchant.name ?? "Merchant"),
     actorId: String(merchantActor.id ?? ""),
     createdCount,
+    generatedStockValueGp: Math.max(0, Number(budgetedSelection?.totalValueGp ?? 0) || 0),
+    targetStockValueGp: Math.max(0, Number(budgetedSelection?.targetValueGp ?? 0) || 0),
+    stockConstrainedToBudget: Boolean(budgetedSelection?.constrained),
     refreshedAt,
     refreshedBy
   };
@@ -17515,6 +18699,13 @@ async function applyMerchantTradeForUser(user, payload = {}) {
 
   const ledger = getOperationsLedger();
   const merchants = ensureMerchantsState(ledger);
+  const shopAccess = getMerchantShopAccessStateForUser(user, merchants);
+  if (!shopAccess.canTrade) {
+    return {
+      ok: false,
+      message: shopAccess.message || "Shops are currently unavailable."
+    };
+  }
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
   if (!merchant) return { ok: false, message: "Merchant not found." };
   const settlementPreference = hasSelectedMerchantSettlementPreference()
@@ -18065,6 +19256,11 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
   }
   const ledger = getOperationsLedger();
   const merchants = ensureMerchantsState(ledger);
+  const shopAccess = getMerchantShopAccessStateForUser(game.user, merchants);
+  if (!shopAccess.canTrade) {
+    ui.notifications?.warn(shopAccess.message || "Shops are currently unavailable.");
+    return;
+  }
   const settlementPreference = hasSelectedMerchantSettlementPreference()
     ? getSelectedMerchantSettlement()
     : merchants.currentSettlement;
@@ -18410,6 +19606,24 @@ function applyMerchantEditorFilters(rootLike) {
   if (!root?.querySelectorAll) return;
   const packFilterInput = root.querySelector("input[data-merchant-pack-filter]");
   const itemFilterInput = root.querySelector("input[data-merchant-item-filter]");
+  if (!root.dataset.poMerchantSuppliesDblclickBound) {
+    root.dataset.poMerchantSuppliesDblclickBound = "1";
+    root.addEventListener("dblclick", (event) => {
+      const target = event?.target instanceof Element ? event.target : null;
+      if (!target) return;
+      const clickedActionControl = target.closest?.("[data-action], button, a, input, select, textarea, label");
+      if (clickedActionControl) return;
+      void openMerchantSupplyItemFromElement(target)
+        .then((opened) => {
+          if (opened) event.preventDefault();
+        })
+        .catch((error) => {
+          if (isModuleDebugEnabled()) {
+            console.warn(`${MODULE_ID}: failed opening merchant supply item from double-click`, error);
+          }
+        });
+    });
+  }
   const packFilter = normalizeMerchantEditorFilter(packFilterInput?.value ?? getMerchantEditorPackFilter()).toLowerCase();
   const itemFilter = normalizeMerchantEditorFilter(itemFilterInput?.value ?? getMerchantEditorItemFilter()).toLowerCase();
   const applyFilter = (selector, filterNeedle) => {
@@ -18481,6 +19695,11 @@ async function refreshMerchantStockFromElement(element) {
     ui.notifications?.warn("Select a merchant first.");
     return null;
   }
+  const draftPatch = readMerchantDefinitionPatchFromElement(element);
+  if (draftPatch && String(draftPatch?.id ?? "").trim() === merchantId) {
+    const saved = await upsertMerchant(draftPatch);
+    if (saved?.id) cacheMerchantEditorDraftFromPatch(saved, saved.id);
+  }
   return refreshMerchantStock(merchantId);
 }
 
@@ -18520,6 +19739,92 @@ async function setMerchantAccessModeFromElement(element) {
   );
   const saved = await setMerchantAccessModeById(merchantId, nextMode);
   return Boolean(saved?.id);
+}
+
+async function setMerchantShopTradableById(merchantIdInput, tradable = true) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return null;
+  const saved = await upsertMerchant({
+    id: merchantId,
+    shopTradable: Boolean(tradable)
+  });
+  if (saved?.id && String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  return saved;
+}
+
+function parseMerchantTradableDatasetValue(value, fallback = true) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return Boolean(fallback);
+}
+
+async function setMerchantShopTradableFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure tradable merchants.");
+    return false;
+  }
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const currentMerchant = getMerchantById(merchantId);
+  const fallback = currentMerchant?.shopTradable !== false;
+  const nextTradable = parseMerchantTradableDatasetValue(element?.dataset?.tradable, !fallback);
+  const saved = await setMerchantShopTradableById(merchantId, nextTradable);
+  return Boolean(saved?.id);
+}
+
+async function setMerchantShopTradableForAll(enabled = true) {
+  let total = 0;
+  let updated = 0;
+  const nextValue = Boolean(enabled);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    const definitions = Array.isArray(merchants?.definitions) ? merchants.definitions : [];
+    total = definitions.length;
+    for (const merchant of definitions) {
+      if (!merchant || !merchant.id) continue;
+      const current = merchant.shopTradable !== false;
+      if (current === nextValue) continue;
+      merchant.shopTradable = nextValue;
+      updated += 1;
+    }
+  });
+  const editorSelection = normalizeMerchantEditorSelectionKey(getMerchantEditorSelection());
+  if (editorSelection && editorSelection !== "__new__") {
+    const merchant = getMerchantById(editorSelection);
+    if (merchant?.id) setMerchantEditorDraftState(merchant.id, merchant);
+  }
+  return { total, updated };
+}
+
+async function setMerchantShopTradableAllFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure tradable merchants.");
+    return false;
+  }
+  const result = await setMerchantShopTradableForAll(true);
+  if (result.total <= 0) {
+    ui.notifications?.warn("No merchants are configured.");
+    return false;
+  }
+  ui.notifications?.info(`Marked ${result.total} merchant(s) as tradable while shops are open.`);
+  return true;
+}
+
+async function setMerchantShopTradableNoneFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure tradable merchants.");
+    return false;
+  }
+  const result = await setMerchantShopTradableForAll(false);
+  if (result.total <= 0) {
+    ui.notifications?.warn("No merchants are configured.");
+    return false;
+  }
+  ui.notifications?.info("Deselected all merchants from shop trading.");
+  return true;
 }
 
 async function setMerchantAssignmentsForAllActors(merchantIdInput, assigned = true) {
@@ -18624,6 +19929,177 @@ async function setMerchantAssignmentFromElement(element) {
   if (!actorId || !merchantId) return false;
   const assigned = Boolean(element?.checked);
   return setMerchantAssignment(actorId, merchantId, assigned);
+}
+
+function setMerchantGmCollectionFilterFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can filter merchant collections.");
+    return false;
+  }
+  return setMerchantGmCollectionFilterStateFromElement(element);
+}
+
+function resetMerchantGmCollectionFilterFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can reset merchant filters.");
+    return false;
+  }
+  resetMerchantGmCollectionFilterState();
+  return true;
+}
+
+async function updateMerchantShopSessionState(patch = {}) {
+  const sourcePatch = patch && typeof patch === "object" ? patch : {};
+  let nextSession = normalizeMerchantShopSession();
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    const currentSession = normalizeMerchantShopSession(merchants.shopSession ?? {});
+    const merged = {
+      ...currentSession,
+      ...sourcePatch
+    };
+    nextSession = normalizeMerchantShopSession(merged);
+    merchants.shopSession = nextSession;
+  });
+  return nextSession;
+}
+
+async function setMerchantShopRestrictionFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restrict shop access.");
+    return false;
+  }
+  const enabled = Boolean(element?.checked);
+  const current = getMerchantShopSessionState();
+  if (current.restrictToSelected === enabled) return false;
+  await updateMerchantShopSessionState({ restrictToSelected: enabled });
+  return true;
+}
+
+async function setMerchantShopPlayerAllowedFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage shop players.");
+    return false;
+  }
+  const userId = String(element?.dataset?.userId ?? "").trim();
+  if (!userId) return false;
+  const playerUsers = getMerchantShopPlayerUsers();
+  const validUserIds = new Set(playerUsers.map((user) => String(user?.id ?? "").trim()).filter(Boolean));
+  if (!validUserIds.has(userId)) return false;
+  const current = getMerchantShopSessionState();
+  const allowedIds = new Set(normalizeMerchantShopAllowedUserIds(current.allowedUserIds ?? [], playerUsers));
+  if (Boolean(element?.checked)) allowedIds.add(userId);
+  else allowedIds.delete(userId);
+  await updateMerchantShopSessionState({ allowedUserIds: Array.from(allowedIds) });
+  return true;
+}
+
+async function setMerchantShopPlayersAllFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage shop players.");
+    return false;
+  }
+  const playerUsers = getMerchantShopPlayerUsers();
+  const userIds = playerUsers.map((user) => String(user?.id ?? "").trim()).filter(Boolean);
+  await updateMerchantShopSessionState({ allowedUserIds: userIds });
+  return true;
+}
+
+async function setMerchantShopPlayersNoneFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage shop players.");
+    return false;
+  }
+  await updateMerchantShopSessionState({ allowedUserIds: [] });
+  return true;
+}
+
+function getMerchantShopAudienceSummary(sessionInput = {}) {
+  const playerUsers = getMerchantShopPlayerUsers();
+  const session = normalizeMerchantShopSession(sessionInput, { playerUsers });
+  if (!session.restrictToSelected) return "All players";
+  const userNameById = new Map(
+    playerUsers.map((user) => [String(user?.id ?? "").trim(), String(user?.name ?? "Player").trim() || "Player"])
+  );
+  const selectedNames = session.allowedUserIds
+    .map((userId) => userNameById.get(String(userId ?? "").trim()))
+    .filter(Boolean);
+  return selectedNames.length > 0 ? selectedNames.join(", ") : "No players selected";
+}
+
+async function playMerchantShopBellSound() {
+  if (typeof AudioHelper?.play !== "function") return false;
+  try {
+    const result = AudioHelper.play({
+      src: MERCHANT_SHOP_BELL_SOUND_SRC,
+      volume: 0.9,
+      autoplay: true,
+      loop: false
+    }, true);
+    if (result && typeof result.then === "function") await result;
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: merchant bell sound failed`, error);
+    }
+    return false;
+  }
+}
+
+async function postMerchantShopBellChatCard(sessionInput = {}) {
+  const session = normalizeMerchantShopSession(sessionInput);
+  const openedAtLabel = formatMerchantTimestampLabel(session.lastOpenedAt);
+  const openedBy = String(session.lastOpenedBy ?? game.user?.name ?? "GM").trim() || "GM";
+  const accessLabel = getMerchantShopAudienceSummary(session);
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <div class="po-chat-claim po-chat-merchant-bell">
+        <h3>Shopping Window Open</h3>
+        <p>The GM rang the dinner bell. Market stalls are now open.</p>
+        <p><strong>Access:</strong> ${poEscapeHtml(accessLabel)}</p>
+        <p><strong>Opened By:</strong> ${poEscapeHtml(openedBy)} (${poEscapeHtml(openedAtLabel)})</p>
+      </div>
+    `
+  });
+}
+
+async function ringMerchantShopBellFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can open shops.");
+    return false;
+  }
+  const openedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const nextSession = await updateMerchantShopSessionState({
+    isOpen: true,
+    lastOpenedAt: Date.now(),
+    lastOpenedBy: openedBy
+  });
+  const accessLabel = getMerchantShopAudienceSummary(nextSession);
+  const [soundPlayed] = await Promise.all([
+    playMerchantShopBellSound(),
+    postMerchantShopBellChatCard(nextSession)
+  ]);
+  const soundSuffix = soundPlayed ? " Bell sounded for connected players." : "";
+  ui.notifications?.info(`Shops opened for ${accessLabel}.${soundSuffix}`);
+  return true;
+}
+
+async function closeMerchantShopsFromElement(_element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can close shops.");
+    return false;
+  }
+  const current = getMerchantShopSessionState();
+  if (!current.isOpen) return false;
+  const closedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  await updateMerchantShopSessionState({
+    isOpen: false,
+    lastClosedAt: Date.now(),
+    lastClosedBy: closedBy
+  });
+  ui.notifications?.info("Shops are now closed for players.");
+  return true;
 }
 
 async function openMerchantActorFromElement(element) {
@@ -20057,6 +21533,42 @@ function resolveWeatherFxEffectIdForPreset(preset = {}) {
   return String(match?.id ?? "").trim();
 }
 
+function resolveSceneWeatherId(scene = game.scenes?.current) {
+  const candidates = [
+    scene?.weather,
+    foundry.utils.getProperty(scene, "environment.weather"),
+    foundry.utils.getProperty(scene, "environment.weatherId"),
+    foundry.utils.getProperty(scene, "environment.weatherType")
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+async function setSceneWeatherId(scene, weatherId = "") {
+  if (!scene || typeof scene.update !== "function") return false;
+  const nextWeatherId = String(weatherId ?? "").trim();
+  const updatePaths = [
+    "weather",
+    "environment.weather",
+    "environment.weatherId",
+    "environment.weatherType"
+  ];
+  for (const path of updatePaths) {
+    try {
+      await scene.update({ [path]: nextWeatherId });
+    } catch (_error) {
+      continue;
+    }
+    const resolved = resolveSceneWeatherId(scene);
+    if (!resolved && !nextWeatherId) return true;
+    if (resolved === nextWeatherId) return true;
+  }
+  return false;
+}
+
 async function applyWeatherSceneFxForPreset(preset = {}) {
   if (!canAccessAllPlayerOps()) return;
   const scene = game.scenes?.current;
@@ -20064,15 +21576,14 @@ async function applyWeatherSceneFxForPreset(preset = {}) {
   const presetKey = String(preset?.key ?? preset?.weatherId ?? "").trim().toLowerCase();
   const effectId = resolveWeatherFxEffectIdForPreset(preset);
   const nextWeatherId = (presetKey.includes("clear") || !effectId) ? "" : effectId;
-  const currentWeatherId = String(scene.weather ?? "").trim();
+  const currentWeatherId = resolveSceneWeatherId(scene);
   if (nextWeatherId === currentWeatherId) return;
-  await scene.update({ weather: nextWeatherId });
+  await setSceneWeatherId(scene, nextWeatherId);
 }
 
 function resolveCurrentSceneWeatherSnapshot() {
   const scene = game.scenes?.current;
-  const rawId = String(scene?.weather ?? "").trim();
-  const weatherId = rawId;
+  const weatherId = resolveSceneWeatherId(scene);
   const weatherCfg = weatherId ? CONFIG.weatherEffects?.[weatherId] : null;
   const label = String(weatherCfg?.label ?? weatherCfg?.name ?? (weatherId ? weatherId : "Clear")).trim() || "Clear";
   const darknessLevel = scene?.environment?.darknessLevel;
@@ -24066,7 +25577,7 @@ async function showReputationBrief() {
 function getLootPackSourceMetaById(packId) {
   const id = String(packId ?? "").trim();
   if (!id) return null;
-  return getAvailableLootItemPackSources().find((entry) => entry.id === id) ?? null;
+  return getLootGenerationItemPackSources().find((entry) => entry.id === id) ?? null;
 }
 
 function getLootTableSourceMetaById(tableId) {
@@ -24081,8 +25592,11 @@ async function setLootManifestPack(element) {
     return;
   }
   const packId = String(element?.value ?? "").trim();
-  const validPackIds = new Set(getAvailableLootItemPackSources().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
-  const nextPackId = packId && validPackIds.has(packId) ? packId : "";
+  const selectedFolderId = parseLootWorldItemsFolderFilterId(packId);
+  const normalizedPackId = selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : packId;
+  const nextPackId = normalizedPackId && isValidLootManifestPackSelectionId(normalizedPackId)
+    ? normalizedPackId
+    : "";
   await updateLootSourceConfig((config) => {
     if (!config.filters || typeof config.filters !== "object") config.filters = {};
     config.filters.manifestPackId = nextPackId;
@@ -24120,6 +25634,10 @@ async function toggleLootPackSource(element) {
   }
   const packId = String(element?.dataset?.packId ?? "").trim();
   if (!packId) return;
+  if (packId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
+    ui.notifications?.warn("Loot generation now uses imported world items only.");
+    return;
+  }
   const enabled = Boolean(element?.checked);
   const meta = getLootPackSourceMetaById(packId);
 
@@ -24151,6 +25669,10 @@ async function setLootPackWeight(element) {
   }
   const packId = String(element?.dataset?.packId ?? "").trim();
   if (!packId) return;
+  if (packId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
+    ui.notifications?.warn("Loot generation now uses imported world items only.");
+    return;
+  }
   const weightRaw = Number(element?.value ?? 1);
   const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1;
   const meta = getLootPackSourceMetaById(packId);
@@ -24404,6 +25926,81 @@ async function openLootItemFromElement(element) {
     return;
   }
   ui.notifications?.warn("No sheet is available for that item.");
+}
+
+function getFirstDatasetText(dataset = {}, keys = []) {
+  for (const key of Array.isArray(keys) ? keys : []) {
+    const value = String(dataset?.[key] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function findItemReferenceFromElement(element) {
+  const uuidKeys = [
+    "itemUuid",
+    "uuid",
+    "documentUuid",
+    "merchantItemUuid",
+    "sourceUuid"
+  ];
+  const itemIdKeys = [
+    "itemId",
+    "merchantItemId",
+    "documentId",
+    "sourceItemId"
+  ];
+  const selector = "[data-item-uuid], [data-uuid], [data-document-uuid], [data-merchant-item-uuid], [data-source-uuid], [data-item-id], [data-merchant-item-id], [data-document-id], [data-source-item-id]";
+  let node = element instanceof Element ? element : null;
+  while (node) {
+    const uuid = getFirstDatasetText(node.dataset ?? {}, uuidKeys);
+    const itemId = getFirstDatasetText(node.dataset ?? {}, itemIdKeys);
+    if (uuid || itemId) return { uuid, itemId };
+
+    const nested = typeof node.querySelector === "function" ? node.querySelector(selector) : null;
+    if (nested) {
+      const nestedUuid = getFirstDatasetText(nested.dataset ?? {}, uuidKeys);
+      const nestedItemId = getFirstDatasetText(nested.dataset ?? {}, itemIdKeys);
+      if (nestedUuid || nestedItemId) return { uuid: nestedUuid, itemId: nestedItemId };
+    }
+    node = node.parentElement;
+  }
+  return { uuid: "", itemId: "" };
+}
+
+function findItemByIdAcrossWorldAndActors(itemId = "") {
+  const id = String(itemId ?? "").trim();
+  if (!id) return null;
+  const worldItem = game.items?.get?.(id);
+  if (worldItem) return worldItem;
+  for (const actor of game.actors?.contents ?? []) {
+    const actorItem = actor?.items?.get?.(id);
+    if (actorItem) return actorItem;
+  }
+  return null;
+}
+
+async function openItemSheetFromReference(reference = {}) {
+  const uuid = String(reference?.uuid ?? "").trim();
+  const itemId = String(reference?.itemId ?? "").trim();
+  let document = null;
+  if (uuid) {
+    document = await resolveUuidDocument(uuid);
+  }
+  if (!document && itemId) {
+    document = findItemByIdAcrossWorldAndActors(itemId);
+  }
+  if (!document || String(document?.documentName ?? "").trim() !== "Item") return false;
+  const sheet = document.sheet ?? document._sheet ?? null;
+  if (!sheet?.render) return false;
+  sheet.render(true);
+  return true;
+}
+
+async function openMerchantSupplyItemFromElement(element) {
+  const reference = findItemReferenceFromElement(element);
+  if (!reference.uuid && !reference.itemId) return false;
+  return openItemSheetFromReference(reference);
 }
 
 function buildLootPreviewResultSkeleton() {
@@ -26114,7 +27711,33 @@ async function gmQuickSelectWeatherPreset(element) {
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
   const selectedPreset = getWeatherPresetByKey(weatherState, sceneSnapshot, selectedKey);
   if (!selectedPreset) return;
-  setGmQuickWeatherDraft(buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot, { selectedKey }));
+  const draft = buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot, { selectedKey });
+  setGmQuickWeatherDraft(draft);
+
+  const rawDarkness = Number(draft?.darkness ?? selectedPreset?.darkness ?? sceneSnapshot?.darkness ?? 0);
+  const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
+  const rawVisibility = Number(draft?.visibilityModifier ?? selectedPreset?.visibilityModifier ?? 0);
+  const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
+  const daeChanges = (Array.isArray(draft?.daeChanges) ? draft.daeChanges : selectedPreset?.daeChanges ?? [])
+    .map((entry) => normalizeWeatherDaeChange(entry))
+    .filter((entry) => entry.key && entry.value);
+  const label = String(selectedPreset?.label ?? "Weather").trim() || "Weather";
+  const snapshot = {
+    id: foundry.utils.randomID(),
+    label,
+    weatherId: String(selectedPreset?.weatherId ?? selectedPreset?.key ?? "").trim(),
+    darkness,
+    visibilityModifier,
+    note: String(draft?.note ?? selectedPreset?.note ?? "").trim() || `Weather preset selected: ${label}`,
+    daeChanges,
+    loggedAt: Date.now(),
+    loggedBy: String(game.user?.name ?? "GM")
+  };
+  await updateOperationsLedger((innerLedger) => {
+    const weather = ensureWeatherState(innerLedger);
+    weather.current = snapshot;
+  });
+  await applyWeatherSceneFxForPreset(selectedPreset);
 }
 
 function gmQuickUpdateWeatherDraftField(element) {

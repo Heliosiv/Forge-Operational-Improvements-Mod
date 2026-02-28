@@ -66,6 +66,13 @@ const MERCHANT_MAX_STACK_SIZE = 25;
 const MERCHANT_MAX_RARITY_WEIGHT = 100;
 const MERCHANT_MAX_GENERATED_ITEM_COUNT = 250;
 const MERCHANT_RARITY_BUCKETS = Object.freeze(["common", "uncommon", "rare", "very-rare", "legendary"]);
+const MERCHANT_ESTIMATED_GP_BY_RARITY = Object.freeze({
+  common: 5,
+  uncommon: 75,
+  rare: 750,
+  "very-rare": 7500,
+  legendary: 25000
+});
 const MERCHANT_DEFAULT_RARITY_WEIGHTS = Object.freeze({
   common: 100,
   uncommon: 45,
@@ -1060,18 +1067,43 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   const selectedByKey = new Map();
   let totalUnits = 0;
   let runningValue = 0;
+  const budgetEnabled = targetValueGp > 0;
+  const budgetTolerance = budgetEnabled ? Math.max(25, targetValueGp * 0.1) : Infinity;
+  const budgetSoftCap = budgetEnabled ? targetValueGp : Infinity;
+  const budgetHardCap = budgetEnabled ? (targetValueGp + budgetTolerance) : Infinity;
   const canAddUnits = () => totalUnits < targetCount;
 
-  const addSelection = (candidate, quantity = 1) => {
+  const getCandidateBudgetValue = (candidate) => {
+    const base = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
+    if (base > 0) return base;
+    const bucket = getRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? "");
+    const estimated = Number(MERCHANT_ESTIMATED_GP_BY_RARITY[bucket] ?? MERCHANT_ESTIMATED_GP_BY_RARITY.common);
+    return Number.isFinite(estimated) ? Math.max(0.01, estimated) : 0.01;
+  };
+
+  const canAffordCandidate = (candidate, quantity = 1, bypassBudget = false) => {
+    if (!budgetEnabled || bypassBudget) return true;
+    const qty = Math.max(1, Number(quantity) || 1);
+    const candidateValue = getCandidateBudgetValue(candidate) * qty;
+    if (candidateValue <= 0) return true;
+    if (selected.length <= 0) return true;
+    if (runningValue >= budgetSoftCap) return false;
+    const projectedValue = runningValue + candidateValue;
+    return projectedValue <= budgetHardCap;
+  };
+
+  const addSelection = (candidate, quantity = 1, addOptions = {}) => {
     const key = String(candidate?.key ?? "").trim();
     if (!key || quantity <= 0) return false;
+    const bypassBudget = addOptions?.bypassBudget === true;
+    if (!canAffordCandidate(candidate, quantity, bypassBudget)) return false;
     const entry = selectedByKey.get(key);
-    const gpValue = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
+    const budgetValue = getCandidateBudgetValue(candidate);
     if (entry) {
       const nextQuantity = Math.max(1, Number(entry.quantity ?? 1) + quantity);
       entry.quantity = nextQuantity;
       totalUnits += quantity;
-      runningValue += gpValue * quantity;
+      runningValue += budgetValue * quantity;
       return true;
     }
     const created = {
@@ -1081,7 +1113,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     selected.push(created);
     selectedByKey.set(key, created);
     totalUnits += created.quantity;
-    runningValue += gpValue * created.quantity;
+    runningValue += budgetValue * created.quantity;
     return true;
   };
 
@@ -1093,7 +1125,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   const getBudgetWeight = (candidate) => {
     if (targetValueGp <= 0) return 1;
-    const value = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
+    const value = getCandidateBudgetValue(candidate);
     const remainingValue = Math.max(0, targetValueGp - runningValue);
     const remainingSlots = Math.max(1, targetCount - totalUnits);
     const desiredValue = Math.max(0.01, remainingValue / remainingSlots);
@@ -1115,23 +1147,28 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       if (!canAddUnits()) break;
       const match = candidateByKey.get(String(uuid ?? "").trim());
       if (!match) continue;
-      addSelection(match, 1);
+      addSelection(match, 1, { bypassBudget: true });
     }
   }
 
   let safety = 0;
   while (canAddUnits() && safety < (targetCount * 30)) {
+    if (budgetEnabled && runningValue >= budgetSoftCap && selected.length > 0) break;
     safety += 1;
-    const remainingCandidates = shuffled.filter((entry) => !selectedByKey.has(String(entry?.key ?? "").trim()));
-    const duplicatePool = selected.filter((entry) => Number(entry?.quantity ?? 1) < maxStackSize);
+    const remainingCandidates = shuffled
+      .filter((entry) => !selectedByKey.has(String(entry?.key ?? "").trim()));
+    const duplicatePool = selected
+      .filter((entry) => Number(entry?.quantity ?? 1) < maxStackSize);
+    const affordableCandidates = remainingCandidates.filter((entry) => canAffordCandidate(entry, 1));
+    const affordableDuplicates = duplicatePool.filter((entry) => canAffordCandidate(entry, 1));
 
-    const canDuplicate = duplicatePool.length > 0;
+    const canDuplicate = affordableDuplicates.length > 0;
     const shouldDuplicate = canDuplicate && duplicateChance > 0 && random() < duplicateChance;
     if (shouldDuplicate) {
-      const duplicatePick = chooseWeightedRow(duplicatePool, (entry) => {
+      const duplicatePick = chooseWeightedRow(affordableDuplicates, (entry) => {
         const rarityWeight = getRarityWeight(entry);
         const valueWeight = getBudgetWeight(entry);
-        const value = Math.max(0, Number(entry?.gpValue ?? 0) || 0);
+        const value = getCandidateBudgetValue(entry);
         const affordableBoost = targetValueGp > 0 && value <= Math.max(0, targetValueGp - runningValue) ? 1.1 : 1;
         return rarityWeight * valueWeight * affordableBoost;
       }, random);
@@ -1141,8 +1178,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       }
     }
 
-    if (remainingCandidates.length > 0) {
-      const picked = chooseWeightedRow(remainingCandidates, getSelectionWeight, random);
+    if (affordableCandidates.length > 0) {
+      const picked = chooseWeightedRow(affordableCandidates, getSelectionWeight, random);
       if (picked) {
         addSelection(picked, 1);
         continue;
@@ -1150,7 +1187,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     }
 
     if (canDuplicate) {
-      const fallbackDuplicate = chooseWeightedRow(duplicatePool, getSelectionWeight, random);
+      const fallbackDuplicate = chooseWeightedRow(affordableDuplicates, getSelectionWeight, random);
       if (fallbackDuplicate) {
         addSelection(fallbackDuplicate, 1);
         continue;

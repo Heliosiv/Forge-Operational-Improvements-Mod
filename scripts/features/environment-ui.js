@@ -23,7 +23,8 @@ export function createGmEnvironmentPageApp(deps) {
     gmQuickSubmitWeather,
     gmQuickSelectWeatherPreset,
     gmQuickUpdateWeatherDraftField,
-    gmQuickApplyWeatherDaeKeyPreset
+    gmQuickApplyWeatherDaeKeyPreset,
+    openGmPanelByKey
   } = deps;
 
   return class GmEnvironmentPageApp extends BaseStatefulPageApp {
@@ -72,6 +73,12 @@ export function createGmEnvironmentPageApp(deps) {
         },
         "gm-environment-page-refresh": async () => {
           rerender();
+        },
+        "gm-panel-tab": async (actionElement) => {
+          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
+          if (!panelKey) return;
+          if (panelKey === "environment") return;
+          openGmPanelByKey(panelKey, { force: false });
         },
         "set-environment-sync-non-party": async (actionElement) => {
           await setOperationalEnvironmentSyncNonParty(actionElement);

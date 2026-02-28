@@ -22,7 +22,8 @@ export function createGmDowntimePageApp(deps) {
     removeDowntimeResolverItemDropFromUi,
     addDowntimeResolverCraftingItemDropFromDropEvent,
     addDowntimeResolverItemRewardFromDropEvent,
-    renderDowntimeResolverItemDropList
+    renderDowntimeResolverItemDropList,
+    openGmPanelByKey
   } = deps;
 
   return class GmDowntimePageApp extends BaseStatefulPageApp {
@@ -67,6 +68,12 @@ export function createGmDowntimePageApp(deps) {
         },
         "gm-downtime-page-refresh": async () => {
           rerender();
+        },
+        "gm-panel-tab": async (actionElement) => {
+          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
+          if (!panelKey) return;
+          if (panelKey === "downtime") return;
+          openGmPanelByKey(panelKey, { force: false });
         },
         "set-downtime-entry-sort": async (actionElement) => {
           setGmDowntimeViewState({ entriesSort: String(actionElement?.value ?? "") });

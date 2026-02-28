@@ -8,6 +8,7 @@ export function createGmLootPageApp(deps) {
     openGmLootClaimsBoard,
     getLootClaimRunIdFromElement,
     setActiveLootRegistryTab,
+    setActiveLootSettingsTab,
     setLootPackSourcesUiState,
     toggleLootPackSource,
     setLootPackWeight,
@@ -29,7 +30,8 @@ export function createGmLootPageApp(deps) {
     publishLootPreviewToClaims,
     clearLootClaimsPool,
     openLootItemFromElement,
-    addLootPreviewItemFromDropEvent
+    addLootPreviewItemFromDropEvent,
+    openGmPanelByKey
   } = deps;
 
   return class GmLootPageApp extends BaseStatefulPageApp {
@@ -37,7 +39,7 @@ export function createGmLootPageApp(deps) {
       id: "party-operations-gm-loot-page",
       classes: ["party-operations"],
       window: { title: "Party Operations - GM Loot" },
-      position: getResponsiveWindowPosition?.("gm-loot") ?? { width: 980, height: 760 },
+      position: getResponsiveWindowPosition?.("gm-loot", { width: 9999, height: 9999 }) ?? { width: 1800, height: 980 },
       resizable: true
     });
 
@@ -84,6 +86,12 @@ export function createGmLootPageApp(deps) {
         "gm-loot-page-refresh": async () => {
           rerender();
         },
+        "gm-panel-tab": async (actionElement) => {
+          const panelKey = String(actionElement?.dataset?.panel ?? "").trim().toLowerCase();
+          if (!panelKey) return;
+          if (panelKey === "loot") return;
+          openGmPanelByKey(panelKey, { force: false });
+        },
         "open-gm-loot-claims-board": async (actionElement) => {
           openGmLootClaimsBoard({
             force: true,
@@ -92,6 +100,10 @@ export function createGmLootPageApp(deps) {
         },
         "set-loot-registry-tab": async (actionElement) => {
           setActiveLootRegistryTab(String(actionElement?.dataset?.tab ?? "preview"));
+          rerender();
+        },
+        "set-loot-settings-tab": async (actionElement) => {
+          setActiveLootSettingsTab(String(actionElement?.dataset?.tab ?? "sources"));
           rerender();
         },
         "set-loot-pack-filter": async (actionElement, event) => {
