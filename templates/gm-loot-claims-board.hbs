@@ -66,11 +66,12 @@
       <div class="po-op-role-row po-loot-claim-card">
         <div class="po-op-role-head">
           <div class="po-op-role-name">{{name}}</div>
-          <div class="po-op-role-status">{{itemType}}</div>
+          <div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div>
         </div>
 
         <div class="po-loot-claim-tags">
           {{#if hasRarity}}<span class="po-pill">Rarity: {{rarity}}</span>{{/if}}
+          {{#if hasQuantity}}<span class="po-pill">Qty: {{quantity}}</span>{{/if}}
           <span class="po-pill">Source: {{sourceLabel}}</span>
           {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
           {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">Selected actor vouched</span>{{/if}}

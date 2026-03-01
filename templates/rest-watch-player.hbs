@@ -1,8 +1,8 @@
-﻿<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Rest Watch Player View">
+<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Player View">
   <header class="po-header">
     <div class="po-header-main">
       <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
-      <div class="po-subtitle" aria-live="polite">Rest Watch (Player) - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
+      <div class="po-subtitle" aria-live="polite">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch (Player){{/if}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
     <div class="po-context-pill" aria-hidden="true">Player View</div>
     <div class="po-controls">
@@ -13,195 +13,38 @@
   </header>
 
   <div class="po-body">
-  <section class="po-overview" aria-label="Rest watch status">
-    <article class="po-overview-card">
-      <span>Slots Filled</span>
-      <strong>{{overview.occupiedSlots}} / {{overview.totalSlots}}</strong>
-    </article>
-    <article class="po-overview-card">
-      <span>Assigned Entries</span>
-      <strong>{{overview.assignedEntries}}</strong>
-    </article>
-    <article class="po-overview-card {{#if overview.hasLowDarkvisionCoverage}}is-alert{{/if}}">
-      <span>Low Darkvision Slots</span>
-      <strong>{{overview.lowDarkvisionSlots}}</strong>
-    </article>
-  </section>
+    {{#if playerHubSimpleMode}}
+    <section class="po-content po-player-hub-shell">
+      <nav class="po-tabs po-tabs-sub po-player-hub-tabs" role="tablist" aria-label="Player Hub Tabs">
+        <button type="button" class="po-tab {{#if playerHubWatch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="watch" aria-selected="{{#if playerHubWatch}}true{{else}}false{{/if}}">Watch</button>
+        <button type="button" class="po-tab {{#if playerHubMarch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="march" aria-selected="{{#if playerHubMarch}}true{{else}}false{{/if}}">March</button>
+        <button type="button" class="po-tab {{#if playerHubLoot}}is-active{{/if}}" data-action="player-hub-tab" data-tab="loot" aria-selected="{{#if playerHubLoot}}true{{else}}false{{/if}}">Loot</button>
+        <button type="button" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
+      </nav>
 
-  <section class="po-content">
-    <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor.</div>
-    <div class="po-op-divider"></div>
-    <section class="po-loot-claims-panel" aria-label="Loot claims">
-      <div class="po-section-head-row">
-        <div class="po-section-title">Loot Claims</div>
-        <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
-      </div>
-      <div class="po-hint">Choose a loot run below, then handle claims and currency in the Live Claim Board.</div>
-      {{#if lootClaims.hasOpenRuns}}
-      <div class="po-loot-claims-run-grid">
-        {{#each lootClaims.openRuns}}
-        <article class="po-op-role-row po-loot-claim-run-card {{#if selected}}is-selected{{/if}}">
-          <div class="po-op-role-head">
-            <div class="po-op-role-name">Loot Run</div>
-            <div class="po-op-role-status">{{statusLabel}}</div>
-          </div>
-          <div class="po-loot-claim-tags">
-            <span class="po-pill">Items: {{itemCount}}</span>
-            <span class="po-pill">Claims: {{claimsLogCount}}</span>
-            {{#if hasContestedItems}}<span class="po-pill is-warn">Contested: {{contestedItemCount}}</span>{{/if}}
-            {{#if hasCurrencyRemaining}}<span class="po-pill">Currency Open</span>{{/if}}
-          </div>
-          <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
-          <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Live Claim Board</button>
-          </div>
-        </article>
-        {{/each}}
-      </div>
-      {{else}}
-      <div class="po-op-summary">No active loot claim boards.</div>
+      {{#if playerHubWatch}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs"}}
       {{/if}}
-      <details class="po-panel-disclosure po-loot-claim-archive-panel">
-        <summary class="po-panel-disclosure-summary">
-          <span class="po-section-title">Archived Loot Claims</span>
-          <span class="po-op-summary">{{lootClaims.archivedRunCount}} archived</span>
-        </summary>
-        <div class="po-panel-disclosure-body">
-          {{#if lootClaims.hasArchivedRuns}}
-          <label class="po-resource-row po-loot-claim-sort-row">
-            <span>Sort</span>
-            <select name="lootClaimsArchiveSort" class="po-select" data-action="set-loot-claims-archive-sort">
-              {{#each lootClaims.archiveSortOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <div class="po-loot-claims-run-grid is-archived">
-            {{#each lootClaims.archivedRuns}}
-            <article class="po-op-role-row po-loot-claim-run-card is-archived {{#if selected}}is-selected{{/if}}">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">Loot Run</div>
-                <div class="po-op-role-status">{{statusLabel}}</div>
-              </div>
-              <div class="po-loot-claim-tags">
-                <span class="po-pill">Items: {{itemCount}}</span>
-                <span class="po-pill">Claims: {{claimsLogCount}}</span>
-                <span class="po-pill">Archived: {{archivedAtLabel}}</span>
-              </div>
-              <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
-              <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Board Snapshot</button>
-              </div>
-            </article>
-            {{/each}}
-          </div>
-          {{else}}
-          <div class="po-op-summary">No archived loot claims yet.</div>
-          {{/if}}
-        </div>
-      </details>
+
+      {{#if playerHubMarch}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs"}}
+      {{/if}}
+
+      {{#if playerHubLoot}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs"}}
+      {{/if}}
+
+      {{#if playerHubDowntime}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-downtime.hbs"}}
+      {{/if}}
     </section>
-    <div class="po-op-divider"></div>
-    <div class="po-cards">
-      {{#each slots}}
-      <article class="po-card" data-slot-id="{{id}}">
-        <div class="po-card-left">
-          <div class="po-slot-badge">{{label}}</div>
-          {{#if timeRange}}
-          <div class="po-time-range">{{timeRange}}</div>
-          {{/if}}
-        </div>
-
-        <div class="po-card-center">
-          {{#if hasEntries}}
-          {{#each entries}}
-          <div class="po-watch-entry" data-actor-id="{{actorId}}">
-            <div class="po-actor">
-              <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
-              <div class="po-actor-meta">
-                <div class="po-actor-name">
-                  {{actor.name}}
-                  <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
-                    <i class="fa-solid fa-location-dot"></i>
-                  </button>
-                </div>
-                <div class="po-watch-stats">
-                  {{#if actor.passivePerception}}
-                  <div class="po-stat po-stat-primary">
-                    <span class="po-stat-label">PP</span>
-                    <span class="po-stat-value">{{actor.passivePerception}}</span>
-                  </div>
-                  {{/if}}
-                </div>
-              </div>
-            </div>
-
-            {{#if activity}}
-            <div class="po-activity-section">
-              <div class="po-activity-row is-compact">
-                <div class="po-exhaustion-badge {{#if activity.exhaustion}}is-exhausted{{/if}}" title="Exhaustion: {{activity.exhaustionLabel}}">
-                  {{#if activity.exhaustion}}
-                  <i class="fa-solid fa-heart-crack"></i>
-                  <span>{{activity.exhaustion}}</span>
-                  {{else}}
-                  <i class="fa-solid fa-heart"></i>
-                  {{/if}}
-                </div>
-              </div>
-            </div>
-            {{/if}}
-
-            <div class="po-entry-actions">
-              <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-controls="po-player-notes-{{../id}}-{{actorId}}" aria-expanded="{{#if notes}}true{{else}}false{{/if}}" aria-label="Toggle notes for {{actor.name}}">
-                <i class="fa-solid fa-note-sticky"></i>
-              </button>
-              {{#if canClear}}
-              <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
-                <i class="fa-solid fa-xmark"></i>
-              </button>
-              {{/if}}
-            </div>
-
-            <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
-              <label class="po-sr-only" for="po-player-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-              <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
-              {{#if canEditNotes}}
-              <div class="po-notes-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
-              </div>
-              {{#if @root.notesDebugHint}}
-              <div class="po-note-label">{{@root.notesDebugHint}}</div>
-              {{/if}}
-              {{/if}}
-            </div>
-          </div>
-          {{/each}}
-          {{/if}}
-
-          {{#unless hasEntries}}
-          <div class="po-empty">
-            <div class="po-empty-text">Assign character(s)...</div>
-          </div>
-          {{/unless}}
-
-          <div class="po-assign-actions">
-            {{#if canAssignMe}}
-            <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
-            {{/if}}
-          </div>
-        </div>
-      </article>
-      {{/each}}
-    </div>
-  </section>
+    {{else}}
+    {{> "modules/party-operations/templates/partials/rest-watch-player/classic.hbs"}}
+    {{/if}}
   </div>
 
   <footer class="po-footer">
-    <div class="po-footer-text">Rest Watch</div>
-    <div class="po-footer-text">Player view</div>
+    <div class="po-footer-text">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch{{/if}}</div>
+    <div class="po-footer-text">{{#if playerHubSimpleMode}}{{#if playerHubWatch}}Watch{{/if}}{{#if playerHubMarch}}March{{/if}}{{#if playerHubLoot}}Loot{{/if}}{{#if playerHubDowntime}}Downtime{{/if}}{{else}}Player view{{/if}}</div>
   </footer>
 </div>
-
-

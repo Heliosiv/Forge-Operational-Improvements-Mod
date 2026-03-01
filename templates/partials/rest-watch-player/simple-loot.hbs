@@ -1,0 +1,30 @@
+<section class="po-player-hub-panel po-loot-claims-panel" aria-label="Loot">
+  <div class="po-section-head-row">
+    <div class="po-section-title">Loot Claims</div>
+    <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
+  </div>
+  <div class="po-hint">Claims are resolved in the Live Claim Board. Pick a run and open it.</div>
+  {{#if lootClaims.hasOpenRuns}}
+  <div class="po-loot-claims-run-grid">
+    {{#each lootClaims.openRuns}}
+    <article class="po-op-role-row po-loot-claim-run-card {{#if selected}}is-selected{{/if}}">
+      <div class="po-op-role-head">
+        <div class="po-op-role-name">Loot Run</div>
+        <div class="po-op-role-status">{{statusLabel}}</div>
+      </div>
+      <div class="po-loot-claim-tags">
+        <span class="po-pill">Items: {{itemCount}}</span>
+        <span class="po-pill">Claims: {{claimsLogCount}}</span>
+        {{#if hasContestedItems}}<span class="po-pill is-warn">Contested: {{contestedItemCount}}</span>{{/if}}
+      </div>
+      <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Live Claim Board</button>
+      </div>
+    </article>
+    {{/each}}
+  </div>
+  {{else}}
+  <div class="po-op-summary">No active loot claim boards.</div>
+  {{/if}}
+</section>

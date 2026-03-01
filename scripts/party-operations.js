@@ -160,6 +160,7 @@ export const SETTINGS = {
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
+  PLAYER_HUB_MODE: "playerHubMode",
   SHARED_GM_PERMISSIONS: "sharedGmPermissions",
   DEBUG_ENABLED: "debugEnabled",
   LOOT_SCARCITY: "lootScarcity",
@@ -227,6 +228,20 @@ const LAUNCHER_PLACEMENTS = {
   SIDEBAR: "sidebar",
   BOTH: "both"
 };
+const PLAYER_HUB_MODES = Object.freeze({
+  SIMPLE: "simple",
+  ADVANCED: "advanced"
+});
+const PLAYER_HUB_ACTION_TYPES = Object.freeze({
+  ASSIGN_WATCH: "assignWatch",
+  SET_MARCH_RANK: "setMarchRank",
+  CLAIM_LOOT: "claimLoot",
+  SUBMIT_DOWNTIME: "submitDowntime"
+});
+const PLAYER_HUB_CLAIM_VARIANTS = Object.freeze({
+  ITEM: "item",
+  CURRENCY: "currency"
+});
 const GATHER_TRAVEL_CHOICES = Object.freeze({
   PACE: "pace",
   FELL_BEHIND: "fell-behind"
@@ -358,6 +373,13 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
+const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
+  "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs",
+  "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs",
+  "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs",
+  "modules/party-operations/templates/partials/rest-watch-player/simple-downtime.hbs",
+  "modules/party-operations/templates/partials/rest-watch-player/classic.hbs"
+]);
 
 const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
   width: 9999,
@@ -727,7 +749,10 @@ function diagnoseRenderedMainTabs(root, scope = "ui") {
 }
 
 async function validatePartyOperationsTemplates() {
-  const templates = [...new Set(Object.values(PO_TEMPLATE_MAP))];
+  const templates = [...new Set([
+    ...Object.values(PO_TEMPLATE_MAP),
+    ...PO_PARTIAL_TEMPLATE_PATHS
+  ])];
   for (const templatePath of templates) {
     try {
       await getTemplate(templatePath);
@@ -736,6 +761,11 @@ async function validatePartyOperationsTemplates() {
       console.error(`${MODULE_ID}: failed to load template`, { templatePath, error });
     }
   }
+}
+
+async function preloadPartyOperationsPartialTemplates() {
+  if (typeof loadTemplates !== "function") return;
+  await loadTemplates(PO_PARTIAL_TEMPLATE_PATHS);
 }
 
 const INTEGRATION_MODES = {
@@ -816,6 +846,7 @@ const STEWARD_POOL_LEGACY_FIELD_BY_KEY = Object.freeze({
 const DEFAULT_MARCH_LIGHT_BRIGHT = 20;
 const DEFAULT_MARCH_LIGHT_DIM = 40;
 const SOP_KEYS = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
+const SOP_NOTE_EMPTY_LABEL = "No notes recorded yet.";
 const LOOT_WORLD_ITEMS_SOURCE_ID = "__world_items__";
 const LOOT_WORLD_ITEMS_SOURCE_LABEL = "Imported World Items";
 const LOOT_WORLD_ITEMS_FOLDER_FILTER_PREFIX = "world-folder:";
@@ -1723,6 +1754,91 @@ function hasActiveGmClient() {
   return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
 }
 
+function getRenderableElementRoot(html) {
+  if (!html) return null;
+  if (html instanceof HTMLElement) return html;
+  if (Array.isArray(html) && html[0] instanceof HTMLElement) return html[0];
+  if (html?.[0] instanceof HTMLElement) return html[0];
+  if (typeof html?.get === "function") {
+    const node = html.get(0);
+    if (node instanceof HTMLElement) return node;
+  }
+  return null;
+}
+
+function parseFolderOwnershipBatchLevelsFromSubmitData(submitData = {}) {
+  const source = submitData && typeof submitData === "object" ? submitData : {};
+  const levels = {};
+  for (const [key, rawValue] of Object.entries(source)) {
+    const textKey = String(key ?? "").trim();
+    if (!textKey.startsWith("ownership.")) continue;
+    const ownershipKey = textKey.slice("ownership.".length).trim();
+    if (!ownershipKey) continue;
+    const levelRaw = Number(rawValue);
+    if (!Number.isFinite(levelRaw) || levelRaw < 0) continue;
+    const level = Math.max(
+      Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0),
+      Math.min(Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3), Math.trunc(levelRaw))
+    );
+    levels[ownershipKey] = level;
+  }
+  return levels;
+}
+
+function bindFolderOwnershipProxySubmit(app, html) {
+  if (game.user?.isGM) return;
+  if (!canAccessAllPlayerOps()) return;
+  const document = app?.document ?? null;
+  if (!document || String(document?.documentName ?? "").trim() !== "Folder") return;
+  const folderId = String(document?.id ?? "").trim();
+  if (!folderId) return;
+  const root = getRenderableElementRoot(html);
+  const form = root?.querySelector?.("form");
+  if (!(form instanceof HTMLFormElement)) return;
+  if (form.dataset.poOwnershipProxyBound === "1") return;
+  form.dataset.poOwnershipProxyBound = "1";
+
+  form.addEventListener("submit", async (event) => {
+    if (game.user?.isGM || !canAccessAllPlayerOps()) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    let submitData = {};
+    try {
+      if (typeof app?._getSubmitData === "function") {
+        submitData = app._getSubmitData() ?? {};
+      } else {
+        const raw = new FormData(form);
+        submitData = Object.fromEntries(raw.entries());
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed reading folder ownership submit data`, error);
+      ui.notifications?.warn("Unable to read folder permission changes.");
+      return;
+    }
+
+    const levels = parseFolderOwnershipBatchLevelsFromSubmitData(submitData);
+    if (Object.keys(levels).length <= 0) {
+      ui.notifications?.info("No ownership changes selected.");
+      return;
+    }
+
+    try {
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:folder-ownership-write",
+        userId: game.user.id,
+        folderId,
+        levels
+      });
+      ui.notifications?.info("Applying folder permissions through active GM...");
+      app.close();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed sending folder ownership proxy request`, error);
+      ui.notifications?.warn("Failed to send folder permission update request.");
+    }
+  });
+}
+
 function normalizeStewardPoolMode(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === STEWARD_POOL_MODES.FINITE) return STEWARD_POOL_MODES.FINITE;
@@ -2104,6 +2220,20 @@ function registerPartyOpsSettings(onSettingsChanged = () => {}) {
     onChange: (value) => notifySettingChanged(SETTINGS.MARCHING_ORDER_LOCK_PLAYERS, Boolean(value))
   });
 
+  game.settings.register(MODULE_ID, SETTINGS.PLAYER_HUB_MODE, {
+    name: "Player Hub Mode",
+    hint: "Choose the player-facing Party Operations UI: streamlined hub or full classic layout.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [PLAYER_HUB_MODES.SIMPLE]: "Simple (Hub)",
+      [PLAYER_HUB_MODES.ADVANCED]: "Advanced (Classic)"
+    },
+    default: PLAYER_HUB_MODES.SIMPLE,
+    onChange: (value) => notifySettingChanged(SETTINGS.PLAYER_HUB_MODE, normalizePlayerHubMode(value))
+  });
+
   game.settings.register(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG, {
     name: "Party Operations Config",
     hint: "Validated module config payload for loot/scarcity tuning and debug wiring.",
@@ -2151,6 +2281,9 @@ async function setInventoryHookMode(mode) {
 function getModuleConfigSnapshot() {
   return {
     schema: CONFIG_SCHEMA,
+    ui: {
+      playerHubMode: getPlayerHubModeSetting()
+    },
     launcher: {
       placement: getLauncherPlacement(),
       floatingLocked: isFloatingLauncherLocked()
@@ -4630,28 +4763,28 @@ function getMerchantGmViewTabStorageKey() {
   return `po-merchant-gm-view-tab-${game.user?.id ?? "anon"}`;
 }
 
-function normalizeMerchantGmViewTab(value, fallback = MERCHANT_GM_VIEW_TABS.EDITOR) {
+function normalizeMerchantGmViewTab(value, fallback = MERCHANT_GM_VIEW_TABS.CONFIGURED) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === MERCHANT_GM_VIEW_TABS.CITY || normalized === "city") return MERCHANT_GM_VIEW_TABS.CITY;
   if (normalized === MERCHANT_GM_VIEW_TABS.EDITOR) return MERCHANT_GM_VIEW_TABS.EDITOR;
   if (normalized === MERCHANT_GM_VIEW_TABS.SETTINGS) return MERCHANT_GM_VIEW_TABS.SETTINGS;
   if (normalized === MERCHANT_GM_VIEW_TABS.CONFIGURED || normalized === "configured") return MERCHANT_GM_VIEW_TABS.CONFIGURED;
   if (normalized === MERCHANT_GM_VIEW_TABS.SHOP || normalized === "shop") return MERCHANT_GM_VIEW_TABS.SHOP;
-  return normalizeMerchantGmViewTab(fallback, MERCHANT_GM_VIEW_TABS.EDITOR);
+  return normalizeMerchantGmViewTab(fallback, MERCHANT_GM_VIEW_TABS.CONFIGURED);
 }
 
 function getMerchantGmViewTab() {
-  return normalizeMerchantGmViewTab(sessionStorage.getItem(getMerchantGmViewTabStorageKey()), MERCHANT_GM_VIEW_TABS.EDITOR);
+  return normalizeMerchantGmViewTab(sessionStorage.getItem(getMerchantGmViewTabStorageKey()), MERCHANT_GM_VIEW_TABS.CONFIGURED);
 }
 
 function setMerchantGmViewTab(value) {
-  const next = normalizeMerchantGmViewTab(value, MERCHANT_GM_VIEW_TABS.EDITOR);
+  const next = normalizeMerchantGmViewTab(value, MERCHANT_GM_VIEW_TABS.CONFIGURED);
   sessionStorage.setItem(getMerchantGmViewTabStorageKey(), next);
   return next;
 }
 
 function setMerchantGmViewTabFromElement(element) {
-  const next = normalizeMerchantGmViewTab(element?.dataset?.tab ?? element?.value, MERCHANT_GM_VIEW_TABS.EDITOR);
+  const next = normalizeMerchantGmViewTab(element?.dataset?.tab ?? element?.value, MERCHANT_GM_VIEW_TABS.CONFIGURED);
   const current = getMerchantGmViewTab();
   if (next === current) return false;
   setMerchantGmViewTab(next);
@@ -4950,6 +5083,117 @@ function getOperationsJournalViewStorageKey() {
   return `po-operations-journal-view-${game.user?.id ?? "anon"}`;
 }
 
+function normalizePlayerHubMode(value, fallback = PLAYER_HUB_MODES.SIMPLE) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === PLAYER_HUB_MODES.ADVANCED) return PLAYER_HUB_MODES.ADVANCED;
+  if (normalized === PLAYER_HUB_MODES.SIMPLE) return PLAYER_HUB_MODES.SIMPLE;
+  return fallback;
+}
+
+function getPlayerHubModeSetting() {
+  try {
+    return normalizePlayerHubMode(game.settings.get(MODULE_ID, SETTINGS.PLAYER_HUB_MODE), PLAYER_HUB_MODES.SIMPLE);
+  } catch {
+    return PLAYER_HUB_MODES.SIMPLE;
+  }
+}
+
+function normalizePlayerHubActionType(value) {
+  const normalized = String(value ?? "").trim();
+  switch (normalized) {
+    case PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH:
+      return PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH;
+    case PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK:
+      return PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK;
+    case PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT:
+      return PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT;
+    case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
+      return PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME;
+    default:
+      return "";
+  }
+}
+
+function normalizePlayerHubClaimVariant(value, fallback = PLAYER_HUB_CLAIM_VARIANTS.ITEM) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.CURRENCY) return PLAYER_HUB_CLAIM_VARIANTS.CURRENCY;
+  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.ITEM) return PLAYER_HUB_CLAIM_VARIANTS.ITEM;
+  return fallback;
+}
+
+async function submitPlayerHubAction(type, payload = {}) {
+  const actionType = normalizePlayerHubActionType(type);
+  if (!actionType) return { handled: false, rerender: false };
+  const element = payload?.element ?? null;
+  switch (actionType) {
+    case PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH:
+      await assignSlotToUser(element);
+      return { handled: true, rerender: false };
+    case PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK:
+      await joinRank(element);
+      return { handled: true, rerender: true };
+    case PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT:
+      if (normalizePlayerHubClaimVariant(payload?.claimVariant) === PLAYER_HUB_CLAIM_VARIANTS.CURRENCY) {
+        await claimLootCurrencyForPlayer(element);
+      } else {
+        await claimLootItemForPlayer(element);
+      }
+      return { handled: true, rerender: false };
+    case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
+      await submitDowntimeAction(element);
+      return { handled: true, rerender: true };
+    default:
+      return { handled: false, rerender: false };
+  }
+}
+
+function getPlayerHubTabStorageKey() {
+  return `po-player-hub-tab-${game.user?.id ?? "anon"}`;
+}
+
+function normalizePlayerHubTab(value, fallback = "watch") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "march") return "march";
+  if (normalized === "loot") return "loot";
+  if (normalized === "downtime") return "downtime";
+  if (normalized === "watch") return "watch";
+  return fallback;
+}
+
+function getPlayerHubTab() {
+  return normalizePlayerHubTab(sessionStorage.getItem(getPlayerHubTabStorageKey()), "watch");
+}
+
+function setPlayerHubTab(value) {
+  const normalized = normalizePlayerHubTab(value, "watch");
+  sessionStorage.setItem(getPlayerHubTabStorageKey(), normalized);
+  return normalized;
+}
+
+function getPlayerHubActionRequestFromUiAction(action) {
+  const normalized = String(action ?? "").trim().toLowerCase();
+  switch (normalized) {
+    case "assign-me":
+      return { type: PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH };
+    case "set-player-rank":
+      return { type: PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK };
+    case "submit-downtime-action":
+      return { type: PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME };
+    case "claim-loot-item":
+      return {
+        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
+        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.ITEM
+      };
+    case "claim-loot-currency":
+      return {
+        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
+        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
+      };
+    default:
+      return null;
+  }
+}
+
 function getOperationsJournalViewState() {
   const fallback = { filter: "", sort: "newest", category: "all" };
   const raw = sessionStorage.getItem(getOperationsJournalViewStorageKey());
@@ -5085,6 +5329,32 @@ function getSopNoteTextareaFromElement(element) {
   }
   const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
   return root?.querySelector?.(`textarea[data-action='set-sop-note'][data-sop='${sopKey}']`) ?? null;
+}
+
+function getSopNoteViewElement(root, sopKeyInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return null;
+  return root?.querySelector?.(`[data-sop-note-view='${sopKey}']`) ?? null;
+}
+
+function syncOperationalSopNoteViewFromElement(element, noteOverride = null) {
+  const sopKey = String(element?.dataset?.sop ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
+  const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
+  const viewNode = getSopNoteViewElement(root, sopKey);
+  if (!viewNode) return;
+  const noteTextarea = getSopNoteTextareaFromElement(element);
+  const rawNote = clampSocketText(noteOverride ?? noteTextarea?.value, SOCKET_NOTE_MAX_LENGTH);
+  const hasText = rawNote.trim().length > 0;
+  viewNode.textContent = hasText ? rawNote : SOP_NOTE_EMPTY_LABEL;
+  viewNode.classList.toggle("is-empty", !hasText);
+}
+
+function syncOperationalSopNoteViews(root) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll("textarea[data-action='set-sop-note'][data-sop]").forEach((textarea) => {
+    syncOperationalSopNoteViewFromElement(textarea);
+  });
 }
 
 function buildRestWatchNoteTimerKey(slotId, actorId) {
@@ -5232,6 +5502,9 @@ function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
   if (!cached) return { note: worldNote, pendingSync: false };
   if (cached.text === worldNote) {
     clearSopCachedNoteEntry(sopKey);
+    return { note: worldNote, pendingSync: false };
+  }
+  if (!cached.pendingSync) {
     return { note: worldNote, pendingSync: false };
   }
   return { note: cached.text, pendingSync: cached.pendingSync };
@@ -5550,6 +5823,8 @@ function hydrateCachedNoteDraftInputs(root) {
     if (cached === "") return;
     if (String(input.value ?? "") !== cached) input.value = cached;
   });
+
+  syncOperationalSopNoteViews(root);
 }
 
 function buildJournalSortOptions(selectedSort = "newest") {
@@ -7280,6 +7555,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
         if (event.target?.matches("textarea[data-action='set-sop-note']")) {
+          syncOperationalSopNoteViewFromElement(event.target);
           cacheOperationalSopNoteDraftFromElement(event.target);
           scheduleOperationalSopNoteSave(this, event.target);
           return;
@@ -7813,6 +8089,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "set-sop-note": async () => {
           clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
           await setOperationalSopNote(element, { suppressUiWarning: true });
+          syncOperationalSopNoteViewFromElement(element);
         },
         "save-sop-note": async () => {
           const sopKey = String(element?.dataset?.sop ?? "").trim();
@@ -7830,6 +8107,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             suppressUiWarning: false,
             notify: true
           });
+          syncOperationalSopNoteViewFromElement(noteInput);
         },
         "set-resource": async () => {
           await setOperationalResource(element);
@@ -8989,6 +9267,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   cacheMerchantEditorDraftFromElement,
   setMerchantGmViewTab,
   setMerchantGmViewTabFromElement,
+  setMerchantEditorViewTab,
   setMerchantEditorViewTabFromElement,
   resetMerchantEditorSelection,
   createStarterMerchants,
@@ -9121,7 +9400,10 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
           return;
         }
         if (action === "claim-loot-item") {
-          await claimLootItemForPlayer(actionElement);
+          await submitPlayerHubAction(PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT, {
+            element: actionElement,
+            claimVariant: PLAYER_HUB_CLAIM_VARIANTS.ITEM
+          });
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
@@ -9145,7 +9427,10 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
           return;
         }
         if (action === "claim-loot-currency") {
-          await claimLootCurrencyForPlayer(actionElement);
+          await submitPlayerHubAction(PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT, {
+            element: actionElement,
+            claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
+          });
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
@@ -9224,8 +9509,14 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
       const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
       const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
       const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
+      const playerHubMode = getPlayerHubModeSetting();
+      const playerHubSimpleMode = playerHubMode === PLAYER_HUB_MODES.SIMPLE;
+      const playerHubTab = getPlayerHubTab();
       const lootClaims = buildLootClaimsContext(game.user);
       const operationsJournal = buildOperationsJournalContext();
+      const ledger = getOperationsLedger();
+      const downtime = buildDowntimeContext(ensureDowntimeState(ledger), { user: game.user });
+      const playerMarch = buildPlayerMarchQuickContext();
       const context = {
         isGM: false,
         locked: state.locked,
@@ -9237,8 +9528,17 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         lastUpdatedBy: state.lastUpdatedBy ?? "-",
         moduleVersion: getCurrentModuleVersion(),
         activeTab: "rest",
+        playerHubMode,
+        playerHubSimpleMode,
+        playerHubTab,
+        playerHubWatch: playerHubTab === "watch",
+        playerHubMarch: playerHubTab === "march",
+        playerHubLoot: playerHubTab === "loot",
+        playerHubDowntime: playerHubTab === "downtime",
         slots,
         miniViz,
+        playerMarch,
+        downtime,
         lootClaims,
         operationsJournal,
         ...miniVizUi,
@@ -9270,8 +9570,35 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         lastUpdatedBy: "-",
         moduleVersion: getCurrentModuleVersion(),
         activeTab: "rest",
+        playerHubMode: PLAYER_HUB_MODES.SIMPLE,
+        playerHubSimpleMode: true,
+        playerHubTab: "watch",
+        playerHubWatch: true,
+        playerHubMarch: false,
+        playerHubLoot: false,
+        playerHubDowntime: false,
         slots: [],
         miniViz: {},
+        playerMarch: {
+          hasActor: false,
+          actorId: "",
+          actorName: "",
+          currentRankId: "",
+          currentRankLabel: "Unassigned",
+          canSetRank: false,
+          lockState: "Locked",
+          rankButtons: []
+        },
+        downtime: {
+          submit: {
+            actorOptions: [],
+            actionOptions: [],
+            hours: 4,
+            note: ""
+          },
+          entries: [],
+          hasEntries: false
+        },
         lootClaims: {},
         operationsJournal: {},
         ...buildMiniVizUiContext(),
@@ -9423,10 +9750,23 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
       if (handledJournalAction) return;
+      const hubActionRequest = getPlayerHubActionRequestFromUiAction(action);
+      if (hubActionRequest) {
+        const result = await submitPlayerHubAction(hubActionRequest.type, {
+          element,
+          claimVariant: hubActionRequest.claimVariant
+        });
+        if (result?.rerender) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        return;
+      }
 
       switch (action) {
         case "refresh":
           emitSocketRefresh();
+          break;
+        case "player-hub-tab":
+          setPlayerHubTab(element?.dataset?.tab);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
           break;
         case "switch-tab":
           this.#onSwitchTabClick(event, element);
@@ -9438,9 +9778,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         case "toggle-mini-viz":
           setMiniVizCollapsed(!isMiniVizCollapsed());
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "assign-me":
-          await assignSlotToUser(element);
           break;
         case "set-activity":
           await updateActivity(element, { skipLocalRefresh: true });
@@ -9463,9 +9800,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         case "ping":
           await pingActorFromElement(element);
           break;
-        case "claim-loot-item":
-          await claimLootItemForPlayer(element);
-          break;
         case "toggle-loot-vouch":
           await toggleLootItemVouchForPlayer(element);
           break;
@@ -9482,9 +9816,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           if (setLootClaimActorSelectionFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
-          break;
-        case "claim-loot-currency":
-          await claimLootCurrencyForPlayer(element);
           break;
         case "open-gm-loot-claims-board":
           openGmLootClaimsBoard({
@@ -12435,6 +12766,58 @@ function getLootRarityBucket(rarity) {
   return normalizeLootRarity(rarity) || "common";
 }
 
+function isLootEntryStackable(entry = {}) {
+  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
+  if (itemType === "ammunition" || itemType === "ammo") return true;
+  const name = String(entry?.name ?? "").trim().toLowerCase();
+  if (!name) return false;
+  const coinLike = /\b(copper|silver|electrum|gold|platinum)\b/.test(name)
+    || /\b(cp|sp|ep|gp|pp)\b/.test(name)
+    || /\bcoins?\b/.test(name);
+  return coinLike;
+}
+
+function getLootEntryStackKey(entry = {}) {
+  if (!isLootEntryStackable(entry)) return "";
+  const uuid = String(entry?.uuid ?? "").trim();
+  if (uuid) return `uuid:${uuid}`;
+  const name = String(entry?.name ?? "").trim().toLowerCase();
+  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
+  const rarity = String(entry?.rarity ?? "").trim().toLowerCase();
+  const sourceLabel = String(entry?.sourceLabel ?? "").trim().toLowerCase();
+  return `name:${name}|type:${itemType}|rarity:${rarity}|source:${sourceLabel}`;
+}
+
+function aggregateLootEntriesForStacks(values = []) {
+  const source = Array.isArray(values) ? values : [];
+  if (source.length <= 1) return source.map((entry) => ({ ...entry, quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) }));
+  const aggregated = [];
+  const byKey = new Map();
+  for (const raw of source) {
+    if (!raw || typeof raw !== "object") continue;
+    const entry = {
+      ...raw,
+      quantity: Math.max(1, Math.floor(Number(raw?.quantity ?? 1) || 1))
+    };
+    const stackKey = getLootEntryStackKey(entry);
+    if (!stackKey) {
+      aggregated.push(entry);
+      continue;
+    }
+    const existingIndex = byKey.get(stackKey);
+    if (existingIndex === undefined) {
+      byKey.set(stackKey, aggregated.length);
+      aggregated.push(entry);
+      continue;
+    }
+    const existing = aggregated[existingIndex];
+    existing.quantity += entry.quantity;
+    existing.itemValueGp = Math.max(0, Number(existing.itemValueGp ?? 0) || 0) + Math.max(0, Number(entry.itemValueGp ?? 0) || 0);
+    aggregated[existingIndex] = existing;
+  }
+  return aggregated;
+}
+
 function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
@@ -13366,10 +13749,12 @@ async function generateLootPreviewPayload(draftInput = {}) {
     const selectionMeta = (Array.isArray(selectedItems) && selectedItems.__meta && typeof selectedItems.__meta === "object")
       ? selectedItems.__meta
       : null;
-    const items = selectedItems.map((entry) => ({
+    const items = aggregateLootEntriesForStacks(selectedItems).map((entry) => ({
       id: foundry.utils.randomID(),
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       ...entry
     }));
+    const generatedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
     const resolvedSelectionMeta = selectionMeta ?? {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
@@ -13420,7 +13805,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
       stats: {
         candidateCount: candidates.length,
         itemCountTarget,
-        itemCountGenerated: items.length,
+        itemCountGenerated: generatedItemCount,
         tableRollCount: tableRolls.length,
         creatureCount: Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1),
         enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
@@ -13715,10 +14100,13 @@ function buildLootPreviewContext() {
         id: String(entry?.id ?? `${String(entry?.uuid ?? "").trim() || String(entry?.name ?? "item").trim() || "item"}-${index}`),
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item"),
+        img: String(entry?.img ?? "icons/svg/item-bag.svg"),
+        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemType: String(entry?.itemType ?? ""),
         rarity: String(entry?.rarity ?? ""),
         sourceLabel: String(entry?.sourceLabel ?? ""),
         hasRarity: String(entry?.rarity ?? "").trim().length > 0,
+        hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
         canOpen: String(entry?.uuid ?? "").trim().length > 0
       }))
       : [],
@@ -13771,7 +14159,9 @@ function buildLootClaimsContext(user = game.user) {
     const hasCurrencyRemaining = ["pp", "gp", "sp", "cp"].some((denom) => {
       return Math.max(0, Math.floor(Number(currencyRemaining?.[denom] ?? 0) || 0)) > 0;
     });
-    const itemCount = Array.isArray(run?.items) ? run.items.length : 0;
+    const itemCount = Array.isArray(run?.items)
+      ? run.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
     const claimsLogCount = Array.isArray(run?.claimsLog) ? run.claimsLog.length : 0;
     const contestedItemCount = Array.isArray(run?.items)
       ? run.items.filter((item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length > 1).length
@@ -13816,8 +14206,12 @@ function buildLootClaimsContext(user = game.user) {
     const rightArchivedAt = Math.max(0, Number(right?.archivedAt ?? 0) || 0);
     const leftPublishedAt = Math.max(0, Number(left?.publishedAt ?? 0) || 0);
     const rightPublishedAt = Math.max(0, Number(right?.publishedAt ?? 0) || 0);
-    const leftItemCount = Array.isArray(left?.items) ? left.items.length : 0;
-    const rightItemCount = Array.isArray(right?.items) ? right.items.length : 0;
+    const leftItemCount = Array.isArray(left?.items)
+      ? left.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
+    const rightItemCount = Array.isArray(right?.items)
+      ? right.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
     switch (archiveSort) {
       case "archived-asc":
         return leftArchivedAt - rightArchivedAt;
@@ -13880,7 +14274,9 @@ function buildLootClaimsContext(user = game.user) {
     const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
     const statusLabel = status === "archived" ? "Archived" : "Open";
     const publishedLabel = formatTimestampLabel(run?.publishedAt);
-    const itemCount = Array.isArray(run?.items) ? run.items.length : 0;
+    const itemCount = Array.isArray(run?.items)
+      ? run.items.reduce((sum, item) => sum + Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1)), 0)
+      : 0;
     return {
       id: String(run?.id ?? ""),
       label: `${publishedLabel} - ${itemCount} item(s) - ${statusLabel}`,
@@ -13896,6 +14292,7 @@ function buildLootClaimsContext(user = game.user) {
   }));
   const hasSelectedRun = Boolean(displayRun);
   const selectedRunHasItems = displayItems.length > 0;
+  const selectedRunItemCount = displayItems.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
   const selectedRunClaimsLogCount = displayClaimsLog.length;
   const selectedRunContestedItemCount = displayItems.filter((entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1).length;
   const canClaimCurrency = hasSelectedRun
@@ -13924,7 +14321,7 @@ function buildLootClaimsContext(user = game.user) {
     publishedBy: String(displayRun?.publishedBy ?? claims.publishedBy ?? "").trim() || "GM",
     hasPublished: publishedAt > 0,
     hasItems: selectedRunHasItems,
-    itemCount: displayItems.length,
+    itemCount: selectedRunItemCount,
     claimsLogCount: selectedRunClaimsLogCount,
     currency: foundry.utils.deepClone(displayCurrency),
     currencyRemaining,
@@ -13939,6 +14336,8 @@ function buildLootClaimsContext(user = game.user) {
     items: displayItems.map((entry) => ({
       ...entry,
       claimRunId: displayRunId,
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+      hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
       hasRarity: entry.rarity.length > 0,
       canOpen: entry.uuid.length > 0,
       isMajorItem: Boolean(entry.majorItem),
@@ -16956,20 +17355,61 @@ function buildMerchantTagGroupsForEditor(tagOptions = []) {
 }
 
 function buildMerchantKeywordCatalogForEditor(merchant = {}) {
-  const keywords = new Set();
+  const MERCHANT_KEYWORD_SUGGESTION_LIMIT = 15;
+  const stopwords = new Set([
+    "the", "and", "for", "with", "from", "into", "onto", "that", "this", "these", "those",
+    "your", "you", "are", "was", "were", "have", "has", "had", "can", "may", "will",
+    "item", "items", "each", "per", "than", "then", "also", "over", "under", "through"
+  ]);
+  const isCandidateKeyword = (value) => {
+    const keyword = String(value ?? "").trim().toLowerCase();
+    if (!keyword) return false;
+    if (keyword.length < 3) return false;
+    if (/^\d+$/.test(keyword)) return false;
+    if (stopwords.has(keyword)) return false;
+    return true;
+  };
+
   const documents = getMerchantSourceDocumentsSync(merchant);
+  const keywordCounts = new Map();
+  let itemCount = 0;
   for (const documentRef of documents) {
     const data = getMerchantItemData(documentRef);
     const tokens = getMerchantItemKeywordTokensFromData(data);
-    for (const token of tokens) {
-      const normalized = String(token ?? "").trim().toLowerCase();
-      if (!normalized) continue;
-      keywords.add(normalized);
+    const uniqueKeywords = new Set(
+      (Array.isArray(tokens) ? tokens : [])
+        .map((entry) => String(entry ?? "").trim().toLowerCase())
+        .filter((entry) => isCandidateKeyword(entry))
+    );
+    if (uniqueKeywords.size <= 0) continue;
+    itemCount += 1;
+    for (const keyword of uniqueKeywords) {
+      keywordCounts.set(keyword, Number(keywordCounts.get(keyword) ?? 0) + 1);
     }
   }
-  return Array.from(keywords)
-    .sort((a, b) => String(a).localeCompare(String(b)))
-    .slice(0, 500);
+
+  if (itemCount <= 0) return [];
+  const ranked = [];
+  for (const [keyword, countValue] of keywordCounts.entries()) {
+    const count = Math.max(0, Math.floor(Number(countValue ?? 0) || 0));
+    if (count <= 0 || count >= itemCount) continue;
+    const partitionPower = Math.min(count, itemCount - count);
+    ranked.push({
+      keyword,
+      count,
+      partitionPower
+    });
+  }
+
+  if (ranked.length <= 0) return [];
+  return ranked
+    .sort((left, right) => {
+      if (left.partitionPower !== right.partitionPower) return right.partitionPower - left.partitionPower;
+      if (left.count !== right.count) return right.count - left.count;
+      return String(left.keyword ?? "").localeCompare(String(right.keyword ?? ""));
+    })
+    .slice(0, MERCHANT_KEYWORD_SUGGESTION_LIMIT)
+    .map((entry) => entry.keyword);
 }
 
 function buildMerchantKeywordOptionsForEditor(keywordCatalog = [], selectedKeywords = []) {
@@ -17173,6 +17613,7 @@ function buildMerchantSettlementOptions(definitions = [], selectionInput = "", f
 
 function buildMerchantInventoryRowsForDisplay(merchant = {}) {
   const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
+  const merchantActorId = String(merchantActor?.id ?? "").trim();
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const rows = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
@@ -17189,6 +17630,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         id: String(item?.id ?? ""),
         itemId: String(item?.id ?? ""),
         itemUuid: String(item?.uuid ?? ""),
+        sourceActorId: merchantActorId,
         name: String(item?.name ?? "Item").trim() || "Item",
         img: String(item?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
         quantity,
@@ -17639,7 +18081,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     .length;
   const editorAllowedTypes = normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []);
   const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
-  const gmViewTab = getMerchantGmViewTab();
+  const gmViewTabStored = getMerchantGmViewTab();
+  const gmViewTab = gmViewTabStored === MERCHANT_GM_VIEW_TABS.SETTINGS
+    ? MERCHANT_GM_VIEW_TABS.EDITOR
+    : gmViewTabStored;
+  if (gmViewTab !== gmViewTabStored) setMerchantGmViewTab(gmViewTab);
   const editorViewTab = getMerchantEditorViewTab();
   const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
   const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
@@ -17691,6 +18137,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
   const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
   const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
+  const savedCityCatalogRows = normalizeMerchantCityList(merchantsState?.cityCatalog ?? []);
   const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
   const editorCuratedRows = [];
   const editorItemFilter = "";
@@ -17749,10 +18196,15 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       viewTab: gmViewTab,
       viewTabCityEditor: gmViewTab === MERCHANT_GM_VIEW_TABS.CITY,
       viewTabEditor: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR,
-      viewTabSettings: gmViewTab === MERCHANT_GM_VIEW_TABS.SETTINGS,
+      viewTabWorkspace: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR,
+      viewTabSettings: false,
       viewTabConfiguredMerchants: gmViewTab === MERCHANT_GM_VIEW_TABS.CONFIGURED,
       viewTabShopSession: gmViewTab === MERCHANT_GM_VIEW_TABS.SHOP,
-      viewTabHasEditorToolbar: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR || gmViewTab === MERCHANT_GM_VIEW_TABS.SETTINGS,
+      viewTabHasEditorToolbar: gmViewTab === MERCHANT_GM_VIEW_TABS.EDITOR,
+      editorSelectionIsNew: activeEditorId === "__new__",
+      editorSelectionLabel: activeEditorId === "__new__"
+        ? "New Merchant"
+        : (String(editingDefinition?.name ?? editorDraft?.name ?? "").trim() || "Unnamed Merchant"),
       definitions: gmFilteredDefinitions.map((merchant) => ({
         ...merchant,
         cityOptions: buildMerchantCityOptions(cityCatalogRows, merchant?.settlement ?? ""),
@@ -17790,6 +18242,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       editorViewTabEditor: editorViewTab !== "settings",
       editorViewTabSettings: editorViewTab === "settings",
       cityCatalogInput: formatMerchantCityListInput(merchantsState?.cityCatalog ?? []),
+      savedCityCatalogRows,
+      hasSavedCityCatalogRows: savedCityCatalogRows.length > 0,
+      savedCityCatalogCount: savedCityCatalogRows.length,
       editor: {
         id: String(editorDraft?.id ?? ""),
         name: String(editorDraft?.name ?? ""),
@@ -19451,7 +19906,8 @@ async function persistMerchantEditorPatchFromElement(element, options = {}) {
     return null;
   }
   const saved = await upsertMerchant(patch);
-  if (saved?.id) setMerchantEditorSelection(saved.id);
+  resetMerchantEditorSelection();
+  setMerchantEditorViewTab("editor");
   clearMerchantEditorDraftState();
   if (options.notifySaved) ui.notifications?.info(`Saved merchant: ${String(saved?.name ?? "Merchant")}.`);
   return saved;
@@ -20436,6 +20892,7 @@ function normalizeLootClaimItemsList(values = []) {
       uuid: String(entry?.uuid ?? "").trim(),
       name: String(entry?.name ?? "Item").trim() || "Item",
       img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       itemType: String(entry?.itemType ?? "").trim(),
       rarity: String(entry?.rarity ?? "").trim(),
       sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -20466,6 +20923,7 @@ function normalizeLootClaimLogEntries(values = []) {
       id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
       itemId: String(entry?.itemId ?? "").trim(),
       itemName: String(entry?.itemName ?? "Item").trim() || "Item",
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       actorId: String(entry?.actorId ?? "").trim(),
       actorName: String(entry?.actorName ?? "Actor").trim() || "Actor",
       claimedByUserId: String(entry?.claimedByUserId ?? "").trim(),
@@ -21075,6 +21533,43 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       socialContractOptions: buildDowntimeSocialContractOptions(String(selectedPending?.baseSocialContractKey ?? "")),
       hint: String(selectedPending?.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT)
     }
+  };
+}
+
+function buildPlayerMarchQuickContext() {
+  const state = getMarchingOrderState();
+  const actor = getActiveActorForUser();
+  const actorId = String(actor?.id ?? "").trim();
+  const rankRows = [
+    { id: "front", label: "Front" },
+    { id: "middle", label: "Middle" },
+    { id: "rear", label: "Rear" }
+  ];
+  let currentRankId = "";
+  if (actorId) {
+    for (const row of rankRows) {
+      const rankEntries = Array.isArray(state?.ranks?.[row.id]) ? state.ranks[row.id] : [];
+      if (rankEntries.includes(actorId)) {
+        currentRankId = row.id;
+        break;
+      }
+    }
+  }
+  const currentRankLabel = rankRows.find((row) => row.id === currentRankId)?.label ?? "Unassigned";
+  const canSetRank = Boolean(actorId) && !isLockedForUser(state, canAccessAllPlayerOps());
+  return {
+    hasActor: Boolean(actorId),
+    actorId,
+    actorName: String(actor?.name ?? "").trim(),
+    currentRankId,
+    currentRankLabel,
+    canSetRank,
+    lockState: canSetRank ? "Open" : "Locked",
+    rankButtons: rankRows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      selected: row.id === currentRankId
+    }))
   };
 }
 
@@ -23178,37 +23673,34 @@ async function setOperationalSopNote(element, options = {}) {
       return false;
     }
     if (!game.user?.isGM) {
-      // Always save locally first so players can save/edit SOP notes without an active GM.
-      writeSopCachedNoteEntry(sopKey, note, { pendingSync: true });
-      const activeGm = hasActiveGmClient();
-      if (activeGm) {
-        game.socket.emit(SOCKET_CHANNEL, {
-          type: "ops:setSopNote",
-          userId: game.user.id,
-          sopKey,
-          note
-        });
-        logUiDebug("operations-sop", "queued SOP note save via socket", {
-          sopKey,
-          noteLength: note.length,
-          userId: String(game.user?.id ?? ""),
-          userName: String(game.user?.name ?? "Unknown")
-        });
-      } else {
+      if (!hasActiveGmClient()) {
+        writeSopCachedNoteEntry(sopKey, note, { pendingSync: true });
         logUiDebug("operations-sop", "saved SOP note locally (pending GM sync)", {
           sopKey,
           noteLength: note.length,
           userId: String(game.user?.id ?? ""),
           userName: String(game.user?.name ?? "Unknown")
         });
+        if (notify) {
+          ui.notifications?.info("Note saved locally. It will sync when a GM reconnects.");
+        }
+        schedulePendingSopNoteSync("player-save-no-gm");
+        return true;
       }
-      if (notify) {
-        ui.notifications?.info(activeGm
-          ? "Note saved."
-          : "Note saved locally. It will sync when a GM reconnects.");
-      }
-      refreshOpenApps();
-      schedulePendingSopNoteSync("player-save");
+      writeSopCachedNoteEntry(sopKey, note, { pendingSync: true });
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:setSopNote",
+        userId: game.user.id,
+        sopKey,
+        note
+      });
+      logUiDebug("operations-sop", "queued SOP note save via socket", {
+        sopKey,
+        noteLength: note.length,
+        userId: String(game.user?.id ?? ""),
+        userName: String(game.user?.name ?? "Unknown")
+      });
+      if (notify) ui.notifications?.info("Note saved.");
       return true;
     }
     await updateOperationsLedger((ledger) => {
@@ -25906,7 +26398,10 @@ async function rollLootPreview(element) {
   setLootPreviewDraft(draft);
   const payload = await generateLootPreviewPayload(draft);
   setLootPreviewResult(payload);
-  ui.notifications?.info(`Loot builder generated (${payload.items.length} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`);
+  const generatedItemCount = Array.isArray(payload?.items)
+    ? payload.items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0)
+    : 0;
+  ui.notifications?.info(`Loot builder generated (${generatedItemCount} item(s), ${Math.round(Number(payload.currency?.gpEquivalent ?? 0))} gp equivalent).`);
 }
 
 function clearLootPreviewResult() {
@@ -25922,12 +26417,83 @@ async function openLootItemFromElement(element) {
     ui.notifications?.warn("That item source could not be found.");
     return;
   }
-  const sheet = document.sheet ?? document._sheet ?? null;
-  if (sheet?.render) {
-    sheet.render(true);
-    return;
+  const opened = await openItemSheetWithPermissionFallback(document, { notifyFallback: true });
+  if (!opened) ui.notifications?.warn("No sheet is available for that item.");
+}
+
+function canUserViewItemDocument(document, user = game.user) {
+  if (!document || String(document?.documentName ?? "").trim() !== "Item") return false;
+  if (Boolean(user?.isGM)) return true;
+  if (Boolean(document?.isOwner)) return true;
+  if (typeof document.testUserPermission === "function") {
+    try {
+      if (document.testUserPermission(user, "OWNER")) return true;
+    } catch {
+      // Fall back to parent permission checks below.
+    }
   }
-  ui.notifications?.warn("No sheet is available for that item.");
+  const parent = document?.parent ?? null;
+  if (parent && typeof parent.testUserPermission === "function") {
+    try {
+      if (parent.testUserPermission(user, "OWNER")) return true;
+    } catch {
+      // Fall through to denied.
+    }
+  }
+  return false;
+}
+
+function buildTemporaryItemPreviewDocument(document) {
+  if (!document || String(document?.documentName ?? "").trim() !== "Item") return null;
+  const source = typeof document.toObject === "function"
+    ? document.toObject()
+    : (document && typeof document === "object" ? foundry.utils.deepClone(document) : null);
+  if (!source || typeof source !== "object") return null;
+
+  // Temporary previews should not retain world identity or ownership constraints.
+  delete source._id;
+  delete source.folder;
+  delete source.sort;
+  delete source.ownership;
+  delete source.pack;
+  if (source.flags && typeof source.flags === "object" && source.flags.core && typeof source.flags.core === "object") {
+    delete source.flags.core.sourceId;
+  }
+
+  const ItemClass = CONFIG?.Item?.documentClass ?? null;
+  if (!ItemClass) return null;
+  try {
+    return new ItemClass(source, {
+      parent: null,
+      pack: null,
+      temporary: true
+    });
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed creating temporary item preview`, error);
+    return null;
+  }
+}
+
+async function openItemSheetWithPermissionFallback(document, options = {}) {
+  if (!document || String(document?.documentName ?? "").trim() !== "Item") return false;
+  const notifyFallback = Boolean(options?.notifyFallback);
+  const canView = canUserViewItemDocument(document, options?.user ?? game.user);
+
+  if (canView) {
+    const sheet = document.sheet ?? document._sheet ?? null;
+    if (!sheet?.render) return false;
+    sheet.render(true);
+    return true;
+  }
+
+  const previewDocument = buildTemporaryItemPreviewDocument(document);
+  const previewSheet = previewDocument?.sheet ?? previewDocument?._sheet ?? null;
+  if (!previewSheet?.render) return false;
+  previewSheet.render(true);
+  if (notifyFallback) {
+    ui.notifications?.info("Opened read-only item preview (insufficient direct permissions for source document).");
+  }
+  return true;
 }
 
 function getFirstDatasetText(dataset = {}, keys = []) {
@@ -25952,27 +26518,41 @@ function findItemReferenceFromElement(element) {
     "documentId",
     "sourceItemId"
   ];
-  const selector = "[data-item-uuid], [data-uuid], [data-document-uuid], [data-merchant-item-uuid], [data-source-uuid], [data-item-id], [data-merchant-item-id], [data-document-id], [data-source-item-id]";
+  const actorIdKeys = [
+    "sourceActorId",
+    "merchantActorId",
+    "documentActorId",
+    "actorId"
+  ];
+  const selector = "[data-item-uuid], [data-uuid], [data-document-uuid], [data-merchant-item-uuid], [data-source-uuid], [data-item-id], [data-merchant-item-id], [data-document-id], [data-source-item-id], [data-source-actor-id], [data-merchant-actor-id], [data-document-actor-id], [data-actor-id]";
   let node = element instanceof Element ? element : null;
   while (node) {
     const uuid = getFirstDatasetText(node.dataset ?? {}, uuidKeys);
     const itemId = getFirstDatasetText(node.dataset ?? {}, itemIdKeys);
-    if (uuid || itemId) return { uuid, itemId };
+    const actorId = getFirstDatasetText(node.dataset ?? {}, actorIdKeys);
+    if (uuid || itemId) return { uuid, itemId, actorId };
 
     const nested = typeof node.querySelector === "function" ? node.querySelector(selector) : null;
     if (nested) {
       const nestedUuid = getFirstDatasetText(nested.dataset ?? {}, uuidKeys);
       const nestedItemId = getFirstDatasetText(nested.dataset ?? {}, itemIdKeys);
-      if (nestedUuid || nestedItemId) return { uuid: nestedUuid, itemId: nestedItemId };
+      const nestedActorId = getFirstDatasetText(nested.dataset ?? {}, actorIdKeys);
+      if (nestedUuid || nestedItemId) return { uuid: nestedUuid, itemId: nestedItemId, actorId: nestedActorId };
     }
     node = node.parentElement;
   }
-  return { uuid: "", itemId: "" };
+  return { uuid: "", itemId: "", actorId: "" };
 }
 
-function findItemByIdAcrossWorldAndActors(itemId = "") {
+function findItemByIdAcrossWorldAndActors(itemId = "", options = {}) {
   const id = String(itemId ?? "").trim();
   if (!id) return null;
+  const preferredActorId = String(options?.actorId ?? "").trim();
+  if (preferredActorId) {
+    const preferredActor = game.actors?.get?.(preferredActorId);
+    const preferredActorItem = preferredActor?.items?.get?.(id);
+    if (preferredActorItem) return preferredActorItem;
+  }
   const worldItem = game.items?.get?.(id);
   if (worldItem) return worldItem;
   for (const actor of game.actors?.contents ?? []) {
@@ -25985,18 +26565,22 @@ function findItemByIdAcrossWorldAndActors(itemId = "") {
 async function openItemSheetFromReference(reference = {}) {
   const uuid = String(reference?.uuid ?? "").trim();
   const itemId = String(reference?.itemId ?? "").trim();
+  const actorId = String(reference?.actorId ?? "").trim();
   let document = null;
   if (uuid) {
     document = await resolveUuidDocument(uuid);
   }
-  if (!document && itemId) {
-    document = findItemByIdAcrossWorldAndActors(itemId);
+  if (!document && itemId && actorId) {
+    const actor = game.actors?.get?.(actorId);
+    document = actor?.items?.get?.(itemId) ?? null;
+  }
+  // Only fall back to cross-world ID lookup when no UUID is available.
+  // Embedded item ids are not globally unique and can collide across actors.
+  if (!document && itemId && !uuid) {
+    document = findItemByIdAcrossWorldAndActors(itemId, { actorId });
   }
   if (!document || String(document?.documentName ?? "").trim() !== "Item") return false;
-  const sheet = document.sheet ?? document._sheet ?? null;
-  if (!sheet?.render) return false;
-  sheet.render(true);
-  return true;
+  return openItemSheetWithPermissionFallback(document, { notifyFallback: true });
 }
 
 async function openMerchantSupplyItemFromElement(element) {
@@ -26387,11 +26971,12 @@ async function publishLootPreviewToClaims() {
     ui.notifications?.warn("Run loot builder first.");
     return;
   }
-  const items = Array.isArray(result.items) ? result.items : [];
+  const items = aggregateLootEntriesForStacks(Array.isArray(result.items) ? result.items : []);
   if (items.length === 0) {
     ui.notifications?.warn("The builder has no items to publish.");
     return;
   }
+  const publishedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
 
   let publishedAt = 0;
   let publishedRunId = "";
@@ -26429,6 +27014,7 @@ async function publishLootPreviewToClaims() {
         uuid: String(entry?.uuid ?? "").trim(),
         name: String(entry?.name ?? "Item").trim() || "Item",
         img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemType: String(entry?.itemType ?? "").trim(),
         rarity: String(entry?.rarity ?? "").trim(),
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -26452,7 +27038,7 @@ async function publishLootPreviewToClaims() {
   logUiDebug("loot-claims", "publishing loot claims to players", {
     publishedAt,
     runId: publishedRunId,
-    itemCount: items.length,
+    itemCount: publishedItemCount,
     recipients: playerUsers.map((user) => ({
       id: String(user?.id ?? ""),
       name: String(user?.name ?? "Player"),
@@ -26468,7 +27054,7 @@ async function publishLootPreviewToClaims() {
       runId: publishedRunId,
       publishedAt,
       publishedBy: String(game.user?.name ?? "GM"),
-      itemCount: items.length,
+      itemCount: publishedItemCount,
       currencyRemaining: {
         pp: publishedCurrency.pp,
         gp: publishedCurrency.gp,
@@ -26479,7 +27065,7 @@ async function publishLootPreviewToClaims() {
   }
   if (canAccessAllPlayerOps()) openGmLootClaimsBoard({ force: true, runId: publishedRunId });
   ui.notifications?.info(
-    `Published ${items.length} loot item(s) to player claims${playerUsers.length > 0 ? ` and prompted ${playerUsers.length} player(s).` : "."}`
+    `Published ${publishedItemCount} loot item(s) to player claims${playerUsers.length > 0 ? ` and prompted ${playerUsers.length} player(s).` : "."}`
   );
 }
 
@@ -26933,8 +27519,10 @@ async function buildLootClaimItemDocumentData(itemEntry = {}) {
   if (!uuid) return null;
   const source = await resolveUuidDocument(uuid);
   if (!source || source.documentName !== "Item") return null;
-  const data = source.toObject();
+  let data = source.toObject();
   if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
+  const quantity = Math.max(1, Math.floor(Number(itemEntry?.quantity ?? 1) || 1));
+  data = applyItemRewardDropQuantity(data, quantity);
   return data;
 }
 
@@ -26983,6 +27571,7 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
       id: foundry.utils.randomID(),
       itemId,
       itemName: String(claimItem.name ?? "Item"),
+      quantity: Math.max(1, Math.floor(Number(claimItem?.quantity ?? 1) || 1)),
       actorId: String(actor.id),
       actorName: String(actor.name ?? "Actor"),
       claimedByUserId: String(user?.id ?? ""),
@@ -26999,6 +27588,7 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
     runId: String(board.id ?? ""),
     actorName: String(actor.name ?? "Actor"),
     itemName: String(claimItem.name ?? "Item"),
+    quantity: Math.max(1, Math.floor(Number(claimItem?.quantity ?? 1) || 1)),
     actorId: String(actor.id ?? ""),
     actorUuid: String(actor.uuid ?? ""),
     itemUuid: String(claimItem.uuid ?? ""),
@@ -27228,6 +27818,8 @@ async function postLootItemClaimToChat(outcome = {}) {
   const actorId = String(outcome?.actorId ?? "").trim();
   const actorUuid = String(outcome?.actorUuid ?? "").trim();
   const itemName = String(outcome?.itemName ?? "Item").trim() || "Item";
+  const quantity = Math.max(1, Math.floor(Number(outcome?.quantity ?? 1) || 1));
+  const itemLabel = quantity > 1 ? `${itemName} x${quantity}` : itemName;
   const itemUuid = String(outcome?.itemUuid ?? "").trim();
   const claimedBy = String(outcome?.claimedByName ?? "Player").trim() || "Player";
   const actor = actorId ? game.actors.get(actorId) : null;
@@ -27237,7 +27829,7 @@ async function postLootItemClaimToChat(outcome = {}) {
     content: `
       <div class="po-chat-claim">
         <p><strong>Loot Claimed</strong></p>
-        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemName)}</strong>.</p>
+        <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(itemLabel)}</strong>.</p>
         <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
     `
@@ -27245,10 +27837,10 @@ async function postLootItemClaimToChat(outcome = {}) {
   await createOperationsJournalEntry({
     category: "loot-claims",
     title: `Loot Claimed - ${actorName}`,
-    summary: `${actorName} received ${itemName}`,
+    summary: `${actorName} received ${itemLabel}`,
     body: `
       <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
-      <p><strong>Item:</strong> ${buildUuidJournalLink(itemUuid, itemName)}</p>
+      <p><strong>Item:</strong> ${buildUuidJournalLink(itemUuid, itemLabel)}</p>
       <p><strong>Claimed By:</strong> ${poEscapeHtml(claimedBy)}</p>
     `
   });
@@ -30645,7 +31237,8 @@ async function joinRank(element) {
     ui.notifications?.warn("Marching order is locked by the GM.");
     return;
   }
-  let rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
+  let rankId = String(element?.dataset?.rankId ?? "").trim();
+  if (!rankId) rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
   
   // If not clicked on a rank, default to middle
   if (!rankId) {
@@ -33206,6 +33799,9 @@ function buildIntegrationHookModule() {
       ["canvasReady", () => {
         if (!game.user?.isGM) return;
         scheduleIntegrationSync("canvas-ready");
+      }],
+      ["renderDocumentOwnershipConfig", (app, html) => {
+        bindFolderOwnershipProxySubmit(app, html);
       }]
     ]
   };
@@ -33233,6 +33829,9 @@ function registerPartyOpsHooks() {
 Hooks.once("init", () => {
   registerPartyOperationsApi();
   registerFeatureModules();
+  void preloadPartyOperationsPartialTemplates().catch((error) => {
+    console.warn(`${MODULE_ID}: failed to preload partial templates`, error);
+  });
   registerPartyOpsSettings((key) => {
     if (key === SETTINGS.DEBUG_ENABLED) return;
     refreshOpenApps();
@@ -33920,6 +34519,12 @@ Hooks.once("ready", () => {
       await applyPlayerSettingWriteRequest(message, requester);
       return;
     }
+    if (message.type === "ops:folder-ownership-write") {
+      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
+      if (!requester) return;
+      await applyPlayerFolderOwnershipWriteRequest(message, requester);
+      return;
+    }
 
     if (message.type === "activity:update") {
       const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
@@ -34041,6 +34646,69 @@ async function applyPlayerSettingWriteRequest(message, requesterRef = null) {
       requesterName: String(requester?.name ?? "Player"),
       settingKey
     });
+  }
+}
+
+async function applyPlayerFolderOwnershipWriteRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  if (!canAccessAllPlayerOps(requester)) return;
+
+  const folderId = sanitizeSocketIdentifier(message?.folderId, { maxLength: 64 });
+  if (!folderId) return;
+
+  const levelsSource = message?.levels && typeof message.levels === "object" ? message.levels : {};
+  const levels = {};
+  for (const [key, rawValue] of Object.entries(levelsSource)) {
+    const ownershipKey = String(key ?? "").trim();
+    if (!ownershipKey) continue;
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed)) continue;
+    const level = Math.max(
+      Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0),
+      Math.min(Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3), Math.trunc(parsed))
+    );
+    levels[ownershipKey] = level;
+  }
+  if (Object.keys(levels).length <= 0) return;
+
+  const folder = game.folders?.get?.(folderId) ?? null;
+  if (!folder) return;
+
+  const documents = Array.from(folder.contents ?? []).filter((document) => document && typeof document.update === "function");
+  if (documents.length <= 0) {
+    ui.notifications?.info(`No documents found in folder "${String(folder?.name ?? "Folder")}".`);
+    return;
+  }
+
+  let updatedCount = 0;
+  for (const document of documents) {
+    const currentOwnership = document?.ownership && typeof document.ownership === "object"
+      ? foundry.utils.deepClone(document.ownership)
+      : { default: Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0) };
+    let changed = false;
+    for (const [ownershipKey, level] of Object.entries(levels)) {
+      if (Number(currentOwnership[ownershipKey]) === Number(level)) continue;
+      currentOwnership[ownershipKey] = level;
+      changed = true;
+    }
+    if (!changed) continue;
+    try {
+      await document.update({ ownership: currentOwnership });
+      updatedCount += 1;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed updating ownership for folder document`, {
+        folderId,
+        documentId: String(document?.id ?? ""),
+        error
+      });
+    }
+  }
+
+  if (updatedCount > 0) {
+    ui.notifications?.info(`Updated permissions on ${updatedCount} document${updatedCount === 1 ? "" : "s"} in "${String(folder?.name ?? "Folder")}".`);
+    refreshOpenApps();
+    emitSocketRefresh();
   }
 }
 

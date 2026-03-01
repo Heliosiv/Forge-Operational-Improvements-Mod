@@ -16,6 +16,86 @@ function getTagCheckboxes(root, tagMode) {
     .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
 }
 
+function getMerchantSourceRefCheckboxes(root) {
+  if (!root?.querySelectorAll) return [];
+  return Array.from(root.querySelectorAll("input[name='merchantSourceRef']"))
+    .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
+}
+
+function syncMerchantSourceRefSelectionUi(root) {
+  if (!root?.querySelectorAll) return;
+  const inputs = getMerchantSourceRefCheckboxes(root);
+  const selectedCount = inputs.filter((entry) => Boolean(entry.checked)).length;
+  const totalCount = inputs.length;
+  for (const node of root.querySelectorAll("[data-merchant-source-ref-selected-count]")) {
+    node.textContent = String(selectedCount);
+  }
+  for (const node of root.querySelectorAll("[data-merchant-source-ref-total-count]")) {
+    node.textContent = String(totalCount);
+  }
+}
+
+function normalizeMerchantKeywordCsvInput(value) {
+  const source = String(value ?? "");
+  const seen = new Set();
+  const normalized = [];
+  for (const part of source.split(/[\n,;]+/)) {
+    const keyword = String(part ?? "").trim().toLowerCase();
+    if (!keyword || seen.has(keyword)) continue;
+    seen.add(keyword);
+    normalized.push(keyword);
+  }
+  return normalized;
+}
+
+function toggleMerchantKeywordFromElement(actionElement, options = {}) {
+  const form = actionElement?.closest?.("form");
+  if (!(form instanceof HTMLElement)) return false;
+  const mode = String(actionElement?.dataset?.keywordMode ?? "").trim().toLowerCase() === "exclude"
+    ? "exclude"
+    : "include";
+  const inputName = mode === "exclude" ? "merchantKeywordExclude" : "merchantKeywordInclude";
+  const input = form.querySelector(`input[name='${inputName}']`);
+  if (!(input instanceof HTMLInputElement)) return false;
+  const keyword = String(actionElement?.dataset?.keywordValue ?? "").trim().toLowerCase();
+  if (!keyword) return false;
+  const current = normalizeMerchantKeywordCsvInput(input.value);
+  const exists = current.includes(keyword);
+  const next = exists ? current.filter((entry) => entry !== keyword) : [...current, keyword];
+  const nextValue = next.join(", ");
+  if (String(input.value ?? "").trim() === nextValue.trim()) return false;
+  input.value = nextValue;
+  const draft = options?.cacheDraft?.(input, { suppressMissingFormWarning: true });
+  return Boolean(draft);
+}
+
+function getTagGroupElementFromAction(actionElement) {
+  return actionElement?.closest?.("details.po-merchant-tag-group") ?? null;
+}
+
+function setMerchantTagGroupSelectionFromElement(actionElement, options = {}) {
+  const group = getTagGroupElementFromAction(actionElement);
+  if (!(group instanceof HTMLElement)) return false;
+  const tagMode = getTagModeFromElement(group);
+  const shouldSelect = options?.selected !== false;
+  const inputName = getTagInputName(tagMode);
+  const nodes = Array.from(group.querySelectorAll(`input[name='${inputName}']`))
+    .filter((entry) => entry instanceof HTMLInputElement
+      && String(entry.type ?? "").toLowerCase() === "checkbox"
+      && !entry.disabled);
+  if (nodes.length <= 0) return false;
+  let changed = false;
+  for (const node of nodes) {
+    const nextChecked = Boolean(shouldSelect);
+    if (Boolean(node.checked) === nextChecked) continue;
+    node.checked = nextChecked;
+    changed = true;
+  }
+  if (!changed) return false;
+  const draft = options?.cacheDraft?.(actionElement, { suppressMissingFormWarning: true });
+  return Boolean(draft);
+}
+
 function syncMerchantTagGroupCounts(root, tagMode) {
   if (!root?.querySelectorAll) return;
   const groups = Array.from(root.querySelectorAll(`details.po-merchant-tag-group[data-tag-mode='${tagMode}']`));
@@ -63,6 +143,7 @@ export function createGmMerchantsPageApp(deps) {
     cacheMerchantEditorDraftFromElement,
     setMerchantGmViewTab,
     setMerchantGmViewTabFromElement,
+    setMerchantEditorViewTab,
     setMerchantEditorViewTabFromElement,
     resetMerchantEditorSelection,
     createStarterMerchants,
@@ -151,6 +232,13 @@ export function createGmMerchantsPageApp(deps) {
             syncMerchantTagSelectionUi(this.element, inputName === "merchantExcludeTags" ? "exclude" : "include");
             return;
           }
+          const isSourceRefCheckbox = actionElement instanceof HTMLInputElement
+            && String(actionElement.type ?? "").toLowerCase() === "checkbox"
+            && inputName === "merchantSourceRef";
+          if (isSourceRefCheckbox) {
+            syncMerchantSourceRefSelectionUi(this.element);
+            return;
+          }
           rerender();
         },
         "merchant-select-all-tags": async (actionElement) => {
@@ -163,6 +251,37 @@ export function createGmMerchantsPageApp(deps) {
           if (!changed) return;
           syncMerchantTagSelectionUi(this.element, getTagModeFromElement(actionElement));
         },
+        "merchant-select-tag-group": async (actionElement, event) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          const changed = setMerchantTagGroupSelectionFromElement(actionElement, {
+            selected: true,
+            cacheDraft: cacheMerchantEditorDraftFromElement
+          });
+          if (!changed) return;
+          const group = getTagGroupElementFromAction(actionElement);
+          syncMerchantTagSelectionUi(this.element, getTagModeFromElement(group ?? actionElement));
+        },
+        "merchant-deselect-tag-group": async (actionElement, event) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          const changed = setMerchantTagGroupSelectionFromElement(actionElement, {
+            selected: false,
+            cacheDraft: cacheMerchantEditorDraftFromElement
+          });
+          if (!changed) return;
+          const group = getTagGroupElementFromAction(actionElement);
+          syncMerchantTagSelectionUi(this.element, getTagModeFromElement(group ?? actionElement));
+        },
+        "merchant-keyword-toggle": async (actionElement, event) => {
+          event?.preventDefault?.();
+          event?.stopPropagation?.();
+          const changed = toggleMerchantKeywordFromElement(actionElement, {
+            cacheDraft: cacheMerchantEditorDraftFromElement
+          });
+          if (!changed) return;
+          rerender();
+        },
         "merchant-editor-view-tab": rerenderIfTruthy(setMerchantEditorViewTabFromElement),
         "merchant-gm-view-tab": async (actionElement) => {
           cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
@@ -170,6 +289,7 @@ export function createGmMerchantsPageApp(deps) {
         },
         "merchant-new": async () => {
           resetMerchantEditorSelection();
+          setMerchantEditorViewTab?.("editor");
           setMerchantGmViewTab?.("editor");
           rerender();
         },
@@ -184,6 +304,7 @@ export function createGmMerchantsPageApp(deps) {
         "merchant-randomize-race": rerenderIfTruthy(randomizeMerchantRaceFromElement),
         "merchant-edit": async (actionElement) => {
           if (setMerchantEditorSelectionFromElement(actionElement)) {
+            setMerchantEditorViewTab?.("editor");
             setMerchantGmViewTab?.("editor");
             rerender();
           }
@@ -211,6 +332,7 @@ export function createGmMerchantsPageApp(deps) {
 
     async _onPostRender() {
       syncAllMerchantTagSelectionUi(this.element);
+      syncMerchantSourceRefSelectionUi(this.element);
     }
   };
 }

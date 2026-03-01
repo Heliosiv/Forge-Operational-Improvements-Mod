@@ -1,0 +1,71 @@
+<section class="po-player-hub-panel" aria-label="Watch">
+  <section class="po-overview" aria-label="Rest watch status">
+    <article class="po-overview-card">
+      <span>Slots Filled</span>
+      <strong>{{overview.occupiedSlots}} / {{overview.totalSlots}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Assigned Entries</span>
+      <strong>{{overview.assignedEntries}}</strong>
+    </article>
+    <article class="po-overview-card {{#if overview.hasLowDarkvisionCoverage}}is-alert{{/if}}">
+      <span>Low Darkvision Slots</span>
+      <strong>{{overview.lowDarkvisionSlots}}</strong>
+    </article>
+  </section>
+  <div class="po-hint">Core flow: claim your watch slot with <strong>Assign Me</strong>, then save a short note.</div>
+  <div class="po-op-divider"></div>
+  <div class="po-cards">
+    {{#each slots}}
+    <article class="po-card" data-slot-id="{{id}}">
+      <div class="po-card-left">
+        <div class="po-slot-badge">{{label}}</div>
+        {{#if timeRange}}<div class="po-time-range">{{timeRange}}</div>{{/if}}
+      </div>
+      <div class="po-card-center">
+        {{#if hasEntries}}
+        {{#each entries}}
+        <div class="po-watch-entry" data-actor-id="{{actorId}}">
+          <div class="po-actor">
+            <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+            <div class="po-actor-meta">
+              <div class="po-actor-name">{{actor.name}}</div>
+              <div class="po-watch-stats">
+                {{#if actor.passivePerception}}
+                <div class="po-stat po-stat-primary">
+                  <span class="po-stat-label">PP</span>
+                  <span class="po-stat-value">{{actor.passivePerception}}</span>
+                </div>
+                {{/if}}
+              </div>
+            </div>
+          </div>
+          <div class="po-entry-actions">
+            <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-controls="po-player-notes-{{../id}}-{{actorId}}" aria-expanded="{{#if notes}}true{{else}}false{{/if}}" aria-label="Toggle notes for {{actor.name}}">
+              <i class="fa-solid fa-note-sticky"></i>
+            </button>
+          </div>
+          <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
+            <label class="po-sr-only" for="po-player-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+            <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+            {{#if canEditNotes}}
+            <div class="po-notes-actions">
+              <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
+            </div>
+            {{/if}}
+          </div>
+        </div>
+        {{/each}}
+        {{else}}
+        <div class="po-empty"><div class="po-empty-text">No assignments in this slot yet.</div></div>
+        {{/if}}
+        <div class="po-assign-actions">
+          {{#if canAssignMe}}
+          <button type="button" class="po-btn is-primary" data-action="assign-me">Assign Me</button>
+          {{/if}}
+        </div>
+      </div>
+    </article>
+    {{/each}}
+  </div>
+</section>

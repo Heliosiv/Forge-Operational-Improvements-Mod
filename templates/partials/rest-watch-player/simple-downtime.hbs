@@ -1,0 +1,49 @@
+<section class="po-player-hub-panel po-downtime-panel" aria-label="Downtime">
+  <div class="po-section-title">Submit Downtime Action</div>
+  <div class="po-hint">Submit one downtime action for a character you can manage.</div>
+  <label class="po-resource-row">
+    <span>Actor</span>
+    <select name="downtimeActorId" class="po-select">
+      {{#each downtime.submit.actorOptions}}
+      <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+      {{/each}}
+    </select>
+  </label>
+  <label class="po-resource-row">
+    <span>Action</span>
+    <select name="downtimeActionKey" class="po-select">
+      {{#each downtime.submit.actionOptions}}
+      <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+      {{/each}}
+    </select>
+  </label>
+  <label class="po-resource-row">
+    <span>Hours</span>
+    <input name="downtimeHours" type="number" min="1" max="24" step="1" class="po-input" value="{{downtime.submit.hours}}" />
+  </label>
+  <label class="po-resource-row po-notes-row-lg">
+    <span>Note</span>
+    <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional context for your GM">{{downtime.submit.note}}</textarea>
+  </label>
+  <div class="po-op-action-row">
+    <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action">Submit Downtime Action</button>
+  </div>
+  <div class="po-op-divider"></div>
+  <div class="po-section-title">Current Entries</div>
+  {{#if downtime.hasEntries}}
+  {{#each downtime.entries}}
+  <div class="po-op-role-row">
+    <div class="po-op-role-head">
+      <div class="po-op-role-name">{{actorName}}</div>
+      <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
+    </div>
+    <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+    {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
+    {{#if hasResult}}<div class="po-op-summary">Result: {{resultSummary}}</div>{{/if}}
+    <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
+  </div>
+  {{/each}}
+  {{else}}
+  <div class="po-op-summary">No downtime entries yet.</div>
+  {{/if}}
+</section>

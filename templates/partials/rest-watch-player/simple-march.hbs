@@ -1,0 +1,18 @@
+<section class="po-player-hub-panel" aria-label="March">
+  <div class="po-section-title">Marching Position</div>
+  {{#if playerMarch.hasActor}}
+  <div class="po-op-summary"><strong>Character:</strong> {{playerMarch.actorName}}</div>
+  <div class="po-op-summary"><strong>Current Rank:</strong> {{playerMarch.currentRankLabel}}</div>
+  <div class="po-op-summary"><strong>Lock State:</strong> {{playerMarch.lockState}}</div>
+  <div class="po-op-action-row po-player-march-actions">
+    {{#each playerMarch.rankButtons}}
+    <button type="button" class="po-btn po-btn-sm {{#if selected}}is-primary{{/if}}" data-action="set-player-rank" data-rank-id="{{id}}" {{#unless @root.playerMarch.canSetRank}}disabled{{/unless}}>Move to {{label}}</button>
+    {{/each}}
+  </div>
+  {{else}}
+  <div class="po-op-summary is-warn">No active character found for this user.</div>
+  {{/if}}
+  <div class="po-op-action-row">
+    <button type="button" class="po-btn po-btn-sm" data-action="switch-tab" data-tab="march">Open Full Marching Order</button>
+  </div>
+</section>

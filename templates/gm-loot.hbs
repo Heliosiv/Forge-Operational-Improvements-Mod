@@ -83,14 +83,19 @@
       {{#if operations.lootSources.preview.items.length}}
       <div class="po-loot-preview-items-grid">
       {{#each operations.lootSources.preview.items}}
-      <div class="po-op-role-row">
-        <div class="po-op-role-head"><div class="po-op-role-name">{{name}}</div><div class="po-op-role-status">{{itemType}}</div></div>
-        <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}">x</button>
-          {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
+      <div class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card">
+        <div class="po-gm-loot-builder-item-main">
+          <div class="po-op-role-head"><div class="po-op-role-name">{{name}}</div><div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div></div>
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}">x</button>
+            {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
+          </div>
+          {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
+          <div class="po-op-summary">Source: {{sourceLabel}}</div>
         </div>
-        {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
-        <div class="po-op-summary">Source: {{sourceLabel}}</div>
+        <div class="po-gm-loot-builder-item-media">
+          <img src="{{img}}" alt="{{name}}" loading="lazy" />
+        </div>
       </div>
       {{/each}}
       </div>

@@ -334,21 +334,29 @@
           <div class="po-section-title">SOP Status</div>
           <div class="po-hint">Toggle procedures currently briefed and active.</div>
           {{#each operations.sops}}
-          <div class="po-op-role-row">
+          <div class="po-op-role-row po-sop-row" data-sop-row="{{key}}">
             <label class="po-switch" title="Enable or disable SOP: {{label}}">
               <input id="po-sop-toggle-{{key}}" name="poSopToggle_{{key}}" type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
               <span>{{label}}</span>
             </label>
-            <details class="po-sop-note-block">
-              <summary>Notes</summary>
-              <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{note}}</textarea>
-              <div class="po-notes-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Note</button>
+            <div class="po-sop-note-grid">
+              <div class="po-sop-note-editor">
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Notes</span>
+                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{note}}</textarea>
+                </label>
+                <div class="po-notes-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Note</button>
+                </div>
+              </div>
+              <div class="po-sop-note-view">
+                <div class="po-note-label">View Notes</div>
+                <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}" data-sop-note-view="{{key}}">{{#if note}}{{note}}{{else}}No notes recorded yet.{{/if}}</div>
               </div>
               {{#if @root.notesDebugHint}}
               <div class="po-note-label">{{@root.notesDebugHint}}</div>
               {{/if}}
-            </details>
+            </div>
           </div>
           {{/each}}
         </div>
@@ -1100,6 +1108,7 @@
                   data-item-uuid="{{itemUuid}}"
                   data-merchant-item-id="{{itemId}}"
                   data-merchant-item-uuid="{{itemUuid}}"
+                  data-source-actor-id="{{sourceActorId}}"
                 >
                   <img class="po-merchant-stock-image" src="{{img}}" alt="{{name}}" loading="lazy" />
                   <div class="po-merchant-stock-main">
