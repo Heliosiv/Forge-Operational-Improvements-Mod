@@ -22,7 +22,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: 3) Validate module.json version matches tag
+      - name: 3) Install tooling dependencies
+        run: npm ci --ignore-scripts
+
+      - name: 4) Check manifest and pack drift
+        run: npm run check:drift
+
+      - name: 5) Validate module.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -31,7 +37,7 @@ jobs:
           echo "Module version: ${MODULE_VERSION}"
           test "${TAG_VERSION}" = "${MODULE_VERSION}"
 
-      - name: 4) Prepare Forge package contents
+      - name: 6) Prepare Forge package contents
         run: |
           mkdir -p release
           cp module.json release/
@@ -40,12 +46,12 @@ jobs:
           cp -r templates release/
           if [ -d packs ]; then cp -r packs release/; fi
 
-      - name: 5) Build module.zip artifact
+      - name: 7) Build module.zip artifact
         run: |
           cd release
           zip -r ../module.zip .
 
-      - name: 6) Upload workflow artifact
+      - name: 8) Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: party-operations-package
@@ -53,7 +59,7 @@ jobs:
             module.zip
             module.json
 
-      - name: 7) Create GitHub release with module artifacts
+      - name: 9) Create GitHub release with module artifacts
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:

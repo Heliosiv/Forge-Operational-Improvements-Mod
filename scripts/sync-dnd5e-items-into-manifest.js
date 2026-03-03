@@ -139,7 +139,7 @@ function getClassicLevel() {
     }
   }
   throw new Error(
-    "classic-level is required. Install with `npm install classic-level --no-save` or keep .tmp_level helper available."
+    "classic-level is required. Run `npm ci` in the repository root or keep .tmp_level helper available."
   );
 }
 
