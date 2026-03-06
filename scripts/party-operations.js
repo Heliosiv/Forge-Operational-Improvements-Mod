@@ -2,8 +2,18 @@ import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
-import { createRestFeatureModule } from "./features/rest-feature.js";
-import { createMarchFeatureModule } from "./features/march-feature.js";
+import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
+import {
+  applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
+  applyPlayerDowntimeClearRequest as applyPlayerDowntimeClearRequestFeature,
+  applyPlayerDowntimeCollectRequest as applyPlayerDowntimeCollectRequestFeature,
+  applyPlayerDowntimeSubmitRequest as applyPlayerDowntimeSubmitRequestFeature,
+  applyPlayerFolderOwnershipWriteRequest as applyPlayerFolderOwnershipWriteRequestFeature,
+  applyPlayerOperationsLedgerWriteRequest as applyPlayerOperationsLedgerWriteRequestFeature,
+  applyPlayerSettingWriteRequest as applyPlayerSettingWriteRequestFeature,
+  applyPlayerSopNoteRequest as applyPlayerSopNoteRequestFeature
+} from "./features/operations-player-handlers.js";
+import { applyRestRequest, createRestFeatureModule, normalizeSocketRestRequest } from "./features/rest-feature.js";
 import { attachModuleApi } from "./core/api-registry.js";
 import { MODULE_ID, SOCKET_CHANNEL } from "./core/constants.js";
 import { createLogger } from "./core/logger.js";
@@ -1828,46 +1838,6 @@ function getSocketRequester(message, options = {}) {
 function normalizeSocketActivityType(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return SOCKET_ACTIVITY_TYPES.has(normalized) ? normalized : "";
-}
-
-function normalizeSocketRestRequest(request) {
-  if (!request || typeof request !== "object") return null;
-  const op = String(request.op ?? "").trim();
-  if (!SOCKET_REST_OPS.has(op)) return null;
-  const slotId = sanitizeSocketIdentifier(request.slotId, { maxLength: 64 });
-  const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
-  if (!slotId || !actorId) return null;
-
-  if (op === "setEntryNotes") {
-    return {
-      op,
-      slotId,
-      actorId,
-      text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH),
-      source: normalizeRestNoteSaveSource(request.source)
-    };
-  }
-  return { op, slotId, actorId };
-}
-
-function normalizeSocketMarchRequest(request) {
-  if (!request || typeof request !== "object") return null;
-  const op = String(request.op ?? "").trim();
-  if (!SOCKET_MARCH_OPS.has(op)) return null;
-  const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
-  if (!actorId) return null;
-
-  if (op === "joinRank") {
-    const rankId = String(request.rankId ?? "").trim();
-    if (!SOCKET_MARCH_RANKS.has(rankId)) return null;
-    return { op, actorId, rankId };
-  }
-
-  return {
-    op,
-    actorId,
-    text: clampSocketText(request.text, SOCKET_NOTE_MAX_LENGTH)
-  };
 }
 
 function isWritableModuleSettingKey(settingKeyInput) {
@@ -30777,7 +30747,13 @@ async function applyMarchingFormation({ front, middle, type }) {
 
 async function updateRestWatchState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
-    const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest);
+    const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest, {
+      restOps: SOCKET_REST_OPS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      normalizeRestNoteSaveSource
+    });
     if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
       type: "rest:mutate",
@@ -30792,7 +30768,18 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
   if (typeof mutatorOrRequest === "function") {
     mutatorOrRequest(state);
   } else {
-    await applyRestRequest(mutatorOrRequest, game.user.id);
+    await applyRestRequest(mutatorOrRequest, game.user.id, {
+      getRestWatchState,
+      resolveRequester,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    });
     return;
   }
   stampUpdate(state);
@@ -30804,7 +30791,13 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
-    const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest);
+    const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
+      marchOps: SOCKET_MARCH_OPS,
+      marchRanks: SOCKET_MARCH_RANKS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH
+    });
     if (!normalizedRequest) return;
     game.socket.emit(SOCKET_CHANNEL, {
       type: "march:mutate",
@@ -30821,7 +30814,18 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (typeof mutatorOrRequest === "function") {
     mutatorOrRequest(state);
   } else {
-    await applyMarchRequest(mutatorOrRequest, game.user.id);
+    await applyMarchRequest(mutatorOrRequest, game.user.id, {
+      getMarchingOrderState,
+      resolveRequester,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    });
     return;
   }
   stampUpdate(state);
@@ -34032,183 +34036,129 @@ async function handlePartyOperationsSocketMessage(message) {
     getRestActivities,
     setModuleSettingWithLocalRefreshSuppressed,
     emitSocketRefresh,
-    normalizeSocketRestRequest,
-    applyRestRequest,
-    normalizeSocketMarchRequest,
-    applyMarchRequest,
-    applyPlayerSettingWriteRequest,
-    applyPlayerFolderOwnershipWriteRequest,
-    applyPlayerSopNoteRequest,
-    applyPlayerOperationsLedgerWriteRequest,
-    applyPlayerDowntimeSubmitRequest,
-    applyPlayerDowntimeClearRequest,
-    applyPlayerDowntimeCollectRequest,
+    normalizeSocketRestRequest: (request) => normalizeSocketRestRequest(request, {
+      restOps: SOCKET_REST_OPS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      normalizeRestNoteSaveSource
+    }),
+    applyRestRequest: (request, requesterRef) => applyRestRequest(request, requesterRef, {
+      getRestWatchState,
+      resolveRequester,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    }),
+    applyPlayerActivityUpdateRequest: (message) => applyPlayerActivityUpdateRequestFeature(message, null, {
+      getSocketRequester,
+      sanitizeSocketIdentifier,
+      normalizeSocketActivityType,
+      getRestActivities,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh
+    }),
+    normalizeSocketMarchRequest: (request) => normalizeSocketMarchRequest(request, {
+      marchOps: SOCKET_MARCH_OPS,
+      marchRanks: SOCKET_MARCH_RANKS,
+      sanitizeSocketIdentifier,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH
+    }),
+    applyMarchRequest: (request, requesterRef) => applyMarchRequest(request, requesterRef, {
+      getMarchingOrderState,
+      resolveRequester,
+      stampUpdate,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      logUiDebug
+    }),
+    applyPlayerSettingWriteRequest: (message, requesterRef) => applyPlayerSettingWriteRequestFeature(message, requesterRef, {
+      resolveRequester,
+      canAccessAllPlayerOps,
+      isWritableModuleSettingKey,
+      game,
+      foundry,
+      moduleId: MODULE_ID,
+      suppressNextSettingRefresh,
+      refreshOpenApps,
+      getRefreshScopesForSettingKey,
+      emitSocketRefresh,
+      logUiFailure
+    }),
+    applyPlayerFolderOwnershipWriteRequest: (message, requesterRef) => applyPlayerFolderOwnershipWriteRequestFeature(message, requesterRef, {
+      resolveRequester,
+      canAccessAllPlayerOps,
+      sanitizeSocketIdentifier,
+      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
+      game,
+      foundry,
+      ui,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh,
+      moduleId: MODULE_ID
+    }),
+    applyPlayerSopNoteRequest: (message, requesterRef) => applyPlayerSopNoteRequestFeature(message, requesterRef, {
+      resolveRequester,
+      sopKeys: SOP_KEYS,
+      clampSocketText,
+      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      updateOperationsLedger,
+      ensureSopNotesState
+    }),
+    applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
+      resolveRequester,
+      buildDefaultOperationsLedger,
+      foundry,
+      setModuleSettingWithLocalRefreshSuppressed,
+      settings: SETTINGS,
+      scheduleIntegrationSync,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      emitSocketRefresh
+    }),
+    applyPlayerDowntimeSubmitRequest: (message, requesterRef) => applyPlayerDowntimeSubmitRequestFeature(message, requesterRef, {
+      resolveRequester,
+      getOperationsLedger,
+      ensureDowntimeState,
+      normalizeDowntimeSubmission,
+      sanitizeSocketIdentifier,
+      applyDowntimeSubmissionForUser
+    }),
+    applyPlayerDowntimeClearRequest: (message, requesterRef) => applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
+      resolveRequester,
+      sanitizeSocketIdentifier,
+      game,
+      canUserManageDowntimeActor,
+      updateOperationsLedger,
+      ensureDowntimeState
+    }),
+    applyPlayerDowntimeCollectRequest: (message, requesterRef) => applyPlayerDowntimeCollectRequestFeature(message, requesterRef, {
+      resolveRequester,
+      sanitizeSocketIdentifier,
+      applyDowntimeCollectionForUser,
+      ui,
+      getDowntimeCollectionSummary
+    }),
     applyPlayerMerchantBarterRequest,
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
     applyPlayerLootVouchRequest
   });
-}
-
-async function applyPlayerSettingWriteRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  if (!canAccessAllPlayerOps(requester)) return;
-
-  const settingKey = String(message?.settingKey ?? "").trim();
-  if (!isWritableModuleSettingKey(settingKey)) return;
-  const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${settingKey}`) ?? null;
-  if (String(settingRecord?.scope ?? "").trim().toLowerCase() === "client") return;
-
-  try {
-    const fullSettingKey = `${MODULE_ID}.${settingKey}`;
-    suppressNextSettingRefresh(fullSettingKey);
-    await game.settings.set(MODULE_ID, settingKey, foundry.utils.deepClone(message?.value));
-    refreshOpenApps({ scopes: getRefreshScopesForSettingKey(settingKey) });
-    emitSocketRefresh({ scopes: getRefreshScopesForSettingKey(settingKey) });
-  } catch (error) {
-    logUiFailure("settings-proxy", "failed player-proxy setting write", error, {
-      requesterId: String(requester?.id ?? ""),
-      requesterName: String(requester?.name ?? "Player"),
-      settingKey
-    });
-  }
-}
-
-async function applyPlayerFolderOwnershipWriteRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  if (!canAccessAllPlayerOps(requester)) return;
-
-  const folderId = sanitizeSocketIdentifier(message?.folderId, { maxLength: 64 });
-  if (!folderId) return;
-
-  const levelsSource = message?.levels && typeof message.levels === "object" ? message.levels : {};
-  const levels = {};
-  for (const [key, rawValue] of Object.entries(levelsSource)) {
-    const ownershipKey = String(key ?? "").trim();
-    if (!ownershipKey) continue;
-    const parsed = Number(rawValue);
-    if (!Number.isFinite(parsed)) continue;
-    const level = Math.max(
-      Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0),
-      Math.min(Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3), Math.trunc(parsed))
-    );
-    levels[ownershipKey] = level;
-  }
-  if (Object.keys(levels).length <= 0) return;
-
-  const folder = game.folders?.get?.(folderId) ?? null;
-  if (!folder) return;
-
-  const documents = Array.from(folder.contents ?? []).filter((document) => document && typeof document.update === "function");
-  if (documents.length <= 0) {
-    ui.notifications?.info(`No documents found in folder "${String(folder?.name ?? "Folder")}".`);
-    return;
-  }
-
-  let updatedCount = 0;
-  for (const document of documents) {
-    const currentOwnership = document?.ownership && typeof document.ownership === "object"
-      ? foundry.utils.deepClone(document.ownership)
-      : { default: Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0) };
-    let changed = false;
-    for (const [ownershipKey, level] of Object.entries(levels)) {
-      if (Number(currentOwnership[ownershipKey]) === Number(level)) continue;
-      currentOwnership[ownershipKey] = level;
-      changed = true;
-    }
-    if (!changed) continue;
-    try {
-      await document.update({ ownership: currentOwnership });
-      updatedCount += 1;
-    } catch (error) {
-      console.warn(`${MODULE_ID}: failed updating ownership for folder document`, {
-        folderId,
-        documentId: String(document?.id ?? ""),
-        error
-      });
-    }
-  }
-
-  if (updatedCount > 0) {
-    ui.notifications?.info(`Updated permissions on ${updatedCount} document${updatedCount === 1 ? "" : "s"} in "${String(folder?.name ?? "Folder")}".`);
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
-  }
-}
-
-async function applyPlayerSopNoteRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-
-  const sopKey = String(message?.sopKey ?? "").trim();
-  if (!SOP_KEYS.includes(sopKey)) return;
-  const note = clampSocketText(message?.note, SOCKET_NOTE_MAX_LENGTH);
-
-  await updateOperationsLedger((ledger) => {
-    const sopNotes = ensureSopNotesState(ledger);
-    sopNotes[sopKey] = note;
-  });
-}
-
-async function applyPlayerOperationsLedgerWriteRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const incomingLedger = message?.ledger;
-  if (!incomingLedger || typeof incomingLedger !== "object" || Array.isArray(incomingLedger)) return;
-
-  const defaults = buildDefaultOperationsLedger();
-  const mergedLedger = foundry.utils.mergeObject(defaults, incomingLedger, {
-    inplace: false,
-    insertKeys: true,
-    insertValues: true
-  });
-
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, mergedLedger);
-  scheduleIntegrationSync("operations-ledger");
-  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
-  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
-}
-
-async function applyPlayerDowntimeSubmitRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const entry = message?.entry && typeof message.entry === "object" ? message.entry : null;
-  if (!entry) return;
-  const previewLedger = getOperationsLedger();
-  const previewDowntime = ensureDowntimeState(previewLedger);
-  const normalizedEntry = normalizeDowntimeSubmission(entry, previewDowntime);
-  if (!sanitizeSocketIdentifier(normalizedEntry.actorId, { maxLength: 64 })) return;
-  await applyDowntimeSubmissionForUser(requester, normalizedEntry);
-}
-
-async function applyPlayerDowntimeClearRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  if (!actorId) return;
-  const actor = game.actors.get(actorId);
-  if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
-  await updateOperationsLedger((ledger) => {
-    const downtime = ensureDowntimeState(ledger);
-    if (!downtime.entries) return;
-    delete downtime.entries[actorId];
-  });
-}
-
-async function applyPlayerDowntimeCollectRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  if (!actorId) return;
-  const outcome = await applyDowntimeCollectionForUser(requester, actorId);
-  if (!outcome.ok) {
-    ui.notifications?.warn(`Downtime collect failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
-    return;
-  }
-  ui.notifications?.info(`${requester.name} collected downtime rewards for ${outcome.actorName}. ${getDowntimeCollectionSummary(outcome)}`);
 }
 
 async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
@@ -34345,152 +34295,6 @@ async function applyPlayerLootVouchRequest(message, requesterRef = null) {
     return;
   }
   ui.notifications?.info(`${requester.name} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
-}
-
-async function applyRestRequest(request, requesterRef) {
-  if (!request || typeof request !== "object") return;
-  const state = getRestWatchState();
-  const requester = resolveRequester(requesterRef, { allowGM: true });
-  if (!requester) return;
-
-  if (state.locked) return;
-
-  // clearAll is not supported via socket (GM clears directly)
-  if (request.op === "clearAll") return;
-
-  // assignMe and clearEntry must be requester's character
-  const requesterActor = requester.character;
-  if (request.op === "assignMe") {
-    if (!requesterActor || requesterActor.id !== request.actorId) return; // security check
-    const slot = state.slots.find((s) => s.id === request.slotId);
-    if (!slot) return;
-    // Migrate old format
-    if (!slot.entries && slot.actorId) {
-      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-      slot.actorId = null;
-      slot.notes = "";
-    }
-    if (!slot.entries) slot.entries = [];
-    // Add new entry
-    slot.entries.push({ actorId: request.actorId, notes: "" });
-    stampUpdate(state, requester);
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
-    scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
-    return;
-  }
-
-  if (request.op === "clearEntry") {
-    const slot = state.slots.find((s) => s.id === request.slotId);
-    if (!slot) return;
-    // Migrate old format
-    if (!slot.entries && slot.actorId) {
-      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-      slot.actorId = null;
-      slot.notes = "";
-    }
-    if (!slot.entries) slot.entries = [];
-    // Only clear own entry
-    const entryIndex = slot.entries.findIndex((e) => e.actorId === requesterActor?.id);
-    if (entryIndex === -1) return; // not found or not owned
-    if (slot.entries[entryIndex].actorId !== request.actorId) return; // security check
-    slot.entries.splice(entryIndex, 1);
-    stampUpdate(state, requester);
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
-    scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
-    return;
-  }
-
-  if (request.op === "setEntryNotes") {
-    const slot = state.slots.find((s) => s.id === request.slotId);
-    if (!slot) return;
-    // Migrate old format
-    if (!slot.entries && slot.actorId) {
-      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-      slot.actorId = null;
-      slot.notes = "";
-    }
-    if (!slot.entries) slot.entries = [];
-    const entry = slot.entries.find((e) => e.actorId === request.actorId);
-    if (!entry) {
-      logUiDebug("rest-watch-notes", "socket reject setEntryNotes (entry not found)", {
-        slotId: request.slotId,
-        actorId: request.actorId,
-        requesterId: String(requester?.id ?? "")
-      });
-      return;
-    }
-    entry.notes = String(request.text ?? "");
-    logUiDebug("rest-watch-notes", "socket apply setEntryNotes", {
-      slotId: request.slotId,
-      actorId: request.actorId,
-      requesterId: String(requester?.id ?? ""),
-      requesterName: String(requester?.name ?? "Unknown"),
-      textLength: String(request.text ?? "").length
-    });
-    stampUpdate(state, requester);
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
-    scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
-    return;
-  }
-}
-
-async function applyMarchRequest(request, requesterRef) {
-  if (!request || typeof request !== "object") return;
-  const state = getMarchingOrderState();
-  const requester = resolveRequester(requesterRef, { allowGM: true });
-  if (!requester) return;
-  const requesterActor = requester.character;
-
-  // joinRank: must be requester's character
-  if (request.op === "joinRank") {
-    if (!requesterActor || requesterActor.id !== request.actorId) return; // security check
-    for (const key of Object.keys(state.ranks)) {
-      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
-    }
-    if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
-    state.ranks[request.rankId].push(request.actorId);
-    stampUpdate(state, requester);
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
-    scheduleIntegrationSync("marching-order-player-mutate");
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
-    return;
-  }
-
-  // setActorNote: actor must already be part of the active formation
-  if (request.op === "setNote") {
-    const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
-      Array.isArray(actorIds) && actorIds.includes(request.actorId)
-    ));
-    if (!inFormation) {
-      logUiDebug("march-notes", "socket reject setNote (actor not in formation)", {
-        actorId: request.actorId,
-        requesterId: String(requester?.id ?? ""),
-        requesterName: String(requester?.name ?? "Unknown")
-      });
-      return;
-    }
-    if (!state.notes) state.notes = {};
-    state.notes[request.actorId] = String(request.text ?? "");
-    logUiDebug("march-notes", "socket apply setNote", {
-      actorId: request.actorId,
-      requesterId: String(requester?.id ?? ""),
-      requesterName: String(requester?.name ?? "Unknown"),
-      textLength: String(request.text ?? "").length
-    });
-    stampUpdate(state, requester);
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
-    scheduleIntegrationSync("marching-order-player-mutate");
-    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
-    return;
-  }
 }
 
 function toggleCardNotes(element) {

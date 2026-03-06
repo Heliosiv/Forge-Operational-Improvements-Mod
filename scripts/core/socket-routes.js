@@ -27,6 +27,7 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     emitSocketRefresh,
     normalizeSocketRestRequest,
     applyRestRequest,
+    applyPlayerActivityUpdateRequest,
     normalizeSocketMarchRequest,
     applyMarchRequest,
     applyPlayerSettingWriteRequest,
@@ -122,20 +123,7 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
   }
 
   if (message.type === "activity:update") {
-    const requester = getActivePlayerRequester();
-    const actorId = sanitizeSocketIdentifier(message.actorId, { maxLength: 64 });
-    const activityType = normalizeSocketActivityType(message.activity);
-    if (!requester || !actorId || !activityType) return true;
-
-    const requesterActor = requester.character;
-    if (!requesterActor || requesterActor.id !== actorId) return true;
-
-    const activities = getRestActivities();
-    if (!activities.activities[actorId]) activities.activities[actorId] = {};
-    activities.activities[actorId].activity = activityType;
-    await setModuleSettingWithLocalRefreshSuppressed(settings.REST_ACTIVITIES, activities);
-    refreshOpenApps({ scope: refreshScopeKeys.REST });
-    emitSocketRefresh({ scope: refreshScopeKeys.REST });
+    await applyPlayerActivityUpdateRequest(message);
     return true;
   }
 
