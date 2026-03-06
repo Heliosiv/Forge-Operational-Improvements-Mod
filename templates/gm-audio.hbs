@@ -30,16 +30,18 @@
           <div class="po-section-title">Scan a private asset folder once, then work from curated buckets instead of raw files.</div>
           <div class="po-hint">Upload the audio pack to a Foundry or Forge-served folder, point Party Operations at that root, and sync the catalog. The module classifies music, ambience, one-shots, and voice content from the folder structure and file names.</div>
         </div>
-        <div class="po-gm-loot-summary-grid" role="list" aria-label="Audio library summary">
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Tracks</span><strong>{{audio.summary.trackCount}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
+        <div class="po-audio-hero-meta">
+          <div class="po-gm-loot-summary-grid" role="list" aria-label="Audio library summary">
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Tracks</span><strong>{{audio.summary.trackCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
+          </div>
+          <div class="po-op-summary po-gm-loot-updated">Catalog updated {{audio.summary.scannedAtLabel}} by {{audio.summary.scannedBy}}</div>
         </div>
-        <div class="po-op-summary po-gm-loot-updated">Catalog updated {{audio.summary.scannedAtLabel}} by {{audio.summary.scannedBy}}</div>
       </section>
 
-      <div class="po-tabs po-tabs-sub po-loot-mode-tabs" aria-label="Audio workspace tabs">
+      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-audio-view-tabs" aria-label="Audio workspace tabs">
         <button type="button" class="po-tab {{#if audio.viewLibrary}}is-active{{/if}}" data-action="set-audio-library-view" data-view="library">Library</button>
         <button type="button" class="po-tab {{#if audio.viewMix}}is-active{{/if}}" data-action="set-audio-library-view" data-view="mix">Mix Table</button>
       </div>
@@ -47,18 +49,25 @@
       {{#if audio.viewLibrary}}
       <div class="po-audio-grid">
         <section class="po-gm-section po-audio-config-card">
-          <div class="po-section-title">Library Source</div>
-          <div class="po-hint">Use the host-served path, not a local `D:\\` path. On most worlds this source is `data`.</div>
-          <label class="po-resource-row">
-            <span>Source</span>
-            <input type="text" class="po-input" data-action="set-audio-library-draft-field" data-field="source" value="{{audio.draft.source}}" placeholder="data" />
-          </label>
-          <label class="po-resource-row">
-            <span>Root Path</span>
-            <input type="text" class="po-input" data-action="set-audio-library-draft-field" data-field="rootPath" value="{{audio.draft.rootPath}}" placeholder="assets/audio/fantasy-complete-ii" />
-          </label>
+          <div class="po-audio-card-head">
+            <div class="po-section-title">Library Source</div>
+            <div class="po-hint">Use the host-served path, not a local `D:\\` path. On most worlds this source is `data`.</div>
+          </div>
+          <div class="po-audio-form-stack">
+            <label class="po-resource-row">
+              <span>Source</span>
+              <input type="text" class="po-input" data-action="set-audio-library-draft-field" data-field="source" value="{{audio.draft.source}}" placeholder="data" />
+            </label>
+            <label class="po-resource-row">
+              <span>Root Path</span>
+              <input type="text" class="po-input" data-action="set-audio-library-draft-field" data-field="rootPath" value="{{audio.draft.rootPath}}" placeholder="assets/audio/fantasy-complete-ii" />
+            </label>
+          </div>
+          <div class="po-op-action-row po-audio-card-actions">
+            <button type="button" class="po-btn po-btn-sm" data-action="browse-audio-library-root">Browse Server Folder</button>
+          </div>
           <div class="po-op-summary">{{audio.draftHint}}</div>
-          <div class="po-op-action-row">
+          <div class="po-op-action-row po-audio-card-actions">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="scan-audio-library">Scan Library</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-audio-library" {{#unless audio.hasCatalog}}disabled{{/unless}}>Clear Catalog</button>
           </div>
@@ -68,27 +77,31 @@
         </section>
 
         <section class="po-gm-section po-audio-filters-card">
-          <div class="po-section-title">Filters</div>
-          <label class="po-resource-row">
-            <span>Search</span>
-            <input type="text" class="po-input" data-action="set-audio-library-filter" data-field="search" value="{{audio.filters.search}}" placeholder="dragon, tavern, rain..." />
-          </label>
-          <label class="po-resource-row">
-            <span>Kind</span>
-            <select class="po-select" data-action="set-audio-library-filter" data-field="kind">
-              {{#each audio.filterOptions.kindOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Usage</span>
-            <select class="po-select" data-action="set-audio-library-filter" data-field="usage">
-              {{#each audio.filterOptions.usageOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
+          <div class="po-audio-card-head">
+            <div class="po-section-title">Filters</div>
+          </div>
+          <div class="po-audio-filter-shell">
+            <label class="po-resource-row">
+              <span>Search</span>
+              <input type="text" class="po-input" data-action="set-audio-library-filter" data-field="search" value="{{audio.filters.search}}" placeholder="dragon, tavern, rain..." />
+            </label>
+            <label class="po-resource-row">
+              <span>Kind</span>
+              <select class="po-select" data-action="set-audio-library-filter" data-field="kind">
+                {{#each audio.filterOptions.kindOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Usage</span>
+              <select class="po-select" data-action="set-audio-library-filter" data-field="usage">
+                {{#each audio.filterOptions.usageOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
 
           <div class="po-audio-chip-list" role="list" aria-label="Audio usage summaries">
             {{#each audio.summary.cards}}
@@ -106,9 +119,11 @@
       {{#if audio.viewMix}}
       <div class="po-audio-results-grid">
         <section class="po-gm-section po-audio-results-card">
-          <div class="po-section-title">Mix Presets</div>
-          <div class="po-hint">One click builds a managed Foundry playlist from your scanned library, then starts a curated pick for that mood.</div>
-          <div class="po-audio-track-list" role="list" aria-label="Audio mix presets">
+          <div class="po-audio-card-head">
+            <div class="po-section-title">Mix Presets</div>
+            <div class="po-hint">One click builds a managed Foundry playlist from your scanned library, then starts a curated pick for that mood.</div>
+          </div>
+          <div class="po-audio-track-list po-audio-preset-list" role="list" aria-label="Audio mix presets">
             {{#each audio.mix.presets}}
             <button type="button" class="po-audio-track-row {{#if selected}}is-selected{{/if}}" data-action="select-audio-mix-preset" data-preset-id="{{id}}" role="listitem">
               <span class="po-audio-track-main">
@@ -121,7 +136,7 @@
             </button>
             {{/each}}
           </div>
-          <div class="po-op-action-row">
+          <div class="po-op-action-row po-audio-card-actions po-audio-mix-actions">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="play-audio-mix" {{#unless audio.mix.hasCandidates}}disabled{{/unless}}>Play Mix</button>
             <button type="button" class="po-btn po-btn-sm" data-action="stop-audio-mix">Stop Mix</button>
           </div>
@@ -158,12 +173,12 @@
       <section class="po-gm-section po-audio-results-card">
         <div class="po-section-title">Preset Candidates</div>
         {{#if audio.mix.hasCandidates}}
-        <div class="po-audio-track-list" role="list" aria-label="Selected mix candidates">
+        <div class="po-audio-track-list po-audio-candidate-list" role="list" aria-label="Selected mix candidates">
           {{#each audio.mix.candidates}}
           <button type="button" class="po-audio-track-row {{#if selected}}is-selected{{/if}}" data-action="play-audio-mix-candidate" data-track-id="{{id}}" role="listitem">
             <span class="po-audio-track-main">
               <span class="po-audio-track-name">{{name}}</span>
-              <span class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} • score {{score}}</span>
+              <span class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} - score {{score}}</span>
             </span>
             <span class="po-audio-track-badges">
               <span class="po-pill">{{kindLabel}}</span>
@@ -183,7 +198,7 @@
         <section class="po-gm-section po-audio-results-card">
           <div class="po-section-title">Curated Results</div>
           {{#if audio.results.hasTracks}}
-          <div class="po-audio-track-list" role="list" aria-label="Audio track results">
+          <div class="po-audio-track-list po-audio-library-list" role="list" aria-label="Audio track results">
             {{#each audio.results.tracks}}
             <button type="button" class="po-audio-track-row {{#if selected}}is-selected{{/if}}" data-action="select-audio-track" data-track-id="{{id}}" role="listitem">
               <span class="po-audio-track-main">

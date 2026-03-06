@@ -8,6 +8,7 @@ export function createGmAudioPageApp(deps) {
     buildContext,
     openMainTab,
     setAudioLibraryDraftField,
+    openAudioLibraryRootPicker,
     scanConfiguredAudioLibrary,
     clearAudioLibraryCatalog,
     setAudioLibraryFilterField,
@@ -79,6 +80,10 @@ export function createGmAudioPageApp(deps) {
         "set-audio-library-draft-field": rerenderUnlessInput((actionElement) => {
           setAudioLibraryDraftField(actionElement);
         }),
+        "browse-audio-library-root": async () => {
+          await openAudioLibraryRootPicker();
+          rerender();
+        },
         "scan-audio-library": rerenderAlways(() => scanConfiguredAudioLibrary()),
         "clear-audio-library": rerenderAlways(() => clearAudioLibraryCatalog()),
         "set-audio-library-filter": rerenderUnlessInput((actionElement) => {

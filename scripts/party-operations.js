@@ -9008,9 +9008,7 @@ function buildGmAudioPageContext() {
     generatedBy: String(game.user?.name ?? "GM"),
     audio: {
       draft: getAudioLibraryDraftState(),
-      draftHint: audioLibraryUiState.draft.rootPath
-        ? "Scan reads the configured server folder recursively and classifies tracks into curated buckets."
-        : "Paste the host-served folder path where your private audio library lives.",
+      draftHint: buildAudioLibraryPathHelpText(audioLibraryUiState.draft.rootPath),
       viewLibrary: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
       viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
       filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
@@ -9435,6 +9433,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   openMainTab,
   setAudioLibraryView,
   setAudioLibraryDraftField,
+  openAudioLibraryRootPicker,
   scanConfiguredAudioLibrary: async () => {
     try {
       clearAudioLibraryError();
@@ -10825,6 +10824,32 @@ function normalizeAudioLibraryRootPath(value) {
     .replace(/\/$/, "");
 }
 
+function isAbsoluteWindowsFilesystemPath(value) {
+  const normalized = String(value ?? "").trim();
+  return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
+}
+
+function buildAudioLibraryPathHelpText(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
+  if (isAbsoluteWindowsFilesystemPath(path)) {
+    return "This must be a Foundry or Forge asset path, not a local D:\\ path. After uploading, use a server path like music/Fantasy Complete II MP3.";
+  }
+  return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
+}
+
+function validateAudioLibraryPathForSource(source, rootPath) {
+  const normalizedSource = normalizeAudioLibrarySource(source);
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedRootPath) {
+    return "Set an audio root path before scanning.";
+  }
+  if (isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return `Audio scanning only works on ${normalizedSource} asset paths served by Foundry or Forge. Use a server path like music/Fantasy Complete II MP3, not ${rootPath}.`;
+  }
+  return "";
+}
+
 function normalizeAudioLibrarySearch(value) {
   return String(value ?? "").trim().toLowerCase().slice(0, 120);
 }
@@ -11031,7 +11056,13 @@ async function browseAudioLibraryTree(source, rootPath) {
     const current = queue.shift();
     if (!current || visited.has(current)) continue;
     visited.add(current);
-    const response = await FilePicker.browse(source, current);
+    let response = null;
+    try {
+      response = await FilePicker.browse(source, current);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown browse error");
+      throw new Error(`Unable to browse "${current}" on source "${source}". ${message}`);
+    }
     const nextFiles = Array.isArray(response?.files) ? response.files : [];
     const nextDirs = Array.isArray(response?.dirs) ? response.dirs : [];
     for (const file of nextFiles) {
@@ -11052,11 +11083,13 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
   }
   const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
   const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
-  if (!nextRootPath) {
-    throw new Error("Set an audio root path before scanning.");
-  }
+  const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
+  if (pathValidationMessage) throw new Error(pathValidationMessage);
 
   const files = await browseAudioLibraryTree(nextSource, nextRootPath);
+  if (files.length <= 0) {
+    throw new Error(`No audio files were found in "${nextRootPath}". Confirm this is a Foundry or Forge asset folder and not a local filesystem path.`);
+  }
   const items = files.map((path) => {
     const inferred = inferAudioLibraryClassification(path, nextRootPath);
     return normalizeAudioLibraryItem({
@@ -11110,6 +11143,27 @@ function setAudioLibraryDraftField(actionElement) {
   if (!field) return;
   if (field === "source") audioLibraryUiState.draft.source = normalizeAudioLibrarySource(actionElement?.value);
   if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(actionElement?.value);
+}
+
+async function openAudioLibraryRootPicker() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can browse audio asset folders.");
+    return false;
+  }
+  const { source, rootPath } = getAudioLibraryDraftState();
+  return new Promise((resolve) => {
+    const picker = new FilePicker({
+      type: "folder",
+      activeSource: source,
+      current: rootPath || "",
+      callback: (selectedPath) => {
+        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(selectedPath);
+        clearAudioLibraryError();
+        resolve(true);
+      }
+    });
+    picker.render(true);
+  });
 }
 
 function setAudioLibraryFilterField(actionElement) {
