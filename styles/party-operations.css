@@ -2421,6 +2421,18 @@
   min-height: 32px;
 }
 
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) #po-ops-recovery .po-btn {
+  min-height: 28px;
+  padding: 2px 10px;
+  font-size: 0.74rem;
+}
+
+.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) #po-ops-recovery .po-btn.po-btn-sm {
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+}
+
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-info-strip {
   gap: var(--po-space-2);
 }
@@ -4243,12 +4255,299 @@
   width: auto;
 }
 
+:is(.window-app, .application).party-operations.po-merchant-shop-dialog-app > .window-content {
+  padding: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--po-accent) 14%, transparent), transparent 34%),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 88%, transparent), var(--po-bg));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-dialog {
+  height: 100%;
+  min-height: 0;
+  color: var(--po-text);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-shell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 14px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-merchant,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-panel,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card {
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 35%, var(--po-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--po-surface) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 10px 30px color-mix(in srgb, black 14%, transparent);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-merchant {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--po-accent) 10%, transparent), transparent 56%),
+    color-mix(in srgb, var(--po-surface) 82%, transparent);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-art {
+  width: 96px;
+  height: 96px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--po-accent) 35%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-kicker,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--po-accent-contrast) 78%, var(--po-muted));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-title,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-panel h3,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-title {
+  margin: 0;
+  color: var(--po-accent-contrast);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-title {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-subtitle {
+  color: color-mix(in srgb, var(--po-accent-contrast) 70%, var(--po-muted));
+  font-weight: 600;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-description {
+  margin: 4px 0 0;
+  color: var(--po-text);
+  line-height: 1.45;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-grid,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-totals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-card,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-card span,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--po-muted);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-card strong,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card strong {
+  font-size: 1.05rem;
+  color: var(--po-accent-contrast);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter.is-disabled {
+  opacity: 0.85;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 76%, transparent);
+  color: var(--po-text);
+  font-size: 0.79rem;
+  line-height: 1.35;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-status[data-state="applied"],
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card.is-net[data-net-state="receive"] {
+  border-color: color-mix(in srgb, var(--po-success) 55%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 16%, var(--po-bg-alt));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-status[data-state="pending"] {
+  border-color: color-mix(in srgb, var(--po-warn) 55%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 16%, var(--po-bg-alt));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-status[data-state="error"],
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card.is-net[data-net-state="pay"] {
+  border-color: color-mix(in srgb, var(--po-danger) 52%, var(--po-border));
+  background: color-mix(in srgb, var(--po-danger) 12%, var(--po-bg-alt));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter-status[data-state="disabled"] {
+  opacity: 0.8;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-panel-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-accepted-types {
+  padding: 8px 14px 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table-wrap {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 10px 10px;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table {
+  width: 100%;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: color-mix(in srgb, var(--po-bg-alt) 94%, var(--po-surface));
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-item {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-item img {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-qty {
+  min-width: 70px;
+  text-align: center;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: var(--po-muted);
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card.is-net[data-net-state="even"] {
+  border-color: color-mix(in srgb, var(--po-accent) 40%, var(--po-border));
+  background: color-mix(in srgb, var(--po-accent) 10%, var(--po-bg-alt));
+}
+
 @media (max-width: 1280px) {
   .party-operations [data-tool="gm-merchants"] .po-merchant-editor-grid {
     grid-template-columns: 1fr;
   }
 
   .party-operations [data-tool="gm-merchants"] .po-merchant-definition-metadata {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-hero,
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -4272,6 +4571,31 @@
   .party-operations [data-tool="gm-merchants"] .po-merchant-buyback-grid,
   .party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-grid {
     grid-template-columns: 1fr;
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-shell {
+    grid-template-rows: auto auto auto auto;
+    padding: 10px;
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-merchant {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-art {
+    width: 72px;
+    height: 72px;
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-grid,
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-totals {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-barter,
+  .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-panel-head {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 
@@ -4684,5 +5008,219 @@
   .party-operations .po-window[data-tool="global-modifiers"] .po-grid.is-operations-layout > :nth-child(3) {
     grid-column: auto;
     grid-row: auto;
+  }
+}
+
+.party-operations .po-window[data-tool="settings-hub"] {
+  --po-layout-max: clamp(840px, 88vw, 1240px);
+}
+
+.party-operations .po-window[data-tool="settings-hub"] .po-settings-hub-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.party-operations .po-window[data-tool="settings-hub"] .po-settings-hub-grid > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.party-operations .po-window[data-tool="settings-hub"] .po-resource-row > input[type="checkbox"] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 980px) {
+  .party-operations .po-window[data-tool="settings-hub"] .po-settings-hub-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="settings-hub"] .po-settings-hub-grid > :nth-child(3) {
+    grid-column: auto;
+  }
+}
+
+/* =========================================================
+   Interaction Motion
+   ========================================================= */
+.party-operations .po-window {
+  --po-click-origin-x: 50%;
+  --po-click-origin-y: 50%;
+  --po-click-ring: color-mix(in srgb, var(--po-accent) 68%, white 14%);
+  --po-press-shadow: 0 10px 24px color-mix(in srgb, black 32%, transparent);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+) {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  will-change: transform, box-shadow;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+)::after {
+  content: "";
+  position: absolute;
+  left: var(--po-click-origin-x);
+  top: var(--po-click-origin-y);
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.25);
+  background: radial-gradient(circle, color-mix(in srgb, var(--po-click-ring) 76%, white 10%) 0%, color-mix(in srgb, var(--po-click-ring) 24%, transparent) 62%, transparent 100%);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px color-mix(in srgb, black 18%, transparent);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+):active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 8px color-mix(in srgb, black 16%, transparent);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+).is-click-animating {
+  animation: po-interaction-pop 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: var(--po-press-shadow), 0 0 0 1px color-mix(in srgb, var(--po-click-ring) 42%, transparent);
+}
+
+.party-operations :is(
+  .po-btn,
+  .po-icon-btn,
+  .po-tab,
+  .po-entry-handle,
+  .po-char-btn,
+  .po-exh-btn,
+  .po-campfire-toggle,
+  .po-panel-disclosure > summary
+).is-click-animating::after {
+  animation: po-interaction-ripple 420ms ease-out;
+}
+
+@keyframes po-interaction-pop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    transform: translateY(-1px) scale(1.04);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes po-interaction-ripple {
+  0% {
+    opacity: 0.5;
+    transform: translate(-50%, -50%) scale(0.25);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(8);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .party-operations :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ) {
+    transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+    animation: none !important;
+  }
+
+  .party-operations :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  )::after {
+    display: none;
+  }
+
+  .party-operations :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ):hover,
+  .party-operations :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ):active {
+    transform: none;
+    box-shadow: none;
   }
 }

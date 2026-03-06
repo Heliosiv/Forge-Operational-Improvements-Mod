@@ -19,7 +19,6 @@ Use this launch plan to start selling access at `$3.50` while continuing develop
 ## 2) Premium Packaging Setup (Now Included)
 
 Files added in this repo:
-- `module.premium.template.json` (premium module manifest template)
 - `scripts/build-premium-package.ps1` (builds premium ZIP artifact)
 - `scripts/build-founders-release.ps1` (builds founders `module.json` + `module.zip` for private GitHub Releases)
 
@@ -49,7 +48,7 @@ Output files:
 
 ## 4) Launch Checklist
 
-1. Copy `module.premium.template.json` to `module.premium.json`
+1. Create a local `module.premium.json` file that is not committed to Git.
 2. Set:
    - `title` (e.g. `Party Operations Premium`)
    - `version`

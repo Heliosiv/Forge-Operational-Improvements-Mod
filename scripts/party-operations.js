@@ -1406,8 +1406,6 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "run-gather-preset",
   "clear-gather-history",
   "remove-gather-history-entry",
-  "set-comm-toggle",
-  "set-comm-text",
   "set-recon-field",
   "run-recon-check",
   "set-reputation-score",
@@ -3028,7 +3026,6 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
   const injury = globalContext.injuryRecovery.injuries?.[actorId] ?? null;
   const roleKeys = globalContext.rolesByActorId[actorId] ?? [];
   const watchSlots = globalContext.watchSlotsByActorId[actorId] ?? [];
-  const communicationReadiness = globalContext.operations.communication?.readiness ?? { ready: false, enabledCount: 0 };
   const reputationSummary = globalContext.operations.reputation?.summary ?? { hostileCount: 0, highStandingCount: 0 };
   const baseSummary = globalContext.operations.baseOperations ?? { maintenancePressure: 0, readiness: false, activeSites: 0 };
   const environment = globalContext.operations.environment ?? { presetKey: "none", movementDc: 12, appliedActorIds: [], preset: null };
@@ -3054,8 +3051,6 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       roleTotal: Number(globalContext.operations.summary?.roleTotal ?? 0),
       activeSops: Number(globalContext.operations.summary?.activeSops ?? 0),
       sopTotal: Number(globalContext.operations.summary?.sopTotal ?? 0),
-      communicationReady: Boolean(communicationReadiness.ready),
-      communicationToggleCount: Number(communicationReadiness.enabledCount ?? 0),
       hostileFactions: Number(reputationSummary.hostileCount ?? 0),
       highStandingFactions: Number(reputationSummary.highStandingCount ?? 0),
       supplyPressure: Number(baseSummary.maintenancePressure ?? 0),
@@ -4351,10 +4346,11 @@ function getOperationsPageStorageKey() {
 }
 
 function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
+  const allowed = new Set(["planning", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
   const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
   if (stored === "supply") return "base";
   if (stored === "readiness") return "planning";
+  if (stored === "comms") return "planning";
   if (stored === "gm" && !canAccessAllPlayerOps()) return "planning";
   return allowed.has(stored) ? stored : "planning";
 }
@@ -4362,7 +4358,8 @@ function getActiveOperationsPage() {
 function setActiveOperationsPage(page) {
   if (page === "supply") page = "base";
   if (page === "readiness") page = "planning";
-  const allowed = new Set(["planning", "comms", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
+  if (page === "comms") page = "planning";
+  const allowed = new Set(["planning", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
   if (page === "gm" && !canAccessAllPlayerOps()) page = "planning";
   const value = allowed.has(page) ? page : "planning";
   sessionStorage.setItem(getOperationsPageStorageKey(), value);
@@ -7429,7 +7426,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmPanelTabCore: mainTab === "rest-watch",
         gmPanelTabOperations: operationsTabActive,
         operationsPagePlanning: operationsPageValue === "planning",
-        operationsPageComms: operationsPageValue === "comms",
         operationsPageReputation: operationsPageValue === "reputation",
         operationsPageSupply: false,
         operationsPageBase: operationsPageValue === "base",
@@ -7520,7 +7516,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmPanelTabCore: mainTab === "rest-watch",
         gmPanelTabOperations: operationsTabActive,
         operationsPagePlanning: fallbackOpsPage === "planning",
-        operationsPageComms: fallbackOpsPage === "comms",
         operationsPageReputation: fallbackOpsPage === "reputation",
         operationsPageSupply: false,
         operationsPageBase: fallbackOpsPage === "base",
@@ -8288,12 +8283,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "show-operational-brief": async () => {
           await showOperationalBrief();
         },
-        "set-comm-toggle": async () => {
-          await setCommunicationToggle(element);
-        },
-        "set-comm-text": async () => {
-          await setCommunicationText(element);
-        },
         "set-recon-field": async () => {
           await setReconField(element);
         },
@@ -8302,9 +8291,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "show-recon-brief": async () => {
           await showReconBrief();
-        },
-        "show-communication-brief": async () => {
-          await showCommunicationBrief();
         },
         "set-reputation-score": async () => {
           await setReputationScore(element);
@@ -14462,13 +14448,6 @@ function buildDefaultOperationsLedger() {
       prisonerHandling: "",
       retreatProtocol: ""
     },
-    communication: {
-      silentSignals: "",
-      codePhrase: "",
-      signalFlare: false,
-      signalBell: false,
-      preCombatPlan: false
-    },
     reputation: {
       factions: getDefaultReputationFactions()
     },
@@ -14651,7 +14630,6 @@ function getOperationsLedger() {
   merged.roles = ensureObject(merged.roles, defaults.roles);
   merged.sops = ensureObject(merged.sops, defaults.sops);
   merged.sopNotes = ensureObject(merged.sopNotes, defaults.sopNotes);
-  merged.communication = ensureObject(merged.communication, defaults.communication);
   merged.reputation = ensureObject(merged.reputation, defaults.reputation);
   merged.supplyLines = ensureObject(merged.supplyLines, defaults.supplyLines);
   merged.recon = ensureObject(merged.recon, defaults.recon);
@@ -14698,6 +14676,7 @@ function getOperationsLedger() {
   merged.resources.upkeep = ensureObject(merged.resources.upkeep, defaults.resources.upkeep);
   ensureOperationalResourceConfig(merged.resources);
   ensureMerchantsState(merged);
+  delete merged.communication;
 
   return merged;
 }
@@ -15040,8 +15019,6 @@ function buildOperationsContext() {
   const activeSops = sops.filter((sop) => sop.active).length;
   const disorderRisk = missingRoles + Math.max(0, 3 - activeSops);
   const effects = getOperationalEffects(ledger, roles, sops);
-  const communication = ledger.communication ?? {};
-  const communicationReadiness = getCommunicationReadiness(communication);
   const reconState = ensureReconState(ledger);
   const recon = buildReconContext(reconState);
   const reputationState = ensureReputationState(ledger);
@@ -15490,14 +15467,6 @@ function buildOperationsContext() {
         { value: "overloaded", label: "Overloaded", selected: (resourcesState.encumbrance ?? "light") === "overloaded" }
       ]
     },
-    communication: {
-      silentSignals: communication.silentSignals ?? "",
-      codePhrase: communication.codePhrase ?? "",
-      signalFlare: Boolean(communication.signalFlare),
-      signalBell: Boolean(communication.signalBell),
-      preCombatPlan: Boolean(communication.preCombatPlan),
-      readiness: communicationReadiness
-    },
     recon,
     partyHealth: {
       customModifiers: partyHealthState.customModifiers.map((entry) => ({
@@ -15656,8 +15625,6 @@ function getOperationalEffects(ledger, roles, sops) {
   const hasCartographer = Boolean(ledger.roles?.cartographer);
   const hasChronicler = Boolean(ledger.roles?.chronicler);
   const hasSteward = Boolean(ledger.roles?.steward);
-  const communication = ledger.communication ?? {};
-  const comms = getCommunicationReadiness(communication);
   const recon = buildReconContext(ensureReconState(ledger));
   const reputation = buildReputationContext(ensureReputationState(ledger));
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
@@ -15723,7 +15690,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (hasCartographer && ledger.sops?.urbanEntry) bonuses.push("Route discipline active: reduce one navigation uncertainty this session.");
   if (hasChronicler) bonuses.push("Operational recall active: clarify one unknown clue or timeline detail once per session.");
   if (hasSteward) bonuses.push("Stewardship active: reduce one lifestyle/logistics cost friction once per session.");
-  if (comms.ready) bonuses.push("Communication discipline active: improve one coordinated response roll by a minor margin.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
 
@@ -15734,10 +15700,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (activeSops >= 2) {
     const modifier = addGlobalModifier("briefed-procedures", "abilityChecks", 1, "Briefed procedures (2+ SOPs)", "All ability checks");
     if (modifier.enabled) globalMinorBonuses.push("Briefed procedures: all player actors gain +1 to ability checks while 2+ SOPs are active.");
-  }
-  if (comms.ready) {
-    const modifier = addGlobalModifier("signal-discipline", "perceptionChecks", 1, "Signal discipline (comms ready)", "Perception checks");
-    if (modifier.enabled) globalMinorBonuses.push("Signal discipline: all player actors gain +1 to Perception checks while communication readiness is active.");
   }
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
@@ -15768,14 +15730,12 @@ function getOperationalEffects(ledger, roles, sops) {
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
   if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
   if (activeSops <= 2) risks.push("Low SOP coverage: apply disadvantage on one unplanned operation check.");
-  if (!comms.ready) risks.push("Communication gaps: increase misread signal risk during first contact.");
   if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
 
   if (roleCoverage <= 1) addGlobalModifier("poor-role-coverage", "initiative", -1, "Poor role coverage", "Initiative rolls");
   if (activeSops <= 1) addGlobalModifier("insufficient-sop-coverage", "abilityChecks", -1, "Insufficient SOP coverage", "All ability checks");
-  if (!comms.ready) addGlobalModifier("communication-gaps", "perceptionChecks", -1, "Communication gaps", "Perception checks");
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const customDaeChanges = [];
@@ -15869,21 +15829,6 @@ function getOperationalEffects(ledger, roles, sops) {
     hasGlobalMinorBonuses: globalMinorBonuses.length > 0,
     hasRisks: risks.length > 0,
     risks
-  };
-}
-
-function getCommunicationReadiness(communication) {
-  const hasSignals = (communication.silentSignals ?? "").trim().length > 0;
-  const hasCodePhrase = (communication.codePhrase ?? "").trim().length > 0;
-  const toggles = [Boolean(communication.signalFlare), Boolean(communication.signalBell), Boolean(communication.preCombatPlan)];
-  const enabledCount = toggles.filter(Boolean).length;
-  const ready = hasSignals && hasCodePhrase && enabledCount >= 2;
-  return {
-    hasSignals,
-    hasCodePhrase,
-    enabledCount,
-    ready,
-    statusText: ready ? "Ready" : "At Risk"
   };
 }
 
@@ -19043,14 +18988,17 @@ function setMerchantTradeDialogBarterStatus(root, options = {}) {
   const statusNode = root.querySelector("[data-merchant-barter-status]");
   if (!statusNode) return;
   if (options.pending) {
+    statusNode.dataset.state = "pending";
     statusNode.textContent = String(options.pendingLabel ?? "Barter pending GM resolution...");
     return;
   }
   if (options.error) {
+    statusNode.dataset.state = "error";
     statusNode.textContent = String(options.errorLabel ?? "Barter request failed.");
     return;
   }
   const summary = String(options.summary ?? "").trim();
+  statusNode.dataset.state = summary ? "applied" : "ready";
   statusNode.textContent = summary || "No barter adjustment applied.";
 }
 
@@ -19384,7 +19332,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   }
 }
 
-function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
+async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
   const sellRate = Number.isFinite(sellRateRaw)
@@ -19418,6 +19366,9 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
       ? getMerchantBarterUiSummaryText(existingBarterResolution)
       : "No barter adjustment applied yet.")
     : "Barter is disabled.";
+  const barterStatusState = barterEnabled
+    ? (existingBarterResolution?.applied ? "applied" : "ready")
+    : "disabled";
   const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Cities";
   const merchantItems = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
@@ -19427,23 +19378,14 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
+        img: String(item?.img ?? "icons/svg/item-bag.svg"),
         qty,
-        unitCp
+        unitCp,
+        unitLabel: formatMerchantCp(unitCp)
       };
     })
     .filter((row) => row.qty > 0)
     .sort((a, b) => a.itemName.localeCompare(b.itemName));
-
-  const buyRowsHtml = merchantItems.length > 0
-    ? merchantItems.map((row) => `
-      <tr>
-        <td>${poEscapeHtml(row.itemName)}</td>
-        <td>${row.qty}</td>
-        <td>${poEscapeHtml(formatMerchantCp(row.unitCp))}</td>
-        <td><input type="number" min="0" max="${row.qty}" value="0" data-merchant-buy-item="${poEscapeHtml(row.itemId)}" data-unit-cp="${row.unitCp}" /></td>
-      </tr>
-    `).join("")
-    : "<tr><td colspan='4'>No wares available.</td></tr>";
 
   const actorSellItems = !sellEnabled
     ? []
@@ -19458,27 +19400,16 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
         return {
           itemId: String(item?.id ?? ""),
           itemName: String(item?.name ?? "Item"),
+          img: String(item?.img ?? "icons/svg/item-bag.svg"),
           itemType: String(item?.type ?? "").trim().toLowerCase(),
           itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[String(item?.type ?? "").trim().toLowerCase()] ?? item?.type ?? "item"),
           qty,
-          unitCp
+          unitCp,
+          unitLabel: formatMerchantCp(unitCp)
         };
       })
       .filter((row) => row.qty > 0)
       .sort((a, b) => a.itemName.localeCompare(b.itemName));
-  const sellRowsHtml = !sellEnabled
-    ? "<tr><td colspan='5'>This merchant is not buying goods.</td></tr>"
-    : (actorSellItems.length > 0
-      ? actorSellItems.map((row) => `
-      <tr>
-        <td>${poEscapeHtml(row.itemName)}</td>
-        <td>${poEscapeHtml(row.itemTypeLabel)}</td>
-        <td>${row.qty}</td>
-        <td>${poEscapeHtml(formatMerchantCp(row.unitCp))}</td>
-        <td><input type="number" min="0" max="${row.qty}" value="0" data-merchant-sell-item="${poEscapeHtml(row.itemId)}" data-unit-cp="${row.unitCp}" /></td>
-      </tr>
-    `).join("")
-      : "<tr><td colspan='5'>No eligible items to sell.</td></tr>");
 
   const actorFunds = formatMerchantCp(currencyBundleToCp(getActorCurrencyBundle(actor)));
   const merchantFundsBase = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
@@ -19486,41 +19417,42 @@ function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlem
   const buybackTypeSummary = buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
     ? "All item types"
     : (Array.from(buybackAllowedTypeSet).map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType)).join(", ") || "None");
-
-  return `
-    <div class="po-merchant-trade-dialog" data-merchant-id="${poEscapeHtml(String(merchant?.id ?? ""))}" data-actor-id="${poEscapeHtml(String(actor?.id ?? ""))}" data-settlement="${poEscapeHtml(settlement)}" data-barter-key="${poEscapeHtml(barterResolutionKey)}">
-      <p><strong>${poEscapeHtml(String(actor?.name ?? "Actor"))}</strong> shopping with <strong>${poEscapeHtml(String(merchant?.name ?? "Merchant"))}</strong>.</p>
-      <p>City: ${poEscapeHtml(settlementLabel)}</p>
-      <p>Player Funds: ${poEscapeHtml(actorFunds)}</p>
-      <p>Merchant Funds: ${poEscapeHtml(merchantFunds)}</p>
-      <p>Buy Markup: x${buyMarkup.toFixed(2)} | Sell Rate: ${Math.round(sellRate * 100)}%</p>
-      ${barterEnabled
-    ? `<p>Barter Check: ${poEscapeHtml(barterAbilityLabel)} (GM-resolved).</p>
-      <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm" data-merchant-barter-request>${poEscapeHtml(barterButtonLabel)}</button>
-        <span class="po-op-summary" data-merchant-barter-status>${poEscapeHtml(barterStatusLabel)}</span>
-      </div>`
-    : "<p>Barter Check: Disabled.</p>"}
-      <details open>
-        <summary><strong>Buy</strong></summary>
-        <table class="po-table po-table-sm" style="width:100%;">
-          <thead><tr><th>Item</th><th>Stock</th><th>Unit</th><th>Qty</th></tr></thead>
-          <tbody>${buyRowsHtml}</tbody>
-        </table>
-      </details>
-      <details open>
-        <summary><strong>Sell</strong></summary>
-        <div class="po-op-summary">Accepted Types: ${poEscapeHtml(buybackTypeSummary)}</div>
-        <table class="po-table po-table-sm" style="width:100%;">
-          <thead><tr><th>Item</th><th>Type</th><th>Owned</th><th>Unit</th><th>Qty</th></tr></thead>
-          <tbody>${sellRowsHtml}</tbody>
-        </table>
-      </details>
-      <div class="po-op-summary">Buy Total: <strong data-merchant-buy-total>0.00 gp</strong></div>
-      <div class="po-op-summary">Sell Total: <strong data-merchant-sell-total>0.00 gp</strong></div>
-      <div class="po-op-summary">Net: <strong data-merchant-net-total>0.00 gp</strong></div>
-    </div>
-  `;
+  return renderTemplate("modules/party-operations/templates/merchant-shop.hbs", {
+    merchantId: String(merchant?.id ?? ""),
+    actorId: String(actor?.id ?? ""),
+    settlement,
+    barterResolutionKey,
+    merchantName: String(merchant?.name ?? "Merchant"),
+    merchantTitle: String(merchant?.title ?? "").trim(),
+    merchantImg: String(merchant?.img ?? merchantActor?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    actorName: String(actor?.name ?? "Actor"),
+    settlementLabel,
+    actorFunds,
+    merchantFunds,
+    buyMarkupLabel: `x${buyMarkup.toFixed(2)}`,
+    sellRateLabel: `${Math.round(sellRate * 100)}%`,
+    barterEnabled,
+    barterAbilityLabel,
+    barterButtonLabel,
+    barterStatusLabel,
+    barterStatusState,
+    barterHint: barterEnabled
+      ? `${barterAbilityLabel} barter check. ${game.user?.isGM ? "Resolve it here before finalizing." : "Ask the GM to resolve it before finalizing."}`
+      : "This merchant is not accepting barter checks.",
+    buyCountLabel: merchantItems.length > 0
+      ? `${merchantItems.length} wares listed`
+      : "No wares available",
+    sellCountLabel: !sellEnabled
+      ? "Selling disabled"
+      : (actorSellItems.length > 0 ? `${actorSellItems.length} sellable items` : "Nothing eligible to sell"),
+    buybackTypeSummary,
+    hasBuyRows: merchantItems.length > 0,
+    buyRows: merchantItems,
+    buyEmptyLabel: "No wares available.",
+    hasSellRows: sellEnabled && actorSellItems.length > 0,
+    sellRows: actorSellItems,
+    sellEmptyLabel: sellEnabled ? "No eligible items to sell." : "This merchant is not buying goods."
+  });
 }
 
 function readMerchantTradeInputsFromDialog(html) {
@@ -19551,6 +19483,7 @@ function bindMerchantTradeDialogTotals(html) {
   const buyNode = root.querySelector("[data-merchant-buy-total]");
   const sellNode = root.querySelector("[data-merchant-sell-total]");
   const netNode = root.querySelector("[data-merchant-net-total]");
+  const netCard = root.querySelector(".po-merchant-trade-total-card.is-net");
   const recalc = () => {
     const sumBySelector = (selector) => Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
       const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
@@ -19568,6 +19501,9 @@ function bindMerchantTradeDialogTotals(html) {
       netNode.textContent = netCp >= 0
         ? `${formatMerchantCp(netCp)} paid`
         : `${formatMerchantCp(Math.abs(netCp))} received`;
+    }
+    if (netCard instanceof HTMLElement) {
+      netCard.dataset.netState = netCp > 0 ? "pay" : (netCp < 0 ? "receive" : "even");
     }
   };
   root.addEventListener("input", (event) => {
@@ -19780,9 +19716,10 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
     return;
   }
 
+  const dialogContent = await buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlement);
   const dialog = new Dialog({
     title: `Merchant Shop - ${String(merchant.name ?? "Merchant")}`,
-    content: buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlement),
+    content: dialogContent,
     buttons: {
       finalize: {
         label: "Finalize",
@@ -19832,6 +19769,11 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
       bindMerchantTradeDialogTotals(html);
       bindMerchantTradeDialogBarterButton(html);
     }
+  }, {
+    classes: ["party-operations", "po-merchant-shop-dialog-app"],
+    width: 1120,
+    height: 820,
+    resizable: true
   });
   dialog.render(true);
 }
@@ -25676,58 +25618,6 @@ async function showReconBrief() {
   `;
   await Dialog.prompt({
     title: "Recon Brief",
-    content,
-    rejectClose: false,
-    callback: () => {}
-  });
-}
-
-async function setCommunicationToggle(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can update communication discipline.");
-    return;
-  }
-  const key = element?.dataset?.comm;
-  if (!key) return;
-  await updateOperationsLedger((ledger) => {
-    if (!ledger.communication) ledger.communication = {};
-    ledger.communication[key] = Boolean(element?.checked);
-  });
-}
-
-async function setCommunicationText(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can update communication discipline.");
-    return;
-  }
-  const key = element?.dataset?.commText;
-  if (!key) return;
-  const value = String(element?.value ?? "").trim();
-  await updateOperationsLedger((ledger) => {
-    if (!ledger.communication) ledger.communication = {};
-    ledger.communication[key] = value;
-  });
-}
-
-async function showCommunicationBrief() {
-  const context = buildOperationsContext();
-  const comm = context.communication;
-  const readiness = comm.readiness;
-  const content = `
-    <div class="po-help">
-      <p><strong>Communication Discipline:</strong> ${readiness.statusText}</p>
-      <p><strong>Silent Signals:</strong> ${readiness.hasSignals ? "Set" : "Missing"}</p>
-      <p><strong>Code Phrase:</strong> ${readiness.hasCodePhrase ? "Set" : "Missing"}</p>
-      <p><strong>Alert Channels:</strong> ${readiness.enabledCount} enabled</p>
-      <p><strong>Flare Plan:</strong> ${comm.signalFlare ? "Enabled" : "Off"}</p>
-      <p><strong>Bell Plan:</strong> ${comm.signalBell ? "Enabled" : "Off"}</p>
-      <p><strong>Pre-Combat Plan:</strong> ${comm.preCombatPlan ? "Enabled" : "Off"}</p>
-      <p><strong>Signal Set:</strong> ${comm.silentSignals || "-"}</p>
-      <p><strong>Code Phrase:</strong> ${comm.codePhrase || "-"}</p>
-    </div>
-  `;
-  await Dialog.prompt({
-    title: "Communication Brief",
     content,
     rejectClose: false,
     callback: () => {}

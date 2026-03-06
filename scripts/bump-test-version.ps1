@@ -1,7 +1,5 @@
 param(
-  [string]$ManifestPath = "module.json",
-  [string]$SecondaryManifestPath = "module.copy.test.json",
-  [switch]$ApplySecondary
+  [string]$ManifestPath = "module.json"
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,9 +51,5 @@ $currentVersion = $currentVersion.Trim()
 $nextVersion = Get-NextTestVersion -CurrentVersion $currentVersion
 
 Update-ManifestVersion -Path $ManifestPath -NextVersion $nextVersion
-
-if ($ApplySecondary -and (Test-Path $SecondaryManifestPath)) {
-  Update-ManifestVersion -Path $SecondaryManifestPath -NextVersion $nextVersion
-}
 
 Write-Output $nextVersion

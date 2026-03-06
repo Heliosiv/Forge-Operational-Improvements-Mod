@@ -1,0 +1,259 @@
+{
+  "generatedAt": "2026-02-27T01:25:03.957Z",
+  "writeMode": false,
+  "summary": {
+    "sourcePath": "C:\\Users\\Kyle\\AppData\\Local\\FoundryVTT\\Data\\worlds\\terranor\\packs\\terranor-c1-items-pack",
+    "manifestPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+    "sourceItemCount": 1010,
+    "manifestItemCountBefore": 1325,
+    "missingFromManifestCount": 110,
+    "balancedMode": true,
+    "deriveSpellPricing": true,
+    "sourceCollection": "world.terranor.terranor-c1-items-pack",
+    "allowedTypes": [
+      "consumable",
+      "equipment",
+      "weapon",
+      "loot",
+      "container",
+      "tool",
+      "backpack",
+      "armor",
+      "ammunition",
+      "trinket",
+      "spell"
+    ],
+    "skippedByBalance": 66,
+    "importedCount": 44,
+    "taggedItems": 44,
+    "itemMidiDefaults": 163,
+    "itemDaeDefaults": 396,
+    "itemMidiPropertiesDefaults": 70,
+    "effectCount": 14,
+    "effectMidiDefaults": 0,
+    "effectDaeDefaults": 0,
+    "manifestItemCountAfter": 1369
+  },
+  "importedItems": [
+    {
+      "id": "05gdU39BGTceoWTH",
+      "name": "Silver Leaf",
+      "type": "consumable"
+    },
+    {
+      "id": "0ihVqrcBZS2S2DIC",
+      "name": "Gloves of Thievery",
+      "type": "equipment"
+    },
+    {
+      "id": "4VAxbCgEezGyrUFs",
+      "name": "Drum of Elemental Fusion",
+      "type": "consumable"
+    },
+    {
+      "id": "70KszVqLAPX7A5XJ",
+      "name": "Life Transference",
+      "type": "spell"
+    },
+    {
+      "id": "9HEjizGE5QOmkGh9",
+      "name": "Potion of Giants Size",
+      "type": "consumable"
+    },
+    {
+      "id": "9TYjE2i7fh2CYFt6",
+      "name": "(ROSS) Guiding Bolt Lv.3",
+      "type": "spell"
+    },
+    {
+      "id": "B75DCwr1GtjLSr2u",
+      "name": "Feywild Circus Amulet",
+      "type": "equipment"
+    },
+    {
+      "id": "BG9e0xCdW4yklgVc",
+      "name": "(SOH) - Cure Wounds Level 2",
+      "type": "spell"
+    },
+    {
+      "id": "BS3slY3vhCohKHpK",
+      "name": "Shield of Spell Echo",
+      "type": "equipment"
+    },
+    {
+      "id": "BhfuI7UoZntTMH9a",
+      "name": "Angels Trumpet",
+      "type": "consumable"
+    },
+    {
+      "id": "DVSEnNYuqmWvzLzG",
+      "name": "Shadow Pelt",
+      "type": "loot"
+    },
+    {
+      "id": "E9vmA9N7LYJ2xYPs",
+      "name": "Ever Frost Berries",
+      "type": "consumable"
+    },
+    {
+      "id": "ENxfOsfB50KNcblA",
+      "name": "Red Ammonita",
+      "type": "consumable"
+    },
+    {
+      "id": "FxRV2ewe5QDjwFcC",
+      "name": "Morning Dew",
+      "type": "consumable"
+    },
+    {
+      "id": "HEMVppXuxkAHHfmj",
+      "name": "(SOH) - Lesser Restoration",
+      "type": "spell"
+    },
+    {
+      "id": "K1LczIXywedLAHQt",
+      "name": "Hag Finger",
+      "type": "consumable"
+    },
+    {
+      "id": "K4vVm4Se0LdYlhKn",
+      "name": "Helios Sundering",
+      "type": "spell"
+    },
+    {
+      "id": "MI3wDnJtjr0uhNk0",
+      "name": "Radiant Fungus",
+      "type": "consumable"
+    },
+    {
+      "id": "PlZACRcKlU5PDLCc",
+      "name": "(DE) - Dream",
+      "type": "spell"
+    },
+    {
+      "id": "PubrFxRC2UE5Ynhs",
+      "name": "Eagles Fern",
+      "type": "consumable"
+    },
+    {
+      "id": "QuGrY0oiKs1NwSfQ",
+      "name": "Rainbow Mushroom",
+      "type": "consumable"
+    },
+    {
+      "id": "RG9hh2PCvg9idEok",
+      "name": "Fairy Stool",
+      "type": "consumable"
+    },
+    {
+      "id": "UEysC8NeYFaJHFCJ",
+      "name": "(DOEF) - Elemental Blast",
+      "type": "spell"
+    },
+    {
+      "id": "VT88293rONu49oAG",
+      "name": "Shimmer Cap",
+      "type": "consumable"
+    },
+    {
+      "id": "axwMHkJXUxoUTM1a",
+      "name": "(ROSS) - Haste",
+      "type": "spell"
+    },
+    {
+      "id": "bJggG0KpRQ5WeaXs",
+      "name": "Belladonna",
+      "type": "consumable"
+    },
+    {
+      "id": "hyZRMb2nuo7PXjyt",
+      "name": "Torch of Gravitation",
+      "type": "consumable"
+    },
+    {
+      "id": "ij9nZdL7Y1c3hIa7",
+      "name": "(SOH) - Cure Wounds Level 3",
+      "type": "spell"
+    },
+    {
+      "id": "kaU7Mxue2aM2JAVa",
+      "name": "(SOH) - Mass Cure Wounds",
+      "type": "spell"
+    },
+    {
+      "id": "lGCclSUqG9ddPX4b",
+      "name": "(SOH) - Cure Wounds Level 4",
+      "type": "spell"
+    },
+    {
+      "id": "meaJQ72ZmOsLV0P4",
+      "name": "Night Shade",
+      "type": "consumable"
+    },
+    {
+      "id": "mhW8MqxC8JptP68z",
+      "name": "Mystic Sands Hourglass",
+      "type": "equipment"
+    },
+    {
+      "id": "nI6reOJv4hRSpFWy",
+      "name": "Death Cap",
+      "type": "consumable"
+    },
+    {
+      "id": "olSomiKR2aht58KL",
+      "name": "Hand Cross. (Mental Assault)",
+      "type": "weapon"
+    },
+    {
+      "id": "omZfomH4TmmsjqAK",
+      "name": "(DOEF) - Elemental Shield",
+      "type": "spell"
+    },
+    {
+      "id": "otBGV6rBt3fWQk8t",
+      "name": "(ROSS) - Cure Wounds Lv.2",
+      "type": "spell"
+    },
+    {
+      "id": "qvgJ0LYNclkqYr3r",
+      "name": "(ROSS) - Magic Missile Lv.2",
+      "type": "spell"
+    },
+    {
+      "id": "shBSik5AOR8MbP4M",
+      "name": "Sentinel Shield",
+      "type": "equipment"
+    },
+    {
+      "id": "tRr2oYcYHTRsemcT",
+      "name": "(DOEF) - Elemental Whirlwind",
+      "type": "spell"
+    },
+    {
+      "id": "tbMVwmjoGTOq8Lxz",
+      "name": "Cold/Fire/Lightning",
+      "type": "equipment"
+    },
+    {
+      "id": "vxKAyHajx4nnDf0o",
+      "name": "(SOH) - Cure Wounds Level 1",
+      "type": "spell"
+    },
+    {
+      "id": "wWVCRptoQuQpWNMB",
+      "name": "Das Lute",
+      "type": "tool"
+    },
+    {
+      "id": "xWFKOPpYGe6g2dPw",
+      "name": "Hunter's Mark - Damage",
+      "type": "spell"
+    },
+    {
+      "id": "zB8fj9TKm0tcwvWA",
+      "name": "(ROSS) - Magic Missile L.v1",
+      "type": "spell"
+    }
+  ]
+}

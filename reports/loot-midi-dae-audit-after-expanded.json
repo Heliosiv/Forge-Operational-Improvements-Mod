@@ -1,0 +1,2428 @@
+{
+  "generatedAt": "2026-02-27T01:21:31.261Z",
+  "summary": {
+    "packPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+    "writeMode": true,
+    "totalItems": 1325,
+    "itemsWithEffects": 56,
+    "totalEffects": 14,
+    "itemLevelMidiFlagsAdded": 0,
+    "itemLevelDaeFlagsAdded": 0,
+    "effectLevelMidiFlagsAdded": 0,
+    "effectLevelDaeFlagsAdded": 0,
+    "effectMidiDefaultsApplied": 0,
+    "effectDaeDefaultsApplied": 0,
+    "semanticGapCandidateCount": 281,
+    "semanticGapCandidateSample": [
+      {
+        "id": "00BggOkChWztQx6R",
+        "name": "Studded Leather Armor +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.00BggOkChWztQx6R"
+      },
+      {
+        "id": "07R6JFioylOCpVoL",
+        "name": "Frost Brand Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.07R6JFioylOCpVoL"
+      },
+      {
+        "id": "0G5LSgbb5NTV4XC7",
+        "name": "Ioun Stone of Strength",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.0G5LSgbb5NTV4XC7"
+      },
+      {
+        "id": "1KMSpOSU0EliUBm2",
+        "name": "Potion of Storm Giant Strength",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.1KMSpOSU0EliUBm2"
+      },
+      {
+        "id": "296Zgo9RhltWShE1",
+        "name": "Stone of Good Luck (Luckstone)",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.296Zgo9RhltWShE1"
+      },
+      {
+        "id": "29e6gHwWKNLaRUoz",
+        "name": "Rope of Climbing",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.29e6gHwWKNLaRUoz"
+      },
+      {
+        "id": "2BYm8to5KldN8eYu",
+        "name": "Tome of Clear Thought",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.2BYm8to5KldN8eYu"
+      },
+      {
+        "id": "2Lkub0qIwucWEfp3",
+        "name": "Nine Lives Stealer Shortsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.2Lkub0qIwucWEfp3"
+      },
+      {
+        "id": "2veAOEyfbDJuxR8Y",
+        "name": "Ring of Warmth",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.2veAOEyfbDJuxR8Y"
+      },
+      {
+        "id": "34YKlIJVVWLeBv7R",
+        "name": "Potion of Cold Resistance",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.34YKlIJVVWLeBv7R"
+      },
+      {
+        "id": "3FNyS6DeCBZzFbqU",
+        "name": "Vorpal Greatsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.3FNyS6DeCBZzFbqU"
+      },
+      {
+        "id": "3TWT5bv3z5zGUZCe",
+        "name": "Gauntlets of Ogre Power",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.3TWT5bv3z5zGUZCe"
+      },
+      {
+        "id": "3X7vdOjnCSpi40yn",
+        "name": "Ring of Fire Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.3X7vdOjnCSpi40yn"
+      },
+      {
+        "id": "3h3ZU6qmQs18FfkA",
+        "name": "Mithral Chain Shirt",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.3h3ZU6qmQs18FfkA"
+      },
+      {
+        "id": "466j8hy4AiENMHVQ",
+        "name": "Plate Armor +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.466j8hy4AiENMHVQ"
+      },
+      {
+        "id": "4ZiJsDTRA1GgcWKP",
+        "name": "Potion of Stone Giant Strength",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.4ZiJsDTRA1GgcWKP"
+      },
+      {
+        "id": "5SorTMl8NKDO9Yge",
+        "name": "Ring of Poison Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.5SorTMl8NKDO9Yge"
+      },
+      {
+        "id": "6067acDZGv7KNOkP",
+        "name": "Elven Chain",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.6067acDZGv7KNOkP"
+      },
+      {
+        "id": "66UkbfH0PVwo4HgA",
+        "name": "Robe of Stars",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.66UkbfH0PVwo4HgA"
+      },
+      {
+        "id": "698gLyJ4JKVVMF53",
+        "name": "Padded Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.698gLyJ4JKVVMF53"
+      },
+      {
+        "id": "6MDTnMG4Hcw7qZsy",
+        "name": "Ioun Stone of Sustenance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.6MDTnMG4Hcw7qZsy"
+      },
+      {
+        "id": "7FEcfqz1piPHN1tV",
+        "name": "Ioun Stone of Greater Absorption",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.7FEcfqz1piPHN1tV"
+      },
+      {
+        "id": "7i4s9msZWpAw4Ynv",
+        "name": "Dagger of Venom",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.7i4s9msZWpAw4Ynv"
+      },
+      {
+        "id": "7jEKkA9qbwJ3IuCb",
+        "name": "Wand of Binding",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.7jEKkA9qbwJ3IuCb"
+      },
+      {
+        "id": "7wY0389wscheFkIa",
+        "name": "Scimitar of Speed",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.7wY0389wscheFkIa"
+      },
+      {
+        "id": "84z9mVy1mCipUWEY",
+        "name": "Breastplate +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.84z9mVy1mCipUWEY"
+      },
+      {
+        "id": "8MPnSrvEeZhPhtTi",
+        "name": "Potion of Lightning Resistance",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.8MPnSrvEeZhPhtTi"
+      },
+      {
+        "id": "8PI1EL8xHLq4tXKr",
+        "name": "Ring of Spell Turning",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.8PI1EL8xHLq4tXKr"
+      },
+      {
+        "id": "902yxeFDwavpm6cv",
+        "name": "Shortsword of Life Stealing",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.902yxeFDwavpm6cv"
+      },
+      {
+        "id": "9Mdes2tKt0cqsNTw",
+        "name": "Nine Lives Stealer Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.9Mdes2tKt0cqsNTw"
+      },
+      {
+        "id": "9jMQEm99q1ttAV1Q",
+        "name": "Ioun Stone of Insight",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.9jMQEm99q1ttAV1Q"
+      },
+      {
+        "id": "9stfX2i2I1YPo8vx",
+        "name": "Instant Fortress",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.9stfX2i2I1YPo8vx"
+      },
+      {
+        "id": "9uT9SXy1Gb1jiiZX",
+        "name": "Scale Mail +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.9uT9SXy1Gb1jiiZX"
+      },
+      {
+        "id": "Aq1rhgcgFnwu2T4I",
+        "name": "Cloak of the Bat",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Aq1rhgcgFnwu2T4I"
+      },
+      {
+        "id": "BQw5lyopqLmf8B6u",
+        "name": "Chain Mail Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.BQw5lyopqLmf8B6u"
+      },
+      {
+        "id": "BefbYlWbRYyy6R8s",
+        "name": "Nine Lives Stealer Longsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.BefbYlWbRYyy6R8s"
+      },
+      {
+        "id": "BjyTJn9oGvURWKJR",
+        "name": "Manual of Bodily Health",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.BjyTJn9oGvURWKJR"
+      },
+      {
+        "id": "BsyPV6eTNghT3Fho",
+        "name": "Eyes of Minute Seeing",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.BsyPV6eTNghT3Fho"
+      },
+      {
+        "id": "BwC8hZaNjO7IQc6K",
+        "name": "Splint Armor +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.BwC8hZaNjO7IQc6K"
+      },
+      {
+        "id": "CcTGZzQHejxEVLK1",
+        "name": "Mithral Breastplate",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.CcTGZzQHejxEVLK1"
+      },
+      {
+        "id": "Ct9LR9Ft1FG4a6Y1",
+        "name": "Potion of Mind Reading",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.Ct9LR9Ft1FG4a6Y1"
+      },
+      {
+        "id": "DT02xK1DzxLNlVaI",
+        "name": "Frost Brand Shortsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.DT02xK1DzxLNlVaI"
+      },
+      {
+        "id": "Do3qeSHtBjUsmfvz",
+        "name": "Rod of Alertness",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.Do3qeSHtBjUsmfvz"
+      },
+      {
+        "id": "E7c4zpWdYgkKDHGo",
+        "name": "Luck Blade Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.E7c4zpWdYgkKDHGo"
+      },
+      {
+        "id": "ER75WHewYN04Zp11",
+        "name": "Belt of Hill Giant Strength",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.ER75WHewYN04Zp11"
+      },
+      {
+        "id": "ET8Oo5vaTZqyb7rN",
+        "name": "Breastplate +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.ET8Oo5vaTZqyb7rN"
+      },
+      {
+        "id": "F3rQcaZvElNEiudk",
+        "name": "Giant Slayer Handaxe",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.F3rQcaZvElNEiudk"
+      },
+      {
+        "id": "FCxG64QUxsnF4Lis",
+        "name": "Holy Avenger Greatsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.FCxG64QUxsnF4Lis"
+      },
+      {
+        "id": "FLoBS3UnFnZTSsSx",
+        "name": "Chain Shirt +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.FLoBS3UnFnZTSsSx"
+      },
+      {
+        "id": "FZixEM5voQkH84xP",
+        "name": "Studded Leather Armor +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.FZixEM5voQkH84xP"
+      },
+      {
+        "id": "Fc6UfFNOnW80XMzi",
+        "name": "Antitoxin",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.Fc6UfFNOnW80XMzi"
+      },
+      {
+        "id": "G9XQPNLlDXkpVxn1",
+        "name": "Padded Armor +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.G9XQPNLlDXkpVxn1"
+      },
+      {
+        "id": "GKQSxYvS3m9qKVac",
+        "name": "Mithral Splint Armor",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.GKQSxYvS3m9qKVac"
+      },
+      {
+        "id": "HF32aZSVw4P0MR4K",
+        "name": "Chain Shirt Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.HF32aZSVw4P0MR4K"
+      },
+      {
+        "id": "HVpXIU0zZw0a4Fb7",
+        "name": "Mithral Plate Armor",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.HVpXIU0zZw0a4Fb7"
+      },
+      {
+        "id": "HY8duCwmvlXOruTG",
+        "name": "Potion of Diminution",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.HY8duCwmvlXOruTG"
+      },
+      {
+        "id": "HnIERWmmra74hSCw",
+        "name": "Ring of Water Elemental Command",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.HnIERWmmra74hSCw"
+      },
+      {
+        "id": "HokQ1loVJTFxt27u",
+        "name": "Vorpal Longsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.HokQ1loVJTFxt27u"
+      },
+      {
+        "id": "HpEEfZg9PRkXnMi4",
+        "name": "Splint Armor +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.HpEEfZg9PRkXnMi4"
+      },
+      {
+        "id": "I5PWgE4IF40Iv9h4",
+        "name": "Giant Slayer Rapier",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.I5PWgE4IF40Iv9h4"
+      },
+      {
+        "id": "I7cOsXsklWkzouHA",
+        "name": "Vorpal Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.I7cOsXsklWkzouHA"
+      },
+      {
+        "id": "IeM5Ha2cg0RA99q3",
+        "name": "Hide Armor +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.IeM5Ha2cg0RA99q3"
+      },
+      {
+        "id": "Ilyv71AeobM6AvIn",
+        "name": "Defender Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.Ilyv71AeobM6AvIn"
+      },
+      {
+        "id": "IpBBqr0r7JanyVn0",
+        "name": "Ring of Thunder Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.IpBBqr0r7JanyVn0"
+      },
+      {
+        "id": "IrC5LPbWNxlAQoK7",
+        "name": "Ring of Radiant Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.IrC5LPbWNxlAQoK7"
+      },
+      {
+        "id": "IuVaBrq17AqxpXc4",
+        "name": "Wand of the War Mage +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.IuVaBrq17AqxpXc4"
+      },
+      {
+        "id": "JDTO996oInbiZGHW",
+        "name": "Breastplate +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.JDTO996oInbiZGHW"
+      },
+      {
+        "id": "JNkjtTxYmEC7W34O",
+        "name": "Splint Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.JNkjtTxYmEC7W34O"
+      },
+      {
+        "id": "JRJpKZyamkpa7awv",
+        "name": "Robe of Scintillating Colors",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.JRJpKZyamkpa7awv"
+      },
+      {
+        "id": "Jj4iFQQGvckx8Wsj",
+        "name": "Potion of Fire Resistance",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.Jj4iFQQGvckx8Wsj"
+      },
+      {
+        "id": "Jvf1NWFxcjfHnMQ5",
+        "name": "Cloak of Elvenkind",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Jvf1NWFxcjfHnMQ5"
+      },
+      {
+        "id": "KKWBLKQIWHtcpymp",
+        "name": "Boots of Elvenkind",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.KKWBLKQIWHtcpymp"
+      },
+      {
+        "id": "KhRhwADrTpol3yTx",
+        "name": "Ring Mail +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.KhRhwADrTpol3yTx"
+      },
+      {
+        "id": "L9KBLub5vfb3mTDz",
+        "name": "Ring of Fire Elemental Command",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.L9KBLub5vfb3mTDz"
+      },
+      {
+        "id": "LBQWNqX6hZOKhQ8a",
+        "name": "Potion of Radiant Resistance",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.LBQWNqX6hZOKhQ8a"
+      },
+      {
+        "id": "LpD064ilKEeFzVI8",
+        "name": "Cloak of Displacement",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.LpD064ilKEeFzVI8"
+      },
+      {
+        "id": "M28HYDCueaK7J8u8",
+        "name": "Ring Mail +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.M28HYDCueaK7J8u8"
+      },
+      {
+        "id": "M5APnDW8bKQb7fHI",
+        "name": "Shield of Missile Attraction",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.M5APnDW8bKQb7fHI"
+      },
+      {
+        "id": "MCMSZrhcD40oMJ9v",
+        "name": "Boots of Speed",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.MCMSZrhcD40oMJ9v"
+      },
+      {
+        "id": "MFd96UkSs5g9QO78",
+        "name": "Dragon Slayer Shortsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.MFd96UkSs5g9QO78"
+      },
+      {
+        "id": "MSO3JxK8578xSh6x",
+        "name": "Chain Shirt +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.MSO3JxK8578xSh6x"
+      },
+      {
+        "id": "NGVEouqK0I6J6jV5",
+        "name": "Ioun Stone of Absorption",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.NGVEouqK0I6J6jV5"
+      },
+      {
+        "id": "NL8UDqVsmPrnUdQg",
+        "name": "Dagger of Shadows",
+        "type": "weapon",
+        "sourceId": ""
+      },
+      {
+        "id": "NM1dPyKwHw2DyUWA",
+        "name": "Ring Mail +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.NM1dPyKwHw2DyUWA"
+      },
+      {
+        "id": "NRj0lC3SM03s1YB3",
+        "name": "Belt of Cloud Giant Strength",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.NRj0lC3SM03s1YB3"
+      },
+      {
+        "id": "NgwrqNa6kkgoPW2Q",
+        "name": "Shield +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.NgwrqNa6kkgoPW2Q"
+      },
+      {
+        "id": "NmZMx2u6bHpRyGUa",
+        "name": "Frost Brand Longsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.NmZMx2u6bHpRyGUa"
+      },
+      {
+        "id": "OPbdSlrhkUDNpgcS",
+        "name": "Wand of the War Mage +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.OPbdSlrhkUDNpgcS"
+      },
+      {
+        "id": "ORKf6RRcalrdD6Qp",
+        "name": "Belt of Frost Giant Strength",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.ORKf6RRcalrdD6Qp"
+      },
+      {
+        "id": "OUGMoQYeJzxEcRvm",
+        "name": "Nine Lives Stealer Rapier",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.OUGMoQYeJzxEcRvm"
+      },
+      {
+        "id": "OwqRt1pVLhdMQa0d",
+        "name": "Dwarven Plate",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.OwqRt1pVLhdMQa0d"
+      },
+      {
+        "id": "PAXfmZ2ErDlCVy0N",
+        "name": "Talisman of Ultimate Evil",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.PAXfmZ2ErDlCVy0N"
+      },
+      {
+        "id": "PLkzJ310FzBnRrI5",
+        "name": "Military Saddle",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.PLkzJ310FzBnRrI5"
+      },
+      {
+        "id": "PRhtLbRLb9LjHZG7",
+        "name": "Gloves of Swimming and Climbing",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.PRhtLbRLb9LjHZG7"
+      },
+      {
+        "id": "PV0sn2Nlr8CNn4W9",
+        "name": "Magnifying Glass",
+        "type": "loot",
+        "sourceId": "Compendium.dnd5e.items.Item.PV0sn2Nlr8CNn4W9"
+      },
+      {
+        "id": "Q4Iy6hqREsbk9yG7",
+        "name": "Ioun Stone of Agility",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Q4Iy6hqREsbk9yG7"
+      },
+      {
+        "id": "Q4jmng3i9Lb2nL5F",
+        "name": "Manual of Quickness of Action",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.Q4jmng3i9Lb2nL5F"
+      },
+      {
+        "id": "Q7E6MgPzVkwBeZ6l",
+        "name": "Ring of Psychic Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Q7E6MgPzVkwBeZ6l"
+      },
+      {
+        "id": "RDPFmUR9exTEXFc8",
+        "name": "Boots of the Winterlands",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.RDPFmUR9exTEXFc8"
+      },
+      {
+        "id": "Rn9gt6JGULtx9Zvz",
+        "name": "Chain Mail +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Rn9gt6JGULtx9Zvz"
+      },
+      {
+        "id": "S7TrIOlE600KIOUx",
+        "name": "Dragon Slayer Rapier",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.S7TrIOlE600KIOUx"
+      },
+      {
+        "id": "STxsp9Ao3pS2T4gt",
+        "name": "Studded Leather Armor +1",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.STxsp9Ao3pS2T4gt"
+      },
+      {
+        "id": "SXjs8JghAPBv7d6j",
+        "name": "Dragon Slayer Longsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.SXjs8JghAPBv7d6j"
+      },
+      {
+        "id": "ScxK8YNU5dWELhlQ",
+        "name": "Ring of Force Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.ScxK8YNU5dWELhlQ"
+      },
+      {
+        "id": "SypSoinJkES0o5FB",
+        "name": "Glamoured Studded Leather",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.SypSoinJkES0o5FB"
+      },
+      {
+        "id": "TevMHicE3A70AlmP",
+        "name": "Potion of Frost Giant Strength",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.TevMHicE3A70AlmP"
+      },
+      {
+        "id": "U4PI6l96QJUk6TGb",
+        "name": "Eyes of the Eagle",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.U4PI6l96QJUk6TGb"
+      },
+      {
+        "id": "U74TPNQLJZbHJyCk",
+        "name": "Robe of Eyes",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.U74TPNQLJZbHJyCk"
+      },
+      {
+        "id": "ULL5nkyN3WzazI4l",
+        "name": "Holy Avenger Scimitar",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.ULL5nkyN3WzazI4l"
+      },
+      {
+        "id": "UT8zCwmdXVQlBiyl",
+        "name": "Leather Armor +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.UT8zCwmdXVQlBiyl"
+      },
+      {
+        "id": "VRT5GEusTFstOZdF",
+        "name": "Hide Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.VRT5GEusTFstOZdF"
+      },
+      {
+        "id": "VTc5McIjCm40KPIz",
+        "name": "Plate Armor +2",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.VTc5McIjCm40KPIz"
+      },
+      {
+        "id": "VwJjuNbBf2KHMPrY",
+        "name": "Cloak of Arachnida",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.VwJjuNbBf2KHMPrY"
+      },
+      {
+        "id": "W1kDsFekjroIywuz",
+        "name": "Studded Leather Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.W1kDsFekjroIywuz"
+      },
+      {
+        "id": "WO8DLfz3G2QZ5njs",
+        "name": "Ring of Acid Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.WO8DLfz3G2QZ5njs"
+      },
+      {
+        "id": "WfqBg3yBNoJQtVEB",
+        "name": "Shield +3",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.WfqBg3yBNoJQtVEB"
+      },
+      {
+        "id": "WnKWD1FuAFUE7f4v",
+        "name": "Tome of Understanding",
+        "type": "consumable",
+        "sourceId": "Compendium.dnd5e.items.Item.WnKWD1FuAFUE7f4v"
+      },
+      {
+        "id": "Wo2Dkh191C4VmLmg",
+        "name": "Ring Mail Armor of Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.Wo2Dkh191C4VmLmg"
+      },
+      {
+        "id": "X6PHssSGnwiJRgcx",
+        "name": "Luck Blade Longsword",
+        "type": "weapon",
+        "sourceId": "Compendium.dnd5e.items.Item.X6PHssSGnwiJRgcx"
+      },
+      {
+        "id": "XJ8CG4UvLELCmOi2",
+        "name": "Ring of Lightning Resistance",
+        "type": "equipment",
+        "sourceId": "Compendium.dnd5e.items.Item.XJ8CG4UvLELCmOi2"
+      }
+    ],
+    "backupPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db.bak"
+  },
+  "semanticGapCandidates": [
+    {
+      "id": "00BggOkChWztQx6R",
+      "name": "Studded Leather Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.00BggOkChWztQx6R"
+    },
+    {
+      "id": "07R6JFioylOCpVoL",
+      "name": "Frost Brand Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.07R6JFioylOCpVoL"
+    },
+    {
+      "id": "0G5LSgbb5NTV4XC7",
+      "name": "Ioun Stone of Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.0G5LSgbb5NTV4XC7"
+    },
+    {
+      "id": "1KMSpOSU0EliUBm2",
+      "name": "Potion of Storm Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.1KMSpOSU0EliUBm2"
+    },
+    {
+      "id": "296Zgo9RhltWShE1",
+      "name": "Stone of Good Luck (Luckstone)",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.296Zgo9RhltWShE1"
+    },
+    {
+      "id": "29e6gHwWKNLaRUoz",
+      "name": "Rope of Climbing",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.29e6gHwWKNLaRUoz"
+    },
+    {
+      "id": "2BYm8to5KldN8eYu",
+      "name": "Tome of Clear Thought",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.2BYm8to5KldN8eYu"
+    },
+    {
+      "id": "2Lkub0qIwucWEfp3",
+      "name": "Nine Lives Stealer Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.2Lkub0qIwucWEfp3"
+    },
+    {
+      "id": "2veAOEyfbDJuxR8Y",
+      "name": "Ring of Warmth",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.2veAOEyfbDJuxR8Y"
+    },
+    {
+      "id": "34YKlIJVVWLeBv7R",
+      "name": "Potion of Cold Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.34YKlIJVVWLeBv7R"
+    },
+    {
+      "id": "3FNyS6DeCBZzFbqU",
+      "name": "Vorpal Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.3FNyS6DeCBZzFbqU"
+    },
+    {
+      "id": "3TWT5bv3z5zGUZCe",
+      "name": "Gauntlets of Ogre Power",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.3TWT5bv3z5zGUZCe"
+    },
+    {
+      "id": "3X7vdOjnCSpi40yn",
+      "name": "Ring of Fire Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.3X7vdOjnCSpi40yn"
+    },
+    {
+      "id": "3h3ZU6qmQs18FfkA",
+      "name": "Mithral Chain Shirt",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.3h3ZU6qmQs18FfkA"
+    },
+    {
+      "id": "466j8hy4AiENMHVQ",
+      "name": "Plate Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.466j8hy4AiENMHVQ"
+    },
+    {
+      "id": "4ZiJsDTRA1GgcWKP",
+      "name": "Potion of Stone Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.4ZiJsDTRA1GgcWKP"
+    },
+    {
+      "id": "5SorTMl8NKDO9Yge",
+      "name": "Ring of Poison Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.5SorTMl8NKDO9Yge"
+    },
+    {
+      "id": "6067acDZGv7KNOkP",
+      "name": "Elven Chain",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.6067acDZGv7KNOkP"
+    },
+    {
+      "id": "66UkbfH0PVwo4HgA",
+      "name": "Robe of Stars",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.66UkbfH0PVwo4HgA"
+    },
+    {
+      "id": "698gLyJ4JKVVMF53",
+      "name": "Padded Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.698gLyJ4JKVVMF53"
+    },
+    {
+      "id": "6MDTnMG4Hcw7qZsy",
+      "name": "Ioun Stone of Sustenance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.6MDTnMG4Hcw7qZsy"
+    },
+    {
+      "id": "7FEcfqz1piPHN1tV",
+      "name": "Ioun Stone of Greater Absorption",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.7FEcfqz1piPHN1tV"
+    },
+    {
+      "id": "7i4s9msZWpAw4Ynv",
+      "name": "Dagger of Venom",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.7i4s9msZWpAw4Ynv"
+    },
+    {
+      "id": "7jEKkA9qbwJ3IuCb",
+      "name": "Wand of Binding",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.7jEKkA9qbwJ3IuCb"
+    },
+    {
+      "id": "7wY0389wscheFkIa",
+      "name": "Scimitar of Speed",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.7wY0389wscheFkIa"
+    },
+    {
+      "id": "84z9mVy1mCipUWEY",
+      "name": "Breastplate +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.84z9mVy1mCipUWEY"
+    },
+    {
+      "id": "8MPnSrvEeZhPhtTi",
+      "name": "Potion of Lightning Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.8MPnSrvEeZhPhtTi"
+    },
+    {
+      "id": "8PI1EL8xHLq4tXKr",
+      "name": "Ring of Spell Turning",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.8PI1EL8xHLq4tXKr"
+    },
+    {
+      "id": "902yxeFDwavpm6cv",
+      "name": "Shortsword of Life Stealing",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.902yxeFDwavpm6cv"
+    },
+    {
+      "id": "9Mdes2tKt0cqsNTw",
+      "name": "Nine Lives Stealer Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.9Mdes2tKt0cqsNTw"
+    },
+    {
+      "id": "9jMQEm99q1ttAV1Q",
+      "name": "Ioun Stone of Insight",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.9jMQEm99q1ttAV1Q"
+    },
+    {
+      "id": "9stfX2i2I1YPo8vx",
+      "name": "Instant Fortress",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.9stfX2i2I1YPo8vx"
+    },
+    {
+      "id": "9uT9SXy1Gb1jiiZX",
+      "name": "Scale Mail +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.9uT9SXy1Gb1jiiZX"
+    },
+    {
+      "id": "Aq1rhgcgFnwu2T4I",
+      "name": "Cloak of the Bat",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Aq1rhgcgFnwu2T4I"
+    },
+    {
+      "id": "BQw5lyopqLmf8B6u",
+      "name": "Chain Mail Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.BQw5lyopqLmf8B6u"
+    },
+    {
+      "id": "BefbYlWbRYyy6R8s",
+      "name": "Nine Lives Stealer Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.BefbYlWbRYyy6R8s"
+    },
+    {
+      "id": "BjyTJn9oGvURWKJR",
+      "name": "Manual of Bodily Health",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.BjyTJn9oGvURWKJR"
+    },
+    {
+      "id": "BsyPV6eTNghT3Fho",
+      "name": "Eyes of Minute Seeing",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.BsyPV6eTNghT3Fho"
+    },
+    {
+      "id": "BwC8hZaNjO7IQc6K",
+      "name": "Splint Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.BwC8hZaNjO7IQc6K"
+    },
+    {
+      "id": "CcTGZzQHejxEVLK1",
+      "name": "Mithral Breastplate",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.CcTGZzQHejxEVLK1"
+    },
+    {
+      "id": "Ct9LR9Ft1FG4a6Y1",
+      "name": "Potion of Mind Reading",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.Ct9LR9Ft1FG4a6Y1"
+    },
+    {
+      "id": "DT02xK1DzxLNlVaI",
+      "name": "Frost Brand Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.DT02xK1DzxLNlVaI"
+    },
+    {
+      "id": "Do3qeSHtBjUsmfvz",
+      "name": "Rod of Alertness",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.Do3qeSHtBjUsmfvz"
+    },
+    {
+      "id": "E7c4zpWdYgkKDHGo",
+      "name": "Luck Blade Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.E7c4zpWdYgkKDHGo"
+    },
+    {
+      "id": "ER75WHewYN04Zp11",
+      "name": "Belt of Hill Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ER75WHewYN04Zp11"
+    },
+    {
+      "id": "ET8Oo5vaTZqyb7rN",
+      "name": "Breastplate +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ET8Oo5vaTZqyb7rN"
+    },
+    {
+      "id": "F3rQcaZvElNEiudk",
+      "name": "Giant Slayer Handaxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.F3rQcaZvElNEiudk"
+    },
+    {
+      "id": "FCxG64QUxsnF4Lis",
+      "name": "Holy Avenger Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.FCxG64QUxsnF4Lis"
+    },
+    {
+      "id": "FLoBS3UnFnZTSsSx",
+      "name": "Chain Shirt +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.FLoBS3UnFnZTSsSx"
+    },
+    {
+      "id": "FZixEM5voQkH84xP",
+      "name": "Studded Leather Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.FZixEM5voQkH84xP"
+    },
+    {
+      "id": "Fc6UfFNOnW80XMzi",
+      "name": "Antitoxin",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.Fc6UfFNOnW80XMzi"
+    },
+    {
+      "id": "G9XQPNLlDXkpVxn1",
+      "name": "Padded Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.G9XQPNLlDXkpVxn1"
+    },
+    {
+      "id": "GKQSxYvS3m9qKVac",
+      "name": "Mithral Splint Armor",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.GKQSxYvS3m9qKVac"
+    },
+    {
+      "id": "HF32aZSVw4P0MR4K",
+      "name": "Chain Shirt Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.HF32aZSVw4P0MR4K"
+    },
+    {
+      "id": "HVpXIU0zZw0a4Fb7",
+      "name": "Mithral Plate Armor",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.HVpXIU0zZw0a4Fb7"
+    },
+    {
+      "id": "HY8duCwmvlXOruTG",
+      "name": "Potion of Diminution",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.HY8duCwmvlXOruTG"
+    },
+    {
+      "id": "HnIERWmmra74hSCw",
+      "name": "Ring of Water Elemental Command",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.HnIERWmmra74hSCw"
+    },
+    {
+      "id": "HokQ1loVJTFxt27u",
+      "name": "Vorpal Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.HokQ1loVJTFxt27u"
+    },
+    {
+      "id": "HpEEfZg9PRkXnMi4",
+      "name": "Splint Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.HpEEfZg9PRkXnMi4"
+    },
+    {
+      "id": "I5PWgE4IF40Iv9h4",
+      "name": "Giant Slayer Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.I5PWgE4IF40Iv9h4"
+    },
+    {
+      "id": "I7cOsXsklWkzouHA",
+      "name": "Vorpal Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.I7cOsXsklWkzouHA"
+    },
+    {
+      "id": "IeM5Ha2cg0RA99q3",
+      "name": "Hide Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.IeM5Ha2cg0RA99q3"
+    },
+    {
+      "id": "Ilyv71AeobM6AvIn",
+      "name": "Defender Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.Ilyv71AeobM6AvIn"
+    },
+    {
+      "id": "IpBBqr0r7JanyVn0",
+      "name": "Ring of Thunder Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.IpBBqr0r7JanyVn0"
+    },
+    {
+      "id": "IrC5LPbWNxlAQoK7",
+      "name": "Ring of Radiant Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.IrC5LPbWNxlAQoK7"
+    },
+    {
+      "id": "IuVaBrq17AqxpXc4",
+      "name": "Wand of the War Mage +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.IuVaBrq17AqxpXc4"
+    },
+    {
+      "id": "JDTO996oInbiZGHW",
+      "name": "Breastplate +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.JDTO996oInbiZGHW"
+    },
+    {
+      "id": "JNkjtTxYmEC7W34O",
+      "name": "Splint Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.JNkjtTxYmEC7W34O"
+    },
+    {
+      "id": "JRJpKZyamkpa7awv",
+      "name": "Robe of Scintillating Colors",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.JRJpKZyamkpa7awv"
+    },
+    {
+      "id": "Jj4iFQQGvckx8Wsj",
+      "name": "Potion of Fire Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.Jj4iFQQGvckx8Wsj"
+    },
+    {
+      "id": "Jvf1NWFxcjfHnMQ5",
+      "name": "Cloak of Elvenkind",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Jvf1NWFxcjfHnMQ5"
+    },
+    {
+      "id": "KKWBLKQIWHtcpymp",
+      "name": "Boots of Elvenkind",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.KKWBLKQIWHtcpymp"
+    },
+    {
+      "id": "KhRhwADrTpol3yTx",
+      "name": "Ring Mail +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.KhRhwADrTpol3yTx"
+    },
+    {
+      "id": "L9KBLub5vfb3mTDz",
+      "name": "Ring of Fire Elemental Command",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.L9KBLub5vfb3mTDz"
+    },
+    {
+      "id": "LBQWNqX6hZOKhQ8a",
+      "name": "Potion of Radiant Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.LBQWNqX6hZOKhQ8a"
+    },
+    {
+      "id": "LpD064ilKEeFzVI8",
+      "name": "Cloak of Displacement",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.LpD064ilKEeFzVI8"
+    },
+    {
+      "id": "M28HYDCueaK7J8u8",
+      "name": "Ring Mail +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.M28HYDCueaK7J8u8"
+    },
+    {
+      "id": "M5APnDW8bKQb7fHI",
+      "name": "Shield of Missile Attraction",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.M5APnDW8bKQb7fHI"
+    },
+    {
+      "id": "MCMSZrhcD40oMJ9v",
+      "name": "Boots of Speed",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.MCMSZrhcD40oMJ9v"
+    },
+    {
+      "id": "MFd96UkSs5g9QO78",
+      "name": "Dragon Slayer Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.MFd96UkSs5g9QO78"
+    },
+    {
+      "id": "MSO3JxK8578xSh6x",
+      "name": "Chain Shirt +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.MSO3JxK8578xSh6x"
+    },
+    {
+      "id": "NGVEouqK0I6J6jV5",
+      "name": "Ioun Stone of Absorption",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.NGVEouqK0I6J6jV5"
+    },
+    {
+      "id": "NL8UDqVsmPrnUdQg",
+      "name": "Dagger of Shadows",
+      "type": "weapon",
+      "sourceId": ""
+    },
+    {
+      "id": "NM1dPyKwHw2DyUWA",
+      "name": "Ring Mail +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.NM1dPyKwHw2DyUWA"
+    },
+    {
+      "id": "NRj0lC3SM03s1YB3",
+      "name": "Belt of Cloud Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.NRj0lC3SM03s1YB3"
+    },
+    {
+      "id": "NgwrqNa6kkgoPW2Q",
+      "name": "Shield +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.NgwrqNa6kkgoPW2Q"
+    },
+    {
+      "id": "NmZMx2u6bHpRyGUa",
+      "name": "Frost Brand Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.NmZMx2u6bHpRyGUa"
+    },
+    {
+      "id": "OPbdSlrhkUDNpgcS",
+      "name": "Wand of the War Mage +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.OPbdSlrhkUDNpgcS"
+    },
+    {
+      "id": "ORKf6RRcalrdD6Qp",
+      "name": "Belt of Frost Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ORKf6RRcalrdD6Qp"
+    },
+    {
+      "id": "OUGMoQYeJzxEcRvm",
+      "name": "Nine Lives Stealer Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.OUGMoQYeJzxEcRvm"
+    },
+    {
+      "id": "OwqRt1pVLhdMQa0d",
+      "name": "Dwarven Plate",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.OwqRt1pVLhdMQa0d"
+    },
+    {
+      "id": "PAXfmZ2ErDlCVy0N",
+      "name": "Talisman of Ultimate Evil",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.PAXfmZ2ErDlCVy0N"
+    },
+    {
+      "id": "PLkzJ310FzBnRrI5",
+      "name": "Military Saddle",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.PLkzJ310FzBnRrI5"
+    },
+    {
+      "id": "PRhtLbRLb9LjHZG7",
+      "name": "Gloves of Swimming and Climbing",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.PRhtLbRLb9LjHZG7"
+    },
+    {
+      "id": "PV0sn2Nlr8CNn4W9",
+      "name": "Magnifying Glass",
+      "type": "loot",
+      "sourceId": "Compendium.dnd5e.items.Item.PV0sn2Nlr8CNn4W9"
+    },
+    {
+      "id": "Q4Iy6hqREsbk9yG7",
+      "name": "Ioun Stone of Agility",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Q4Iy6hqREsbk9yG7"
+    },
+    {
+      "id": "Q4jmng3i9Lb2nL5F",
+      "name": "Manual of Quickness of Action",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.Q4jmng3i9Lb2nL5F"
+    },
+    {
+      "id": "Q7E6MgPzVkwBeZ6l",
+      "name": "Ring of Psychic Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Q7E6MgPzVkwBeZ6l"
+    },
+    {
+      "id": "RDPFmUR9exTEXFc8",
+      "name": "Boots of the Winterlands",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.RDPFmUR9exTEXFc8"
+    },
+    {
+      "id": "Rn9gt6JGULtx9Zvz",
+      "name": "Chain Mail +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Rn9gt6JGULtx9Zvz"
+    },
+    {
+      "id": "S7TrIOlE600KIOUx",
+      "name": "Dragon Slayer Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.S7TrIOlE600KIOUx"
+    },
+    {
+      "id": "STxsp9Ao3pS2T4gt",
+      "name": "Studded Leather Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.STxsp9Ao3pS2T4gt"
+    },
+    {
+      "id": "SXjs8JghAPBv7d6j",
+      "name": "Dragon Slayer Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.SXjs8JghAPBv7d6j"
+    },
+    {
+      "id": "ScxK8YNU5dWELhlQ",
+      "name": "Ring of Force Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ScxK8YNU5dWELhlQ"
+    },
+    {
+      "id": "SypSoinJkES0o5FB",
+      "name": "Glamoured Studded Leather",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.SypSoinJkES0o5FB"
+    },
+    {
+      "id": "TevMHicE3A70AlmP",
+      "name": "Potion of Frost Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.TevMHicE3A70AlmP"
+    },
+    {
+      "id": "U4PI6l96QJUk6TGb",
+      "name": "Eyes of the Eagle",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.U4PI6l96QJUk6TGb"
+    },
+    {
+      "id": "U74TPNQLJZbHJyCk",
+      "name": "Robe of Eyes",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.U74TPNQLJZbHJyCk"
+    },
+    {
+      "id": "ULL5nkyN3WzazI4l",
+      "name": "Holy Avenger Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.ULL5nkyN3WzazI4l"
+    },
+    {
+      "id": "UT8zCwmdXVQlBiyl",
+      "name": "Leather Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.UT8zCwmdXVQlBiyl"
+    },
+    {
+      "id": "VRT5GEusTFstOZdF",
+      "name": "Hide Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.VRT5GEusTFstOZdF"
+    },
+    {
+      "id": "VTc5McIjCm40KPIz",
+      "name": "Plate Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.VTc5McIjCm40KPIz"
+    },
+    {
+      "id": "VwJjuNbBf2KHMPrY",
+      "name": "Cloak of Arachnida",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.VwJjuNbBf2KHMPrY"
+    },
+    {
+      "id": "W1kDsFekjroIywuz",
+      "name": "Studded Leather Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.W1kDsFekjroIywuz"
+    },
+    {
+      "id": "WO8DLfz3G2QZ5njs",
+      "name": "Ring of Acid Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.WO8DLfz3G2QZ5njs"
+    },
+    {
+      "id": "WfqBg3yBNoJQtVEB",
+      "name": "Shield +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.WfqBg3yBNoJQtVEB"
+    },
+    {
+      "id": "WnKWD1FuAFUE7f4v",
+      "name": "Tome of Understanding",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.WnKWD1FuAFUE7f4v"
+    },
+    {
+      "id": "Wo2Dkh191C4VmLmg",
+      "name": "Ring Mail Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Wo2Dkh191C4VmLmg"
+    },
+    {
+      "id": "X6PHssSGnwiJRgcx",
+      "name": "Luck Blade Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.X6PHssSGnwiJRgcx"
+    },
+    {
+      "id": "XJ8CG4UvLELCmOi2",
+      "name": "Ring of Lightning Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.XJ8CG4UvLELCmOi2"
+    },
+    {
+      "id": "XJFqU9COdk4ycFa2",
+      "name": "Hide Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.XJFqU9COdk4ycFa2"
+    },
+    {
+      "id": "XKnDE8DTrJxIkVCF",
+      "name": "Padded Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.XKnDE8DTrJxIkVCF"
+    },
+    {
+      "id": "XZWHQ20ynJBK6xmU",
+      "name": "Ring of Air Elemental Command",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.XZWHQ20ynJBK6xmU"
+    },
+    {
+      "id": "YFarUKR3OrM5raf5",
+      "name": "Half Plate Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.YFarUKR3OrM5raf5"
+    },
+    {
+      "id": "YM6bZNmpync83VFa",
+      "name": "Giant Slayer Battleaxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.YM6bZNmpync83VFa"
+    },
+    {
+      "id": "YS9CRHg2yQlOVi3j",
+      "name": "Mithral Chain Mail",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.YS9CRHg2yQlOVi3j"
+    },
+    {
+      "id": "YeLz5OxRNxmvHJId",
+      "name": "Ioun Stone of Intellect",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.YeLz5OxRNxmvHJId"
+    },
+    {
+      "id": "YrkkHa6KN8a9o35k",
+      "name": "Defender Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.YrkkHa6KN8a9o35k"
+    },
+    {
+      "id": "YwS4pESpfsiq0JZv",
+      "name": "Armor of Vulnerability",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.YwS4pESpfsiq0JZv"
+    },
+    {
+      "id": "ZLpj1bpnWlAFUEHE",
+      "name": "Giant Slayer Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.ZLpj1bpnWlAFUEHE"
+    },
+    {
+      "id": "ZYEqOSY9BLZs2GPx",
+      "name": "Bracers of Archery",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ZYEqOSY9BLZs2GPx"
+    },
+    {
+      "id": "ZdcEtbtU3VkuxIFE",
+      "name": "Brooch of Shielding",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ZdcEtbtU3VkuxIFE"
+    },
+    {
+      "id": "Zf7kBZa5f4WBepn1",
+      "name": "Ring of Earth Elemental Command",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.Zf7kBZa5f4WBepn1"
+    },
+    {
+      "id": "ZoUVmRA3HfAK2eZy",
+      "name": "Candle of Invocation",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.ZoUVmRA3HfAK2eZy"
+    },
+    {
+      "id": "ZwFCZDgQljlidzns",
+      "name": "Leather Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ZwFCZDgQljlidzns"
+    },
+    {
+      "id": "a26LjC4QxP1oorXC",
+      "name": "Headband of Intellect",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.a26LjC4QxP1oorXC"
+    },
+    {
+      "id": "aDEAwKwttl35dWaB",
+      "name": "Scale Mail +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.aDEAwKwttl35dWaB"
+    },
+    {
+      "id": "aMnWi1WXWpxRHq4r",
+      "name": "Potion of Climbing",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.aMnWi1WXWpxRHq4r"
+    },
+    {
+      "id": "akjpaK4TYkUZbGrN",
+      "name": "Chain Mail +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.akjpaK4TYkUZbGrN"
+    },
+    {
+      "id": "azxwKFHrNmG3HpVy",
+      "name": "Plate Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.azxwKFHrNmG3HpVy"
+    },
+    {
+      "id": "bAyr7j5Peq9wIJTa",
+      "name": "Potion of Clairvoyance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.bAyr7j5Peq9wIJTa"
+    },
+    {
+      "id": "bEZOY6uvHRweMM56",
+      "name": "Potion of Fire Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.bEZOY6uvHRweMM56"
+    },
+    {
+      "id": "bHbbIhbTzu4lYMRz",
+      "name": "Holy Avenger Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.bHbbIhbTzu4lYMRz"
+    },
+    {
+      "id": "bq9YKwEHLQ7p7ric",
+      "name": "Belt of Fire Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.bq9YKwEHLQ7p7ric"
+    },
+    {
+      "id": "bqZ6NTLDCUB98YjV",
+      "name": "Potion of Gaseous Form",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.bqZ6NTLDCUB98YjV"
+    },
+    {
+      "id": "c0luemOP0iW8L23R",
+      "name": "Potion of Psychic Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.c0luemOP0iW8L23R"
+    },
+    {
+      "id": "cI0UhWUux8gIzSHn",
+      "name": "Chain Shirt +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.cI0UhWUux8gIzSHn"
+    },
+    {
+      "id": "ctKfjHjk9gs9UtZI",
+      "name": "Potion of Speed",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.ctKfjHjk9gs9UtZI"
+    },
+    {
+      "id": "d58CvI0Fiav9Jjt1",
+      "name": "Defender Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.d58CvI0Fiav9Jjt1"
+    },
+    {
+      "id": "dOZkW5MwvsMhnd08",
+      "name": "Half Plate Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.dOZkW5MwvsMhnd08"
+    },
+    {
+      "id": "dRtb9Tg34NKX9mGF",
+      "name": "Leather Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.dRtb9Tg34NKX9mGF"
+    },
+    {
+      "id": "dXtZxlh2VKLCo1nA",
+      "name": "Leather Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.dXtZxlh2VKLCo1nA"
+    },
+    {
+      "id": "dZ9zWfhsIlabadKL",
+      "name": "Holy Avenger Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.dZ9zWfhsIlabadKL"
+    },
+    {
+      "id": "dvNzJqb7vq6oJlA2",
+      "name": "Berserker Battleaxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.dvNzJqb7vq6oJlA2"
+    },
+    {
+      "id": "eHGbr3rqRRxdBPLq",
+      "name": "Chain Mail +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.eHGbr3rqRRxdBPLq"
+    },
+    {
+      "id": "eTNc8XPtvZNe3yQs",
+      "name": "Potion of Flying",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.eTNc8XPtvZNe3yQs"
+    },
+    {
+      "id": "efluRemOguW2YeZY",
+      "name": "Frost Brand Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.efluRemOguW2YeZY"
+    },
+    {
+      "id": "ejEt6hLQxOux04lS",
+      "name": "Demon Armor",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ejEt6hLQxOux04lS"
+    },
+    {
+      "id": "evSCq83oPhR0ZK4y",
+      "name": "Armor of Invulnerability",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.evSCq83oPhR0ZK4y"
+    },
+    {
+      "id": "f0I81P9k29Q1lV4S",
+      "name": "Scale Mail Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.f0I81P9k29Q1lV4S"
+    },
+    {
+      "id": "f5chGcpQCi1HYPQw",
+      "name": "Potion of Poison Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.f5chGcpQCi1HYPQw"
+    },
+    {
+      "id": "fCUZ7h8YYrs16UhX",
+      "name": "Belt of Stone Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.fCUZ7h8YYrs16UhX"
+    },
+    {
+      "id": "fO1PuSOtZWLzEHqu",
+      "name": "Scale Mail +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.fO1PuSOtZWLzEHqu"
+    },
+    {
+      "id": "fStHPOhuJvwEjzQh",
+      "name": "Plate Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.fStHPOhuJvwEjzQh"
+    },
+    {
+      "id": "fWR9EFEjR0JtFdCC",
+      "name": "Luck Blade Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.fWR9EFEjR0JtFdCC"
+    },
+    {
+      "id": "feKHv3JUWZdSNKf0",
+      "name": "Dragon Slayer Scimitar",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.feKHv3JUWZdSNKf0"
+    },
+    {
+      "id": "fvezXwRJ5PqUf5NN",
+      "name": "Ring of Cold Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.fvezXwRJ5PqUf5NN"
+    },
+    {
+      "id": "gTRFQLdVD1gsKtPi",
+      "name": "Potion of Growth",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.gTRFQLdVD1gsKtPi"
+    },
+    {
+      "id": "gwuffGC4JZ8BbStz",
+      "name": "Berserker Handaxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.gwuffGC4JZ8BbStz"
+    },
+    {
+      "id": "h8rS84jKsMHl9J1i",
+      "name": "Ioun Stone of Awareness",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.h8rS84jKsMHl9J1i"
+    },
+    {
+      "id": "hDF4RSCzMO8iI14x",
+      "name": "Ioun Stone of Leadership",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.hDF4RSCzMO8iI14x"
+    },
+    {
+      "id": "iB3gunzgxZ8xK6Z5",
+      "name": "Talisman of Pure Good",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.iB3gunzgxZ8xK6Z5"
+    },
+    {
+      "id": "iRDmig2qZ7LdP0ug",
+      "name": "Mithral Scale Mail",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.iRDmig2qZ7LdP0ug"
+    },
+    {
+      "id": "ig5DOQtQYJPXJId4",
+      "name": "Ioun Stone of Fortitude",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.ig5DOQtQYJPXJId4"
+    },
+    {
+      "id": "iiQxTvDOhPGW5spF",
+      "name": "Amulet of Health",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.iiQxTvDOhPGW5spF"
+    },
+    {
+      "id": "j2ZGEwx8MhHZXds4",
+      "name": "Belt of Dwarvenkind",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.j2ZGEwx8MhHZXds4"
+    },
+    {
+      "id": "jmSC8I5awCoxNVv7",
+      "name": "Giant Slayer Greataxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.jmSC8I5awCoxNVv7"
+    },
+    {
+      "id": "jvKmgJYL33E8gev5",
+      "name": "Ioun Stone of Reserve",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.jvKmgJYL33E8gev5"
+    },
+    {
+      "id": "k2B9P3gm2NGjJ1m0",
+      "name": "Hide Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.k2B9P3gm2NGjJ1m0"
+    },
+    {
+      "id": "k3T7tpcdzDyVKlF4",
+      "name": "Wand of the War Mage +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.k3T7tpcdzDyVKlF4"
+    },
+    {
+      "id": "kKGJjVVlJVoakWgQ",
+      "name": "Potion of Force Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.kKGJjVVlJVoakWgQ"
+    },
+    {
+      "id": "kTxi62RTrrdrIBr9",
+      "name": "Holy Avenger Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.kTxi62RTrrdrIBr9"
+    },
+    {
+      "id": "kpDbCYgUivh7NApp",
+      "name": "Spellguard Shield",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.kpDbCYgUivh7NApp"
+    },
+    {
+      "id": "kvD4ElYCfCKpjDeg",
+      "name": "Dwarven Thrower",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.kvD4ElYCfCKpjDeg"
+    },
+    {
+      "id": "l3V7V8VCXpmAAysQ",
+      "name": "Staff of the Magi",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.l3V7V8VCXpmAAysQ"
+    },
+    {
+      "id": "lAcTZgNtpmks2Mo5",
+      "name": "Potion of Cloud Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.lAcTZgNtpmks2Mo5"
+    },
+    {
+      "id": "lN1VbnGFo3HNZXNb",
+      "name": "Half Plate Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.lN1VbnGFo3HNZXNb"
+    },
+    {
+      "id": "lccm5AjIk91aIHbi",
+      "name": "Breastplate Armor of Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.lccm5AjIk91aIHbi"
+    },
+    {
+      "id": "lsiR1hVfISlC5YoB",
+      "name": "Staff of Fire",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.lsiR1hVfISlC5YoB"
+    },
+    {
+      "id": "lvLrkAR7k8DS7J3W",
+      "name": "Iron Flask",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.lvLrkAR7k8DS7J3W"
+    },
+    {
+      "id": "mGIwk9FwTAJB6qTn",
+      "name": "Oathbow",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.mGIwk9FwTAJB6qTn"
+    },
+    {
+      "id": "mhFBTY0egW8AeCHe",
+      "name": "Potion of Hill Giant Strength",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.mhFBTY0egW8AeCHe"
+    },
+    {
+      "id": "nBFr5xTWeChM7xrb",
+      "name": "Giant Slayer Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.nBFr5xTWeChM7xrb"
+    },
+    {
+      "id": "nL0Y0X8SjF58OmBM",
+      "name": "Luck Blade Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.nL0Y0X8SjF58OmBM"
+    },
+    {
+      "id": "nSNhjX5F7f86AW1a",
+      "name": "Defender Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.nSNhjX5F7f86AW1a"
+    },
+    {
+      "id": "nk2MH16KcZmKp7FQ",
+      "name": "Ioun Stone of Mastery",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.nk2MH16KcZmKp7FQ"
+    },
+    {
+      "id": "oN4Glcmi4BhdAI3k",
+      "name": "Tome of Leadership and Influence",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.oN4Glcmi4BhdAI3k"
+    },
+    {
+      "id": "oSarKEU8x1AupB6z",
+      "name": "Deck of Many Things",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.oSarKEU8x1AupB6z"
+    },
+    {
+      "id": "oYZNXHth1UYxPwVi",
+      "name": "Periapt of Proof against Poison",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.oYZNXHth1UYxPwVi"
+    },
+    {
+      "id": "orHjq3XDPz4eXcov",
+      "name": "Dragon Slayer Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.orHjq3XDPz4eXcov"
+    },
+    {
+      "id": "oxzUb5j1TMsccGW4",
+      "name": "Mantle of Spell Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.oxzUb5j1TMsccGW4"
+    },
+    {
+      "id": "p01JzD9RpIOkJiqK",
+      "name": "Rapier of Life Stealing",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.p01JzD9RpIOkJiqK"
+    },
+    {
+      "id": "qGH7YqWhi0tHisMi",
+      "name": "Luck Blade Rapier",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.qGH7YqWhi0tHisMi"
+    },
+    {
+      "id": "qMGkmzfLHfXd7DiJ",
+      "name": "Ring of Necrotic Resistance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.qMGkmzfLHfXd7DiJ"
+    },
+    {
+      "id": "qRMQH8lRE42JkugE",
+      "name": "Mithral Half Plate Armor",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.qRMQH8lRE42JkugE"
+    },
+    {
+      "id": "rhGulc3gEJhnuP31",
+      "name": "Helm of Brilliance",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.rhGulc3gEJhnuP31"
+    },
+    {
+      "id": "sdHSbitJxgTX6aDG",
+      "name": "Greatsword of Life Stealing",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.sdHSbitJxgTX6aDG"
+    },
+    {
+      "id": "sfegfmo59MHJg2YC",
+      "name": "Scimitar of Life Stealing",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.sfegfmo59MHJg2YC"
+    },
+    {
+      "id": "srTRzwTfWKO5opOo",
+      "name": "Portable Ram",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.srTRzwTfWKO5opOo"
+    },
+    {
+      "id": "szNhDWpks5BhEXhT",
+      "name": "Ioun Stone of Regeneration",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.szNhDWpks5BhEXhT"
+    },
+    {
+      "id": "t7GfyRp3dB3lqS9i",
+      "name": "Horn of Blasting",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.t7GfyRp3dB3lqS9i"
+    },
+    {
+      "id": "tFLmAPUDLxBY8jFO",
+      "name": "Nine Lives Stealer Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.tFLmAPUDLxBY8jFO"
+    },
+    {
+      "id": "tIwoSAGJlcuyiwaQ",
+      "name": "Dragon Scale Mail",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.tIwoSAGJlcuyiwaQ"
+    },
+    {
+      "id": "tJQXAJx92wL6GM1v",
+      "name": "Mithral Ring Mail",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.tJQXAJx92wL6GM1v"
+    },
+    {
+      "id": "tTqixDDmzAfs995G",
+      "name": "Giant Slayer Shortsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.tTqixDDmzAfs995G"
+    },
+    {
+      "id": "twRJhPtDQe1HceFt",
+      "name": "Padded Armor +1",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.twRJhPtDQe1HceFt"
+    },
+    {
+      "id": "uWUD93jwuO2Jxkti",
+      "name": "Arrow-Catching Shield",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.uWUD93jwuO2Jxkti"
+    },
+    {
+      "id": "ukcKemEoTTRB9yLC",
+      "name": "Defender Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.ukcKemEoTTRB9yLC"
+    },
+    {
+      "id": "v4uNbmiz4ECTI89n",
+      "name": "Ioun Stone of Protection",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.v4uNbmiz4ECTI89n"
+    },
+    {
+      "id": "w56FIjFafs2rN6iK",
+      "name": "Mace of Smiting",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.w56FIjFafs2rN6iK"
+    },
+    {
+      "id": "wBYmPQG3nZfD88aP",
+      "name": "Belt of Storm Giant Strength",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.wBYmPQG3nZfD88aP"
+    },
+    {
+      "id": "wGDDt17DpBcXPuUD",
+      "name": "Hammer of Thunderbolts",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.wGDDt17DpBcXPuUD"
+    },
+    {
+      "id": "wNKYbKYwOHbA7SH8",
+      "name": "Potion of Heroism",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.wNKYbKYwOHbA7SH8"
+    },
+    {
+      "id": "wtctR6tCcYbQPiS0",
+      "name": "Longsword of Life Stealing",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.wtctR6tCcYbQPiS0"
+    },
+    {
+      "id": "wwNpAz2KMukovewN",
+      "name": "Necklace of Adaptation",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.wwNpAz2KMukovewN"
+    },
+    {
+      "id": "xEtBeZjJnkDXojQM",
+      "name": "Staff of Frost",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.xEtBeZjJnkDXojQM"
+    },
+    {
+      "id": "xbVpKtrQ6tJsPhXX",
+      "name": "Half Plate Armor +3",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.xbVpKtrQ6tJsPhXX"
+    },
+    {
+      "id": "xjRSY2ECcc9viSz3",
+      "name": "Scarab of Protection",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.xjRSY2ECcc9viSz3"
+    },
+    {
+      "id": "xw2kL7Puwg4wfjW3",
+      "name": "Giant Slayer Longsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.xw2kL7Puwg4wfjW3"
+    },
+    {
+      "id": "xw99pcqPBVwtMOLw",
+      "name": "Potion of Necrotic Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.xw99pcqPBVwtMOLw"
+    },
+    {
+      "id": "xzZQIIxXjNJwNqnp",
+      "name": "Shield +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.xzZQIIxXjNJwNqnp"
+    },
+    {
+      "id": "yiYCqmD5n08NftYk",
+      "name": "Sun Blade",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.yiYCqmD5n08NftYk"
+    },
+    {
+      "id": "ykB6UKv5BuQnSRSL",
+      "name": "Frost Brand Greatsword",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.ykB6UKv5BuQnSRSL"
+    },
+    {
+      "id": "ykefWXBjq3y6y9Se",
+      "name": "Manual of Gainful Exercise",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.ykefWXBjq3y6y9Se"
+    },
+    {
+      "id": "ypmzVapk7guDIqx4",
+      "name": "Shield",
+      "type": "equipment",
+      "sourceId": ""
+    },
+    {
+      "id": "zBX8LLC2CjC89Dzl",
+      "name": "Potion of Thunder Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.zBX8LLC2CjC89Dzl"
+    },
+    {
+      "id": "zIpNJyuOxp2raizE",
+      "name": "Splint Armor +2",
+      "type": "equipment",
+      "sourceId": "Compendium.dnd5e.items.Item.zIpNJyuOxp2raizE"
+    },
+    {
+      "id": "zSKorO6lwT7vs2uk",
+      "name": "Berserker Greataxe",
+      "type": "weapon",
+      "sourceId": "Compendium.dnd5e.items.Item.zSKorO6lwT7vs2uk"
+    },
+    {
+      "id": "zgZkJAyFAfYmyn11",
+      "name": "Potion of Acid Resistance",
+      "type": "consumable",
+      "sourceId": "Compendium.dnd5e.items.Item.zgZkJAyFAfYmyn11"
+    },
+    {
+      "id": "2IWiZAJtOGDoKjiz",
+      "name": "Gaseous Form",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.2IWiZAJtOGDoKjiz"
+    },
+    {
+      "id": "2RC0EyvBLPH88PZF",
+      "name": "Sunbeam",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.2RC0EyvBLPH88PZF"
+    },
+    {
+      "id": "2VXGS206tuChoeXy",
+      "name": "Speak with Plants",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.2VXGS206tuChoeXy"
+    },
+    {
+      "id": "2yHXEcrRbadZDr5M",
+      "name": "Heat Metal",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.2yHXEcrRbadZDr5M"
+    },
+    {
+      "id": "30ZgXtijJVCxQk5N",
+      "name": "Enthrall",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.30ZgXtijJVCxQk5N"
+    },
+    {
+      "id": "3okM6Gn63zzEULkz",
+      "name": "Wish",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.3okM6Gn63zzEULkz"
+    },
+    {
+      "id": "6HEEhLdJz32TL4Js",
+      "name": "Foresight",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.6HEEhLdJz32TL4Js"
+    },
+    {
+      "id": "7e3QXF10hLNDEdr6",
+      "name": "False Life",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.7e3QXF10hLNDEdr6"
+    },
+    {
+      "id": "7fFHlBk3UNX8gPKL",
+      "name": "Control Water",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.7fFHlBk3UNX8gPKL"
+    },
+    {
+      "id": "8PJAsHmbu6UgDHC0",
+      "name": "Wind Walk",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.8PJAsHmbu6UgDHC0"
+    },
+    {
+      "id": "9eOZDBImVKxbeOyZ",
+      "name": "Enhance Ability",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.9eOZDBImVKxbeOyZ"
+    },
+    {
+      "id": "AGFMPAmuzwWO6Dfz",
+      "name": "Raise Dead",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.AGFMPAmuzwWO6Dfz"
+    },
+    {
+      "id": "BQk5Row4NymMnUQl",
+      "name": "Hideous Laughter",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.BQk5Row4NymMnUQl"
+    },
+    {
+      "id": "CjIq8Ed7bu3vVwT1",
+      "name": "Contagion",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.CjIq8Ed7bu3vVwT1"
+    },
+    {
+      "id": "DUBgwHPakcLDkB6W",
+      "name": "Tree Stride",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.DUBgwHPakcLDkB6W"
+    },
+    {
+      "id": "HQfd7jJyULIoGxrZ",
+      "name": "Telekinesis",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.HQfd7jJyULIoGxrZ"
+    },
+    {
+      "id": "JGT5bNqu9REL7Fuz",
+      "name": "Find Familiar",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.JGT5bNqu9REL7Fuz"
+    },
+    {
+      "id": "JVhKeanAXZH62DrF",
+      "name": "Warding Bond",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.JVhKeanAXZH62DrF"
+    },
+    {
+      "id": "SLxA9QhrggTz0taU",
+      "name": "Hallow",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.SLxA9QhrggTz0taU"
+    },
+    {
+      "id": "TfRzwEgBHHkCc6Ql",
+      "name": "Irresistible Dance",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.TfRzwEgBHHkCc6Ql"
+    },
+    {
+      "id": "TkJ8Wtg1L7TZtspm",
+      "name": "Dispel Evil and Good",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.TkJ8Wtg1L7TZtspm"
+    },
+    {
+      "id": "UDUnlfPsOAbq2RSE",
+      "name": "Blur",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.UDUnlfPsOAbq2RSE"
+    },
+    {
+      "id": "W4Qx5z0id6da0vqg",
+      "name": "Legend Lore",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.W4Qx5z0id6da0vqg"
+    },
+    {
+      "id": "WahI41a3goVUg0x1",
+      "name": "Enlarge/Reduce",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.WahI41a3goVUg0x1"
+    },
+    {
+      "id": "XbwGq5kDJNvAxNXV",
+      "name": "Gate",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.XbwGq5kDJNvAxNXV"
+    },
+    {
+      "id": "XvbiNhNqXXIFisIy",
+      "name": "Shocking Grasp",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.XvbiNhNqXXIFisIy"
+    },
+    {
+      "id": "ZU9d6woBdUP8pIPt",
+      "name": "Beacon of Hope",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.ZU9d6woBdUP8pIPt"
+    },
+    {
+      "id": "a2KJHCIbY5Mi4Dmn",
+      "name": "Arcane Hand",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.a2KJHCIbY5Mi4Dmn"
+    },
+    {
+      "id": "aL1F8fvYLtNzUbKu",
+      "name": "Speak with Animals",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.aL1F8fvYLtNzUbKu"
+    },
+    {
+      "id": "cdrYKaFi98YWaBMw",
+      "name": "Vicious Mockery",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.cdrYKaFi98YWaBMw"
+    },
+    {
+      "id": "hzK7FQya0BDjSmLE",
+      "name": "Sunburst",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.hzK7FQya0BDjSmLE"
+    },
+    {
+      "id": "j8NtLXOOJ3GAKF8I",
+      "name": "Protection from Energy",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.j8NtLXOOJ3GAKF8I"
+    },
+    {
+      "id": "j8S49Rea8b1640Zi",
+      "name": "Holy Aura",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.j8S49Rea8b1640Zi"
+    },
+    {
+      "id": "jhhT9PsHy5A7EojO",
+      "name": "Resurrection",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.jhhT9PsHy5A7EojO"
+    },
+    {
+      "id": "mGGlcLdggHwcL7MG",
+      "name": "True Strike",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.mGGlcLdggHwcL7MG"
+    },
+    {
+      "id": "pO4zGe5LmFIYqJiL",
+      "name": "Bestow Curse",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.pO4zGe5LmFIYqJiL"
+    },
+    {
+      "id": "ppWAAEul0QHtm4er",
+      "name": "Detect Thoughts",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.ppWAAEul0QHtm4er"
+    },
+    {
+      "id": "r3243JU4AyQJyfX4",
+      "name": "Modify Memory",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.r3243JU4AyQJyfX4"
+    },
+    {
+      "id": "vrN18tbTw7io5MWd",
+      "name": "Chill Touch",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.vrN18tbTw7io5MWd"
+    },
+    {
+      "id": "wJKpSvSTbSkTjqyb",
+      "name": "Shatter",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.wJKpSvSTbSkTjqyb"
+    },
+    {
+      "id": "xmDBqZhRVrtLP8h2",
+      "name": "Protection from Evil and Good",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.xmDBqZhRVrtLP8h2"
+    },
+    {
+      "id": "y8A4HfTwd93ypdEz",
+      "name": "Magic Circle",
+      "type": "spell",
+      "sourceId": "Compendium.dnd5e.spells.Item.y8A4HfTwd93ypdEz"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
       <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
       <div class="po-subtitle" aria-live="polite">{{mainSubtitleLabel}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
-    <nav class="po-tabs po-tabs-main po-tabs-main-header" role="navigation" aria-label="Party Operations views">
+    <nav class="po-tabs po-tabs-main po-tabs-main-header" role="tablist" aria-label="Party Operations views">
       <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
       <button type="button" class="po-tab" data-action="switch-tab" data-tab="march" aria-selected="false" aria-current="false">Marching Order</button>
       <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="switch-tab" data-tab="operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
@@ -223,8 +223,15 @@
       </div>
       {{/if}}
 
+      {{#if isGM}}
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if gmPanelTabCore}}
+        <div class="po-gm-section">
+          <div class="po-section-title">Quick Setup</div>
+          <div class="po-hint">Configure player experience, launcher behavior, and automation from one guided screen.</div>
+          <button type="button" class="po-btn" data-action="open-settings-hub"><i class="fa-solid fa-sliders"></i> Open Settings Hub</button>
+        </div>
+
         <div class="po-gm-section">
           <div class="po-section-title">Auto-Fill</div>
           <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
@@ -271,7 +278,6 @@
         {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
-          <button type="button" class="po-tab {{#if operationsPageComms}}is-active{{/if}}" data-action="operations-page" data-page="comms" title="Configure communication discipline and emergency signaling">Comms</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
           <button type="button" class="po-tab {{#if operationsPageMerchants}}is-active{{/if}}" data-action="operations-page" data-page="merchants" title="Track merchant contacts, routes, and procurement priorities">Merchants</button>
@@ -771,38 +777,6 @@
           </details>
         </div>
         {{/if}}
-
-        {{/if}}
-
-        {{#if operationsPageComms}}
-
-        <div id="po-ops-comms" class="po-gm-section">
-          <div class="po-section-title">Communication Discipline</div>
-          <div class="po-hint">Define signals and escalation patterns before contact.</div>
-          <label class="po-resource-row">
-            <span>Silent Signals</span>
-            <input type="text" class="po-input" data-action="set-comm-text" data-comm-text="silentSignals" value="{{operations.communication.silentSignals}}" placeholder="e.g., fist=hold, two taps=advance" />
-          </label>
-          <label class="po-resource-row">
-            <span>Code Phrase</span>
-            <input type="text" class="po-input" data-action="set-comm-text" data-comm-text="codePhrase" value="{{operations.communication.codePhrase}}" placeholder="e.g., Black Birch" />
-          </label>
-          <label class="po-switch">
-            <input id="po-comm-toggle-signalFlare" name="poCommToggle_signalFlare" type="checkbox" data-action="set-comm-toggle" data-comm="signalFlare" {{#if operations.communication.signalFlare}}checked{{/if}} />
-            <span>Signal Flare Plan</span>
-          </label>
-          <label class="po-switch">
-            <input id="po-comm-toggle-signalBell" name="poCommToggle_signalBell" type="checkbox" data-action="set-comm-toggle" data-comm="signalBell" {{#if operations.communication.signalBell}}checked{{/if}} />
-            <span>Bell/Alarm Plan</span>
-          </label>
-          <label class="po-switch">
-            <input id="po-comm-toggle-preCombatPlan" name="poCommToggle_preCombatPlan" type="checkbox" data-action="set-comm-toggle" data-comm="preCombatPlan" {{#if operations.communication.preCombatPlan}}checked{{/if}} />
-            <span>Pre-Combat Plan Briefed</span>
-          </label>
-          <div class="po-op-summary">Comms status: {{operations.communication.readiness.statusText}}</div>
-          <div class="po-op-summary">Alert channels enabled: {{operations.communication.readiness.enabledCount}}</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-communication-brief">Show Communication Brief</button>
-        </div>
 
         {{/if}}
 
@@ -1778,6 +1752,7 @@
 
         {{/if}}
       </aside>
+      {{/if}}
     </div>
   </section>
   </div>
