@@ -6,7 +6,8 @@ export function registerPartyOpsDataSettings({
   buildDefaultActivityState,
   buildDefaultOperationsLedger,
   buildDefaultInjuryRecoveryState,
-  buildDefaultLootSourceConfig
+  buildDefaultLootSourceConfig,
+  buildDefaultAudioLibraryCatalog
 } = {}) {
   game.settings.register(moduleId, settings.REST_STATE, {
     scope: "world",
@@ -69,5 +70,26 @@ export function registerPartyOpsDataSettings({
     config: false,
     type: Object,
     default: buildDefaultLootSourceConfig()
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_LIBRARY_SOURCE, {
+    scope: "world",
+    config: false,
+    type: String,
+    default: "data"
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_LIBRARY_ROOT, {
+    scope: "world",
+    config: false,
+    type: String,
+    default: ""
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_LIBRARY_CATALOG, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultAudioLibraryCatalog()
   });
 }
