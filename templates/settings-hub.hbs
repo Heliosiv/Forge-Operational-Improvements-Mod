@@ -1,0 +1,114 @@
+<form class="{{cssClass}} party-operations-app" autocomplete="off">
+  <div class="po-window po-window-rest" data-tool="settings-hub" role="region" aria-label="Party Operations Settings Hub">
+    <header class="po-header">
+      <div class="po-header-main">
+        <h1 class="po-title">Party Operations <span class="po-pill">Settings Hub</span></h1>
+        <div class="po-subtitle">Guided configuration for the most important module behaviors.</div>
+      </div>
+      <div class="po-controls">
+        <button type="button" class="po-btn po-btn-sm" data-action="open-foundry-settings"><i class="fa-solid fa-cog"></i> Configure Settings</button>
+        <button type="submit" class="po-btn po-btn-sm"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+      </div>
+    </header>
+
+    <div class="po-body">
+      <section class="po-content">
+        <div class="po-grid is-operations-layout po-settings-hub-grid">
+          <div class="po-gm-section">
+            <div class="po-section-title">Core Gameplay</div>
+            <div class="po-hint">Start here for player UX and table ownership defaults.</div>
+
+            <label class="po-resource-row">
+              <span>Player Hub Mode</span>
+              <select class="po-select" name="playerHubMode">
+                <option value="simple" {{#if playerHubModeSimple}}selected{{/if}}>Simple</option>
+                <option value="advanced" {{#if playerHubModeAdvanced}}selected{{/if}}>Advanced</option>
+              </select>
+            </label>
+
+            <label class="po-resource-row">
+              <span>Shared GM Permissions</span>
+              <input type="checkbox" name="sharedGmPermissions" {{#if sharedGmPermissions}}checked{{/if}} />
+            </label>
+
+            <label class="po-resource-row">
+              <span>Rest Automation</span>
+              <input type="checkbox" name="restAutomationEnabled" {{#if restAutomationEnabled}}checked{{/if}} />
+            </label>
+
+            <label class="po-resource-row">
+              <span>Lock March Order for Players</span>
+              <input type="checkbox" name="marchingOrderLockPlayers" {{#if marchingOrderLockPlayers}}checked{{/if}} />
+            </label>
+
+            <label class="po-resource-row">
+              <span>Auto-open Rest Watch</span>
+              <input type="checkbox" name="playerAutoOpenRest" {{#if playerAutoOpenRest}}checked{{/if}} />
+            </label>
+          </div>
+
+          <div class="po-gm-section">
+            <div class="po-section-title">Launcher + Module Integration</div>
+            <div class="po-hint">Pick where players find Party Operations and how integrations are applied.</div>
+
+            <label class="po-resource-row">
+              <span>Launcher Placement</span>
+              <select class="po-select" name="launcherPlacement">
+                <option value="floating" {{#if launcherFloating}}selected{{/if}}>Floating</option>
+                <option value="sidebar" {{#if launcherSidebar}}selected{{/if}}>Sidebar</option>
+                <option value="both" {{#if launcherBoth}}selected{{/if}}>Both</option>
+              </select>
+            </label>
+
+            <label class="po-resource-row">
+              <span>Lock Launcher Position</span>
+              <input type="checkbox" name="launcherLocked" {{#if launcherLocked}}checked{{/if}} />
+            </label>
+
+            <label class="po-resource-row">
+              <span>Loot Scarcity</span>
+              <select class="po-select" name="lootScarcity">
+                <option value="abundant" {{#if lootScarcityAbundant}}selected{{/if}}>Abundant</option>
+                <option value="normal" {{#if lootScarcityNormal}}selected{{/if}}>Normal</option>
+                <option value="scarce" {{#if lootScarcityScarce}}selected{{/if}}>Scarce</option>
+              </select>
+            </label>
+
+            <label class="po-resource-row">
+              <span>Integration Mode</span>
+              <select class="po-select" name="integrationMode">
+                <option value="auto" {{#if integrationModeAuto}}selected{{/if}}>Auto</option>
+                <option value="off" {{#if integrationModeOff}}selected{{/if}}>Off</option>
+                <option value="flags" {{#if integrationModeFlags}}selected{{/if}}>Flags</option>
+                <option value="dae" {{#if integrationModeDae}}selected{{/if}}>DAE</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="po-gm-section">
+            <div class="po-section-title">Advanced Controls</div>
+            <div class="po-hint">Enable this only when you want additional tuning knobs in Configure Settings.</div>
+
+            <label class="po-resource-row">
+              <span>Show Advanced Settings</span>
+              <input type="checkbox" name="advancedEnabled" {{#if advancedEnabled}}checked{{/if}} />
+            </label>
+
+            {{#if advancedEnabled}}
+            <label class="po-resource-row">
+              <span>Inventory Hook Mode</span>
+              <select class="po-select" name="inventoryHookMode">
+                <option value="off" {{#if inventoryHookModeOff}}selected{{/if}}>Off</option>
+                <option value="refresh" {{#if inventoryHookModeRefresh}}selected{{/if}}>Refresh</option>
+                <option value="sync" {{#if inventoryHookModeSync}}selected{{/if}}>Sync</option>
+              </select>
+            </label>
+            {{else}}
+            <div class="po-op-summary">Enable advanced settings to edit inventory hook behavior.</div>
+            {{/if}}
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</form>

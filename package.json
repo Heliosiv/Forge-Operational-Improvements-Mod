@@ -1,0 +1,23 @@
+{
+  "name": "party-operations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tooling for packaging and validating the Party Operations Foundry module.",
+  "scripts": {
+    "check": "node scripts/validate-module.mjs",
+    "prepare:package": "node scripts/prepare-package.mjs --output dist/staging-public",
+    "prepare:release": "node scripts/prepare-package.mjs --output release"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Heliosiv/Forge-Operational-Improvements-Mod.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/issues"
+  },
+  "homepage": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod#readme"
+}

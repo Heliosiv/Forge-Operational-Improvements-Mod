@@ -9,7 +9,8 @@ From the module root:
 ```powershell
 git status
 git pull origin main
-git add -A
+npm run check
+git add module.json README.md HOW_TO_USE.md .github/workflows/release.yml scripts/ styles/ templates/ packs/
 git commit -m "Describe your changes"
 git push origin main
 ```
@@ -32,9 +33,15 @@ What it does:
 
 Use this when you want a local test/export package without publishing to GitHub:
 
-1. Build/export into `dist/` (or `dist/premium/`) locally.
-2. Do **not** run `git add -A` for export-only steps.
-3. Stage only intended source/manifest/docs files with explicit paths.
+1. Stage runtime-only package contents locally:
+
+```powershell
+npm run prepare:package
+```
+
+2. Zip `dist/staging-public/staging/` into your local test artifact if needed.
+3. Do **not** run `git add -A` for export-only steps.
+4. Stage only intended source/manifest/docs files with explicit paths.
 
 Recommended safe staging command:
 
@@ -48,7 +55,7 @@ Before committing, verify no build artifacts are staged:
 git status --short
 ```
 
-Expected: no `dist/`, `.zip`, `.sha256.txt`, or `.staging-local-test/` entries in staged changes.
+Expected: no `dist/`, `release/`, `.zip`, `.sha256.txt`, or `.staging-local-test/` entries in staged changes.
 
 ### Founder-first private manifest release
 

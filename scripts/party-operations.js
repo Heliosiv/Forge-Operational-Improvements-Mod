@@ -4,6 +4,15 @@ import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createRestFeatureModule } from "./features/rest-feature.js";
 import { createMarchFeatureModule } from "./features/march-feature.js";
+import { attachModuleApi } from "./core/api-registry.js";
+import { MODULE_ID, SOCKET_CHANNEL } from "./core/constants.js";
+import { createLogger } from "./core/logger.js";
+import { registerPartyOpsDataSettings } from "./core/settings-data.js";
+import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
+import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
+import { routePartyOperationsSocketMessage } from "./core/socket-routes.js";
+import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
+import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
 import {
   MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
   MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
@@ -59,23 +68,8 @@ import {
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
-const PRIMARY_MODULE_ID = "party-operations";
-const PREMIUM_MODULE_ID = "party-operations-premium";
-const MODULE_ID = (() => {
-  try {
-    const candidates = [PRIMARY_MODULE_ID, PREMIUM_MODULE_ID];
-    for (const id of candidates) {
-      if (globalThis.game?.modules?.get(id)?.active) return id;
-    }
-    for (const id of candidates) {
-      if (globalThis.game?.modules?.has?.(id) || globalThis.game?.modules?.get(id)) return id;
-    }
-  } catch {
-    // Ignore and fall back to the primary channel id.
-  }
-  return PRIMARY_MODULE_ID;
-})();
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+const bootstrapLogger = createLogger("bootstrap");
 const FEATURE_MODULES = Object.freeze([
   createRestFeatureModule(),
   createMarchFeatureModule()
@@ -160,6 +154,7 @@ export const SETTINGS = {
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
+  ADVANCED_SETTINGS_ENABLED: "advancedSettingsEnabled",
   PLAYER_HUB_MODE: "playerHubMode",
   SHARED_GM_PERMISSIONS: "sharedGmPermissions",
   DEBUG_ENABLED: "debugEnabled",
@@ -184,7 +179,6 @@ export const SETTINGS = {
   AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift"
 };
 
-const SOCKET_CHANNEL = `module.${MODULE_ID}`;
 let restWatchAppInstance = null;
 let marchingOrderAppInstance = null;
 let restWatchPlayerAppInstance = null;
@@ -222,6 +216,8 @@ const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
+let refreshOpenAppsQueueAll = false;
+const refreshOpenAppsScopeQueue = new Set();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
 const LAUNCHER_PLACEMENTS = {
   FLOATING: "floating",
@@ -241,6 +237,54 @@ const PLAYER_HUB_ACTION_TYPES = Object.freeze({
 const PLAYER_HUB_CLAIM_VARIANTS = Object.freeze({
   ITEM: "item",
   CURRENCY: "currency"
+});
+const REFRESH_SCOPE_KEYS = Object.freeze({
+  REST: "rest",
+  MARCH: "march",
+  OPERATIONS: "operations",
+  LOOT: "loot",
+  INJURY: "injury",
+  SETTINGS: "settings"
+});
+const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
+  "rest-watch-app",
+  "marching-order-app",
+  "rest-watch-player-app",
+  "party-operations-global-modifier-summary",
+  "party-operations-gm-environment-page",
+  "party-operations-gm-downtime-page",
+  "party-operations-gm-merchants-page",
+  "party-operations-gm-loot-page",
+  "party-operations-gm-loot-claims-board"
+]);
+const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
+  [REFRESH_SCOPE_KEYS.REST]: Object.freeze([
+    "rest-watch-app",
+    "rest-watch-player-app"
+  ]),
+  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze([
+    "marching-order-app",
+    "rest-watch-player-app"
+  ]),
+  [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
+    "rest-watch-app",
+    "rest-watch-player-app",
+    "party-operations-global-modifier-summary",
+    "party-operations-gm-environment-page",
+    "party-operations-gm-downtime-page",
+    "party-operations-gm-merchants-page",
+    "party-operations-gm-loot-page",
+    "party-operations-gm-loot-claims-board"
+  ]),
+  [REFRESH_SCOPE_KEYS.LOOT]: Object.freeze([
+    "rest-watch-app",
+    "party-operations-gm-loot-page",
+    "party-operations-gm-loot-claims-board"
+  ]),
+  [REFRESH_SCOPE_KEYS.INJURY]: Object.freeze([
+    "rest-watch-app"
+  ]),
+  [REFRESH_SCOPE_KEYS.SETTINGS]: PARTY_OPS_REFRESHABLE_WINDOW_IDS
 });
 const GATHER_TRAVEL_CHOICES = Object.freeze({
   PACE: "pace",
@@ -382,12 +426,12 @@ const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
 ]);
 
 const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
-  width: 9999,
-  height: 9999,
-  minWidth: 920,
-  minHeight: 640,
-  maxWidthRatio: 0.98,
-  maxHeightRatio: 0.96
+  width: 1520,
+  height: 900,
+  minWidth: 860,
+  minHeight: 600,
+  maxWidthRatio: 0.94,
+  maxHeightRatio: 0.9
 });
 
 const APP_WINDOW_SIZE_PROFILES = Object.freeze({
@@ -613,6 +657,70 @@ function renderAppWithPreservedState(app, renderOptions = { force: true, parts: 
       action: String(options?.action ?? ""),
       eventType: String(options?.eventType ?? "")
     });
+  }
+}
+
+function normalizeRefreshScopeList(input) {
+  const values = Array.isArray(input) ? input : [input];
+  const normalized = [];
+  for (const value of values) {
+    const scope = String(value ?? "").trim().toLowerCase();
+    if (!scope) continue;
+    if (!Object.prototype.hasOwnProperty.call(REFRESH_SCOPE_TO_WINDOW_IDS, scope)) continue;
+    if (normalized.includes(scope)) continue;
+    normalized.push(scope);
+  }
+  return normalized;
+}
+
+function getRefreshTargetWindowIds(scopes = []) {
+  const normalizedScopes = normalizeRefreshScopeList(scopes);
+  if (normalizedScopes.length <= 0) return new Set(PARTY_OPS_REFRESHABLE_WINDOW_IDS);
+  const ids = new Set();
+  for (const scope of normalizedScopes) {
+    const windowIds = REFRESH_SCOPE_TO_WINDOW_IDS[scope] ?? [];
+    for (const windowId of windowIds) ids.add(windowId);
+  }
+  return ids;
+}
+
+function getAppWindowId(app) {
+  return String(app?.id ?? app?.options?.id ?? "").trim();
+}
+
+function getRefreshScopesForSettingKey(settingKeyInput) {
+  const fullKey = String(settingKeyInput ?? "").trim();
+  if (!fullKey) return [];
+  const prefix = `${MODULE_ID}.`;
+  const settingKey = fullKey.startsWith(prefix) ? fullKey.slice(prefix.length) : fullKey;
+  switch (settingKey) {
+    case SETTINGS.REST_STATE:
+    case SETTINGS.REST_COMMITTED:
+    case SETTINGS.REST_ACTIVITIES:
+      return [REFRESH_SCOPE_KEYS.REST];
+    case SETTINGS.MARCH_STATE:
+    case SETTINGS.MARCH_COMMITTED:
+      return [REFRESH_SCOPE_KEYS.MARCH];
+    case SETTINGS.OPS_LEDGER:
+    case SETTINGS.JOURNAL_ENTRY_VISIBILITY:
+    case SETTINGS.SESSION_SUMMARY_RANGE:
+      return [REFRESH_SCOPE_KEYS.OPERATIONS];
+    case SETTINGS.LOOT_SOURCE_CONFIG:
+    case SETTINGS.LOOT_SCARCITY:
+      return [REFRESH_SCOPE_KEYS.LOOT];
+    case SETTINGS.INJURY_RECOVERY:
+    case SETTINGS.INJURY_REMINDER_DAY:
+      return [REFRESH_SCOPE_KEYS.INJURY];
+    case SETTINGS.ADVANCED_SETTINGS_ENABLED:
+    case SETTINGS.MARCHING_ORDER_LOCK_PLAYERS:
+    case SETTINGS.PLAYER_AUTO_OPEN_REST:
+    case SETTINGS.PLAYER_HUB_MODE:
+    case SETTINGS.REST_AUTOMATION_ENABLED:
+    case SETTINGS.SHARED_GM_PERMISSIONS:
+    case SETTINGS.LAUNCHER_PLACEMENT:
+      return [REFRESH_SCOPE_KEYS.SETTINGS];
+    default:
+      return [];
   }
 }
 
@@ -1599,6 +1707,36 @@ function appHasFocusedTypingInput(appOrElement) {
   return isEditableTypingElement(active);
 }
 
+const throttledUiNoticeCache = new Map();
+
+function shouldEmitThrottledUiNotice(cacheKey, ttlMs) {
+  const key = String(cacheKey ?? "").trim() || "notice";
+  const ttl = Math.max(50, Number(ttlMs ?? 1200) || 1200);
+  const now = Date.now();
+  const last = Number(throttledUiNoticeCache.get(key) ?? 0);
+  if (now - last < ttl) return false;
+  throttledUiNoticeCache.set(key, now);
+  return true;
+}
+
+function notifyUiWarnThrottled(message, options = {}) {
+  const text = String(message ?? "").trim();
+  if (!text) return;
+  const key = String(options.key ?? text);
+  const ttlMs = Number(options.ttlMs ?? 1200);
+  if (!shouldEmitThrottledUiNotice(`warn:${key}`, ttlMs)) return;
+  ui.notifications?.warn(text);
+}
+
+function notifyUiInfoThrottled(message, options = {}) {
+  const text = String(message ?? "").trim();
+  if (!text) return;
+  const key = String(options.key ?? text);
+  const ttlMs = Number(options.ttlMs ?? 1200);
+  if (!shouldEmitThrottledUiNotice(`info:${key}`, ttlMs)) return;
+  ui.notifications?.info(text);
+}
+
 function refreshTabAccessibility(root) {
   if (!root?.querySelectorAll) return;
   const tablists = Array.from(root.querySelectorAll("[role='tablist']"));
@@ -2160,103 +2298,63 @@ async function savePartyOpsConfigSetting(input) {
   return normalized;
 }
 
+function areAdvancedSettingsEnabled() {
+  try {
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.ADVANCED_SETTINGS_ENABLED));
+  } catch {
+    return false;
+  }
+}
+
+function shouldAutoOpenRestForPlayers() {
+  try {
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST));
+  } catch {
+    return false;
+  }
+}
+
+const {
+  PartyOperationsSettingsHub,
+  openPartyOperationsSettingsHub
+} = createPartyOperationsSettingsHub({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  playerHubModes: PLAYER_HUB_MODES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  areAdvancedSettingsEnabled,
+  normalizePlayerHubMode,
+  normalizeInventoryHookMode,
+  normalizeLauncherPlacement,
+  setModuleSettingWithLocalRefreshSuppressed,
+  refreshOpenApps,
+  ensureLauncherUi,
+  notifyUiInfoThrottled,
+  notifyUiWarnThrottled,
+  canAccessAllPlayerOps
+});
+
 function registerPartyOpsSettings(onSettingsChanged = () => {}) {
-  const notifySettingChanged = (key, value) => {
-    try {
-      onSettingsChanged(key, value);
-    } catch (error) {
-      console.warn(`${MODULE_ID}: settings onChange callback failed`, { key, value, error });
-    }
-  };
-
-  game.settings.register(MODULE_ID, SETTINGS.DEBUG_ENABLED, {
-    name: "Enable Debug Logging",
-    hint: "Turn on verbose Party Operations debug output for troubleshooting.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: false,
-    onChange: (value) => notifySettingChanged(SETTINGS.DEBUG_ENABLED, Boolean(value))
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.LOOT_SCARCITY, {
-    name: "Loot Scarcity",
-    hint: "Set overall loot availability used by Party Operations loot systems.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      [LOOT_SCARCITY_LEVELS.ABUNDANT]: "Abundant",
-      [LOOT_SCARCITY_LEVELS.NORMAL]: "Normal",
-      [LOOT_SCARCITY_LEVELS.SCARCE]: "Scarce"
+  registerPartyOpsUiSettings({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    settingsHubType: PartyOperationsSettingsHub,
+    areAdvancedSettingsEnabled,
+    lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+    playerHubModes: PLAYER_HUB_MODES,
+    defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+    validatePartyOpsConfig,
+    notifyUiInfoThrottled,
+    normalizePlayerHubMode,
+    setModuleSettingWithLocalRefreshSuppressed,
+    isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+    setPartyOpsConfigNormalizationInProgress: (value) => {
+      partyOpsConfigNormalizationInProgress = Boolean(value);
     },
-    default: LOOT_SCARCITY_LEVELS.NORMAL,
-    onChange: (value) => {
-      const raw = String(value ?? LOOT_SCARCITY_LEVELS.NORMAL).trim().toLowerCase();
-      const normalized = raw === LOOT_SCARCITY_LEVELS.ABUNDANT || raw === LOOT_SCARCITY_LEVELS.SCARCE
-        ? raw
-        : LOOT_SCARCITY_LEVELS.NORMAL;
-      notifySettingChanged(SETTINGS.LOOT_SCARCITY, normalized);
-    }
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.REST_AUTOMATION_ENABLED, {
-    name: "Enable Rest Automation",
-    hint: "Allow Party Operations to automate supported rest workflows.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-    onChange: (value) => notifySettingChanged(SETTINGS.REST_AUTOMATION_ENABLED, Boolean(value))
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.MARCHING_ORDER_LOCK_PLAYERS, {
-    name: "Lock Marching Order For Players",
-    hint: "Prevent non-GM players from changing marching order positions.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: false,
-    onChange: (value) => notifySettingChanged(SETTINGS.MARCHING_ORDER_LOCK_PLAYERS, Boolean(value))
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.PLAYER_HUB_MODE, {
-    name: "Player Hub Mode",
-    hint: "Choose the player-facing Party Operations UI: streamlined hub or full classic layout.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      [PLAYER_HUB_MODES.SIMPLE]: "Simple (Hub)",
-      [PLAYER_HUB_MODES.ADVANCED]: "Advanced (Classic)"
-    },
-    default: PLAYER_HUB_MODES.SIMPLE,
-    onChange: (value) => notifySettingChanged(SETTINGS.PLAYER_HUB_MODE, normalizePlayerHubMode(value))
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG, {
-    name: "Party Operations Config",
-    hint: "Validated module config payload for loot/scarcity tuning and debug wiring.",
-    scope: "world",
-    config: false,
-    type: Object,
-    default: foundry.utils.deepClone(DEFAULT_PARTY_OPS_CONFIG),
-    onChange: (value) => {
-      const normalized = validatePartyOpsConfig(value);
-      notifySettingChanged(SETTINGS.PARTY_OPS_CONFIG, normalized);
-      const incomingSerialized = JSON.stringify(value ?? null);
-      const normalizedSerialized = JSON.stringify(normalized);
-      if (partyOpsConfigNormalizationInProgress) return;
-      if (incomingSerialized === normalizedSerialized) return;
-      partyOpsConfigNormalizationInProgress = true;
-      void setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized)
-        .catch((error) => {
-          console.warn(`${MODULE_ID}: failed to normalize partyOpsConfig on save`, error);
-        })
-        .finally(() => {
-          partyOpsConfigNormalizationInProgress = false;
-        });
-    }
+    onSettingsChanged
   });
 }
 
@@ -5627,17 +5725,6 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
   setNoteDraftCacheValue(cacheKey, text);
 
   if (!canAccessAllPlayerOps()) {
-    const actor = game.actors.get(actorId);
-    if (!actor || !canUserControlActor(actor, game.user)) {
-      logUiDebug("rest-watch-notes", "blocked note save (client permission check failed)", {
-        slotId,
-        actorId,
-        userId: String(game.user?.id ?? ""),
-        userName: String(game.user?.name ?? "Unknown")
-      });
-      ui.notifications?.warn("You can only save notes for characters you can access.");
-      return false;
-    }
     await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
     if (options?.notify) ui.notifications?.info("Note saved.");
     return true;
@@ -5732,16 +5819,6 @@ async function saveMarchingNoteByContext(context = {}, options = {}) {
   setNoteDraftCacheValue(cacheKey, text);
 
   if (!canAccessAllPlayerOps()) {
-    const actor = game.actors.get(actorId);
-    if (!actor || !canUserControlActor(actor, game.user)) {
-      logUiDebug("march-notes", "blocked note save (client permission check failed)", {
-        actorId,
-        userId: String(game.user?.id ?? ""),
-        userName: String(game.user?.name ?? "Unknown")
-      });
-      ui.notifications?.warn("You can only save notes for characters you can access.");
-      return false;
-    }
     await updateMarchingOrderState({ op: "setNote", actorId, text });
     if (options?.notify) ui.notifications?.info("Note saved.");
     return true;
@@ -5968,20 +6045,36 @@ function buildOperationsJournalContext() {
   };
 }
 
+function parseLootPreviewNumericInput(value, fallback = 0) {
+  const fallbackNumber = Number(fallback);
+  const safeFallback = Number.isFinite(fallbackNumber) ? fallbackNumber : 0;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const text = String(value ?? "").trim();
+  if (!text) return safeFallback;
+  const direct = Number(text);
+  if (Number.isFinite(direct)) return direct;
+  const compact = text.replace(/[,\s_]/g, "");
+  if (compact) {
+    const compactParsed = Number(compact);
+    if (Number.isFinite(compactParsed)) return compactParsed;
+  }
+  return safeFallback;
+}
+
 function normalizeLootPreviewDraft(input = {}) {
   const mode = String(input?.mode ?? "horde").trim().toLowerCase();
   const profile = String(input?.profile ?? "standard").trim().toLowerCase();
   const challenge = String(input?.challenge ?? "mid").trim().toLowerCase();
   const scale = String(input?.scale ?? "medium").trim().toLowerCase();
-  const creaturesRaw = Number(input?.creatures ?? input?.actorCount ?? 1);
+  const creaturesRaw = parseLootPreviewNumericInput(input?.creatures ?? input?.actorCount, 1);
   const creatures = Number.isFinite(creaturesRaw) ? Math.max(1, Math.min(100, Math.floor(creaturesRaw))) : 1;
-  const currencyScalarRaw = Number(input?.currencyScalar ?? 100);
-  const itemScalarRaw = Number(input?.itemScalar ?? 100);
-  const tableScalarRaw = Number(input?.tableScalar ?? 100);
-  const valueBudgetScalarRaw = Number(input?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
-  const valueStrictnessRaw = Number(input?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
-  const maxItemValueGpRaw = Number(input?.maxItemValueGp ?? 0);
-  const targetItemsValueGpRaw = Number(input?.targetItemsValueGp ?? 0);
+  const currencyScalarRaw = parseLootPreviewNumericInput(input?.currencyScalar, 100);
+  const itemScalarRaw = parseLootPreviewNumericInput(input?.itemScalar, 100);
+  const tableScalarRaw = parseLootPreviewNumericInput(input?.tableScalar, 100);
+  const valueBudgetScalarRaw = parseLootPreviewNumericInput(input?.valueBudgetScalar, LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
+  const valueStrictnessRaw = parseLootPreviewNumericInput(input?.valueStrictness, LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+  const maxItemValueGpRaw = parseLootPreviewNumericInput(input?.maxItemValueGp, 0);
+  const targetItemsValueGpRaw = parseLootPreviewNumericInput(input?.targetItemsValueGp, 0);
   const deterministic = shouldUseDeterministicLootRng(input);
   const seed = String(input?.seed ?? "").trim();
   const dateBucket = String(input?.dateBucket ?? "").trim();
@@ -7689,7 +7782,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDrop(this.element);
     
-    if (game.user?.isGM && canAccessAllPlayerOps() && !this._openedPlayers) {
+    if (game.user?.isGM && canAccessAllPlayerOps() && shouldAutoOpenRestForPlayers() && !this._openedPlayers) {
       emitOpenRestPlayers();
       this._openedPlayers = true;
     }
@@ -7745,7 +7838,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   setActivePanel(panelId, options = {}) {
     const normalized = normalizeMainTabId(panelId, "rest-watch");
     if (normalized === "gm" && !canAccessAllPlayerOps()) {
-      ui.notifications?.warn("GM permissions are required for the GM section.");
+      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
       return;
     }
     this._activePanel = normalized;
@@ -7844,6 +7940,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "popout": async () => {
           this.render({ force: true, popOut: true });
+        },
+        "open-settings-hub": async () => {
+          openPartyOperationsSettingsHub({ force: true });
         },
         "assign": async () => {
           await assignSlotByPicker(element, { source: "pc" });
@@ -8587,7 +8686,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (event?.type === "input") return;
     const state = getRestWatchState();
     if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      ui.notifications?.warn("Rest watch is locked by the GM.");
+      notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+        key: "rest-watch-locked",
+        ttlMs: 1500
+      });
       return;
     }
     const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
@@ -8595,9 +8697,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const text = event.target.value ?? "";
 
     if (!canAccessAllPlayerOps()) {
-      const actor = getActiveActorForUser();
-      if (!actor) return;
-      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
+      const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
+      if (!actorId) return;
+      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
       return;
     }
 
@@ -9843,7 +9945,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     if (event?.type === "input") return;
     const state = getRestWatchState();
     if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      ui.notifications?.warn("Rest watch is locked by the GM.");
+      notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+        key: "rest-watch-locked",
+        ttlMs: 1500
+      });
       return;
     }
     const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
@@ -9851,8 +9956,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     const text = event.target.value ?? "";
     const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
     if (!actorId) return;
-    const actor = game.actors.get(actorId);
-    if (!actor || !canUserControlActor(actor, game.user)) return;
     await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
   }
 
@@ -10208,17 +10311,17 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     if (event?.type === "input") return;
     const state = getMarchingOrderState();
     if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      ui.notifications?.warn("Marching order is locked by the GM.");
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
       return;
     }
     const text = event.target.value ?? "";
 
-    // Players: only allowed to edit notes for characters they own
     if (!canAccessAllPlayerOps()) {
       const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId || getActiveActorForUser()?.id;
       if (!actorId) return;
-      const actor = game.actors.get(actorId);
-      if (!actor || !userOwnsActor(actor)) return;
       await updateMarchingOrderState({ op: "setNote", actorId, text });
       return;
     }
@@ -10236,7 +10339,10 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     if (event?.type === "input") return;
     const state = getMarchingOrderState();
     if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      ui.notifications?.warn("Marching order is locked by the GM.");
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
       return;
     }
     if (!canAccessAllPlayerOps()) return; // GM notes are GM-only
@@ -10641,8 +10747,8 @@ async function updateLootSourceConfig(mutator, options = {}) {
   next.updatedAt = Date.now();
   next.updatedBy = String(game.user?.name ?? "GM");
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LOOT_SOURCE_CONFIG, next);
-  if (!options.skipLocalRefresh) refreshOpenApps();
-  emitSocketRefresh();
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
 }
 
 function getAllCompendiumPacks() {
@@ -14643,8 +14749,8 @@ async function updateOperationsLedger(mutator, options = {}) {
 
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
     scheduleIntegrationSync("operations-ledger");
-    if (!options.skipLocalRefresh) refreshOpenApps();
-    emitSocketRefresh();
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
   } catch (error) {
     logUiFailure("operations-ledger", "update failed", error, {
       skipLocalRefresh: Boolean(options?.skipLocalRefresh),
@@ -17774,7 +17880,6 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const assignmentActors = getOwnedPcActors().sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
   const storedSettlement = getSelectedMerchantSettlement();
   const hasStoredSettlement = hasSelectedMerchantSettlementPreference();
-  const isGmViewer = canAccessAllPlayerOps(user);
   const shopPlayerUsers = getMerchantShopPlayerUsers();
   const shopSession = normalizeMerchantShopSession(merchantsState?.shopSession ?? {}, { playerUsers: shopPlayerUsers });
   const shopAllowedUserSet = new Set(shopSession.allowedUserIds);
@@ -17796,7 +17901,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     ? `Selected players (${shopSelectedRows.length}/${shopPlayerRows.length})`
     : "All players";
   const viewerShopAccess = getMerchantShopAccessStateForUser(user, merchantsState);
-  const viewerCanUseShop = isGmViewer || viewerShopAccess.canTrade;
+  // Player-facing merchants should only render while a GM-opened shop session is active.
+  const viewerCanUseShop = Boolean(shopSession.isOpen && viewerShopAccess.canTrade);
   const gmCollectionFilterState = getMerchantGmCollectionFilterState();
 
   const definitionsForDisplay = definitions.map((merchant) => {
@@ -25354,7 +25460,7 @@ async function runGatherResourcesAction(options = {}) {
       ui.notifications?.warn("Gather check resolved, but the history entry could not be recorded.");
     }
   }
-  if (result?.ok) refreshOpenApps();
+  if (result?.ok) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
   if (!result?.ok && result?.blocked && options?.silent !== true) {
     ui.notifications?.warn(String(result?.reason ?? "Gather attempt blocked."));
   }
@@ -26329,10 +26435,14 @@ function setLootPreviewField(element) {
     "maxItemValueGp",
     "targetItemsValueGp"
   ]);
+  const currentNumericValue = parseLootPreviewNumericInput(
+    current?.[normalizedField],
+    current?.creatures ?? current?.actorCount ?? 1
+  );
   const next = {
     ...current,
     [normalizedField]: (numericFields.has(normalizedField))
-      ? Number(element?.value ?? current.creatures ?? current.actorCount ?? 1)
+      ? parseLootPreviewNumericInput(element?.value, currentNumericValue)
       : String(element?.value ?? current[normalizedField] ?? "")
   };
   setLootPreviewDraft(next);
@@ -26373,19 +26483,25 @@ async function awardCurrencyBundleToActor(actor, bundle = {}) {
 function readLootPreviewDraftFromUi(element) {
   const root = element?.closest(".po-loot-preview-panel");
   if (!root) return null;
+  const current = getLootPreviewDraft();
+  const readFieldValue = (name, field, fallback = "") => {
+    const byName = name ? root.querySelector(`[name='${name}']`) : null;
+    const byField = field ? root.querySelector(`[data-field='${field}']`) : null;
+    return byName?.value ?? byField?.value ?? fallback;
+  };
   return normalizeLootPreviewDraft({
-    mode: root.querySelector("select[name='lootPreviewMode']")?.value ?? "",
-    profile: root.querySelector("select[name='lootPreviewProfile']")?.value ?? "",
-    challenge: root.querySelector("select[name='lootPreviewChallenge']")?.value ?? "",
-    scale: root.querySelector("select[name='lootPreviewScale']")?.value ?? "",
-    creatures: root.querySelector("input[name='lootPreviewCreatures']")?.value ?? 1,
-    currencyScalar: root.querySelector("input[name='lootPreviewCurrencyScalar']")?.value ?? 100,
-    itemScalar: root.querySelector("input[name='lootPreviewItemScalar']")?.value ?? 100,
-    tableScalar: root.querySelector("input[name='lootPreviewTableScalar']")?.value ?? 100,
-    valueBudgetScalar: root.querySelector("input[name='lootPreviewValueBudgetScalar']")?.value ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR,
-    valueStrictness: root.querySelector("input[name='lootPreviewValueStrictness']")?.value ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS,
-    maxItemValueGp: root.querySelector("input[name='lootPreviewMaxItemValueGp']")?.value ?? 0,
-    targetItemsValueGp: root.querySelector("input[name='lootPreviewTargetItemsValueGp']")?.value ?? 0
+    mode: readFieldValue("lootPreviewMode", "mode", current?.mode ?? "horde"),
+    profile: readFieldValue("lootPreviewProfile", "profile", current?.profile ?? "standard"),
+    challenge: readFieldValue("lootPreviewChallenge", "challenge", current?.challenge ?? "mid"),
+    scale: readFieldValue("lootPreviewScale", "scale", current?.scale ?? "medium"),
+    creatures: readFieldValue("lootPreviewCreatures", "creatures", current?.creatures ?? 1),
+    currencyScalar: readFieldValue("lootPreviewCurrencyScalar", "currencyScalar", current?.currencyScalar ?? 100),
+    itemScalar: readFieldValue("lootPreviewItemScalar", "itemScalar", current?.itemScalar ?? 100),
+    tableScalar: readFieldValue("lootPreviewTableScalar", "tableScalar", current?.tableScalar ?? 100),
+    valueBudgetScalar: readFieldValue("lootPreviewValueBudgetScalar", "valueBudgetScalar", current?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
+    valueStrictness: readFieldValue("lootPreviewValueStrictness", "valueStrictness", current?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
+    maxItemValueGp: readFieldValue("lootPreviewMaxItemValueGp", "maxItemValueGp", current?.maxItemValueGp ?? 0),
+    targetItemsValueGp: readFieldValue("lootPreviewTargetItemsValueGp", "targetItemsValueGp", current?.targetItemsValueGp ?? 0)
   });
 }
 
@@ -29491,8 +29607,8 @@ async function updateInjuryRecoveryState(mutator) {
 
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
   if (game.user?.isGM) scheduleIntegrationSync("injury-recovery");
-  refreshOpenApps();
-  if (game.user?.isGM) emitSocketRefresh();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.INJURY });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.INJURY });
 }
 
 function buildInjuryActorOptions(selectedActorId = "") {
@@ -30635,7 +30751,10 @@ function getOrderedMarchingActors(state) {
 async function applyMarchingFormation({ front, middle, type }) {
   const state = getMarchingOrderState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Marching order is locked by the GM.");
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const ordered = getOrderedMarchingActors(state);
@@ -30666,7 +30785,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       request: normalizedRequest
     });
     // Refresh immediately for player to avoid stale lag
-    refreshOpenApps();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
     return;
   }
   const state = getRestWatchState();
@@ -30679,8 +30798,8 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
   stampUpdate(state);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
   if (game.user?.isGM) scheduleIntegrationSync("rest-watch");
-  if (!options.skipLocalRefresh) refreshOpenApps();
-  if (game.user?.isGM) emitSocketRefresh();
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
 }
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
@@ -30694,7 +30813,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     });
     if (!options.skipLocalRefresh) {
       // Refresh immediately for player to avoid stale lag
-      refreshOpenApps();
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
     }
     return;
   }
@@ -30708,8 +30827,8 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   stampUpdate(state);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
   if (game.user?.isGM) scheduleIntegrationSync("marching-order");
-  if (!options.skipLocalRefresh) refreshOpenApps();
-  if (game.user?.isGM) emitSocketRefresh();
+  if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+  if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
 }
 
 function stampUpdate(state, user = game.user) {
@@ -30720,7 +30839,10 @@ function stampUpdate(state, user = game.user) {
 async function assignSlotToUser(element) {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Rest watch is locked by the GM.");
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const actor = getActiveActorForUser();
@@ -30822,7 +30944,7 @@ async function assignSlotByPicker(element, config = {}) {
             slot.actorId = null;
             slot.notes = "";
           });
-          if (canAccessAllPlayerOps()) refreshOpenApps();
+          if (canAccessAllPlayerOps()) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
         }
       },
       cancel: { label: "Cancel" }
@@ -30835,7 +30957,10 @@ async function assignSlotByPicker(element, config = {}) {
 async function clearSlotEntry(element) {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Rest watch is locked by the GM.");
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const card = element?.closest(".po-card");
@@ -30873,7 +30998,10 @@ async function clearSlotEntry(element) {
 async function swapSlots(element) {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Rest watch is locked by the GM.");
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const slotId = element?.closest(".po-card")?.dataset?.slotId;
@@ -30949,7 +31077,10 @@ async function updateTimeRange(element) {
 async function autofillFromParty() {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Rest watch is locked by the GM.");
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const actors = game.actors.contents.filter((actor) => {
@@ -30981,8 +31112,8 @@ async function restoreRestCommitted() {
   const committed = game.settings.get(MODULE_ID, SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
   scheduleIntegrationSync("rest-watch-restore");
-  refreshOpenApps();        // ensures local refresh even if socket doesn't echo back
-  emitSocketRefresh();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });        // ensures local refresh even if socket doesn't echo back
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
 }
 
 async function commitRestWatchState() {
@@ -31059,7 +31190,10 @@ async function copyRestWatchText(asMarkdown) {
 async function clearRestWatchAll() {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Rest watch is locked by the GM.");
+    notifyUiWarnThrottled("Rest watch is locked by the GM.", {
+      key: "rest-watch-locked",
+      ttlMs: 1500
+    });
     return;
   }
   if (!canAccessAllPlayerOps()) {
@@ -31169,7 +31303,10 @@ async function assignActorToRank(element) {
   if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
   if (isLockedForUser(state, true)) {
-    ui.notifications?.warn("Marching order is locked by the GM.");
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const rankId = element?.dataset?.rankId;
@@ -31214,7 +31351,10 @@ async function removeActorFromRanks(element) {
   if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
   if (isLockedForUser(state, true)) {
-    ui.notifications?.warn("Marching order is locked by the GM.");
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const actorId = element?.dataset?.actorId;
@@ -31234,7 +31374,10 @@ async function removeActorFromRanks(element) {
 async function joinRank(element) {
   const state = getMarchingOrderState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Marching order is locked by the GM.");
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
     return;
   }
   let rankId = String(element?.dataset?.rankId ?? "").trim();
@@ -31338,7 +31481,10 @@ async function copyMarchingText(asMarkdown) {
 async function clearMarchingAll() {
   const state = getMarchingOrderState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
-    ui.notifications?.warn("Marching order is locked by the GM.");
+    notifyUiWarnThrottled("Marching order is locked by the GM.", {
+      key: "marching-order-locked",
+      ttlMs: 1500
+    });
     return;
   }
   const confirmed = await Dialog.confirm({
@@ -31531,8 +31677,8 @@ async function updateExhaustion(element) {
   activities.activities[actorId].exhaustion = level;
 
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
-  refreshOpenApps();
-  emitSocketRefresh();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
 }
 
 async function updateActivity(element, options = {}) {
@@ -31546,8 +31692,8 @@ async function updateActivity(element, options = {}) {
     if (!activities.activities[actorId]) activities.activities[actorId] = {};
     activities.activities[actorId].activity = activityType;
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
-    if (!options.skipLocalRefresh) refreshOpenApps();
-    emitSocketRefresh();
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
   } else {
     // Player updates their own activity via socket (non-GMs can't modify world settings)
     game.socket.emit(SOCKET_CHANNEL, {
@@ -31556,7 +31702,7 @@ async function updateActivity(element, options = {}) {
       actorId,
       activity: activityType
     });
-    if (!options.skipLocalRefresh) refreshOpenApps();
+    if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
   }
 }
 
@@ -31604,8 +31750,8 @@ async function resetAllActivities() {
   }
 
   ui.notifications?.info("Activities reset for new day.");
-  refreshOpenApps();
-  emitSocketRefresh();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
 }
 
 
@@ -31628,14 +31774,14 @@ function buildWatchSlotsView(state, isGM, visibility) {
     const entriesView = entries.map((entry) => {
       const actor = game.actors.get(entry.actorId);
       if (!actor) return null;
-      const canEditNotes = isGM || userOwnsActor(actor);
+      const canEditNotes = !lockedForUser;
       const activityData = activities.activities[entry.actorId] ?? {};
       return {
         actorId: entry.actorId,
         actor: buildActorView(actor, isGM, visibility),
         notes: entry.notes ?? "",
         canClear: (isGM || userOwnsActor(actor)) && !lockedForUser,
-        canEditNotes: canEditNotes && !lockedForUser,
+        canEditNotes,
         isActiveCharacter: !isGM && activeActorId === entry.actorId,
         activity: buildActivityView(actor, activityData)
       };
@@ -31702,7 +31848,7 @@ function buildRanksView(state, isGM) {
         const lightTooltip = hasLight
           ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.`
           : "";
-        const canEditNote = (isGM || userOwnsActor(actor)) && !lockedForUser;
+        const canEditNote = !lockedForUser;
         return {
           actorId,
           actor: buildActorView(actor, isGM, "names-passives"),
@@ -31735,14 +31881,14 @@ function buildRanksView(state, isGM) {
 }
 
 function buildNotesView(state, ranks, isGM) {
+  const lockedForUser = isLockedForUser(state, isGM);
   const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
   const uniqueIds = Array.from(new Set(actorIds));
   return uniqueIds
     .map((actorId) => {
       const actor = game.actors.get(actorId);
       if (!actor) return null;
-      const canEdit = isGM || userOwnsActor(actor);
-      if (!isGM && !canEdit) return null;
+      const canEdit = !lockedForUser;
       return {
         actorId,
         actorName: actor.name,
@@ -32629,7 +32775,10 @@ function setupMarchingDragAndDrop(html) {
       if (!isGM) return;
       const liveState = getMarchingOrderState();
       if (isLockedForUser(liveState, isGM)) {
-        ui.notifications?.warn("Marching order is locked by the GM.");
+        notifyUiWarnThrottled("Marching order is locked by the GM.", {
+          key: "marching-order-locked",
+          ttlMs: 1500
+        });
         return;
       }
       const actorId = event.dataTransfer?.getData("text/plain");
@@ -32832,7 +32981,7 @@ function queueInventoryRefresh(actor, reason = "inventory-update") {
 
   const timeoutId = window.setTimeout(() => {
     pendingInventoryRefreshByActor.delete(actorId);
-    refreshOpenApps();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
     if (hookMode === INVENTORY_HOOK_MODES.SYNC && canAccessAllPlayerOps()) {
       scheduleIntegrationSync(reason);
     }
@@ -32882,7 +33031,10 @@ function openMainTab(tabId, renderOptions = { force: true }) {
 
   if (normalized === "gm") {
     if (!canAccessAllPlayerOps()) {
-      ui.notifications?.warn("GM permissions are required for the GM section.");
+      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
       return null;
     }
     setActiveRestMainTab("gm");
@@ -33120,6 +33272,7 @@ function buildPartyOperationsApi() {
     undoSessionAutopilot: () => undoLastSessionAutopilot(),
     syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
     syncIntegrations: () => scheduleIntegrationSync("api"),
+    settingsHub: () => openPartyOperationsSettingsHub({ force: true }),
     getConfig: () => foundry.utils.deepClone(getModuleConfigSnapshot()),
     getTypedConfig: () => foundry.utils.deepClone(getPartyOpsConfigSetting()),
     saveTypedConfig: (input) => savePartyOpsConfigSetting(input),
@@ -33153,6 +33306,7 @@ function buildPartyOperationsApi() {
   api.openOperations = api.operations;
   api.openGM = api.gm;
   api.openGmMerchants = api.gmMerchants;
+  api.openSettingsHub = api.settingsHub;
   api.gather = api.gatherResources;
   api.launcher = api.ensureLauncher;
 
@@ -33161,69 +33315,13 @@ function buildPartyOperationsApi() {
 
 function registerPartyOperationsApi() {
   const api = buildPartyOperationsApi();
-  game.partyOperations = api;
-  game.partyops = api;
-  globalThis.partyOperations = api;
-  globalThis.PartyOperations = api;
-  globalThis.partyops = api;
-
-  try {
-    Object.defineProperty(globalThis, "partyOperations", {
-      configurable: true,
-      get: () => game.partyOperations ?? api,
-      set: (value) => {
-        game.partyOperations = value;
-        game.partyops = value;
-      }
-    });
-  } catch {
-    // Ignore if runtime prevents redefining globals.
-  }
-
-  try {
-    Object.defineProperty(globalThis, "PartyOperations", {
-      configurable: true,
-      get: () => game.partyOperations ?? api,
-      set: (value) => {
-        game.partyOperations = value;
-        game.partyops = value;
-      }
-    });
-  } catch {
-    // Ignore if runtime prevents redefining globals.
-  }
-
-  try {
-    Object.defineProperty(globalThis, "partyops", {
-      configurable: true,
-      get: () => game.partyops ?? game.partyOperations ?? api,
-      set: (value) => {
-        game.partyOperations = value;
-        game.partyops = value;
-      }
-    });
-  } catch {
-    // Ignore if runtime prevents redefining globals.
-  }
-
-  const moduleRef = game.modules?.get?.(MODULE_ID);
-  if (moduleRef) {
-    try {
-      moduleRef.api = api;
-    } catch (error) {
-      try {
-        Object.defineProperty(moduleRef, "api", {
-          value: api,
-          configurable: true,
-          writable: true
-        });
-      } catch (defineError) {
-        console.warn(`${MODULE_ID}: unable to attach api on module reference`, error, defineError);
-      }
+  return attachModuleApi({
+    moduleId: MODULE_ID,
+    api,
+    onModuleApiAttachFailure: (error, defineError) => {
+      bootstrapLogger.warn("unable to attach api on module reference", error, defineError);
     }
-  }
-
-  return api;
+  });
 }
 
 function ensureClickOpener() {
@@ -33783,7 +33881,7 @@ function buildSettingHookModule() {
         const settingKey = String(setting?.key ?? "").trim();
         if (!settingKey) return;
         if (consumeSuppressedSettingRefresh(settingKey)) return;
-        if (refreshKeys.has(settingKey)) refreshOpenApps();
+        if (refreshKeys.has(settingKey)) refreshOpenApps({ scopes: getRefreshScopesForSettingKey(settingKey) });
         if (game.user?.isGM && integrationSyncKeys.has(settingKey)) {
           scheduleIntegrationSync("update-setting");
         }
@@ -33826,7 +33924,7 @@ function registerPartyOpsHooks() {
   }
 }
 
-Hooks.once("init", () => {
+export function onPartyOperationsInit() {
   registerPartyOperationsApi();
   registerFeatureModules();
   void preloadPartyOperationsPartialTemplates().catch((error) => {
@@ -33834,591 +33932,45 @@ Hooks.once("init", () => {
   });
   registerPartyOpsSettings((key) => {
     if (key === SETTINGS.DEBUG_ENABLED) return;
-    refreshOpenApps();
+    refreshOpenApps({ scopes: getRefreshScopesForSettingKey(key) });
   });
-  game.settings.register(MODULE_ID, SETTINGS.REST_STATE, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultRestWatchState()
+  registerPartyOpsDataSettings({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig
   });
-
-  game.settings.register(MODULE_ID, SETTINGS.REST_COMMITTED, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultRestWatchState()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.MARCH_STATE, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultMarchingOrderState()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.MARCH_COMMITTED, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultMarchingOrderState()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.REST_ACTIVITIES, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultActivityState()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.OPS_LEDGER, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultOperationsLedger()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.INJURY_RECOVERY, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultInjuryRecoveryState()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.INJURY_REMINDER_DAY, {
-    scope: "client",
-    config: false,
-    type: String,
-    default: ""
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.LOOT_SOURCE_CONFIG, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: buildDefaultLootSourceConfig()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ENABLED, {
-    name: "Auto Inventory For Unlinked Tokens",
-    hint: "When enabled, new unlinked NPC tokens get generated usable inventory on placement.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_WEAPON_PACK, {
-    name: "Auto Inventory Weapon Pack",
-    hint: "Compendium pack ID used for weapon lookups (for example dnd5e.items).",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "dnd5e.items",
-    onChange: () => autoInventoryPackIndexCache.clear()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ARMOR_PACK, {
-    name: "Auto Inventory Armor Pack",
-    hint: "Compendium pack ID used for armor/shield lookups.",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "dnd5e.items",
-    onChange: () => autoInventoryPackIndexCache.clear()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_GEAR_PACK, {
-    name: "Auto Inventory Gear Pack",
-    hint: "Compendium pack ID used for adventuring gear lookups.",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "dnd5e.items",
-    onChange: () => autoInventoryPackIndexCache.clear()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLES_PACK, {
-    name: "Auto Inventory Consumables Pack",
-    hint: "Compendium pack ID used for potions and consumables lookups.",
-    scope: "world",
-    config: true,
-    type: String,
-    default: "dnd5e.items",
-    onChange: () => autoInventoryPackIndexCache.clear()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_ENABLED, {
-    name: "Auto Inventory Currency",
-    hint: "If enabled, generated unlinked token inventory can include weighted currency bundles.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_ITEM_CHANCE_SCALAR, {
-    name: "Auto Inventory Item Chance (%)",
-    hint: "Scales non-mandatory equipment/gear chance for unlinked token auto inventory.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: {
-      min: 0,
-      max: 200,
-      step: 5
+  registerPartyOpsFeatureSettings({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    areAdvancedSettingsEnabled,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults: {
+      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
     },
-    default: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR
+    gatherDefaults: GATHER_DEFAULTS,
+    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+    launcherPlacements: LAUNCHER_PLACEMENTS,
+    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+    inventoryHookModes: INVENTORY_HOOK_MODES,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition,
+    refreshOpenApps,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    openRestWatchUiForCurrentUser,
+    openMainTab
   });
+}
 
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CONSUMABLE_CHANCE_SCALAR, {
-    name: "Auto Inventory Consumable Chance (%)",
-    hint: "Scales potion and utility consumable chance for unlinked token auto inventory.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: {
-      min: 0,
-      max: 300,
-      step: 5
-    },
-    default: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_CURRENCY_SCALAR, {
-    name: "Auto Inventory Currency Scale (%)",
-    hint: "Scales generated currency bundle amounts for unlinked token auto inventory.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: {
-      min: 0,
-      max: 300,
-      step: 5
-    },
-    default: AUTO_INV_DEFAULT_CURRENCY_SCALAR
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.AUTO_INV_QUALITY_SHIFT, {
-    name: "Auto Inventory Quality Shift",
-    hint: "Shifts item quality band from CR (-2 to +2) for stricter or richer gear quality.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: {
-      min: -2,
-      max: 2,
-      step: 1
-    },
-    default: AUTO_INV_DEFAULT_QUALITY_SHIFT
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.INTEGRATION_MODE, {
-    name: "Integration Mode",
-    hint: "Choose how Party Operations syncs state for DAE/automation modules.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      auto: "Auto (DAE if active, otherwise flags)",
-      off: "Off",
-      flags: "Flags Only",
-      dae: "DAE + Flags"
-    },
-    default: "auto"
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.SESSION_AUTOPILOT_SNAPSHOT, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: {}
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ROLL_MODE, {
-    name: "Gather Roll Mode",
-    hint: "Choose how Gather Resource checks request Wisdom (Survival) rolls.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      "prefer-monks": "Prefer Monk's TokenBar (fallback to Foundry)",
-      "monks-only": "Monk's TokenBar Only",
-      "foundry-only": "Foundry Only"
-    },
-    default: "prefer-monks"
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLED, {
-    name: "Gather Resources Enabled",
-    hint: "Enable or disable gather resource actions in Party Operations.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.enabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_MIN_HOURS, {
-    name: "Gather Minimum Hours",
-    hint: "Minimum hours required for one gather attempt.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: {
-      min: 1,
-      max: 24,
-      step: 1
-    },
-    default: GATHER_DEFAULTS.minimumHours
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DISALLOW_COMBAT, {
-    name: "Disallow Gather In Combat",
-    hint: "Prevent gather attempts when the actor is an active combatant.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.disallowCombat
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_LUSH, {
-    name: "Gather DC: Lush Forest / River Valley",
-    hint: "Base DC for lush forest or river valley gather attempts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_TEMPERATE, {
-    name: "Gather DC: Temperate Hills / Light Woodland",
-    hint: "Base DC for temperate hills or light woodland gather attempts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_SPARSE, {
-    name: "Gather DC: Sparse Plains / Rocky",
-    hint: "Base DC for sparse plains or rocky terrain gather attempts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_COLD, {
-    name: "Gather DC: Cold Mountains / Swamp",
-    hint: "Base DC for cold mountains or swamp gather attempts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DC_DESERT, {
-    name: "Gather DC: Desert / Blighted Wasteland",
-    hint: "Base DC for desert or blighted wasteland gather attempts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.baseDc.desert_blighted_wasteland
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_SEASON_MOD, {
-    name: "Gather Default Season Modifier",
-    hint: "Default DC modifier from season shifts.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: -10, max: 10, step: 1 },
-    default: GATHER_DEFAULTS.seasonMod
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_WEATHER_MOD, {
-    name: "Gather Default Weather Modifier",
-    hint: "Default DC modifier from weather conditions.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: -10, max: 10, step: 1 },
-    default: GATHER_DEFAULTS.weatherMod
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_DEFAULT_CORRUPTION_MOD, {
-    name: "Gather Default Corruption Modifier",
-    hint: "Default DC modifier from corruption effects.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: -10, max: 10, step: 1 },
-    default: GATHER_DEFAULTS.corruptionMod
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_HERBALISM_ADVANTAGE, {
-    name: "Gather: Herbalism Advantage",
-    hint: "Allow advantage for plant gathering mode when enabled by the GM.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.herbalismAdvantageEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_HOSTILE_FAIL_FLAG, {
-    name: "Gather: Hostile Terrain Encounter Flag",
-    hint: "On failure in hostile terrain, flag for encounter checks.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.hostileEncounterFlagEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_FAIL_BY5_COMPLICATION, {
-    name: "Gather: Fail by 5+ Complication",
-    hint: "Apply optional complications when the check fails by 5 or more.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.failBy5ComplicationEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, {
-    name: "Gather: Success by 5+ Doubles Rations",
-    hint: "Double rations on checks that succeed by 5 or more.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.successBy5DoubleEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_NAT20_BONUS, {
-    name: "Gather: Natural 20 Bonus",
-    hint: "Natural 20 grants +1d4 rations and safe campsite flag.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.nat20BonusEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_NAT1_FLAG, {
-    name: "Gather: Natural 1 Complication",
-    hint: "Natural 1 triggers spoiled/poison/attract-danger complication flag.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.nat1ComplicationEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_CORRUPTION_WATER_CHECK, {
-    name: "Gather: Corruption Water Check",
-    hint: "When gathering water in corrupted regions, run contamination check.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.corruptionWaterCheckEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_CORRUPTION_SAVE_DC, {
-    name: "Gather: Corruption Water Con Save DC",
-    hint: "Constitution save DC used when contaminated water is found.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.corruptionConSaveDc
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_WATER_AUTO_FOUND, {
-    name: "Gather: Water Auto-Found Toggle",
-    hint: "Allow the obvious-water-source toggle to auto-find water.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.waterAutoFoundEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_ENABLE_TRAVEL_TRADEOFF, {
-    name: "Gather: Travel Tradeoff Enabled",
-    hint: "Apply travel tradeoff when gathering during travel.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: GATHER_DEFAULTS.travelTradeoffEnabled
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_TRAVEL_TRADEOFF_DEFAULT, {
-    name: "Gather: Default Travel Tradeoff",
-    hint: "Default tradeoff used when gathering during travel.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      [GATHER_TRAVEL_CHOICES.PACE]: "Reduce pace one step",
-      [GATHER_TRAVEL_CHOICES.FELL_BEHIND]: "Fell behind + Con save"
-    },
-    default: GATHER_DEFAULTS.travelTradeoffDefault
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.GATHER_TRAVEL_CON_SAVE_DC, {
-    name: "Gather: Travel Con Save DC",
-    hint: "Constitution save DC when the actor falls behind during travel gathering.",
-    scope: "world",
-    config: true,
-    type: Number,
-    range: { min: 1, max: 30, step: 1 },
-    default: GATHER_DEFAULTS.travelConSaveDc
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT, {
-    name: "Launcher Placement",
-    hint: "Choose whether the Party Operations launcher is on-screen, in the sidebar, or both.",
-    scope: "client",
-    config: true,
-    type: String,
-    choices: {
-      [LAUNCHER_PLACEMENTS.FLOATING]: "Floating on Screen",
-      [LAUNCHER_PLACEMENTS.SIDEBAR]: "Pinned in Sidebar",
-      [LAUNCHER_PLACEMENTS.BOTH]: "Show Both"
-    },
-    default: LAUNCHER_PLACEMENTS.FLOATING,
-    onChange: () => ensureLauncherUi()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, {
-    scope: "client",
-    config: false,
-    type: Object,
-    default: {
-      left: 16,
-      top: 180
-    }
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, {
-    name: "Lock Launcher Position",
-    hint: "When enabled, the floating Party Operations launcher cannot be dragged.",
-    scope: "client",
-    config: true,
-    type: Boolean,
-    default: false,
-    onChange: () => ensureLauncherUi()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_RESET, {
-    name: "Reset Launcher Position",
-    hint: "Set to true to reset launcher position, then it auto-clears.",
-    scope: "client",
-    config: true,
-    type: Boolean,
-    default: false,
-    onChange: async (value) => {
-      if (!value) return;
-      await resetFloatingLauncherPosition();
-      await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_RESET, false);
-      ensureLauncherUi();
-    }
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST, {
-    name: "Auto-open Rest Watch for Players",
-    hint: "When enabled, non-GM users automatically open Rest Watch when Foundry is ready.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: false
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.SHARED_GM_PERMISSIONS, {
-    name: "Shared GM Permissions (Module)",
-    hint: "When enabled, all players can use GM-level Party Operations controls. Changes still execute through the active GM client.",
-    scope: "world",
-    config: true,
-    type: Boolean,
-    default: true,
-    onChange: () => refreshOpenApps()
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY, {
-    name: "Operations Journal Visibility",
-    hint: "Control how sensitive operation logs are exposed in shared journals.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      [JOURNAL_VISIBILITY_MODES.PUBLIC]: "Public (full details to observers)",
-      [JOURNAL_VISIBILITY_MODES.REDACTED]: "Redacted (sensitive details hidden)",
-      [JOURNAL_VISIBILITY_MODES.GM_PRIVATE]: "GM Only (sensitive entries private)"
-    },
-    default: JOURNAL_VISIBILITY_MODES.REDACTED
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.SESSION_SUMMARY_RANGE, {
-    name: "Session Summary Default Window",
-    hint: "Default lookback window when creating a session summary journal.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: SESSION_SUMMARY_RANGE_OPTIONS,
-    default: "last-24h"
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_FILTER_DEBOUNCE_MS, {
-    name: "Journal Filter Debounce (ms)",
-    hint: "Delay before applying journal search input, to reduce UI re-renders.",
-    scope: "client",
-    config: true,
-    type: Number,
-    range: { min: 0, max: 1000, step: 10 },
-    default: 180
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE, {
-    scope: "world",
-    config: false,
-    type: Object,
-    default: { folders: {} }
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE, {
-    name: "Inventory Hook Mode",
-    hint: "Controls actor inventory hook behavior for Party Operations refresh/sync.",
-    scope: "world",
-    config: true,
-    type: String,
-    choices: {
-      [INVENTORY_HOOK_MODES.OFF]: "Off",
-      [INVENTORY_HOOK_MODES.REFRESH]: "Refresh UI Only",
-      [INVENTORY_HOOK_MODES.SYNC]: "Refresh UI + Integration Sync"
-    },
-    default: INVENTORY_HOOK_MODES.SYNC
-  });
-
-  game.keybindings.register(MODULE_ID, "openRestWatch", {
-    name: "Open Rest Watch",
-    editable: [],
-    onDown: () => {
-      openRestWatchUiForCurrentUser({ force: true });
-      return true;
-    }
-  });
-
-  game.keybindings.register(MODULE_ID, "openMarchingOrder", {
-    name: "Open Marching Order",
-    editable: [],
-    onDown: () => {
-      openMainTab("marching-order", { force: true });
-      return true;
-    }
-  });
-});
-
-Hooks.once("ready", () => {
+export function onPartyOperationsReady() {
   registerPartyOperationsApi();
   void validatePartyOperationsTemplates();
   bindPoBrowserBackNavigation();
@@ -34450,179 +34002,54 @@ Hooks.once("ready", () => {
     });
   }
 
-  game.socket.on(SOCKET_CHANNEL, async (message) => {
-    if (!message || typeof message !== "object") return;
-
-    if (message.type === "players:openLootClaims") {
-      const currentUserId = String(game.user?.id ?? "").trim();
-      const targetUserId = String(message.userId ?? "").trim();
-      const broadcast = !targetUserId || targetUserId === "*" || targetUserId.toLowerCase() === "all";
-      if (!broadcast && targetUserId !== currentUserId) return;
-      if (game.user?.isGM) return;
-
-      const actorIdByUserId = message?.actorIdByUserId && typeof message.actorIdByUserId === "object"
-        ? message.actorIdByUserId
-        : null;
-      const preferredActorId = actorIdByUserId
-        ? normalizeLootClaimActorId(actorIdByUserId[currentUserId])
-        : "";
-      const selectedActorId = preferredActorId || normalizeLootClaimActorId(message.actorId);
-      if (selectedActorId) setLootClaimActorSelection(selectedActorId);
-      const selectedRunId = normalizeLootClaimRunId(message.runId);
-      if (selectedRunId) setLootClaimRunSelection(selectedRunId);
-      await waitForLootClaimsPublished(message?.publishedAt);
-      const lootClaims = buildLootClaimsContext(game.user);
-      logUiDebug("loot-claims", "prompting player loot claims UI", {
-        currentUserId,
-        targetUserId,
-        broadcast,
-        selectedActorId,
-        selectedRunId,
-        itemCount: Math.max(0, Number(message?.itemCount ?? lootClaims?.itemCount ?? 0) || 0),
-        publishedAt: Math.max(0, Number(message?.publishedAt ?? 0) || 0)
-      });
-      const shouldOpen = await promptLootClaimsDialogForPlayer({
-        itemCount: message?.itemCount,
-        publishedBy: message?.publishedBy,
-        publishedAt: message?.publishedAt,
-        currencyRemaining: message?.currencyRemaining,
-        lootClaims
-      });
-      if (!shouldOpen) return;
-      openOperationsLootClaimsTabForPlayer({ force: true });
-      return;
-    }
-
-    if (message.type === "players:openRest" && !game.user?.isGM) {
-      openRestWatchUiForCurrentUser({ force: true });
-      return;
-    }
-
-    if (message.type === "refresh") {
-      if (message.userId && message.userId === game.user.id) return;
-      // Small delay helps ensure settings updates have propagated before re-rendering
-      setTimeout(() => refreshOpenApps(), 75);
-      if (!game.user?.isGM) schedulePendingSopNoteSync("socket-refresh");
-      return;
-    }
-
-    if (message.type === "ops:merchant-barter-result") {
-      syncMerchantBarterStatusForOpenDialogs(message);
-      return;
-    }
-
-    if (!game.user?.isGM) return; // only GM applies mutations
-
-    if (message.type === "ops:setting-write") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerSettingWriteRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:folder-ownership-write") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerFolderOwnershipWriteRequest(message, requester);
-      return;
-    }
-
-    if (message.type === "activity:update") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      const actorId = sanitizeSocketIdentifier(message.actorId, { maxLength: 64 });
-      const activityType = normalizeSocketActivityType(message.activity);
-      if (!requester || !actorId || !activityType) return;
-
-      // Players can update their own activity
-      const requesterActor = requester.character;
-      if (!requesterActor || requesterActor.id !== actorId) return; // security check
-
-      const activities = getRestActivities();
-      if (!activities.activities[actorId]) activities.activities[actorId] = {};
-      activities.activities[actorId].activity = activityType;
-      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_ACTIVITIES, activities);
-      refreshOpenApps();
-      emitSocketRefresh();
-      return;
-    }
-
-    if (message.type === "rest:mutate") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      const request = normalizeSocketRestRequest(message.request);
-      if (!requester || !request) return;
-      await applyRestRequest(request, requester);
-      return;
-    }
-    if (message.type === "march:mutate") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      const request = normalizeSocketMarchRequest(message.request);
-      if (!requester || !request) return;
-      await applyMarchRequest(request, requester);
-      return;
-    }
-    if (message.type === "ops:setSopNote") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerSopNoteRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:ledger-write") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerOperationsLedgerWriteRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:downtime-submit") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerDowntimeSubmitRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:downtime-clear") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerDowntimeClearRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:downtime-collect") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerDowntimeCollectRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:merchant-barter-request") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerMerchantBarterRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:merchant-trade") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerMerchantTradeRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:loot-claim") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerLootClaimRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:loot-claim-currency") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerLootCurrencyClaimRequest(message, requester);
-      return;
-    }
-    if (message.type === "ops:loot-vouch") {
-      const requester = getSocketRequester(message, { allowGM: false, requireActive: true });
-      if (!requester) return;
-      await applyPlayerLootVouchRequest(message, requester);
-      return;
-    }
-  });
+  registerModuleSocketHandler({ channel: SOCKET_CHANNEL, handler: handlePartyOperationsSocketMessage });
 
   registerPartyOpsHooks();
-});
+}
+
+async function handlePartyOperationsSocketMessage(message) {
+  await routePartyOperationsSocketMessage(message, {
+    game,
+    settings: SETTINGS,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    normalizeRefreshScopeList,
+    setLootClaimActorSelection,
+    normalizeLootClaimActorId,
+    setLootClaimRunSelection,
+    normalizeLootClaimRunId,
+    waitForLootClaimsPublished,
+    buildLootClaimsContext,
+    logUiDebug,
+    promptLootClaimsDialogForPlayer,
+    openOperationsLootClaimsTabForPlayer,
+    openRestWatchUiForCurrentUser,
+    refreshOpenApps,
+    schedulePendingSopNoteSync,
+    syncMerchantBarterStatusForOpenDialogs,
+    getSocketRequester,
+    sanitizeSocketIdentifier,
+    normalizeSocketActivityType,
+    getRestActivities,
+    setModuleSettingWithLocalRefreshSuppressed,
+    emitSocketRefresh,
+    normalizeSocketRestRequest,
+    applyRestRequest,
+    normalizeSocketMarchRequest,
+    applyMarchRequest,
+    applyPlayerSettingWriteRequest,
+    applyPlayerFolderOwnershipWriteRequest,
+    applyPlayerSopNoteRequest,
+    applyPlayerOperationsLedgerWriteRequest,
+    applyPlayerDowntimeSubmitRequest,
+    applyPlayerDowntimeClearRequest,
+    applyPlayerDowntimeCollectRequest,
+    applyPlayerMerchantBarterRequest,
+    applyPlayerMerchantTradeRequest,
+    applyPlayerLootClaimRequest,
+    applyPlayerLootCurrencyClaimRequest,
+    applyPlayerLootVouchRequest
+  });
+}
 
 async function applyPlayerSettingWriteRequest(message, requesterRef = null) {
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
@@ -34638,8 +34065,8 @@ async function applyPlayerSettingWriteRequest(message, requesterRef = null) {
     const fullSettingKey = `${MODULE_ID}.${settingKey}`;
     suppressNextSettingRefresh(fullSettingKey);
     await game.settings.set(MODULE_ID, settingKey, foundry.utils.deepClone(message?.value));
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scopes: getRefreshScopesForSettingKey(settingKey) });
+    emitSocketRefresh({ scopes: getRefreshScopesForSettingKey(settingKey) });
   } catch (error) {
     logUiFailure("settings-proxy", "failed player-proxy setting write", error, {
       requesterId: String(requester?.id ?? ""),
@@ -34707,8 +34134,8 @@ async function applyPlayerFolderOwnershipWriteRequest(message, requesterRef = nu
 
   if (updatedCount > 0) {
     ui.notifications?.info(`Updated permissions on ${updatedCount} document${updatedCount === 1 ? "" : "s"} in "${String(folder?.name ?? "Folder")}".`);
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
   }
 }
 
@@ -34741,8 +34168,8 @@ async function applyPlayerOperationsLedgerWriteRequest(message, requesterRef = n
 
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, mergedLedger);
   scheduleIntegrationSync("operations-ledger");
-  refreshOpenApps();
-  emitSocketRefresh();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
 }
 
 async function applyPlayerDowntimeSubmitRequest(message, requesterRef = null) {
@@ -34809,7 +34236,7 @@ async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
     }
     : null;
 
-  game.socket.emit(SOCKET_CHANNEL, {
+  emitModuleSocket({
     type: "ops:merchant-barter-result",
     userId: String(requester?.id ?? ""),
     merchantId,
@@ -34820,7 +34247,7 @@ async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
       ? String(resolved?.summary ?? "Barter resolved.")
       : String(resolved?.message ?? "Barter request failed."),
     resolution: resolutionPayload
-  });
+  }, { channel: SOCKET_CHANNEL });
 
   if (!resolved?.ok) {
     ui.notifications?.warn(`Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`);
@@ -34949,8 +34376,8 @@ async function applyRestRequest(request, requesterRef) {
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
     return;
   }
 
@@ -34972,8 +34399,8 @@ async function applyRestRequest(request, requesterRef) {
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
     return;
   }
 
@@ -34987,23 +34414,12 @@ async function applyRestRequest(request, requesterRef) {
       slot.notes = "";
     }
     if (!slot.entries) slot.entries = [];
-    // Only allow notes edits for entry actor the requester can control.
     const entry = slot.entries.find((e) => e.actorId === request.actorId);
     if (!entry) {
       logUiDebug("rest-watch-notes", "socket reject setEntryNotes (entry not found)", {
         slotId: request.slotId,
         actorId: request.actorId,
         requesterId: String(requester?.id ?? "")
-      });
-      return;
-    }
-    const entryActor = game.actors.get(request.actorId);
-    if (!entryActor || !canUserControlActor(entryActor, requester)) {
-      logUiDebug("rest-watch-notes", "socket reject setEntryNotes (permission denied)", {
-        slotId: request.slotId,
-        actorId: request.actorId,
-        requesterId: String(requester?.id ?? ""),
-        requesterName: String(requester?.name ?? "Unknown")
       });
       return;
     }
@@ -35018,8 +34434,8 @@ async function applyRestRequest(request, requesterRef) {
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
     return;
   }
 }
@@ -35042,22 +34458,13 @@ async function applyMarchRequest(request, requesterRef) {
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
     return;
   }
 
-  // setActorNote: requester must be permitted for actor and actor must be in formation
+  // setActorNote: actor must already be part of the active formation
   if (request.op === "setNote") {
-    const targetActor = game.actors.get(request.actorId);
-    if (!targetActor || !canUserControlActor(targetActor, requester)) {
-      logUiDebug("march-notes", "socket reject setNote (permission denied)", {
-        actorId: request.actorId,
-        requesterId: String(requester?.id ?? ""),
-        requesterName: String(requester?.name ?? "Unknown")
-      });
-      return;
-    }
     const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
       Array.isArray(actorIds) && actorIds.includes(request.actorId)
     ));
@@ -35080,8 +34487,8 @@ async function applyMarchRequest(request, requesterRef) {
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
-    refreshOpenApps();
-    emitSocketRefresh();
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
     return;
   }
 }
@@ -35113,23 +34520,25 @@ async function toggleCampfire(element) {
   ui.notifications?.info(status);
 }
 
-function refreshOpenApps() {
+function refreshOpenApps(options = {}) {
+  const scopes = normalizeRefreshScopeList(options?.scopes ?? options?.scope);
+  if (scopes.length <= 0 || options?.all === true) {
+    refreshOpenAppsQueueAll = true;
+  } else {
+    for (const scope of scopes) refreshOpenAppsScopeQueue.add(scope);
+  }
+
   if (refreshOpenAppsQueued) return;
   refreshOpenAppsQueued = true;
   requestAnimationFrame(() => {
     refreshOpenAppsQueued = false;
+    const targetIds = refreshOpenAppsQueueAll
+      ? new Set(PARTY_OPS_REFRESHABLE_WINDOW_IDS)
+      : getRefreshTargetWindowIds(Array.from(refreshOpenAppsScopeQueue));
+    refreshOpenAppsQueueAll = false;
+    refreshOpenAppsScopeQueue.clear();
+
     const canvasSnapshot = captureCanvasViewState();
-    const ids = new Set([
-      "rest-watch-app",
-      "marching-order-app",
-      "rest-watch-player-app",
-      "party-operations-global-modifier-summary",
-      "party-operations-gm-environment-page",
-      "party-operations-gm-downtime-page",
-      "party-operations-gm-merchants-page",
-      "party-operations-gm-loot-page",
-      "party-operations-gm-loot-claims-board"
-    ]);
     const knownInstances = [
       restWatchAppInstance,
       marchingOrderAppInstance,
@@ -35141,19 +34550,10 @@ function refreshOpenApps() {
       gmLootPageAppInstance,
       gmLootClaimsBoardAppInstance
     ]
-      .filter((app) => app?.element?.isConnected);
-    const apps = Object.values(ui.windows).filter((app) =>
-      app instanceof RestWatchApp ||
-      app instanceof MarchingOrderApp ||
-      app instanceof RestWatchPlayerApp ||
-      app instanceof GlobalModifierSummaryApp ||
-      app instanceof GmEnvironmentPageApp ||
-      app instanceof GmDowntimePageApp ||
-      app instanceof GmMerchantsPageApp ||
-      app instanceof GmLootPageApp ||
-      app instanceof GmLootClaimsBoardApp ||
-      ids.has(app?.id ?? app?.options?.id)
-    );
+      .filter((app) => app?.element?.isConnected)
+      .filter((app) => targetIds.has(getAppWindowId(app)));
+    const apps = Object.values(ui.windows)
+      .filter((app) => targetIds.has(getAppWindowId(app)));
     const unique = Array.from(new Set([...apps, ...knownInstances]));
     for (const app of unique) {
       // Force re-prepare context and re-render for v12 ApplicationV2
@@ -35270,10 +34670,16 @@ function openRestWatchPlayerApp() {
   return app;
 }
 
-export function emitSocketRefresh() {
-  game.socket.emit(SOCKET_CHANNEL, { type: "refresh", userId: game.user.id });
+export function emitSocketRefresh(options = {}) {
+  const scopes = normalizeRefreshScopeList(options?.scopes ?? options?.scope);
+  const payload = {
+    type: "refresh",
+    userId: game.user.id
+  };
+  if (scopes.length > 0) payload.scopes = scopes;
+  emitModuleSocket(payload, { channel: SOCKET_CHANNEL });
 }
 
 function emitOpenRestPlayers() {
-  game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
+  emitModuleSocket({ type: "players:openRest" }, { channel: SOCKET_CHANNEL });
 }

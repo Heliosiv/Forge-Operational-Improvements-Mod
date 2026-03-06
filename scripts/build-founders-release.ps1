@@ -48,14 +48,11 @@ if (Test-Path $staging) {
 New-Item -ItemType Directory -Path $staging -Force | Out-Null
 New-Item -ItemType Directory -Path $foundersRoot -Force | Out-Null
 
-$manifest | ConvertTo-Json -Depth 20 | Set-Content -NoNewline (Join-Path $staging "module.json")
 $manifest | ConvertTo-Json -Depth 20 | Set-Content -NoNewline $manifestPath
 
-Copy-Item -Path "scripts" -Destination $staging -Recurse -Force
-Copy-Item -Path "styles" -Destination $staging -Recurse -Force
-Copy-Item -Path "templates" -Destination $staging -Recurse -Force
-if (Test-Path "packs") {
-  Copy-Item -Path "packs" -Destination $staging -Recurse -Force
+& node "scripts/prepare-package.mjs" --manifest $manifestPath --output $foundersRoot
+if ($LASTEXITCODE -ne 0) {
+  throw "prepare-package.mjs failed with exit code $LASTEXITCODE"
 }
 
 foreach ($pack in @($manifest.packs)) {

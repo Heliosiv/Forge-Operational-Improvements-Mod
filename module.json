@@ -17,18 +17,21 @@
                           "maximum":  "13"
                       },
     "esmodules":  [
-                      "scripts/party-operations.js"
+                      "scripts/module.js"
                   ],
     "styles":  [
                    "styles/party-operations.css"
                ],
     "templates":  [
                       "templates/rest-watch.hbs",
+                      "templates/settings-hub.hbs",
                       "templates/marching-order.hbs",
+                      "templates/party-operations-app.hbs",
                       "templates/rest-watch-player.hbs",
                       "templates/global-modifiers.hbs",
                       "templates/gm-environment.hbs",
                       "templates/gm-downtime.hbs",
+                      "templates/gm-merchants.hbs",
                       "templates/gm-loot.hbs",
                       "templates/gm-loot-claims-board.hbs"
                   ],
