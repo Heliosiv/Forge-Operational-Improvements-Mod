@@ -22,6 +22,7 @@ export function createGmAudioPageApp(deps) {
     deleteSelectedAudioMixPreset,
     addTrackToSelectedAudioMixPreset,
     addSelectedLibraryTrackToAudioMixPreset,
+    clearSelectedAudioMixPresetTrackList,
     queueSelectedTrackNext,
     moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
@@ -130,6 +131,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "add-selected-audio-track-to-mix": rerenderAlways(() => {
           return addSelectedLibraryTrackToAudioMixPreset();
+        }),
+        "clear-audio-mix-track-list": rerenderAlways(() => {
+          return clearSelectedAudioMixPresetTrackList();
         }),
         "queue-selected-audio-track-next": rerenderAlways((actionElement) => {
           return queueSelectedTrackNext(actionElement);

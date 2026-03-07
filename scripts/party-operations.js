@@ -9466,6 +9466,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   deleteSelectedAudioMixPreset,
   addTrackToSelectedAudioMixPreset,
   addSelectedLibraryTrackToAudioMixPreset,
+  clearSelectedAudioMixPresetTrackList,
   queueSelectedTrackNext,
   moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
@@ -10867,7 +10868,8 @@ function buildDefaultAudioLibraryCatalog() {
 function buildDefaultAudioMixPresetStore() {
   return {
     version: AUDIO_MIX_PRESET_STORE_VERSION,
-    presets: []
+    presets: [],
+    overrides: {}
   };
 }
 
@@ -10915,7 +10917,7 @@ function normalizeAudioMixPresetTrackIds(value) {
     .filter((entry, index, rows) => entry && rows.indexOf(entry) === index);
 }
 
-function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false } = {}) {
+function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false, allowTrackIds = false } = {}) {
   const preferredKinds = Array.isArray(input.preferredKinds)
     ? input.preferredKinds.map((entry) => normalizeAudioLibraryKind(entry)).filter((entry) => entry !== "all")
     : [];
@@ -10947,8 +10949,34 @@ function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false } = {}
     repeat: playbackMode === "repeat",
     playbackMode,
     isCustom,
-    trackIds: isCustom ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
+    trackIds: (isCustom || allowTrackIds) ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
   };
+}
+
+function serializeAudioMixPresetForStore(preset = {}, { includeIdentity = true } = {}) {
+  const normalized = normalizeAudioMixPresetDefinition(preset, {
+    isCustom: Boolean(preset?.isCustom),
+    allowTrackIds: true
+  });
+  const payload = {
+    description: normalized.description,
+    preferredKinds: normalized.preferredKinds,
+    preferredUsage: normalized.preferredUsage,
+    kindFocus: normalized.kindFocus,
+    usageFocus: normalized.usageFocus,
+    searchTokens: normalized.searchTokens,
+    channel: normalized.channel,
+    volume: normalized.volume,
+    fade: normalized.fade,
+    repeat: normalized.repeat,
+    playbackMode: normalized.playbackMode,
+    trackIds: normalized.trackIds
+  };
+  if (includeIdentity) {
+    payload.id = normalized.id;
+    payload.label = normalized.label;
+  }
+  return payload;
 }
 
 function normalizeAudioMixPresetStore(store = {}) {
@@ -10957,14 +10985,39 @@ function normalizeAudioMixPresetStore(store = {}) {
       .map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true }))
       .filter(Boolean)
     : [];
+  const overrideSource = (store?.overrides && typeof store.overrides === "object" && !Array.isArray(store.overrides))
+    ? store.overrides
+    : {};
+  const overrides = {};
+  for (const preset of AUDIO_MIX_BUILT_IN_PRESETS) {
+    const entry = overrideSource?.[preset.id];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const normalized = normalizeAudioMixPresetDefinition({
+      ...preset,
+      ...entry,
+      id: preset.id,
+      label: preset.label
+    }, { isCustom: false, allowTrackIds: true });
+    overrides[preset.id] = serializeAudioMixPresetForStore(normalized, { includeIdentity: false });
+  }
   return {
     version: AUDIO_MIX_PRESET_STORE_VERSION,
-    presets
+    presets,
+    overrides
   };
 }
 
 function getBuiltInAudioMixPresets() {
-  return AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => normalizeAudioMixPresetDefinition(preset, { isCustom: false }));
+  const store = getStoredAudioMixPresetStore();
+  return AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => {
+    const override = store?.overrides?.[preset.id] ?? {};
+    return normalizeAudioMixPresetDefinition({
+      ...preset,
+      ...override,
+      id: preset.id,
+      label: preset.label
+    }, { isCustom: false, allowTrackIds: true });
+  });
 }
 
 function normalizeAudioLibrarySource(value) {
@@ -11103,9 +11156,11 @@ function getAllAudioMixPresets() {
 }
 
 function getAudioMixPresetById(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "").trim();
   const presets = getAllAudioMixPresets();
-  return presets.find((preset) => preset.id === normalized) ?? presets[0];
+  return presets.find((preset) => String(preset.id ?? "").trim() === normalized)
+    ?? presets.find((preset) => String(preset.id ?? "").trim().toLowerCase() === normalized.toLowerCase())
+    ?? presets[0];
 }
 
 function getSelectedAudioMixPreset() {
@@ -11598,7 +11653,12 @@ async function updateStoredAudioMixPresets(mutator) {
   const current = getStoredAudioMixPresetStore();
   const next = normalizeAudioMixPresetStore(typeof mutator === "function" ? (mutator(foundry.utils.deepClone(current)) ?? current) : current);
   await saveAudioMixPresetStore(next);
-  if (!getAllAudioMixPresets().some((preset) => preset.id === audioLibraryUiState.selectedMixPresetId)) {
+  const selectedId = String(audioLibraryUiState.selectedMixPresetId ?? "").trim();
+  const nextPresetIds = [
+    ...AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => String(preset.id ?? "").trim()),
+    ...next.presets.map((preset) => String(preset.id ?? "").trim())
+  ];
+  if (!nextPresetIds.some((presetId) => presetId === selectedId)) {
     audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
   }
   return next;
@@ -11641,10 +11701,67 @@ function getSelectedCustomAudioMixPreset() {
   return preset?.isCustom ? preset : null;
 }
 
+function getSelectedEditableAudioMixPreset() {
+  return getSelectedAudioMixPreset();
+}
+
+function isBuiltInAudioMixPreset(preset) {
+  const presetId = String(preset?.id ?? "").trim();
+  return AUDIO_MIX_BUILT_IN_PRESETS.some((entry) => String(entry.id ?? "").trim() === presetId);
+}
+
+async function updateSelectedAudioMixPreset(mutator) {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) return false;
+  await updateStoredAudioMixPresets((store) => {
+    if (preset.isCustom) {
+      store.presets = store.presets.map((entry) => {
+        if (String(entry.id ?? "").trim() !== String(preset.id ?? "").trim()) return entry;
+        const nextEntry = typeof mutator === "function" ? (mutator(foundry.utils.deepClone(entry), preset) ?? entry) : entry;
+        return serializeAudioMixPresetForStore({
+          ...preset,
+          ...nextEntry,
+          id: preset.id,
+          label: String(nextEntry?.label ?? preset.label).trim() || preset.label,
+          isCustom: true
+        }, { includeIdentity: true });
+      });
+      return store;
+    }
+
+    const basePreset = AUDIO_MIX_BUILT_IN_PRESETS.find((entry) => String(entry.id ?? "").trim() === String(preset.id ?? "").trim()) ?? preset;
+    const currentOverride = store.overrides?.[preset.id] ?? {};
+    const nextOverride = typeof mutator === "function"
+      ? (mutator(foundry.utils.deepClone({
+        ...basePreset,
+        ...currentOverride,
+        id: preset.id,
+        label: preset.label
+      }), preset) ?? currentOverride)
+      : currentOverride;
+    store.overrides = {
+      ...(store.overrides ?? {}),
+      [preset.id]: serializeAudioMixPresetForStore({
+        ...basePreset,
+        ...nextOverride,
+        id: preset.id,
+        label: preset.label,
+        isCustom: false
+      }, { includeIdentity: false })
+    };
+    return store;
+  });
+  return true;
+}
+
 async function promptAndUpdateSelectedAudioMixPresetField(field) {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   if (!preset) {
-    ui.notifications?.warn("Select a custom preset to edit it.");
+    ui.notifications?.warn("Select a mix preset to edit it.");
+    return false;
+  }
+  if (field === "label" && !preset.isCustom) {
+    ui.notifications?.warn("Built-in preset names are fixed. Create a custom preset to rename it.");
     return false;
   }
 
@@ -11674,44 +11791,34 @@ async function promptAndUpdateSelectedAudioMixPresetField(field) {
     : String(response ?? "").trim();
   if ((field === "label" || field === "description") && !nextValue) return false;
 
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      return {
-        ...entry,
-        [field]: nextValue
-      };
-    });
-    return store;
+  await updateSelectedAudioMixPreset((entry) => {
+    entry[field] = nextValue;
+    return entry;
   });
   return true;
 }
 
 async function setSelectedAudioMixPresetOption(actionElement) {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   if (!preset) return false;
   const field = String(actionElement?.dataset?.field ?? "").trim();
   const value = actionElement?.value;
   if (!field) return false;
 
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      const next = { ...entry };
-      if (field === "kindFocus") {
-        next.kindFocus = normalizeAudioLibraryKind(value);
-        next.preferredKinds = next.kindFocus === "all" ? [] : [next.kindFocus];
-        next.channel = inferAudioMixChannelForKind(next.kindFocus);
-      } else if (field === "usageFocus") {
-        next.usageFocus = normalizeAudioLibraryUsage(value);
-        next.preferredUsage = next.usageFocus === "all" ? [] : [next.usageFocus];
-      } else if (field === "playbackMode") {
-        next.playbackMode = normalizeAudioMixPlaybackMode(value);
-        next.repeat = next.playbackMode === "repeat";
-      }
-      return next;
-    });
-    return store;
+  await updateSelectedAudioMixPreset((entry) => {
+    const next = { ...entry };
+    if (field === "kindFocus") {
+      next.kindFocus = normalizeAudioLibraryKind(value);
+      next.preferredKinds = next.kindFocus === "all" ? [] : [next.kindFocus];
+      next.channel = inferAudioMixChannelForKind(next.kindFocus);
+    } else if (field === "usageFocus") {
+      next.usageFocus = normalizeAudioLibraryUsage(value);
+      next.preferredUsage = next.usageFocus === "all" ? [] : [next.usageFocus];
+    } else if (field === "playbackMode") {
+      next.playbackMode = normalizeAudioMixPlaybackMode(value);
+      next.repeat = next.playbackMode === "repeat";
+    }
+    return next;
   });
   return true;
 }
@@ -11738,24 +11845,31 @@ async function deleteSelectedAudioMixPreset() {
 }
 
 async function addTrackToSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) {
-    ui.notifications?.warn("Select a custom preset before adding tracks.");
+    ui.notifications?.warn("Select a mix preset before adding tracks.");
     return false;
   }
 
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      const nextTrackIds = normalizeAudioMixPresetTrackIds([...(entry.trackIds ?? []), normalizedTrackId]);
-      return {
-        ...entry,
-        trackIds: nextTrackIds
-      };
-    });
-    return store;
-  });
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: normalizeAudioMixPresetTrackIds([...(entry.trackIds ?? []), normalizedTrackId])
+  }));
+  if (!preset.isCustom) {
+    setAudioMixStatus(`Saved ${preset.label} curated track list.`);
+  }
+  return true;
+}
+
+async function clearSelectedAudioMixPresetTrackList() {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) return false;
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: []
+  }));
+  setAudioMixStatus(`Cleared saved track list for ${preset.label}.`);
   return true;
 }
 
@@ -11767,7 +11881,7 @@ async function addSelectedLibraryTrackToAudioMixPreset() {
 function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
   const playback = getAudioMixPlaybackState(getAudioLibraryCatalog());
   const currentTrackId = String(playback?.activeTrack?.id ?? playback?.activeTrackId ?? "").trim();
-  if (!preset?.isCustom || !currentTrackId) return -1;
+  if (!preset || !currentTrackId) return -1;
   if (String(playback?.presetId ?? "").trim() !== String(preset.id ?? "").trim()) return -1;
   const trackIds = Array.isArray(preset.trackIds) ? preset.trackIds : [];
   return trackIds.indexOf(currentTrackId);
@@ -11783,64 +11897,48 @@ function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
 }
 
 async function queueTrackNextInSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
   const insertionIndex = getAudioMixCurrentInsertionIndex(preset);
   const targetIndex = insertionIndex >= 0 ? insertionIndex + 1 : 0;
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      return {
-        ...entry,
-        trackIds: buildReorderedAudioMixTrackIds(entry.trackIds ?? [], normalizedTrackId, targetIndex)
-      };
-    });
-    return store;
-  });
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: buildReorderedAudioMixTrackIds(entry.trackIds ?? [], normalizedTrackId, targetIndex)
+  }));
   return true;
 }
 
 async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
-      const index = rows.indexOf(normalizedTrackId);
-      if (index < 0) return entry;
-      const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
-      const targetIndex = Math.max(0, Math.min(rows.length - 1, index + delta));
-      if (targetIndex === index) return entry;
-      const [moved] = rows.splice(index, 1);
-      rows.splice(targetIndex, 0, moved);
-      return {
-        ...entry,
-        trackIds: rows
-      };
-    });
-    return store;
+  await updateSelectedAudioMixPreset((entry) => {
+    const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
+    const index = rows.indexOf(normalizedTrackId);
+    if (index < 0) return entry;
+    const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
+    const targetIndex = Math.max(0, Math.min(rows.length - 1, index + delta));
+    if (targetIndex === index) return entry;
+    const [moved] = rows.splice(index, 1);
+    rows.splice(targetIndex, 0, moved);
+    return {
+      ...entry,
+      trackIds: rows
+    };
   });
   return true;
 }
 
 async function removeTrackFromSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedCustomAudioMixPreset();
+  const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
 
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.map((entry) => {
-      if (entry.id !== preset.id) return entry;
-      return {
-        ...entry,
-        trackIds: normalizeAudioMixPresetTrackIds((entry.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
-      };
-    });
-    return store;
-  });
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: normalizeAudioMixPresetTrackIds((entry.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
+  }));
   return true;
 }
 
@@ -11916,7 +12014,7 @@ function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset(), 
 }
 
 function getPlayableAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
-  if (preset?.isCustom) return buildAudioMixAssignedCandidates(catalog, preset);
+  if (Array.isArray(preset?.trackIds) && preset.trackIds.length > 0) return buildAudioMixAssignedCandidates(catalog, preset);
   return buildAudioMixCandidates(catalog, preset);
 }
 
@@ -11928,7 +12026,7 @@ function getManagedAudioMixPlaylist() {
 }
 
 function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
-  return Boolean(preset?.isCustom) && Number(candidateCount ?? 0) > 1;
+  return Number(candidateCount ?? 0) > 1;
 }
 
 function getAudioMixPlaylistMode(preset, candidateCount = 0) {
@@ -12094,7 +12192,7 @@ async function playAudioMixPresetById(presetId, options = {}) {
   const catalog = getAudioLibraryCatalog();
   const candidates = getPlayableAudioMixCandidates(catalog, preset);
   if (candidates.length <= 0) {
-    throw new Error(preset.isCustom
+    throw new Error((Array.isArray(preset?.trackIds) && preset.trackIds.length > 0) || preset.isCustom
       ? `Add tracks to the ${preset.label} mix before playing it.`
       : `No audio tracks matched the ${preset.label} mix.`);
   }
@@ -12174,7 +12272,7 @@ async function playAudioMixCandidateByTrackId(trackId) {
   const mixState = getAudioMixStateFlag(playlist);
   const queueTrackIds = String(mixState.presetId ?? "").trim() === String(preset.id ?? "").trim()
     ? mixState.queueTrackIds
-    : (preset.isCustom ? preset.trackIds : []);
+    : (Array.isArray(preset.trackIds) && preset.trackIds.length > 0 ? preset.trackIds : []);
   return playAudioMixPresetById(preset.id, {
     excludeTrackId: "",
     preferredTrackId: String(trackId ?? "").trim(),
@@ -12239,7 +12337,7 @@ async function queueSelectedTrackNext(actionElement) {
   const preset = getSelectedAudioMixPreset();
   const trackId = String(actionElement?.dataset?.trackId ?? "").trim() || String(audioLibraryUiState.selectedTrackId ?? "").trim();
   if (!trackId) return false;
-  if (preset?.isCustom) return queueTrackNextInSelectedAudioMixPreset(trackId);
+  if (Array.isArray(preset?.trackIds)) return queueTrackNextInSelectedAudioMixPreset(trackId);
   const playlist = getManagedAudioMixPlaylist();
   const mixState = getAudioMixStateFlag(playlist);
   const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
@@ -12401,7 +12499,8 @@ function buildAudioMixContext(catalog) {
   const suggestedCandidates = buildAudioMixCandidates(catalog, selectedPreset, {
     excludeTrackIds: assignedCandidates.map(({ item }) => item.id)
   });
-  const candidates = selectedPreset.isCustom ? assignedCandidates : suggestedCandidates;
+  const hasSavedTrackList = assignedCandidates.length > 0;
+  const candidates = hasSavedTrackList ? assignedCandidates : suggestedCandidates;
   const playback = getAudioMixPlaybackState(catalog);
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
   const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
@@ -12416,20 +12515,25 @@ function buildAudioMixContext(catalog) {
       description: preset.description,
       isCustom: Boolean(preset.isCustom),
       selected: preset.id === selectedPreset.id,
-      candidateCount: preset.isCustom ? buildAudioMixAssignedCandidates(catalog, preset).length : buildAudioMixCandidates(catalog, preset).length,
-      playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode)
+      candidateCount: (Array.isArray(preset.trackIds) && preset.trackIds.length > 0)
+        ? buildAudioMixAssignedCandidates(catalog, preset).length
+        : buildAudioMixCandidates(catalog, preset).length,
+      playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode),
+      hasSavedTrackList: Array.isArray(preset.trackIds) && preset.trackIds.length > 0
     })),
     selectedPreset: {
       ...selectedPreset,
       candidateCount: candidates.length,
       assignedCount: assignedCandidates.length,
       suggestedCount: suggestedCandidates.length,
+      hasSavedTrackList,
       channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
       playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
       kindFocusLabel: getAudioLibraryKindLabel(selectedPreset.kindFocus),
       usageFocusLabel: getAudioLibraryUsageLabel(selectedPreset.usageFocus),
       searchTokensLabel: formatAudioMixPresetSearchTokens(selectedPreset.searchTokens),
-      canDelete: Boolean(selectedPreset.isCustom)
+      canDelete: Boolean(selectedPreset.isCustom),
+      canRename: Boolean(selectedPreset.isCustom)
     },
     candidates: candidates.slice(0, 14).map(({ item, score }) => ({
       id: item.id,
@@ -12466,12 +12570,14 @@ function buildAudioMixContext(catalog) {
     hasSuggestedTracks: suggestedCandidates.length > 0,
     hasCandidates: candidates.length > 0,
     editor: {
-      canEdit: Boolean(selectedPreset.isCustom),
+      canEdit: true,
+      canRename: Boolean(selectedPreset.isCustom),
       hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
       selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
       kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
       usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
-      playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode)
+      playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode),
+      hasAssignedTracks: assignedCandidates.length > 0
     },
     queue: {
       hasLiveQueue: liveQueueTracks.length > 0,

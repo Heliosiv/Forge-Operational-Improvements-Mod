@@ -136,6 +136,7 @@
               </span>
               <span class="po-audio-track-badges">
                 {{#if isCustom}}<span class="po-pill">Custom</span>{{/if}}
+                {{#if hasSavedTrackList}}<span class="po-pill">Curated</span>{{/if}}
                 <span class="po-pill">{{candidateCount}} tracks</span>
                 <span class="po-pill">{{playbackModeLabel}}</span>
               </span>
@@ -157,7 +158,7 @@
           <div class="po-section-title">{{audio.mix.selectedPreset.label}}</div>
           <div class="po-op-summary">{{audio.mix.selectedPreset.description}}</div>
           <div class="po-audio-chip-list">
-            {{#if audio.mix.selectedPreset.isCustom}}
+            {{#if audio.mix.selectedPreset.hasSavedTrackList}}
             <span class="po-pill">{{audio.mix.selectedPreset.assignedCount}} assigned tracks</span>
             <span class="po-pill">{{audio.mix.selectedPreset.suggestedCount}} suggestions</span>
             {{else}}
@@ -199,7 +200,9 @@
               </label>
             </div>
             <div class="po-op-action-row po-audio-card-actions">
+              {{#if audio.mix.editor.canRename}}
               <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="label">Rename</button>
+              {{/if}}
               <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="description">Edit Description</button>
               <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="searchTokens">Edit Tokens</button>
             </div>
@@ -210,7 +213,12 @@
               <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" {{#unless audio.mix.editor.hasSelectedLibraryTrack}}disabled{{/unless}}>
                 Queue Selected Next
               </button>
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-audio-mix-track-list" {{#unless audio.mix.editor.hasAssignedTracks}}disabled{{/unless}}>
+                Clear Saved List
+              </button>
+              {{#if audio.mix.selectedPreset.canDelete}}
               <button type="button" class="po-btn po-btn-sm" data-action="delete-audio-mix-preset">Delete Preset</button>
+              {{/if}}
             </div>
           </div>
           {{/if}}
@@ -256,8 +264,7 @@
       </div>
 
       <section class="po-gm-section po-audio-results-card">
-        {{#if audio.mix.selectedPreset.isCustom}}
-        <div class="po-section-title">Preset Tracks</div>
+        <div class="po-section-title">Saved Track List</div>
         {{#if audio.mix.hasAssignedTracks}}
         <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Assigned mix tracks">
           {{#each audio.mix.assignedTracks}}
@@ -281,7 +288,7 @@
           {{/each}}
         </div>
         {{else}}
-        <div class="po-op-summary">This preset is empty. Add tracks from the suggestions below or from the selected Library track.</div>
+        <div class="po-op-summary">This preset does not have a saved track list yet. Add tracks from the suggestions below or from the selected Library track to make it fully curatable.</div>
         {{/if}}
 
         <div class="po-section-title">Suggested Tracks</div>
@@ -306,28 +313,7 @@
           {{/each}}
         </div>
         {{else}}
-        <div class="po-op-summary">No suggestions matched this custom preset yet. Broaden the focus or adjust the search tokens.</div>
-        {{/if}}
-        {{else}}
-        <div class="po-section-title">Preset Candidates</div>
-        {{#if audio.mix.hasCandidates}}
-        <div class="po-audio-track-list po-audio-candidate-list" role="list" aria-label="Selected mix candidates">
-          {{#each audio.mix.candidates}}
-          <button type="button" class="po-audio-track-row {{#if selected}}is-selected{{/if}}" data-action="play-audio-mix-candidate" data-track-id="{{id}}" role="listitem">
-            <span class="po-audio-track-main">
-              <span class="po-audio-track-name">{{name}}</span>
-              <span class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} - score {{score}}</span>
-            </span>
-            <span class="po-audio-track-badges">
-              <span class="po-pill">{{kindLabel}}</span>
-              <span class="po-pill">{{usageLabel}}</span>
-            </span>
-          </button>
-          {{/each}}
-        </div>
-        {{else}}
-        <div class="po-op-summary">This preset has no matches yet. Scan the library first or refine the uploaded folder.</div>
-        {{/if}}
+        <div class="po-op-summary">No suggestions matched this preset yet. Broaden the focus or adjust the search tokens.</div>
         {{/if}}
       </section>
       {{/if}}
