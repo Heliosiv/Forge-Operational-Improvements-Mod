@@ -157,16 +157,17 @@
                       {{/each}}
                     </div>
                     {{/if}}
-                    <div class="po-op-summary">Source: {{sourceLabel}}</div>
-                    {{#if hasItemValue}}<div class="po-op-summary">Item Value: {{itemValueLabel}}</div>{{/if}}
+                    {{#if hasItemValue}}<div class="po-op-summary po-loot-builder-item-value">Value {{itemValueLabel}}</div>{{/if}}
                   </div>
                   <div class="po-loot-builder-item-actions">
                     <button type="button" class="po-icon-btn" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}" aria-label="Remove {{name}}">
                       <i class="fa-solid fa-xmark"></i>
                     </button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="edit-loot-preview-item" data-item-id="{{id}}" aria-label="Adjust {{name}}">Adjust</button>
                     {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
                   </div>
                 </div>
+                {{#if sourceLabel}}<div class="po-op-summary po-loot-builder-item-source" title="{{sourceLabel}}">{{sourceLabel}}</div>{{/if}}
               </article>
               {{/each}}
             </div>

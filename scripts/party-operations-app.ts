@@ -63,10 +63,30 @@ function toPlainObject(value: unknown): Record<string, unknown> {
 function mapSystemRarityToLootRarity(raw: unknown): LootCatalogItem["rarity"] {
   const value = String(raw ?? "").trim().toLowerCase();
   if (value === "legendary") return "legendary";
-  if (value === "very-rare" || value === "very rare") return "veryRare";
+  if (value === "very-rare" || value === "very rare" || value === "veryrare") return "veryRare";
   if (value === "rare") return "rare";
   if (value === "uncommon") return "uncommon";
   return "common";
+}
+
+function getPartyOpsFlags(item: any): Record<string, unknown> {
+  return (item?.flags?.["party-operations"] ?? {}) as Record<string, unknown>;
+}
+
+function isLootEligible(item: any): boolean {
+  const poFlags = getPartyOpsFlags(item);
+  if (typeof poFlags.lootEligible === "boolean") return poFlags.lootEligible;
+  return true;
+}
+
+function getLootWeight(item: any): number {
+  const raw = Number(getPartyOpsFlags(item).lootWeight ?? 1);
+  return Number.isFinite(raw) && raw > 0 ? raw : 1;
+}
+
+function getMaxRecommendedQty(item: any): number {
+  const raw = Number(getPartyOpsFlags(item).maxRecommendedQty ?? 1);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 1;
 }
 
 class PartyOpsDefaultUiServices implements PartyOpsUiServices {
@@ -97,13 +117,14 @@ class PartyOpsDefaultUiServices implements PartyOpsUiServices {
       .map((item: any) => {
         const uuid = String(item?.uuid ?? "").trim();
         const name = String(item?.name ?? "").trim();
-        if (!uuid || !name) return null;
+        if (!uuid || !name || !isLootEligible(item)) return null;
+        const poFlags = getPartyOpsFlags(item);
         return {
           uuid,
           name,
-          rarity: mapSystemRarityToLootRarity(item?.system?.rarity),
-          weight: 1,
-          maxQty: 1
+          rarity: mapSystemRarityToLootRarity(poFlags.rarityNormalized ?? item?.system?.rarity),
+          weight: getLootWeight(item),
+          maxQty: getMaxRecommendedQty(item)
         } as LootCatalogItem;
       })
       .filter((entry: LootCatalogItem | null): entry is LootCatalogItem => Boolean(entry));

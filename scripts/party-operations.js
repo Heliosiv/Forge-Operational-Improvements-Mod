@@ -161,6 +161,8 @@ export const SETTINGS = {
   AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
   AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
   AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
+  AUDIO_LIBRARY_HIDDEN_TRACKS: "audioLibraryHiddenTracks",
+  AUDIO_MIX_PRESETS: "audioMixPresets",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   LAUNCHER_PLACEMENT: "launcherPlacement",
@@ -731,6 +733,8 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
     case SETTINGS.AUDIO_LIBRARY_SOURCE:
     case SETTINGS.AUDIO_LIBRARY_ROOT:
     case SETTINGS.AUDIO_LIBRARY_CATALOG:
+    case SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS:
+    case SETTINGS.AUDIO_MIX_PRESETS:
       return [REFRESH_SCOPE_KEYS.LOOT];
     case SETTINGS.INJURY_RECOVERY:
     case SETTINGS.INJURY_REMINDER_DAY:
@@ -4801,6 +4805,40 @@ function clearMerchantEditorDraftState() {
   sessionStorage.removeItem(getMerchantEditorDraftStorageKey());
 }
 
+function getMerchantCityCatalogDraftStorageKey() {
+  const worldId = String(game.world?.id ?? "world").trim() || "world";
+  const userId = String(game.user?.id ?? "anon").trim() || "anon";
+  return `${MODULE_ID}.merchantCityCatalogDraft.${worldId}.${userId}`;
+}
+
+function getMerchantCityCatalogDraftValue() {
+  try {
+    const raw = sessionStorage.getItem(getMerchantCityCatalogDraftStorageKey());
+    if (raw === null || raw === undefined) return null;
+    return String(raw);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function setMerchantCityCatalogDraftValue(value) {
+  try {
+    const text = String(value ?? "");
+    sessionStorage.setItem(getMerchantCityCatalogDraftStorageKey(), text);
+    return text;
+  } catch (_error) {
+    return String(value ?? "");
+  }
+}
+
+function clearMerchantCityCatalogDraftValue() {
+  try {
+    sessionStorage.removeItem(getMerchantCityCatalogDraftStorageKey());
+  } catch (_error) {
+    // Ignore storage failures outside browser execution contexts.
+  }
+}
+
 function getMerchantEditorViewTabStorageKey() {
   return `po-merchant-editor-view-tab-${game.user?.id ?? "anon"}`;
 }
@@ -6113,6 +6151,113 @@ function setLootPreviewDraft(draft = {}) {
   sessionStorage.setItem(getLootPreviewDraftStorageKey(), JSON.stringify(normalized));
 }
 
+function getDowntimeUiDraftStorageKey() {
+  const worldId = String(game.world?.id ?? "world").trim() || "world";
+  const userId = String(game.user?.id ?? "anon").trim() || "anon";
+  return `${MODULE_ID}.downtimeUiDraft.${worldId}.${userId}`;
+}
+
+function getDowntimeUiDraft() {
+  try {
+    const raw = sessionStorage.getItem(getDowntimeUiDraftStorageKey());
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeDowntimeUiDraft(draft = {}) {
+  try {
+    const next = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+    if (Object.keys(next).length <= 0) {
+      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
+      return {};
+    }
+    sessionStorage.setItem(getDowntimeUiDraftStorageKey(), JSON.stringify(next));
+    return next;
+  } catch (_error) {
+    return draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+  }
+}
+
+function setDowntimeUiDraftSection(sectionKey, patch = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) return getDowntimeUiDraft();
+  const current = getDowntimeUiDraft();
+  const next = { ...current };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
+    delete next[section];
+    return writeDowntimeUiDraft(next);
+  }
+  next[section] = {
+    ...(current?.[section] && typeof current[section] === "object" && !Array.isArray(current[section]) ? current[section] : {}),
+    ...patch
+  };
+  return writeDowntimeUiDraft(next);
+}
+
+function replaceDowntimeUiDraftSection(sectionKey, patch = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) return getDowntimeUiDraft();
+  const current = getDowntimeUiDraft();
+  const next = { ...current };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
+    delete next[section];
+    return writeDowntimeUiDraft(next);
+  }
+  next[section] = { ...patch };
+  return writeDowntimeUiDraft(next);
+}
+
+function clearDowntimeUiDraft(sectionKey = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) {
+    try {
+      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
+    } catch (_error) {
+      // Ignore storage failures outside browser execution contexts.
+    }
+    return {};
+  }
+  return replaceDowntimeUiDraftSection(section, null);
+}
+
+function syncDowntimeSubmissionDraftFromRoot(root) {
+  if (!(root instanceof HTMLElement)) return {};
+  return setDowntimeUiDraftSection("submission", {
+    actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
+    actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
+    hours: String(root.querySelector("input[name='downtimeHours']")?.value ?? ""),
+    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
+  });
+}
+
+function syncDowntimeResolverDraftFromRoot(root) {
+  if (!(root instanceof HTMLElement)) return {};
+  return setDowntimeUiDraftSection("resolution", {
+    actorId: String(root.querySelector("select[name='resolveDowntimeActorId']")?.value ?? "").trim(),
+    summary: String(root.querySelector("input[name='resolveDowntimeSummary']")?.value ?? ""),
+    gpAward: String(root.querySelector("input[name='resolveDowntimeGp']")?.value ?? ""),
+    gpCost: String(root.querySelector("input[name='resolveDowntimeCost']")?.value ?? ""),
+    rumorCount: String(root.querySelector("input[name='resolveDowntimeRumors']")?.value ?? ""),
+    socialContractKey: String(root.querySelector("select[name='resolveDowntimeContractKey']")?.value ?? "").trim(),
+    socialContractNotes: String(root.querySelector("textarea[name='resolveDowntimeContractNotes']")?.value ?? ""),
+    itemRewardsText: String(root.querySelector("textarea[name='resolveDowntimeItems']")?.value ?? ""),
+    itemRewardDropsJson: String(root.querySelector("input[name='resolveDowntimeItemDrops']")?.value ?? "[]"),
+    gmNotes: String(root.querySelector("textarea[name='resolveDowntimeNotes']")?.value ?? "")
+  });
+}
+
+function syncDowntimeUiDraftFromElement(element) {
+  const panelRoot = element?.closest?.(".po-downtime-panel");
+  if (panelRoot instanceof HTMLElement) syncDowntimeSubmissionDraftFromRoot(panelRoot);
+  const resolverRoot = element?.closest?.(".po-downtime-resolver");
+  if (resolverRoot instanceof HTMLElement) syncDowntimeResolverDraftFromRoot(resolverRoot);
+  return getDowntimeUiDraft();
+}
+
 function getLootPreviewResult() {
   const raw = sessionStorage.getItem(getLootPreviewResultStorageKey());
   if (!raw) return null;
@@ -7034,9 +7179,9 @@ function buildOperationsContextFallback() {
     fallbackMerchants = {
       currentSettlement: "",
       currentSettlementLabel: "Global",
-      settlementOptions: [{ value: "", label: "All Cities", selected: true }],
+      settlementOptions: [{ value: "", label: "All Locations", selected: true }],
       selectedSettlement: "",
-      selectedSettlementLabel: "All Cities",
+      selectedSettlementLabel: "All Locations",
       actorOptions: [],
       hasActorOptions: false,
       activeActorId: "",
@@ -7056,7 +7201,7 @@ function buildOperationsContextFallback() {
       shopLastClosedBy: "-",
       availableMerchants: [],
       hasAvailableMerchants: false,
-      emptyStateMessage: "No merchants are currently available for this actor/city combination.",
+      emptyStateMessage: "No merchants are currently available for this actor/location combination.",
       activeMerchantId: "",
       hasActiveMerchant: false,
       activeMerchantName: "No Merchant Selected",
@@ -7084,7 +7229,7 @@ function buildOperationsContextFallback() {
         collectionFilterCity: "",
         collectionFilterAccess: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
         collectionFilterStock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL,
-        collectionFilterCityOptions: [{ value: "", label: "All Cities", selected: true }],
+        collectionFilterCityOptions: [{ value: "", label: "All Locations", selected: true }],
         collectionFilterAccessOptions: [
           { value: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL, label: "Any Access", selected: true },
           { value: MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC, label: "All Players", selected: false },
@@ -7114,6 +7259,9 @@ function buildOperationsContextFallback() {
         editorViewTabEditor: true,
         editorViewTabSettings: false,
         cityCatalogInput: "",
+        savedLocationCatalogRows: [],
+        hasSavedLocationCatalogRows: false,
+        savedLocationCatalogCount: 0,
         editor: {
           id: "",
           name: "",
@@ -7608,6 +7756,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          syncDowntimeUiDraftFromElement(event.target);
+        } else if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
         }
       });
 
@@ -7640,6 +7792,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          syncDowntimeUiDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
           return;
         }
       });
@@ -8995,7 +9155,22 @@ function buildGmMerchantsPageContext() {
 }
 
 function buildGmAudioPageContext() {
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  pruneSelectedAudioLibraryTrackSelectionIds(rawCatalog.items.map((item) => item.id));
   const catalog = getAudioLibraryCatalog();
+  const hiddenTrackIds = getHiddenAudioLibraryTrackIds();
+  const hiddenTrackIdSet = new Set(hiddenTrackIds);
+  const hiddenMatches = rawCatalog.items
+    .filter((item) => hiddenTrackIdSet.has(String(item?.id ?? "").trim()))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const hiddenTracks = hiddenMatches
+    .slice(0, 24)
+    .map((item) => ({
+      ...item,
+      hasSubcategory: Boolean(item.subcategory),
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage)
+    }));
   const hasSelectedTrack = catalog.items.some((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim());
   if (!hasSelectedTrack) {
     audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
@@ -9013,10 +9188,15 @@ function buildGmAudioPageContext() {
       viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
       filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
       filterOptions: buildAudioLibraryFilterOptions(),
-      summary: buildAudioLibrarySummary(catalog),
+      summary: buildAudioLibrarySummary(catalog, { hiddenCount: hiddenMatches.length }),
       results,
       mix: buildAudioMixContext(catalog),
       selectedTrack,
+      hidden: {
+        count: hiddenMatches.length,
+        tracks: hiddenTracks,
+        hasTracks: hiddenMatches.length > 0
+      },
       hasCatalog: catalog.items.length > 0,
       hasError: Boolean(audioLibraryUiState.error),
       error: audioLibraryUiState.error
@@ -9375,6 +9555,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   addDowntimeResolverCraftingItemDropFromDropEvent,
   addDowntimeResolverItemRewardFromDropEvent,
   renderDowntimeResolverItemDropList,
+  syncDowntimeUiDraftFromElement,
   openGmPanelByKey
 });
 
@@ -9396,7 +9577,11 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   randomizeMerchantNameFromElement,
   randomizeMerchantRaceFromElement,
   saveMerchantCityCatalogFromElement,
+  updateMerchantCatalogLocationFromElement,
+  removeMerchantCatalogLocationFromElement,
   assignMerchantCityFromElement,
+  assignMerchantCatalogLocationMerchantFromElement,
+  removeMerchantCatalogLocationMerchantFromElement,
   setMerchantEditorSelectionFromElement,
   saveMerchantFromElement,
   deleteMerchantFromElement,
@@ -9420,6 +9605,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   setMerchantAssignmentAllEnabledFromElement,
   setMerchantAssignmentAllDisabledFromElement,
   openMerchantActorFromElement,
+  setMerchantCityCatalogDraftValue,
   openGmPanelByKey
 });
 
@@ -9457,7 +9643,24 @@ export const GmAudioPageApp = createGmAudioPageApp({
   clearAudioLibraryCatalog,
   setAudioLibraryFilterField,
   selectAudioLibraryTrack,
+  toggleAudioLibraryTrackSelection,
+  selectVisibleAudioLibraryTracks,
+  clearAudioLibraryTrackSelections,
   selectAudioMixPreset,
+  createAudioMixPresetFromSelection,
+  promptAndUpdateSelectedAudioMixPresetField,
+  setSelectedAudioMixPresetOption,
+  deleteSelectedAudioMixPreset,
+  addTrackToSelectedAudioMixPreset,
+  addSelectedLibraryTrackToAudioMixPreset,
+  clearSelectedAudioMixPresetTrackList,
+  hideAudioLibraryTrack,
+  hideSelectedAudioLibraryTracks,
+  queueSelectedTrackNext,
+  moveTrackWithinSelectedAudioMixPreset,
+  removeTrackFromSelectedAudioMixPreset,
+  restoreAllHiddenAudioLibraryTracks,
+  restoreHiddenAudioLibraryTrack,
   playSelectedAudioMixPreset: async () => {
     try {
       clearAudioLibraryError();
@@ -9472,6 +9675,26 @@ export const GmAudioPageApp = createGmAudioPageApp({
     try {
       clearAudioLibraryError();
       await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playNextAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await playNextAudioMixTrack();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  restartCurrentAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await restartCurrentAudioMixTrack();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
       setAudioLibraryError(message);
@@ -9520,6 +9743,7 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootPreviewField,
   rollLootPreview,
   addLootPreviewItemByPicker,
+  editLootPreviewItem,
   removeLootPreviewItem,
   adjustLootPreviewCurrency,
   clearLootPreviewResult,
@@ -9854,6 +10078,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+          syncDowntimeUiDraftFromElement(event.target);
         }
       });
 
@@ -9866,6 +10092,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         }
         if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+          syncDowntimeUiDraftFromElement(event.target);
           return;
         }
       });
@@ -10680,6 +10910,7 @@ function buildDefaultLootSourceConfig() {
 
 const AUDIO_LIBRARY_DEFAULT_SOURCE = "data";
 const AUDIO_LIBRARY_VERSION = 1;
+const AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION = 1;
 const AUDIO_LIBRARY_EXTENSIONS = Object.freeze(["mp3", "wav", "ogg", "webm", "flac", "m4a"]);
 const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
   all: "All Kinds",
@@ -10709,7 +10940,17 @@ const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
 });
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
-const AUDIO_MIX_PRESETS = Object.freeze([
+const AUDIO_MIX_PRESET_STORE_VERSION = 1;
+const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
+  music: "Music",
+  environment: "Environment",
+  interface: "Interface"
+});
+const AUDIO_MIX_PLAYBACK_MODE_LABELS = Object.freeze({
+  repeat: "Loop / Repeat",
+  single: "Single Pass"
+});
+const AUDIO_MIX_BUILT_IN_PRESETS = Object.freeze([
   {
     id: "camp",
     label: "Camp",
@@ -10717,7 +10958,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["rest", "ambience", "general"],
     searchTokens: ["camp", "night", "sleep", "blissful", "harp", "fire", "rest"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.48,
     fade: 1800,
     repeat: true
@@ -10729,7 +10970,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["travel", "ambience", "general"],
     searchTokens: ["travel", "journey", "road", "march", "path", "adventure"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.52,
     fade: 1400,
     repeat: true
@@ -10741,7 +10982,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music"],
     preferredUsage: ["intrigue", "tension", "general"],
     searchTokens: ["intrigue", "court", "waltz", "curiosity", "mystery", "shadow", "noble", "palace", "whisper"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.46,
     fade: 1600,
     repeat: true
@@ -10753,7 +10994,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "sfx"],
     preferredUsage: ["combat", "stinger", "general"],
     searchTokens: ["action", "battle", "combat", "war", "spell", "melee", "archer", "fight"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.64,
     fade: 900,
     repeat: true
@@ -10765,7 +11006,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["tension", "ambience", "intrigue"],
     searchTokens: ["horror", "anxiety", "dark", "undead", "fear", "whisper", "creep", "shadow"],
-    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    channel: "environment",
     volume: 0.44,
     fade: 1900,
     repeat: true
@@ -10777,7 +11018,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["town", "foley", "general"],
     searchTokens: ["town", "tavern", "market", "city", "courtyard", "folk", "cooking", "village"],
-    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    channel: "environment",
     volume: 0.42,
     fade: 1500,
     repeat: true
@@ -10789,7 +11030,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["sfx", "voice"],
     preferredUsage: ["stinger", "voice", "combat"],
     searchTokens: ["stinger", "shot", "cinematic", "spell", "impact", "voice"],
-    channel: CONST?.AUDIO_CHANNELS?.interface ?? "interface",
+    channel: "interface",
     volume: 0.6,
     fade: 300,
     repeat: false
@@ -10807,6 +11048,7 @@ const audioLibraryUiState = {
     usage: "all"
   },
   selectedTrackId: "",
+  selectedTrackIds: [],
   selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
   mixStatus: "",
   error: ""
@@ -10823,16 +11065,193 @@ function buildDefaultAudioLibraryCatalog() {
   };
 }
 
+function buildDefaultAudioLibraryHiddenTrackStore() {
+  return {
+    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+    trackIds: []
+  };
+}
+
+function buildDefaultAudioMixPresetStore() {
+  return {
+    version: AUDIO_MIX_PRESET_STORE_VERSION,
+    presets: [],
+    overrides: {}
+  };
+}
+
+function normalizeAudioMixChannel(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_MIX_CHANNEL_LABELS, normalized) ? normalized : "music";
+}
+
+function getAudioMixChannelLabel(value) {
+  return AUDIO_MIX_CHANNEL_LABELS[normalizeAudioMixChannel(value)] ?? AUDIO_MIX_CHANNEL_LABELS.music;
+}
+
+function normalizeAudioMixPlaybackMode(value) {
+  return String(value ?? "").trim().toLowerCase() === "single" ? "single" : "repeat";
+}
+
+function getAudioMixPlaybackModeLabel(value) {
+  return AUDIO_MIX_PLAYBACK_MODE_LABELS[normalizeAudioMixPlaybackMode(value)] ?? AUDIO_MIX_PLAYBACK_MODE_LABELS.repeat;
+}
+
+function inferAudioMixChannelForKind(kindFocus) {
+  const normalizedKind = normalizeAudioLibraryKind(kindFocus);
+  if (normalizedKind === "ambience") return "environment";
+  if (normalizedKind === "sfx" || normalizedKind === "voice") return "interface";
+  return "music";
+}
+
+function normalizeAudioMixPresetSearchTokens(value) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(/[\n,;]+/);
+  return source
+    .flatMap((entry) => String(entry ?? "").split(/\s+/g))
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index)
+    .slice(0, 16);
+}
+
+function formatAudioMixPresetSearchTokens(value) {
+  return normalizeAudioMixPresetSearchTokens(value).join(", ");
+}
+
+function normalizeAudioMixPresetTrackIds(value) {
+  const source = Array.isArray(value) ? value : [value];
+  return source
+    .map((entry) => normalizeAudioLibraryRootPath(entry))
+    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index);
+}
+
+function normalizeAudioLibraryHiddenTrackStore(store = {}) {
+  return {
+    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+    trackIds: normalizeAudioMixPresetTrackIds(store?.trackIds ?? [])
+  };
+}
+
+function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false, allowTrackIds = false } = {}) {
+  const preferredKinds = Array.isArray(input.preferredKinds)
+    ? input.preferredKinds.map((entry) => normalizeAudioLibraryKind(entry)).filter((entry) => entry !== "all")
+    : [];
+  const preferredUsage = Array.isArray(input.preferredUsage)
+    ? input.preferredUsage.map((entry) => normalizeAudioLibraryUsage(entry)).filter((entry) => entry !== "all")
+    : [];
+  const kindFocus = isCustom
+    ? normalizeAudioLibraryKind(input.kindFocus ?? preferredKinds[0] ?? "music")
+    : normalizeAudioLibraryKind(preferredKinds[0] ?? "all");
+  const usageFocus = isCustom
+    ? normalizeAudioLibraryUsage(input.usageFocus ?? preferredUsage[0] ?? "general")
+    : normalizeAudioLibraryUsage(preferredUsage[0] ?? "all");
+  const playbackMode = normalizeAudioMixPlaybackMode(input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single"));
+  const channel = normalizeAudioMixChannel(input.channel ?? inferAudioMixChannelForKind(kindFocus));
+  const volumeRaw = Number(input.volume ?? 0.5);
+  const fadeRaw = Number(input.fade ?? 1200);
+  return {
+    id: String(input.id ?? "").trim() || foundry.utils.randomID(),
+    label: String(input.label ?? "").trim() || "New Mix",
+    description: String(input.description ?? "").trim() || "Custom ambient playlist.",
+    preferredKinds: preferredKinds.length > 0 ? preferredKinds : (kindFocus !== "all" ? [kindFocus] : []),
+    preferredUsage: preferredUsage.length > 0 ? preferredUsage : (usageFocus !== "all" ? [usageFocus] : []),
+    kindFocus,
+    usageFocus,
+    searchTokens: normalizeAudioMixPresetSearchTokens(input.searchTokens),
+    channel,
+    volume: Math.max(0, Math.min(1, Number.isFinite(volumeRaw) ? volumeRaw : 0.5)),
+    fade: Math.max(0, Math.floor(Number.isFinite(fadeRaw) ? fadeRaw : 1200)),
+    repeat: playbackMode === "repeat",
+    playbackMode,
+    isCustom,
+    trackIds: (isCustom || allowTrackIds) ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
+  };
+}
+
+function serializeAudioMixPresetForStore(preset = {}, { includeIdentity = true } = {}) {
+  const normalized = normalizeAudioMixPresetDefinition(preset, {
+    isCustom: Boolean(preset?.isCustom),
+    allowTrackIds: true
+  });
+  const payload = {
+    description: normalized.description,
+    preferredKinds: normalized.preferredKinds,
+    preferredUsage: normalized.preferredUsage,
+    kindFocus: normalized.kindFocus,
+    usageFocus: normalized.usageFocus,
+    searchTokens: normalized.searchTokens,
+    channel: normalized.channel,
+    volume: normalized.volume,
+    fade: normalized.fade,
+    repeat: normalized.repeat,
+    playbackMode: normalized.playbackMode,
+    trackIds: normalized.trackIds
+  };
+  if (includeIdentity) {
+    payload.id = normalized.id;
+    payload.label = normalized.label;
+  }
+  return payload;
+}
+
+function normalizeAudioMixPresetStore(store = {}) {
+  const presets = Array.isArray(store?.presets)
+    ? store.presets
+      .map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true }))
+      .filter(Boolean)
+    : [];
+  const overrideSource = (store?.overrides && typeof store.overrides === "object" && !Array.isArray(store.overrides))
+    ? store.overrides
+    : {};
+  const overrides = {};
+  for (const preset of AUDIO_MIX_BUILT_IN_PRESETS) {
+    const entry = overrideSource?.[preset.id];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const normalized = normalizeAudioMixPresetDefinition({
+      ...preset,
+      ...entry,
+      id: preset.id,
+      label: preset.label
+    }, { isCustom: false, allowTrackIds: true });
+    overrides[preset.id] = serializeAudioMixPresetForStore(normalized, { includeIdentity: false });
+  }
+  return {
+    version: AUDIO_MIX_PRESET_STORE_VERSION,
+    presets,
+    overrides
+  };
+}
+
+function getBuiltInAudioMixPresets() {
+  const store = getStoredAudioMixPresetStore();
+  return AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => {
+    const override = store?.overrides?.[preset.id] ?? {};
+    return normalizeAudioMixPresetDefinition({
+      ...preset,
+      ...override,
+      id: preset.id,
+      label: preset.label
+    }, { isCustom: false, allowTrackIds: true });
+  });
+}
+
 function normalizeAudioLibrarySource(value) {
   const normalized = String(value ?? "").trim();
   return normalized || AUDIO_LIBRARY_DEFAULT_SOURCE;
 }
 
+function isAbsoluteUrl(value) {
+  return /^[a-z]+:\/\//i.test(String(value ?? "").trim());
+}
+
 function normalizeAudioLibraryRootPath(value) {
-  return String(value ?? "")
-    .replace(/\\/g, "/")
+  const raw = String(value ?? "").trim().replace(/\\/g, "/");
+  if (!raw) return "";
+  if (isAbsoluteUrl(raw)) {
+    const [scheme, ...rest] = raw.split("://");
+    return `${scheme}://${rest.join("://").replace(/\/+/g, "/").replace(/\/$/, "")}`;
+  }
+  return raw
     .replace(/\/+/g, "/")
-    .trim()
     .replace(/\/$/, "");
 }
 
@@ -10841,11 +11260,56 @@ function isAbsoluteWindowsFilesystemPath(value) {
   return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
 }
 
+function safeDecodeAudioText(value) {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function extractForgeAssetRelativePath(value) {
+  const normalized = normalizeAudioLibraryRootPath(value);
+  if (!isAbsoluteUrl(normalized)) return "";
+  try {
+    const url = new URL(normalized);
+    if (!/assets\.forge-vtt\.com$/i.test(String(url.hostname ?? "").trim())) return "";
+    const segments = safeDecodeAudioText(url.pathname).split("/").filter(Boolean);
+    if (segments.length <= 1) return "";
+    return normalizeAudioLibraryRootPath(segments.slice(1).join("/"));
+  } catch {
+    return "";
+  }
+}
+
+function buildAudioLibraryRelativePath(path, rootPath = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedPath) return "";
+  if (normalizedRoot) {
+    const pathLower = normalizedPath.toLowerCase();
+    const rootLower = normalizedRoot.toLowerCase();
+    if (pathLower === rootLower) return normalizedPath;
+    if (pathLower.startsWith(`${rootLower}/`)) return normalizedPath;
+    const needle = `/${rootLower}`;
+    const index = pathLower.indexOf(needle);
+    if (index >= 0) return normalizedPath.slice(index + 1);
+  }
+  const forgeRelative = extractForgeAssetRelativePath(normalizedPath);
+  if (forgeRelative) return forgeRelative;
+  return normalizedPath;
+}
+
 function buildAudioLibraryPathHelpText(path = "") {
   const normalizedPath = normalizeAudioLibraryRootPath(path);
   if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
   if (isAbsoluteWindowsFilesystemPath(path)) {
     return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
+  }
+  if (isAbsoluteUrl(normalizedPath)) {
+    return "Use a source-relative asset path like music/Fantasy Complete II MP3, not the full Forge asset URL.";
   }
   return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
 }
@@ -10858,6 +11322,9 @@ function validateAudioLibraryPathForSource(source, rootPath) {
   }
   if (isAbsoluteWindowsFilesystemPath(rootPath)) {
     return `Audio scanning only works on ${normalizedSource} asset paths served by Foundry or Forge. Use a server path like music/Fantasy Complete II MP3, not ${rootPath}.`;
+  }
+  if (isAbsoluteUrl(normalizedRootPath)) {
+    return `Audio scanning expects a source-relative asset path like music/Fantasy Complete II MP3, not a full URL like ${normalizedRootPath}.`;
   }
   return "";
 }
@@ -10884,15 +11351,54 @@ function normalizeAudioLibraryFilters(filters = {}) {
   };
 }
 
+function normalizeAudioLibraryTrackSelectionIds(values = []) {
+  const source = Array.isArray(values) ? values : [values];
+  return Array.from(new Set(source
+    .map((entry) => normalizeAudioLibraryRootPath(entry))
+    .filter(Boolean)));
+}
+
+function getSelectedAudioLibraryTrackSelectionIds() {
+  return normalizeAudioLibraryTrackSelectionIds(audioLibraryUiState.selectedTrackIds ?? []);
+}
+
+function setSelectedAudioLibraryTrackSelectionIds(values = []) {
+  const normalized = normalizeAudioLibraryTrackSelectionIds(values);
+  audioLibraryUiState.selectedTrackIds = normalized;
+  return normalized;
+}
+
+function pruneSelectedAudioLibraryTrackSelectionIds(availableTrackIds = []) {
+  const available = new Set(normalizeAudioLibraryTrackSelectionIds(availableTrackIds));
+  return setSelectedAudioLibraryTrackSelectionIds(
+    getSelectedAudioLibraryTrackSelectionIds().filter((trackId) => available.has(trackId))
+  );
+}
+
 function normalizeAudioLibraryView(value) {
   return String(value ?? "").trim().toLowerCase() === AUDIO_LIBRARY_VIEW_IDS.MIX
     ? AUDIO_LIBRARY_VIEW_IDS.MIX
     : AUDIO_LIBRARY_VIEW_IDS.LIBRARY;
 }
 
+function getStoredAudioMixPresetStore() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_MIX_PRESETS);
+  return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
+}
+
+function getAllAudioMixPresets() {
+  return [
+    ...getBuiltInAudioMixPresets(),
+    ...getStoredAudioMixPresetStore().presets
+  ];
+}
+
 function getAudioMixPresetById(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return AUDIO_MIX_PRESETS.find((preset) => preset.id === normalized) ?? AUDIO_MIX_PRESETS[0];
+  const normalized = String(value ?? "").trim();
+  const presets = getAllAudioMixPresets();
+  return presets.find((preset) => String(preset.id ?? "").trim() === normalized)
+    ?? presets.find((preset) => String(preset.id ?? "").trim().toLowerCase() === normalized.toLowerCase())
+    ?? presets[0];
 }
 
 function getSelectedAudioMixPreset() {
@@ -10922,17 +11428,17 @@ function getAudioLibraryRootSetting() {
 function normalizeAudioLibraryItem(entry = {}) {
   const path = normalizeAudioLibraryRootPath(entry.path);
   if (!path) return null;
-  const id = String(entry.id ?? path).trim() || path;
-  const name = String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim();
-  const category = String(entry.category ?? "Uncategorized").trim() || "Uncategorized";
-  const subcategory = String(entry.subcategory ?? "").trim();
+  const id = normalizeAudioLibraryRootPath(entry.id ?? path) || path;
+  const name = safeDecodeAudioText(String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim());
+  const category = safeDecodeAudioText(String(entry.category ?? "Uncategorized").trim() || "Uncategorized");
+  const subcategory = safeDecodeAudioText(String(entry.subcategory ?? "").trim());
   const kind = normalizeAudioLibraryKind(entry.kind === "all" ? "" : entry.kind);
   const usage = normalizeAudioLibraryUsage(entry.usage === "all" ? "" : entry.usage);
   const extensionRaw = String(entry.extension ?? "").trim().replace(/^\./, "").toLowerCase();
   const extension = AUDIO_LIBRARY_EXTENSIONS.includes(extensionRaw) ? extensionRaw : "mp3";
   const tags = Array.isArray(entry.tags)
     ? entry.tags
-      .map((tag) => String(tag ?? "").trim())
+      .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
       .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
       .slice(0, 12)
     : [];
@@ -10966,9 +11472,39 @@ function normalizeAudioLibraryCatalog(catalog = {}) {
   };
 }
 
-function getAudioLibraryCatalog() {
+function getStoredAudioLibraryCatalog() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_CATALOG);
   return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+}
+
+function getStoredAudioLibraryHiddenTrackStore() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS);
+  return normalizeAudioLibraryHiddenTrackStore(stored ?? buildDefaultAudioLibraryHiddenTrackStore());
+}
+
+function getHiddenAudioLibraryTrackIds() {
+  return getStoredAudioLibraryHiddenTrackStore().trackIds;
+}
+
+function getHiddenAudioLibraryTrackIdSet() {
+  return new Set(getHiddenAudioLibraryTrackIds());
+}
+
+function applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds = []) {
+  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog);
+  const hiddenIds = new Set(normalizeAudioMixPresetTrackIds(hiddenTrackIds));
+  if (hiddenIds.size <= 0) return normalizedCatalog;
+  return {
+    ...normalizedCatalog,
+    items: normalizedCatalog.items.filter((item) => !hiddenIds.has(String(item?.id ?? "").trim()))
+  };
+}
+
+function getAudioLibraryCatalog(options = {}) {
+  const includeHidden = Boolean(options?.includeHidden);
+  const catalog = getStoredAudioLibraryCatalog();
+  if (includeHidden) return catalog;
+  return applyHiddenTracksToAudioLibraryCatalog(catalog, getHiddenAudioLibraryTrackIds());
 }
 
 function setAudioLibraryError(message = "") {
@@ -11000,14 +11536,15 @@ function extractAudioLibraryTokens(value) {
 function inferAudioLibraryClassification(path, rootPath = "") {
   const normalizedPath = normalizeAudioLibraryRootPath(path);
   const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
-  const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
-    ? normalizedPath.slice(normalizedRoot.length + 1)
-    : normalizedPath;
+  const candidateRelativePath = buildAudioLibraryRelativePath(normalizedPath, normalizedRoot);
+  const relativePath = normalizedRoot && candidateRelativePath.startsWith(`${normalizedRoot}/`)
+    ? candidateRelativePath.slice(normalizedRoot.length + 1)
+    : candidateRelativePath;
   const segments = relativePath.split("/").filter(Boolean);
   const filename = segments.at(-1) ?? normalizedPath;
-  const stem = filename.replace(/\.[^.]+$/u, "");
-  const categoryRaw = segments[0] ?? "Uncategorized";
-  const subcategoryRaw = segments.length > 2 ? segments[1] : "";
+  const stem = safeDecodeAudioText(filename.replace(/\.[^.]+$/u, ""));
+  const categoryRaw = safeDecodeAudioText(segments[0] ?? "Uncategorized");
+  const subcategoryRaw = safeDecodeAudioText(segments.length > 2 ? segments[1] : "");
   const category = categoryRaw.replace(/^\d+\s*/u, "").trim() || categoryRaw;
   const subcategory = subcategoryRaw.replace(/^\d+\s*/u, "").trim();
   const tokens = [
@@ -11070,7 +11607,12 @@ function normalizeAudioLibraryDirectorySelection(path = "") {
 
 function getAudioLibraryPickerCurrentPath(path = "") {
   if (isAbsoluteWindowsFilesystemPath(path)) return "";
-  return normalizeAudioLibraryDirectorySelection(path);
+  return normalizeAudioLibraryDirectorySelection(extractForgeAssetRelativePath(path) || path);
+}
+
+function normalizeAudioLibraryPickerSelection(path = "") {
+  const forgeRelativePath = extractForgeAssetRelativePath(path);
+  return normalizeAudioLibraryDirectorySelection(forgeRelativePath || path);
 }
 
 function getAudioLibraryUploadRelativePath(file) {
@@ -11166,7 +11708,7 @@ async function browseAudioLibraryTree(source, rootPath) {
       if (isAudioLibraryFile(file)) files.push(normalizeAudioLibraryRootPath(file));
     }
     for (const dir of nextDirs) {
-      const normalizedDir = normalizeAudioLibraryRootPath(dir);
+      const normalizedDir = normalizeAudioLibraryPickerSelection(dir);
       if (normalizedDir && !visited.has(normalizedDir)) queue.push(normalizedDir);
     }
   }
@@ -11189,8 +11731,9 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
   }
   const items = files.map((path) => {
     const inferred = inferAudioLibraryClassification(path, nextRootPath);
+    const stableId = normalizeAudioLibraryRootPath(path);
     return normalizeAudioLibraryItem({
-      id: foundry.utils.randomID(),
+      id: stableId,
       path,
       ...inferred
     });
@@ -11210,6 +11753,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
 
   audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+  setSelectedAudioLibraryTrackSelectionIds([]);
   audioLibraryUiState.draft.source = catalog.source;
   audioLibraryUiState.draft.rootPath = catalog.rootPath;
   clearAudioLibraryError();
@@ -11229,6 +11773,7 @@ async function clearAudioLibraryCatalog() {
   }
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, buildDefaultAudioLibraryCatalog());
   audioLibraryUiState.selectedTrackId = "";
+  setSelectedAudioLibraryTrackSelectionIds([]);
   clearAudioLibraryError();
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
@@ -11250,12 +11795,12 @@ async function openAudioLibraryRootPicker() {
   const { source, rootPath } = getAudioLibraryDraftState();
   return new Promise((resolve) => {
     const picker = new FilePicker({
-      type: "audio",
+      type: "folder",
       activeSource: source,
       current: getAudioLibraryPickerCurrentPath(rootPath),
       callback: (selectedPath) => {
         audioLibraryUiState.draft.source = normalizeAudioLibrarySource(picker.activeSource ?? source);
-        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(selectedPath);
+        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryPickerSelection(selectedPath);
         clearAudioLibraryError();
         resolve(true);
       }
@@ -11361,9 +11906,521 @@ function selectAudioLibraryTrack(actionElement) {
   audioLibraryUiState.selectedTrackId = String(actionElement?.dataset?.trackId ?? "").trim();
 }
 
+function toggleAudioLibraryTrackSelection(actionElement) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(actionElement?.dataset?.trackId);
+  if (!normalizedTrackId) return false;
+  const selected = new Set(getSelectedAudioLibraryTrackSelectionIds());
+  const shouldSelect = actionElement instanceof HTMLInputElement
+    ? Boolean(actionElement.checked)
+    : !selected.has(normalizedTrackId);
+  if (shouldSelect) selected.add(normalizedTrackId);
+  else selected.delete(normalizedTrackId);
+  setSelectedAudioLibraryTrackSelectionIds([...selected]);
+  return true;
+}
+
+function selectVisibleAudioLibraryTracks() {
+  const catalog = getAudioLibraryCatalog();
+  const visibleTrackIds = buildAudioLibraryResults(catalog).tracks.map((item) => item.id);
+  setSelectedAudioLibraryTrackSelectionIds(visibleTrackIds);
+  return visibleTrackIds.length;
+}
+
+function clearAudioLibraryTrackSelections() {
+  setSelectedAudioLibraryTrackSelectionIds([]);
+  return true;
+}
+
 function selectAudioMixPreset(actionElement) {
-  const preset = getAudioMixPresetById(actionElement?.dataset?.presetId);
+  const preset = getAudioMixPresetById(actionElement?.dataset?.presetId ?? actionElement?.value);
   audioLibraryUiState.selectedMixPresetId = preset.id;
+}
+
+async function saveAudioMixPresetStore(store) {
+  const normalized = normalizeAudioMixPresetStore(store);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_MIX_PRESETS, normalized);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return normalized;
+}
+
+async function saveAudioLibraryHiddenTrackStore(store) {
+  const normalized = normalizeAudioLibraryHiddenTrackStore(store);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS, normalized);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return normalized;
+}
+
+async function updateStoredAudioLibraryHiddenTracks(mutator) {
+  const current = getStoredAudioLibraryHiddenTrackStore();
+  const next = normalizeAudioLibraryHiddenTrackStore(typeof mutator === "function"
+    ? (mutator(foundry.utils.deepClone(current)) ?? current)
+    : current);
+  await saveAudioLibraryHiddenTrackStore(next);
+  return next;
+}
+
+async function updateStoredAudioMixPresets(mutator) {
+  const current = getStoredAudioMixPresetStore();
+  const next = normalizeAudioMixPresetStore(typeof mutator === "function" ? (mutator(foundry.utils.deepClone(current)) ?? current) : current);
+  await saveAudioMixPresetStore(next);
+  const selectedId = String(audioLibraryUiState.selectedMixPresetId ?? "").trim();
+  const nextPresetIds = [
+    ...AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => String(preset.id ?? "").trim()),
+    ...next.presets.map((preset) => String(preset.id ?? "").trim())
+  ];
+  if (!nextPresetIds.some((presetId) => presetId === selectedId)) {
+    audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
+  }
+  return next;
+}
+
+function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset()) {
+  const baseLabel = String(seedPreset?.label ?? "Mix").trim() || "Mix";
+  return normalizeAudioMixPresetDefinition({
+    id: `custom-${foundry.utils.randomID()}`,
+    label: `New ${baseLabel} Mix`,
+    description: String(seedPreset?.description ?? "Custom ambient playlist.").trim() || "Custom ambient playlist.",
+    kindFocus: seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0] ?? "music",
+    usageFocus: seedPreset?.usageFocus ?? seedPreset?.preferredUsage?.[0] ?? "general",
+    searchTokens: seedPreset?.searchTokens ?? [],
+    channel: seedPreset?.channel ?? inferAudioMixChannelForKind(seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0]),
+    volume: seedPreset?.volume ?? 0.5,
+    fade: seedPreset?.fade ?? 1200,
+    playbackMode: seedPreset?.playbackMode ?? (seedPreset?.repeat ? "repeat" : "single"),
+    trackIds: []
+  }, { isCustom: true });
+}
+
+async function createAudioMixPresetFromSelection() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create Party Operations mix presets.");
+    return null;
+  }
+  const preset = buildCustomAudioMixPresetSeed(getSelectedAudioMixPreset());
+  await updateStoredAudioMixPresets((store) => {
+    store.presets.push(preset);
+    return store;
+  });
+  audioLibraryUiState.selectedMixPresetId = preset.id;
+  setAudioMixStatus(`Created custom preset: ${preset.label}`);
+  return preset;
+}
+
+function getSelectedCustomAudioMixPreset() {
+  const preset = getSelectedAudioMixPreset();
+  return preset?.isCustom ? preset : null;
+}
+
+function getSelectedEditableAudioMixPreset() {
+  return getSelectedAudioMixPreset();
+}
+
+function isBuiltInAudioMixPreset(preset) {
+  const presetId = String(preset?.id ?? "").trim();
+  return AUDIO_MIX_BUILT_IN_PRESETS.some((entry) => String(entry.id ?? "").trim() === presetId);
+}
+
+async function updateSelectedAudioMixPreset(mutator) {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) return false;
+  await updateStoredAudioMixPresets((store) => {
+    if (preset.isCustom) {
+      store.presets = store.presets.map((entry) => {
+        if (String(entry.id ?? "").trim() !== String(preset.id ?? "").trim()) return entry;
+        const nextEntry = typeof mutator === "function" ? (mutator(foundry.utils.deepClone(entry), preset) ?? entry) : entry;
+        return serializeAudioMixPresetForStore({
+          ...preset,
+          ...nextEntry,
+          id: preset.id,
+          label: String(nextEntry?.label ?? preset.label).trim() || preset.label,
+          isCustom: true
+        }, { includeIdentity: true });
+      });
+      return store;
+    }
+
+    const basePreset = AUDIO_MIX_BUILT_IN_PRESETS.find((entry) => String(entry.id ?? "").trim() === String(preset.id ?? "").trim()) ?? preset;
+    const currentOverride = store.overrides?.[preset.id] ?? {};
+    const nextOverride = typeof mutator === "function"
+      ? (mutator(foundry.utils.deepClone({
+        ...basePreset,
+        ...currentOverride,
+        id: preset.id,
+        label: preset.label
+      }), preset) ?? currentOverride)
+      : currentOverride;
+    store.overrides = {
+      ...(store.overrides ?? {}),
+      [preset.id]: serializeAudioMixPresetForStore({
+        ...basePreset,
+        ...nextOverride,
+        id: preset.id,
+        label: preset.label,
+        isCustom: false
+      }, { includeIdentity: false })
+    };
+    return store;
+  });
+  return true;
+}
+
+async function promptAndUpdateSelectedAudioMixPresetField(field) {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) {
+    ui.notifications?.warn("Select a mix preset to edit it.");
+    return false;
+  }
+  if (field === "label" && !preset.isCustom) {
+    ui.notifications?.warn("Built-in preset names are fixed. Create a custom preset to rename it.");
+    return false;
+  }
+
+  const config = {
+    label: {
+      title: "Rename Mix Preset",
+      message: "Preset name",
+      value: preset.label
+    },
+    description: {
+      title: "Edit Mix Description",
+      message: "Preset description",
+      value: preset.description
+    },
+    searchTokens: {
+      title: "Edit Mix Search Tokens",
+      message: "Comma-separated search tokens",
+      value: formatAudioMixPresetSearchTokens(preset.searchTokens)
+    }
+  }[field];
+  if (!config) return false;
+
+  const response = window.prompt(config.message, config.value);
+  if (response === null) return false;
+  const nextValue = field === "searchTokens"
+    ? normalizeAudioMixPresetSearchTokens(response)
+    : String(response ?? "").trim();
+  if ((field === "label" || field === "description") && !nextValue) return false;
+
+  await updateSelectedAudioMixPreset((entry) => {
+    entry[field] = nextValue;
+    return entry;
+  });
+  return true;
+}
+
+async function setSelectedAudioMixPresetOption(actionElement) {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) return false;
+  const field = String(actionElement?.dataset?.field ?? "").trim();
+  const value = actionElement?.value;
+  if (!field) return false;
+
+  await updateSelectedAudioMixPreset((entry) => {
+    const next = { ...entry };
+    if (field === "kindFocus") {
+      next.kindFocus = normalizeAudioLibraryKind(value);
+      next.preferredKinds = next.kindFocus === "all" ? [] : [next.kindFocus];
+      next.channel = inferAudioMixChannelForKind(next.kindFocus);
+    } else if (field === "usageFocus") {
+      next.usageFocus = normalizeAudioLibraryUsage(value);
+      next.preferredUsage = next.usageFocus === "all" ? [] : [next.usageFocus];
+    } else if (field === "playbackMode") {
+      next.playbackMode = normalizeAudioMixPlaybackMode(value);
+      next.repeat = next.playbackMode === "repeat";
+    }
+    return next;
+  });
+  return true;
+}
+
+async function deleteSelectedAudioMixPreset() {
+  const preset = getSelectedCustomAudioMixPreset();
+  if (!preset) {
+    ui.notifications?.warn("Built-in presets cannot be deleted.");
+    return false;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Delete Mix Preset",
+    content: `<p>Delete <strong>${poEscapeHtml(preset.label)}</strong>?</p>`
+  });
+  if (!confirmed) return false;
+
+  const clearedQueue = await clearManagedAudioMixQueueForPreset(preset, {
+    nextPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+    stopPlayback: true
+  });
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.filter((entry) => entry.id !== preset.id);
+    return store;
+  });
+  audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
+  setAudioMixStatus(clearedQueue
+    ? `Deleted custom preset and cleared its queue: ${preset.label}`
+    : `Deleted custom preset: ${preset.label}`);
+  return true;
+}
+
+async function addTrackToSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) {
+    ui.notifications?.warn("Select a mix preset before adding tracks.");
+    return false;
+  }
+
+  const nextTrackIds = normalizeAudioMixPresetTrackIds([...(preset.trackIds ?? []), normalizedTrackId]);
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: nextTrackIds
+  }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  if (!preset.isCustom) {
+    setAudioMixStatus(`Saved ${preset.label} curated track list.`);
+  }
+  return true;
+}
+
+async function clearSelectedAudioMixPresetTrackList() {
+  const preset = getSelectedEditableAudioMixPreset();
+  if (!preset) return false;
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: []
+  }));
+  const clearedQueue = await clearManagedAudioMixQueueForPreset(preset, { stopPlayback: true });
+  if (!clearedQueue) {
+    await syncSelectedAudioMixPresetTrackIdsToLiveQueue([], preset);
+  }
+  setAudioMixStatus(clearedQueue
+    ? `Cleared saved track list and queue for ${preset.label}.`
+    : `Cleared saved track list for ${preset.label}.`);
+  return true;
+}
+
+async function addSelectedLibraryTrackToAudioMixPreset() {
+  const trackId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  return addTrackToSelectedAudioMixPreset(trackId);
+}
+
+function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
+  const playback = getAudioMixPlaybackState(getAudioLibraryCatalog());
+  const currentTrackId = String(playback?.activeTrack?.id ?? playback?.activeTrackId ?? "").trim();
+  if (!preset || !currentTrackId) return -1;
+  if (String(playback?.presetId ?? "").trim() !== String(preset.id ?? "").trim()) return -1;
+  const trackIds = Array.isArray(preset.trackIds) ? preset.trackIds : [];
+  return trackIds.indexOf(currentTrackId);
+}
+
+function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return normalizeAudioMixPresetTrackIds(trackIds);
+  const existing = normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => entry !== normalizedTrackId);
+  const nextIndex = Math.max(0, Math.min(existing.length, Number(targetIndex ?? existing.length)));
+  existing.splice(nextIndex, 0, normalizedTrackId);
+  return existing;
+}
+
+async function syncSelectedAudioMixPresetTrackIdsToLiveQueue(trackIds, preset = getSelectedEditableAudioMixPreset()) {
+  const normalizedTrackIds = normalizeAudioMixPresetTrackIds(trackIds);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || !preset || String(mixState.presetId ?? "").trim() !== String(preset.id ?? "").trim()) {
+    return false;
+  }
+  const activeTrackId = String(mixState.activeTrackId ?? "").trim();
+  const activeIndex = normalizedTrackIds.indexOf(activeTrackId);
+  const fallbackIndex = Math.min(Math.max(0, mixState.currentIndex), Math.max(0, normalizedTrackIds.length - 1));
+  await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    queueTrackIds: normalizedTrackIds,
+    currentIndex: activeIndex >= 0 ? activeIndex : fallbackIndex,
+    updatedAt: Date.now()
+  });
+  return true;
+}
+
+async function clearManagedAudioMixQueueForPreset(preset = getSelectedEditableAudioMixPreset(), options = {}) {
+  const normalizedPresetId = String(preset?.id ?? "").trim();
+  if (!normalizedPresetId) return false;
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || String(mixState.presetId ?? "").trim() !== normalizedPresetId) {
+    return false;
+  }
+  if (options?.stopPlayback !== false) {
+    await stopManagedAudioMixPlaylist(playlist);
+  }
+  const nextPresetId = String(options?.nextPresetId ?? normalizedPresetId).trim() || normalizedPresetId;
+  await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    presetId: nextPresetId,
+    activeTrackId: "",
+    activeTrackName: "",
+    queueTrackIds: [],
+    currentIndex: 0,
+    updatedAt: Date.now()
+  });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function queueTrackNextInSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+  const insertionIndex = getAudioMixCurrentInsertionIndex(preset);
+  const targetIndex = insertionIndex >= 0 ? insertionIndex + 1 : 0;
+  const nextTrackIds = buildReorderedAudioMixTrackIds(preset.trackIds ?? [], normalizedTrackId, targetIndex);
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: nextTrackIds
+  }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  return true;
+}
+
+async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+  let nextTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
+  await updateSelectedAudioMixPreset((entry) => {
+    const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
+    const index = rows.indexOf(normalizedTrackId);
+    if (index < 0) return entry;
+    const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
+    const targetIndex = Math.max(0, Math.min(rows.length - 1, index + delta));
+    if (targetIndex === index) return entry;
+    const [moved] = rows.splice(index, 1);
+    rows.splice(targetIndex, 0, moved);
+    nextTrackIds = rows;
+    return {
+      ...entry,
+      trackIds: rows
+    };
+  });
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  return true;
+}
+
+async function removeTrackFromSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+
+  const nextTrackIds = normalizeAudioMixPresetTrackIds((preset.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId));
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: nextTrackIds
+  }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  return true;
+}
+
+async function removeTrackFromAllAudioMixPresets(trackId) {
+  return removeTracksFromAllAudioMixPresets([trackId]);
+}
+
+async function removeTracksFromAllAudioMixPresets(trackIds = []) {
+  const normalizedTrackIds = normalizeAudioLibraryTrackSelectionIds(trackIds);
+  if (normalizedTrackIds.length < 1) return false;
+  const hiddenTrackIdSet = new Set(normalizedTrackIds);
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = (store.presets ?? []).map((entry) => ({
+      ...entry,
+      trackIds: normalizeAudioMixPresetTrackIds((entry?.trackIds ?? []).filter((entryTrackId) => !hiddenTrackIdSet.has(entryTrackId)))
+    }));
+
+    const nextOverrides = {};
+    for (const [presetId, entry] of Object.entries(store.overrides ?? {})) {
+      nextOverrides[presetId] = {
+        ...entry,
+        trackIds: normalizeAudioMixPresetTrackIds((entry?.trackIds ?? []).filter((entryTrackId) => !hiddenTrackIdSet.has(entryTrackId)))
+      };
+    }
+    store.overrides = nextOverrides;
+    return store;
+  });
+  return true;
+}
+
+async function hideAudioLibraryTrack(trackId) {
+  return hideAudioLibraryTracks([trackId]);
+}
+
+async function hideSelectedAudioLibraryTracks() {
+  const selectedTrackIds = getSelectedAudioLibraryTrackSelectionIds();
+  if (selectedTrackIds.length < 1) {
+    ui.notifications?.warn("Check one or more curated results first.");
+    return false;
+  }
+  return hideAudioLibraryTracks(selectedTrackIds);
+}
+
+async function hideAudioLibraryTracks(trackIds = []) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can hide Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackIds = normalizeAudioLibraryTrackSelectionIds(trackIds);
+  if (normalizedTrackIds.length < 1) return false;
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  const hiddenTrackIdSet = new Set(getHiddenAudioLibraryTrackIds());
+  const targetTrackIdSet = new Set(normalizedTrackIds);
+  const tracks = rawCatalog.items.filter((item) => targetTrackIdSet.has(item.id) && !hiddenTrackIdSet.has(item.id));
+  if (tracks.length < 1) return false;
+  const idsToHide = tracks.map((item) => item.id);
+  const idsToHideSet = new Set(idsToHide);
+  const activePresetId = getAudioMixStateFlag(getManagedAudioMixPlaylist()).presetId;
+
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds([...(store?.trackIds ?? []), ...idsToHide])
+  }));
+  await removeTracksFromAllAudioMixPresets(idsToHide);
+  const activePreset = getAudioMixPresetById(activePresetId || getSelectedAudioMixPreset().id);
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(activePreset.trackIds ?? [], activePreset);
+
+  const visibleCatalog = getAudioLibraryCatalog();
+  if (idsToHideSet.has(String(audioLibraryUiState.selectedTrackId ?? "").trim())) {
+    audioLibraryUiState.selectedTrackId = visibleCatalog.items[0]?.id ?? "";
+  }
+  setSelectedAudioLibraryTrackSelectionIds(
+    getSelectedAudioLibraryTrackSelectionIds().filter((trackId) => !idsToHideSet.has(trackId))
+  );
+  setAudioMixStatus(tracks.length === 1
+    ? `Hidden audio track: ${tracks[0].name}`
+    : `Hidden ${tracks.length} audio tracks.`);
+  return true;
+}
+
+async function restoreHiddenAudioLibraryTrack(trackId) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds((store?.trackIds ?? []).filter((entry) => entry !== normalizedTrackId))
+  }));
+  audioLibraryUiState.selectedTrackId = normalizedTrackId;
+  setAudioMixStatus("Restored audio track to the library.");
+  return true;
+}
+
+async function restoreAllHiddenAudioLibraryTracks() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  await saveAudioLibraryHiddenTrackStore(buildDefaultAudioLibraryHiddenTrackStore());
+  setAudioMixStatus("Restored all hidden audio tracks.");
+  return true;
 }
 
 function clearAudioMixStatus() {
@@ -11403,13 +12460,28 @@ function scoreAudioTrackForMixPreset(item, preset) {
   return score;
 }
 
-function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+function buildAudioMixAssignedCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  const trackIds = Array.isArray(preset?.trackIds) ? preset.trackIds : [];
+  return trackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        item,
+        score: Math.max(1, 1000 - index)
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset(), { excludeTrackIds = [] } = {}) {
+  const excluded = new Set(normalizeAudioMixPresetTrackIds(excludeTrackIds));
   const scored = catalog.items
     .map((item) => ({
       item,
       score: scoreAudioTrackForMixPreset(item, preset)
     }))
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score > 0 && !excluded.has(entry.item.id))
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.item.name.localeCompare(right.item.name);
@@ -11417,9 +12489,14 @@ function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) 
   if (scored.length > 0) return scored;
 
   return catalog.items
-    .filter((item) => (preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage))
+    .filter((item) => ((preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage)) && !excluded.has(item.id))
     .map((item) => ({ item, score: 1 }))
     .sort((left, right) => left.item.name.localeCompare(right.item.name));
+}
+
+function getPlayableAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  if (Array.isArray(preset?.trackIds) && preset.trackIds.length > 0) return buildAudioMixAssignedCandidates(catalog, preset);
+  return buildAudioMixCandidates(catalog, preset);
 }
 
 function getManagedAudioMixPlaylist() {
@@ -11429,13 +12506,25 @@ function getManagedAudioMixPlaylist() {
     ?? null;
 }
 
-async function ensureManagedAudioMixPlaylist(preset) {
+function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
+  return Number(candidateCount ?? 0) > 1;
+}
+
+function getAudioMixPlaylistMode(preset, candidateCount = 0) {
+  const disabled = CONST?.PLAYLIST_MODES?.DISABLED ?? 0;
+  const sequential = CONST?.PLAYLIST_MODES?.SEQUENTIAL ?? disabled;
+  const shuffle = CONST?.PLAYLIST_MODES?.SHUFFLE ?? sequential;
+  if (!shouldSequenceAudioMixPresetPlayback(preset, candidateCount)) return disabled;
+  return preset?.repeat ? shuffle : sequential;
+}
+
+async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
   const baseData = {
     name: AUDIO_MIX_PLAYLIST_NAME,
     description: `Managed by Party Operations for the ${preset.label} mix preset.`,
-    mode: CONST?.PLAYLIST_MODES?.DISABLED ?? 0,
+    mode: getAudioMixPlaylistMode(preset, candidateCount),
     sorting: CONST?.PLAYLIST_SORT_MODES?.MANUAL ?? 0,
-    channel: preset.channel,
+    channel: normalizeAudioMixChannel(preset.channel),
     fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0))
   };
   let playlist = getManagedAudioMixPlaylist();
@@ -11466,11 +12555,12 @@ async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
   }
   if (rows.length <= 0) return [];
 
+  const shouldSequence = shouldSequenceAudioMixPresetPlayback(preset, rows.length);
   const sounds = rows.map(({ item, score }, index) => ({
     name: item.name,
     path: item.path,
-    channel: preset.channel,
-    repeat: Boolean(preset.repeat),
+    channel: normalizeAudioMixChannel(preset.channel),
+    repeat: shouldSequence ? false : Boolean(preset.repeat),
     fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
     volume: Math.max(0, Math.min(1, Number(preset.volume ?? 0.5) || 0.5)),
     sort: index * 10,
@@ -11499,6 +12589,81 @@ function getCurrentManagedAudioMixSound(playlist) {
   return sounds.find((sound) => Boolean(sound?.playing)) ?? null;
 }
 
+function normalizeAudioMixQueueTrackIds(trackIds = [], candidates = []) {
+  const available = new Set((Array.isArray(candidates) ? candidates : []).map(({ item }) => String(item?.id ?? "").trim()).filter(Boolean));
+  return normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => available.has(entry));
+}
+
+function buildOrderedAudioMixCandidates(candidates, options = {}) {
+  const rows = Array.isArray(candidates) ? candidates.slice() : [];
+  const candidateMap = new Map(rows.map((entry) => [String(entry?.item?.id ?? "").trim(), entry]));
+  const queuedIds = normalizeAudioMixQueueTrackIds(options.queueTrackIds, rows);
+  let ordered = queuedIds
+    .map((trackId) => candidateMap.get(trackId) ?? null)
+    .filter(Boolean);
+  if (ordered.length <= 0) ordered = rows;
+  const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  if (preferredTrackId) {
+    const preferred = candidateMap.get(preferredTrackId) ?? null;
+    if (preferred) {
+      ordered = [preferred, ...ordered.filter((entry) => String(entry?.item?.id ?? "").trim() !== preferredTrackId)];
+    }
+  }
+  return ordered;
+}
+
+async function stopManagedAudioMixPlaylist(playlist) {
+  if (!playlist) return false;
+  if (typeof playlist.stopAll === "function") {
+    await playlist.stopAll();
+    return true;
+  }
+  if (typeof playlist.stopAllSounds === "function") {
+    await playlist.stopAllSounds();
+    return true;
+  }
+  return false;
+}
+
+async function playManagedAudioMixSound(playlist, sound) {
+  if (!playlist || !sound) return false;
+  if (typeof playlist.playSound === "function") {
+    await playlist.playSound(sound);
+    return true;
+  }
+  if (typeof sound?.update === "function") {
+    await sound.update({ playing: true });
+    return true;
+  }
+  return false;
+}
+
+function getAudioMixStateFlag(playlist = getManagedAudioMixPlaylist()) {
+  const raw = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
+  return {
+    presetId: String(raw?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(raw?.activeTrackId ?? ""),
+    activeTrackName: String(raw?.activeTrackName ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(raw?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(raw?.currentIndex ?? 0) || 0)),
+    updatedAt: Number(raw?.updatedAt ?? 0) || 0
+  };
+}
+
+async function setAudioMixStateFlag(playlist, input = {}) {
+  if (!playlist?.setFlag) return null;
+  const next = {
+    presetId: String(input?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(input?.activeTrackId ?? ""),
+    activeTrackName: String(input?.activeTrackName ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(input?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(input?.currentIndex ?? 0) || 0)),
+    updatedAt: Number(input?.updatedAt ?? Date.now()) || Date.now()
+  };
+  await playlist.setFlag(MODULE_ID, "audioMixState", next);
+  return next;
+}
+
 async function playAudioMixPresetById(presetId, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
@@ -11506,19 +12671,23 @@ async function playAudioMixPresetById(presetId, options = {}) {
   }
   const preset = getAudioMixPresetById(presetId);
   const catalog = getAudioLibraryCatalog();
-  const candidates = buildAudioMixCandidates(catalog, preset);
+  const candidates = getPlayableAudioMixCandidates(catalog, preset);
   if (candidates.length <= 0) {
-    throw new Error(`No audio tracks matched the ${preset.label} mix.`);
+    throw new Error((Array.isArray(preset?.trackIds) && preset.trackIds.length > 0) || preset.isCustom
+      ? `Add tracks to the ${preset.label} mix before playing it.`
+      : `No audio tracks matched the ${preset.label} mix.`);
   }
 
-  const playlist = await ensureManagedAudioMixPlaylist(preset);
+  const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
+  if (!playlist) throw new Error("The managed mix playlist could not be created.");
   const currentSound = getCurrentManagedAudioMixSound(playlist);
-  await playlist.stopAll();
-  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, candidates);
+  await stopManagedAudioMixPlaylist(playlist);
+  const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
   const chosenCandidate = preferredTrackId
-    ? candidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
-    : pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
+    ? orderedCandidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
+    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
   const chosenSound = Array.from(createdSounds ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id)
     ?? createdSounds?.[0]
     ?? null;
@@ -11526,11 +12695,20 @@ async function playAudioMixPresetById(presetId, options = {}) {
     throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
   }
 
-  await playlist.playSound(chosenSound);
-  await playlist.setFlag(MODULE_ID, "audioMixState", {
+  const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
+  const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
+  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function" && currentIndex === 0) {
+    await playlist.playAll();
+  } else {
+    const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
+    if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
+  }
+  await setAudioMixStateFlag(playlist, {
     presetId: preset.id,
     activeTrackId: String(chosenCandidate?.item?.id ?? ""),
     activeTrackName: String(chosenCandidate?.item?.name ?? chosenSound.name ?? ""),
+    queueTrackIds,
+    currentIndex,
     updatedAt: Date.now()
   });
   audioLibraryUiState.selectedMixPresetId = preset.id;
@@ -11553,11 +12731,14 @@ async function stopAudioMixPlayback() {
   }
   const playlist = getManagedAudioMixPlaylist();
   if (!playlist) return false;
-  await playlist.stopAll();
-  await playlist.setFlag(MODULE_ID, "audioMixState", {
+  await stopManagedAudioMixPlaylist(playlist);
+  const priorState = getAudioMixStateFlag(playlist);
+  await setAudioMixStateFlag(playlist, {
     presetId: getSelectedAudioMixPreset().id,
     activeTrackId: "",
     activeTrackName: "",
+    queueTrackIds: priorState.queueTrackIds,
+    currentIndex: priorState.currentIndex,
     updatedAt: Date.now()
   });
   setAudioMixStatus("Mix playback stopped.");
@@ -11568,7 +12749,94 @@ async function stopAudioMixPlayback() {
 
 async function playAudioMixCandidateByTrackId(trackId) {
   const preset = getSelectedAudioMixPreset();
-  return playAudioMixPresetById(preset.id, { excludeTrackId: "", preferredTrackId: String(trackId ?? "").trim() });
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const queueTrackIds = String(mixState.presetId ?? "").trim() === String(preset.id ?? "").trim()
+    ? mixState.queueTrackIds
+    : (Array.isArray(preset.trackIds) && preset.trackIds.length > 0 ? preset.trackIds : []);
+  return playAudioMixPresetById(preset.id, {
+    excludeTrackId: "",
+    preferredTrackId: String(trackId ?? "").trim(),
+    queueTrackIds
+  });
+}
+
+async function playManagedAudioMixQueueAtIndex(targetIndex, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return null;
+  }
+  const catalog = getAudioLibraryCatalog();
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const candidates = getPlayableAudioMixCandidates(catalog, preset);
+  const queueTrackIds = normalizeAudioMixQueueTrackIds(mixState.queueTrackIds, candidates);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id, {});
+  }
+  const normalizedIndex = Math.max(0, Math.min(queueTrackIds.length - 1, Math.floor(Number(targetIndex ?? 0) || 0)));
+  const preferredTrackId = queueTrackIds[normalizedIndex];
+  return playAudioMixPresetById(preset.id, {
+    queueTrackIds,
+    preferredTrackId,
+    currentIndex: normalizedIndex,
+    excludeTrackId: options.excludeTrackId ?? ""
+  });
+}
+
+async function playNextAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id);
+  }
+  const nextIndex = mixState.currentIndex + 1;
+  if (nextIndex >= queueTrackIds.length) {
+    if (!preset.repeat) {
+      await stopAudioMixPlayback();
+      setAudioMixStatus(`${preset.label} reached the end of the queue.`);
+      return null;
+    }
+    return playManagedAudioMixQueueAtIndex(0);
+  }
+  return playManagedAudioMixQueueAtIndex(nextIndex);
+}
+
+async function restartCurrentAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.activeTrackId) {
+    return playAudioMixPresetById(getSelectedAudioMixPreset().id);
+  }
+  return playManagedAudioMixQueueAtIndex(mixState.currentIndex);
+}
+
+async function queueSelectedTrackNext(actionElement) {
+  const preset = getSelectedAudioMixPreset();
+  const trackId = String(actionElement?.dataset?.trackId ?? "").trim() || String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  if (!trackId) return false;
+  if (Array.isArray(preset?.trackIds)) return queueTrackNextInSelectedAudioMixPreset(trackId);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  const currentIndex = Math.max(0, Math.floor(Number(mixState.currentIndex ?? 0) || 0));
+  const filtered = queueTrackIds.filter((entry) => entry !== trackId);
+  const targetIndex = Math.min(filtered.length, currentIndex + 1);
+  filtered.splice(targetIndex, 0, trackId);
+  if (playlist) {
+    await setAudioMixStateFlag(playlist, {
+      ...mixState,
+      queueTrackIds: filtered,
+      updatedAt: Date.now()
+    });
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    return true;
+  }
+  return false;
 }
 
 function getFilteredAudioLibraryItems(catalog) {
@@ -11597,10 +12865,11 @@ function buildAudioLibraryFilterOptions() {
   return { kindOptions, usageOptions };
 }
 
-function buildAudioLibrarySummary(catalog) {
+function buildAudioLibrarySummary(catalog, options = {}) {
   const categoryCount = new Set(catalog.items.map((item) => item.category).filter(Boolean)).size;
   const kindCount = new Set(catalog.items.map((item) => item.kind).filter(Boolean)).size;
   const usageCount = new Set(catalog.items.map((item) => item.usage).filter(Boolean)).size;
+  const hiddenCount = Math.max(0, Math.floor(Number(options?.hiddenCount ?? 0) || 0));
   const usageSummaryOrder = ["music", "ambience", "sfx", "voice", "combat", "tension", "rest", "travel"];
   const cards = usageSummaryOrder.map((key) => {
     const count = catalog.items.filter((item) => item.kind === key || item.usage === key).length;
@@ -11616,6 +12885,7 @@ function buildAudioLibrarySummary(catalog) {
     categoryCount,
     kindCount,
     usageCount,
+    hiddenCount,
     scannedAtLabel: catalog.scannedAt ? new Date(catalog.scannedAt).toLocaleString() : "-",
     scannedBy: catalog.scannedBy || "-",
     cards
@@ -11625,28 +12895,57 @@ function buildAudioLibrarySummary(catalog) {
 function buildAudioLibraryResults(catalog) {
   const filtered = getFilteredAudioLibraryItems(catalog);
   const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  const selectedTrackIdSet = new Set(getSelectedAudioLibraryTrackSelectionIds());
   const visibleTracks = filtered.slice(0, 160).map((item) => ({
     ...item,
     selected: item.id === selectedId,
+    checked: selectedTrackIdSet.has(item.id),
     hasSubcategory: Boolean(item.subcategory),
     kindLabel: getAudioLibraryKindLabel(item.kind),
     usageLabel: getAudioLibraryUsageLabel(item.usage)
   }));
+  const visibleSelectedCount = visibleTracks.filter((item) => item.checked).length;
+  const selectedCount = selectedTrackIdSet.size;
   return {
     tracks: visibleTracks,
     hasTracks: visibleTracks.length > 0,
     totalMatches: filtered.length,
-    visibleCount: visibleTracks.length
+    visibleCount: visibleTracks.length,
+    selection: {
+      selectedCount,
+      visibleSelectedCount,
+      hasSelection: selectedCount > 0,
+      hasVisibleSelection: visibleSelectedCount > 0,
+      allVisibleSelected: visibleTracks.length > 0 && visibleSelectedCount === visibleTracks.length,
+      label: selectedCount === 1
+        ? "1 track checked for bulk hide."
+        : `${selectedCount} tracks checked for bulk hide.`
+    }
   };
 }
 
 function getAudioMixPlaybackState(catalog) {
   const playlist = getManagedAudioMixPlaylist();
-  const mixFlag = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
+  const mixFlag = getAudioMixStateFlag(playlist);
   const playingSound = getCurrentManagedAudioMixSound(playlist);
   const activeTrackId = String(playingSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? mixFlag?.activeTrackId ?? "").trim();
   const activeTrack = catalog.items.find((item) => item.id === activeTrackId) ?? null;
   const activePreset = getAudioMixPresetById(mixFlag?.presetId ?? getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixFlag.queueTrackIds ?? []);
+  const queueTracks = queueTrackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        ...item,
+        order: index + 1,
+        isActive: item.id === activeTrackId,
+        isCurrentIndex: index === mixFlag.currentIndex
+      };
+    })
+    .filter(Boolean);
+  const currentIndex = queueTracks.findIndex((entry) => entry.id === activeTrackId);
+  const normalizedCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(Math.max(0, mixFlag.currentIndex), Math.max(0, queueTracks.length - 1));
   return {
     hasPlaylist: Boolean(playlist),
     playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
@@ -11654,29 +12953,101 @@ function getAudioMixPlaybackState(catalog) {
     presetId: activePreset.id,
     presetLabel: activePreset.label,
     activeTrack,
+    activeTrackId,
     activeTrackName: String(activeTrack?.name ?? mixFlag?.activeTrackName ?? "").trim(),
-    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-"
+    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-",
+    queueTrackIds,
+    queueTracks,
+    hasQueue: queueTracks.length > 0,
+    queueLength: queueTracks.length,
+    currentIndex: normalizedCurrentIndex,
+    canSkipNext: queueTracks.length > 1 || Boolean(activePreset.repeat),
+    canRestart: Boolean(activeTrackId)
   };
+}
+
+function buildAudioMixKindFocusOptions(selectedValue = "music") {
+  return Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryKind(selectedValue) === value
+  }));
+}
+
+function buildAudioMixUsageFocusOptions(selectedValue = "general") {
+  return Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryUsage(selectedValue) === value
+  }));
+}
+
+function buildAudioMixPlaybackModeOptions(selectedValue = "repeat") {
+  return Object.entries(AUDIO_MIX_PLAYBACK_MODE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioMixPlaybackMode(selectedValue) === value
+  }));
 }
 
 function buildAudioMixContext(catalog) {
   const selectedPreset = getSelectedAudioMixPreset();
-  const candidates = buildAudioMixCandidates(catalog, selectedPreset);
+  const assignedCandidates = buildAudioMixAssignedCandidates(catalog, selectedPreset);
+  const suggestedCandidates = buildAudioMixCandidates(catalog, selectedPreset, {
+    excludeTrackIds: assignedCandidates.map(({ item }) => item.id)
+  });
+  const hasSavedTrackList = assignedCandidates.length > 0;
+  const candidates = hasSavedTrackList ? assignedCandidates : suggestedCandidates;
   const playback = getAudioMixPlaybackState(catalog);
+  const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
+  const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
+  const queueRows = hasSavedTrackList
+    ? assignedCandidates.map(({ item }, index) => ({
+      ...item,
+      order: index + 1,
+      isActive: item.id === playback?.activeTrack?.id,
+      isCurrentIndex: index === playback.currentIndex
+    }))
+    : (playbackMatchesSelection && playback.hasQueue
+      ? playback.queueTracks
+      : suggestedCandidates.slice(0, 12).map(({ item }, index) => ({
+        ...item,
+        order: index + 1,
+        isActive: item.id === playback?.activeTrack?.id,
+        isCurrentIndex: false
+      })));
+  const queueSourceLabel = hasSavedTrackList
+    ? "Preset Queue"
+    : (playbackMatchesSelection && playback.hasQueue ? "Live Queue" : "Suggested Queue");
   return {
     status: audioLibraryUiState.mixStatus,
     hasStatus: Boolean(audioLibraryUiState.mixStatus),
     selectedPresetId: selectedPreset.id,
-    presets: AUDIO_MIX_PRESETS.map((preset) => ({
+    presets: getAllAudioMixPresets().map((preset) => ({
       id: preset.id,
       label: preset.label,
       description: preset.description,
+      isCustom: Boolean(preset.isCustom),
       selected: preset.id === selectedPreset.id,
-      candidateCount: buildAudioMixCandidates(catalog, preset).length
+      candidateCount: (Array.isArray(preset.trackIds) && preset.trackIds.length > 0)
+        ? buildAudioMixAssignedCandidates(catalog, preset).length
+        : buildAudioMixCandidates(catalog, preset).length,
+      playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode),
+      hasSavedTrackList: Array.isArray(preset.trackIds) && preset.trackIds.length > 0
     })),
     selectedPreset: {
       ...selectedPreset,
-      candidateCount: candidates.length
+      candidateCount: candidates.length,
+      assignedCount: assignedCandidates.length,
+      suggestedCount: suggestedCandidates.length,
+      hasSavedTrackList,
+      channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
+      playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
+      kindFocusLabel: getAudioLibraryKindLabel(selectedPreset.kindFocus),
+      usageFocusLabel: getAudioLibraryUsageLabel(selectedPreset.usageFocus),
+      searchTokensLabel: formatAudioMixPresetSearchTokens(selectedPreset.searchTokens),
+      canDelete: Boolean(selectedPreset.isCustom),
+      canRename: Boolean(selectedPreset.isCustom)
     },
     candidates: candidates.slice(0, 14).map(({ item, score }) => ({
       id: item.id,
@@ -11688,7 +13059,54 @@ function buildAudioMixContext(catalog) {
       usageLabel: getAudioLibraryUsageLabel(item.usage),
       selected: item.id === playback?.activeTrack?.id
     })),
+    assignedTracks: assignedCandidates.slice(0, 20).map(({ item, score }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      score,
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage),
+      selected: item.id === playback?.activeTrack?.id,
+      isActive: item.id === playback?.activeTrack?.id
+    })),
+    hasAssignedTracks: assignedCandidates.length > 0,
+    suggestedTracks: suggestedCandidates.slice(0, 20).map(({ item, score }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      score,
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage),
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    hasSuggestedTracks: suggestedCandidates.length > 0,
     hasCandidates: candidates.length > 0,
+    editor: {
+      canEdit: true,
+      canRename: Boolean(selectedPreset.isCustom),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
+      usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
+      playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode),
+      hasAssignedTracks: assignedCandidates.length > 0
+    },
+    queue: {
+      hasTracks: queueRows.length > 0,
+      sourceLabel: queueSourceLabel,
+      tracks: queueRows.map((track) => ({
+        ...track,
+        kindLabel: getAudioLibraryKindLabel(track.kind),
+        usageLabel: getAudioLibraryUsageLabel(track.usage)
+      })),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      canControl: playbackMatchesSelection || selectedPreset.isCustom,
+      hasSavedTrackList,
+      hasLiveQueue: playbackMatchesSelection && playback.hasQueue
+    },
     playback: {
       ...playback,
       hasActiveTrack: Boolean(playback.activeTrack),
@@ -16354,7 +17772,12 @@ function buildLootClaimsContext(user = game.user) {
       ...entry,
       claimRunId: displayRunId,
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+      itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+      itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
+        ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+        : "",
       hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
+      hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
       hasRarity: entry.rarity.length > 0,
       canOpen: entry.uuid.length > 0,
       isMajorItem: Boolean(entry.majorItem),
@@ -18750,6 +20173,25 @@ async function setMerchantCurrentSettlement(value) {
   });
 }
 
+function syncStoredMerchantSettlementPreference(previousSettlementInput = "", nextSettlementInput = "") {
+  const previousSettlement = normalizeMerchantSettlementSelection(previousSettlementInput);
+  if (!previousSettlement || !hasSelectedMerchantSettlementPreference()) return;
+  const selectedSettlement = getSelectedMerchantSettlement();
+  if (selectedSettlement.toLowerCase() !== previousSettlement.toLowerCase()) return;
+  setSelectedMerchantSettlement(nextSettlementInput);
+}
+
+function syncMerchantGmCollectionFilterLocation(previousSettlementInput = "", nextSettlementInput = "") {
+  const previousSettlement = normalizeMerchantSettlementSelection(previousSettlementInput);
+  if (!previousSettlement) return;
+  const filterState = getMerchantGmCollectionFilterState();
+  const selectedLocation = normalizeMerchantSettlementSelection(filterState?.city ?? "");
+  if (selectedLocation.toLowerCase() !== previousSettlement.toLowerCase()) return;
+  setMerchantGmCollectionFilterState({
+    city: normalizeMerchantSettlementSelection(nextSettlementInput)
+  });
+}
+
 function buildMerchantCityCatalogRows(merchantsState = {}, definitions = []) {
   const rows = [];
   rows.push(...normalizeMerchantCityList(merchantsState?.cityCatalog ?? []));
@@ -18760,6 +20202,51 @@ function buildMerchantCityCatalogRows(merchantsState = {}, definitions = []) {
   return normalizeMerchantCityList(rows);
 }
 
+function buildMerchantCatalogLocationRows(merchantsState = {}, definitions = []) {
+  const explicitCatalog = normalizeMerchantCityList(merchantsState?.cityCatalog ?? []);
+  const explicitCatalogSet = new Set(explicitCatalog.map((entry) => entry.toLowerCase()));
+  const allLocations = buildMerchantCityCatalogRows(merchantsState, definitions);
+  const sortedDefinitions = sortMerchantDefinitions(Array.isArray(definitions) ? definitions : []);
+  return allLocations.map((location) => {
+    const locationLower = location.toLowerCase();
+    const assignedMerchantRows = sortedDefinitions
+      .filter((merchant) => normalizeMerchantSettlementSelection(merchant?.settlement ?? "").toLowerCase() === locationLower)
+      .map((merchant) => ({
+        id: String(merchant?.id ?? "").trim(),
+        name: String(merchant?.name ?? "").trim() || "Unnamed Merchant",
+        title: String(merchant?.title ?? "").trim(),
+        currentLocationLabel: getMerchantSettlementLabel(merchant?.settlement ?? "")
+      }));
+    const availableMerchantOptions = [
+      { value: "", label: "Add merchant...", selected: true, disabled: false },
+      ...sortedDefinitions
+        .filter((merchant) => normalizeMerchantSettlementSelection(merchant?.settlement ?? "").toLowerCase() !== locationLower)
+        .map((merchant) => {
+          const merchantId = String(merchant?.id ?? "").trim();
+          const merchantName = String(merchant?.name ?? "").trim() || "Unnamed Merchant";
+          const merchantLocation = normalizeMerchantSettlementSelection(merchant?.settlement ?? "");
+          const merchantLocationLabel = merchantLocation ? getMerchantSettlementLabel(merchantLocation) : "Global";
+          return {
+            value: merchantId,
+            label: merchantLocation ? `${merchantName} (${merchantLocationLabel})` : merchantName,
+            selected: false,
+            disabled: !merchantId
+          };
+        })
+    ];
+    return {
+      value: location,
+      isSaved: explicitCatalogSet.has(locationLower),
+      statusLabel: explicitCatalogSet.has(locationLower) ? "Saved" : "In Use",
+      merchantCount: assignedMerchantRows.length,
+      hasAssignedMerchantRows: assignedMerchantRows.length > 0,
+      assignedMerchantRows,
+      availableMerchantOptions,
+      hasAvailableMerchantOptions: availableMerchantOptions.length > 1
+    };
+  });
+}
+
 async function saveMerchantCityCatalog(rawInput = "") {
   const cityCatalog = parseMerchantCityListInput(rawInput);
   await updateOperationsLedger((ledger) => {
@@ -18767,6 +20254,63 @@ async function saveMerchantCityCatalog(rawInput = "") {
     merchants.cityCatalog = cityCatalog;
   });
   return cityCatalog;
+}
+
+async function updateMerchantCatalogLocation(originalLocationInput = "", nextLocationInput = "") {
+  const originalLocation = normalizeMerchantSettlementSelection(originalLocationInput);
+  const nextLocation = normalizeMerchantSettlementSelection(nextLocationInput);
+  if (!originalLocation && !nextLocation) return "";
+  if (!nextLocation) return "";
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    const currentCatalog = normalizeMerchantCityList(merchants?.cityCatalog ?? []);
+    const nextCatalog = currentCatalog.filter((entry) => entry.toLowerCase() !== originalLocation.toLowerCase());
+    nextCatalog.push(nextLocation);
+    merchants.cityCatalog = normalizeMerchantCityList(nextCatalog);
+    if (!originalLocation || originalLocation.toLowerCase() === nextLocation.toLowerCase()) return;
+    merchants.definitions = (Array.isArray(merchants.definitions) ? merchants.definitions : []).map((entry, index) => {
+      const settlement = normalizeMerchantSettlementSelection(entry?.settlement ?? "");
+      if (settlement.toLowerCase() !== originalLocation.toLowerCase()) return normalizeMerchantDefinition(entry, index);
+      return normalizeMerchantDefinition({
+        ...entry,
+        settlement: nextLocation
+      }, index);
+    });
+    const currentSettlement = normalizeMerchantSettlementSelection(merchants.currentSettlement ?? "");
+    if (currentSettlement.toLowerCase() === originalLocation.toLowerCase()) merchants.currentSettlement = nextLocation;
+  });
+  if (originalLocation && originalLocation.toLowerCase() !== nextLocation.toLowerCase()) {
+    syncStoredMerchantSettlementPreference(originalLocation, nextLocation);
+    syncMerchantGmCollectionFilterLocation(originalLocation, nextLocation);
+  }
+  return nextLocation;
+}
+
+async function removeMerchantCatalogLocation(locationInput = "") {
+  const location = normalizeMerchantSettlementSelection(locationInput);
+  if (!location) return { location: "", clearedMerchantCount: 0 };
+  let clearedMerchantCount = 0;
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    merchants.cityCatalog = normalizeMerchantCityList(
+      (Array.isArray(merchants?.cityCatalog) ? merchants.cityCatalog : [])
+        .filter((entry) => normalizeMerchantSettlementSelection(entry).toLowerCase() !== location.toLowerCase())
+    );
+    merchants.definitions = (Array.isArray(merchants.definitions) ? merchants.definitions : []).map((entry, index) => {
+      const settlement = normalizeMerchantSettlementSelection(entry?.settlement ?? "");
+      if (settlement.toLowerCase() !== location.toLowerCase()) return normalizeMerchantDefinition(entry, index);
+      clearedMerchantCount += 1;
+      return normalizeMerchantDefinition({
+        ...entry,
+        settlement: ""
+      }, index);
+    });
+    const currentSettlement = normalizeMerchantSettlementSelection(merchants.currentSettlement ?? "");
+    if (currentSettlement.toLowerCase() === location.toLowerCase()) merchants.currentSettlement = "";
+  });
+  syncStoredMerchantSettlementPreference(location, "");
+  syncMerchantGmCollectionFilterLocation(location, "");
+  return { location, clearedMerchantCount };
 }
 
 async function setMerchantCityById(merchantIdInput, cityInput = "") {
@@ -19571,7 +21115,7 @@ function buildMerchantSettlementOptions(definitions = [], selectionInput = "", f
       selected: false
     }));
   const options = [
-    { value: "", label: "All Cities", selected: false },
+    { value: "", label: "All Locations", selected: false },
     ...cityRows
   ];
   const activeValue = options.some((entry) => entry.value.toLowerCase() === selection.toLowerCase())
@@ -19582,7 +21126,7 @@ function buildMerchantSettlementOptions(definitions = [], selectionInput = "", f
   }
   return {
     activeValue,
-    activeLabel: activeValue ? getMerchantSettlementLabel(activeValue) : "All Cities",
+    activeLabel: activeValue ? getMerchantSettlementLabel(activeValue) : "All Locations",
     options
   };
 }
@@ -19682,7 +21226,7 @@ function buildMerchantGmCollectionCityOptions(definitions = [], selectedCityInpu
   }
   if (selectedCity && !cityMap.has(selectedCity.toLowerCase())) cityMap.set(selectedCity.toLowerCase(), selectedCity);
   const options = [
-    { value: "", label: "All Cities", selected: !selectedCity },
+    { value: "", label: "All Locations", selected: !selectedCity },
     ...Array.from(cityMap.values())
       .sort((left, right) => left.localeCompare(right))
       .map((value) => ({
@@ -19983,7 +21527,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const emptyStateMessage = !viewerCanUseShop
     ? (viewerShopAccess.message || "Shops are currently unavailable.")
     : (hasTradableMerchants
-      ? "No merchants are currently available for this actor/city combination."
+      ? "No merchants are currently available for this actor/location combination."
       : "No merchants are marked as tradable while shops are open.");
   const userId = String(user?.id ?? "").trim();
   const accessLog = (merchantsState.accessLog ?? [])
@@ -20117,7 +21661,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
   const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
   const editorSourceTaxonomy = buildPartyOperationsTaxonomySummaryFromDocuments(getMerchantSourceDocumentsSync(editorDraft));
-  const savedCityCatalogRows = normalizeMerchantCityList(merchantsState?.cityCatalog ?? []);
+  const savedLocationCatalogRows = buildMerchantCatalogLocationRows(merchantsState, definitionsForDisplay);
   const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
   const editorCuratedRows = [];
   const editorItemFilter = "";
@@ -20221,10 +21765,13 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       editorViewTab,
       editorViewTabEditor: editorViewTab !== "settings",
       editorViewTabSettings: editorViewTab === "settings",
-      cityCatalogInput: formatMerchantCityListInput(merchantsState?.cityCatalog ?? []),
-      savedCityCatalogRows,
-      hasSavedCityCatalogRows: savedCityCatalogRows.length > 0,
-      savedCityCatalogCount: savedCityCatalogRows.length,
+      cityCatalogInput: (() => {
+        const draftValue = getMerchantCityCatalogDraftValue();
+        return draftValue !== null ? draftValue : formatMerchantCityListInput(merchantsState?.cityCatalog ?? []);
+      })(),
+      savedLocationCatalogRows,
+      hasSavedLocationCatalogRows: savedLocationCatalogRows.length > 0,
+      savedLocationCatalogCount: savedLocationCatalogRows.length,
       editor: {
         id: String(editorDraft?.id ?? ""),
         name: String(editorDraft?.name ?? ""),
@@ -21329,7 +22876,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
   const barterStatusState = barterEnabled
     ? (existingBarterResolution?.applied ? "applied" : "ready")
     : "disabled";
-  const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Cities";
+  const settlementLabel = settlement ? getMerchantSettlementLabel(settlement) : "All Locations";
   const merchantItems = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
     .map((item) => {
@@ -21790,7 +23337,7 @@ function getMerchantIdFromElementOrEditor(element) {
 
 async function setMerchantSettlementFromElement(element) {
   if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can set the current settlement.");
+    ui.notifications?.warn("Only the GM can set the current location.");
     return false;
   }
   const settlement = String(element?.value ?? "").trim();
@@ -21806,22 +23353,69 @@ function setMerchantSettlementSelectionFromElement(element) {
   return setSelectedMerchantSettlementFromElement(element);
 }
 
+function getMerchantCatalogLocationRowFromElement(element) {
+  return element?.closest?.("[data-merchant-location-row]") ?? null;
+}
+
+function getMerchantCatalogLocationInputFromElement(element) {
+  const row = getMerchantCatalogLocationRowFromElement(element);
+  const input = row?.querySelector?.("input[name='merchantCatalogLocationName']");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
 async function saveMerchantCityCatalogFromElement(element) {
   if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can manage merchant cities.");
+    ui.notifications?.warn("Only the GM can manage merchant locations.");
     return false;
   }
   const root = getMerchantEditorRootFromElement(element);
   if (!root) return false;
   const rawInput = String(root.querySelector("input[name='merchantCityCatalog']")?.value ?? "").trim();
   const cityCatalog = await saveMerchantCityCatalog(rawInput);
-  ui.notifications?.info(`Saved merchant cities (${cityCatalog.length}).`);
+  clearMerchantCityCatalogDraftValue();
+  ui.notifications?.info(`Saved merchant locations (${cityCatalog.length}).`);
+  return true;
+}
+
+async function updateMerchantCatalogLocationFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage merchant locations.");
+    return false;
+  }
+  const row = getMerchantCatalogLocationRowFromElement(element);
+  if (!(row instanceof HTMLElement)) return false;
+  const originalLocation = normalizeMerchantSettlementSelection(row.dataset?.location ?? "");
+  const input = getMerchantCatalogLocationInputFromElement(element);
+  const nextLocation = normalizeMerchantSettlementSelection(input?.value ?? originalLocation);
+  if (!nextLocation) {
+    ui.notifications?.warn("Enter a location name before saving.");
+    return false;
+  }
+  const savedLocation = await updateMerchantCatalogLocation(originalLocation, nextLocation);
+  if (!savedLocation) return false;
+  ui.notifications?.info(`Saved merchant location: ${savedLocation}.`);
+  return true;
+}
+
+async function removeMerchantCatalogLocationFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage merchant locations.");
+    return false;
+  }
+  const row = getMerchantCatalogLocationRowFromElement(element);
+  const location = normalizeMerchantSettlementSelection(row?.dataset?.location ?? "");
+  if (!location) return false;
+  const result = await removeMerchantCatalogLocation(location);
+  if (!result?.location) return false;
+  const clearedMerchantCount = Math.max(0, Number(result?.clearedMerchantCount ?? 0) || 0);
+  const merchantSummary = clearedMerchantCount > 0 ? ` Cleared ${clearedMerchantCount} merchant assignment(s).` : "";
+  ui.notifications?.info(`Removed merchant location: ${result.location}.${merchantSummary}`);
   return true;
 }
 
 async function assignMerchantCityFromElement(element) {
   if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can assign merchant cities.");
+    ui.notifications?.warn("Only the GM can assign merchant locations.");
     return false;
   }
   const merchantId = String(element?.dataset?.merchantId ?? "").trim();
@@ -21832,6 +23426,53 @@ async function assignMerchantCityFromElement(element) {
   if (String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
     setMerchantEditorDraftState(saved.id, saved);
   }
+  return true;
+}
+
+async function assignMerchantCatalogLocationMerchantFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant locations.");
+    return false;
+  }
+  const row = getMerchantCatalogLocationRowFromElement(element);
+  if (!(row instanceof HTMLElement)) return false;
+  const input = getMerchantCatalogLocationInputFromElement(element);
+  const currentLocation = normalizeMerchantSettlementSelection(input?.value ?? row.dataset?.location ?? "");
+  if (!currentLocation) {
+    ui.notifications?.warn("Save a location name before assigning merchants to it.");
+    return false;
+  }
+  const originalLocation = normalizeMerchantSettlementSelection(row.dataset?.location ?? "");
+  const savedLocation = await updateMerchantCatalogLocation(originalLocation, currentLocation);
+  if (!savedLocation) return false;
+  const select = row.querySelector("select[name='merchantCatalogLocationMerchant']");
+  const merchantId = String(select?.value ?? "").trim();
+  if (!merchantId) {
+    ui.notifications?.warn("Select a merchant to add to this location.");
+    return false;
+  }
+  const saved = await setMerchantCityById(merchantId, savedLocation);
+  if (!saved?.id) return false;
+  if (String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  ui.notifications?.info(`Assigned ${saved.name || "merchant"} to ${savedLocation}.`);
+  return true;
+}
+
+async function removeMerchantCatalogLocationMerchantFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can assign merchant locations.");
+    return false;
+  }
+  const merchantId = String(element?.dataset?.merchantId ?? "").trim();
+  if (!merchantId) return false;
+  const saved = await setMerchantCityById(merchantId, "");
+  if (!saved?.id) return false;
+  if (String(getMerchantEditorSelection() ?? "").trim() === saved.id) {
+    setMerchantEditorDraftState(saved.id, saved);
+  }
+  ui.notifications?.info(`Removed ${saved.name || "merchant"} from this location.`);
   return true;
 }
 
@@ -22907,6 +24548,7 @@ function normalizeLootClaimItemsList(values = []) {
       name: String(entry?.name ?? "Item").trim() || "Item",
       img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+      itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
       itemType: String(entry?.itemType ?? "").trim(),
       rarity: String(entry?.rarity ?? "").trim(),
       sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -23482,8 +25124,51 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       baseHint: base.hint
     };
   });
+  const uiDraft = getDowntimeUiDraft();
+  const submitDraft = uiDraft?.submission && typeof uiDraft.submission === "object" && !Array.isArray(uiDraft.submission)
+    ? uiDraft.submission
+    : null;
+  const resolutionDraft = uiDraft?.resolution && typeof uiDraft.resolution === "object" && !Array.isArray(uiDraft.resolution)
+    ? uiDraft.resolution
+    : null;
+
+  const draftedSubmitActorId = String(submitDraft?.actorId ?? "").trim();
+  const resolvedSubmitActorId = actorOptions.some((entry) => entry.id === draftedSubmitActorId)
+    ? draftedSubmitActorId
+    : defaultActorId;
+  for (const option of actorOptions) {
+    option.selected = option.id === resolvedSubmitActorId;
+  }
+
+  const draftedSubmitActionKey = String(submitDraft?.actionKey ?? "").trim();
+  const submitActionOptions = actionOptions.map((entry) => ({
+    ...entry,
+    selected: entry.key === draftedSubmitActionKey
+  }));
+  if (!submitActionOptions.some((entry) => entry.selected)) {
+    const fallbackActionKey = String(currentEntry?.actionKey ?? submitActionOptions[0]?.key ?? "").trim();
+    for (const option of submitActionOptions) {
+      option.selected = option.key === fallbackActionKey;
+    }
+  }
+
+  const draftedResolutionActorId = String(resolutionDraft?.actorId ?? "").trim();
+  const resolvedPendingActorId = pendingOptions.some((entry) => entry.actorId === draftedResolutionActorId)
+    ? draftedResolutionActorId
+    : String(pendingOptions.find((entry) => entry.selected)?.actorId ?? pendingOptions[0]?.actorId ?? "").trim();
+  for (const option of pendingOptions) {
+    option.selected = option.actorId === resolvedPendingActorId;
+  }
+
   const selectedPending = pendingOptions.find((entry) => entry.selected) ?? null;
   const selectedPendingItemRewardDrops = parseDowntimeItemRewardDrops(String(selectedPending?.baseItemRewardDropsJson ?? "[]"));
+  const draftedResolutionSocialContractKey = Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "socialContractKey")
+    ? String(resolutionDraft?.socialContractKey ?? "").trim()
+    : String(selectedPending?.baseSocialContractKey ?? "").trim();
+  const draftedResolutionItemRewardDropsJson = Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "itemRewardDropsJson")
+    ? String(resolutionDraft?.itemRewardDropsJson ?? "[]")
+    : String(selectedPending?.baseItemRewardDropsJson ?? "[]");
+  const draftedResolutionItemRewardDrops = parseDowntimeItemRewardDrops(draftedResolutionItemRewardDropsJson);
 
   return {
     hoursGranted,
@@ -23506,9 +25191,13 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     },
     submit: {
       actorOptions,
-      actionOptions,
-      hours: submitHours,
-      note: currentEntry?.note ?? ""
+      actionOptions: submitActionOptions,
+      hours: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "hours")
+        ? String(submitDraft?.hours ?? "")
+        : submitHours,
+      note: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "note")
+        ? String(submitDraft?.note ?? "")
+        : (currentEntry?.note ?? "")
     },
     entriesSort,
     entriesSortOptions: DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => ({
@@ -23530,21 +25219,35 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     gmResolve: {
       hasPending: pendingOptions.length > 0,
       pendingOptions,
-      selectedActorId: String(selectedPending?.actorId ?? ""),
+      selectedActorId: resolvedPendingActorId,
       selectedIsPreResolved: selectedPending?.isPreResolved === true,
       selectedPreResolvedLabel: String(selectedPending?.preResolvedLabel ?? ""),
-      summary: String(selectedPending?.baseSummary ?? ""),
-      gpAward: Number(selectedPending?.baseGpAward ?? 0),
-      gpCost: Number(selectedPending?.baseGpCost ?? 0),
-      rumorCount: Number(selectedPending?.baseRumorCount ?? 0),
-      itemRewardsText: String(selectedPending?.baseItemRewardsText ?? ""),
-      itemRewardDrops: selectedPendingItemRewardDrops,
-      hasItemRewardDrops: selectedPendingItemRewardDrops.length > 0,
-      itemRewardDropsJson: String(selectedPending?.baseItemRewardDropsJson ?? "[]"),
-      gmNotes: String(selectedPending?.baseNotes ?? ""),
-      socialContractKey: String(selectedPending?.baseSocialContractKey ?? ""),
-      socialContractNotes: String(selectedPending?.baseSocialContractNotes ?? ""),
-      socialContractOptions: buildDowntimeSocialContractOptions(String(selectedPending?.baseSocialContractKey ?? "")),
+      summary: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "summary")
+        ? String(resolutionDraft?.summary ?? "")
+        : String(selectedPending?.baseSummary ?? ""),
+      gpAward: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gpAward")
+        ? String(resolutionDraft?.gpAward ?? "")
+        : Number(selectedPending?.baseGpAward ?? 0),
+      gpCost: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gpCost")
+        ? String(resolutionDraft?.gpCost ?? "")
+        : Number(selectedPending?.baseGpCost ?? 0),
+      rumorCount: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "rumorCount")
+        ? String(resolutionDraft?.rumorCount ?? "")
+        : Number(selectedPending?.baseRumorCount ?? 0),
+      itemRewardsText: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "itemRewardsText")
+        ? String(resolutionDraft?.itemRewardsText ?? "")
+        : String(selectedPending?.baseItemRewardsText ?? ""),
+      itemRewardDrops: draftedResolutionItemRewardDrops,
+      hasItemRewardDrops: draftedResolutionItemRewardDrops.length > 0,
+      itemRewardDropsJson: draftedResolutionItemRewardDropsJson,
+      gmNotes: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gmNotes")
+        ? String(resolutionDraft?.gmNotes ?? "")
+        : String(selectedPending?.baseNotes ?? ""),
+      socialContractKey: draftedResolutionSocialContractKey,
+      socialContractNotes: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "socialContractNotes")
+        ? String(resolutionDraft?.socialContractNotes ?? "")
+        : String(selectedPending?.baseSocialContractNotes ?? ""),
+      socialContractOptions: buildDowntimeSocialContractOptions(draftedResolutionSocialContractKey),
       hint: String(selectedPending?.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT)
     }
   };
@@ -24505,6 +26208,7 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
 async function submitDowntimeAction(element) {
   const submission = readDowntimeSubmissionFromUi(element);
   if (!submission) return;
+  syncDowntimeUiDraftFromElement(element);
   if (!submission.actorId) {
     ui.notifications?.warn("Select an actor for downtime submission.");
     return;
@@ -24534,6 +26238,7 @@ async function submitDowntimeAction(element) {
 async function clearDowntimeEntry(element) {
   const actorId = String(element?.dataset?.actorId ?? readDowntimeSubmissionFromUi(element)?.actorId ?? "").trim();
   if (!actorId) return;
+  const currentDraft = getDowntimeUiDraft();
   const actor = game.actors.get(actorId);
   if (!actor) {
     ui.notifications?.warn("Actor for downtime entry was not found.");
@@ -24546,6 +26251,9 @@ async function clearDowntimeEntry(element) {
       if (!downtime.entries) return;
       delete downtime.entries[actorId];
     });
+    if (String(currentDraft?.resolution?.actorId ?? "").trim() === actorId) {
+      clearDowntimeUiDraft("resolution");
+    }
     ui.notifications?.info(`Cleared downtime entry for ${actor.name}.`);
     return;
   }
@@ -24639,6 +26347,7 @@ async function addDowntimeResolverItemRewardFromDropEvent(event) {
   currentRewards.push(itemName);
   rewardsField.value = currentRewards.join("\n");
   rewardsField.dispatchEvent(new Event("input", { bubbles: true }));
+  if (resolverRoot instanceof HTMLElement) syncDowntimeResolverDraftFromRoot(resolverRoot);
   ui.notifications?.info(`Added item reward: ${itemName}`);
   return true;
 }
@@ -24686,6 +26395,7 @@ function removeDowntimeResolverItemDropFromUi(element) {
   if (next.length === current.length) return false;
   setDowntimeResolverItemDropsInUi(root, next);
   renderDowntimeResolverItemDropList(root);
+  syncDowntimeResolverDraftFromRoot(root);
   return true;
 }
 
@@ -24725,6 +26435,7 @@ async function addDowntimeResolverCraftingItemDropFromDropEvent(event) {
   current.push(nextDrop);
   setDowntimeResolverItemDropsInUi(resolverRoot, current);
   renderDowntimeResolverItemDropList(resolverRoot);
+  syncDowntimeResolverDraftFromRoot(resolverRoot);
   ui.notifications?.info(`Queued crafted item grant: ${nextDrop.name}`);
   return true;
 }
@@ -24773,6 +26484,7 @@ function applyDowntimeResolverBaseToUi(element, options = {}) {
   if (contractNotesTextarea && (force || !String(contractNotesTextarea.value ?? "").trim())) contractNotesTextarea.value = String(selectedOption.dataset.baseContractNotes ?? "");
   if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT);
   renderDowntimeResolverItemDropList(root);
+  syncDowntimeResolverDraftFromRoot(root);
 }
 
 function readDowntimeResolutionFromUi(element) {
@@ -24963,6 +26675,7 @@ async function preResolveSelectedDowntimeEntry(element) {
   });
 
   const actorName = getDowntimeActorName(resolution.actorId, entry.actorName);
+  replaceDowntimeUiDraftSection("resolution", { actorId: resolution.actorId });
   ui.notifications?.info(`Pre-resolved downtime for ${actorName}. Edit fields, then Final Resolve.`);
 }
 
@@ -25025,6 +26738,7 @@ async function resolveSelectedDowntimeEntry(element) {
     });
   });
 
+  clearDowntimeUiDraft("resolution");
   ui.notifications?.info(`Resolved downtime for ${actorName}.`);
 }
 
@@ -25075,6 +26789,7 @@ async function editDowntimeResult(element) {
     ui.notifications?.warn(`No resolved downtime result found for ${actorName}.`);
     return;
   }
+  replaceDowntimeUiDraftSection("resolution", { actorId });
   ui.notifications?.info(`Moved ${actorName} back to pending for editing.`);
 }
 
@@ -28616,16 +30331,45 @@ function getMutableLootPreviewResult() {
 
 function refreshLootPreviewResultStats(result) {
   const sourceConfig = getLootSourceConfig();
-  const itemCountGenerated = Array.isArray(result?.items) ? result.items.length : 0;
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const itemCountGenerated = items.length;
   const tableRollCount = Array.isArray(result?.tableRolls) ? result.tableRolls.length : 0;
   const currentTarget = Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0);
+  const finalItemsValueGp = Number(items.reduce((sum, entry) => {
+    return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  }, 0).toFixed(2));
+  const encounterTargetGp = Number(result?.stats?.encounterTargetGp ?? 0);
+  const deltaGp = Number((finalItemsValueGp - (Number.isFinite(encounterTargetGp) ? encounterTargetGp : 0)).toFixed(2));
+  const strictnessToleranceGp = Number(
+    result?.stats?.strictnessToleranceGp
+      ?? result?.stats?.toleranceGp
+      ?? 0
+  );
+  const strictnessTolerancePercent = Number(
+    result?.stats?.strictnessTolerancePercent
+      ?? result?.stats?.tolerancePercent
+      ?? 0
+  );
   result.stats = {
     candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
     itemCountTarget: Math.max(currentTarget, itemCountGenerated),
     itemCountGenerated,
     tableRollCount,
     enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
-    enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
+    enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
+    desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? currentTarget) || 0),
+    maxItems: Math.max(0, Number(result?.stats?.maxItems ?? currentTarget) || 0),
+    encounterTargetGp: Number.isFinite(encounterTargetGp) ? encounterTargetGp : 0,
+    finalItemsValueGp,
+    deltaGp,
+    strictnessToleranceGp,
+    strictnessTolerancePercent,
+    toleranceGp: strictnessToleranceGp,
+    tolerancePercent: strictnessTolerancePercent,
+    strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? "Normal"),
+    strictnessBandKey: String(result?.stats?.strictnessBandKey ?? "normal"),
+    deterministic: Boolean(result?.stats?.deterministic),
+    seed: String(result?.stats?.seed ?? "")
   };
 }
 
@@ -28695,6 +30439,114 @@ function addItemToLootPreviewResult(itemEntry) {
   result.generatedBy = String(game.user?.name ?? "GM");
   refreshLootPreviewResultStats(result);
   setLootPreviewResult(result);
+}
+
+function getLootPreviewItemIdentityFromElement(element) {
+  return {
+    itemId: String(element?.dataset?.itemId ?? "").trim(),
+    itemUuid: String(element?.dataset?.itemUuid ?? "").trim()
+  };
+}
+
+function findLootPreviewItemIndex(items = [], identity = {}) {
+  const itemId = String(identity?.itemId ?? "").trim();
+  const itemUuid = String(identity?.itemUuid ?? "").trim();
+  if (!Array.isArray(items) || (!itemId && !itemUuid)) return -1;
+  return items.findIndex((entry) => {
+    const entryId = String(entry?.id ?? "").trim();
+    const entryUuid = String(entry?.uuid ?? "").trim();
+    if (itemId && entryId === itemId) return true;
+    if (!itemId && itemUuid && entryUuid === itemUuid) return true;
+    return false;
+  });
+}
+
+function normalizeLootPreviewItemQuantity(value, fallback = 1) {
+  const parsed = Number(value);
+  const safeFallback = Math.max(1, Math.floor(Number(fallback ?? 1) || 1));
+  if (!Number.isFinite(parsed)) return safeFallback;
+  return Math.max(1, Math.min(9999, Math.floor(parsed)));
+}
+
+function normalizeLootPreviewItemValueGp(value, fallback = 0) {
+  const parsed = Number(value);
+  const safeFallback = Math.max(0, Number(Number(fallback ?? 0) || 0));
+  if (!Number.isFinite(parsed)) return safeFallback;
+  return Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Number(parsed.toFixed(2))));
+}
+
+async function editLootPreviewItem(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can curate loot builder items.");
+    return false;
+  }
+  const identity = getLootPreviewItemIdentityFromElement(element);
+  if (!identity.itemId && !identity.itemUuid) return false;
+  const result = getMutableLootPreviewResult();
+  const items = Array.isArray(result.items) ? result.items : [];
+  const itemIndex = findLootPreviewItemIndex(items, identity);
+  if (itemIndex < 0) return false;
+
+  const entry = items[itemIndex] ?? {};
+  const currentQuantity = normalizeLootPreviewItemQuantity(entry?.quantity ?? 1, 1);
+  const currentValueGp = normalizeLootPreviewItemValueGp(entry?.itemValueGp ?? 0, 0);
+  const itemName = String(entry?.name ?? "Item").trim() || "Item";
+  const sourceLabel = String(entry?.sourceLabel ?? "").trim();
+
+  const submission = await new Promise((resolve) => {
+    const dialog = new Dialog({
+      title: `Adjust Loot Item: ${itemName}`,
+      content: `
+        <div class="po-help">
+          <p><strong>${poEscapeHtml(itemName)}</strong></p>
+          ${sourceLabel ? `<p class="notes">Source: ${poEscapeHtml(sourceLabel)}</p>` : ""}
+          <p class="notes">These edits only affect this generated loot instance and the claim run published from it.</p>
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" name="lootPreviewItemQuantity" min="1" max="9999" step="1" value="${poEscapeHtml(String(currentQuantity))}" />
+          </div>
+          <div class="form-group">
+            <label>Assigned Value (gp)</label>
+            <input type="number" name="lootPreviewItemValueGp" min="0" max="${LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT}" step="0.01" value="${poEscapeHtml(String(currentValueGp))}" />
+          </div>
+        </div>
+      `,
+      buttons: {
+        save: {
+          label: "Save",
+          callback: (html) => {
+            resolve({
+              quantity: html.find("input[name='lootPreviewItemQuantity']").val(),
+              itemValueGp: html.find("input[name='lootPreviewItemValueGp']").val()
+            });
+          }
+        },
+        cancel: {
+          label: "Cancel",
+          callback: () => resolve(null)
+        }
+      },
+      default: "save"
+    });
+    dialog.render(true);
+  });
+
+  if (!submission) return false;
+  const nextQuantity = normalizeLootPreviewItemQuantity(submission.quantity, currentQuantity);
+  const nextValueGp = normalizeLootPreviewItemValueGp(submission.itemValueGp, currentValueGp);
+  if (nextQuantity === currentQuantity && nextValueGp === currentValueGp) return false;
+
+  items[itemIndex] = {
+    ...entry,
+    quantity: nextQuantity,
+    itemValueGp: nextValueGp
+  };
+  result.items = items;
+  result.generatedAt = Date.now();
+  result.generatedBy = String(game.user?.name ?? "GM");
+  refreshLootPreviewResultStats(result);
+  setLootPreviewResult(result);
+  return true;
 }
 
 async function addLootPreviewItemByUuid(uuidInput = "") {
@@ -28797,19 +30649,14 @@ async function removeLootPreviewItem(element) {
     ui.notifications?.warn("Only the GM can curate loot builder items.");
     return false;
   }
-  const itemId = String(element?.dataset?.itemId ?? "").trim();
-  const itemUuid = String(element?.dataset?.itemUuid ?? "").trim();
+  const { itemId, itemUuid } = getLootPreviewItemIdentityFromElement(element);
   if (!itemId && !itemUuid) return false;
   const result = getMutableLootPreviewResult();
   const currentItems = Array.isArray(result.items) ? result.items : [];
-  const nextItems = currentItems.filter((entry) => {
-    const entryId = String(entry?.id ?? "").trim();
-    const entryUuid = String(entry?.uuid ?? "").trim();
-    if (itemId && entryId === itemId) return false;
-    if (!itemId && itemUuid && entryUuid === itemUuid) return false;
-    return true;
-  });
-  if (nextItems.length === currentItems.length) return false;
+  const itemIndex = findLootPreviewItemIndex(currentItems, { itemId, itemUuid });
+  if (itemIndex < 0) return false;
+  const nextItems = [...currentItems];
+  nextItems.splice(itemIndex, 1);
   result.items = nextItems;
   result.generatedAt = Date.now();
   result.generatedBy = String(game.user?.name ?? "GM");
@@ -29013,6 +30860,7 @@ async function publishLootPreviewToClaims() {
         name: String(entry?.name ?? "Item").trim() || "Item",
         img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
         itemType: String(entry?.itemType ?? "").trim(),
         rarity: String(entry?.rarity ?? "").trim(),
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -35211,10 +37059,22 @@ function buildPartyOperationsApi() {
     audio: {
       open: () => openGmAudioPage({ force: true }),
       getCatalog: () => foundry.utils.deepClone(getAudioLibraryCatalog()),
+      getCatalogWithHidden: () => foundry.utils.deepClone(getAudioLibraryCatalog({ includeHidden: true })),
       scan: (options = {}) => scanAudioLibraryCatalog(options),
       clear: () => clearAudioLibraryCatalog(),
-      getMixPresets: () => foundry.utils.deepClone(AUDIO_MIX_PRESETS),
+      hideTrack: (trackId) => hideAudioLibraryTrack(trackId),
+      restoreTrack: (trackId) => restoreHiddenAudioLibraryTrack(trackId),
+      restoreAllTracks: () => restoreAllHiddenAudioLibraryTracks(),
+      getMixPresets: () => foundry.utils.deepClone(getAllAudioMixPresets()),
+      createMixPreset: () => createAudioMixPresetFromSelection(),
+      deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
+      addTrackToSelectedMixPreset: (trackId) => addTrackToSelectedAudioMixPreset(trackId),
+      queueTrackNext: (trackId) => queueSelectedTrackNext({ dataset: { trackId } }),
+      moveTrackInSelectedMixPreset: (trackId, direction) => moveTrackWithinSelectedAudioMixPreset(trackId, direction),
+      removeTrackFromSelectedMixPreset: (trackId) => removeTrackFromSelectedAudioMixPreset(trackId),
       playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
+      nextTrack: () => playNextAudioMixTrack(),
+      restartTrack: () => restartCurrentAudioMixTrack(),
       stopMix: () => stopAudioMixPlayback(),
       pick: ({ kind = "all", usage = "all", search = "" } = {}) => {
         const catalog = getAudioLibraryCatalog();
@@ -35885,7 +37745,9 @@ export function onPartyOperationsInit() {
     buildDefaultOperationsLedger,
     buildDefaultInjuryRecoveryState,
     buildDefaultLootSourceConfig,
-    buildDefaultAudioLibraryCatalog
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore
   });
   syncAudioLibraryDraftFromSettings();
   registerPartyOpsFeatureSettings({

@@ -33,6 +33,7 @@
                       "templates/gm-environment.hbs",
                       "templates/gm-downtime.hbs",
                       "templates/gm-merchants.hbs",
+                      "templates/gm-audio.hbs",
                       "templates/gm-loot.hbs",
                       "templates/gm-loot-claims-board.hbs"
                   ],

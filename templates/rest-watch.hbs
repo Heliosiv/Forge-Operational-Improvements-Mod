@@ -561,110 +561,114 @@
             </div>
           </div>
           <div class="po-op-divider"></div>
-          <div class="po-section-head-row po-gather-history-head">
-            <div class="po-section-title">Gather History</div>
-            <div class="po-gather-history-head-tools">
-              <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
-              {{#if @root.isGM}}
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
-              {{/if}}
+          <div class="po-gather-history-panel">
+            <div class="po-section-head-row po-gather-history-head">
+              <div class="po-section-title">Gather History</div>
+              <div class="po-gather-history-head-tools">
+                <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
+                <div class="po-gather-history-head-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
+                  {{#if @root.isGM}}
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
+                  {{/if}}
+                </div>
+              </div>
             </div>
+            <div class="po-gather-history-controls">
+              <label class="po-resource-row is-search">
+                <span>Search</span>
+                <input
+                  type="text"
+                  class="po-input"
+                  data-action="set-gather-history-filter"
+                  data-filter-key="search"
+                  value="{{operations.resources.gatherHistory.filters.search}}"
+                  placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Result</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
+                  {{#each operations.resources.gatherHistory.resultOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Type</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
+                  {{#each operations.resources.gatherHistory.resourceOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Environment</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
+                  {{#each operations.resources.gatherHistory.environmentOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Actor</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
+                  {{#each operations.resources.gatherHistory.actorOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row is-sort">
+                <span>Sort</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
+                  {{#each operations.resources.gatherHistory.sortOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+            </div>
+            {{#if operations.resources.gatherHistory.hasRows}}
+            <div class="po-gather-history-wrap">
+              <table class="po-gather-history-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Actor</th>
+                    <th>Environment</th>
+                    <th>Result</th>
+                    <th>Roll</th>
+                    <th>Type</th>
+                    <th>Rations</th>
+                    <th>Notes</th>
+                    {{#if @root.isGM}}
+                    <th>Actions</th>
+                    {{/if}}
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each operations.resources.gatherHistory.rows}}
+                  <tr>
+                    <td>{{timestampLabel}}</td>
+                    <td>{{actorName}}</td>
+                    <td>{{environmentLabel}}</td>
+                    <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
+                    <td>{{rollVsDc}}</td>
+                    <td>{{resourceTypeLabel}}</td>
+                    <td>{{rations}}</td>
+                    <td class="po-gather-history-notes">{{detailsText}}</td>
+                    {{#if @root.isGM}}
+                    <td class="po-gather-history-actions">
+                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
+                    </td>
+                    {{/if}}
+                  </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+            {{else}}
+            <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherHistory.emptyMessage}}</div>
+            {{/if}}
           </div>
-          <div class="po-gather-history-controls">
-            <label class="po-resource-row is-search">
-              <span>Search</span>
-              <input
-                type="text"
-                class="po-input"
-                data-action="set-gather-history-filter"
-                data-filter-key="search"
-                value="{{operations.resources.gatherHistory.filters.search}}"
-                placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Result</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
-                {{#each operations.resources.gatherHistory.resultOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Type</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
-                {{#each operations.resources.gatherHistory.resourceOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Environment</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
-                {{#each operations.resources.gatherHistory.environmentOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Actor</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
-                {{#each operations.resources.gatherHistory.actorOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row is-sort">
-              <span>Sort</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
-                {{#each operations.resources.gatherHistory.sortOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-          </div>
-          {{#if operations.resources.gatherHistory.hasRows}}
-          <div class="po-gather-history-wrap">
-            <table class="po-gather-history-table">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Actor</th>
-                  <th>Environment</th>
-                  <th>Result</th>
-                  <th>Roll</th>
-                  <th>Type</th>
-                  <th>Rations</th>
-                  <th>Notes</th>
-                  {{#if @root.isGM}}
-                  <th>Actions</th>
-                  {{/if}}
-                </tr>
-              </thead>
-              <tbody>
-                {{#each operations.resources.gatherHistory.rows}}
-                <tr>
-                  <td>{{timestampLabel}}</td>
-                  <td>{{actorName}}</td>
-                  <td>{{environmentLabel}}</td>
-                  <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
-                  <td>{{rollVsDc}}</td>
-                  <td>{{resourceTypeLabel}}</td>
-                  <td>{{rations}}</td>
-                  <td class="po-gather-history-notes">{{detailsText}}</td>
-                  {{#if @root.isGM}}
-                  <td class="po-gather-history-actions">
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
-                  </td>
-                  {{/if}}
-                </tr>
-                {{/each}}
-              </tbody>
-            </table>
-          </div>
-          {{else}}
-          <div class="po-op-summary">{{operations.resources.gatherHistory.emptyMessage}}</div>
-          {{/if}}
         </div>
         {{/if}}
 
@@ -983,12 +987,12 @@
 
         <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
-          <div class="po-hint">Set your city, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
+          <div class="po-hint">Set your location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
 
           <div class="po-merchant-showcase">
             <div class="po-merchant-showcase-head">
               <label class="po-resource-row">
-                <span>City</span>
+                <span>Location</span>
                 <select class="po-select" data-action="merchant-select-city">
                   {{#each operations.merchants.settlementOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -1479,6 +1483,7 @@
             <button type="button" class="po-tab" data-action="gm-quick-open-environment">Environment</button>
             <button type="button" class="po-tab" data-action="gm-quick-open-downtime">Downtime</button>
             <button type="button" class="po-tab" data-action="gm-quick-open-merchants">Merchants</button>
+            <button type="button" class="po-tab" data-action="gm-quick-open-audio">Audio</button>
             <button type="button" class="po-tab" data-action="gm-quick-open-loot">Loot</button>
           </div>
           <div class="po-two-col po-gm-quick-panels">

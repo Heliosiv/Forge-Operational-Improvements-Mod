@@ -1,18 +1,21 @@
 #!/usr/bin/env node
 
-const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const MODULE_ID = "party-operations";
-const TAG_SCHEMA = "po-loot-v1";
+const TAG_SCHEMA = "po-loot-v2";
 
 const DEFAULT_DND5E_PACK_PATH = "C:/Users/Kyle/AppData/Local/FoundryVTT/Data/systems/dnd5e/packs/items";
 const DEFAULT_MANIFEST_PATH = path.resolve(process.cwd(), "packs", "party-operations-loot-manifest.db");
 const DEFAULT_REPORT_PATH = path.resolve(process.cwd(), "reports", "dnd5e-manifest-sync-report.json");
 const DEFAULT_SOURCE_COLLECTION = "dnd5e.items";
 const DEFAULT_MANIFEST_COLLECTION = `${MODULE_ID}.party-operations-loot-manifest`;
-const ENRICHMENT_SCHEMA = "po-item-enrichment-v1";
+const ENRICHMENT_SCHEMA = "po-item-enrichment-v2";
 
 const MIDI_QOL_DEFAULTS = Object.freeze({
   rollAttackPerTarget: "default",
@@ -58,6 +61,23 @@ const RARITY_NORMALIZATION = Object.freeze({
   "very-rare": "very-rare",
   legendary: "legendary",
   artifact: "legendary"
+});
+
+const PRICE_DENOMINATION_TO_GP = Object.freeze({
+  pp: 10,
+  gp: 1,
+  ep: 0.5,
+  sp: 0.1,
+  cp: 0.01
+});
+
+const ABILITY_KEY_MAP = Object.freeze({
+  strength: "str",
+  dexterity: "dex",
+  constitution: "con",
+  intelligence: "int",
+  wisdom: "wis",
+  charisma: "cha"
 });
 
 function parseArgs(argv) {
@@ -239,12 +259,74 @@ function getGpValue(item = {}) {
   if (isPlainObject(price)) {
     const amount = Math.max(0, toNumber(price.value ?? price.amount ?? 0));
     const denomRaw = String(price.denomination ?? price.currency ?? "gp").trim().toLowerCase();
-    const denomMap = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
-    const multiplier = toNumber(denomMap[denomRaw] ?? 1) || 1;
+    const multiplier = toNumber(PRICE_DENOMINATION_TO_GP[denomRaw] ?? 1) || 1;
     return Math.max(0, amount * multiplier);
   }
   if (price !== null && price !== undefined) return Math.max(0, toNumber(price));
   return Math.max(0, toNumber(item?.price ?? 0));
+}
+
+function getPriceDenomination(item = {}) {
+  const denomRaw = item?.system?.price?.denomination ?? item?.system?.price?.currency ?? "gp";
+  const normalized = String(denomRaw ?? "gp").trim().toLowerCase();
+  return String(PRICE_DENOMINATION_TO_GP[normalized] ? normalized : "gp");
+}
+
+function setItemPrice(item = {}, amount = 0, denomination = "gp") {
+  const system = ensureObject(item, "system");
+  const price = ensureObject(system, "price");
+  const normalizedAmount = Math.max(0, Number(amount) || 0);
+  const normalizedDenomination = String(denomination ?? "gp").trim().toLowerCase();
+  price.value = Number(normalizedAmount.toFixed(2));
+  price.denomination = PRICE_DENOMINATION_TO_GP[normalizedDenomination] ? normalizedDenomination : "gp";
+}
+
+function setPriceFromGp(item = {}, gpValue = 0) {
+  const normalized = Math.max(0, Number(gpValue) || 0);
+  if (normalized <= 0.09) {
+    setItemPrice(item, Math.max(1, Math.round(normalized * 100)), "cp");
+    return;
+  }
+  if (normalized < 1) {
+    setItemPrice(item, Math.max(1, Math.round(normalized * 10)), "sp");
+    return;
+  }
+  if (normalized >= 1000 && Number.isInteger(normalized / 10)) {
+    setItemPrice(item, normalized / 10, "pp");
+    return;
+  }
+  setItemPrice(item, normalized, "gp");
+}
+
+function ensureItemRarity(item = {}, rarity = "") {
+  const normalized = normalizeRarity(rarity);
+  if (!normalized) return;
+  const system = ensureObject(item, "system");
+  system.rarity = normalized;
+  item.rarity = normalized;
+}
+
+function getNormalizedItemName(item = {}) {
+  return String(item?.name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getDescriptionTextRaw(item = {}) {
+  return stripHtml(item?.system?.description?.value ?? "");
+}
+
+function updateItemDescription(item = {}, updater = null) {
+  if (typeof updater !== "function") return false;
+  const system = ensureObject(item, "system");
+  const description = ensureObject(system, "description");
+  const current = String(description.value ?? "");
+  const next = String(updater(current) ?? "").trim();
+  if (!next || next === current.trim()) return false;
+  description.value = next;
+  return true;
 }
 
 function getSpellLevel(item = {}) {
@@ -327,6 +409,7 @@ function getTierFromRarity(rarity = "") {
 
 function getValueBand(gpValue = 0) {
   const gp = Math.max(0, toNumber(gpValue));
+  if (gp < 5) return "value.v0";
   if (gp <= 49) return "value.v1";
   if (gp <= 149) return "value.v2";
   if (gp <= 749) return "value.v3";
@@ -339,6 +422,136 @@ function sanitizeKeywordSegment(value) {
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
+}
+
+function sourceIdToKeyword(sourceId = "") {
+  const parsed = parseCompendiumSourceId(sourceId);
+  if (!parsed) return "source.world";
+  const normalized = `${parsed.collection}`.replace(/[^a-z0-9]+/gi, ".").toLowerCase();
+  return `source.${normalized}`;
+}
+
+function inferMerchantCategories(item = {}) {
+  const categories = new Set();
+  const type = String(item?.type ?? "").trim().toLowerCase();
+  const subtype = String(item?.system?.type?.value ?? "").trim().toLowerCase();
+  const name = getNormalizedItemName(item);
+  const description = getDescriptionTextRaw(item).toLowerCase();
+
+  if (type) categories.add(type);
+  if (type === "spell") {
+    categories.add("magic");
+    categories.add("arcana");
+  }
+  if (type === "weapon") categories.add("arms");
+  if (type === "equipment") categories.add("outfitting");
+  if (type === "tool") categories.add("tools");
+  if (type === "container") categories.add("storage");
+  if (type === "consumable") categories.add("consumable");
+
+  if (subtype === "potion") categories.add("potion");
+  if (subtype === "poison") categories.add("poison");
+  if (subtype === "food") {
+    categories.add("provisions");
+    categories.add("meal");
+  }
+  if (subtype === "ammo") categories.add("supplies");
+  if (subtype === "instrument") categories.add("instrument");
+  if (["light", "medium", "heavy", "shield"].includes(subtype)) categories.add("armor");
+
+  if (/\b(gem|opal|ruby|sapphire|emerald|diamond|topaz|agate|amethyst|alexandrite|aquamarine|amber|azurite)\b/i.test(name)) {
+    categories.add("gem");
+    categories.add("treasure");
+    categories.add("luxury");
+  }
+  if (/\b(ring|necklace|pendant|broach|brooch|jewelry|jewel|coin|token|charm)\b/i.test(name)) {
+    categories.add("jewelry");
+    categories.add("treasure");
+  }
+  if (/\b(copper|silver|gold|platinum|iron|adamantine|mithril|mithral|ivory)\b/i.test(name)) {
+    categories.add("material");
+  }
+  if (/\b(copper|silver|gold|platinum|iron|adamantine|mithril|mithral)\b/i.test(name)) {
+    categories.add("metal");
+    categories.add("tradegood");
+  }
+  if (/\b(canvas|cotton|linen|silk)\b/i.test(name)) {
+    categories.add("textile");
+    categories.add("tradegood");
+  }
+  if (/\b(saffron|cinnamon|ginger|pepper|cloves|salt|flour|wheat|incense)\b/i.test(name)) {
+    categories.add("ingredient");
+    categories.add("tradegood");
+  }
+  if (/\b(berry|berries|fungus|mushroom|fern|shade|belladonna|ammonita|leaf|finger|dew|feather|herb|herbs|reagent|reagents)\b/i.test(name)) {
+    categories.add("ingredient");
+    categories.add("herb");
+  }
+  if (/\b(raw meat|raw fish|brined meat|stew|meal|ale|rations|waterskin)\b/i.test(name)) {
+    categories.add("provisions");
+  }
+  if (/\b(ale|beer|wine|mead|cider|liquor|whiskey|rum|vodka|brandy|stout)\b/i.test(name)) {
+    categories.add("drink");
+    categories.add("alcohol");
+  }
+  if (/\b(cow|ox|goat|sheep|pig|chicken)\b/i.test(name)) {
+    categories.add("livestock");
+    categories.add("tradegood");
+  }
+  if (/\b(fur|hide|pelt)\b/i.test(name)) {
+    categories.add("hide");
+    categories.add("tradegood");
+  }
+  if (/\b(junk|broken|scrap|twig)\b/i.test(name)) categories.add("salvage");
+  if (/\b(shadow|feywild|elemental|gravitation|lucidity)\b/i.test(name + " " + description)) categories.add("curio");
+  if (/\bportal|rift|feywild\b/i.test(description)) categories.add("travel");
+  if (isMagicItem(item, getRarityFromItem(item))) categories.add("magic");
+
+  return Array.from(categories).sort((left, right) => left.localeCompare(right));
+}
+
+function inferSaleLiquidity(categories = [], gpValue = 0) {
+  const source = Array.isArray(categories) ? categories : [];
+  if (source.includes("salvage")) return "sale.salvage";
+  if (source.includes("livestock") || source.includes("tradegood") || source.includes("provisions")) return "sale.bulk";
+  if (source.includes("treasure") || source.includes("luxury")) return "sale.luxury";
+  if (Math.max(0, Number(gpValue) || 0) >= 5000) return "sale.specialty";
+  return "sale.standard";
+}
+
+function inferLootWeight(item = {}, categories = []) {
+  const rarity = getRarityFromItem(item);
+  const type = String(item?.type ?? "").trim().toLowerCase();
+  const gpValue = getGpValue(item);
+
+  if (type === "spell") return 0.25;
+  if (["legendary", "very-rare"].includes(rarity)) return 0.2;
+  if (rarity === "rare") return 0.35;
+  if (categories.includes("tradegood") || categories.includes("provisions")) return 3;
+  if (categories.includes("gem") || categories.includes("treasure")) return 1.6;
+  if (gpValue <= 5) return 2.5;
+  if (gpValue <= 50) return 1.75;
+  return 1;
+}
+
+function inferMaxRecommendedQty(item = {}, categories = []) {
+  const type = String(item?.type ?? "").trim().toLowerCase();
+  const rarity = getRarityFromItem(item);
+  if (type === "spell") return 1;
+  if (["legendary", "very-rare", "rare"].includes(rarity)) return 1;
+  if (categories.includes("tradegood") || categories.includes("provisions")) return 6;
+  if (categories.includes("ingredient")) return 4;
+  if (categories.includes("gem") || categories.includes("treasure")) return 2;
+  if (type === "consumable") return 3;
+  return 2;
+}
+
+function inferLootEligibility(item = {}, categories = []) {
+  const name = getNormalizedItemName(item);
+  if (name === "unarmed strike") return false;
+  if (name === "improvised weapon") return false;
+  if (categories.includes("salvage") && getGpValue(item) <= 0.1) return false;
+  return true;
 }
 
 function getDamageTypes(item = {}) {
@@ -404,6 +617,10 @@ function buildKeywords(item = {}, metadata = {}) {
   const tier = String(metadata.tier ?? "").trim().toLowerCase();
   const valueBand = String(metadata.valueBand ?? "").trim().toLowerCase();
   const gpValue = Math.max(0, toNumber(metadata.gpValue));
+  const priceDenomination = String(metadata.priceDenomination ?? getPriceDenomination(item)).trim().toLowerCase() || "gp";
+  const merchantCategories = Array.isArray(metadata.merchantCategories) ? metadata.merchantCategories : inferMerchantCategories(item);
+  const saleLiquidity = String(metadata.saleLiquidity ?? inferSaleLiquidity(merchantCategories, gpValue)).trim().toLowerCase();
+  const sourceKeyword = String(metadata.sourceKeyword ?? sourceIdToKeyword(item?.flags?.core?.sourceId ?? "")).trim().toLowerCase();
 
   if (type) keywords.add(`foundryType.${type}`);
   keywords.add("loot");
@@ -413,9 +630,11 @@ function buildKeywords(item = {}, metadata = {}) {
   if (baseItem) keywords.add(`base.${sanitizeKeywordSegment(baseItem)}`);
   if (tier) keywords.add(tier);
   if (valueBand) keywords.add(valueBand);
-  keywords.add("price.gp");
+  keywords.add(`price.${sanitizeKeywordSegment(priceDenomination) || "gp"}`);
   if (item?.system?.attunement === "required") keywords.add("attunement.required");
   if (isMagicItem(item, rarity)) keywords.add("magic.bonus");
+  if (sourceKeyword) keywords.add(sourceKeyword);
+  if (saleLiquidity) keywords.add(saleLiquidity);
 
   const properties = Array.isArray(item?.system?.properties) ? item.system.properties : [];
   for (const prop of properties) {
@@ -430,6 +649,24 @@ function buildKeywords(item = {}, metadata = {}) {
   if (nameLower.includes("ring")) keywords.add("tag.ring");
   if (nameLower.includes("gem")) keywords.add("tag.gem");
   if (nameLower.includes("potion")) keywords.add("tag.potion");
+  for (const category of merchantCategories) {
+    const normalized = sanitizeKeywordSegment(category);
+    if (!normalized) continue;
+    keywords.add(`merchant.${normalized}`);
+  }
+
+  if (type === "spell") {
+    const level = Math.max(0, Math.floor(Number(item?.system?.level) || 0));
+    const school = sanitizeKeywordSegment(item?.system?.school);
+    keywords.add(`spell.level.${level}`);
+    if (school) keywords.add(`spell.school.${school}`);
+    if (properties.some((entry) => String(entry ?? "").trim().toLowerCase() === "concentration")) {
+      keywords.add("spell.concentration");
+    }
+    if (properties.some((entry) => String(entry ?? "").trim().toLowerCase() === "ritual")) {
+      keywords.add("spell.ritual");
+    }
+  }
 
   if (gpValue >= 5000) keywords.add("value.high");
   return Array.from(keywords).sort((left, right) => left.localeCompare(right));
@@ -1033,6 +1270,45 @@ function ensureActivityEffectReference(activity = {}, effectId = "", onSave = fa
   return 1;
 }
 
+function buildMidiBooleanChange(key = "") {
+  return {
+    key: String(key ?? "").trim(),
+    mode: 5,
+    value: "1"
+  };
+}
+
+function extractAbilityOverrideProfile(item = {}) {
+  const descriptionText = getDescriptionTextRaw(item);
+  if (!descriptionText) return null;
+
+  const patterns = [
+    /\byour (strength|dexterity|constitution|intelligence|wisdom|charisma) score is (\d+)\b/i,
+    /\bsets? your (strength|dexterity|constitution|intelligence|wisdom|charisma) score to (\d+)\b/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = descriptionText.match(pattern);
+    if (!match) continue;
+    const abilityKey = ABILITY_KEY_MAP[String(match[1] ?? "").trim().toLowerCase()];
+    const score = Number(match[2]);
+    if (!abilityKey || !Number.isFinite(score) || score <= 0) continue;
+    return { abilityKey, score: Math.floor(score) };
+  }
+
+  const name = String(item?.name ?? "").trim().toLowerCase();
+  if (/gauntlets of ogre power/i.test(name)) return { abilityKey: "str", score: 19 };
+  if (/belt of hill giant strength/i.test(name)) return { abilityKey: "str", score: 21 };
+  if (/belt of stone giant strength/i.test(name)) return { abilityKey: "str", score: 23 };
+  if (/belt of frost giant strength/i.test(name)) return { abilityKey: "str", score: 23 };
+  if (/belt of fire giant strength/i.test(name)) return { abilityKey: "str", score: 25 };
+  if (/belt of cloud giant strength/i.test(name)) return { abilityKey: "str", score: 27 };
+  if (/belt of storm giant strength/i.test(name)) return { abilityKey: "str", score: 29 };
+  if (/amulet of health/i.test(name)) return { abilityKey: "con", score: 19 };
+  if (/headband of intellect/i.test(name)) return { abilityKey: "int", score: 19 };
+  return null;
+}
+
 function extractFlatBonusFromDescription(descriptionText = "", target = "ac") {
   const text = String(descriptionText ?? "").toLowerCase();
   if (!text) return 0;
@@ -1214,6 +1490,101 @@ function appendCommonRulingDescription(item = {}, noteText = "", marker = "", su
   return true;
 }
 
+function applyManifestBalancing(item = {}, summary = null) {
+  const system = ensureObject(item, "system");
+  const descriptionText = getDescriptionTextRaw(item).toLowerCase();
+  const normalizedName = getNormalizedItemName(item);
+  let changed = 0;
+  let pricingSource = "system";
+
+  const renameItem = (nextName) => {
+    const candidate = String(nextName ?? "").trim();
+    if (!candidate || candidate === String(item?.name ?? "").trim()) return;
+    item.name = candidate;
+    changed += 1;
+  };
+
+  const setGpEstimate = (gpValue, options = {}) => {
+    const nextGp = Math.max(0, Number(gpValue) || 0);
+    const currentGp = getGpValue(item);
+    const currentRarity = getRarityFromItem(item);
+    const force = options.force === true;
+    if (force || currentGp <= 0 || Math.abs(currentGp - nextGp) > 0.001) {
+      if (options.denomination) {
+        setItemPrice(item, nextGp, options.denomination);
+      } else {
+        setPriceFromGp(item, nextGp);
+      }
+      changed += 1;
+      pricingSource = options.source ?? "manual";
+    }
+    if (options.rarity && (!currentRarity || force)) {
+      ensureItemRarity(item, options.rarity);
+      changed += 1;
+    }
+  };
+
+  if (system.rarity === "artifact" || item.rarity === "artifact") {
+    ensureItemRarity(item, "legendary");
+    changed += 1;
+  }
+
+  if (normalizedName === "new item" && descriptionText.includes("heart of shadows")) {
+    renameItem("Heart of Shadows");
+    ensureItemRarity(item, "legendary");
+    system.attunement = "required";
+    setGpEstimate(20000, { source: "manual", force: true });
+  } else if (normalizedName === "new item" && item?.type === "loot" && descriptionText.includes("potent herbs")) {
+    renameItem("Faded Ritual Herbs");
+    ensureItemRarity(item, "uncommon");
+    setGpEstimate(25, { source: "manual", force: true });
+  } else if (normalizedName === "new item" && item?.type === "consumable") {
+    renameItem("Scrap Reagents");
+    ensureItemRarity(item, "common");
+    setGpEstimate(0.5, { source: "manual", force: true });
+  }
+
+  if (normalizedName === "twigs") setGpEstimate(0.01, { source: "manual", force: true });
+  if (normalizedName === "jewelry") setGpEstimate(100, { source: "manual", force: true });
+  if (normalizedName === "potion of lucidity") setGpEstimate(350, { source: "manual", force: true, rarity: "rare" });
+  if (normalizedName === "deer hide") setGpEstimate(2, { source: "manual", force: true });
+  if (normalizedName === "dark crow feather") setGpEstimate(5, { source: "manual", force: true });
+  if (normalizedName === "scarlet token") setGpEstimate(25, { source: "manual", force: true, rarity: "uncommon" });
+  if (normalizedName === "incense" && item?.type === "consumable") setGpEstimate(1, { source: "manual", force: true });
+  if (normalizedName === "junk") setGpEstimate(0.01, { source: "manual", force: true });
+  if (normalizedName === "improvised weapon") setGpEstimate(0.1, { source: "manual", force: true });
+  if (normalizedName === "diamond dust") setGpEstimate(25, { source: "manual", force: true, rarity: "uncommon" });
+  if (normalizedName === "powdered silver") setGpEstimate(10, { source: "manual", force: true });
+  if (normalizedName === "cold fire lightning") setGpEstimate(18000, { source: "manual", force: true, rarity: "very-rare" });
+  if (normalizedName === "potion of giants size") setGpEstimate(10000, { source: "manual", force: true, rarity: "legendary" });
+
+  if (item?.type === "spell" && getGpValue(item) <= 0) {
+    setGpEstimate(getSuggestedSpellPriceGp(getSpellLevel(item)), { source: "derived-spell-level", force: true });
+    if (!getRarityFromItem(item)) {
+      ensureItemRarity(item, getSuggestedSpellRarity(getSpellLevel(item)));
+      changed += 1;
+    }
+  }
+
+  if (getGpValue(item) > 0 && !String(system?.price?.denomination ?? "").trim()) {
+    const currentGp = getGpValue(item);
+    setPriceFromGp(item, currentGp);
+    changed += 1;
+  }
+
+  const poFlags = ensureObject(ensureObject(item, "flags"), MODULE_ID);
+  if (poFlags.pricingSource !== pricingSource) {
+    poFlags.pricingSource = pricingSource;
+    changed += 1;
+  }
+
+  if (summary && changed > 0) {
+    summary.manifestBalanceAdjustments += changed;
+    if (pricingSource === "manual") summary.manualPricingOverrides += 1;
+    if (pricingSource === "derived-spell-level") summary.derivedPricingOverrides += 1;
+  }
+}
+
 function ensureSourceMetadata(item = {}, summary = null) {
   const flags = ensureObject(item, "flags");
   const coreFlags = ensureObject(flags, "core");
@@ -1335,12 +1706,48 @@ function ensurePassiveEffects(item = {}, summary = null) {
       }, summary);
       if (result.changed && summary) summary.luckBladeEffectsEnsured += 1;
     }
+
     return;
   }
 
   if (itemType !== "equipment") return;
 
   const equipmentType = String(item?.system?.type?.value ?? "").trim().toLowerCase();
+  const abilityOverride = extractAbilityOverrideProfile(item);
+  if (abilityOverride && !hasEffectChange(item, `system.abilities.${abilityOverride.abilityKey}.value`)) {
+    upsertTransferEffect(item, {
+      slug: `${abilityOverride.abilityKey}-override-${abilityOverride.score}`,
+      name: `${abilityOverride.abilityKey.toUpperCase()} ${abilityOverride.score}`,
+      changes: [{
+        key: `system.abilities.${abilityOverride.abilityKey}.value`,
+        mode: 5,
+        value: String(abilityOverride.score)
+      }]
+    }, summary);
+  }
+
+  if (/sentinel shield/i.test(itemName) && !hasEffectChange(item, "flags.midi-qol.advantage.skill.prc")) {
+    upsertTransferEffect(item, {
+      slug: "sentinel-shield-awareness",
+      name: "Sentinel Awareness",
+      changes: [
+        buildMidiBooleanChange("flags.midi-qol.advantage.skill.prc"),
+        buildMidiBooleanChange("flags.midi-qol.advantage.ability.check.dex")
+      ]
+    }, summary);
+  }
+
+  if (/\b(stone of good luck|luckstone)\b/i.test(itemName) && !hasEffectChange(item, "system.bonuses.abilities.check")) {
+    upsertTransferEffect(item, {
+      slug: "luckstone-bonuses",
+      name: "+1 Checks & Saves",
+      changes: [
+        { key: "system.bonuses.abilities.check", mode: 2, value: "+1" },
+        { key: "system.bonuses.abilities.save", mode: 2, value: "+1" }
+      ]
+    }, summary);
+  }
+
   const isArmorLike = new Set(["light", "medium", "heavy", "shield"]).has(equipmentType);
   if (isArmorLike) return;
 
@@ -1506,6 +1913,123 @@ function ensureMundaneConsumableRules(item = {}, summary = null) {
   if (summary && changed > 0) summary.consumableActivityFieldsPatched += changed;
 }
 
+function ensureCustomConsumableAutomation(item = {}, summary = null) {
+  const itemType = String(item?.type ?? "").trim().toLowerCase();
+  if (itemType !== "consumable") return;
+
+  const itemName = String(item?.name ?? "").trim();
+  const normalizedName = getNormalizedItemName(item);
+  if (!itemName) return;
+
+  let changed = 0;
+
+  const ensureAppliedUtility = (options = {}) => {
+    const utilityEntry = ensureActivityByType(item, "utility", (activityId, sort) => (
+      buildGenericUtilityActivity(item, activityId, sort)
+    ), summary);
+    const utility = utilityEntry.activity;
+    tuneActivity(utility, summary);
+    if (assignIfChanged(utility, "name", String(options.activityName ?? `Use ${itemName}`))) changed += 1;
+    const utilityDescription = ensureObject(utility, "description");
+    if (assignIfChanged(utilityDescription, "chatFlavor", String(options.chatFlavor ?? `Use ${itemName}.`))) changed += 1;
+    changed += ensureActivityActivation(utility, { type: "action", value: 1, condition: "" });
+    changed += ensureItemUsesConsumptionTarget(utility, "1");
+    changed += ensureSingleWillingTarget(utility, "touch");
+
+    const effectResult = upsertAppliedEffect(item, {
+      slug: String(options.slug ?? normalizedName ?? "custom-effect"),
+      name: String(options.effectName ?? itemName),
+      seconds: Number(options.seconds ?? 3600),
+      description: String(options.effectDescription ?? ""),
+      changes: Array.isArray(options.changes) ? options.changes : [],
+      matcher: options.matcher
+    }, summary);
+    changed += ensureActivityEffectReference(utility, effectResult.effectId);
+  };
+
+  if (normalizedName === "potion of lucidity") {
+    ensureAppliedUtility({
+      slug: "lucidity",
+      activityName: "Drink Potion of Lucidity",
+      chatFlavor: "Drink the Essence of Lucidity.",
+      effectName: "Lucidity",
+      seconds: 3600,
+      effectDescription: "Advantage on Wisdom checks for 1 hour.",
+      changes: [buildMidiBooleanChange("flags.midi-qol.advantage.ability.check.wis")],
+      matcher: (effect) => /\blucidity\b/i.test(String(effect?.name ?? ""))
+    });
+    appendCommonRulingDescription(
+      item,
+      "When opened, the potion may release a harmless but pungent smoke that can alert nearby creatures.",
+      "lucidity-smoke",
+      summary
+    );
+  }
+
+  if (normalizedName === "potion of giants size") {
+    ensureAppliedUtility({
+      slug: "giant-size",
+      activityName: "Drink Potion of Giant Size",
+      chatFlavor: "Drink the Potion of Giant Size.",
+      effectName: "Giant Size",
+      seconds: 86400,
+      effectDescription: "Automation covers Strength check/save advantage; size, reach, and carrying capacity changes remain a table-side ruling.",
+      changes: [
+        buildMidiBooleanChange("flags.midi-qol.advantage.ability.check.str"),
+        buildMidiBooleanChange("flags.midi-qol.advantage.ability.save.str")
+      ],
+      matcher: (effect) => /\bgiant size\b/i.test(String(effect?.name ?? ""))
+    });
+    appendCommonRulingDescription(
+      item,
+      "Automation covers the Strength-facing buff. Size, reach, temporary hit points, and carrying-capacity changes should still be adjudicated at the table.",
+      "giant-size-ruling",
+      summary
+    );
+  }
+
+  const mealProfiles = {
+    "brined meat": { effectName: "Well Fed (Low)", tempHp: 1, seconds: 28800 },
+    "strange meat": { effectName: "Well Fed", tempHp: 1, seconds: 28800 },
+    "hearty stew": { effectName: "Well Fed", tempHp: 2, seconds: 28800 },
+    "well made meal": { effectName: "Well Fed (Med)", tempHp: 3, seconds: 28800 },
+    "lavish meal": { effectName: "Well Fed (High)", tempHp: 5, seconds: 28800 }
+  };
+  const matchedMeal = Object.entries(mealProfiles).find(([key]) => normalizedName.includes(key));
+  if (matchedMeal) {
+    const [, profile] = matchedMeal;
+    ensureAppliedUtility({
+      slug: `meal-${sanitizeKeywordSegment(profile.effectName)}`,
+      activityName: `Eat ${itemName}`,
+      chatFlavor: `Eat ${itemName}.`,
+      effectName: profile.effectName,
+      seconds: profile.seconds,
+      effectDescription: `Gain ${profile.tempHp} temporary hit points for 8 hours.`,
+      changes: [{
+        key: "system.attributes.hp.temp",
+        mode: 5,
+        value: String(profile.tempHp)
+      }],
+      matcher: (effect) => /\bwell fed\b/i.test(String(effect?.name ?? ""))
+    });
+  }
+
+  if (normalizedName === "airship supplies") {
+    ensureAppliedUtility({
+      slug: "airship-supplies",
+      activityName: "Apply Airship Supplies",
+      chatFlavor: "Use one bundle of airship supplies for maintenance.",
+      effectName: "Well Maintained",
+      seconds: 86400,
+      effectDescription: "Represents a fresh round of airship maintenance.",
+      changes: [{ key: "StatusEffectName", mode: 0, value: "Well Maintained" }],
+      matcher: (effect) => /\bwell maintained\b/i.test(String(effect?.name ?? ""))
+    });
+  }
+
+  if (summary && changed > 0) summary.consumableActivityFieldsPatched += changed;
+}
+
 function stampEnrichmentDetails(item = {}, summary = null) {
   const flags = ensureObject(item, "flags");
   const poFlags = ensureObject(flags, MODULE_ID);
@@ -1533,12 +2057,14 @@ function stampEnrichmentDetails(item = {}, summary = null) {
 }
 
 function enrichManifestItem(item = {}, summary = null) {
+  applyManifestBalancing(item, summary);
   ensureSourceMetadata(item, summary);
   tuneEnhancedWeaponItem(item, summary);
   ensureDescription(item, summary);
   ensureActivityCoverage(item, summary);
   ensurePassiveEffects(item, summary);
   ensureMundaneConsumableRules(item, summary);
+  ensureCustomConsumableAutomation(item, summary);
   stampEnrichmentDetails(item, summary);
 }
 
@@ -1550,6 +2076,34 @@ function normalizeItemFlags(item, summary) {
   summary.itemMidiDefaults += applyDefaults(itemMidi, MIDI_QOL_DEFAULTS);
   summary.itemDaeDefaults += applyDefaults(itemDae, DAE_DEFAULTS);
   summary.itemMidiPropertiesDefaults += applyDefaults(itemMidiProps, MIDI_PROPERTIES_DEFAULTS);
+}
+
+function normalizeLegacyEffectChanges(effect = {}, summary = null) {
+  const changes = Array.isArray(effect?.changes) ? effect.changes : [];
+  let changed = 0;
+
+  for (const change of changes) {
+    if (!isPlainObject(change)) continue;
+    const key = String(change?.key ?? "").trim();
+    const abilityCheckMatch = key.match(/^data\.abilities\.(str|dex|con|int|wis|cha)\.check\.adv$/i);
+    if (abilityCheckMatch) {
+      change.key = `flags.midi-qol.advantage.ability.check.${String(abilityCheckMatch[1]).toLowerCase()}`;
+      change.mode = 5;
+      change.value = "1";
+      changed += 1;
+      continue;
+    }
+
+    const abilitySaveMatch = key.match(/^data\.abilities\.(str|dex|con|int|wis|cha)\.save\.adv$/i);
+    if (abilitySaveMatch) {
+      change.key = `flags.midi-qol.advantage.ability.save.${String(abilitySaveMatch[1]).toLowerCase()}`;
+      change.mode = 5;
+      change.value = "1";
+      changed += 1;
+    }
+  }
+
+  if (summary && changed > 0) summary.legacyEffectKeysNormalized += changed;
 }
 
 function normalizeEffects(item, summary) {
@@ -1603,6 +2157,7 @@ function normalizeEffects(item, summary) {
   for (const effect of normalizedEffects) {
     if (!isPlainObject(effect)) continue;
     summary.effectCount += 1;
+    normalizeLegacyEffectChanges(effect, summary);
     const flags = ensureObject(effect, "flags");
     const midi = ensureObject(flags, "midi-qol");
     const dae = ensureObject(flags, "dae");
@@ -1625,8 +2180,25 @@ function stampPartyOperationsMetadata(item, summary, options = {}) {
   const lootType = classifyLootType(item, rarity);
   const tier = getTierFromRarity(rarity);
   const valueBand = getValueBand(gpValue);
+  const priceDenomination = getPriceDenomination(item);
+  const merchantCategories = inferMerchantCategories(item);
+  const saleLiquidity = inferSaleLiquidity(merchantCategories, gpValue);
+  const sourceKeyword = sourceIdToKeyword(coreFlags.sourceId ?? "");
+  const lootWeight = inferLootWeight(item, merchantCategories);
+  const maxRecommendedQty = inferMaxRecommendedQty(item, merchantCategories);
+  const lootEligible = inferLootEligibility(item, merchantCategories);
   const taggedAt = new Date().toISOString();
-  const keywords = buildKeywords(item, { rarity, gpValue, lootType, tier, valueBand });
+  const keywords = buildKeywords(item, {
+    rarity,
+    gpValue,
+    lootType,
+    tier,
+    valueBand,
+    priceDenomination,
+    merchantCategories,
+    saleLiquidity,
+    sourceKeyword
+  });
 
   const poFlags = ensureObject(flags, MODULE_ID);
   poFlags.keywords = keywords;
@@ -1635,6 +2207,13 @@ function stampPartyOperationsMetadata(item, summary, options = {}) {
   poFlags.rarityNormalized = rarity;
   poFlags.gpValue = gpValue;
   poFlags.valueBand = valueBand;
+  poFlags.priceDenomination = priceDenomination;
+  poFlags.merchantCategories = merchantCategories;
+  poFlags.saleLiquidity = saleLiquidity;
+  poFlags.lootWeight = Number(lootWeight.toFixed(2));
+  poFlags.maxRecommendedQty = maxRecommendedQty;
+  poFlags.lootEligible = lootEligible;
+  poFlags.sellValueGp = Number((gpValue * 0.5).toFixed(2));
   poFlags.taggedAt = taggedAt;
   poFlags.tagSchema = TAG_SCHEMA;
 
@@ -1795,7 +2374,11 @@ async function main() {
     luckBladeEffectsEnsured: 0,
     genericAcEffectsEnsured: 0,
     genericSaveEffectsEnsured: 0,
-    detailFieldsFilled: 0
+    detailFieldsFilled: 0,
+    manifestBalanceAdjustments: 0,
+    manualPricingOverrides: 0,
+    derivedPricingOverrides: 0,
+    legacyEffectKeysNormalized: 0
   };
 
   const importedPreview = [];
@@ -1830,11 +2413,7 @@ async function main() {
     normalizeItemFlags(manifestItem, summary);
     enrichManifestItem(manifestItem, summary);
     normalizeEffects(manifestItem, summary);
-    const hasTaggedMetadata = Array.isArray(manifestItem?.flags?.[MODULE_ID]?.keywords)
-      && manifestItem.flags[MODULE_ID].keywords.length > 0;
-    if (!hasTaggedMetadata) {
-      stampPartyOperationsMetadata(manifestItem, summary, { collection: args.collection });
-    }
+    stampPartyOperationsMetadata(manifestItem, summary, { collection: args.collection });
   }
 
   const output = {

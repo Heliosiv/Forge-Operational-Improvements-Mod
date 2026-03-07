@@ -15,9 +15,28 @@ export function createGmAudioPageApp(deps) {
     setAudioLibraryFilterField,
     setAudioLibraryView,
     selectAudioLibraryTrack,
+    toggleAudioLibraryTrackSelection,
+    selectVisibleAudioLibraryTracks,
+    clearAudioLibraryTrackSelections,
     selectAudioMixPreset,
+    createAudioMixPresetFromSelection,
+    promptAndUpdateSelectedAudioMixPresetField,
+    setSelectedAudioMixPresetOption,
+    deleteSelectedAudioMixPreset,
+    addTrackToSelectedAudioMixPreset,
+    addSelectedLibraryTrackToAudioMixPreset,
+    clearSelectedAudioMixPresetTrackList,
+    hideAudioLibraryTrack,
+    hideSelectedAudioLibraryTracks,
+    queueSelectedTrackNext,
+    moveTrackWithinSelectedAudioMixPreset,
+    removeTrackFromSelectedAudioMixPreset,
+    restoreAllHiddenAudioLibraryTracks,
+    restoreHiddenAudioLibraryTrack,
     playSelectedAudioMixPreset,
     playSelectedAudioMixCandidate,
+    playNextAudioMixTrack,
+    restartCurrentAudioMixTrack,
     stopAudioMixPlayback,
     openGmPanelByKey
   } = deps;
@@ -56,7 +75,9 @@ export function createGmAudioPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return action === "set-audio-library-draft-field" || action === "set-audio-library-filter";
+      return action === "set-audio-library-draft-field"
+        || action === "set-audio-library-filter"
+        || action === "set-audio-mix-preset-option";
     }
 
     _getActionHandlers() {
@@ -97,14 +118,71 @@ export function createGmAudioPageApp(deps) {
         "select-audio-track": rerenderAlways((actionElement) => {
           selectAudioLibraryTrack(actionElement);
         }),
+        "toggle-audio-track-selection": rerenderAlways((actionElement) => {
+          toggleAudioLibraryTrackSelection(actionElement);
+        }),
+        "select-visible-audio-tracks": rerenderAlways(() => {
+          selectVisibleAudioLibraryTracks();
+        }),
+        "clear-selected-audio-tracks": rerenderAlways(() => {
+          clearAudioLibraryTrackSelections();
+        }),
         "select-audio-mix-preset": rerenderAlways((actionElement) => {
           selectAudioMixPreset(actionElement);
+        }),
+        "create-audio-mix-preset": rerenderAlways(() => {
+          return createAudioMixPresetFromSelection();
+        }),
+        "edit-audio-mix-preset-field": rerenderAlways((actionElement) => {
+          return promptAndUpdateSelectedAudioMixPresetField(actionElement?.dataset?.field);
+        }),
+        "set-audio-mix-preset-option": rerenderUnlessInput((actionElement) => {
+          return setSelectedAudioMixPresetOption(actionElement);
+        }),
+        "delete-audio-mix-preset": rerenderAlways(() => {
+          return deleteSelectedAudioMixPreset();
+        }),
+        "add-audio-mix-track": rerenderAlways((actionElement) => {
+          return addTrackToSelectedAudioMixPreset(actionElement?.dataset?.trackId);
+        }),
+        "add-selected-audio-track-to-mix": rerenderAlways(() => {
+          return addSelectedLibraryTrackToAudioMixPreset();
+        }),
+        "clear-audio-mix-track-list": rerenderAlways(() => {
+          return clearSelectedAudioMixPresetTrackList();
+        }),
+        "hide-audio-track": rerenderAlways((actionElement) => {
+          return hideAudioLibraryTrack(actionElement?.dataset?.trackId);
+        }),
+        "hide-selected-audio-tracks": rerenderAlways(() => {
+          return hideSelectedAudioLibraryTracks();
+        }),
+        "queue-selected-audio-track-next": rerenderAlways((actionElement) => {
+          return queueSelectedTrackNext(actionElement);
+        }),
+        "move-audio-mix-track": rerenderAlways((actionElement) => {
+          return moveTrackWithinSelectedAudioMixPreset(actionElement?.dataset?.trackId, actionElement?.dataset?.direction);
+        }),
+        "remove-audio-mix-track": rerenderAlways((actionElement) => {
+          return removeTrackFromSelectedAudioMixPreset(actionElement?.dataset?.trackId);
+        }),
+        "restore-hidden-audio-track": rerenderAlways((actionElement) => {
+          return restoreHiddenAudioLibraryTrack(actionElement?.dataset?.trackId);
+        }),
+        "restore-all-hidden-audio-tracks": rerenderAlways(() => {
+          return restoreAllHiddenAudioLibraryTracks();
         }),
         "play-audio-mix": rerenderAlways(() => {
           return playSelectedAudioMixPreset();
         }),
         "play-audio-mix-candidate": rerenderAlways((actionElement) => {
           return playSelectedAudioMixCandidate(actionElement);
+        }),
+        "play-audio-mix-next": rerenderAlways(() => {
+          return playNextAudioMixTrack();
+        }),
+        "restart-audio-mix-track": rerenderAlways(() => {
+          return restartCurrentAudioMixTrack();
         }),
         "stop-audio-mix": rerenderAlways(() => {
           return stopAudioMixPlayback();

@@ -276,9 +276,53 @@
   text-align: left;
 }
 
+.party-operations .po-audio-track-row.is-bulk-selected {
+  border-color: color-mix(in srgb, var(--po-accent) 60%, var(--po-border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-accent) 35%, transparent);
+}
+
 .party-operations .po-audio-track-row.is-selected {
   border-color: var(--po-neon-green);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 55%, transparent);
+}
+
+.party-operations .po-audio-library-row {
+  align-items: stretch;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-audio-track-checkbox {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.party-operations .po-audio-track-checkbox input {
+  margin: 0;
+}
+
+.party-operations .po-audio-track-select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--po-space-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.party-operations .po-audio-track-select-button:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--po-neon-green) 75%, transparent);
+  outline-offset: 2px;
+  border-radius: calc(var(--po-radius) - 2px);
+}
+
+.party-operations .po-audio-results-toolbar {
+  flex-wrap: wrap;
 }
 
 .party-operations .po-audio-track-main {
@@ -4111,17 +4155,18 @@
 .party-operations .po-window[data-main-tab="gm"] .po-tabs.po-gm-panel-tabs,
 .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs,
 .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .party-operations .po-window[data-main-tab="gm"] .po-tabs.po-gm-panel-tabs .po-tab,
 .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs .po-tab,
 .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 1 auto;
   min-width: 0;
   min-height: 30px;
   padding: 3px 10px;
@@ -4144,14 +4189,16 @@
 }
 
 .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px;
+  align-items: flex-start;
 }
 
 .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 1 auto;
   min-width: 0;
   min-height: 30px;
   padding: 3px 10px;
@@ -4373,6 +4420,72 @@
   padding: 3px 10px;
 }
 
+.party-operations [data-tool="gm-merchants"] .po-merchant-city-editor-grid {
+  grid-template-columns: minmax(280px, 0.75fr) minmax(0, 1.25fr);
+  gap: 10px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-city-catalog-list {
+  display: grid;
+  gap: 8px;
+  max-height: 620px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-city-catalog-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 30%, var(--po-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-card-head {
+  display: grid;
+  gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-name-row,
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-add-row {
+  grid-template-columns: 78px minmax(0, 1fr);
+  margin: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-row-actions,
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-row-assignment {
+  gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-row-assignment {
+  align-items: end;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-assigned-list {
+  display: grid;
+  gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-assigned-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-surface) 76%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-location-assigned-item > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .party-operations [data-tool="gm-merchants"] .po-merchant-definition-grid {
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 10px;
@@ -4430,6 +4543,34 @@
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-session-toolbar .po-btn {
   width: auto;
+}
+
+@media (max-width: 980px) {
+  .party-operations [data-tool="gm-merchants"] .po-merchant-city-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs .po-tab {
+    flex: 1 1 calc(50% - 6px);
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .party-operations [data-tool="gm-merchants"] .po-merchant-location-assigned-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .party-operations .po-window[data-main-tab="gm"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-merchants"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-loot"] .po-tabs.po-gm-panel-tabs .po-tab,
+  .party-operations [data-tool="gm-merchants"] .po-tabs.po-merchant-view-tabs .po-tab {
+    flex-basis: 100%;
+  }
 }
 
 :is(.window-app, .application).party-operations.po-merchant-shop-dialog-app > .window-content {
@@ -4918,8 +5059,16 @@
   gap: 6px;
 }
 
+.party-operations .po-window[data-tool] .po-op-action-row,
+.party-operations .po-window[data-tool] .po-controls {
+  align-items: flex-start;
+}
+
 .party-operations .po-window[data-tool] .po-op-action-row .po-btn,
 .party-operations .po-window[data-tool] .po-controls .po-btn {
+  width: auto;
+  flex: 0 0 auto;
+  max-width: 100%;
   min-height: 30px;
   padding: 3px 10px;
 }
@@ -5058,11 +5207,11 @@
   .po-window[data-tool="gm-merchants"],
   .po-window[data-tool="gm-loot"]
 ) .po-tabs.po-gm-panel-tabs {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px;
-  align-items: stretch;
+  align-items: flex-start;
 }
 
 .party-operations :is(
@@ -5072,7 +5221,8 @@
   .po-window[data-tool="gm-merchants"],
   .po-window[data-tool="gm-loot"]
 ) .po-tabs.po-gm-panel-tabs .po-tab {
-  width: 100%;
+  width: auto;
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
 }
@@ -5497,7 +5647,7 @@
 }
 
 .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-preview-items-grid {
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -5763,7 +5913,7 @@
 
 .party-operations .po-window[data-tool="gm-loot"] .po-gm-loot-builder-item-card {
   padding: 12px;
-  gap: 0;
+  gap: 8px;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-card-head {
@@ -5784,8 +5934,10 @@
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-copy {
   min-width: 0;
-  display: grid;
-  gap: 6px;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-name-row {
@@ -5795,10 +5947,56 @@
   gap: 6px;
 }
 
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-name-row .po-op-role-name {
+  line-height: 1.2;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-tags {
+  gap: 4px;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-value {
+  margin-top: auto;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-source {
+  margin: 0;
+  font-size: 0.64rem;
+  line-height: 1.1;
+  color: color-mix(in srgb, var(--po-muted) 78%, black);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions {
   display: grid;
   gap: 6px;
   justify-items: end;
+}
+
+@media (min-width: 1360px) {
+  .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-preview-items-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1760px) {
+  .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-preview-items-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-preview-items-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-preview-items-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-roll-grid,
@@ -6093,6 +6291,81 @@
   padding: 8px 10px;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-shell {
+  gap: 12px;
+  padding: 12px;
+  border-color: color-mix(in srgb, var(--po-border-strong) 42%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #0f151c 88%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent)),
+    repeating-linear-gradient(90deg, transparent 0 58px, color-mix(in srgb, var(--po-border) 22%, transparent) 58px 60px),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 100% 100%, 720px 720px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent), 0 16px 36px color-mix(in srgb, black 18%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-console,
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-console {
+  grid-template-columns: minmax(0, 1.18fr) minmax(300px, 0.82fr);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-strip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 46%, var(--po-border));
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 88%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent)),
+    linear-gradient(90deg, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 16%);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-strip::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(90deg, var(--po-neon-green), color-mix(in srgb, var(--po-accent) 80%, white 20%));
+  opacity: 0.72;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-strip-live {
+  justify-content: flex-start;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-actions {
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-actions .po-btn {
+  min-width: 108px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-console-drawer {
+  border-color: color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 78%, transparent);
+}
+
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-grid {
   grid-template-columns: minmax(320px, 0.92fr) minmax(360px, 1.08fr);
   gap: 12px;
@@ -6121,7 +6394,7 @@
   gap: 6px;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 3px;
@@ -6129,13 +6402,13 @@
   margin: 0;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row > span {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row > span {
   margin: 0;
   font-size: 0.68rem;
   line-height: 1.1;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row :is(.po-input, .po-select) {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row :is(.po-input, .po-select) {
   width: 100%;
   min-width: 0;
   min-height: 30px;
@@ -6154,9 +6427,14 @@
   padding: 2px 10px;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-management-actions .po-btn,
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-actions .po-btn {
-  min-width: 112px;
+  min-width: 0;
   justify-content: center;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-toolbar {
+  margin-bottom: 6px;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-filters-card .po-audio-chip-list {
@@ -6235,6 +6513,121 @@
   max-width: 72ch;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-custom-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 198, 255, 0.14);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+  max-width: 280px;
+  position: relative;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions .po-btn {
+  min-height: 24px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options {
+  position: relative;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options > summary::-webkit-details-marker {
+  display: none;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options > summary::marker {
+  content: "";
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 1px 9px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 46%, var(--po-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
+  color: var(--po-muted);
+  font-size: 0.72rem;
+  line-height: 1.1;
+  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options[open] .po-audio-row-options-toggle,
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options:hover .po-audio-row-options-toggle {
+  border-color: color-mix(in srgb, var(--po-accent) 62%, var(--po-border-strong));
+  color: var(--po-accent-contrast);
+  background: color-mix(in srgb, var(--po-accent) 16%, var(--po-bg-alt));
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 3;
+  display: grid;
+  gap: 4px;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 46%, var(--po-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--po-bg-alt) 96%, transparent);
+  box-shadow: 0 12px 24px color-mix(in srgb, black 20%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options-menu .po-btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-assigned-list .po-audio-track-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-hidden-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-hidden-list {
+  max-height: 220px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-card .po-section-title + .po-audio-track-list {
+  margin-top: 6px;
+}
+
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-player {
   width: 100%;
   min-height: 34px;
@@ -6243,13 +6636,42 @@
 @media (max-width: 1280px) {
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-hero,
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-grid,
-  .party-operations .po-window[data-tool="gm-audio"] .po-audio-results-grid {
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-results-grid,
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-console,
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
+    max-width: none;
+    justify-content: flex-start;
   }
 }
 
 @media (max-width: 820px) {
-  .party-operations .po-window[data-tool="gm-audio"] .po-audio-preset-list {
-    grid-template-columns: 1fr;
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-head {
+    flex-direction: column;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-console-actions .po-btn {
+    min-width: 0;
+    flex: 1 1 140px;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
+    max-width: none;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options-menu {
+    left: 0;
+    right: auto;
   }
 }

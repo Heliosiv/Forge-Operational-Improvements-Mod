@@ -72,6 +72,7 @@
         <div class="po-loot-claim-tags">
           {{#if hasRarity}}<span class="po-pill">Rarity: {{rarity}}</span>{{/if}}
           {{#if hasQuantity}}<span class="po-pill">Qty: {{quantity}}</span>{{/if}}
+          {{#if hasItemValue}}<span class="po-pill">Value: {{itemValueLabel}}</span>{{/if}}
           <span class="po-pill">Source: {{sourceLabel}}</span>
           {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
           {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">Selected actor vouched</span>{{/if}}

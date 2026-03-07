@@ -7,7 +7,9 @@ export function registerPartyOpsDataSettings({
   buildDefaultOperationsLedger,
   buildDefaultInjuryRecoveryState,
   buildDefaultLootSourceConfig,
-  buildDefaultAudioLibraryCatalog
+  buildDefaultAudioLibraryCatalog,
+  buildDefaultAudioLibraryHiddenTrackStore,
+  buildDefaultAudioMixPresetStore
 } = {}) {
   game.settings.register(moduleId, settings.REST_STATE, {
     scope: "world",
@@ -91,5 +93,19 @@ export function registerPartyOpsDataSettings({
     config: false,
     type: Object,
     default: buildDefaultAudioLibraryCatalog()
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_LIBRARY_HIDDEN_TRACKS, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultAudioLibraryHiddenTrackStore()
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_MIX_PRESETS, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultAudioMixPresetStore()
   });
 }
