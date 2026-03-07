@@ -9434,6 +9434,16 @@ export const GmAudioPageApp = createGmAudioPageApp({
   setAudioLibraryView,
   setAudioLibraryDraftField,
   openAudioLibraryRootPicker,
+  uploadLocalAudioFolderToLibrary: async () => {
+    try {
+      clearAudioLibraryError();
+      await uploadLocalAudioFolderToLibrary();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio library upload failed: ${message}`);
+    }
+  },
   scanConfiguredAudioLibrary: async () => {
     try {
       clearAudioLibraryError();
@@ -9502,6 +9512,8 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootRarityFloor,
   setLootRarityCeiling,
   setLootManifestPack,
+  importLootManifestCompendiumToWorld,
+  clearLootManifestImportedWorldItems,
   setLootKeywordIncludeTags,
   setLootKeywordExcludeTags,
   resetLootSourceConfig,
@@ -10833,7 +10845,7 @@ function buildAudioLibraryPathHelpText(path = "") {
   const normalizedPath = normalizeAudioLibraryRootPath(path);
   if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
   if (isAbsoluteWindowsFilesystemPath(path)) {
-    return "This must be a Foundry or Forge asset path, not a local D:\\ path. After uploading, use a server path like music/Fantasy Complete II MP3.";
+    return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
   }
   return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
 }
@@ -11047,6 +11059,90 @@ function isAudioLibraryFile(path) {
   return AUDIO_LIBRARY_EXTENSIONS.some((extension) => normalized.endsWith(`.${extension}`));
 }
 
+function normalizeAudioLibraryDirectorySelection(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "";
+  if (!isAudioLibraryFile(normalizedPath)) return normalizedPath;
+  const segments = normalizedPath.split("/").filter(Boolean);
+  segments.pop();
+  return segments.join("/");
+}
+
+function getAudioLibraryPickerCurrentPath(path = "") {
+  if (isAbsoluteWindowsFilesystemPath(path)) return "";
+  return normalizeAudioLibraryDirectorySelection(path);
+}
+
+function getAudioLibraryUploadRelativePath(file) {
+  const rawPath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!rawPath) return "";
+  const segments = rawPath.split("/").filter(Boolean);
+  if (segments.length <= 1) return segments[0] ?? "";
+  return segments.slice(1).join("/");
+}
+
+function isUploadableAudioLibraryFile(file) {
+  const candidatePath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!candidatePath) return false;
+  const basename = String(candidatePath.split("/").pop() ?? "").trim();
+  if (!basename || basename.startsWith("._") || basename === ".DS_Store") return false;
+  return isAudioLibraryFile(candidatePath);
+}
+
+function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return normalizeAudioLibraryDirectorySelection(normalizedRootPath);
+  }
+  const normalizedFolderName = normalizeAudioLibraryRootPath(localFolderName).split("/").filter(Boolean).pop() ?? "";
+  const fallbackFolderName = normalizedFolderName || "audio-library";
+  return normalizeAudioLibraryRootPath(`music/${fallbackFolderName}`);
+}
+
+function getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const relative = normalizeAudioLibraryRootPath(relativePath);
+  if (!relative) return root;
+  const segments = relative.split("/").filter(Boolean);
+  segments.pop();
+  if (segments.length <= 0) return root;
+  return normalizeAudioLibraryRootPath(`${root}/${segments.join("/")}`);
+}
+
+function buildAudioLibraryUploadDirectories(destinationRoot, relativePaths = []) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const directories = new Set(root ? [root] : []);
+  for (const relativePath of Array.isArray(relativePaths) ? relativePaths : []) {
+    const normalizedRelativePath = normalizeAudioLibraryRootPath(relativePath);
+    if (!normalizedRelativePath) continue;
+    const parts = normalizedRelativePath.split("/").filter(Boolean);
+    parts.pop();
+    let current = root;
+    for (const part of parts) {
+      current = normalizeAudioLibraryRootPath(`${current}/${part}`);
+      if (current) directories.add(current);
+    }
+  }
+  return Array.from(directories).sort((left, right) => left.split("/").length - right.split("/").length);
+}
+
+function isExistingDirectoryError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  return message.includes("already exists") || message.includes("eexist");
+}
+
+async function ensureAudioLibraryUploadDirectories(source, destinationRoot, relativePaths = []) {
+  const directories = buildAudioLibraryUploadDirectories(destinationRoot, relativePaths);
+  for (const directory of directories) {
+    if (!directory) continue;
+    try {
+      await FilePicker.createDirectory(source, directory);
+    } catch (error) {
+      if (isExistingDirectoryError(error)) continue;
+      throw error;
+    }
+  }
+}
 async function browseAudioLibraryTree(source, rootPath) {
   const queue = [normalizeAudioLibraryRootPath(rootPath)];
   const visited = new Set();
@@ -11153,11 +11249,12 @@ async function openAudioLibraryRootPicker() {
   const { source, rootPath } = getAudioLibraryDraftState();
   return new Promise((resolve) => {
     const picker = new FilePicker({
-      type: "folder",
+      type: "audio",
       activeSource: source,
-      current: rootPath || "",
+      current: getAudioLibraryPickerCurrentPath(rootPath),
       callback: (selectedPath) => {
-        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(selectedPath);
+        audioLibraryUiState.draft.source = normalizeAudioLibrarySource(picker.activeSource ?? source);
+        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(selectedPath);
         clearAudioLibraryError();
         resolve(true);
       }
@@ -11166,6 +11263,85 @@ async function openAudioLibraryRootPicker() {
   });
 }
 
+async function uploadLocalAudioFolderToLibrary() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can upload audio asset folders.");
+    return false;
+  }
+
+  const { source, rootPath } = getAudioLibraryDraftState();
+  const activeSource = normalizeAudioLibrarySource(source);
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    let settled = false;
+    const finalize = (result, error = null) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(result);
+    };
+
+    input.type = "file";
+    input.multiple = true;
+    input.accept = AUDIO_LIBRARY_EXTENSIONS.map((extension) => `.${extension}`).join(",");
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.addEventListener("change", () => {
+      void (async () => {
+        try {
+          const selectedFiles = Array.from(input.files ?? []).filter((file) => isUploadableAudioLibraryFile(file));
+          if (selectedFiles.length <= 0) {
+            finalize(false);
+            return;
+          }
+
+          const localRootName = String(selectedFiles[0]?.webkitRelativePath ?? "")
+            .split(/[\\/]/)
+            .filter(Boolean)[0] ?? "";
+          const destinationRoot = buildAudioLibraryUploadRootPath(rootPath, localRootName);
+          const relativePaths = selectedFiles
+            .map((file) => getAudioLibraryUploadRelativePath(file))
+            .filter(Boolean);
+
+          await ensureAudioLibraryUploadDirectories(activeSource, destinationRoot, relativePaths);
+
+          let uploadedCount = 0;
+          for (const file of selectedFiles) {
+            const relativePath = getAudioLibraryUploadRelativePath(file);
+            const destinationDirectory = getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath);
+            await FilePicker.upload(activeSource, destinationDirectory, file, {}, { notify: false });
+            uploadedCount += 1;
+          }
+
+          audioLibraryUiState.draft.source = activeSource;
+          audioLibraryUiState.draft.rootPath = destinationRoot;
+          clearAudioLibraryError();
+          notifyUiInfoThrottled(`Uploaded ${uploadedCount} audio file(s) to ${destinationRoot}.`, {
+            key: "audio-library-upload-complete",
+            ttlMs: 2200
+          });
+          await scanAudioLibraryCatalog({ source: activeSource, rootPath: destinationRoot });
+          finalize(true);
+        } catch (error) {
+          finalize(false, error);
+        }
+      })();
+    }, { once: true });
+
+    input.addEventListener("cancel", () => {
+      finalize(false);
+    }, { once: true });
+
+  input.click();
+  });
+}
 function setAudioLibraryFilterField(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   if (!field) return;
@@ -12108,6 +12284,528 @@ function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
       lootManifestFolderSyncPromise = null;
     });
   return lootManifestFolderSyncPromise;
+}
+
+function getDocumentFolderParentId(entry) {
+  return String(entry?.folder?.id ?? entry?.folder ?? entry?.parent?.id ?? entry?.parent ?? "").trim();
+}
+
+function getLootManifestImportFlag(entry = {}) {
+  const primary = entry?.flags?.[MODULE_ID]?.lootManifestImport;
+  if (primary && typeof primary === "object") return primary;
+  const legacy = entry?.flags?.["party-operations"]?.lootManifestImport;
+  if (legacy && typeof legacy === "object") return legacy;
+  return {};
+}
+
+function parseCompendiumItemSourceReference(value = "") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^Compendium\.(.+)\.Item\.([^.]+)$/i);
+  if (!match) return null;
+  return {
+    packId: String(match[1] ?? "").trim(),
+    itemId: String(match[2] ?? "").trim()
+  };
+}
+
+function buildLootManifestImportSourceKey(packId = "", itemId = "") {
+  const normalizedPackId = String(packId ?? "").trim();
+  const normalizedItemId = String(itemId ?? "").trim();
+  if (!normalizedPackId || !normalizedItemId) return "";
+  return `${normalizedPackId}:${normalizedItemId}`;
+}
+
+function getLootManifestImportedSourceKey(entry = {}) {
+  const importFlag = getLootManifestImportFlag(entry);
+  const flaggedKey = buildLootManifestImportSourceKey(importFlag?.sourcePackId, importFlag?.sourceItemId);
+  if (flaggedKey) return flaggedKey;
+
+  const sourceCandidates = [
+    entry?.flags?.core?.sourceId,
+    entry?._stats?.compendiumSource,
+    entry?.flags?.[MODULE_ID]?.core?.sourceId,
+    entry?.flags?.["party-operations"]?.core?.sourceId
+  ];
+  for (const candidate of sourceCandidates) {
+    const parsed = parseCompendiumItemSourceReference(candidate);
+    const key = buildLootManifestImportSourceKey(parsed?.packId, parsed?.itemId);
+    if (key) return key;
+  }
+  return "";
+}
+
+function buildLootManifestCompendiumFolderDescriptors(pack, itemRows = []) {
+  const descriptorMap = new Map();
+  const actualFolders = getCompendiumFolderRows(pack)
+    .map((folder) => {
+      const id = String(folder?.id ?? folder?._id ?? "").trim();
+      if (!id) return null;
+      return {
+        key: `folder:${id}`,
+        sourceFolderId: id,
+        name: String(folder?.name ?? "").trim() || "Other",
+        parentKey: (() => {
+          const parentId = getDocumentFolderParentId(folder);
+          return parentId ? `folder:${parentId}` : "";
+        })(),
+        sort: Number(folder?.sort ?? 0) || 0
+      };
+    })
+    .filter(Boolean);
+
+  for (const descriptor of actualFolders) {
+    descriptorMap.set(descriptor.key, descriptor);
+  }
+
+  const rootDescriptorByName = new Map(
+    Array.from(descriptorMap.values())
+      .filter((descriptor) => !descriptor.parentKey)
+      .map((descriptor) => [getLootManifestFolderNameKey(descriptor.name), descriptor.key])
+  );
+
+  for (const item of Array.isArray(itemRows) ? itemRows : []) {
+    const sourceFolderId = String(item?.folderId ?? "").trim();
+    if (sourceFolderId && descriptorMap.has(`folder:${sourceFolderId}`)) continue;
+    const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+    const label = getLootManifestFolderLabelForType(normalizedType);
+    const existingRootKey = rootDescriptorByName.get(getLootManifestFolderNameKey(label));
+    if (existingRootKey) continue;
+    const key = `type:${normalizedType}`;
+    if (descriptorMap.has(key)) continue;
+    descriptorMap.set(key, {
+      key,
+      sourceFolderId: "",
+      name: label,
+      parentKey: "",
+      sort: getLootManifestFolderSortPriority(normalizedType) * 1000
+    });
+    rootDescriptorByName.set(getLootManifestFolderNameKey(label), key);
+  }
+
+  const getDepth = (descriptor) => {
+    let depth = 0;
+    let currentKey = String(descriptor?.parentKey ?? "").trim();
+    const visited = new Set([String(descriptor?.key ?? "").trim()]);
+    while (currentKey && depth < 20) {
+      if (visited.has(currentKey)) break;
+      visited.add(currentKey);
+      const current = descriptorMap.get(currentKey);
+      if (!current) break;
+      depth += 1;
+      currentKey = String(current?.parentKey ?? "").trim();
+    }
+    return depth;
+  };
+
+  return Array.from(descriptorMap.values()).sort((left, right) => {
+    const depthDelta = getDepth(left) - getDepth(right);
+    if (depthDelta !== 0) return depthDelta;
+    const sortDelta = Number(left?.sort ?? 0) - Number(right?.sort ?? 0);
+    if (sortDelta !== 0) return sortDelta;
+    return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+  });
+}
+
+async function ensureLootManifestWorldImportRootFolder(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  const preferredName = String(pack?.metadata?.label ?? pack?.title ?? LOOT_MANIFEST_PACK_LABEL).trim() || LOOT_MANIFEST_PACK_LABEL;
+  const itemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+
+  let rootFolder = itemFolders.find((folder) => {
+    const importFlag = getLootManifestImportFlag(folder);
+    return importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId;
+  }) ?? null;
+
+  if (!rootFolder) {
+    rootFolder = itemFolders.find((folder) => {
+      if (getDocumentFolderParentId(folder)) return false;
+      return String(folder?.name ?? "").trim() === preferredName;
+    }) ?? null;
+  }
+
+  const flagData = {
+    managed: true,
+    isRoot: true,
+    sourcePackId: packId,
+    importedAt: Date.now()
+  };
+
+  if (!rootFolder) {
+    return Folder.create({
+      name: preferredName,
+      type: "Item",
+      folder: null,
+      sorting: "a",
+      color: null,
+      sort: -1000,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+
+  const needsUpdate = String(rootFolder?.name ?? "").trim() !== preferredName
+    || getDocumentFolderParentId(rootFolder)
+    || getLootManifestImportFlag(rootFolder)?.isRoot !== true
+    || String(getLootManifestImportFlag(rootFolder)?.sourcePackId ?? "").trim() !== packId;
+  if (needsUpdate) {
+    await rootFolder.update({
+      name: preferredName,
+      folder: null,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+  return rootFolder;
+}
+
+async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows = []) {
+  const descriptors = buildLootManifestCompendiumFolderDescriptors(pack, itemRows);
+  const packId = String(pack?.collection ?? "").trim();
+  const worldItemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+  const descriptorFolderMap = new Map();
+  const existingBySourceFolderId = new Map();
+  const existingByParentAndName = new Map();
+
+  for (const folder of worldItemFolders) {
+    const importFlag = getLootManifestImportFlag(folder);
+    if (importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId) continue;
+    const sourceFolderId = String(importFlag?.sourceFolderId ?? "").trim();
+    if (sourceFolderId && String(importFlag?.sourcePackId ?? "").trim() === packId) {
+      existingBySourceFolderId.set(sourceFolderId, folder);
+    }
+    const parentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    const nameKey = getLootManifestFolderNameKey(folder?.name);
+    if (nameKey) existingByParentAndName.set(`${parentId}::${nameKey}`, folder);
+  }
+
+  let createdFolders = 0;
+  let updatedFolders = 0;
+
+  for (const descriptor of descriptors) {
+    const parentFolderId = descriptor.parentKey
+      ? (descriptorFolderMap.get(descriptor.parentKey)?.id ?? rootFolder.id)
+      : rootFolder.id;
+    const sourceFolderId = String(descriptor?.sourceFolderId ?? "").trim();
+    const nameKey = getLootManifestFolderNameKey(descriptor?.name);
+    let folder = sourceFolderId ? existingBySourceFolderId.get(sourceFolderId) ?? null : null;
+    if (!folder) folder = existingByParentAndName.get(`${parentFolderId}::${nameKey}`) ?? null;
+
+    const flagData = {
+      managed: true,
+      isRoot: false,
+      sourcePackId: packId,
+      sourceFolderId,
+      sourceFolderKey: String(descriptor?.key ?? "").trim(),
+      importedAt: Date.now()
+    };
+
+    if (!folder) {
+      folder = await Folder.create({
+        name: String(descriptor?.name ?? "Other"),
+        type: "Item",
+        folder: parentFolderId,
+        sorting: "a",
+        color: null,
+        sort: Number(descriptor?.sort ?? 0) || 0,
+        flags: {
+          [MODULE_ID]: {
+            lootManifestImport: flagData
+          }
+        }
+      });
+      createdFolders += 1;
+    } else {
+      const currentImportFlag = getLootManifestImportFlag(folder);
+      const needsUpdate = String(folder?.name ?? "").trim() !== String(descriptor?.name ?? "").trim()
+        || String(getDocumentFolderParentId(folder) || rootFolder.id).trim() !== String(parentFolderId).trim()
+        || String(currentImportFlag?.sourcePackId ?? "").trim() !== packId
+        || String(currentImportFlag?.sourceFolderId ?? "").trim() !== sourceFolderId
+        || currentImportFlag?.isRoot === true;
+      if (needsUpdate) {
+        await folder.update({
+          name: String(descriptor?.name ?? "Other"),
+          folder: parentFolderId,
+          sort: Number(descriptor?.sort ?? 0) || 0,
+          flags: {
+            [MODULE_ID]: {
+              lootManifestImport: flagData
+            }
+          }
+        });
+        updatedFolders += 1;
+      }
+    }
+
+    descriptorFolderMap.set(String(descriptor?.key ?? "").trim(), folder);
+    const folderParentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    existingByParentAndName.set(`${folderParentId}::${nameKey}`, folder);
+    if (sourceFolderId) existingBySourceFolderId.set(sourceFolderId, folder);
+  }
+
+  return {
+    descriptorFolderMap,
+    createdFolders,
+    updatedFolders
+  };
+}
+
+function chunkDocumentRows(rows = [], size = 50) {
+  const source = Array.isArray(rows) ? rows : [];
+  const chunkSize = Math.max(1, Math.floor(Number(size) || 50));
+  const chunks = [];
+  for (let index = 0; index < source.length; index += chunkSize) {
+    chunks.push(source.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function getLootManifestImportedWorldItems(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  return (game.items?.contents ?? []).filter((item) => {
+    const importFlag = getLootManifestImportFlag(item);
+    if (String(importFlag?.sourcePackId ?? "").trim() === packId) return true;
+    const sourceKey = getLootManifestImportedSourceKey(item);
+    return sourceKey.startsWith(`${packId}:`);
+  });
+}
+
+function getLootManifestManagedWorldFolders(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  return (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    if (type !== "item") return false;
+    const importFlag = getLootManifestImportFlag(folder);
+    return String(importFlag?.sourcePackId ?? "").trim() === packId;
+  });
+}
+
+function sortFoldersDeepestFirst(folders = []) {
+  const rows = Array.isArray(folders) ? folders : [];
+  const byId = new Map(rows.map((folder) => [String(folder?.id ?? "").trim(), folder]));
+  const getDepth = (folder) => {
+    let depth = 0;
+    let parentId = getDocumentFolderParentId(folder);
+    const visited = new Set([String(folder?.id ?? "").trim()]);
+    while (parentId && depth < 30) {
+      if (visited.has(parentId)) break;
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      depth += 1;
+      parentId = getDocumentFolderParentId(parent);
+    }
+    return depth;
+  };
+  return [...rows].sort((left, right) => getDepth(right) - getDepth(left));
+}
+
+async function clearLootManifestImportedWorldItems() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear imported built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const importedItems = getLootManifestImportedWorldItems(pack);
+  const managedFolders = getLootManifestManagedWorldFolders(pack);
+  if (importedItems.length <= 0 && managedFolders.length <= 0) {
+    ui.notifications?.info("No imported built items were found in the world.");
+    return { ok: true, packId: String(pack?.collection ?? "").trim(), deletedItems: 0, deletedFolders: 0 };
+  }
+
+  const confirmed = await Dialog.confirm({
+    title: "Clear Imported Built Items",
+    content: `
+      <p>This will remove imported Party Operations built items from the world.</p>
+      <p><strong>Items:</strong> ${importedItems.length}</p>
+      <p><strong>Managed folders:</strong> ${managedFolders.length}</p>
+      <p>This does not modify the source compendium.</p>
+    `,
+    yes: () => true,
+    no: () => false,
+    defaultYes: false
+  });
+  if (!confirmed) return { ok: false, reason: "cancelled" };
+
+  for (const batch of chunkDocumentRows(importedItems.map((item) => String(item?.id ?? "").trim()).filter(Boolean), 50)) {
+    if (batch.length <= 0) continue;
+    await Item.deleteDocuments(batch);
+  }
+
+  for (const folder of sortFoldersDeepestFirst(managedFolders)) {
+    try {
+      await folder.delete();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to delete managed loot import folder`, folder, error);
+    }
+  }
+
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    const currentManifestId = String(config.filters.manifestPackId ?? "").trim();
+    const selectedFolderId = parseLootWorldItemsFolderFilterId(currentManifestId);
+    const deletedFolderIds = new Set(managedFolders.map((folder) => String(folder?.id ?? "").trim()).filter(Boolean));
+    if (selectedFolderId && deletedFolderIds.has(selectedFolderId)) {
+      config.filters.manifestPackId = "";
+    }
+  }, { skipLocalRefresh: true });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    deletedItems: importedItems.length,
+    deletedFolders: managedFolders.length
+  };
+  ui.notifications?.info(`Cleared ${report.deletedItems} imported built item(s) and ${report.deletedFolders} folder(s).`);
+  return report;
+}
+
+async function importLootManifestCompendiumToWorld() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can import built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const syncReport = await scheduleLootManifestCompendiumTypeFolderSync("world-import").catch(() => null);
+  if (syncReport?.ok === false && isModuleDebugEnabled()) {
+    console.warn(`${MODULE_ID}: proceeding with loot manifest world import after folder sync warning`, syncReport);
+  }
+
+  if (typeof pack?.getFolders === "function") {
+    try {
+      await pack.getFolders();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to preload loot manifest compendium folders`, error);
+    }
+  }
+
+  const itemRows = await getLootManifestPackItemRows(pack);
+  const documents = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+  if (!Array.isArray(documents) || documents.length <= 0) {
+    ui.notifications?.warn("The built-items compendium is empty.");
+    return { ok: false, reason: "pack-empty" };
+  }
+
+  const rootFolder = await ensureLootManifestWorldImportRootFolder(pack);
+  const { descriptorFolderMap, createdFolders, updatedFolders } = await ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows);
+  const itemRowById = new Map((Array.isArray(itemRows) ? itemRows : []).map((row) => [String(row?.id ?? "").trim(), row]));
+  const rootDescriptorByName = new Map(
+    Array.from(descriptorFolderMap.entries())
+      .filter(([, folder]) => String(getDocumentFolderParentId(folder) || rootFolder.id).trim() === String(rootFolder.id).trim())
+      .map(([key, folder]) => [getLootManifestFolderNameKey(folder?.name), key])
+  );
+  const importedItemMap = new Map(
+    (game.items?.contents ?? [])
+      .map((item) => [getLootManifestImportedSourceKey(item), item])
+      .filter(([key]) => key)
+  );
+
+  const createData = [];
+  const updateData = [];
+  const timestamp = Date.now();
+
+  for (const documentRef of documents) {
+    const sourceItemId = String(documentRef?.id ?? documentRef?._id ?? "").trim();
+    if (!sourceItemId) continue;
+    const sourceKey = buildLootManifestImportSourceKey(pack.collection, sourceItemId);
+    if (!sourceKey) continue;
+    const row = itemRowById.get(sourceItemId) ?? {};
+    const sourceFolderId = String(documentRef?.folder?.id ?? documentRef?.folder ?? row?.folderId ?? "").trim();
+    let descriptorKey = sourceFolderId ? `folder:${sourceFolderId}` : "";
+    if (!descriptorFolderMap.has(descriptorKey)) {
+      const typeLabel = getLootManifestFolderLabelForType(documentRef?.type ?? row?.type ?? "other");
+      descriptorKey = rootDescriptorByName.get(getLootManifestFolderNameKey(typeLabel)) ?? "";
+    }
+    const targetFolderId = descriptorFolderMap.get(descriptorKey)?.id ?? rootFolder.id;
+    const sourceUuid = String(documentRef?.uuid ?? `Compendium.${pack.collection}.Item.${sourceItemId}`).trim();
+    const data = typeof documentRef?.toObject === "function" ? documentRef.toObject() : foundry.utils.deepClone(documentRef);
+    if (data && typeof data === "object" && "_id" in data) delete data._id;
+    data.folder = targetFolderId;
+    data.flags = data.flags && typeof data.flags === "object" ? data.flags : {};
+    data.flags.core = data.flags.core && typeof data.flags.core === "object" ? data.flags.core : {};
+    data.flags.core.sourceId = sourceUuid;
+    data.flags[MODULE_ID] = data.flags[MODULE_ID] && typeof data.flags[MODULE_ID] === "object" ? data.flags[MODULE_ID] : {};
+    data.flags[MODULE_ID].lootManifestImport = {
+      managed: true,
+      sourcePackId: pack.collection,
+      sourceItemId,
+      sourceUuid,
+      sourceFolderId,
+      sourceFolderKey: descriptorKey,
+      importedAt: timestamp
+    };
+
+    const existing = importedItemMap.get(sourceKey) ?? null;
+    if (existing) {
+      updateData.push({
+        _id: existing.id,
+        ...data
+      });
+      continue;
+    }
+    createData.push(data);
+  }
+
+  for (const batch of chunkDocumentRows(updateData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.updateDocuments(batch);
+  }
+  for (const batch of chunkDocumentRows(createData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.createDocuments(batch);
+  }
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.packs)) config.packs = [];
+    let worldSource = config.packs.find((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID);
+    if (!worldSource) {
+      config.packs.unshift(buildLootWorldItemSourceEntry({ enabled: true }));
+      worldSource = config.packs[0];
+    }
+    worldSource.enabled = true;
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.manifestPackId = buildLootWorldItemsFolderFilterId(rootFolder.id);
+  }, { skipLocalRefresh: true });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    rootFolderId: String(rootFolder?.id ?? "").trim(),
+    createdFolders,
+    updatedFolders,
+    createdItems: createData.length,
+    updatedItems: updateData.length
+  };
+  ui.notifications?.info(`Imported ${report.createdItems + report.updatedItems} built item(s) into organized world folders.`);
+  return report;
 }
 
 function getAvailableLootItemPackSources() {

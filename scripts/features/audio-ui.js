@@ -9,6 +9,7 @@ export function createGmAudioPageApp(deps) {
     openMainTab,
     setAudioLibraryDraftField,
     openAudioLibraryRootPicker,
+    uploadLocalAudioFolderToLibrary,
     scanConfiguredAudioLibrary,
     clearAudioLibraryCatalog,
     setAudioLibraryFilterField,
@@ -82,6 +83,10 @@ export function createGmAudioPageApp(deps) {
         }),
         "browse-audio-library-root": async () => {
           await openAudioLibraryRootPicker();
+          rerender();
+        },
+        "upload-audio-library-folder": async () => {
+          await uploadLocalAudioFolderToLibrary();
           rerender();
         },
         "scan-audio-library": rerenderAlways(() => scanConfiguredAudioLibrary()),

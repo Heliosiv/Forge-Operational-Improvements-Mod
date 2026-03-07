@@ -23,107 +23,307 @@
         <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
         <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="loot">Loot</button>
       </div>
-      <div class="po-hint">Loot builder and source controls.</div>
-      <div class="po-gm-loot-summary-grid" role="list" aria-label="Loot source summary">
-        <div class="po-gm-loot-summary-chip" role="listitem"><span>Packs</span><strong>{{operations.lootSources.summary.enabledItemPacks}} / {{operations.lootSources.summary.totalItemPacks}}</strong></div>
-        <div class="po-gm-loot-summary-chip" role="listitem"><span>Tables</span><strong>{{operations.lootSources.summary.enabledTables}} / {{operations.lootSources.summary.totalTables}}</strong></div>
-        <div class="po-gm-loot-summary-chip" role="listitem"><span>Types</span><strong>{{operations.lootSources.summary.enabledItemTypes}} / {{operations.lootSources.summary.totalItemTypes}}</strong></div>
-        <div class="po-gm-loot-summary-chip" role="listitem"><span>Updated By</span><strong>{{operations.lootSources.summary.updatedBy}}</strong></div>
-      </div>
-      <div class="po-op-summary po-gm-loot-updated">Updated {{operations.lootSources.summary.updatedAtLabel}}</div>
 
-      <div class="po-op-divider"></div>
-      <div class="po-tabs po-tabs-sub">
+      <section class="po-gm-section po-loot-hero">
+        <div class="po-loot-hero-copy">
+          <div class="po-loot-eyebrow">GM Loot Workspace</div>
+          <div class="po-section-title">Build treasure, tune sources, and publish claims with confidence.</div>
+          <div class="po-hint">Shape the encounter profile, keep the output on-budget, then send a polished claim board straight to the party.</div>
+        </div>
+        <div class="po-loot-hero-actions">
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
+          <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+        </div>
+        <div class="po-gm-loot-summary-grid" role="list" aria-label="Loot source summary">
+          <div class="po-gm-loot-summary-chip" role="listitem"><span>Packs Live</span><strong>{{sourceSummary.enabledItemPacks}} / {{sourceSummary.totalItemPacks}}</strong></div>
+          <div class="po-gm-loot-summary-chip" role="listitem"><span>Tables Ready</span><strong>{{sourceSummary.enabledTables}} / {{sourceSummary.totalTables}}</strong></div>
+          <div class="po-gm-loot-summary-chip" role="listitem"><span>Tag Schema</span><strong>{{sourceSummary.tagSchemaLabel}}</strong></div>
+          <div class="po-gm-loot-summary-chip" role="listitem"><span>Claims Open</span><strong>{{lootClaims.openRunCount}} open / {{lootClaims.archivedRunCount}} archived</strong></div>
+        </div>
+        <div class="po-op-summary po-gm-loot-updated">Registry updated {{sourceSummary.updatedAtLabel}} by {{sourceSummary.updatedBy}}</div>
+      </section>
+
+      <div class="po-tabs po-tabs-sub po-loot-mode-tabs" aria-label="Loot workspace tabs">
         <button type="button" class="po-tab {{#if operations.lootSources.registryTabPreview}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="preview">Builder</button>
         <button type="button" class="po-tab {{#if operations.lootSources.registryTabSettings}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="settings">Settings</button>
       </div>
 
       {{#if operations.lootSources.registryTabPreview}}
-      <div class="po-op-role-row po-loot-preview-panel">
-        <label class="po-resource-row"><span>Mode</span><select name="lootPreviewMode" class="po-select" data-action="set-loot-preview-field" data-field="mode">{{#each operations.lootSources.preview.modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-        <label class="po-resource-row"><span>Equipment Profile</span><select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">{{#each operations.lootSources.preview.profileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-        <label class="po-resource-row"><span>Challenge Tier</span><select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">{{#each operations.lootSources.preview.challengeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-        <label class="po-resource-row"><span>Scale</span><select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">{{#each operations.lootSources.preview.scaleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-        <label class="po-resource-row"><span>Creatures</span><input name="lootPreviewCreatures" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="creatures" value="{{operations.lootSources.preview.draft.creatures}}" /></label>
-        <label class="po-resource-row"><span>Currency Scale ({{operations.lootSources.preview.draft.currencyScalar}}%)</span><input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{operations.lootSources.preview.draft.currencyScalar}}" /></label>
-        <label class="po-resource-row"><span>Item Count Scale ({{operations.lootSources.preview.draft.itemScalar}}%)</span><input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{operations.lootSources.preview.draft.itemScalar}}" /></label>
-        <label class="po-resource-row"><span>Table Roll Scale ({{operations.lootSources.preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{operations.lootSources.preview.draft.tableScalar}}" /></label>
-        <label class="po-resource-row"><span>Value Budget Scale ({{operations.lootSources.preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{operations.lootSources.preview.draft.valueBudgetScalar}}" /></label>
-        <label class="po-resource-row"><span>Value Strictness ({{operations.lootSources.preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{operations.lootSources.preview.draft.valueStrictness}}" /></label>
-        <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{operations.lootSources.preview.draft.maxItemValueGp}}" /></label>
-        <label class="po-resource-row"><span>Target Items Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{operations.lootSources.preview.draft.targetItemsValueGp}}" /></label>
-        <div class="po-op-action-row po-gm-loot-primary-actions">
-          <button type="button" class="po-btn po-btn-sm" data-action="roll-loot-preview">Generate Loot</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="add-loot-preview-item">Add Item</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear Builder Items</button>
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless operations.lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+      <div class="po-loot-workspace">
+        <div class="po-loot-workspace-main">
+          <section class="po-gm-section po-loot-builder-deck">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Builder Controls</div>
+                <div class="po-hint">Define the encounter feel first, then tighten the output with scale and budget controls.</div>
+              </div>
+              <div class="po-loot-builder-status">
+                <span class="po-pill">Target {{preview.budget.desiredItemCount}} items</span>
+                <span class="po-pill">Budget {{preview.budget.totalBudgetGp}} gp</span>
+                <span class="po-pill">Cap {{preview.budget.effectiveMaxItemValueGp}} gp</span>
+              </div>
+            </div>
+
+            <div class="po-loot-builder-control-grid">
+              <div class="po-loot-control-card">
+                <div class="po-loot-control-card-head">
+                  <div class="po-section-title">Encounter Shape</div>
+                  <div class="po-op-summary">Set the baseline identity for this loot drop.</div>
+                </div>
+                <label class="po-resource-row"><span>Mode</span><select name="lootPreviewMode" class="po-select" data-action="set-loot-preview-field" data-field="mode">{{#each preview.modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Equipment Profile</span><select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">{{#each preview.profileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Challenge Tier</span><select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">{{#each preview.challengeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Scale</span><select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">{{#each preview.scaleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Creatures</span><input name="lootPreviewCreatures" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="creatures" value="{{preview.draft.creatures}}" /></label>
+              </div>
+
+              <div class="po-loot-control-card">
+                <div class="po-loot-control-card-head">
+                  <div class="po-section-title">Yield + Scaling</div>
+                  <div class="po-op-summary">Push more coins, more items, or more table influence without rewriting source data.</div>
+                </div>
+                <label class="po-resource-row"><span>Currency Scale ({{preview.draft.currencyScalar}}%)</span><input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{preview.draft.currencyScalar}}" /></label>
+                <label class="po-resource-row"><span>Item Count Scale ({{preview.draft.itemScalar}}%)</span><input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{preview.draft.itemScalar}}" /></label>
+                <label class="po-resource-row"><span>Table Roll Scale ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
+                <div class="po-loot-mini-metrics">
+                  <div class="po-loot-mini-metric"><span>Desired</span><strong>{{preview.budget.desiredItemCount}}</strong></div>
+                  <div class="po-loot-mini-metric"><span>Max Items</span><strong>{{preview.budget.maxItems}}</strong></div>
+                  <div class="po-loot-mini-metric"><span>Tolerance</span><strong>{{preview.budget.tolerancePercent}}%</strong></div>
+                </div>
+              </div>
+
+              <div class="po-loot-control-card">
+                <div class="po-loot-control-card-head">
+                  <div class="po-section-title">Budget Guardrails</div>
+                  <div class="po-op-summary">Use manual caps only when you want to force the generator away from its normal budget curve.</div>
+                </div>
+                <label class="po-resource-row"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
+                <label class="po-resource-row"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
+                <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{preview.draft.maxItemValueGp}}" /></label>
+                <label class="po-resource-row"><span>Target Items Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
+                <div class="po-op-summary">Strictness band: {{preview.budget.strictnessBandLabel}}</div>
+              </div>
+            </div>
+
+            <div class="po-loot-action-bar">
+              <div class="po-loot-action-group">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="add-loot-preview-item">Add Item</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear Builder Items</button>
+              </div>
+              <div class="po-loot-action-group po-loot-action-group-publish">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
+                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="po-gm-section po-loot-builder-items-section">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Builder Items</div>
+                <div class="po-hint">Drag an item from the sidebar or compendium into this tray to inject it directly into the current output.</div>
+              </div>
+              <div class="po-loot-builder-status">
+                <span class="po-pill">{{preview.stats.itemCountGenerated}} generated</span>
+                <span class="po-pill">{{preview.stats.itemCountTarget}} target</span>
+                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp value</span>
+              </div>
+            </div>
+            <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>
+              <span class="po-loot-dropzone-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+              <span>Drop an item here to add it to this builder output.</span>
+            </div>
+
+            {{#if preview.items.length}}
+            <div class="po-loot-preview-items-grid">
+              {{#each preview.items}}
+              <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card">
+                <div class="po-loot-builder-item-card-head">
+                  <img class="po-loot-builder-item-thumb" src="{{img}}" alt="{{name}}" loading="lazy" />
+                  <div class="po-loot-builder-item-copy">
+                    <div class="po-loot-builder-item-name-row">
+                      <div class="po-op-role-name">{{name}}</div>
+                      {{#if hasQuantity}}<span class="po-pill">x{{quantity}}</span>{{/if}}
+                    </div>
+                    <div class="po-loot-builder-item-tags">
+                      <span class="po-pill">{{itemType}}</span>
+                      {{#if hasRarity}}<span class="po-pill">{{rarity}}</span>{{/if}}
+                    </div>
+                    {{#if hasMetaPills}}
+                    <div class="po-loot-builder-item-tags po-loot-builder-item-tags-meta">
+                      {{#each metaPills}}
+                      <span class="po-pill">{{label}}</span>
+                      {{/each}}
+                    </div>
+                    {{/if}}
+                    <div class="po-op-summary">Source: {{sourceLabel}}</div>
+                    {{#if hasItemValue}}<div class="po-op-summary">Item Value: {{itemValueLabel}}</div>{{/if}}
+                  </div>
+                  <div class="po-loot-builder-item-actions">
+                    <button type="button" class="po-icon-btn" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}" aria-label="Remove {{name}}">
+                      <i class="fa-solid fa-xmark"></i>
+                    </button>
+                    {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
+                  </div>
+                </div>
+              </article>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-loot-empty-state">
+              <div class="po-section-title">No builder items yet</div>
+              <div class="po-op-summary">Generate a loot pass, add a manual item, or drag a document into the tray to start shaping the final drop.</div>
+            </div>
+            {{/if}}
+          </section>
+
+          <section class="po-gm-section po-loot-rolls-section">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Builder Table Rolls</div>
+                <div class="po-hint">Every roll-table contribution is logged here so the GM can see exactly what entered the output.</div>
+              </div>
+              <div class="po-loot-builder-status">
+                <span class="po-pill">{{preview.stats.tableRollCount}} rolls</span>
+                <span class="po-pill">{{preview.stats.candidateCount}} candidates</span>
+              </div>
+            </div>
+
+            {{#if preview.tableRolls.length}}
+            <div class="po-loot-roll-grid">
+              {{#each preview.tableRolls}}
+              <article class="po-op-role-row po-loot-roll-card">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{tableName}}</div>
+                  <div class="po-op-role-status">{{sourceType}}</div>
+                </div>
+                <div class="po-op-summary">Source: {{sourceLabel}}</div>
+                <div class="po-op-summary">Roll: {{formula}} = {{total}}</div>
+                <div class="po-op-summary">Result: {{result}}</div>
+              </article>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-loot-empty-state">
+              <div class="po-section-title">No table rolls generated</div>
+              <div class="po-op-summary">Enable roll-table sources in settings or increase table-roll scale if you want more table-driven treasure.</div>
+            </div>
+            {{/if}}
+          </section>
+
+          {{#if preview.warnings.length}}
+          <section class="po-gm-section po-loot-warning-section">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Warnings</div>
+                <div class="po-hint">Use these to spot missing sources, over-constrained filters, or budget pressure before you publish.</div>
+              </div>
+            </div>
+            <div class="po-loot-warning-grid">
+              {{#each preview.warnings}}
+              <div class="po-loot-warning-card">{{this}}</div>
+              {{/each}}
+            </div>
+          </section>
+          {{/if}}
         </div>
+
+        <aside class="po-loot-workspace-sidebar">
+          <section class="po-gm-section po-loot-sidebar-card po-loot-sidebar-card-highlight">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Builder Snapshot</div>
+                <div class="po-hint">{{#if preview.hasResult}}Last generated {{preview.generatedAtLabel}} by {{preview.generatedBy}}{{else}}Ready to generate using the current builder draft.{{/if}}</div>
+              </div>
+            </div>
+            <div class="po-loot-sidebar-metrics">
+              <div class="po-loot-sidebar-metric"><span>Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Per Item</span><strong>{{preview.budget.targetPerItemGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Cap</span><strong>{{preview.budget.effectiveMaxItemValueGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
+            </div>
+            <div class="po-op-summary">Strictness: {{preview.stats.strictnessBandLabel}}</div>
+            <div class="po-op-summary">Value delta: {{preview.stats.deltaGp}} gp</div>
+          </section>
+
+          <section class="po-gm-section po-loot-sidebar-card">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Currency</div>
+                <div class="po-hint">Adjust the generated coin pile before publishing.</div>
+              </div>
+            </div>
+            <div class="po-loot-currency-display">
+              <div class="po-loot-currency-pill"><span>PP</span><strong>{{preview.currency.pp}}</strong></div>
+              <div class="po-loot-currency-pill"><span>GP</span><strong>{{preview.currency.gp}}</strong></div>
+              <div class="po-loot-currency-pill"><span>SP</span><strong>{{preview.currency.sp}}</strong></div>
+              <div class="po-loot-currency-pill"><span>CP</span><strong>{{preview.currency.cp}}</strong></div>
+            </div>
+            <div class="po-op-summary">Equivalent value: {{preview.currency.gpEquivalent}} gp</div>
+            <div class="po-op-summary">Formula: {{preview.currency.formula}}</div>
+
+            <div class="po-loot-currency-adjust-shell">
+              <label class="po-resource-row"><span>Currency</span><select name="lootPreviewCurrencyAdjustDenom" class="po-select"><option value="pp">PP</option><option value="gp" selected>GP</option><option value="sp">SP</option><option value="cp">CP</option></select></label>
+              <label class="po-resource-row"><span>Qty</span><input name="lootPreviewCurrencyAdjustQty" type="number" min="1" step="1" class="po-input" value="1" /></label>
+              <div class="po-loot-currency-adjust-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add">Add</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract">Subtract</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add" data-qty="10">+10</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract" data-qty="10">-10</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="po-gm-section po-loot-sidebar-card">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Claim Board Readiness</div>
+                <div class="po-hint">Keep one eye on the currently selected run while you build the next one.</div>
+              </div>
+            </div>
+            {{#if lootClaims.hasSelectedRun}}
+            <div class="po-op-summary">Selected run: {{lootClaims.selectedRunCard.statusLabel}}</div>
+            <div class="po-op-summary">Published: {{lootClaims.selectedRunCard.publishedAtLabel}} by {{lootClaims.selectedRunCard.publishedBy}}</div>
+            {{#if lootClaims.selectedRunCard.isArchived}}
+            <div class="po-op-summary">Archived: {{lootClaims.selectedRunCard.archivedAtLabel}}</div>
+            {{/if}}
+            {{else}}
+            <div class="po-op-summary">No active claim run selected.</div>
+            {{/if}}
+            <div class="po-loot-sidebar-metrics">
+              <div class="po-loot-sidebar-metric"><span>Open Runs</span><strong>{{lootClaims.openRunCount}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Claimable Items</span><strong>{{lootClaims.itemCount}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Claims Logged</span><strong>{{lootClaims.claimsLogCount}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Currency Claims</span><strong>{{lootClaims.currencyClaimedCount}}</strong></div>
+            </div>
+            <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+          </section>
+        </aside>
       </div>
-
-      {{#if operations.lootSources.preview.hasResult}}
-      <div class="po-op-summary">Generated: {{operations.lootSources.preview.generatedAtLabel}} by {{operations.lootSources.preview.generatedBy}}</div>
-      <div class="po-op-summary">Currency: {{operations.lootSources.preview.currency.pp}} pp - {{operations.lootSources.preview.currency.gp}} gp - {{operations.lootSources.preview.currency.sp}} sp - {{operations.lootSources.preview.currency.cp}} cp ({{operations.lootSources.preview.currency.gpEquivalent}} gp eq)</div>
-      <div class="po-op-summary">Candidates: {{operations.lootSources.preview.stats.candidateCount}} - Items: {{operations.lootSources.preview.stats.itemCountGenerated}} / target {{operations.lootSources.preview.stats.itemCountTarget}} - Table Rolls: {{operations.lootSources.preview.stats.tableRollCount}}</div>
-
-      <div class="po-op-role-row po-loot-preview-currency-adjust">
-        <label class="po-resource-row"><span>Currency</span><select name="lootPreviewCurrencyAdjustDenom" class="po-select"><option value="pp">PP</option><option value="gp" selected>GP</option><option value="sp">SP</option><option value="cp">CP</option></select></label>
-        <label class="po-resource-row"><span>Qty</span><input name="lootPreviewCurrencyAdjustQty" type="number" min="1" step="1" class="po-input" value="1" /></label>
-        <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add">Add</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract">Subtract</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add" data-qty="10">+10</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract" data-qty="10">-10</button>
-        </div>
-      </div>
-
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Builder Items</div>
-      <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>Drag an Item here from the sidebar/compendium to add it to this builder output.</div>
-      {{#if operations.lootSources.preview.items.length}}
-      <div class="po-loot-preview-items-grid">
-      {{#each operations.lootSources.preview.items}}
-      <div class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card">
-        <div class="po-gm-loot-builder-item-main">
-          <div class="po-op-role-head"><div class="po-op-role-name">{{name}}</div><div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div></div>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}">x</button>
-            {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
-          </div>
-          {{#if hasRarity}}<div class="po-op-summary">Rarity: {{rarity}}</div>{{/if}}
-          <div class="po-op-summary">Source: {{sourceLabel}}</div>
-        </div>
-        <div class="po-gm-loot-builder-item-media">
-          <img src="{{img}}" alt="{{name}}" loading="lazy" />
-        </div>
-      </div>
-      {{/each}}
-      </div>
-      {{else}}<div class="po-op-summary">No items generated for current settings.</div>{{/if}}
-
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Builder Table Rolls</div>
-      {{#if operations.lootSources.preview.tableRolls.length}}
-      {{#each operations.lootSources.preview.tableRolls}}
-      <div class="po-op-role-row"><div class="po-op-role-head"><div class="po-op-role-name">{{tableName}}</div><div class="po-op-role-status">{{sourceType}}</div></div><div class="po-op-summary">Source: {{sourceLabel}}</div><div class="po-op-summary">Roll: {{formula}} = {{total}}</div><div class="po-op-summary">Result: {{result}}</div></div>
-      {{/each}}
-      {{else}}<div class="po-op-summary">No table rolls generated.</div>{{/if}}
-
-      {{#if operations.lootSources.preview.warnings.length}}
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Warnings</div>
-      {{#each operations.lootSources.preview.warnings}}<div class="po-op-summary is-warn">{{this}}</div>{{/each}}
-      {{/if}}
-      {{/if}}
       {{/if}}
 
       {{#if operations.lootSources.registryTabSettings}}
       <div class="po-gm-loot-settings-shell">
+        <section class="po-gm-section po-loot-settings-overview">
+          <div class="po-loot-section-head">
+            <div>
+              <div class="po-section-title">Source Control Deck</div>
+              <div class="po-hint">Curate where treasure can come from, classify roll tables, and clamp the generator with search tags and rarity boundaries.</div>
+            </div>
+            <div class="po-loot-builder-status">
+              <span class="po-pill">{{sourceSummary.enabledItemPacks}} pack sources</span>
+              <span class="po-pill">{{sourceSummary.enabledTables}} table sources</span>
+              <span class="po-pill">{{sourceSummary.sourceItemCount}} tagged items</span>
+              <span class="po-pill">{{sourceSummary.tagSchemaLabel}}</span>
+            </div>
+          </div>
+        </section>
+
         <div class="po-tabs po-tabs-sub po-loot-settings-tabs" aria-label="Loot settings tabs">
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabSources}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="sources">Sources <span class="po-loot-settings-tab-count">{{operations.lootSources.summary.enabledItemPacks}}/{{operations.lootSources.summary.totalItemPacks}}</span></button>
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabTables}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="tables">Tables <span class="po-loot-settings-tab-count">{{operations.lootSources.summary.enabledTables}}/{{operations.lootSources.summary.totalTables}}</span></button>
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabFilters}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="filters">Filters <span class="po-loot-settings-tab-count">{{operations.lootSources.summary.enabledItemTypes}}/{{operations.lootSources.summary.totalItemTypes}}</span></button>
+          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabSources}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="sources">Sources <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemPacks}}/{{sourceSummary.totalItemPacks}}</span></button>
+          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabTables}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="tables">Tables <span class="po-loot-settings-tab-count">{{sourceSummary.enabledTables}}/{{sourceSummary.totalTables}}</span></button>
+          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabFilters}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="filters">Filters <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemTypes}}/{{sourceSummary.totalItemTypes}}</span></button>
         </div>
 
         {{#if operations.lootSources.settingsTabSources}}
@@ -137,23 +337,45 @@
               </div>
               {{#if operations.lootSources.itemPackVisibleOptions.length}}
               <div class="po-loot-pack-grid">
-              {{#each operations.lootSources.itemPackVisibleOptions}}
-              <div class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact">
-                <div class="po-gm-loot-source-top">
-                  <div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Ready{{else}}Missing{{/if}}</div></div>
-                  <label class="po-switch po-gm-loot-inline-switch"><input id="po-loot-pack-enabled-{{id}}" name="poLootPackEnabled_{{id}}" type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>On</span></label>
-                </div>
-                <label class="po-resource-row po-gm-loot-inline-field"><span>Weight</span><input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" /></label>
+                {{#each operations.lootSources.itemPackVisibleOptions}}
+                <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-loot-source-panel-card">
+                  <div class="po-loot-source-panel-head">
+                    <div>
+                      <div class="po-op-role-name">{{label}}</div>
+                      <div class="po-loot-source-panel-meta">
+                        <span class="po-pill">{{sourceKind}}</span>
+                        <span class="po-pill {{#if available}}po-loot-pill-ready{{else}}po-loot-pill-missing{{/if}}">{{#if available}}Ready{{else}}Missing{{/if}}</span>
+                      </div>
+                      <div class="po-op-summary">{{id}}</div>
+                    </div>
+                    <label class="po-switch po-gm-loot-inline-switch"><input id="po-loot-pack-enabled-{{id}}" name="poLootPackEnabled_{{id}}" type="checkbox" data-action="toggle-loot-pack-source" data-pack-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>On</span></label>
+                  </div>
+                  <label class="po-resource-row po-gm-loot-inline-field"><span>Weight</span><input type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-pack-weight" data-pack-id="{{id}}" value="{{weight}}" /></label>
+                </article>
+                {{/each}}
               </div>
-              {{/each}}
+              {{else}}
+              <div class="po-loot-empty-state">
+                <div class="po-section-title">No pack sources match this filter</div>
+                <div class="po-op-summary">Clear the search or add more item packs to the world if you want additional loot pools.</div>
               </div>
-              {{else}}<div class="po-op-summary">No item-pack sources detected for current filter.</div>{{/if}}
+              {{/if}}
             </div>
           </details>
 
-          <div class="po-op-role-row po-gm-loot-manifest-card">
+          <div class="po-op-role-row po-gm-loot-manifest-card po-loot-manifest-panel">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Manifest Pack</div>
+                <div class="po-hint">Published loot and claim board entries pull from this selected manifest source.</div>
+              </div>
+            </div>
             <label class="po-resource-row"><span>Manifest Pack</span><select class="po-select" data-action="set-loot-manifest-pack">{{#each operations.lootSources.manifestPackOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-            <div class="po-op-summary">Published loot and claim board entries pull from this selected source.</div>
+            <div class="po-op-actions">
+              <button type="button" class="po-button po-button-secondary" data-action="import-loot-manifest-compendium">Import Built Items to World Folders</button>
+              <button type="button" class="po-button" data-action="clear-loot-manifest-imported-items">Clear Imported Built Items</button>
+            </div>
+            <div class="po-hint">Import rebuilds the world folder tree. Clear removes previously imported built items and managed folders so you can start clean.</div>
           </div>
         </div>
         {{/if}}
@@ -161,21 +383,33 @@
         {{#if operations.lootSources.settingsTabTables}}
         <div class="po-gm-loot-settings-pane">
           <details class="po-panel-disclosure po-gm-loot-disclosure" open>
-            <summary class="po-panel-disclosure-summary"><span class="po-section-title">Roll-Table Sources</span><span class="po-op-summary">{{operations.lootSources.summary.enabledTables}} enabled of {{operations.lootSources.summary.totalTables}}</span></summary>
+            <summary class="po-panel-disclosure-summary"><span class="po-section-title">Roll-Table Sources</span><span class="po-op-summary">{{sourceSummary.enabledTables}} enabled of {{sourceSummary.totalTables}}</span></summary>
             <div class="po-panel-disclosure-body">
               {{#if operations.lootSources.tableOptions.length}}
               <div class="po-roll-table-grid">
-              {{#each operations.lootSources.tableOptions}}
-              <div class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact">
-                <div class="po-gm-loot-source-top">
-                  <div class="po-op-role-head"><div class="po-op-role-name">{{label}}</div><div class="po-op-role-status">{{#if available}}Ready{{else}}Missing{{/if}}</div></div>
-                  <label class="po-switch po-gm-loot-inline-switch"><input id="po-loot-table-enabled-{{id}}" name="poLootTableEnabled_{{id}}" type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>On</span></label>
-                </div>
-                <label class="po-resource-row po-gm-loot-inline-field"><span>Category</span><select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">{{#each typeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                {{#each operations.lootSources.tableOptions}}
+                <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-loot-source-panel-card">
+                  <div class="po-loot-source-panel-head">
+                    <div>
+                      <div class="po-op-role-name">{{label}}</div>
+                      <div class="po-loot-source-panel-meta">
+                        <span class="po-pill">{{sourceKind}}</span>
+                        <span class="po-pill {{#if available}}po-loot-pill-ready{{else}}po-loot-pill-missing{{/if}}">{{#if available}}Ready{{else}}Missing{{/if}}</span>
+                      </div>
+                      <div class="po-op-summary">{{id}}</div>
+                    </div>
+                    <label class="po-switch po-gm-loot-inline-switch"><input id="po-loot-table-enabled-{{id}}" name="poLootTableEnabled_{{id}}" type="checkbox" data-action="toggle-loot-table-source" data-table-id="{{id}}" {{#if enabled}}checked{{/if}} /><span>On</span></label>
+                  </div>
+                  <label class="po-resource-row po-gm-loot-inline-field"><span>Category</span><select class="po-select" data-action="set-loot-table-type" data-table-id="{{id}}">{{#each typeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                </article>
+                {{/each}}
               </div>
-              {{/each}}
+              {{else}}
+              <div class="po-loot-empty-state">
+                <div class="po-section-title">No roll-table sources detected</div>
+                <div class="po-op-summary">Add or enable roll tables in the world to bring random table results into the generator.</div>
               </div>
-              {{else}}<div class="po-op-summary">No roll-table sources detected.</div>{{/if}}
+              {{/if}}
             </div>
           </details>
         </div>
@@ -184,17 +418,146 @@
         {{#if operations.lootSources.settingsTabFilters}}
         <div class="po-gm-loot-settings-pane">
           <details class="po-panel-disclosure po-gm-loot-disclosure" open>
-            <summary class="po-panel-disclosure-summary"><span class="po-section-title">Item Filters</span><span class="po-op-summary">{{operations.lootSources.summary.enabledItemTypes}} enabled of {{operations.lootSources.summary.totalItemTypes}}</span></summary>
+            <summary class="po-panel-disclosure-summary"><span class="po-section-title">Item Filters</span><span class="po-op-summary">{{sourceSummary.enabledItemTypes}} enabled of {{sourceSummary.totalItemTypes}}</span></summary>
             <div class="po-panel-disclosure-body">
-              <div class="po-gm-loot-filter-grid">
-                <label class="po-resource-row"><span>Include Tags (all)</span><input type="text" class="po-input" data-action="set-loot-keyword-include-tags" value="{{operations.lootSources.keywordIncludeTagsInput}}" placeholder="loot.potion, tier.t2, ctx.dungeon" /></label>
-                <label class="po-resource-row"><span>Exclude Tags (any)</span><input type="text" class="po-input" data-action="set-loot-keyword-exclude-tags" value="{{operations.lootSources.keywordExcludeTagsInput}}" placeholder="ctx.urban, loot.artifact" /></label>
+              <div class="po-loot-taxonomy-shell">
+                <article class="po-loot-taxonomy-card">
+                  <div class="po-loot-section-head">
+                    <div>
+                      <div class="po-section-title">Party Ops Tag Atlas</div>
+                      <div class="po-hint">These reflect the hardcoded Party Operations item tags currently available to loot generation.</div>
+                    </div>
+                  </div>
+                  <div class="po-loot-sidebar-metrics">
+                    <div class="po-loot-sidebar-metric"><span>Schema</span><strong>{{operations.lootSources.taxonomySummary.schemaLabel}}</strong></div>
+                    <div class="po-loot-sidebar-metric"><span>Tagged Items</span><strong>{{operations.lootSources.taxonomySummary.itemCount}}</strong></div>
+                    <div class="po-loot-sidebar-metric"><span>Category Lanes</span><strong>{{sourceSummary.merchantCategoryCount}}</strong></div>
+                    <div class="po-loot-sidebar-metric"><span>Catalog Tags</span><strong>{{operations.lootSources.tagCatalogCount}}</strong></div>
+                  </div>
+                  {{#if operations.lootSources.taxonomySummary.categoryRows.length}}
+                  <div class="po-op-summary">Merchant Categories</div>
+                  <div class="po-loot-taxonomy-chip-grid">
+                    {{#each operations.lootSources.taxonomySummary.categoryRows}}
+                    <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                  {{#if operations.lootSources.taxonomySummary.valueRows.length}}
+                  <div class="po-op-summary">Value Bands</div>
+                  <div class="po-loot-taxonomy-chip-grid">
+                    {{#each operations.lootSources.taxonomySummary.valueRows}}
+                    <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                  {{#if operations.lootSources.taxonomySummary.priceRows.length}}
+                  <div class="po-op-summary">Price Denominations</div>
+                  <div class="po-loot-taxonomy-chip-grid">
+                    {{#each operations.lootSources.taxonomySummary.priceRows}}
+                    <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                </article>
+
+                <article class="po-loot-tag-picker-card" data-loot-tag-mode="include">
+                  <div class="po-loot-section-head">
+                    <div>
+                      <div class="po-section-title">Require Tags</div>
+                      <div class="po-hint">All selected tags must exist on an item for it to enter the builder candidate pool.</div>
+                    </div>
+                    <div class="po-loot-builder-status"><span class="po-pill">{{operations.lootSources.includeTagSelectedCount}} selected</span></div>
+                  </div>
+                  {{#if operations.lootSources.hasIncludeTagGroups}}
+                  <div class="po-loot-tag-group-grid">
+                    {{#each operations.lootSources.includeTagGroups}}
+                    <details class="po-merchant-tag-group po-loot-tag-group" {{#if open}}open{{/if}}>
+                      <summary class="po-merchant-tag-group-summary">
+                        <span class="po-merchant-tag-group-title">{{label}}</span>
+                        <span class="po-merchant-tag-group-meta">{{selectedCount}} / {{optionCount}}</span>
+                      </summary>
+                      <div class="po-merchant-tag-group-options">
+                        {{#each options}}
+                        <label class="po-merchant-source-option">
+                          <input type="checkbox" name="lootKeywordIncludeTag" value="{{value}}" data-action="set-loot-keyword-include-tags" {{#if selected}}checked{{/if}} />
+                          <span>{{label}}</span>
+                        </label>
+                        {{/each}}
+                      </div>
+                    </details>
+                    {{/each}}
+                  </div>
+                  {{else}}
+                  <div class="po-op-summary">No Party Operations tags found in the current loot sources.</div>
+                  {{/if}}
+                  <label class="po-resource-row">
+                    <span>Manual CSV</span>
+                    <input type="text" class="po-input" data-action="set-loot-keyword-include-tags" value="{{operations.lootSources.keywordIncludeTagsInput}}" placeholder="merchant.alchemy, tier.t2, value.v3" />
+                  </label>
+                </article>
+
+                <article class="po-loot-tag-picker-card" data-loot-tag-mode="exclude">
+                  <div class="po-loot-section-head">
+                    <div>
+                      <div class="po-section-title">Block Tags</div>
+                      <div class="po-hint">Any selected tag will disqualify a matching item from the generated loot pool.</div>
+                    </div>
+                    <div class="po-loot-builder-status"><span class="po-pill">{{operations.lootSources.excludeTagSelectedCount}} selected</span></div>
+                  </div>
+                  {{#if operations.lootSources.hasExcludeTagGroups}}
+                  <div class="po-loot-tag-group-grid">
+                    {{#each operations.lootSources.excludeTagGroups}}
+                    <details class="po-merchant-tag-group po-loot-tag-group" {{#if open}}open{{/if}}>
+                      <summary class="po-merchant-tag-group-summary">
+                        <span class="po-merchant-tag-group-title">{{label}}</span>
+                        <span class="po-merchant-tag-group-meta">{{selectedCount}} / {{optionCount}}</span>
+                      </summary>
+                      <div class="po-merchant-tag-group-options">
+                        {{#each options}}
+                        <label class="po-merchant-source-option">
+                          <input type="checkbox" name="lootKeywordExcludeTag" value="{{value}}" data-action="set-loot-keyword-exclude-tags" {{#if selected}}checked{{/if}} />
+                          <span>{{label}}</span>
+                        </label>
+                        {{/each}}
+                      </div>
+                    </details>
+                    {{/each}}
+                  </div>
+                  {{else}}
+                  <div class="po-op-summary">No Party Operations tags found in the current loot sources.</div>
+                  {{/if}}
+                  <label class="po-resource-row">
+                    <span>Manual CSV</span>
+                    <input type="text" class="po-input" data-action="set-loot-keyword-exclude-tags" value="{{operations.lootSources.keywordExcludeTagsInput}}" placeholder="merchant.cursed, rarity.legendary" />
+                  </label>
+                </article>
               </div>
-              <div class="po-op-summary">Allowed Item Types</div>
-              <div class="po-item-filter-grid po-gm-loot-type-grid">{{#each operations.lootSources.itemTypeOptions}}<div class="po-checkbox-target"><input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} /><label class="po-checkbox-target-label" for="po-loot-item-type-{{value}}">{{label}}</label></div>{{/each}}</div>
-              <div class="po-gm-loot-rarity-grid">
-                <label class="po-resource-row"><span>Rarity Floor</span><select class="po-select" data-action="set-loot-rarity-floor">{{#each operations.lootSources.rarityFloorOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-                <label class="po-resource-row"><span>Rarity Ceiling</span><select class="po-select" data-action="set-loot-rarity-ceiling">{{#each operations.lootSources.rarityCeilingOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+              <div class="po-loot-filter-overview">
+                <span class="po-pill">{{operations.lootSources.keywordIncludeTagCount}} include tags</span>
+                <span class="po-pill">{{operations.lootSources.keywordExcludeTagCount}} exclude tags</span>
+                <span class="po-pill">{{operations.lootSources.tagCatalogCount}} catalog tags</span>
+              </div>
+              <div class="po-loot-governor-grid">
+                <article class="po-loot-taxonomy-card">
+                  <div class="po-section-title">Allowed Item Types</div>
+                  <div class="po-op-summary">Keep generation focused on the kinds of items the encounter should actually drop.</div>
+                  <div class="po-item-filter-grid po-gm-loot-type-grid">{{#each operations.lootSources.itemTypeOptions}}<div class="po-checkbox-target"><input id="po-loot-item-type-{{value}}" type="checkbox" data-action="toggle-loot-item-type" data-item-type="{{value}}" {{#if selected}}checked{{/if}} /><label class="po-checkbox-target-label" for="po-loot-item-type-{{value}}">{{label}}</label></div>{{/each}}</div>
+                </article>
+                <article class="po-loot-taxonomy-card">
+                  <div class="po-section-title">Rarity Guardrails</div>
+                  <div class="po-op-summary">Clamp how far the generator can roam up or down the Party Operations balance ladder.</div>
+                  <div class="po-gm-loot-rarity-grid">
+                    <label class="po-resource-row"><span>Rarity Floor</span><select class="po-select" data-action="set-loot-rarity-floor">{{#each operations.lootSources.rarityFloorOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                    <label class="po-resource-row"><span>Rarity Ceiling</span><select class="po-select" data-action="set-loot-rarity-ceiling">{{#each operations.lootSources.rarityCeilingOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                  </div>
+                  {{#if operations.lootSources.taxonomySummary.rarityRows.length}}
+                  <div class="po-loot-taxonomy-chip-grid">
+                    {{#each operations.lootSources.taxonomySummary.rarityRows}}
+                    <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                </article>
               </div>
               <div class="po-op-action-row po-gm-loot-filter-actions"><button type="button" class="po-btn po-btn-sm" data-action="reset-loot-source-config">Reset Filters</button></div>
             </div>
@@ -204,16 +567,32 @@
       </div>
       {{/if}}
 
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Published Claim Board</div>
-      {{#if operations.lootClaims.hasSelectedRun}}
-      <div class="po-op-summary">Selected Run: {{operations.lootClaims.selectedRunCard.statusLabel}} | Published: {{operations.lootClaims.publishedAtLabel}} by {{operations.lootClaims.publishedBy}}</div>
-      {{else}}
-      <div class="po-op-summary">No claim run is currently selected.</div>
-      {{/if}}
-      <div class="po-op-summary">Open Runs: {{operations.lootClaims.openRunCount}} | Archived Runs: {{operations.lootClaims.archivedRunCount}}</div>
-      <div class="po-op-summary">Claimable Items: {{operations.lootClaims.itemCount}} | Logged Claims: {{operations.lootClaims.claimsLogCount}}</div>
-      <div class="po-op-summary">Currency Remaining: {{operations.lootClaims.currencyRemaining.pp}} pp - {{operations.lootClaims.currencyRemaining.gp}} gp - {{operations.lootClaims.currencyRemaining.sp}} sp - {{operations.lootClaims.currencyRemaining.cp}} cp | Currency Claims: {{operations.lootClaims.currencyClaimedCount}}</div>
+      <section class="po-gm-section po-loot-claims-summary-panel">
+        <div class="po-loot-section-head">
+          <div>
+            <div class="po-section-title">Published Claim Board</div>
+            <div class="po-hint">Review the live player-facing board status here, then jump into the detailed claims board when you need to resolve or archive runs.</div>
+          </div>
+          <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+        </div>
+
+        {{#if lootClaims.hasSelectedRun}}
+        <div class="po-loot-claims-summary-grid">
+          <div class="po-loot-claims-summary-card"><span>Status</span><strong>{{lootClaims.selectedRunCard.statusLabel}}</strong></div>
+          <div class="po-loot-claims-summary-card"><span>Published</span><strong>{{lootClaims.selectedRunCard.publishedAtLabel}}</strong></div>
+          <div class="po-loot-claims-summary-card"><span>Items</span><strong>{{lootClaims.itemCount}}</strong></div>
+          <div class="po-loot-claims-summary-card"><span>Claims Logged</span><strong>{{lootClaims.claimsLogCount}}</strong></div>
+          <div class="po-loot-claims-summary-card"><span>Currency Remaining</span><strong>{{lootClaims.selectedRunCard.currencyRemainingLabel}}</strong></div>
+          <div class="po-loot-claims-summary-card"><span>Contested</span><strong>{{lootClaims.contestedItemCount}}</strong></div>
+        </div>
+        <div class="po-op-summary">Selected run published by {{lootClaims.selectedRunCard.publishedBy}}{{#if lootClaims.selectedRunCard.isArchived}} and archived {{lootClaims.selectedRunCard.archivedAtLabel}} by {{lootClaims.selectedRunCard.archivedBy}}{{/if}}.</div>
+        {{else}}
+        <div class="po-loot-empty-state">
+          <div class="po-section-title">No claim run is currently selected</div>
+          <div class="po-op-summary">Publish a builder result to players to create a live claim board run.</div>
+        </div>
+        {{/if}}
+      </section>
     </section>
   </div>
 </div>
