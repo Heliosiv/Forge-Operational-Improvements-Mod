@@ -10828,11 +10828,31 @@ function normalizeAudioLibrarySource(value) {
   return normalized || AUDIO_LIBRARY_DEFAULT_SOURCE;
 }
 
-function normalizeAudioLibraryRootPath(value) {
-  return String(value ?? "")
+function normalizeAudioLibraryRawPath(value) {
+  const normalized = String(value ?? "")
     .replace(/\\/g, "/")
+    .trim();
+  return normalized.replace(/^(https?):\/(?!\/)/i, "$1://");
+}
+
+function isAbsoluteAudioLibraryUrl(value) {
+  return /^https?:\/\//i.test(String(value ?? "").trim());
+}
+
+function normalizeAudioLibraryRootPath(value) {
+  const normalized = normalizeAudioLibraryRawPath(value);
+  if (!normalized) return "";
+  if (isAbsoluteAudioLibraryUrl(normalized)) {
+    try {
+      const url = new URL(normalized);
+      const pathname = url.pathname.replace(/\/+/g, "/").replace(/\/$/, "");
+      return `${url.protocol}//${url.host}${pathname}${url.search}${url.hash}`;
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to normalize audio library URL`, normalized, error);
+    }
+  }
+  return normalized
     .replace(/\/+/g, "/")
-    .trim()
     .replace(/\/$/, "");
 }
 
@@ -10841,8 +10861,54 @@ function isAbsoluteWindowsFilesystemPath(value) {
   return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
 }
 
+function decodeAudioLibraryPathSegment(value = "") {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+function getAudioLibraryUrlPathSegments(value = "") {
+  const normalized = normalizeAudioLibraryRootPath(value);
+  if (!isAbsoluteAudioLibraryUrl(normalized)) return [];
+  try {
+    const url = new URL(normalized);
+    return url.pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => decodeAudioLibraryPathSegment(segment));
+  } catch {
+    return [];
+  }
+}
+
+function getAudioLibrarySourcePath(value = "") {
+  const normalized = normalizeAudioLibraryRootPath(value);
+  if (!normalized) return "";
+  if (!isAbsoluteAudioLibraryUrl(normalized)) return normalized;
+  const segments = getAudioLibraryUrlPathSegments(normalized);
+  if (segments.length <= 0) return "";
+  if (/forge-vtt\.com$/i.test(new URL(normalized).hostname) && segments.length >= 2) {
+    return normalizeAudioLibraryRootPath(segments.slice(1).join("/"));
+  }
+  return normalizeAudioLibraryRootPath(segments.join("/"));
+}
+
+function getAudioLibraryComparablePath(value = "") {
+  const sourcePath = getAudioLibrarySourcePath(value);
+  return sourcePath || normalizeAudioLibraryRootPath(value);
+}
+
+function getAudioLibraryFilename(value = "") {
+  const comparable = getAudioLibraryComparablePath(value);
+  return decodeAudioLibraryPathSegment(String(comparable.split("/").pop() ?? value).trim());
+}
+
 function buildAudioLibraryPathHelpText(path = "") {
-  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedPath = getAudioLibrarySourcePath(path);
   if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
   if (isAbsoluteWindowsFilesystemPath(path)) {
     return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
@@ -10852,7 +10918,7 @@ function buildAudioLibraryPathHelpText(path = "") {
 
 function validateAudioLibraryPathForSource(source, rootPath) {
   const normalizedSource = normalizeAudioLibrarySource(source);
-  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  const normalizedRootPath = getAudioLibrarySourcePath(rootPath);
   if (!normalizedRootPath) {
     return "Set an audio root path before scanning.";
   }
@@ -10902,7 +10968,7 @@ function getSelectedAudioMixPreset() {
 function getAudioLibraryDraftState() {
   return {
     source: normalizeAudioLibrarySource(audioLibraryUiState.draft.source),
-    rootPath: normalizeAudioLibraryRootPath(audioLibraryUiState.draft.rootPath)
+    rootPath: getAudioLibrarySourcePath(audioLibraryUiState.draft.rootPath)
   };
 }
 
@@ -10916,14 +10982,14 @@ function getAudioLibrarySourceSetting() {
 }
 
 function getAudioLibraryRootSetting() {
-  return normalizeAudioLibraryRootPath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
+  return getAudioLibrarySourcePath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
 }
 
 function normalizeAudioLibraryItem(entry = {}) {
   const path = normalizeAudioLibraryRootPath(entry.path);
   if (!path) return null;
   const id = String(entry.id ?? path).trim() || path;
-  const name = String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim();
+  const name = decodeAudioLibraryPathSegment(String(entry.name ?? "").trim()) || getAudioLibraryFilename(path);
   const category = String(entry.category ?? "Uncategorized").trim() || "Uncategorized";
   const subcategory = String(entry.subcategory ?? "").trim();
   const kind = normalizeAudioLibraryKind(entry.kind === "all" ? "" : entry.kind);
@@ -10959,7 +11025,7 @@ function normalizeAudioLibraryCatalog(catalog = {}) {
   return {
     version: AUDIO_LIBRARY_VERSION,
     source: normalizeAudioLibrarySource(catalog?.source),
-    rootPath: normalizeAudioLibraryRootPath(catalog?.rootPath),
+    rootPath: getAudioLibrarySourcePath(catalog?.rootPath),
     scannedAt: Number.isFinite(scannedAtRaw) ? scannedAtRaw : 0,
     scannedBy: String(catalog?.scannedBy ?? "").trim(),
     items
@@ -10998,8 +11064,8 @@ function extractAudioLibraryTokens(value) {
 }
 
 function inferAudioLibraryClassification(path, rootPath = "") {
-  const normalizedPath = normalizeAudioLibraryRootPath(path);
-  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  const normalizedPath = getAudioLibraryComparablePath(path);
+  const normalizedRoot = getAudioLibrarySourcePath(rootPath);
   const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
     ? normalizedPath.slice(normalizedRoot.length + 1)
     : normalizedPath;
@@ -11055,12 +11121,12 @@ function inferAudioLibraryClassification(path, rootPath = "") {
 }
 
 function isAudioLibraryFile(path) {
-  const normalized = normalizeAudioLibraryRootPath(path).toLowerCase();
+  const normalized = getAudioLibraryComparablePath(path).toLowerCase();
   return AUDIO_LIBRARY_EXTENSIONS.some((extension) => normalized.endsWith(`.${extension}`));
 }
 
 function normalizeAudioLibraryDirectorySelection(path = "") {
-  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedPath = getAudioLibrarySourcePath(path);
   if (!normalizedPath) return "";
   if (!isAudioLibraryFile(normalizedPath)) return normalizedPath;
   const segments = normalizedPath.split("/").filter(Boolean);
@@ -11090,9 +11156,9 @@ function isUploadableAudioLibraryFile(file) {
 }
 
 function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
-  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  const normalizedRootPath = normalizeAudioLibraryDirectorySelection(rootPath);
   if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
-    return normalizeAudioLibraryDirectorySelection(normalizedRootPath);
+    return normalizedRootPath;
   }
   const normalizedFolderName = normalizeAudioLibraryRootPath(localFolderName).split("/").filter(Boolean).pop() ?? "";
   const fallbackFolderName = normalizedFolderName || "audio-library";
@@ -11144,7 +11210,7 @@ async function ensureAudioLibraryUploadDirectories(source, destinationRoot, rela
   }
 }
 async function browseAudioLibraryTree(source, rootPath) {
-  const queue = [normalizeAudioLibraryRootPath(rootPath)];
+  const queue = [normalizeAudioLibraryDirectorySelection(rootPath)];
   const visited = new Set();
   const files = [];
 
@@ -11165,7 +11231,7 @@ async function browseAudioLibraryTree(source, rootPath) {
       if (isAudioLibraryFile(file)) files.push(normalizeAudioLibraryRootPath(file));
     }
     for (const dir of nextDirs) {
-      const normalizedDir = normalizeAudioLibraryRootPath(dir);
+      const normalizedDir = normalizeAudioLibraryDirectorySelection(dir);
       if (normalizedDir && !visited.has(normalizedDir)) queue.push(normalizedDir);
     }
   }
@@ -11178,7 +11244,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
     throw new Error("GM permissions are required to scan audio libraries.");
   }
   const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
-  const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
+  const nextRootPath = normalizeAudioLibraryDirectorySelection(rootPath ?? getAudioLibraryDraftState().rootPath);
   const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
   if (pathValidationMessage) throw new Error(pathValidationMessage);
 
@@ -11238,7 +11304,7 @@ function setAudioLibraryDraftField(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   if (!field) return;
   if (field === "source") audioLibraryUiState.draft.source = normalizeAudioLibrarySource(actionElement?.value);
-  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(actionElement?.value);
+  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(actionElement?.value);
 }
 
 async function openAudioLibraryRootPicker() {
