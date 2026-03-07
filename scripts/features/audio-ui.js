@@ -22,9 +22,13 @@ export function createGmAudioPageApp(deps) {
     deleteSelectedAudioMixPreset,
     addTrackToSelectedAudioMixPreset,
     addSelectedLibraryTrackToAudioMixPreset,
+    queueSelectedTrackNext,
+    moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
     playSelectedAudioMixPreset,
     playSelectedAudioMixCandidate,
+    playNextAudioMixTrack,
+    restartCurrentAudioMixTrack,
     stopAudioMixPlayback,
     openGmPanelByKey
   } = deps;
@@ -127,6 +131,12 @@ export function createGmAudioPageApp(deps) {
         "add-selected-audio-track-to-mix": rerenderAlways(() => {
           return addSelectedLibraryTrackToAudioMixPreset();
         }),
+        "queue-selected-audio-track-next": rerenderAlways((actionElement) => {
+          return queueSelectedTrackNext(actionElement);
+        }),
+        "move-audio-mix-track": rerenderAlways((actionElement) => {
+          return moveTrackWithinSelectedAudioMixPreset(actionElement?.dataset?.trackId, actionElement?.dataset?.direction);
+        }),
         "remove-audio-mix-track": rerenderAlways((actionElement) => {
           return removeTrackFromSelectedAudioMixPreset(actionElement?.dataset?.trackId);
         }),
@@ -135,6 +145,12 @@ export function createGmAudioPageApp(deps) {
         }),
         "play-audio-mix-candidate": rerenderAlways((actionElement) => {
           return playSelectedAudioMixCandidate(actionElement);
+        }),
+        "play-audio-mix-next": rerenderAlways(() => {
+          return playNextAudioMixTrack();
+        }),
+        "restart-audio-mix-track": rerenderAlways(() => {
+          return restartCurrentAudioMixTrack();
         }),
         "stop-audio-mix": rerenderAlways(() => {
           return stopAudioMixPlayback();

@@ -9466,6 +9466,8 @@ export const GmAudioPageApp = createGmAudioPageApp({
   deleteSelectedAudioMixPreset,
   addTrackToSelectedAudioMixPreset,
   addSelectedLibraryTrackToAudioMixPreset,
+  queueSelectedTrackNext,
+  moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
   playSelectedAudioMixPreset: async () => {
     try {
@@ -9481,6 +9483,26 @@ export const GmAudioPageApp = createGmAudioPageApp({
     try {
       clearAudioLibraryError();
       await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playNextAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await playNextAudioMixTrack();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  restartCurrentAudioMixTrack: async () => {
+    try {
+      clearAudioLibraryError();
+      await restartCurrentAudioMixTrack();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
       setAudioLibraryError(message);
@@ -11742,6 +11764,68 @@ async function addSelectedLibraryTrackToAudioMixPreset() {
   return addTrackToSelectedAudioMixPreset(trackId);
 }
 
+function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
+  const playback = getAudioMixPlaybackState(getAudioLibraryCatalog());
+  const currentTrackId = String(playback?.activeTrack?.id ?? playback?.activeTrackId ?? "").trim();
+  if (!preset?.isCustom || !currentTrackId) return -1;
+  if (String(playback?.presetId ?? "").trim() !== String(preset.id ?? "").trim()) return -1;
+  const trackIds = Array.isArray(preset.trackIds) ? preset.trackIds : [];
+  return trackIds.indexOf(currentTrackId);
+}
+
+function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return normalizeAudioMixPresetTrackIds(trackIds);
+  const existing = normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => entry !== normalizedTrackId);
+  const nextIndex = Math.max(0, Math.min(existing.length, Number(targetIndex ?? existing.length)));
+  existing.splice(nextIndex, 0, normalizedTrackId);
+  return existing;
+}
+
+async function queueTrackNextInSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedCustomAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+  const insertionIndex = getAudioMixCurrentInsertionIndex(preset);
+  const targetIndex = insertionIndex >= 0 ? insertionIndex + 1 : 0;
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      return {
+        ...entry,
+        trackIds: buildReorderedAudioMixTrackIds(entry.trackIds ?? [], normalizedTrackId, targetIndex)
+      };
+    });
+    return store;
+  });
+  return true;
+}
+
+async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
+  const preset = getSelectedCustomAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
+      const index = rows.indexOf(normalizedTrackId);
+      if (index < 0) return entry;
+      const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
+      const targetIndex = Math.max(0, Math.min(rows.length - 1, index + delta));
+      if (targetIndex === index) return entry;
+      const [moved] = rows.splice(index, 1);
+      rows.splice(targetIndex, 0, moved);
+      return {
+        ...entry,
+        trackIds: rows
+      };
+    });
+    return store;
+  });
+  return true;
+}
+
 async function removeTrackFromSelectedAudioMixPreset(trackId) {
   const preset = getSelectedCustomAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
@@ -11926,6 +12010,29 @@ function getCurrentManagedAudioMixSound(playlist) {
   return sounds.find((sound) => Boolean(sound?.playing)) ?? null;
 }
 
+function normalizeAudioMixQueueTrackIds(trackIds = [], candidates = []) {
+  const available = new Set((Array.isArray(candidates) ? candidates : []).map(({ item }) => String(item?.id ?? "").trim()).filter(Boolean));
+  return normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => available.has(entry));
+}
+
+function buildOrderedAudioMixCandidates(candidates, options = {}) {
+  const rows = Array.isArray(candidates) ? candidates.slice() : [];
+  const candidateMap = new Map(rows.map((entry) => [String(entry?.item?.id ?? "").trim(), entry]));
+  const queuedIds = normalizeAudioMixQueueTrackIds(options.queueTrackIds, rows);
+  let ordered = queuedIds
+    .map((trackId) => candidateMap.get(trackId) ?? null)
+    .filter(Boolean);
+  if (ordered.length <= 0) ordered = rows;
+  const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  if (!queuedIds.length && preferredTrackId) {
+    const preferred = candidateMap.get(preferredTrackId) ?? null;
+    if (preferred) {
+      ordered = [preferred, ...ordered.filter((entry) => String(entry?.item?.id ?? "").trim() !== preferredTrackId)];
+    }
+  }
+  return ordered;
+}
+
 async function stopManagedAudioMixPlaylist(playlist) {
   if (!playlist) return false;
   if (typeof playlist.stopAll === "function") {
@@ -11952,6 +12059,32 @@ async function playManagedAudioMixSound(playlist, sound) {
   return false;
 }
 
+function getAudioMixStateFlag(playlist = getManagedAudioMixPlaylist()) {
+  const raw = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
+  return {
+    presetId: String(raw?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(raw?.activeTrackId ?? ""),
+    activeTrackName: String(raw?.activeTrackName ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(raw?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(raw?.currentIndex ?? 0) || 0)),
+    updatedAt: Number(raw?.updatedAt ?? 0) || 0
+  };
+}
+
+async function setAudioMixStateFlag(playlist, input = {}) {
+  if (!playlist?.setFlag) return null;
+  const next = {
+    presetId: String(input?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(input?.activeTrackId ?? ""),
+    activeTrackName: String(input?.activeTrackName ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(input?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(input?.currentIndex ?? 0) || 0)),
+    updatedAt: Number(input?.updatedAt ?? Date.now()) || Date.now()
+  };
+  await playlist.setFlag(MODULE_ID, "audioMixState", next);
+  return next;
+}
+
 async function playAudioMixPresetById(presetId, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
@@ -11970,13 +12103,11 @@ async function playAudioMixPresetById(presetId, options = {}) {
   if (!playlist) throw new Error("The managed mix playlist could not be created.");
   const currentSound = getCurrentManagedAudioMixSound(playlist);
   await stopManagedAudioMixPlaylist(playlist);
+  const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
   const chosenCandidate = preferredTrackId
-    ? candidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
-    : pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
-  const orderedCandidates = chosenCandidate
-    ? [chosenCandidate, ...candidates.filter(({ item }) => item.id !== chosenCandidate.item.id)]
-    : candidates;
+    ? orderedCandidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
+    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
   const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
   const chosenSound = Array.from(createdSounds ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id)
     ?? createdSounds?.[0]
@@ -11985,16 +12116,20 @@ async function playAudioMixPresetById(presetId, options = {}) {
     throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
   }
 
-  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function") {
+  const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
+  const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
+  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function" && currentIndex === 0) {
     await playlist.playAll();
   } else {
     const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
     if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
   }
-  await playlist.setFlag(MODULE_ID, "audioMixState", {
+  await setAudioMixStateFlag(playlist, {
     presetId: preset.id,
     activeTrackId: String(chosenCandidate?.item?.id ?? ""),
     activeTrackName: String(chosenCandidate?.item?.name ?? chosenSound.name ?? ""),
+    queueTrackIds,
+    currentIndex,
     updatedAt: Date.now()
   });
   audioLibraryUiState.selectedMixPresetId = preset.id;
@@ -12018,10 +12153,13 @@ async function stopAudioMixPlayback() {
   const playlist = getManagedAudioMixPlaylist();
   if (!playlist) return false;
   await stopManagedAudioMixPlaylist(playlist);
-  await playlist.setFlag(MODULE_ID, "audioMixState", {
+  const priorState = getAudioMixStateFlag(playlist);
+  await setAudioMixStateFlag(playlist, {
     presetId: getSelectedAudioMixPreset().id,
     activeTrackId: "",
     activeTrackName: "",
+    queueTrackIds: priorState.queueTrackIds,
+    currentIndex: priorState.currentIndex,
     updatedAt: Date.now()
   });
   setAudioMixStatus("Mix playback stopped.");
@@ -12032,7 +12170,94 @@ async function stopAudioMixPlayback() {
 
 async function playAudioMixCandidateByTrackId(trackId) {
   const preset = getSelectedAudioMixPreset();
-  return playAudioMixPresetById(preset.id, { excludeTrackId: "", preferredTrackId: String(trackId ?? "").trim() });
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const queueTrackIds = String(mixState.presetId ?? "").trim() === String(preset.id ?? "").trim()
+    ? mixState.queueTrackIds
+    : (preset.isCustom ? preset.trackIds : []);
+  return playAudioMixPresetById(preset.id, {
+    excludeTrackId: "",
+    preferredTrackId: String(trackId ?? "").trim(),
+    queueTrackIds
+  });
+}
+
+async function playManagedAudioMixQueueAtIndex(targetIndex, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return null;
+  }
+  const catalog = getAudioLibraryCatalog();
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const candidates = getPlayableAudioMixCandidates(catalog, preset);
+  const queueTrackIds = normalizeAudioMixQueueTrackIds(mixState.queueTrackIds, candidates);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id, {});
+  }
+  const normalizedIndex = Math.max(0, Math.min(queueTrackIds.length - 1, Math.floor(Number(targetIndex ?? 0) || 0)));
+  const preferredTrackId = queueTrackIds[normalizedIndex];
+  return playAudioMixPresetById(preset.id, {
+    queueTrackIds,
+    preferredTrackId,
+    currentIndex: normalizedIndex,
+    excludeTrackId: options.excludeTrackId ?? ""
+  });
+}
+
+async function playNextAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length <= 0) {
+    return playAudioMixPresetById(preset.id);
+  }
+  const nextIndex = mixState.currentIndex + 1;
+  if (nextIndex >= queueTrackIds.length) {
+    if (!preset.repeat) {
+      await stopAudioMixPlayback();
+      setAudioMixStatus(`${preset.label} reached the end of the queue.`);
+      return null;
+    }
+    return playManagedAudioMixQueueAtIndex(0);
+  }
+  return playManagedAudioMixQueueAtIndex(nextIndex);
+}
+
+async function restartCurrentAudioMixTrack() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.activeTrackId) {
+    return playAudioMixPresetById(getSelectedAudioMixPreset().id);
+  }
+  return playManagedAudioMixQueueAtIndex(mixState.currentIndex);
+}
+
+async function queueSelectedTrackNext(actionElement) {
+  const preset = getSelectedAudioMixPreset();
+  const trackId = String(actionElement?.dataset?.trackId ?? "").trim() || String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  if (!trackId) return false;
+  if (preset?.isCustom) return queueTrackNextInSelectedAudioMixPreset(trackId);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  const currentIndex = Math.max(0, Math.floor(Number(mixState.currentIndex ?? 0) || 0));
+  const filtered = queueTrackIds.filter((entry) => entry !== trackId);
+  const targetIndex = Math.min(filtered.length, currentIndex + 1);
+  filtered.splice(targetIndex, 0, trackId);
+  if (playlist) {
+    await setAudioMixStateFlag(playlist, {
+      ...mixState,
+      queueTrackIds: filtered,
+      updatedAt: Date.now()
+    });
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    return true;
+  }
+  return false;
 }
 
 function getFilteredAudioLibraryItems(catalog) {
@@ -12106,11 +12331,26 @@ function buildAudioLibraryResults(catalog) {
 
 function getAudioMixPlaybackState(catalog) {
   const playlist = getManagedAudioMixPlaylist();
-  const mixFlag = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
+  const mixFlag = getAudioMixStateFlag(playlist);
   const playingSound = getCurrentManagedAudioMixSound(playlist);
   const activeTrackId = String(playingSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? mixFlag?.activeTrackId ?? "").trim();
   const activeTrack = catalog.items.find((item) => item.id === activeTrackId) ?? null;
   const activePreset = getAudioMixPresetById(mixFlag?.presetId ?? getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixFlag.queueTrackIds ?? []);
+  const queueTracks = queueTrackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        ...item,
+        order: index + 1,
+        isActive: item.id === activeTrackId,
+        isCurrentIndex: index === mixFlag.currentIndex
+      };
+    })
+    .filter(Boolean);
+  const currentIndex = queueTracks.findIndex((entry) => entry.id === activeTrackId);
+  const normalizedCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(Math.max(0, mixFlag.currentIndex), Math.max(0, queueTracks.length - 1));
   return {
     hasPlaylist: Boolean(playlist),
     playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
@@ -12118,8 +12358,16 @@ function getAudioMixPlaybackState(catalog) {
     presetId: activePreset.id,
     presetLabel: activePreset.label,
     activeTrack,
+    activeTrackId,
     activeTrackName: String(activeTrack?.name ?? mixFlag?.activeTrackName ?? "").trim(),
-    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-"
+    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-",
+    queueTrackIds,
+    queueTracks,
+    hasQueue: queueTracks.length > 0,
+    queueLength: queueTracks.length,
+    currentIndex: normalizedCurrentIndex,
+    canSkipNext: queueTracks.length > 1 || Boolean(activePreset.repeat),
+    canRestart: Boolean(activeTrackId)
   };
 }
 
@@ -12156,6 +12404,8 @@ function buildAudioMixContext(catalog) {
   const candidates = selectedPreset.isCustom ? assignedCandidates : suggestedCandidates;
   const playback = getAudioMixPlaybackState(catalog);
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
+  const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
+  const liveQueueTracks = playbackMatchesSelection && playback.hasQueue ? playback.queueTracks : [];
   return {
     status: audioLibraryUiState.mixStatus,
     hasStatus: Boolean(audioLibraryUiState.mixStatus),
@@ -12199,7 +12449,8 @@ function buildAudioMixContext(catalog) {
       score,
       kindLabel: getAudioLibraryKindLabel(item.kind),
       usageLabel: getAudioLibraryUsageLabel(item.usage),
-      selected: item.id === playback?.activeTrack?.id
+      selected: item.id === playback?.activeTrack?.id,
+      isActive: item.id === playback?.activeTrack?.id
     })),
     hasAssignedTracks: assignedCandidates.length > 0,
     suggestedTracks: suggestedCandidates.slice(0, 20).map(({ item, score }) => ({
@@ -12221,6 +12472,17 @@ function buildAudioMixContext(catalog) {
       kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
       usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
       playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode)
+    },
+    queue: {
+      hasLiveQueue: liveQueueTracks.length > 0,
+      tracks: liveQueueTracks.map((track) => ({
+        ...track,
+        kindLabel: getAudioLibraryKindLabel(track.kind),
+        usageLabel: getAudioLibraryUsageLabel(track.usage)
+      })),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      canControl: playbackMatchesSelection || selectedPreset.isCustom
     },
     playback: {
       ...playback,
@@ -35750,8 +36012,12 @@ function buildPartyOperationsApi() {
       createMixPreset: () => createAudioMixPresetFromSelection(),
       deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
       addTrackToSelectedMixPreset: (trackId) => addTrackToSelectedAudioMixPreset(trackId),
+      queueTrackNext: (trackId) => queueSelectedTrackNext({ dataset: { trackId } }),
+      moveTrackInSelectedMixPreset: (trackId, direction) => moveTrackWithinSelectedAudioMixPreset(trackId, direction),
       removeTrackFromSelectedMixPreset: (trackId) => removeTrackFromSelectedAudioMixPreset(trackId),
       playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
+      nextTrack: () => playNextAudioMixTrack(),
+      restartTrack: () => restartCurrentAudioMixTrack(),
       stopMix: () => stopAudioMixPlayback(),
       pick: ({ kind = "all", usage = "all", search = "" } = {}) => {
         const catalog = getAudioLibraryCatalog();

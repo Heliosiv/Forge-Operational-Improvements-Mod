@@ -6271,6 +6271,14 @@
   align-items: center;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-assigned-list .po-audio-track-row {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-card .po-section-title + .po-audio-track-list {
+  margin-top: 6px;
+}
+
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-player {
   width: 100%;
   min-height: 34px;
@@ -6284,6 +6292,10 @@
   }
 
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list) .po-audio-track-row {
     grid-template-columns: 1fr;
   }
 }

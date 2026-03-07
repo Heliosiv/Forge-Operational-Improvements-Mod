@@ -144,6 +144,8 @@
           </div>
           <div class="po-op-action-row po-audio-card-actions po-audio-mix-actions">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="play-audio-mix" {{#unless audio.mix.hasCandidates}}disabled{{/unless}}>Play Mix</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-next" {{#unless audio.mix.playback.canSkipNext}}disabled{{/unless}}>Next Track</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="restart-audio-mix-track" {{#unless audio.mix.playback.canRestart}}disabled{{/unless}}>Restart Track</button>
             <button type="button" class="po-btn po-btn-sm" data-action="stop-audio-mix">Stop Mix</button>
           </div>
           {{#if audio.mix.hasStatus}}
@@ -205,8 +207,35 @@
               <button type="button" class="po-btn po-btn-sm" data-action="add-selected-audio-track-to-mix" {{#unless audio.mix.editor.hasSelectedLibraryTrack}}disabled{{/unless}}>
                 Add Selected Library Track{{#if audio.mix.editor.hasSelectedLibraryTrack}}: {{audio.mix.editor.selectedLibraryTrackName}}{{/if}}
               </button>
+              <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" {{#unless audio.mix.editor.hasSelectedLibraryTrack}}disabled{{/unless}}>
+                Queue Selected Next
+              </button>
               <button type="button" class="po-btn po-btn-sm" data-action="delete-audio-mix-preset">Delete Preset</button>
             </div>
+          </div>
+          {{/if}}
+          {{#if audio.mix.queue.hasLiveQueue}}
+          <div class="po-section-title">Live Queue</div>
+          <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Live mix queue">
+            {{#each audio.mix.queue.tracks}}
+            <div class="po-audio-track-row {{#if isActive}}is-selected{{/if}}" role="listitem">
+              <div class="po-audio-track-main">
+                <div class="po-audio-track-name">{{order}}. {{name}}</div>
+                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}}</div>
+              </div>
+              <div class="po-audio-track-badges">
+                {{#if isActive}}<span class="po-pill">Live</span>{{/if}}
+                <span class="po-pill">{{kindLabel}}</span>
+                <span class="po-pill">{{usageLabel}}</span>
+              </div>
+              <div class="po-audio-inline-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
+                {{#if ../audio.mix.editor.canEdit}}
+                <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Queue Next</button>
+                {{/if}}
+              </div>
+            </div>
+            {{/each}}
           </div>
           {{/if}}
           {{#if audio.mix.playback.hasActiveTrack}}
@@ -230,7 +259,7 @@
         {{#if audio.mix.selectedPreset.isCustom}}
         <div class="po-section-title">Preset Tracks</div>
         {{#if audio.mix.hasAssignedTracks}}
-        <div class="po-audio-track-list po-audio-candidate-list" role="list" aria-label="Assigned mix tracks">
+        <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Assigned mix tracks">
           {{#each audio.mix.assignedTracks}}
           <div class="po-audio-track-row {{#if selected}}is-selected{{/if}}" role="listitem">
             <div class="po-audio-track-main">
@@ -242,7 +271,10 @@
               <span class="po-pill">{{usageLabel}}</span>
             </div>
             <div class="po-audio-inline-actions">
-              <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Queue Next</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="up">Up</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="down">Down</button>
               <button type="button" class="po-btn po-btn-sm" data-action="remove-audio-mix-track" data-track-id="{{id}}">Remove</button>
             </div>
           </div>
@@ -267,6 +299,8 @@
             </div>
             <div class="po-audio-inline-actions">
               <button type="button" class="po-btn po-btn-sm" data-action="add-audio-mix-track" data-track-id="{{id}}">Add</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Add Next</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
             </div>
           </div>
           {{/each}}
