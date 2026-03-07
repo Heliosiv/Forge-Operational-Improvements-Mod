@@ -12384,9 +12384,8 @@ function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
 function getAudioMixPlaylistMode(preset, candidateCount = 0) {
   const disabled = CONST?.PLAYLIST_MODES?.DISABLED ?? 0;
   const sequential = CONST?.PLAYLIST_MODES?.SEQUENTIAL ?? disabled;
-  const shuffle = CONST?.PLAYLIST_MODES?.SHUFFLE ?? sequential;
   if (!shouldSequenceAudioMixPresetPlayback(preset, candidateCount)) return disabled;
-  return preset?.repeat ? shuffle : sequential;
+  return sequential;
 }
 
 async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
@@ -12568,12 +12567,8 @@ async function playAudioMixPresetById(presetId, options = {}) {
 
   const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
   const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
-  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function" && currentIndex === 0) {
-    await playlist.playAll();
-  } else {
-    const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
-    if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
-  }
+  const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
+  if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
   await setAudioMixStateFlag(playlist, {
     presetId: preset.id,
     activeTrackId: String(chosenCandidate?.item?.id ?? ""),
