@@ -1,6 +1,7 @@
 import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
+import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
 import {
@@ -157,6 +158,9 @@ export const SETTINGS = {
   INJURY_RECOVERY: "injuryRecoveryState",
   INJURY_REMINDER_DAY: "injuryReminderDay",
   LOOT_SOURCE_CONFIG: "lootSourceConfig",
+  AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
+  AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
+  AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   LAUNCHER_PLACEMENT: "launcherPlacement",
@@ -197,6 +201,7 @@ let gmEnvironmentPageAppInstance = null;
 let gmLootPageAppInstance = null;
 let gmDowntimePageAppInstance = null;
 let gmMerchantsPageAppInstance = null;
+let gmAudioPageAppInstance = null;
 let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
@@ -264,6 +269,7 @@ const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
   "party-operations-gm-environment-page",
   "party-operations-gm-downtime-page",
   "party-operations-gm-merchants-page",
+  "party-operations-gm-audio-page",
   "party-operations-gm-loot-page",
   "party-operations-gm-loot-claims-board"
 ]);
@@ -283,11 +289,13 @@ const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "party-operations-gm-environment-page",
     "party-operations-gm-downtime-page",
     "party-operations-gm-merchants-page",
+    "party-operations-gm-audio-page",
     "party-operations-gm-loot-page",
     "party-operations-gm-loot-claims-board"
   ]),
   [REFRESH_SCOPE_KEYS.LOOT]: Object.freeze([
     "rest-watch-app",
+    "party-operations-gm-audio-page",
     "party-operations-gm-loot-page",
     "party-operations-gm-loot-claims-board"
   ]),
@@ -424,6 +432,7 @@ const PO_TEMPLATE_MAP = Object.freeze({
   "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
   "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",
   "gm-merchants": "modules/party-operations/templates/gm-merchants.hbs",
+  "gm-audio": "modules/party-operations/templates/gm-audio.hbs",
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
 });
@@ -453,6 +462,7 @@ const APP_WINDOW_SIZE_PROFILES = Object.freeze({
   "gm-environment": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-downtime": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-merchants": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-audio": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-loot": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-loot-claims-board": NEAR_FULLSCREEN_WINDOW_PROFILE
 });
@@ -465,6 +475,7 @@ const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
   "party-operations-gm-environment-page": "gm-environment",
   "party-operations-gm-downtime-page": "gm-downtime",
   "party-operations-gm-merchants-page": "gm-merchants",
+  "party-operations-gm-audio-page": "gm-audio",
   "party-operations-gm-loot-page": "gm-loot",
   "party-operations-gm-loot-claims-board": "gm-loot-claims-board"
 });
@@ -717,6 +728,9 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
       return [REFRESH_SCOPE_KEYS.OPERATIONS];
     case SETTINGS.LOOT_SOURCE_CONFIG:
     case SETTINGS.LOOT_SCARCITY:
+    case SETTINGS.AUDIO_LIBRARY_SOURCE:
+    case SETTINGS.AUDIO_LIBRARY_ROOT:
+    case SETTINGS.AUDIO_LIBRARY_CATALOG:
       return [REFRESH_SCOPE_KEYS.LOOT];
     case SETTINGS.INJURY_RECOVERY:
     case SETTINGS.INJURY_REMINDER_DAY:
@@ -8493,6 +8507,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "gm-quick-open-merchants": async () => {
           openGmMerchantsPage({ force: true });
         },
+        "gm-quick-open-audio": async () => {
+          openGmAudioPage({ force: true });
+        },
         "gm-quick-open-loot": async () => {
           openGmLootPage({ force: true });
         },
@@ -8977,6 +8994,36 @@ function buildGmMerchantsPageContext() {
   };
 }
 
+function buildGmAudioPageContext() {
+  const catalog = getAudioLibraryCatalog();
+  const hasSelectedTrack = catalog.items.some((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim());
+  if (!hasSelectedTrack) {
+    audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+  }
+  const results = buildAudioLibraryResults(catalog);
+  const selectedTrack = getSelectedAudioLibraryTrack(catalog, results);
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    audio: {
+      draft: getAudioLibraryDraftState(),
+      draftHint: buildAudioLibraryPathHelpText(audioLibraryUiState.draft.rootPath),
+      viewLibrary: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
+      viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
+      filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
+      filterOptions: buildAudioLibraryFilterOptions(),
+      summary: buildAudioLibrarySummary(catalog),
+      results,
+      mix: buildAudioMixContext(catalog),
+      selectedTrack,
+      hasCatalog: catalog.items.length > 0,
+      hasError: Boolean(audioLibraryUiState.error),
+      error: audioLibraryUiState.error
+    }
+  };
+}
+
 function buildGmLootPageContext() {
   const operations = getStandaloneOpsContext();
   const lootSources = operations?.lootSources ?? {};
@@ -9084,6 +9131,20 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
   return app;
 }
 
+function openGmAudioPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view audio controls.");
+    return null;
+  }
+  const app = gmAudioPageAppInstance?.element?.isConnected
+    ? gmAudioPageAppInstance
+    : new GmAudioPageApp(getResponsiveWindowOptions("gm-audio"));
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-audio" });
+  return app;
+}
+
 function openGmLootPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
   if (!canAccessAllPlayerOps()) {
@@ -9121,6 +9182,9 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   }
   if (key === "merchants") {
     return openGmMerchantsPage({ ...renderOptions, suppressHistory });
+  }
+  if (key === "audio") {
+    return openGmAudioPage({ ...renderOptions, suppressHistory });
   }
   if (key === "loot") {
     return openGmLootPage({ ...renderOptions, suppressHistory });
@@ -9359,6 +9423,74 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   openGmPanelByKey
 });
 
+export const GmAudioPageApp = createGmAudioPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    gmAudioPageAppInstance = instance;
+  },
+  buildContext: buildGmAudioPageContext,
+  openMainTab,
+  setAudioLibraryView,
+  setAudioLibraryDraftField,
+  openAudioLibraryRootPicker,
+  uploadLocalAudioFolderToLibrary: async () => {
+    try {
+      clearAudioLibraryError();
+      await uploadLocalAudioFolderToLibrary();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio library upload failed: ${message}`);
+    }
+  },
+  scanConfiguredAudioLibrary: async () => {
+    try {
+      clearAudioLibraryError();
+      await scanAudioLibraryCatalog();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio library scan failed: ${message}`);
+    }
+  },
+  clearAudioLibraryCatalog,
+  setAudioLibraryFilterField,
+  selectAudioLibraryTrack,
+  selectAudioMixPreset,
+  playSelectedAudioMixPreset: async () => {
+    try {
+      clearAudioLibraryError();
+      await playAudioMixPresetById(getSelectedAudioMixPreset().id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  playSelectedAudioMixCandidate: async (actionElement) => {
+    try {
+      clearAudioLibraryError();
+      await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  stopAudioMixPlayback: async () => {
+    try {
+      clearAudioLibraryError();
+      await stopAudioMixPlayback();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio stop failed: ${message}`);
+    }
+  },
+  openGmPanelByKey
+});
+
 export const GmLootPageApp = createGmLootPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
@@ -9380,6 +9512,8 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootRarityFloor,
   setLootRarityCeiling,
   setLootManifestPack,
+  importLootManifestCompendiumToWorld,
+  clearLootManifestImportedWorldItems,
   setLootKeywordIncludeTags,
   setLootKeywordExcludeTags,
   resetLootSourceConfig,
@@ -10544,6 +10678,1046 @@ function buildDefaultLootSourceConfig() {
   };
 }
 
+const AUDIO_LIBRARY_DEFAULT_SOURCE = "data";
+const AUDIO_LIBRARY_VERSION = 1;
+const AUDIO_LIBRARY_EXTENSIONS = Object.freeze(["mp3", "wav", "ogg", "webm", "flac", "m4a"]);
+const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
+  all: "All Kinds",
+  music: "Music",
+  ambience: "Ambience",
+  sfx: "SFX",
+  voice: "Voice"
+});
+const AUDIO_LIBRARY_USAGE_LABELS = Object.freeze({
+  all: "All Usages",
+  general: "General",
+  rest: "Rest / Camp",
+  travel: "Travel",
+  combat: "Combat",
+  intrigue: "Intrigue",
+  tension: "Tension / Horror",
+  ambience: "Ambience",
+  foley: "Foley / World",
+  stinger: "Stinger / One-Shot",
+  town: "Town / Tavern",
+  voice: "Voicelines",
+  scifi: "Sci-Fi"
+});
+const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
+  LIBRARY: "library",
+  MIX: "mix"
+});
+const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
+const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
+const AUDIO_MIX_PRESETS = Object.freeze([
+  {
+    id: "camp",
+    label: "Camp",
+    description: "Restful campfire, downtime, and fireside beds.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["rest", "ambience", "general"],
+    searchTokens: ["camp", "night", "sleep", "blissful", "harp", "fire", "rest"],
+    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    volume: 0.48,
+    fade: 1800,
+    repeat: true
+  },
+  {
+    id: "travel",
+    label: "Travel",
+    description: "Road, wilderness, and marching momentum.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["travel", "ambience", "general"],
+    searchTokens: ["travel", "journey", "road", "march", "path", "adventure"],
+    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    volume: 0.52,
+    fade: 1400,
+    repeat: true
+  },
+  {
+    id: "intrigue",
+    label: "Intrigue",
+    description: "Courtly schemes, stealth, suspicion, and investigation.",
+    preferredKinds: ["music"],
+    preferredUsage: ["intrigue", "tension", "general"],
+    searchTokens: ["intrigue", "court", "waltz", "curiosity", "mystery", "shadow", "noble", "palace", "whisper"],
+    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    volume: 0.46,
+    fade: 1600,
+    repeat: true
+  },
+  {
+    id: "combat",
+    label: "Combat",
+    description: "Pressure, battle, and spell-heavy action.",
+    preferredKinds: ["music", "sfx"],
+    preferredUsage: ["combat", "stinger", "general"],
+    searchTokens: ["action", "battle", "combat", "war", "spell", "melee", "archer", "fight"],
+    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    volume: 0.64,
+    fade: 900,
+    repeat: true
+  },
+  {
+    id: "horror",
+    label: "Horror",
+    description: "Dread, anxiety, undead, and lurking danger.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["tension", "ambience", "intrigue"],
+    searchTokens: ["horror", "anxiety", "dark", "undead", "fear", "whisper", "creep", "shadow"],
+    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    volume: 0.44,
+    fade: 1900,
+    repeat: true
+  },
+  {
+    id: "town",
+    label: "Town",
+    description: "Taverns, courtyards, folk ambience, and street life.",
+    preferredKinds: ["music", "ambience"],
+    preferredUsage: ["town", "foley", "general"],
+    searchTokens: ["town", "tavern", "market", "city", "courtyard", "folk", "cooking", "village"],
+    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    volume: 0.42,
+    fade: 1500,
+    repeat: true
+  },
+  {
+    id: "stingers",
+    label: "Stingers",
+    description: "Short one-shots and punctuation hits.",
+    preferredKinds: ["sfx", "voice"],
+    preferredUsage: ["stinger", "voice", "combat"],
+    searchTokens: ["stinger", "shot", "cinematic", "spell", "impact", "voice"],
+    channel: CONST?.AUDIO_CHANNELS?.interface ?? "interface",
+    volume: 0.6,
+    fade: 300,
+    repeat: false
+  }
+]);
+const audioLibraryUiState = {
+  draft: {
+    source: AUDIO_LIBRARY_DEFAULT_SOURCE,
+    rootPath: ""
+  },
+  view: AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
+  filters: {
+    search: "",
+    kind: "all",
+    usage: "all"
+  },
+  selectedTrackId: "",
+  selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  mixStatus: "",
+  error: ""
+};
+
+function buildDefaultAudioLibraryCatalog() {
+  return {
+    version: AUDIO_LIBRARY_VERSION,
+    source: AUDIO_LIBRARY_DEFAULT_SOURCE,
+    rootPath: "",
+    scannedAt: 0,
+    scannedBy: "",
+    items: []
+  };
+}
+
+function normalizeAudioLibrarySource(value) {
+  const normalized = String(value ?? "").trim();
+  return normalized || AUDIO_LIBRARY_DEFAULT_SOURCE;
+}
+
+function normalizeAudioLibraryRootPath(value) {
+  return String(value ?? "")
+    .replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .trim()
+    .replace(/\/$/, "");
+}
+
+function isAbsoluteWindowsFilesystemPath(value) {
+  const normalized = String(value ?? "").trim();
+  return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
+}
+
+function buildAudioLibraryPathHelpText(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
+  if (isAbsoluteWindowsFilesystemPath(path)) {
+    return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
+  }
+  return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
+}
+
+function validateAudioLibraryPathForSource(source, rootPath) {
+  const normalizedSource = normalizeAudioLibrarySource(source);
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedRootPath) {
+    return "Set an audio root path before scanning.";
+  }
+  if (isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return `Audio scanning only works on ${normalizedSource} asset paths served by Foundry or Forge. Use a server path like music/Fantasy Complete II MP3, not ${rootPath}.`;
+  }
+  return "";
+}
+
+function normalizeAudioLibrarySearch(value) {
+  return String(value ?? "").trim().toLowerCase().slice(0, 120);
+}
+
+function normalizeAudioLibraryKind(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_LIBRARY_KIND_LABELS, normalized) ? normalized : "all";
+}
+
+function normalizeAudioLibraryUsage(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_LIBRARY_USAGE_LABELS, normalized) ? normalized : "all";
+}
+
+function normalizeAudioLibraryFilters(filters = {}) {
+  return {
+    search: normalizeAudioLibrarySearch(filters.search),
+    kind: normalizeAudioLibraryKind(filters.kind),
+    usage: normalizeAudioLibraryUsage(filters.usage)
+  };
+}
+
+function normalizeAudioLibraryView(value) {
+  return String(value ?? "").trim().toLowerCase() === AUDIO_LIBRARY_VIEW_IDS.MIX
+    ? AUDIO_LIBRARY_VIEW_IDS.MIX
+    : AUDIO_LIBRARY_VIEW_IDS.LIBRARY;
+}
+
+function getAudioMixPresetById(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return AUDIO_MIX_PRESETS.find((preset) => preset.id === normalized) ?? AUDIO_MIX_PRESETS[0];
+}
+
+function getSelectedAudioMixPreset() {
+  return getAudioMixPresetById(audioLibraryUiState.selectedMixPresetId);
+}
+
+function getAudioLibraryDraftState() {
+  return {
+    source: normalizeAudioLibrarySource(audioLibraryUiState.draft.source),
+    rootPath: normalizeAudioLibraryRootPath(audioLibraryUiState.draft.rootPath)
+  };
+}
+
+function syncAudioLibraryDraftFromSettings() {
+  audioLibraryUiState.draft.source = getAudioLibrarySourceSetting();
+  audioLibraryUiState.draft.rootPath = getAudioLibraryRootSetting();
+}
+
+function getAudioLibrarySourceSetting() {
+  return normalizeAudioLibrarySource(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_SOURCE));
+}
+
+function getAudioLibraryRootSetting() {
+  return normalizeAudioLibraryRootPath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
+}
+
+function normalizeAudioLibraryItem(entry = {}) {
+  const path = normalizeAudioLibraryRootPath(entry.path);
+  if (!path) return null;
+  const id = String(entry.id ?? path).trim() || path;
+  const name = String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim();
+  const category = String(entry.category ?? "Uncategorized").trim() || "Uncategorized";
+  const subcategory = String(entry.subcategory ?? "").trim();
+  const kind = normalizeAudioLibraryKind(entry.kind === "all" ? "" : entry.kind);
+  const usage = normalizeAudioLibraryUsage(entry.usage === "all" ? "" : entry.usage);
+  const extensionRaw = String(entry.extension ?? "").trim().replace(/^\./, "").toLowerCase();
+  const extension = AUDIO_LIBRARY_EXTENSIONS.includes(extensionRaw) ? extensionRaw : "mp3";
+  const tags = Array.isArray(entry.tags)
+    ? entry.tags
+      .map((tag) => String(tag ?? "").trim())
+      .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
+      .slice(0, 12)
+    : [];
+  return {
+    id,
+    path,
+    name,
+    category,
+    subcategory,
+    kind: kind === "all" ? "music" : kind,
+    usage: usage === "all" ? "general" : usage,
+    extension,
+    tags
+  };
+}
+
+function normalizeAudioLibraryCatalog(catalog = {}) {
+  const items = Array.isArray(catalog?.items)
+    ? catalog.items
+      .map((entry) => normalizeAudioLibraryItem(entry))
+      .filter(Boolean)
+    : [];
+  const scannedAtRaw = Number(catalog?.scannedAt ?? 0);
+  return {
+    version: AUDIO_LIBRARY_VERSION,
+    source: normalizeAudioLibrarySource(catalog?.source),
+    rootPath: normalizeAudioLibraryRootPath(catalog?.rootPath),
+    scannedAt: Number.isFinite(scannedAtRaw) ? scannedAtRaw : 0,
+    scannedBy: String(catalog?.scannedBy ?? "").trim(),
+    items
+  };
+}
+
+function getAudioLibraryCatalog() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_CATALOG);
+  return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+}
+
+function setAudioLibraryError(message = "") {
+  audioLibraryUiState.error = String(message ?? "").trim();
+}
+
+function clearAudioLibraryError() {
+  setAudioLibraryError("");
+}
+
+function getAudioLibraryKindLabel(value) {
+  const normalized = normalizeAudioLibraryKind(value);
+  return AUDIO_LIBRARY_KIND_LABELS[normalized] ?? "Music";
+}
+
+function getAudioLibraryUsageLabel(value) {
+  const normalized = normalizeAudioLibraryUsage(value);
+  return AUDIO_LIBRARY_USAGE_LABELS[normalized] ?? "General";
+}
+
+function extractAudioLibraryTokens(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function inferAudioLibraryClassification(path, rootPath = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
+    ? normalizedPath.slice(normalizedRoot.length + 1)
+    : normalizedPath;
+  const segments = relativePath.split("/").filter(Boolean);
+  const filename = segments.at(-1) ?? normalizedPath;
+  const stem = filename.replace(/\.[^.]+$/u, "");
+  const categoryRaw = segments[0] ?? "Uncategorized";
+  const subcategoryRaw = segments.length > 2 ? segments[1] : "";
+  const category = categoryRaw.replace(/^\d+\s*/u, "").trim() || categoryRaw;
+  const subcategory = subcategoryRaw.replace(/^\d+\s*/u, "").trim();
+  const tokens = [
+    ...extractAudioLibraryTokens(category),
+    ...extractAudioLibraryTokens(subcategory),
+    ...extractAudioLibraryTokens(stem)
+  ];
+
+  let kind = "music";
+  if (tokens.includes("voice") || tokens.includes("voicelines") || tokens.includes("voiceline")) kind = "voice";
+  else if (tokens.includes("ambience") || tokens.includes("ambient") || tokens.includes("atmos") || tokens.includes("environment") || tokens.includes("foley")) kind = "ambience";
+  else if (tokens.includes("oneshots") || tokens.includes("shots") || tokens.includes("sfx") || tokens.includes("spell") || tokens.includes("design")) kind = "sfx";
+
+  let usage = "general";
+  if (tokens.includes("action") || tokens.includes("battle") || tokens.includes("combat") || tokens.includes("melee") || tokens.includes("archers") || tokens.includes("magic")) usage = "combat";
+  else if (tokens.includes("intrigue") || tokens.includes("court") || tokens.includes("curiosity") || tokens.includes("waltz") || tokens.includes("noble") || tokens.includes("mystery") || tokens.includes("shadow")) usage = "intrigue";
+  else if (tokens.includes("horror") || tokens.includes("anxiety") || tokens.includes("dark") || tokens.includes("fear") || tokens.includes("undead")) usage = "tension";
+  else if (tokens.includes("ambient") || tokens.includes("atmos") || tokens.includes("atmosphere")) usage = "ambience";
+  else if (tokens.includes("town") || tokens.includes("tavern") || tokens.includes("market") || tokens.includes("city") || tokens.includes("courtyard") || tokens.includes("folk") || tokens.includes("slavic")) usage = "town";
+  else if (tokens.includes("environment") || tokens.includes("foley") || tokens.includes("movement") || tokens.includes("cooking")) usage = "foley";
+  else if (tokens.includes("voice") || tokens.includes("voicelines") || tokens.includes("voiceline")) usage = "voice";
+  else if (tokens.includes("oneshots") || tokens.includes("cinematic") || tokens.includes("stinger") || tokens.includes("shot")) usage = "stinger";
+  else if (tokens.includes("scifi") || tokens.includes("firearms") || tokens.includes("handguns") || tokens.includes("rifles") || tokens.includes("modern")) usage = "scifi";
+  else if (tokens.includes("rest") || tokens.includes("camp") || tokens.includes("sleep") || tokens.includes("night") || tokens.includes("blissful")) usage = "rest";
+  else if (tokens.includes("travel") || tokens.includes("road") || tokens.includes("journey") || tokens.includes("march")) usage = "travel";
+
+  if (kind === "voice") usage = "voice";
+  if (kind === "ambience" && usage === "general") usage = "ambience";
+  if (kind === "sfx" && usage === "general") usage = "stinger";
+
+  return {
+    name: stem.trim() || filename,
+    category,
+    subcategory,
+    kind,
+    usage,
+    extension: filename.includes(".") ? filename.split(".").pop().toLowerCase() : "mp3",
+    tags: [
+      category,
+      subcategory,
+      getAudioLibraryKindLabel(kind),
+      getAudioLibraryUsageLabel(usage)
+    ].filter((entry, index, rows) => entry && rows.indexOf(entry) === index)
+  };
+}
+
+function isAudioLibraryFile(path) {
+  const normalized = normalizeAudioLibraryRootPath(path).toLowerCase();
+  return AUDIO_LIBRARY_EXTENSIONS.some((extension) => normalized.endsWith(`.${extension}`));
+}
+
+function normalizeAudioLibraryDirectorySelection(path = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath) return "";
+  if (!isAudioLibraryFile(normalizedPath)) return normalizedPath;
+  const segments = normalizedPath.split("/").filter(Boolean);
+  segments.pop();
+  return segments.join("/");
+}
+
+function getAudioLibraryPickerCurrentPath(path = "") {
+  if (isAbsoluteWindowsFilesystemPath(path)) return "";
+  return normalizeAudioLibraryDirectorySelection(path);
+}
+
+function getAudioLibraryUploadRelativePath(file) {
+  const rawPath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!rawPath) return "";
+  const segments = rawPath.split("/").filter(Boolean);
+  if (segments.length <= 1) return segments[0] ?? "";
+  return segments.slice(1).join("/");
+}
+
+function isUploadableAudioLibraryFile(file) {
+  const candidatePath = normalizeAudioLibraryRootPath(file?.webkitRelativePath || file?.name || "");
+  if (!candidatePath) return false;
+  const basename = String(candidatePath.split("/").pop() ?? "").trim();
+  if (!basename || basename.startsWith("._") || basename === ".DS_Store") return false;
+  return isAudioLibraryFile(candidatePath);
+}
+
+function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
+  if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
+    return normalizeAudioLibraryDirectorySelection(normalizedRootPath);
+  }
+  const normalizedFolderName = normalizeAudioLibraryRootPath(localFolderName).split("/").filter(Boolean).pop() ?? "";
+  const fallbackFolderName = normalizedFolderName || "audio-library";
+  return normalizeAudioLibraryRootPath(`music/${fallbackFolderName}`);
+}
+
+function getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const relative = normalizeAudioLibraryRootPath(relativePath);
+  if (!relative) return root;
+  const segments = relative.split("/").filter(Boolean);
+  segments.pop();
+  if (segments.length <= 0) return root;
+  return normalizeAudioLibraryRootPath(`${root}/${segments.join("/")}`);
+}
+
+function buildAudioLibraryUploadDirectories(destinationRoot, relativePaths = []) {
+  const root = normalizeAudioLibraryRootPath(destinationRoot);
+  const directories = new Set(root ? [root] : []);
+  for (const relativePath of Array.isArray(relativePaths) ? relativePaths : []) {
+    const normalizedRelativePath = normalizeAudioLibraryRootPath(relativePath);
+    if (!normalizedRelativePath) continue;
+    const parts = normalizedRelativePath.split("/").filter(Boolean);
+    parts.pop();
+    let current = root;
+    for (const part of parts) {
+      current = normalizeAudioLibraryRootPath(`${current}/${part}`);
+      if (current) directories.add(current);
+    }
+  }
+  return Array.from(directories).sort((left, right) => left.split("/").length - right.split("/").length);
+}
+
+function isExistingDirectoryError(error) {
+  const message = String(error?.message ?? error ?? "").toLowerCase();
+  return message.includes("already exists") || message.includes("eexist");
+}
+
+async function ensureAudioLibraryUploadDirectories(source, destinationRoot, relativePaths = []) {
+  const directories = buildAudioLibraryUploadDirectories(destinationRoot, relativePaths);
+  for (const directory of directories) {
+    if (!directory) continue;
+    try {
+      await FilePicker.createDirectory(source, directory);
+    } catch (error) {
+      if (isExistingDirectoryError(error)) continue;
+      throw error;
+    }
+  }
+}
+
+async function browseAudioLibraryTree(source, rootPath) {
+  const queue = [normalizeAudioLibraryRootPath(rootPath)];
+  const visited = new Set();
+  const files = [];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current)) continue;
+    visited.add(current);
+    let response = null;
+    try {
+      response = await FilePicker.browse(source, current);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown browse error");
+      throw new Error(`Unable to browse "${current}" on source "${source}". ${message}`);
+    }
+    const nextFiles = Array.isArray(response?.files) ? response.files : [];
+    const nextDirs = Array.isArray(response?.dirs) ? response.dirs : [];
+    for (const file of nextFiles) {
+      if (isAudioLibraryFile(file)) files.push(normalizeAudioLibraryRootPath(file));
+    }
+    for (const dir of nextDirs) {
+      const normalizedDir = normalizeAudioLibraryRootPath(dir);
+      if (normalizedDir && !visited.has(normalizedDir)) queue.push(normalizedDir);
+    }
+  }
+
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
+  if (!canAccessAllPlayerOps()) {
+    throw new Error("GM permissions are required to scan audio libraries.");
+  }
+  const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
+  const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
+  const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
+  if (pathValidationMessage) throw new Error(pathValidationMessage);
+
+  const files = await browseAudioLibraryTree(nextSource, nextRootPath);
+  if (files.length <= 0) {
+    throw new Error(`No audio files were found in "${nextRootPath}". Confirm this is a Foundry or Forge asset folder and not a local filesystem path.`);
+  }
+  const items = files.map((path) => {
+    const inferred = inferAudioLibraryClassification(path, nextRootPath);
+    return normalizeAudioLibraryItem({
+      id: foundry.utils.randomID(),
+      path,
+      ...inferred
+    });
+  }).filter(Boolean);
+
+  const catalog = normalizeAudioLibraryCatalog({
+    version: AUDIO_LIBRARY_VERSION,
+    source: nextSource,
+    rootPath: nextRootPath,
+    scannedAt: Date.now(),
+    scannedBy: String(game.user?.name ?? "GM"),
+    items
+  });
+
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_SOURCE, catalog.source);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_ROOT, catalog.rootPath);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
+
+  audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+  audioLibraryUiState.draft.source = catalog.source;
+  audioLibraryUiState.draft.rootPath = catalog.rootPath;
+  clearAudioLibraryError();
+  notifyUiInfoThrottled(`Audio library synced: ${catalog.items.length} track(s) indexed.`, {
+    key: "audio-library-scan-complete",
+    ttlMs: 1800
+  });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return catalog;
+}
+
+async function clearAudioLibraryCatalog() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear the audio library catalog.");
+    return false;
+  }
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, buildDefaultAudioLibraryCatalog());
+  audioLibraryUiState.selectedTrackId = "";
+  clearAudioLibraryError();
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+function setAudioLibraryDraftField(actionElement) {
+  const field = String(actionElement?.dataset?.field ?? "").trim();
+  if (!field) return;
+  if (field === "source") audioLibraryUiState.draft.source = normalizeAudioLibrarySource(actionElement?.value);
+  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(actionElement?.value);
+}
+
+async function openAudioLibraryRootPicker() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can browse audio asset folders.");
+    return false;
+  }
+  const { source, rootPath } = getAudioLibraryDraftState();
+  return new Promise((resolve) => {
+    const picker = new FilePicker({
+      type: "audio",
+      activeSource: source,
+      current: getAudioLibraryPickerCurrentPath(rootPath),
+      callback: (selectedPath) => {
+        audioLibraryUiState.draft.source = normalizeAudioLibrarySource(picker.activeSource ?? source);
+        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(selectedPath);
+        clearAudioLibraryError();
+        resolve(true);
+      }
+    });
+    picker.render(true);
+  });
+}
+
+async function uploadLocalAudioFolderToLibrary() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can upload audio asset folders.");
+    return false;
+  }
+
+  const { source, rootPath } = getAudioLibraryDraftState();
+  const activeSource = normalizeAudioLibrarySource(source);
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    let settled = false;
+    const finalize = (result, error = null) => {
+      if (settled) return;
+      settled = true;
+      input.remove();
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(result);
+    };
+
+    input.type = "file";
+    input.multiple = true;
+    input.accept = AUDIO_LIBRARY_EXTENSIONS.map((extension) => `.${extension}`).join(",");
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    input.addEventListener("change", () => {
+      void (async () => {
+        try {
+          const selectedFiles = Array.from(input.files ?? []).filter((file) => isUploadableAudioLibraryFile(file));
+          if (selectedFiles.length <= 0) {
+            finalize(false);
+            return;
+          }
+
+          const localRootName = String(selectedFiles[0]?.webkitRelativePath ?? "")
+            .split(/[\\/]/)
+            .filter(Boolean)[0] ?? "";
+          const destinationRoot = buildAudioLibraryUploadRootPath(rootPath, localRootName);
+          const relativePaths = selectedFiles
+            .map((file) => getAudioLibraryUploadRelativePath(file))
+            .filter(Boolean);
+
+          await ensureAudioLibraryUploadDirectories(activeSource, destinationRoot, relativePaths);
+
+          let uploadedCount = 0;
+          for (const file of selectedFiles) {
+            const relativePath = getAudioLibraryUploadRelativePath(file);
+            const destinationDirectory = getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath);
+            await FilePicker.upload(activeSource, destinationDirectory, file, {}, { notify: false });
+            uploadedCount += 1;
+          }
+
+          audioLibraryUiState.draft.source = activeSource;
+          audioLibraryUiState.draft.rootPath = destinationRoot;
+          clearAudioLibraryError();
+          notifyUiInfoThrottled(`Uploaded ${uploadedCount} audio file(s) to ${destinationRoot}.`, {
+            key: "audio-library-upload-complete",
+            ttlMs: 2200
+          });
+          await scanAudioLibraryCatalog({ source: activeSource, rootPath: destinationRoot });
+          finalize(true);
+        } catch (error) {
+          finalize(false, error);
+        }
+      })();
+    }, { once: true });
+
+    input.addEventListener("cancel", () => {
+      finalize(false);
+    }, { once: true });
+
+    input.click();
+  });
+}
+
+function setAudioLibraryFilterField(actionElement) {
+  const field = String(actionElement?.dataset?.field ?? "").trim();
+  if (!field) return;
+  if (field === "search") audioLibraryUiState.filters.search = normalizeAudioLibrarySearch(actionElement?.value);
+  if (field === "kind") audioLibraryUiState.filters.kind = normalizeAudioLibraryKind(actionElement?.value);
+  if (field === "usage") audioLibraryUiState.filters.usage = normalizeAudioLibraryUsage(actionElement?.value);
+}
+
+function setAudioLibraryView(actionElement) {
+  const view = normalizeAudioLibraryView(actionElement?.dataset?.view);
+  audioLibraryUiState.view = view;
+}
+
+function selectAudioLibraryTrack(actionElement) {
+  audioLibraryUiState.selectedTrackId = String(actionElement?.dataset?.trackId ?? "").trim();
+}
+
+function selectAudioMixPreset(actionElement) {
+  const preset = getAudioMixPresetById(actionElement?.dataset?.presetId);
+  audioLibraryUiState.selectedMixPresetId = preset.id;
+}
+
+function clearAudioMixStatus() {
+  audioLibraryUiState.mixStatus = "";
+}
+
+function setAudioMixStatus(message = "") {
+  audioLibraryUiState.mixStatus = String(message ?? "").trim();
+}
+
+function getAudioMixPresetText(item) {
+  return `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
+}
+
+function scoreAudioTrackForMixPreset(item, preset) {
+  if (!item || !preset) return 0;
+  const preferredKinds = Array.isArray(preset.preferredKinds) ? preset.preferredKinds : [];
+  const preferredUsage = Array.isArray(preset.preferredUsage) ? preset.preferredUsage : [];
+  const searchTokens = Array.isArray(preset.searchTokens) ? preset.searchTokens : [];
+  const text = getAudioMixPresetText(item);
+  let score = 0;
+
+  if (preferredKinds.includes(item.kind)) score += 10;
+  else if (item.kind === "music" && preferredKinds.includes("ambience")) score += 3;
+
+  if (preferredUsage.includes(item.usage)) score += 12;
+  else if (item.usage === "general") score += 3;
+
+  for (const token of searchTokens) {
+    const normalizedToken = String(token ?? "").trim().toLowerCase();
+    if (!normalizedToken) continue;
+    if (text.includes(normalizedToken)) score += 4;
+  }
+
+  if (item.usage === "scifi" && preset.id !== "stingers") score -= 8;
+  if (item.kind === "voice" && preset.id !== "stingers") score -= 2;
+  return score;
+}
+
+function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  const scored = catalog.items
+    .map((item) => ({
+      item,
+      score: scoreAudioTrackForMixPreset(item, preset)
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return left.item.name.localeCompare(right.item.name);
+    });
+  if (scored.length > 0) return scored;
+
+  return catalog.items
+    .filter((item) => (preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage))
+    .map((item) => ({ item, score: 1 }))
+    .sort((left, right) => left.item.name.localeCompare(right.item.name));
+}
+
+function getManagedAudioMixPlaylist() {
+  const playlists = Array.from(game?.playlists?.contents ?? []);
+  return playlists.find((playlist) => playlist.getFlag?.(MODULE_ID, "managedAudioMixboard"))
+    ?? playlists.find((playlist) => String(playlist?.name ?? "").trim() === AUDIO_MIX_PLAYLIST_NAME)
+    ?? null;
+}
+
+async function ensureManagedAudioMixPlaylist(preset) {
+  const baseData = {
+    name: AUDIO_MIX_PLAYLIST_NAME,
+    description: `Managed by Party Operations for the ${preset.label} mix preset.`,
+    mode: CONST?.PLAYLIST_MODES?.DISABLED ?? 0,
+    sorting: CONST?.PLAYLIST_SORT_MODES?.MANUAL ?? 0,
+    channel: preset.channel,
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0))
+  };
+  let playlist = getManagedAudioMixPlaylist();
+  if (!playlist) {
+    playlist = await Playlist.create({
+      ...baseData,
+      flags: {
+        [MODULE_ID]: {
+          managedAudioMixboard: true
+        }
+      }
+    });
+    return playlist;
+  }
+
+  await playlist.update(baseData);
+  if (!playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) {
+    await playlist.setFlag(MODULE_ID, "managedAudioMixboard", true);
+  }
+  return playlist;
+}
+
+async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
+  const rows = candidates.slice(0, 24);
+  const existingIds = Array.from(playlist?.sounds?.contents ?? []).map((sound) => sound.id).filter(Boolean);
+  if (existingIds.length > 0) {
+    await playlist.deleteEmbeddedDocuments("PlaylistSound", existingIds);
+  }
+  if (rows.length <= 0) return [];
+
+  const sounds = rows.map(({ item, score }, index) => ({
+    name: item.name,
+    path: item.path,
+    channel: preset.channel,
+    repeat: Boolean(preset.repeat),
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
+    volume: Math.max(0, Math.min(1, Number(preset.volume ?? 0.5) || 0.5)),
+    sort: index * 10,
+    flags: {
+      [MODULE_ID]: {
+        audioLibraryTrackId: item.id,
+        mixPresetId: preset.id,
+        mixScore: score
+      }
+    }
+  }));
+  return playlist.createEmbeddedDocuments("PlaylistSound", sounds);
+}
+
+function pickAudioMixCandidate(candidates, excludedTrackId = "") {
+  const normalizedExcludedId = String(excludedTrackId ?? "").trim();
+  const pool = candidates.filter(({ item }) => item.id !== normalizedExcludedId);
+  const effectivePool = pool.length > 0 ? pool : candidates;
+  if (effectivePool.length <= 0) return null;
+  const topSlice = effectivePool.slice(0, Math.min(6, effectivePool.length));
+  return topSlice[Math.floor(Math.random() * topSlice.length)] ?? effectivePool[0];
+}
+
+function getCurrentManagedAudioMixSound(playlist) {
+  const sounds = Array.from(playlist?.sounds?.contents ?? []);
+  return sounds.find((sound) => Boolean(sound?.playing)) ?? null;
+}
+
+async function playAudioMixPresetById(presetId, options = {}) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return null;
+  }
+  const preset = getAudioMixPresetById(presetId);
+  const catalog = getAudioLibraryCatalog();
+  const candidates = buildAudioMixCandidates(catalog, preset);
+  if (candidates.length <= 0) {
+    throw new Error(`No audio tracks matched the ${preset.label} mix.`);
+  }
+
+  const playlist = await ensureManagedAudioMixPlaylist(preset);
+  const currentSound = getCurrentManagedAudioMixSound(playlist);
+  await playlist.stopAll();
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, candidates);
+  const preferredTrackId = String(options.preferredTrackId ?? "").trim();
+  const chosenCandidate = preferredTrackId
+    ? candidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
+    : pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
+  const chosenSound = Array.from(createdSounds ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id)
+    ?? createdSounds?.[0]
+    ?? null;
+  if (!chosenSound) {
+    throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
+  }
+
+  await playlist.playSound(chosenSound);
+  await playlist.setFlag(MODULE_ID, "audioMixState", {
+    presetId: preset.id,
+    activeTrackId: String(chosenCandidate?.item?.id ?? ""),
+    activeTrackName: String(chosenCandidate?.item?.name ?? chosenSound.name ?? ""),
+    updatedAt: Date.now()
+  });
+  audioLibraryUiState.selectedMixPresetId = preset.id;
+  audioLibraryUiState.selectedTrackId = String(chosenCandidate?.item?.id ?? audioLibraryUiState.selectedTrackId);
+  setAudioMixStatus(`Playing ${preset.label}: ${String(chosenCandidate?.item?.name ?? chosenSound.name ?? "Track")}`);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return {
+    playlist,
+    preset,
+    sound: chosenSound,
+    track: chosenCandidate?.item ?? null
+  };
+}
+
+async function stopAudioMixPlayback() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can stop Party Operations mix playback.");
+    return false;
+  }
+  const playlist = getManagedAudioMixPlaylist();
+  if (!playlist) return false;
+  await playlist.stopAll();
+  await playlist.setFlag(MODULE_ID, "audioMixState", {
+    presetId: getSelectedAudioMixPreset().id,
+    activeTrackId: "",
+    activeTrackName: "",
+    updatedAt: Date.now()
+  });
+  setAudioMixStatus("Mix playback stopped.");
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function playAudioMixCandidateByTrackId(trackId) {
+  const preset = getSelectedAudioMixPreset();
+  return playAudioMixPresetById(preset.id, { excludeTrackId: "", preferredTrackId: String(trackId ?? "").trim() });
+}
+
+function getFilteredAudioLibraryItems(catalog) {
+  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  const searchTokens = filters.search.split(/\s+/g).filter(Boolean);
+  return catalog.items.filter((item) => {
+    if (filters.kind !== "all" && item.kind !== filters.kind) return false;
+    if (filters.usage !== "all" && item.usage !== filters.usage) return false;
+    if (searchTokens.length <= 0) return true;
+    const haystack = `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
+    return searchTokens.every((token) => haystack.includes(token));
+  });
+}
+
+function buildAudioLibraryFilterOptions() {
+  const kindOptions = Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryKind(audioLibraryUiState.filters.kind) === value
+  }));
+  const usageOptions = Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryUsage(audioLibraryUiState.filters.usage) === value
+  }));
+  return { kindOptions, usageOptions };
+}
+
+function buildAudioLibrarySummary(catalog) {
+  const categoryCount = new Set(catalog.items.map((item) => item.category).filter(Boolean)).size;
+  const kindCount = new Set(catalog.items.map((item) => item.kind).filter(Boolean)).size;
+  const usageCount = new Set(catalog.items.map((item) => item.usage).filter(Boolean)).size;
+  const usageSummaryOrder = ["music", "ambience", "sfx", "voice", "combat", "tension", "rest", "travel"];
+  const cards = usageSummaryOrder.map((key) => {
+    const count = catalog.items.filter((item) => item.kind === key || item.usage === key).length;
+    if (count <= 0) return null;
+    return {
+      key,
+      label: AUDIO_LIBRARY_KIND_LABELS[key] ?? AUDIO_LIBRARY_USAGE_LABELS[key] ?? key,
+      count
+    };
+  }).filter(Boolean);
+  return {
+    trackCount: catalog.items.length,
+    categoryCount,
+    kindCount,
+    usageCount,
+    scannedAtLabel: catalog.scannedAt ? new Date(catalog.scannedAt).toLocaleString() : "-",
+    scannedBy: catalog.scannedBy || "-",
+    cards
+  };
+}
+
+function buildAudioLibraryResults(catalog) {
+  const filtered = getFilteredAudioLibraryItems(catalog);
+  const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  const visibleTracks = filtered.slice(0, 160).map((item) => ({
+    ...item,
+    selected: item.id === selectedId,
+    hasSubcategory: Boolean(item.subcategory),
+    kindLabel: getAudioLibraryKindLabel(item.kind),
+    usageLabel: getAudioLibraryUsageLabel(item.usage)
+  }));
+  return {
+    tracks: visibleTracks,
+    hasTracks: visibleTracks.length > 0,
+    totalMatches: filtered.length,
+    visibleCount: visibleTracks.length
+  };
+}
+
+function getAudioMixPlaybackState(catalog) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixFlag = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
+  const playingSound = getCurrentManagedAudioMixSound(playlist);
+  const activeTrackId = String(playingSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? mixFlag?.activeTrackId ?? "").trim();
+  const activeTrack = catalog.items.find((item) => item.id === activeTrackId) ?? null;
+  const activePreset = getAudioMixPresetById(mixFlag?.presetId ?? getSelectedAudioMixPreset().id);
+  return {
+    hasPlaylist: Boolean(playlist),
+    playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
+    isPlaying: Boolean(playingSound?.playing),
+    presetId: activePreset.id,
+    presetLabel: activePreset.label,
+    activeTrack,
+    activeTrackName: String(activeTrack?.name ?? mixFlag?.activeTrackName ?? "").trim(),
+    updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-"
+  };
+}
+
+function buildAudioMixContext(catalog) {
+  const selectedPreset = getSelectedAudioMixPreset();
+  const candidates = buildAudioMixCandidates(catalog, selectedPreset);
+  const playback = getAudioMixPlaybackState(catalog);
+  return {
+    status: audioLibraryUiState.mixStatus,
+    hasStatus: Boolean(audioLibraryUiState.mixStatus),
+    selectedPresetId: selectedPreset.id,
+    presets: AUDIO_MIX_PRESETS.map((preset) => ({
+      id: preset.id,
+      label: preset.label,
+      description: preset.description,
+      selected: preset.id === selectedPreset.id,
+      candidateCount: buildAudioMixCandidates(catalog, preset).length
+    })),
+    selectedPreset: {
+      ...selectedPreset,
+      candidateCount: candidates.length
+    },
+    candidates: candidates.slice(0, 14).map(({ item, score }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      score,
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage),
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    hasCandidates: candidates.length > 0,
+    playback: {
+      ...playback,
+      hasActiveTrack: Boolean(playback.activeTrack),
+      activeTrackName: playback.activeTrackName || "No track playing",
+      activeTrackPath: String(playback.activeTrack?.path ?? ""),
+      activeTrackKindLabel: playback.activeTrack ? getAudioLibraryKindLabel(playback.activeTrack.kind) : "",
+      activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : ""
+    }
+  };
+}
+
+function getSelectedAudioLibraryTrack(catalog, results) {
+  const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  const fromCatalog = catalog.items.find((item) => item.id === selectedId);
+  const fallback = fromCatalog ?? filteredFallback(results.tracks);
+  if (!fallback) return null;
+  return {
+    ...fallback,
+    hasSubcategory: Boolean(fallback.subcategory),
+    kindLabel: getAudioLibraryKindLabel(fallback.kind),
+    usageLabel: getAudioLibraryUsageLabel(fallback.usage),
+    hasTags: Array.isArray(fallback.tags) && fallback.tags.length > 0
+  };
+}
+
+function filteredFallback(tracks = []) {
+  return Array.isArray(tracks) && tracks.length > 0 ? tracks[0] : null;
+}
+
 function normalizeLootKeywordTag(value) {
   return String(value ?? "")
     .trim()
@@ -11114,6 +12288,528 @@ function scheduleLootManifestCompendiumTypeFolderSync(reason = "") {
   return lootManifestFolderSyncPromise;
 }
 
+function getDocumentFolderParentId(entry) {
+  return String(entry?.folder?.id ?? entry?.folder ?? entry?.parent?.id ?? entry?.parent ?? "").trim();
+}
+
+function getLootManifestImportFlag(entry = {}) {
+  const primary = entry?.flags?.[MODULE_ID]?.lootManifestImport;
+  if (primary && typeof primary === "object") return primary;
+  const legacy = entry?.flags?.["party-operations"]?.lootManifestImport;
+  if (legacy && typeof legacy === "object") return legacy;
+  return {};
+}
+
+function parseCompendiumItemSourceReference(value = "") {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const match = raw.match(/^Compendium\.(.+)\.Item\.([^.]+)$/i);
+  if (!match) return null;
+  return {
+    packId: String(match[1] ?? "").trim(),
+    itemId: String(match[2] ?? "").trim()
+  };
+}
+
+function buildLootManifestImportSourceKey(packId = "", itemId = "") {
+  const normalizedPackId = String(packId ?? "").trim();
+  const normalizedItemId = String(itemId ?? "").trim();
+  if (!normalizedPackId || !normalizedItemId) return "";
+  return `${normalizedPackId}:${normalizedItemId}`;
+}
+
+function getLootManifestImportedSourceKey(entry = {}) {
+  const importFlag = getLootManifestImportFlag(entry);
+  const flaggedKey = buildLootManifestImportSourceKey(importFlag?.sourcePackId, importFlag?.sourceItemId);
+  if (flaggedKey) return flaggedKey;
+
+  const sourceCandidates = [
+    entry?.flags?.core?.sourceId,
+    entry?._stats?.compendiumSource,
+    entry?.flags?.[MODULE_ID]?.core?.sourceId,
+    entry?.flags?.["party-operations"]?.core?.sourceId
+  ];
+  for (const candidate of sourceCandidates) {
+    const parsed = parseCompendiumItemSourceReference(candidate);
+    const key = buildLootManifestImportSourceKey(parsed?.packId, parsed?.itemId);
+    if (key) return key;
+  }
+  return "";
+}
+
+function buildLootManifestCompendiumFolderDescriptors(pack, itemRows = []) {
+  const descriptorMap = new Map();
+  const actualFolders = getCompendiumFolderRows(pack)
+    .map((folder) => {
+      const id = String(folder?.id ?? folder?._id ?? "").trim();
+      if (!id) return null;
+      return {
+        key: `folder:${id}`,
+        sourceFolderId: id,
+        name: String(folder?.name ?? "").trim() || "Other",
+        parentKey: (() => {
+          const parentId = getDocumentFolderParentId(folder);
+          return parentId ? `folder:${parentId}` : "";
+        })(),
+        sort: Number(folder?.sort ?? 0) || 0
+      };
+    })
+    .filter(Boolean);
+
+  for (const descriptor of actualFolders) {
+    descriptorMap.set(descriptor.key, descriptor);
+  }
+
+  const rootDescriptorByName = new Map(
+    Array.from(descriptorMap.values())
+      .filter((descriptor) => !descriptor.parentKey)
+      .map((descriptor) => [getLootManifestFolderNameKey(descriptor.name), descriptor.key])
+  );
+
+  for (const item of Array.isArray(itemRows) ? itemRows : []) {
+    const sourceFolderId = String(item?.folderId ?? "").trim();
+    if (sourceFolderId && descriptorMap.has(`folder:${sourceFolderId}`)) continue;
+    const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+    const label = getLootManifestFolderLabelForType(normalizedType);
+    const existingRootKey = rootDescriptorByName.get(getLootManifestFolderNameKey(label));
+    if (existingRootKey) continue;
+    const key = `type:${normalizedType}`;
+    if (descriptorMap.has(key)) continue;
+    descriptorMap.set(key, {
+      key,
+      sourceFolderId: "",
+      name: label,
+      parentKey: "",
+      sort: getLootManifestFolderSortPriority(normalizedType) * 1000
+    });
+    rootDescriptorByName.set(getLootManifestFolderNameKey(label), key);
+  }
+
+  const getDepth = (descriptor) => {
+    let depth = 0;
+    let currentKey = String(descriptor?.parentKey ?? "").trim();
+    const visited = new Set([String(descriptor?.key ?? "").trim()]);
+    while (currentKey && depth < 20) {
+      if (visited.has(currentKey)) break;
+      visited.add(currentKey);
+      const current = descriptorMap.get(currentKey);
+      if (!current) break;
+      depth += 1;
+      currentKey = String(current?.parentKey ?? "").trim();
+    }
+    return depth;
+  };
+
+  return Array.from(descriptorMap.values()).sort((left, right) => {
+    const depthDelta = getDepth(left) - getDepth(right);
+    if (depthDelta !== 0) return depthDelta;
+    const sortDelta = Number(left?.sort ?? 0) - Number(right?.sort ?? 0);
+    if (sortDelta !== 0) return sortDelta;
+    return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+  });
+}
+
+async function ensureLootManifestWorldImportRootFolder(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  const preferredName = String(pack?.metadata?.label ?? pack?.title ?? LOOT_MANIFEST_PACK_LABEL).trim() || LOOT_MANIFEST_PACK_LABEL;
+  const itemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+
+  let rootFolder = itemFolders.find((folder) => {
+    const importFlag = getLootManifestImportFlag(folder);
+    return importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId;
+  }) ?? null;
+
+  if (!rootFolder) {
+    rootFolder = itemFolders.find((folder) => {
+      if (getDocumentFolderParentId(folder)) return false;
+      return String(folder?.name ?? "").trim() === preferredName;
+    }) ?? null;
+  }
+
+  const flagData = {
+    managed: true,
+    isRoot: true,
+    sourcePackId: packId,
+    importedAt: Date.now()
+  };
+
+  if (!rootFolder) {
+    return Folder.create({
+      name: preferredName,
+      type: "Item",
+      folder: null,
+      sorting: "a",
+      color: null,
+      sort: -1000,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+
+  const needsUpdate = String(rootFolder?.name ?? "").trim() !== preferredName
+    || getDocumentFolderParentId(rootFolder)
+    || getLootManifestImportFlag(rootFolder)?.isRoot !== true
+    || String(getLootManifestImportFlag(rootFolder)?.sourcePackId ?? "").trim() !== packId;
+  if (needsUpdate) {
+    await rootFolder.update({
+      name: preferredName,
+      folder: null,
+      flags: {
+        [MODULE_ID]: {
+          lootManifestImport: flagData
+        }
+      }
+    });
+  }
+  return rootFolder;
+}
+
+async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows = []) {
+  const descriptors = buildLootManifestCompendiumFolderDescriptors(pack, itemRows);
+  const packId = String(pack?.collection ?? "").trim();
+  const worldItemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+  const descriptorFolderMap = new Map();
+  const existingBySourceFolderId = new Map();
+  const existingByParentAndName = new Map();
+
+  for (const folder of worldItemFolders) {
+    const importFlag = getLootManifestImportFlag(folder);
+    if (importFlag?.isRoot === true && String(importFlag?.sourcePackId ?? "").trim() === packId) continue;
+    const sourceFolderId = String(importFlag?.sourceFolderId ?? "").trim();
+    if (sourceFolderId && String(importFlag?.sourcePackId ?? "").trim() === packId) {
+      existingBySourceFolderId.set(sourceFolderId, folder);
+    }
+    const parentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    const nameKey = getLootManifestFolderNameKey(folder?.name);
+    if (nameKey) existingByParentAndName.set(`${parentId}::${nameKey}`, folder);
+  }
+
+  let createdFolders = 0;
+  let updatedFolders = 0;
+
+  for (const descriptor of descriptors) {
+    const parentFolderId = descriptor.parentKey
+      ? (descriptorFolderMap.get(descriptor.parentKey)?.id ?? rootFolder.id)
+      : rootFolder.id;
+    const sourceFolderId = String(descriptor?.sourceFolderId ?? "").trim();
+    const nameKey = getLootManifestFolderNameKey(descriptor?.name);
+    let folder = sourceFolderId ? existingBySourceFolderId.get(sourceFolderId) ?? null : null;
+    if (!folder) folder = existingByParentAndName.get(`${parentFolderId}::${nameKey}`) ?? null;
+
+    const flagData = {
+      managed: true,
+      isRoot: false,
+      sourcePackId: packId,
+      sourceFolderId,
+      sourceFolderKey: String(descriptor?.key ?? "").trim(),
+      importedAt: Date.now()
+    };
+
+    if (!folder) {
+      folder = await Folder.create({
+        name: String(descriptor?.name ?? "Other"),
+        type: "Item",
+        folder: parentFolderId,
+        sorting: "a",
+        color: null,
+        sort: Number(descriptor?.sort ?? 0) || 0,
+        flags: {
+          [MODULE_ID]: {
+            lootManifestImport: flagData
+          }
+        }
+      });
+      createdFolders += 1;
+    } else {
+      const currentImportFlag = getLootManifestImportFlag(folder);
+      const needsUpdate = String(folder?.name ?? "").trim() !== String(descriptor?.name ?? "").trim()
+        || String(getDocumentFolderParentId(folder) || rootFolder.id).trim() !== String(parentFolderId).trim()
+        || String(currentImportFlag?.sourcePackId ?? "").trim() !== packId
+        || String(currentImportFlag?.sourceFolderId ?? "").trim() !== sourceFolderId
+        || currentImportFlag?.isRoot === true;
+      if (needsUpdate) {
+        await folder.update({
+          name: String(descriptor?.name ?? "Other"),
+          folder: parentFolderId,
+          sort: Number(descriptor?.sort ?? 0) || 0,
+          flags: {
+            [MODULE_ID]: {
+              lootManifestImport: flagData
+            }
+          }
+        });
+        updatedFolders += 1;
+      }
+    }
+
+    descriptorFolderMap.set(String(descriptor?.key ?? "").trim(), folder);
+    const folderParentId = getDocumentFolderParentId(folder) || rootFolder.id;
+    existingByParentAndName.set(`${folderParentId}::${nameKey}`, folder);
+    if (sourceFolderId) existingBySourceFolderId.set(sourceFolderId, folder);
+  }
+
+  return {
+    descriptorFolderMap,
+    createdFolders,
+    updatedFolders
+  };
+}
+
+function chunkDocumentRows(rows = [], size = 50) {
+  const source = Array.isArray(rows) ? rows : [];
+  const chunkSize = Math.max(1, Math.floor(Number(size) || 50));
+  const chunks = [];
+  for (let index = 0; index < source.length; index += chunkSize) {
+    chunks.push(source.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+function getLootManifestImportedWorldItems(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  return (game.items?.contents ?? []).filter((item) => {
+    const importFlag = getLootManifestImportFlag(item);
+    if (String(importFlag?.sourcePackId ?? "").trim() === packId) return true;
+    const sourceKey = getLootManifestImportedSourceKey(item);
+    return sourceKey.startsWith(`${packId}:`);
+  });
+}
+
+function getLootManifestManagedWorldFolders(pack) {
+  const packId = String(pack?.collection ?? "").trim();
+  if (!packId) return [];
+  return (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    if (type !== "item") return false;
+    const importFlag = getLootManifestImportFlag(folder);
+    return String(importFlag?.sourcePackId ?? "").trim() === packId;
+  });
+}
+
+function sortFoldersDeepestFirst(folders = []) {
+  const rows = Array.isArray(folders) ? folders : [];
+  const byId = new Map(rows.map((folder) => [String(folder?.id ?? "").trim(), folder]));
+  const getDepth = (folder) => {
+    let depth = 0;
+    let parentId = getDocumentFolderParentId(folder);
+    const visited = new Set([String(folder?.id ?? "").trim()]);
+    while (parentId && depth < 30) {
+      if (visited.has(parentId)) break;
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      if (!parent) break;
+      depth += 1;
+      parentId = getDocumentFolderParentId(parent);
+    }
+    return depth;
+  };
+  return [...rows].sort((left, right) => getDepth(right) - getDepth(left));
+}
+
+async function clearLootManifestImportedWorldItems() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can clear imported built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const importedItems = getLootManifestImportedWorldItems(pack);
+  const managedFolders = getLootManifestManagedWorldFolders(pack);
+  if (importedItems.length <= 0 && managedFolders.length <= 0) {
+    ui.notifications?.info("No imported built items were found in the world.");
+    return { ok: true, packId: String(pack?.collection ?? "").trim(), deletedItems: 0, deletedFolders: 0 };
+  }
+
+  const confirmed = await Dialog.confirm({
+    title: "Clear Imported Built Items",
+    content: `
+      <p>This will remove imported Party Operations built items from the world.</p>
+      <p><strong>Items:</strong> ${importedItems.length}</p>
+      <p><strong>Managed folders:</strong> ${managedFolders.length}</p>
+      <p>This does not modify the source compendium.</p>
+    `,
+    yes: () => true,
+    no: () => false,
+    defaultYes: false
+  });
+  if (!confirmed) return { ok: false, reason: "cancelled" };
+
+  for (const batch of chunkDocumentRows(importedItems.map((item) => String(item?.id ?? "").trim()).filter(Boolean), 50)) {
+    if (batch.length <= 0) continue;
+    await Item.deleteDocuments(batch);
+  }
+
+  for (const folder of sortFoldersDeepestFirst(managedFolders)) {
+    try {
+      await folder.delete();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to delete managed loot import folder`, folder, error);
+    }
+  }
+
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    const currentManifestId = String(config.filters.manifestPackId ?? "").trim();
+    const selectedFolderId = parseLootWorldItemsFolderFilterId(currentManifestId);
+    const deletedFolderIds = new Set(managedFolders.map((folder) => String(folder?.id ?? "").trim()).filter(Boolean));
+    if (selectedFolderId && deletedFolderIds.has(selectedFolderId)) {
+      config.filters.manifestPackId = "";
+    }
+  }, { skipLocalRefresh: true });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    deletedItems: importedItems.length,
+    deletedFolders: managedFolders.length
+  };
+  ui.notifications?.info(`Cleared ${report.deletedItems} imported built item(s) and ${report.deletedFolders} folder(s).`);
+  return report;
+}
+
+async function importLootManifestCompendiumToWorld() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can import built loot items.");
+    return { ok: false, reason: "not-gm" };
+  }
+
+  const pack = getLootManifestCompendiumPack();
+  if (!pack) {
+    ui.notifications?.warn("Party Operations built-items compendium was not found.");
+    return { ok: false, reason: "pack-missing" };
+  }
+
+  const syncReport = await scheduleLootManifestCompendiumTypeFolderSync("world-import").catch(() => null);
+  if (syncReport?.ok === false && isModuleDebugEnabled()) {
+    console.warn(`${MODULE_ID}: proceeding with loot manifest world import after folder sync warning`, syncReport);
+  }
+
+  if (typeof pack?.getFolders === "function") {
+    try {
+      await pack.getFolders();
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to preload loot manifest compendium folders`, error);
+    }
+  }
+
+  const itemRows = await getLootManifestPackItemRows(pack);
+  const documents = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
+  if (!Array.isArray(documents) || documents.length <= 0) {
+    ui.notifications?.warn("The built-items compendium is empty.");
+    return { ok: false, reason: "pack-empty" };
+  }
+
+  const rootFolder = await ensureLootManifestWorldImportRootFolder(pack);
+  const { descriptorFolderMap, createdFolders, updatedFolders } = await ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows);
+  const itemRowById = new Map((Array.isArray(itemRows) ? itemRows : []).map((row) => [String(row?.id ?? "").trim(), row]));
+  const rootDescriptorByName = new Map(
+    Array.from(descriptorFolderMap.entries())
+      .filter(([, folder]) => String(getDocumentFolderParentId(folder) || rootFolder.id).trim() === String(rootFolder.id).trim())
+      .map(([key, folder]) => [getLootManifestFolderNameKey(folder?.name), key])
+  );
+  const importedItemMap = new Map(
+    (game.items?.contents ?? [])
+      .map((item) => [getLootManifestImportedSourceKey(item), item])
+      .filter(([key]) => key)
+  );
+
+  const createData = [];
+  const updateData = [];
+  const timestamp = Date.now();
+
+  for (const documentRef of documents) {
+    const sourceItemId = String(documentRef?.id ?? documentRef?._id ?? "").trim();
+    if (!sourceItemId) continue;
+    const sourceKey = buildLootManifestImportSourceKey(pack.collection, sourceItemId);
+    if (!sourceKey) continue;
+    const row = itemRowById.get(sourceItemId) ?? {};
+    const sourceFolderId = String(documentRef?.folder?.id ?? documentRef?.folder ?? row?.folderId ?? "").trim();
+    let descriptorKey = sourceFolderId ? `folder:${sourceFolderId}` : "";
+    if (!descriptorFolderMap.has(descriptorKey)) {
+      const typeLabel = getLootManifestFolderLabelForType(documentRef?.type ?? row?.type ?? "other");
+      descriptorKey = rootDescriptorByName.get(getLootManifestFolderNameKey(typeLabel)) ?? "";
+    }
+    const targetFolderId = descriptorFolderMap.get(descriptorKey)?.id ?? rootFolder.id;
+    const sourceUuid = String(documentRef?.uuid ?? `Compendium.${pack.collection}.Item.${sourceItemId}`).trim();
+    const data = typeof documentRef?.toObject === "function" ? documentRef.toObject() : foundry.utils.deepClone(documentRef);
+    if (data && typeof data === "object" && "_id" in data) delete data._id;
+    data.folder = targetFolderId;
+    data.flags = data.flags && typeof data.flags === "object" ? data.flags : {};
+    data.flags.core = data.flags.core && typeof data.flags.core === "object" ? data.flags.core : {};
+    data.flags.core.sourceId = sourceUuid;
+    data.flags[MODULE_ID] = data.flags[MODULE_ID] && typeof data.flags[MODULE_ID] === "object" ? data.flags[MODULE_ID] : {};
+    data.flags[MODULE_ID].lootManifestImport = {
+      managed: true,
+      sourcePackId: pack.collection,
+      sourceItemId,
+      sourceUuid,
+      sourceFolderId,
+      sourceFolderKey: descriptorKey,
+      importedAt: timestamp
+    };
+
+    const existing = importedItemMap.get(sourceKey) ?? null;
+    if (existing) {
+      updateData.push({
+        _id: existing.id,
+        ...data
+      });
+      continue;
+    }
+    createData.push(data);
+  }
+
+  for (const batch of chunkDocumentRows(updateData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.updateDocuments(batch);
+  }
+  for (const batch of chunkDocumentRows(createData, 50)) {
+    if (batch.length <= 0) continue;
+    await Item.createDocuments(batch);
+  }
+
+  await updateLootSourceConfig((config) => {
+    if (!Array.isArray(config.packs)) config.packs = [];
+    let worldSource = config.packs.find((entry) => String(entry?.id ?? "").trim() === LOOT_WORLD_ITEMS_SOURCE_ID);
+    if (!worldSource) {
+      config.packs.unshift(buildLootWorldItemSourceEntry({ enabled: true }));
+      worldSource = config.packs[0];
+    }
+    worldSource.enabled = true;
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.manifestPackId = buildLootWorldItemsFolderFilterId(rootFolder.id);
+  }, { skipLocalRefresh: true });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+
+  const report = {
+    ok: true,
+    packId: String(pack?.collection ?? "").trim(),
+    rootFolderId: String(rootFolder?.id ?? "").trim(),
+    createdFolders,
+    updatedFolders,
+    createdItems: createData.length,
+    updatedItems: updateData.length
+  };
+  ui.notifications?.info(`Imported ${report.createdItems + report.updatedItems} built item(s) into organized world folders.`);
+  return report;
+}
+
 function getAvailableLootItemPackSources() {
   const rows = [{
     id: LOOT_WORLD_ITEMS_SOURCE_ID,
@@ -11254,6 +12950,40 @@ function matchesLootSourceSearchQuery(query, source = {}) {
   });
 }
 
+function getLootSourceDocumentsForEditor(config = getLootSourceConfig()) {
+  const enabledSourceIds = new Set(
+    (Array.isArray(config?.packs) ? config.packs : [])
+      .filter((entry) => entry?.enabled !== false)
+      .map((entry) => String(entry?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  if (!enabledSourceIds.has(LOOT_WORLD_ITEMS_SOURCE_ID)) return [];
+  return (game.items?.contents ?? []).filter((item) => {
+    const itemType = String(item?.type ?? "").trim().toLowerCase();
+    if (!itemType) return false;
+    const data = getMerchantItemData(item);
+    const poFlags = getPartyOperationsItemFlags(data);
+    return poFlags?.lootEligible !== false;
+  });
+}
+
+function buildLootTagCatalogForEditor(config = getLootSourceConfig()) {
+  const tags = new Set();
+  const documents = getLootSourceDocumentsForEditor(config);
+  for (const documentRef of documents) {
+    const data = getMerchantItemData(documentRef);
+    const keywords = getLootKeywordsFromData(data);
+    for (const keyword of keywords) {
+      const normalized = String(keyword ?? "").trim().toLowerCase();
+      if (!normalized) continue;
+      tags.add(normalized);
+    }
+  }
+  return Array.from(tags)
+    .sort((a, b) => String(a).localeCompare(String(b)))
+    .slice(0, 400);
+}
+
 function buildLootSourceRegistryContext() {
   const config = getLootSourceConfig();
   const availablePacks = getLootGenerationItemPackSources();
@@ -11350,6 +13080,12 @@ function buildLootSourceRegistryContext() {
   const rarityCeiling = normalizeLootRarityValue(config.filters?.rarityCeiling);
   const manifestPackId = String(config.filters?.manifestPackId ?? "").trim();
   const manifestPackOptions = buildLootManifestPackOptions(manifestPackId, itemPackOptions);
+  const tagCatalog = buildLootTagCatalogForEditor(config);
+  const includeTagOptions = buildMerchantTagOptionsForEditor(tagCatalog, config.filters?.keywordIncludeTags ?? []);
+  const excludeTagOptions = buildMerchantTagOptionsForEditor(tagCatalog, config.filters?.keywordExcludeTags ?? []);
+  const includeTagGroups = buildMerchantTagGroupsForEditor(includeTagOptions);
+  const excludeTagGroups = buildMerchantTagGroupsForEditor(excludeTagOptions);
+  const taxonomySummary = buildPartyOperationsTaxonomySummaryFromDocuments(getLootSourceDocumentsForEditor(config));
   const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
   const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
   const updatedAt = Number(config.updatedAt ?? 0);
@@ -11375,6 +13111,17 @@ function buildLootSourceRegistryContext() {
       label: entry.label,
       selected: entry.value === rarityCeiling
     })),
+    tagCatalogCount: tagCatalog.length,
+    hasTagCatalog: tagCatalog.length > 0,
+    includeTagOptions,
+    excludeTagOptions,
+    includeTagGroups,
+    excludeTagGroups,
+    hasIncludeTagGroups: includeTagGroups.length > 0,
+    hasExcludeTagGroups: excludeTagGroups.length > 0,
+    includeTagSelectedCount: includeTagOptions.filter((entry) => entry?.selected).length,
+    excludeTagSelectedCount: excludeTagOptions.filter((entry) => entry?.selected).length,
+    taxonomySummary,
     manifestPackOptions,
     manifestPackId,
     keywordIncludeTagsInput,
@@ -11388,6 +13135,9 @@ function buildLootSourceRegistryContext() {
       totalTables: tableOptions.length,
       enabledItemTypes: itemTypeOptions.filter((entry) => entry.selected).length,
       totalItemTypes: itemTypeOptions.length,
+      sourceItemCount: taxonomySummary.itemCount,
+      tagSchemaLabel: taxonomySummary.schemaLabel,
+      merchantCategoryCount: taxonomySummary.categoryRows.length,
       updatedAtLabel,
       updatedBy: String(config.updatedBy ?? "").trim() || "GM"
     }
@@ -12154,6 +13904,191 @@ function getLootKeywordsFromData(data = {}) {
   return [];
 }
 
+function getPartyOperationsItemFlags(data = {}) {
+  const primary = data?.flags?.[MODULE_ID];
+  if (primary && typeof primary === "object") return primary;
+  const legacy = data?.flags?.["party-operations"];
+  if (legacy && typeof legacy === "object") return legacy;
+  return {};
+}
+
+function formatPartyOperationsWordLabel(value = "", fallback = "Unspecified") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return fallback;
+  return normalized
+    .split(/[-_.:/]+/)
+    .filter(Boolean)
+    .map((entry) => entry.charAt(0).toUpperCase() + entry.slice(1))
+    .join(" ");
+}
+
+function formatPartyOperationsTierLabel(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const tierMatch = normalized.match(/^tier\.t(\d+)$/);
+  if (tierMatch) return `Tier ${tierMatch[1]}`;
+  return formatPartyOperationsWordLabel(normalized, "No Tier");
+}
+
+function formatPartyOperationsValueBandLabel(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  const valueMatch = normalized.match(/^value\.v(\d+)$/);
+  if (valueMatch) return `Value V${valueMatch[1]}`;
+  return formatPartyOperationsWordLabel(normalized, "No Value Band");
+}
+
+function formatPartyOperationsPriceDenominationLabel(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return "Any Coin";
+  return normalized.toUpperCase();
+}
+
+function formatPartyOperationsTagSchemaLabel(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return "Legacy Tags";
+  if (normalized === "po-loot-v2") return "PO Loot V2";
+  return formatPartyOperationsWordLabel(normalized, "Legacy Tags");
+}
+
+function getLootItemMerchantCategoriesFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  const explicit = Array.isArray(poFlags?.merchantCategories)
+    ? poFlags.merchantCategories
+    : [];
+  const categories = explicit
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter(Boolean);
+  if (categories.length > 0) return categories;
+  return getLootKeywordsFromData(data)
+    .filter((entry) => String(entry ?? "").trim().toLowerCase().startsWith("merchant."))
+    .map((entry) => String(entry).trim().toLowerCase().slice("merchant.".length))
+    .filter(Boolean);
+}
+
+function getLootItemTierFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  const explicit = String(poFlags?.tier ?? "").trim().toLowerCase();
+  if (explicit) return explicit;
+  return getLootKeywordsFromData(data).find((entry) => String(entry ?? "").trim().toLowerCase().startsWith("tier.")) ?? "";
+}
+
+function getLootItemValueBandFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  const explicit = String(poFlags?.valueBand ?? "").trim().toLowerCase();
+  if (explicit) return explicit;
+  return getLootKeywordsFromData(data).find((entry) => String(entry ?? "").trim().toLowerCase().startsWith("value.")) ?? "";
+}
+
+function getLootItemPriceDenominationFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  const explicit = String(poFlags?.priceDenomination ?? "").trim().toLowerCase();
+  if (explicit) return explicit;
+  const keyword = getLootKeywordsFromData(data).find((entry) => String(entry ?? "").trim().toLowerCase().startsWith("price."));
+  return keyword ? String(keyword).trim().toLowerCase().slice("price.".length) : "";
+}
+
+function getLootItemTagSchemaFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  return String(poFlags?.tagSchema ?? "").trim().toLowerCase();
+}
+
+function buildPartyOperationsMetaPillsFromData(data = {}, options = {}) {
+  const maxPillsRaw = Number(options?.maxPills ?? 4);
+  const maxPills = Number.isFinite(maxPillsRaw) ? Math.max(1, Math.floor(maxPillsRaw)) : 4;
+  const categories = getLootItemMerchantCategoriesFromData(data);
+  const rarity = normalizeLootRarity(getLootRarityFromData(data));
+  const tier = getLootItemTierFromData(data);
+  const valueBand = getLootItemValueBandFromData(data);
+  const priceDenomination = getLootItemPriceDenominationFromData(data);
+  const pills = [];
+  if (rarity) pills.push({ label: formatPartyOperationsWordLabel(rarity), kind: "rarity" });
+  if (categories[0]) pills.push({ label: formatPartyOperationsWordLabel(categories[0]), kind: "category" });
+  if (tier) pills.push({ label: formatPartyOperationsTierLabel(tier), kind: "tier" });
+  if (valueBand) pills.push({ label: formatPartyOperationsValueBandLabel(valueBand), kind: "value" });
+  if (priceDenomination) pills.push({ label: formatPartyOperationsPriceDenominationLabel(priceDenomination), kind: "price" });
+  return pills.slice(0, maxPills);
+}
+
+function pushPartyOperationsTaxonomyCount(map, key, formatter) {
+  const normalized = String(key ?? "").trim().toLowerCase();
+  if (!normalized) return;
+  const current = map.get(normalized) ?? {
+    value: normalized,
+    label: typeof formatter === "function" ? formatter(normalized) : normalized,
+    count: 0
+  };
+  current.count += 1;
+  map.set(normalized, current);
+}
+
+function finalizePartyOperationsTaxonomyRows(map, limit = 6) {
+  return Array.from(map.values())
+    .sort((left, right) => {
+      const countDelta = Number(right?.count ?? 0) - Number(left?.count ?? 0);
+      if (countDelta !== 0) return countDelta;
+      return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+    })
+    .slice(0, limit);
+}
+
+function buildPartyOperationsTaxonomySummaryFromDocuments(documents = []) {
+  const rows = Array.isArray(documents) ? documents : [];
+  const schemaCounts = new Map();
+  const categoryCounts = new Map();
+  const rarityCounts = new Map();
+  const tierCounts = new Map();
+  const valueCounts = new Map();
+  const priceCounts = new Map();
+  let itemCount = 0;
+
+  for (const documentRef of rows) {
+    const data = getMerchantItemData(documentRef);
+    const itemType = String(data?.type ?? "").trim().toLowerCase();
+    if (!itemType) continue;
+    const poFlags = getPartyOperationsItemFlags(data);
+    if (poFlags?.lootEligible === false) continue;
+    itemCount += 1;
+
+    pushPartyOperationsTaxonomyCount(
+      schemaCounts,
+      getLootItemTagSchemaFromData(data) || "legacy",
+      (value) => value === "legacy" ? "Legacy Tags" : formatPartyOperationsTagSchemaLabel(value)
+    );
+
+    for (const category of getLootItemMerchantCategoriesFromData(data)) {
+      pushPartyOperationsTaxonomyCount(categoryCounts, category, (value) => formatPartyOperationsWordLabel(value));
+    }
+
+    const rarity = normalizeLootRarity(getLootRarityFromData(data));
+    if (rarity) pushPartyOperationsTaxonomyCount(rarityCounts, rarity, (value) => formatPartyOperationsWordLabel(value));
+
+    const tier = getLootItemTierFromData(data);
+    if (tier) pushPartyOperationsTaxonomyCount(tierCounts, tier, (value) => formatPartyOperationsTierLabel(value));
+
+    const valueBand = getLootItemValueBandFromData(data);
+    if (valueBand) pushPartyOperationsTaxonomyCount(valueCounts, valueBand, (value) => formatPartyOperationsValueBandLabel(value));
+
+    const priceDenomination = getLootItemPriceDenominationFromData(data);
+    if (priceDenomination) {
+      pushPartyOperationsTaxonomyCount(priceCounts, priceDenomination, (value) => formatPartyOperationsPriceDenominationLabel(value));
+    }
+  }
+
+  const schemaRows = finalizePartyOperationsTaxonomyRows(schemaCounts, 3);
+  const primarySchema = schemaRows[0] ?? null;
+  return {
+    itemCount,
+    schemaLabel: primarySchema?.label ?? "Legacy Tags",
+    schemaCount: schemaRows.length,
+    hasMultipleSchemas: schemaRows.length > 1,
+    schemaRows,
+    categoryRows: finalizePartyOperationsTaxonomyRows(categoryCounts, 8),
+    rarityRows: finalizePartyOperationsTaxonomyRows(rarityCounts, 5),
+    tierRows: finalizePartyOperationsTaxonomyRows(tierCounts, 5),
+    valueRows: finalizePartyOperationsTaxonomyRows(valueCounts, 6),
+    priceRows: finalizePartyOperationsTaxonomyRows(priceCounts, 4)
+  };
+}
+
 function isLootKeywordMatch(itemKeywords = [], includeTags = [], excludeTags = []) {
   const keywords = new Set(normalizeLootKeywordTagList(itemKeywords));
   const include = normalizeLootKeywordTagList(includeTags);
@@ -12762,6 +14697,8 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
   const data = (item && typeof item?.toObject === "function") ? item.toObject() : item;
   const itemType = String(data?.type ?? "").trim();
   if (!itemType) return null;
+  const poFlags = data?.flags?.[MODULE_ID] ?? data?.flags?.["party-operations"] ?? {};
+  if (poFlags?.lootEligible === false) return null;
 
   const includeTags = filters.includeTags ?? [];
   const excludeTags = filters.excludeTags ?? [];
@@ -12795,7 +14732,13 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     sourceLabel,
     sourceWeight,
     itemValueGp,
+    tier: String(poFlags?.tier ?? getLootItemTierFromData(data) ?? "").trim().toLowerCase(),
+    valueBand: String(poFlags?.valueBand ?? getLootItemValueBandFromData(data) ?? "").trim().toLowerCase(),
+    priceDenomination: String(poFlags?.priceDenomination ?? getLootItemPriceDenominationFromData(data) ?? "").trim().toLowerCase(),
+    merchantCategories: getLootItemMerchantCategoriesFromData(data),
+    tagSchema: String(poFlags?.tagSchema ?? getLootItemTagSchemaFromData(data) ?? "").trim().toLowerCase(),
     keywords,
+    lootWeight: Math.max(0.05, Number(poFlags?.lootWeight ?? 1) || 1),
     profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
     rarityWeight: getLootModeChallengeRarityWeight(draft, rarityBucket)
   };
@@ -13268,7 +15211,8 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     ? 1 + Math.min(0.85, (remaining - value) / Math.max(1, remaining))
     : 1;
   const budgetWeight = Math.max(0.000001, closenessWeight * cheapFillBoost);
-  return sourceWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight;
+  const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
+  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight;
 }
 
 function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spend") {
@@ -13527,7 +15471,8 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
         draft,
         valueBudgetContext
       ) || 0));
-      return sourceWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight;
+      const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
+      return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight;
     });
     const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0));
     const picked = pickedRow?.item ?? null;
@@ -14166,8 +16111,18 @@ function buildLootPreviewContext() {
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemType: String(entry?.itemType ?? ""),
         rarity: String(entry?.rarity ?? ""),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
+          ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+          : "",
+        tierLabel: formatPartyOperationsTierLabel(entry?.tier ?? ""),
+        valueBandLabel: formatPartyOperationsValueBandLabel(entry?.valueBand ?? ""),
+        tagSchemaLabel: formatPartyOperationsTagSchemaLabel(entry?.tagSchema ?? ""),
+        metaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }),
         sourceLabel: String(entry?.sourceLabel ?? ""),
         hasRarity: String(entry?.rarity ?? "").trim().length > 0,
+        hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+        hasMetaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }).length > 0,
         hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
         canOpen: String(entry?.uuid ?? "").trim().length > 0
       }))
@@ -17659,6 +19614,9 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         weightLabel,
         baseCp,
         buyCp,
+        itemValueGp: Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0)),
+        hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
+        metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
         basePriceLabel: formatMerchantCp(baseCp),
         buyPriceLabel: formatMerchantCp(buyCp),
         markupLabel: buyMarkup.toFixed(2)
@@ -18158,6 +20116,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
   const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
   const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
+  const editorSourceTaxonomy = buildPartyOperationsTaxonomySummaryFromDocuments(getMerchantSourceDocumentsSync(editorDraft));
   const savedCityCatalogRows = normalizeMerchantCityList(merchantsState?.cityCatalog ?? []);
   const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
   const editorCuratedRows = [];
@@ -18347,6 +20306,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       hasKeywordCatalog: editorKeywordCatalog.length > 0,
       keywordIncludeOptions: editorKeywordIncludeOptions,
       keywordExcludeOptions: editorKeywordExcludeOptions,
+      sourceTaxonomy: editorSourceTaxonomy,
       allowedTypeOptions: editorAllowedTypeOptions,
       buybackTypeOptions: editorBuybackTypeOptions,
       curatedRows: editorCuratedRows,
@@ -19374,14 +21334,20 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
     .map((item) => {
       const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
-      const unitCp = getMerchantItemUnitPriceCp(getMerchantItemData(item), buyMarkup);
+      const itemData = getMerchantItemData(item);
+      const unitCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
         img: String(item?.img ?? "icons/svg/item-bag.svg"),
         qty,
         unitCp,
-        unitLabel: formatMerchantCp(unitCp)
+        unitLabel: formatMerchantCp(unitCp),
+        metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
+        hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
+        valueLabel: Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0)) > 0
+          ? `${Number(getLootItemGpValueFromData(itemData) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+          : ""
       };
     })
     .filter((row) => row.qty > 0)
@@ -19395,8 +21361,9 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
         return buybackAllowedTypeSet.has(itemType) && MERCHANT_ALLOWED_ITEM_TYPES.has(itemType);
       })
       .map((item) => {
+        const itemData = getMerchantItemData(item);
         const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
-        const unitCp = getMerchantItemUnitPriceCp(getMerchantItemData(item), sellRate);
+        const unitCp = getMerchantItemUnitPriceCp(itemData, sellRate);
         return {
           itemId: String(item?.id ?? ""),
           itemName: String(item?.name ?? "Item"),
@@ -19405,7 +21372,12 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[String(item?.type ?? "").trim().toLowerCase()] ?? item?.type ?? "item"),
           qty,
           unitCp,
-          unitLabel: formatMerchantCp(unitCp)
+          unitLabel: formatMerchantCp(unitCp),
+          metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }),
+          hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }).length > 0,
+          valueLabel: Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0)) > 0
+            ? `${Number(getLootItemGpValueFromData(itemData) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+            : ""
         };
       })
       .filter((row) => row.qty > 0)
@@ -19420,6 +21392,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
   return renderTemplate("modules/party-operations/templates/merchant-shop.hbs", {
     merchantId: String(merchant?.id ?? ""),
     actorId: String(actor?.id ?? ""),
+    merchantStockActorId: String(merchantActor?.id ?? ""),
     settlement,
     barterResolutionKey,
     merchantName: String(merchant?.name ?? "Merchant"),
@@ -19475,6 +21448,28 @@ function readMerchantTradeInputsFromDialog(html) {
     buyItems: readLines("input[data-merchant-buy-item]", "merchantBuyItem"),
     sellItems: readLines("input[data-merchant-sell-item]", "merchantSellItem")
   };
+}
+
+function bindMerchantTradeDialogItemOpeners(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root || root.dataset.poMerchantTradeItemOpenBound === "1") return;
+  root.dataset.poMerchantTradeItemOpenBound = "1";
+  root.addEventListener("dblclick", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.closest("input, button, a, select, textarea, label")) return;
+    const itemRow = target.closest("tr[data-item-id], [data-item-id][data-source-actor-id]");
+    if (!itemRow) return;
+    void openItemSheetFromReference(findItemReferenceFromElement(itemRow))
+      .then((opened) => {
+        if (opened) event.preventDefault();
+      })
+      .catch((error) => {
+        if (isModuleDebugEnabled()) {
+          console.warn(`${MODULE_ID}: failed opening merchant trade item from double-click`, error);
+        }
+      });
+  });
 }
 
 function bindMerchantTradeDialogTotals(html) {
@@ -19768,11 +21763,12 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
     render: (html) => {
       bindMerchantTradeDialogTotals(html);
       bindMerchantTradeDialogBarterButton(html);
+      bindMerchantTradeDialogItemOpeners(html);
     }
   }, {
     classes: ["party-operations", "po-merchant-shop-dialog-app"],
-    width: 1120,
-    height: 820,
+    width: 1180,
+    height: 880,
     resizable: true
   });
   dialog.render(true);
@@ -26068,7 +28064,16 @@ async function setLootKeywordIncludeTags(element) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
-  const next = parseLootKeywordTagListFromInput(element?.value ?? "");
+  const next = (() => {
+    if (String(element?.type ?? "").trim().toLowerCase() === "checkbox") {
+      const root = element?.closest?.("[data-loot-tag-mode='include']") ?? element?.closest?.(".po-loot-tag-picker-card");
+      const selectedValues = Array.from(root?.querySelectorAll?.("input[name='lootKeywordIncludeTag']:checked") ?? [])
+        .map((input) => String(input?.value ?? "").trim())
+        .filter(Boolean);
+      return normalizeLootKeywordTagList(selectedValues);
+    }
+    return parseLootKeywordTagListFromInput(element?.value ?? "");
+  })();
   await updateLootSourceConfig((config) => {
     if (!config.filters || typeof config.filters !== "object") config.filters = {};
     config.filters.keywordIncludeTags = next;
@@ -26080,7 +28085,16 @@ async function setLootKeywordExcludeTags(element) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
     return;
   }
-  const next = parseLootKeywordTagListFromInput(element?.value ?? "");
+  const next = (() => {
+    if (String(element?.type ?? "").trim().toLowerCase() === "checkbox") {
+      const root = element?.closest?.("[data-loot-tag-mode='exclude']") ?? element?.closest?.(".po-loot-tag-picker-card");
+      const selectedValues = Array.from(root?.querySelectorAll?.("input[name='lootKeywordExcludeTag']:checked") ?? [])
+        .map((input) => String(input?.value ?? "").trim())
+        .filter(Boolean);
+      return normalizeLootKeywordTagList(selectedValues);
+    }
+    return parseLootKeywordTagListFromInput(element?.value ?? "");
+  })();
   await updateLootSourceConfig((config) => {
     if (!config.filters || typeof config.filters !== "object") config.filters = {};
     config.filters.keywordExcludeTags = next;
@@ -26630,6 +28644,7 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
   const data = (documentRef && typeof documentRef?.toObject === "function") ? documentRef.toObject() : documentRef;
   const uuid = String(documentRef?.uuid ?? data?.uuid ?? "").trim();
   const rarity = getLootRarityFromData(data);
+  const poFlags = getPartyOperationsItemFlags(data);
   return {
     id: foundry.utils.randomID(),
     uuid,
@@ -26637,6 +28652,13 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
     itemType: String(data?.type ?? "").trim(),
     rarity,
+    itemValueGp: Math.max(0, Number(getLootItemGpValueFromData(data) || 0)),
+    tier: String(poFlags?.tier ?? getLootItemTierFromData(data) ?? "").trim().toLowerCase(),
+    valueBand: String(poFlags?.valueBand ?? getLootItemValueBandFromData(data) ?? "").trim().toLowerCase(),
+    priceDenomination: String(poFlags?.priceDenomination ?? getLootItemPriceDenominationFromData(data) ?? "").trim().toLowerCase(),
+    merchantCategories: getLootItemMerchantCategoriesFromData(data),
+    keywords: getLootKeywordsFromData(data),
+    tagSchema: String(poFlags?.tagSchema ?? getLootItemTagSchemaFromData(data) ?? "").trim().toLowerCase(),
     sourceLabel: buildLootPreviewSourceLabel(documentRef, options?.sourceLabel ?? "Manual Add")
   };
 }
@@ -33156,6 +35178,7 @@ function buildPartyOperationsApi() {
     operations: () => openMainTab("operations", { force: true }),
     gm: () => openMainTab("gm", { force: true }),
     gmMerchants: () => openGmMerchantsPage({ force: true }),
+    gmAudio: () => openGmAudioPage({ force: true }),
     refreshAll: () => refreshOpenApps(),
     getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
     gatherResources: (options = {}) => runGatherResourcesAction(options),
@@ -33185,6 +35208,30 @@ function buildPartyOperationsApi() {
     showLauncher: () => ensureLauncherUi(),
     forceLauncherRecovery: (reason) => forceLauncherRecovery(reason),
     launcherStatus: () => getLauncherStatusSnapshot(),
+    audio: {
+      open: () => openGmAudioPage({ force: true }),
+      getCatalog: () => foundry.utils.deepClone(getAudioLibraryCatalog()),
+      scan: (options = {}) => scanAudioLibraryCatalog(options),
+      clear: () => clearAudioLibraryCatalog(),
+      getMixPresets: () => foundry.utils.deepClone(AUDIO_MIX_PRESETS),
+      playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
+      stopMix: () => stopAudioMixPlayback(),
+      pick: ({ kind = "all", usage = "all", search = "" } = {}) => {
+        const catalog = getAudioLibraryCatalog();
+        const normalizedKind = normalizeAudioLibraryKind(kind);
+        const normalizedUsage = normalizeAudioLibraryUsage(usage);
+        const normalizedSearch = normalizeAudioLibrarySearch(search);
+        const candidates = catalog.items.filter((item) => {
+          if (normalizedKind !== "all" && item.kind !== normalizedKind) return false;
+          if (normalizedUsage !== "all" && item.usage !== normalizedUsage) return false;
+          if (!normalizedSearch) return true;
+          const haystack = `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
+          return haystack.includes(normalizedSearch);
+        });
+        if (candidates.length <= 0) return null;
+        return foundry.utils.deepClone(candidates[Math.floor(Math.random() * candidates.length)]);
+      }
+    },
     apiStatus: () => ({
       moduleActive: Boolean(game.modules?.get?.(MODULE_ID)?.active),
       hasGameApi: Boolean(game.partyOperations || game.partyops),
@@ -33200,6 +35247,7 @@ function buildPartyOperationsApi() {
   api.openOperations = api.operations;
   api.openGM = api.gm;
   api.openGmMerchants = api.gmMerchants;
+  api.openGmAudio = api.gmAudio;
   api.openSettingsHub = api.settingsHub;
   api.gather = api.gatherResources;
   api.launcher = api.ensureLauncher;
@@ -33836,8 +35884,10 @@ export function onPartyOperationsInit() {
     buildDefaultActivityState,
     buildDefaultOperationsLedger,
     buildDefaultInjuryRecoveryState,
-    buildDefaultLootSourceConfig
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog
   });
+  syncAudioLibraryDraftFromSettings();
   registerPartyOpsFeatureSettings({
     moduleId: MODULE_ID,
     settings: SETTINGS,

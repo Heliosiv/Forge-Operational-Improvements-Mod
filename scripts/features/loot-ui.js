@@ -20,6 +20,8 @@ export function createGmLootPageApp(deps) {
     setLootRarityFloor,
     setLootRarityCeiling,
     setLootManifestPack,
+    importLootManifestCompendiumToWorld,
+    clearLootManifestImportedWorldItems,
     setLootKeywordIncludeTags,
     setLootKeywordExcludeTags,
     resetLootSourceConfig,
@@ -122,6 +124,8 @@ export function createGmLootPageApp(deps) {
         "set-loot-rarity-floor": rerenderAlways(setLootRarityFloor),
         "set-loot-rarity-ceiling": rerenderAlways(setLootRarityCeiling),
         "set-loot-manifest-pack": rerenderAlways(setLootManifestPack),
+        "import-loot-manifest-compendium": rerenderAlways(() => importLootManifestCompendiumToWorld()),
+        "clear-loot-manifest-imported-items": rerenderAlways(() => clearLootManifestImportedWorldItems()),
         "set-loot-keyword-include-tags": rerenderAlways(setLootKeywordIncludeTags),
         "set-loot-keyword-exclude-tags": rerenderAlways(setLootKeywordExcludeTags),
         "reset-loot-source-config": rerenderAlways(() => resetLootSourceConfig()),
@@ -142,19 +146,46 @@ export function createGmLootPageApp(deps) {
     }
 
     _bindAdditionalListeners(root) {
-      root.addEventListener("dragover", (event) => {
-        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+      const setDropzoneState = (eventTarget, active) => {
+        const dropZone = eventTarget?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return null;
+        dropZone.classList.toggle("is-drop-active", active);
+        return dropZone;
+      };
+
+      const clearDropzoneState = () => {
+        root.querySelectorAll?.("[data-loot-preview-dropzone].is-drop-active")?.forEach?.((dropZone) => {
+          dropZone.classList.remove("is-drop-active");
+        });
+      };
+
+      root.addEventListener("dragenter", (event) => {
+        const dropZone = setDropzoneState(event.target, true);
         if (!dropZone) return;
         event.preventDefault();
+      });
+      root.addEventListener("dragover", (event) => {
+        const dropZone = setDropzoneState(event.target, true);
+        if (!dropZone) return;
+        event.preventDefault();
+      });
+      root.addEventListener("dragleave", (event) => {
+        const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
+        if (!dropZone) return;
+        dropZone.classList.remove("is-drop-active");
       });
       root.addEventListener("drop", (event) => {
         void (async () => {
           const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
           if (!dropZone) return;
           event.preventDefault();
+          dropZone.classList.remove("is-drop-active");
           const added = await addLootPreviewItemFromDropEvent(event);
           if (added) this._renderWithPreservedState({ force: true, parts: ["main"] });
         })();
+      });
+      root.addEventListener("dragend", () => {
+        clearDropzoneState();
       });
     }
   };
