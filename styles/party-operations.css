@@ -4615,7 +4615,7 @@
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
   align-items: center;
   gap: 10px;
   min-height: 44px;
@@ -6029,20 +6029,20 @@
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-gm-loot-builder-item-card {
-  padding: 12px;
-  gap: 8px;
+  padding: 10px;
+  gap: 10px;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-card-head {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-thumb {
-  width: 72px;
-  height: 72px;
+  width: 64px;
+  height: 64px;
   border-radius: 14px;
   object-fit: cover;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 50%, var(--po-border));
@@ -6051,10 +6051,10 @@
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-copy {
   min-width: 0;
-  min-height: 72px;
+  min-height: 64px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-name-row {
@@ -6069,6 +6069,9 @@
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
 }
 
@@ -6076,20 +6079,22 @@
   margin-top: auto;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-source {
-  margin: 0;
-  font-size: 0.64rem;
-  line-height: 1.1;
-  color: color-mix(in srgb, var(--po-muted) 78%, black);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border) 72%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions {
-  display: grid;
-  gap: 6px;
-  justify-items: end;
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions .po-btn {
+  margin: 0;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions .po-icon-btn {
+  flex: 0 0 auto;
 }
 
 @media (min-width: 1360px) {
@@ -6208,9 +6213,7 @@
   }
 
   .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-actions {
-    grid-column: 1 / -1;
-    justify-items: start;
-    grid-auto-flow: column;
+    justify-content: flex-start;
   }
 }
 

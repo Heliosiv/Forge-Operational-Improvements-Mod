@@ -22,6 +22,7 @@ import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
 import { routePartyOperationsSocketMessage } from "./core/socket-routes.js";
+import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
 import {
@@ -7714,6 +7715,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
     restWatchAppInstance = this;
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
     syncApplicationWindowTitle(this, getRestMainWindowTitle(getActiveRestMainTab()));
     
     if (this.element && !this.element.dataset.poBoundRest) {
@@ -9020,6 +9022,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
     if (this.element) {
       const bindClickOnce = (selector, handler) => {
         const elements = Array.from(this.element.querySelectorAll(selector));
@@ -9474,6 +9477,7 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
     if (this.element) {
       const datasetKey = this._getBoundDatasetKey();
       if (datasetKey && !this.element.dataset[datasetKey]) {
@@ -9892,6 +9896,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   async _onRender(context, options) {
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
     if (this.element && !this.element.dataset.poBoundGmLootClaimsBoard) {
       this.element.dataset.poBoundGmLootClaimsBoard = "1";
       this.element.addEventListener("click", (event) => {
@@ -10047,6 +10052,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
 
     restWatchPlayerAppInstance = this;
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
 
     if (this.element && !this.element.dataset.poBoundRestPlayer) {
       this.element.dataset.poBoundRestPlayer = "1";
@@ -10407,6 +10413,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     marchingOrderAppInstance = this;
     if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
     ensurePartyOperationsClass(this);
+    bindCanvasKeyboardSuppression(this.element);
     
     if (this.element && !this.element.dataset.poBoundMarch) {
       this.element.dataset.poBoundMarch = "1";
