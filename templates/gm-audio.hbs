@@ -156,7 +156,7 @@
             <div class="po-audio-chip-list">
               {{#if audio.mix.selectedPreset.isCustom}}<span class="po-pill">Custom</span>{{else}}<span class="po-pill">Built-in</span>{{/if}}
               {{#if audio.mix.selectedPreset.hasSavedTrackList}}
-              <span class="po-pill">{{audio.mix.selectedPreset.assignedCount}} saved</span>
+              <span class="po-pill">{{audio.mix.selectedPreset.assignedCount}} queued</span>
               <span class="po-pill">{{audio.mix.selectedPreset.suggestedCount}} suggested</span>
               {{else}}
               <span class="po-pill">{{audio.mix.selectedPreset.candidateCount}} matches</span>
@@ -189,7 +189,25 @@
                 <span class="po-pill">{{audio.mix.playback.playlistName}}</span>
               </div>
             </div>
-            <audio class="po-audio-preview-player" controls preload="none" src="{{audio.mix.playback.activeTrack.path}}"></audio>
+            <div class="po-audio-preview-player" data-po-audio-player data-default-volume="{{audio.preview.defaultVolume}}">
+              <audio class="po-audio-preview-media" preload="metadata" src="{{audio.mix.playback.activeTrack.path}}"></audio>
+              <div class="po-audio-preview-controls">
+                <button type="button" class="po-audio-preview-toggle" data-role="toggle" aria-label="Play audio preview">
+                  <i class="fa-solid fa-play" data-role="toggle-icon"></i>
+                </button>
+                <div class="po-audio-preview-time">
+                  <span data-role="current">0:00</span>
+                  <span>/</span>
+                  <span data-role="duration">--:--</span>
+                </div>
+                <input type="range" class="po-audio-preview-seek" data-role="seek" min="0" max="1000" step="1" value="0" aria-label="Seek audio preview" />
+                <label class="po-audio-preview-volume">
+                  <i class="fa-solid fa-volume-low"></i>
+                  <input type="range" class="po-audio-preview-volume-slider" data-role="volume" min="0" max="100" step="1" value="{{audio.preview.defaultVolumePercent}}" aria-label="Audio preview volume" />
+                  <span data-role="volume-label">{{audio.preview.defaultVolumePercent}}%</span>
+                </label>
+              </div>
+            </div>
             {{else}}
             <div class="po-op-summary">No mix track is playing yet.</div>
             {{/if}}
@@ -309,7 +327,7 @@
             {{/each}}
           </div>
           {{else}}
-          <div class="po-op-summary">Add tracks below to build the current queue for this preset.</div>
+          <div class="po-op-summary">{{audio.mix.queue.emptyLabel}}</div>
           {{/if}}
         </section>
 
@@ -389,7 +407,25 @@
               <span class="po-pill">{{audio.selectedTrack.extension}}</span>
             </div>
           </div>
-          <audio class="po-audio-preview-player" controls preload="none" src="{{audio.selectedTrack.path}}"></audio>
+          <div class="po-audio-preview-player" data-po-audio-player data-default-volume="{{audio.preview.defaultVolume}}">
+            <audio class="po-audio-preview-media" preload="metadata" src="{{audio.selectedTrack.path}}"></audio>
+            <div class="po-audio-preview-controls">
+              <button type="button" class="po-audio-preview-toggle" data-role="toggle" aria-label="Play audio preview">
+                <i class="fa-solid fa-play" data-role="toggle-icon"></i>
+              </button>
+              <div class="po-audio-preview-time">
+                <span data-role="current">0:00</span>
+                <span>/</span>
+                <span data-role="duration">--:--</span>
+              </div>
+              <input type="range" class="po-audio-preview-seek" data-role="seek" min="0" max="1000" step="1" value="0" aria-label="Seek audio preview" />
+              <label class="po-audio-preview-volume">
+                <i class="fa-solid fa-volume-low"></i>
+                <input type="range" class="po-audio-preview-volume-slider" data-role="volume" min="0" max="100" step="1" value="{{audio.preview.defaultVolumePercent}}" aria-label="Audio preview volume" />
+                <span data-role="volume-label">{{audio.preview.defaultVolumePercent}}%</span>
+              </label>
+            </div>
+          </div>
           <div class="po-op-summary po-audio-preview-path">{{audio.selectedTrack.path}}</div>
           <div class="po-op-action-row po-audio-card-actions po-audio-management-actions">
             <button type="button" class="po-btn po-btn-sm" data-action="hide-audio-track" data-track-id="{{audio.selectedTrack.id}}">Hide Track</button>

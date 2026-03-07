@@ -1,5 +1,22 @@
 import { createPageActionHelpers } from "./page-action-helpers.js";
 
+function clampAudioPreviewVolume(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.max(0, Math.min(1, numeric));
+}
+
+function formatAudioPreviewTime(seconds) {
+  const numeric = Number(seconds);
+  if (!Number.isFinite(numeric) || numeric < 0) return "--:--";
+  const totalSeconds = Math.floor(numeric);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  return `${minutes}:${String(secs).padStart(2, "0")}`;
+}
+
 export function createGmAudioPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -28,6 +45,8 @@ export function createGmAudioPageApp(deps) {
     clearSelectedAudioMixPresetTrackList,
     hideAudioLibraryTrack,
     hideSelectedAudioLibraryTracks,
+    getAudioPreviewVolumeSetting,
+    setAudioPreviewVolumeSetting,
     queueSelectedTrackNext,
     moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
@@ -42,6 +61,11 @@ export function createGmAudioPageApp(deps) {
   } = deps;
 
   return class GmAudioPageApp extends BaseStatefulPageApp {
+    constructor(options = {}) {
+      super(options);
+      this._audioPreviewVolumeSaveTimer = null;
+    }
+
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
       id: "party-operations-gm-audio-page",
       classes: ["party-operations"],
@@ -74,10 +98,126 @@ export function createGmAudioPageApp(deps) {
       return "Audio library action failed. Check console for details.";
     }
 
+    async close(options = {}) {
+      if (this._audioPreviewVolumeSaveTimer) {
+        window.clearTimeout(this._audioPreviewVolumeSaveTimer);
+        this._audioPreviewVolumeSaveTimer = null;
+      }
+      return super.close(options);
+    }
+
     _shouldHandleInputAction(action) {
       return action === "set-audio-library-draft-field"
         || action === "set-audio-library-filter"
         || action === "set-audio-mix-preset-option";
+    }
+
+    async _onPostRender(context, options) {
+      await super._onPostRender(context, options);
+      this._bindAudioPreviewPlayers();
+    }
+
+    _queueAudioPreviewVolumeSave(volume) {
+      const normalized = clampAudioPreviewVolume(volume);
+      if (this._audioPreviewVolumeSaveTimer) window.clearTimeout(this._audioPreviewVolumeSaveTimer);
+      this._audioPreviewVolumeSaveTimer = window.setTimeout(() => {
+        this._audioPreviewVolumeSaveTimer = null;
+        void setAudioPreviewVolumeSetting(normalized);
+      }, 120);
+    }
+
+    _bindAudioPreviewPlayers() {
+      const root = this.element;
+      if (!root) return;
+      const players = Array.from(root.querySelectorAll("[data-po-audio-player]"));
+      const defaultVolume = clampAudioPreviewVolume(getAudioPreviewVolumeSetting?.() ?? 1);
+
+      for (const player of players) {
+        if (player.dataset.poAudioPlayerBound === "1") continue;
+        player.dataset.poAudioPlayerBound = "1";
+
+        const media = player.querySelector("audio");
+        const toggle = player.querySelector("[data-role='toggle']");
+        const toggleIcon = player.querySelector("[data-role='toggle-icon']");
+        const currentLabel = player.querySelector("[data-role='current']");
+        const durationLabel = player.querySelector("[data-role='duration']");
+        const seek = player.querySelector("[data-role='seek']");
+        const volume = player.querySelector("[data-role='volume']");
+        const volumeLabel = player.querySelector("[data-role='volume-label']");
+        if (!(media instanceof HTMLAudioElement) || !(seek instanceof HTMLInputElement) || !(volume instanceof HTMLInputElement)) continue;
+
+        let isSeeking = false;
+        const syncPlayState = () => {
+          const isPlaying = !media.paused && !media.ended;
+          toggle?.setAttribute("aria-label", isPlaying ? "Pause audio preview" : "Play audio preview");
+          if (toggleIcon) {
+            toggleIcon.classList.toggle("fa-play", !isPlaying);
+            toggleIcon.classList.toggle("fa-pause", isPlaying);
+          }
+        };
+        const syncTimeState = () => {
+          const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
+          const current = Number.isFinite(media.currentTime) && media.currentTime > 0 ? media.currentTime : 0;
+          if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(current);
+          if (durationLabel) durationLabel.textContent = duration > 0 ? formatAudioPreviewTime(duration) : "--:--";
+          if (!isSeeking) {
+            seek.disabled = duration <= 0;
+            seek.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : "0";
+          }
+        };
+        const syncVolumeState = (value, { persist = false } = {}) => {
+          const normalized = clampAudioPreviewVolume(value);
+          const percent = Math.round(normalized * 100);
+          media.volume = normalized;
+          volume.value = String(percent);
+          if (volumeLabel) volumeLabel.textContent = `${percent}%`;
+          if (persist) this._queueAudioPreviewVolumeSave(normalized);
+        };
+
+        media.preload = "metadata";
+        syncVolumeState(Number(player.dataset.defaultVolume ?? defaultVolume));
+        syncPlayState();
+        syncTimeState();
+
+        toggle?.addEventListener("click", async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (media.paused || media.ended) await media.play().catch(() => {});
+          else media.pause();
+          syncPlayState();
+        });
+
+        media.addEventListener("play", syncPlayState);
+        media.addEventListener("pause", syncPlayState);
+        media.addEventListener("ended", () => {
+          syncPlayState();
+          syncTimeState();
+        });
+        media.addEventListener("loadedmetadata", syncTimeState);
+        media.addEventListener("durationchange", syncTimeState);
+        media.addEventListener("timeupdate", syncTimeState);
+
+        seek.addEventListener("input", () => {
+          isSeeking = true;
+          const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
+          const ratio = Math.max(0, Math.min(1, Number(seek.value) / 1000));
+          if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(duration * ratio);
+        });
+        seek.addEventListener("change", () => {
+          const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
+          const ratio = Math.max(0, Math.min(1, Number(seek.value) / 1000));
+          media.currentTime = duration * ratio;
+          isSeeking = false;
+          syncTimeState();
+        });
+
+        volume.addEventListener("input", () => {
+          syncVolumeState(Number(volume.value) / 100, { persist: true });
+        });
+        volume.addEventListener("change", () => {
+          syncVolumeState(Number(volume.value) / 100, { persist: true });
+        });
+      }
     }
 
     _getActionHandlers() {

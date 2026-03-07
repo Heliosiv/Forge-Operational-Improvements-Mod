@@ -987,18 +987,11 @@
 
         <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
-          <div class="po-hint">Set your location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
+          <div class="po-hint">Review your GM-assigned location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
 
           <div class="po-merchant-showcase">
             <div class="po-merchant-showcase-head">
-              <label class="po-resource-row">
-                <span>Location</span>
-                <select class="po-select" data-action="merchant-select-city">
-                  {{#each operations.merchants.settlementOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
+              <div class="po-op-summary">Assigned Location: {{operations.merchants.selectedSettlementLabel}}</div>
               <label class="po-resource-row">
                 <span>Trading As</span>
                 <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>

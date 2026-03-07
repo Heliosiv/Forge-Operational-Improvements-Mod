@@ -538,10 +538,20 @@
             </div>
             <div class="po-merchant-shop-player-grid">
               {{#each merchants.gm.shopSession.playerRows}}
-              <label class="po-merchant-shop-player-row">
-                <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
-                <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
-              </label>
+              <div class="po-merchant-shop-player-row">
+                <label class="po-merchant-shop-player-toggle">
+                  <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
+                  <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
+                </label>
+                <label class="po-resource-row po-merchant-shop-player-location">
+                  <span>Location</span>
+                  <select class="po-select" data-action="merchant-shop-player-location" data-user-id="{{userId}}">
+                    {{#each locationOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+              </div>
               {{/each}}
             </div>
             {{else}}

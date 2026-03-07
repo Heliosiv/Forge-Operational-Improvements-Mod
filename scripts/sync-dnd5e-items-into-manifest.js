@@ -8,14 +8,16 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const MODULE_ID = "party-operations";
-const TAG_SCHEMA = "po-loot-v2";
+const TAG_SCHEMA = "po-loot-v3";
 
 const DEFAULT_DND5E_PACK_PATH = "C:/Users/Kyle/AppData/Local/FoundryVTT/Data/systems/dnd5e/packs/items";
 const DEFAULT_MANIFEST_PATH = path.resolve(process.cwd(), "packs", "party-operations-loot-manifest.db");
 const DEFAULT_REPORT_PATH = path.resolve(process.cwd(), "reports", "dnd5e-manifest-sync-report.json");
 const DEFAULT_SOURCE_COLLECTION = "dnd5e.items";
 const DEFAULT_MANIFEST_COLLECTION = `${MODULE_ID}.party-operations-loot-manifest`;
-const ENRICHMENT_SCHEMA = "po-item-enrichment-v2";
+const ENRICHMENT_SCHEMA = "po-item-enrichment-v3";
+const FOLDER_SCHEMA = "po-loot-folder-v1";
+const USABILITY_SCHEMA = "po-loot-usage-v1";
 
 const MIDI_QOL_DEFAULTS = Object.freeze({
   rollAttackPerTarget: "default",
@@ -78,6 +80,15 @@ const ABILITY_KEY_MAP = Object.freeze({
   intelligence: "int",
   wisdom: "wis",
   charisma: "cha"
+});
+
+const FOLDER_FAMILY_DEFINITIONS = Object.freeze({
+  weapons: Object.freeze({ label: "Weapons", sort: 1000 }),
+  armor: Object.freeze({ label: "Armor", sort: 2000 }),
+  consumables: Object.freeze({ label: "Consumables", sort: 3000 }),
+  spells: Object.freeze({ label: "Spells", sort: 4000 }),
+  tools: Object.freeze({ label: "Tools", sort: 5000 }),
+  sundries: Object.freeze({ label: "Sundries", sort: 6000 })
 });
 
 function parseArgs(argv) {
@@ -607,6 +618,458 @@ function classifyLootType(item = {}, rarity = "") {
   return `loot.${type || "item"}`;
 }
 
+function sanitizeFolderKey(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildFolderPlacement(path = []) {
+  const normalizedPath = (Array.isArray(path) ? path : [])
+    .map((entry, index) => {
+      const key = sanitizeFolderKey(entry?.key ?? entry?.label ?? `segment-${index + 1}`);
+      const label = String(entry?.label ?? "").trim();
+      const sort = Number(entry?.sort ?? ((index + 1) * 1000)) || ((index + 1) * 1000);
+      if (!key || !label) return null;
+      return { key, label, sort };
+    })
+    .filter(Boolean);
+  if (normalizedPath.length <= 0) return null;
+
+  const family = normalizedPath[0] ?? {};
+  const section = normalizedPath[1] ?? {};
+  const leaf = normalizedPath[2] ?? {};
+  return {
+    schema: FOLDER_SCHEMA,
+    familyKey: String(family.key ?? ""),
+    familyLabel: String(family.label ?? ""),
+    sectionKey: String(section.key ?? ""),
+    sectionLabel: String(section.label ?? ""),
+    leafKey: String(leaf.key ?? ""),
+    leafLabel: String(leaf.label ?? ""),
+    path: normalizedPath,
+    pathLabels: normalizedPath.map((entry) => String(entry.label ?? "")),
+    pathKeys: normalizedPath.map((entry) => String(entry.key ?? "")),
+    pathKey: normalizedPath.map((entry) => String(entry.key ?? "")).filter(Boolean).join("/")
+  };
+}
+
+function getFamilyDefinition(key = "sundries") {
+  return FOLDER_FAMILY_DEFINITIONS[String(key ?? "").trim().toLowerCase()] ?? FOLDER_FAMILY_DEFINITIONS.sundries;
+}
+
+function buildFolderPlacementFromSegments(familyKey, section = {}, leaf = null) {
+  const familyDefinition = getFamilyDefinition(familyKey);
+  const path = [{
+    key: familyKey,
+    label: familyDefinition.label,
+    sort: familyDefinition.sort
+  }];
+
+  const sectionLabel = String(section?.label ?? "").trim();
+  if (sectionLabel) {
+    path.push({
+      key: sanitizeFolderKey(section?.key ?? sectionLabel),
+      label: sectionLabel,
+      sort: Number(section?.sort ?? (familyDefinition.sort + 100)) || (familyDefinition.sort + 100)
+    });
+  }
+
+  const leafLabel = String(leaf?.label ?? "").trim();
+  if (leafLabel) {
+    path.push({
+      key: sanitizeFolderKey(leaf?.key ?? leafLabel),
+      label: leafLabel,
+      sort: Number(leaf?.sort ?? ((Number(section?.sort ?? familyDefinition.sort + 100) || (familyDefinition.sort + 100)) + 10))
+        || ((Number(section?.sort ?? familyDefinition.sort + 100) || (familyDefinition.sort + 100)) + 10)
+    });
+  }
+
+  return buildFolderPlacement(path);
+}
+
+function getWeaponLeafData(subtype = "", sectionSort = 0) {
+  const map = {
+    simplem: { key: "simple-melee", label: "Simple Melee", sort: sectionSort + 10 },
+    simpler: { key: "simple-ranged", label: "Simple Ranged", sort: sectionSort + 20 },
+    martialm: { key: "martial-melee", label: "Martial Melee", sort: sectionSort + 30 },
+    martialr: { key: "martial-ranged", label: "Martial Ranged", sort: sectionSort + 40 },
+    natural: { key: "natural-weapons", label: "Natural Weapons", sort: sectionSort + 50 }
+  };
+  return map[String(subtype ?? "").trim().toLowerCase()] ?? {
+    key: "other-weapons",
+    label: "Other Weapons",
+    sort: sectionSort + 90
+  };
+}
+
+function getArmorLeafData(subtype = "", sectionSort = 0) {
+  const map = {
+    light: { key: "light-armor", label: "Light Armor", sort: sectionSort + 10 },
+    medium: { key: "medium-armor", label: "Medium Armor", sort: sectionSort + 20 },
+    heavy: { key: "heavy-armor", label: "Heavy Armor", sort: sectionSort + 30 },
+    shield: { key: "shields", label: "Shields", sort: sectionSort + 40 }
+  };
+  return map[String(subtype ?? "").trim().toLowerCase()] ?? {
+    key: "other-armor",
+    label: "Other Armor",
+    sort: sectionSort + 90
+  };
+}
+
+function inferSundriesSectionPlacement(item = {}, categories = [], magical = false) {
+  const type = String(item?.type ?? "").trim().toLowerCase();
+  const subtype = String(item?.system?.type?.value ?? "").trim().toLowerCase();
+  const name = String(item?.name ?? "").trim().toLowerCase();
+  const categorySet = new Set(Array.isArray(categories) ? categories : []);
+
+  if (type === "container" || type === "backpack" || categorySet.has("storage")) {
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "containers-packs",
+      label: "Containers & Packs",
+      sort: 6100
+    }, {
+      key: "storage",
+      label: "Storage Gear",
+      sort: 6110
+    });
+  }
+
+  if (categorySet.has("gem") || categorySet.has("jewelry") || categorySet.has("treasure") || categorySet.has("luxury")) {
+    const leaf = categorySet.has("gem")
+      ? { key: "gemstones", label: "Gemstones", sort: 6210 }
+      : { key: "jewelry-tokens", label: "Jewelry & Tokens", sort: 6220 };
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "gems-jewelry",
+      label: "Gems & Jewelry",
+      sort: 6200
+    }, leaf);
+  }
+
+  if (categorySet.has("ingredient") || categorySet.has("herb")) {
+    const leaf = categorySet.has("herb")
+      ? { key: "herbs", label: "Herbs", sort: 6310 }
+      : { key: "reagents", label: "Alchemical Reagents", sort: 6320 };
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "herbs-reagents",
+      label: "Herbs & Reagents",
+      sort: 6300
+    }, leaf);
+  }
+
+  if (
+    categorySet.has("tradegood")
+    || categorySet.has("material")
+    || categorySet.has("metal")
+    || categorySet.has("textile")
+    || categorySet.has("hide")
+    || categorySet.has("livestock")
+  ) {
+    let leaf = { key: "bulk-goods", label: "Bulk Goods", sort: 6410 };
+    if (categorySet.has("livestock")) leaf = { key: "livestock", label: "Livestock", sort: 6440 };
+    else if (categorySet.has("textile") || categorySet.has("hide")) leaf = { key: "textiles-hides", label: "Textiles & Hides", sort: 6430 };
+    else if (categorySet.has("material") || categorySet.has("metal")) leaf = { key: "materials-metals", label: "Materials & Metals", sort: 6420 };
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "trade-goods",
+      label: "Trade Goods",
+      sort: 6400
+    }, leaf);
+  }
+
+  if (magical) {
+    const leaf = (subtype === "clothing" || /\b(cloak|boots|gloves|belt|hat|helm|hood|bracers|gauntlets|ring|amulet|necklace)\b/i.test(name))
+      ? { key: "apparel-accessories", label: "Apparel & Accessories", sort: 6510 }
+      : { key: "trinkets-implements", label: "Trinkets & Implements", sort: 6520 };
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "wondrous-items",
+      label: "Wondrous Items",
+      sort: 6500
+    }, leaf);
+  }
+
+  if (categorySet.has("curio") || categorySet.has("travel")) {
+    const leaf = categorySet.has("travel")
+      ? { key: "travel-curios", label: "Travel Curios", sort: 6610 }
+      : { key: "oddities", label: "Oddities", sort: 6620 };
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "curios",
+      label: "Curios",
+      sort: 6600
+    }, leaf);
+  }
+
+  if (subtype === "clothing") {
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "adventuring-gear",
+      label: "Adventuring Gear",
+      sort: 6700
+    }, {
+      key: "clothing-wearables",
+      label: "Clothing & Wearables",
+      sort: 6710
+    });
+  }
+
+  return buildFolderPlacementFromSegments("sundries", {
+    key: "adventuring-gear",
+    label: "Adventuring Gear",
+    sort: 6700
+  }, {
+    key: type === "loot" ? "general-loot" : "general-gear",
+    label: type === "loot" ? "General Loot" : "General Gear",
+    sort: 6790
+  });
+}
+
+function inferFolderPlacement(item = {}, metadata = {}) {
+  const type = String(item?.type ?? "").trim().toLowerCase();
+  const subtype = String(item?.system?.type?.value ?? "").trim().toLowerCase();
+  const rarity = String(metadata?.rarity ?? getRarityFromItem(item)).trim().toLowerCase();
+  const magical = isMagicItem(item, rarity);
+  const categories = Array.isArray(metadata?.merchantCategories) ? metadata.merchantCategories : inferMerchantCategories(item);
+
+  if (type === "spell" || subtype === "scroll") {
+    if (type === "spell") {
+      const level = Math.max(0, Math.floor(Number(item?.system?.level) || 0));
+      const section = level <= 0
+        ? { key: "cantrips", label: "Cantrips", sort: 4100 }
+        : { key: `level-${level}`, label: `Level ${level}`, sort: 4100 + (level * 10) };
+      return buildFolderPlacementFromSegments("spells", section, null);
+    }
+    return buildFolderPlacementFromSegments("spells", {
+      key: "spell-scrolls",
+      label: "Spell Scrolls",
+      sort: 4200
+    }, null);
+  }
+
+  if (type === "weapon" || subtype === "ammo") {
+    if (subtype === "ammo") {
+      return buildFolderPlacementFromSegments("weapons", {
+        key: "ammunition",
+        label: "Ammunition",
+        sort: 1300
+      }, null);
+    }
+
+    const section = magical
+      ? { key: "magic-weapons", label: "Magic Weapons", sort: 1100 }
+      : { key: "mundane-weapons", label: "Mundane Weapons", sort: 1200 };
+    return buildFolderPlacementFromSegments("weapons", section, getWeaponLeafData(subtype, section.sort));
+  }
+
+  if (type === "equipment" && ["light", "medium", "heavy", "shield"].includes(subtype)) {
+    const section = magical
+      ? { key: "magic-armor-shields", label: "Magic Armor & Shields", sort: 2100 }
+      : { key: "armor-shields", label: "Armor & Shields", sort: 2200 };
+    return buildFolderPlacementFromSegments("armor", section, getArmorLeafData(subtype, section.sort));
+  }
+
+  if (type === "tool") {
+    const section = {
+      art: { key: "artisan-tools", label: "Artisan Tools", sort: 5100 },
+      music: { key: "musical-instruments", label: "Musical Instruments", sort: 5200 },
+      game: { key: "gaming-sets", label: "Gaming Sets", sort: 5300 }
+    }[subtype] ?? {
+      key: "other-tools",
+      label: "Other Tools",
+      sort: 5400
+    };
+    return buildFolderPlacementFromSegments("tools", section, null);
+  }
+
+  if (type === "consumable") {
+    if (subtype === "ammo") {
+      return buildFolderPlacementFromSegments("weapons", {
+        key: "ammunition",
+        label: "Ammunition",
+        sort: 1300
+      }, null);
+    }
+
+    if (subtype === "potion") {
+      return buildFolderPlacementFromSegments("consumables", {
+        key: "potions",
+        label: "Potions",
+        sort: 3100
+      }, magical ? {
+        key: "magic-potions",
+        label: "Magic Potions",
+        sort: 3110
+      } : null);
+    }
+
+    if (subtype === "poison") {
+      return buildFolderPlacementFromSegments("consumables", {
+        key: "poisons",
+        label: "Poisons",
+        sort: 3200
+      }, null);
+    }
+
+    if (subtype === "food" || categories.includes("meal") || categories.includes("provisions") || categories.includes("drink") || categories.includes("alcohol")) {
+      const leaf = (categories.includes("drink") || categories.includes("alcohol"))
+        ? { key: "drink-spirits", label: "Drink & Spirits", sort: 3320 }
+        : { key: "meals-rations", label: "Meals & Rations", sort: 3310 };
+      return buildFolderPlacementFromSegments("consumables", {
+        key: "food-provisions",
+        label: "Food & Provisions",
+        sort: 3300
+      }, leaf);
+    }
+
+    if (subtype === "wand" || subtype === "rod") {
+      return buildFolderPlacementFromSegments("consumables", {
+        key: "charged-magic-items",
+        label: "Charged Magic Items",
+        sort: 3400
+      }, null);
+    }
+
+    if (magical) {
+      return buildFolderPlacementFromSegments("consumables", {
+        key: "arcane-consumables",
+        label: "Arcane Consumables",
+        sort: 3500
+      }, null);
+    }
+
+    return buildFolderPlacementFromSegments("consumables", {
+      key: "other-consumables",
+      label: "Other Consumables",
+      sort: 3600
+    }, null);
+  }
+
+  return inferSundriesSectionPlacement(item, categories, magical);
+}
+
+function collectItemAutomationProfile(item = {}) {
+  const activities = isPlainObject(item?.system?.activities)
+    ? Object.values(item.system.activities).filter((entry) => isPlainObject(entry))
+    : [];
+  const effects = Array.isArray(item?.effects)
+    ? item.effects.filter((entry) => isPlainObject(entry))
+    : [];
+
+  const activityTypes = Array.from(new Set(
+    activities
+      .map((activity) => sanitizeKeywordSegment(activity?.type))
+      .filter(Boolean)
+  )).sort((left, right) => left.localeCompare(right));
+  const activationTypes = Array.from(new Set(
+    activities
+      .map((activity) => sanitizeKeywordSegment(activity?.activation?.type))
+      .filter(Boolean)
+  )).sort((left, right) => left.localeCompare(right));
+  const targetTypes = Array.from(new Set(
+    activities
+      .map((activity) => sanitizeKeywordSegment(activity?.target?.affects?.type))
+      .filter(Boolean)
+  )).sort((left, right) => left.localeCompare(right));
+
+  const transferEffects = effects.filter((effect) => effect?.transfer === true);
+  const appliedEffects = effects.filter((effect) => effect?.transfer !== true);
+  const effectChanges = effects.flatMap((effect) => Array.isArray(effect?.changes) ? effect.changes : []);
+  const hasMidiFlagOverrides = [item?.flags?.["midi-qol"], ...effects.map((effect) => effect?.flags?.["midi-qol"])]
+    .some((entry) => hasMeaningfulFlagOverrides(entry, MIDI_QOL_DEFAULTS));
+  const hasDaeFlagOverrides = [item?.flags?.dae, ...effects.map((effect) => effect?.flags?.dae)]
+    .some((entry) => hasMeaningfulFlagOverrides(entry, DAE_DEFAULTS));
+  const hasMeaningfulActivityMidi = activities.some((activity) => {
+    const midiProps = activity?.midiProperties;
+    if (!isPlainObject(midiProps)) return false;
+    return (
+      (Array.isArray(midiProps.ignoreTraits) && midiProps.ignoreTraits.length > 0)
+      || String(midiProps.triggeredActivityId ?? "").trim().toLowerCase() !== "none"
+      || String(midiProps.triggeredActivityConditionText ?? "").trim().length > 0
+      || String(midiProps.triggeredActivityTargets ?? "").trim().toLowerCase() !== "targets"
+      || String(midiProps.triggeredActivityRollAs ?? "").trim().toLowerCase() !== "self"
+      || midiProps.forceDialog === true
+      || String(midiProps.confirmTargets ?? "").trim().toLowerCase() !== "default"
+      || String(midiProps.autoTargetType ?? "").trim().toLowerCase() !== "any"
+      || String(midiProps.autoTargetAction ?? "").trim().toLowerCase() !== "default"
+      || midiProps.automationOnly === true
+      || String(midiProps.identifier ?? "").trim().length > 0
+      || midiProps.displayActivityName === true
+      || String(midiProps.rollMode ?? "").trim().toLowerCase() !== "default"
+      || midiProps.chooseEffects === true
+      || midiProps.toggleEffect === true
+      || midiProps.ignoreFullCover === true
+    );
+  });
+  const hasMidiChangeKeys = effectChanges.some((change) => String(change?.key ?? "").trim().toLowerCase().startsWith("flags.midi-qol."));
+  const hasDaeChangeKeys = effectChanges.some((change) => String(change?.key ?? "").trim().toLowerCase().startsWith("flags.dae."));
+  const hasMidi = hasMidiFlagOverrides || hasMeaningfulActivityMidi || hasMidiChangeKeys;
+  const hasDae = transferEffects.length > 0 || hasDaeFlagOverrides || hasDaeChangeKeys;
+  const hasTimesUp = [item?.flags?.["times-up"], ...effects.map((effect) => effect?.flags?.["times-up"])]
+    .some((entry) => isPlainObject(entry) && Object.keys(entry).length > 0);
+
+  const integrations = [];
+  if (hasMidi) integrations.push("midi-qol");
+  if (hasDae) integrations.push("dae");
+  if (hasTimesUp) integrations.push("times-up");
+
+  let primaryMode = "reference";
+  if (activities.length > 0 && appliedEffects.length > 0) primaryMode = "on-use";
+  else if (activities.length > 0) primaryMode = "usable";
+  else if (transferEffects.length > 0) primaryMode = "passive";
+
+  return {
+    schema: USABILITY_SCHEMA,
+    isUsable: activities.length > 0,
+    primaryMode,
+    activityCount: activities.length,
+    activityTypes,
+    primaryActivityType: activityTypes[0] ?? "",
+    activationTypes,
+    targetTypes,
+    effectCount: effects.length,
+    transferEffectCount: transferEffects.length,
+    appliedEffectCount: appliedEffects.length,
+    hasPassiveEffects: transferEffects.length > 0,
+    hasAppliedEffects: appliedEffects.length > 0,
+    integrations
+  };
+}
+
+function buildAutomationKeywords(profile = {}) {
+  const keywords = new Set();
+  if (profile?.isUsable) keywords.add("automation.activity");
+  for (const activityType of Array.isArray(profile?.activityTypes) ? profile.activityTypes : []) {
+    keywords.add(`automation.activity.${activityType}`);
+  }
+  for (const activationType of Array.isArray(profile?.activationTypes) ? profile.activationTypes : []) {
+    keywords.add(`activation.${activationType}`);
+  }
+  for (const targetType of Array.isArray(profile?.targetTypes) ? profile.targetTypes : []) {
+    keywords.add(`target.${targetType}`);
+  }
+  if (profile?.hasPassiveEffects) {
+    keywords.add("automation.effect.transfer");
+    if (!profile?.isUsable) keywords.add("automation.passive");
+  }
+  if (profile?.hasAppliedEffects) {
+    keywords.add("automation.effect.applied");
+    keywords.add("automation.on-use");
+  }
+  for (const integration of Array.isArray(profile?.integrations) ? profile.integrations : []) {
+    keywords.add(`integration.${integration}`);
+  }
+  if (profile?.primaryMode) keywords.add(`automation.mode.${sanitizeKeywordSegment(profile.primaryMode)}`);
+  return Array.from(keywords).sort((left, right) => left.localeCompare(right));
+}
+
+function hasMeaningfulFlagOverrides(value = {}, defaults = {}) {
+  if (!isPlainObject(value)) return false;
+  for (const [key, current] of Object.entries(value)) {
+    const fallback = defaults[key];
+    if (JSON.stringify(current) !== JSON.stringify(fallback)) return true;
+  }
+  return false;
+}
+
 function buildKeywords(item = {}, metadata = {}) {
   const keywords = new Set();
   const type = String(item?.type ?? "").trim().toLowerCase();
@@ -621,6 +1084,12 @@ function buildKeywords(item = {}, metadata = {}) {
   const merchantCategories = Array.isArray(metadata.merchantCategories) ? metadata.merchantCategories : inferMerchantCategories(item);
   const saleLiquidity = String(metadata.saleLiquidity ?? inferSaleLiquidity(merchantCategories, gpValue)).trim().toLowerCase();
   const sourceKeyword = String(metadata.sourceKeyword ?? sourceIdToKeyword(item?.flags?.core?.sourceId ?? "")).trim().toLowerCase();
+  const folderPlacement = metadata.folderPlacement && typeof metadata.folderPlacement === "object"
+    ? metadata.folderPlacement
+    : inferFolderPlacement(item, { rarity, merchantCategories });
+  const automationProfile = metadata.automationProfile && typeof metadata.automationProfile === "object"
+    ? metadata.automationProfile
+    : collectItemAutomationProfile(item);
 
   if (type) keywords.add(`foundryType.${type}`);
   keywords.add("loot");
@@ -654,6 +1123,11 @@ function buildKeywords(item = {}, metadata = {}) {
     if (!normalized) continue;
     keywords.add(`merchant.${normalized}`);
   }
+  if (folderPlacement?.familyKey) keywords.add(`folder.family.${folderPlacement.familyKey}`);
+  if (folderPlacement?.sectionKey) keywords.add(`folder.section.${folderPlacement.sectionKey}`);
+  if (folderPlacement?.leafKey) keywords.add(`folder.leaf.${folderPlacement.leafKey}`);
+  if (folderPlacement?.pathKey) keywords.add(`folder.path.${String(folderPlacement.pathKey).replace(/\//g, ".")}`);
+  for (const automationKeyword of buildAutomationKeywords(automationProfile)) keywords.add(automationKeyword);
 
   if (type === "spell") {
     const level = Math.max(0, Math.floor(Number(item?.system?.level) || 0));
@@ -2038,6 +2512,12 @@ function stampEnrichmentDetails(item = {}, summary = null) {
   const activities = isPlainObject(system.activities) ? Object.keys(system.activities).length : 0;
   const effects = Array.isArray(item?.effects) ? item.effects.length : 0;
   const hasDescription = Boolean(String(system?.description?.value ?? "").trim());
+  const merchantCategories = inferMerchantCategories(item);
+  const folderPlacement = inferFolderPlacement(item, {
+    rarity: getRarityFromItem(item),
+    merchantCategories
+  });
+  const automationProfile = collectItemAutomationProfile(item);
 
   let changed = 0;
   const setIfDifferent = (key, value) => {
@@ -2052,6 +2532,13 @@ function stampEnrichmentDetails(item = {}, summary = null) {
   setIfDifferent("effectCount", effects);
   setIfDifferent("hasDescription", hasDescription);
   setIfDifferent("coreSourceId", String(item?.flags?.core?.sourceId ?? ""));
+  setIfDifferent("folderPathKey", String(folderPlacement?.pathKey ?? ""));
+  setIfDifferent("folderLabels", Array.isArray(folderPlacement?.pathLabels) ? folderPlacement.pathLabels : []);
+  setIfDifferent("primaryMode", String(automationProfile?.primaryMode ?? ""));
+  setIfDifferent("activityTypes", Array.isArray(automationProfile?.activityTypes) ? automationProfile.activityTypes : []);
+  setIfDifferent("activationTypes", Array.isArray(automationProfile?.activationTypes) ? automationProfile.activationTypes : []);
+  setIfDifferent("transferEffectCount", Number(automationProfile?.transferEffectCount ?? 0) || 0);
+  setIfDifferent("appliedEffectCount", Number(automationProfile?.appliedEffectCount ?? 0) || 0);
 
   if (summary && changed > 0) summary.detailFieldsFilled += changed;
 }
@@ -2187,6 +2674,11 @@ function stampPartyOperationsMetadata(item, summary, options = {}) {
   const lootWeight = inferLootWeight(item, merchantCategories);
   const maxRecommendedQty = inferMaxRecommendedQty(item, merchantCategories);
   const lootEligible = inferLootEligibility(item, merchantCategories);
+  const folderPlacement = inferFolderPlacement(item, {
+    rarity,
+    merchantCategories
+  });
+  const automationProfile = collectItemAutomationProfile(item);
   const taggedAt = new Date().toISOString();
   const keywords = buildKeywords(item, {
     rarity,
@@ -2197,7 +2689,9 @@ function stampPartyOperationsMetadata(item, summary, options = {}) {
     priceDenomination,
     merchantCategories,
     saleLiquidity,
-    sourceKeyword
+    sourceKeyword,
+    folderPlacement,
+    automationProfile
   });
 
   const poFlags = ensureObject(flags, MODULE_ID);
@@ -2216,8 +2710,12 @@ function stampPartyOperationsMetadata(item, summary, options = {}) {
   poFlags.sellValueGp = Number((gpValue * 0.5).toFixed(2));
   poFlags.taggedAt = taggedAt;
   poFlags.tagSchema = TAG_SCHEMA;
+  poFlags.folder = folderPlacement;
+  poFlags.usability = automationProfile;
 
   summary.taggedItems += 1;
+  summary.folderProfilesStamped += 1;
+  summary.usabilityProfilesStamped += 1;
 }
 
 function readManifestItems(manifestPath) {
@@ -2378,7 +2876,9 @@ async function main() {
     manifestBalanceAdjustments: 0,
     manualPricingOverrides: 0,
     derivedPricingOverrides: 0,
-    legacyEffectKeysNormalized: 0
+    legacyEffectKeysNormalized: 0,
+    folderProfilesStamped: 0,
+    usabilityProfilesStamped: 0
   };
 
   const importedPreview = [];

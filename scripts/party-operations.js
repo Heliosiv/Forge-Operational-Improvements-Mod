@@ -163,6 +163,7 @@ export const SETTINGS = {
   AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
   AUDIO_LIBRARY_HIDDEN_TRACKS: "audioLibraryHiddenTracks",
   AUDIO_MIX_PRESETS: "audioMixPresets",
+  AUDIO_PREVIEW_VOLUME: "audioPreviewVolume",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   LAUNCHER_PLACEMENT: "launcherPlacement",
@@ -172,6 +173,8 @@ export const SETTINGS = {
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
   ADVANCED_SETTINGS_ENABLED: "advancedSettingsEnabled",
   PLAYER_HUB_MODE: "playerHubMode",
+  UI_BUTTON_SOUNDS_ENABLED: "uiButtonSoundsEnabled",
+  UI_BUTTON_SOUND_PATH: "uiButtonSoundPath",
   SHARED_GM_PERMISSIONS: "sharedGmPermissions",
   DEBUG_ENABLED: "debugEnabled",
   LOOT_SCARCITY: "lootScarcity",
@@ -7250,6 +7253,7 @@ function buildOperationsContextFallback() {
           totalCount: 0,
           playerRows: [],
           hasPlayerRows: false,
+          userSettlements: {},
           lastOpenedAtLabel: "-",
           lastOpenedBy: "-",
           lastClosedAtLabel: "-",
@@ -9177,6 +9181,7 @@ function buildGmAudioPageContext() {
   }
   const results = buildAudioLibraryResults(catalog);
   const selectedTrack = getSelectedAudioLibraryTrack(catalog, results);
+  const previewVolume = getAudioPreviewVolumeSetting();
   return {
     moduleVersion: getCurrentModuleVersion(),
     generatedAtLabel: new Date().toLocaleString(),
@@ -9191,6 +9196,10 @@ function buildGmAudioPageContext() {
       summary: buildAudioLibrarySummary(catalog, { hiddenCount: hiddenMatches.length }),
       results,
       mix: buildAudioMixContext(catalog),
+      preview: {
+        defaultVolume: previewVolume,
+        defaultVolumePercent: Math.round(previewVolume * 100)
+      },
       selectedTrack,
       hidden: {
         count: hiddenMatches.length,
@@ -9592,6 +9601,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   selectAllMerchantTagsFromElement,
   deselectAllMerchantTagsFromElement,
   setMerchantShopRestrictionFromElement,
+  setMerchantShopPlayerLocationFromElement,
   setMerchantShopPlayerAllowedFromElement,
   setMerchantShopPlayersAllFromElement,
   setMerchantShopPlayersNoneFromElement,
@@ -9656,6 +9666,8 @@ export const GmAudioPageApp = createGmAudioPageApp({
   clearSelectedAudioMixPresetTrackList,
   hideAudioLibraryTrack,
   hideSelectedAudioLibraryTracks,
+  getAudioPreviewVolumeSetting,
+  setAudioPreviewVolumeSetting,
   queueSelectedTrackNext,
   moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
@@ -10938,6 +10950,7 @@ const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
   LIBRARY: "library",
   MIX: "mix"
 });
+const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
 const AUDIO_MIX_PRESET_STORE_VERSION = 1;
@@ -11050,9 +11063,45 @@ const audioLibraryUiState = {
   selectedTrackId: "",
   selectedTrackIds: [],
   selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  previewVolume: AUDIO_PREVIEW_VOLUME_DEFAULT,
   mixStatus: "",
   error: ""
 };
+
+function normalizeAudioPreviewVolume(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return AUDIO_PREVIEW_VOLUME_DEFAULT;
+  return Math.max(0, Math.min(1, Math.round(numeric * 100) / 100));
+}
+
+function getStoredAudioPreviewVolume() {
+  return normalizeAudioPreviewVolume(audioLibraryUiState.previewVolume);
+}
+
+function getAudioPreviewVolumeSetting() {
+  try {
+    const stored = game?.settings?.get?.(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME);
+    const normalized = normalizeAudioPreviewVolume(stored);
+    audioLibraryUiState.previewVolume = normalized;
+    return normalized;
+  } catch {
+    return getStoredAudioPreviewVolume();
+  }
+}
+
+async function setAudioPreviewVolumeSetting(value) {
+  const normalized = normalizeAudioPreviewVolume(value);
+  audioLibraryUiState.previewVolume = normalized;
+  try {
+    const current = normalizeAudioPreviewVolume(game?.settings?.get?.(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME));
+    if (Math.abs(current - normalized) > 0.0001) {
+      await game.settings.set(MODULE_ID, SETTINGS.AUDIO_PREVIEW_VOLUME, normalized);
+    }
+  } catch {
+    return normalized;
+  }
+  return normalized;
+}
 
 function buildDefaultAudioLibraryCatalog() {
   return {
@@ -11989,7 +12038,7 @@ function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset())
     volume: seedPreset?.volume ?? 0.5,
     fade: seedPreset?.fade ?? 1200,
     playbackMode: seedPreset?.playbackMode ?? (seedPreset?.repeat ? "repeat" : "single"),
-    trackIds: []
+    trackIds: normalizeAudioMixPresetTrackIds(seedPreset?.trackIds ?? [])
   }, { isCustom: true });
 }
 
@@ -12671,11 +12720,13 @@ async function playAudioMixPresetById(presetId, options = {}) {
   }
   const preset = getAudioMixPresetById(presetId);
   const catalog = getAudioLibraryCatalog();
-  const candidates = getPlayableAudioMixCandidates(catalog, preset);
+  const queuedTrackIds = normalizeAudioMixPresetTrackIds(options.queueTrackIds ?? preset?.trackIds ?? []);
+  const candidates = buildAudioMixAssignedCandidates(catalog, {
+    ...preset,
+    trackIds: queuedTrackIds
+  });
   if (candidates.length <= 0) {
-    throw new Error((Array.isArray(preset?.trackIds) && preset.trackIds.length > 0) || preset.isCustom
-      ? `Add tracks to the ${preset.label} mix before playing it.`
-      : `No audio tracks matched the ${preset.label} mix.`);
+    throw new Error(`Add tracks from Suggested Tracks to the ${preset.label} queue before playing it.`);
   }
 
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
@@ -12749,15 +12800,16 @@ async function stopAudioMixPlayback() {
 
 async function playAudioMixCandidateByTrackId(trackId) {
   const preset = getSelectedAudioMixPreset();
-  const playlist = getManagedAudioMixPlaylist();
-  const mixState = getAudioMixStateFlag(playlist);
-  const queueTrackIds = String(mixState.presetId ?? "").trim() === String(preset.id ?? "").trim()
-    ? mixState.queueTrackIds
-    : (Array.isArray(preset.trackIds) && preset.trackIds.length > 0 ? preset.trackIds : []);
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(preset?.trackIds ?? []);
+  const previewQueueTrackIds = queueTrackIds.includes(normalizedTrackId)
+    ? queueTrackIds
+    : [normalizedTrackId];
   return playAudioMixPresetById(preset.id, {
     excludeTrackId: "",
-    preferredTrackId: String(trackId ?? "").trim(),
-    queueTrackIds
+    preferredTrackId: normalizedTrackId,
+    queueTrackIds: previewQueueTrackIds
   });
 }
 
@@ -12992,33 +13044,30 @@ function buildAudioMixPlaybackModeOptions(selectedValue = "repeat") {
 
 function buildAudioMixContext(catalog) {
   const selectedPreset = getSelectedAudioMixPreset();
+  const savedTrackIds = normalizeAudioMixPresetTrackIds(selectedPreset?.trackIds ?? []);
   const assignedCandidates = buildAudioMixAssignedCandidates(catalog, selectedPreset);
   const suggestedCandidates = buildAudioMixCandidates(catalog, selectedPreset, {
     excludeTrackIds: assignedCandidates.map(({ item }) => item.id)
   });
-  const hasSavedTrackList = assignedCandidates.length > 0;
-  const candidates = hasSavedTrackList ? assignedCandidates : suggestedCandidates;
+  const hasSavedTrackList = savedTrackIds.length > 0;
   const playback = getAudioMixPlaybackState(catalog);
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
   const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
-  const queueRows = hasSavedTrackList
-    ? assignedCandidates.map(({ item }, index) => ({
-      ...item,
-      order: index + 1,
-      isActive: item.id === playback?.activeTrack?.id,
-      isCurrentIndex: index === playback.currentIndex
-    }))
-    : (playbackMatchesSelection && playback.hasQueue
-      ? playback.queueTracks
-      : suggestedCandidates.slice(0, 12).map(({ item }, index) => ({
-        ...item,
-        order: index + 1,
-        isActive: item.id === playback?.activeTrack?.id,
-        isCurrentIndex: false
-      })));
+  const queueRows = assignedCandidates.map(({ item }, index) => ({
+    ...item,
+    order: index + 1,
+    isActive: item.id === playback?.activeTrack?.id,
+    isCurrentIndex: index === playback.currentIndex
+  }));
   const queueSourceLabel = hasSavedTrackList
-    ? "Preset Queue"
-    : (playbackMatchesSelection && playback.hasQueue ? "Live Queue" : "Suggested Queue");
+    ? "Manual queue saved to this preset"
+    : "Add tracks from Suggested Tracks to build this queue";
+  const missingTrackCount = Math.max(0, savedTrackIds.length - assignedCandidates.length);
+  const queueEmptyLabel = hasSavedTrackList
+    ? (missingTrackCount > 0
+      ? `${missingTrackCount} saved track${missingTrackCount === 1 ? "" : "s"} could not be matched in the current library. Rescan or re-add them.`
+      : "This preset has a saved queue, but none of those tracks are available in the current library scan.")
+    : "Add tracks below to build the current queue for this preset.";
   return {
     status: audioLibraryUiState.mixStatus,
     hasStatus: Boolean(audioLibraryUiState.mixStatus),
@@ -13037,9 +13086,11 @@ function buildAudioMixContext(catalog) {
     })),
     selectedPreset: {
       ...selectedPreset,
-      candidateCount: candidates.length,
+      candidateCount: suggestedCandidates.length,
       assignedCount: assignedCandidates.length,
       suggestedCount: suggestedCandidates.length,
+      savedTrackCount: savedTrackIds.length,
+      missingTrackCount,
       hasSavedTrackList,
       channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
       playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
@@ -13049,7 +13100,7 @@ function buildAudioMixContext(catalog) {
       canDelete: Boolean(selectedPreset.isCustom),
       canRename: Boolean(selectedPreset.isCustom)
     },
-    candidates: candidates.slice(0, 14).map(({ item, score }) => ({
+    candidates: suggestedCandidates.slice(0, 14).map(({ item, score }) => ({
       id: item.id,
       name: item.name,
       category: item.category,
@@ -13082,7 +13133,7 @@ function buildAudioMixContext(catalog) {
       selected: item.id === playback?.activeTrack?.id
     })),
     hasSuggestedTracks: suggestedCandidates.length > 0,
-    hasCandidates: candidates.length > 0,
+    hasCandidates: assignedCandidates.length > 0,
     editor: {
       canEdit: true,
       canRename: Boolean(selectedPreset.isCustom),
@@ -13096,6 +13147,7 @@ function buildAudioMixContext(catalog) {
     queue: {
       hasTracks: queueRows.length > 0,
       sourceLabel: queueSourceLabel,
+      emptyLabel: queueEmptyLabel,
       tracks: queueRows.map((track) => ({
         ...track,
         kindLabel: getAudioLibraryKindLabel(track.kind),
@@ -13105,6 +13157,7 @@ function buildAudioMixContext(catalog) {
       selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
       canControl: playbackMatchesSelection || selectedPreset.isCustom,
       hasSavedTrackList,
+      missingTrackCount,
       hasLiveQueue: playbackMatchesSelection && playback.hasQueue
     },
     playback: {
@@ -13393,7 +13446,7 @@ function getCompendiumFolderRows(pack) {
 async function getLootManifestPackItemRows(pack) {
   try {
     if (typeof pack?.getIndex === "function") {
-      const index = await pack.getIndex({ fields: ["type", "folder", "name"] });
+      const index = await pack.getIndex({ fields: ["type", "folder", "name", "flags.party-operations.folder", "flags"] });
       const rows = [];
       if (Array.isArray(index)) rows.push(...index);
       else if (Array.isArray(index?.contents)) rows.push(...index.contents);
@@ -13403,7 +13456,8 @@ async function getLootManifestPackItemRows(pack) {
           id: String(entry?._id ?? entry?.id ?? "").trim(),
           type: normalizeLootManifestItemType(entry?.type),
           name: String(entry?.name ?? "").trim(),
-          folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+          folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim(),
+          folderMeta: getLootItemFolderProfileFromData(entry)
         })).filter((entry) => entry.id);
       }
     }
@@ -13417,7 +13471,8 @@ async function getLootManifestPackItemRows(pack) {
       id: String(entry?.id ?? entry?._id ?? "").trim(),
       type: normalizeLootManifestItemType(entry?.type),
       name: String(entry?.name ?? "").trim(),
-      folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim()
+      folderId: String(entry?.folder?.id ?? entry?.folder ?? "").trim(),
+      folderMeta: getLootItemFolderProfileFromData(entry)
     })).filter((entry) => entry.id);
   } catch (error) {
     console.warn(`${MODULE_ID}: failed to read loot manifest compendium documents`, error);
@@ -13757,50 +13812,81 @@ function getLootManifestImportedSourceKey(entry = {}) {
 
 function buildLootManifestCompendiumFolderDescriptors(pack, itemRows = []) {
   const descriptorMap = new Map();
-  const actualFolders = getCompendiumFolderRows(pack)
-    .map((folder) => {
-      const id = String(folder?.id ?? folder?._id ?? "").trim();
-      if (!id) return null;
-      return {
-        key: `folder:${id}`,
-        sourceFolderId: id,
-        name: String(folder?.name ?? "").trim() || "Other",
-        parentKey: (() => {
-          const parentId = getDocumentFolderParentId(folder);
-          return parentId ? `folder:${parentId}` : "";
-        })(),
-        sort: Number(folder?.sort ?? 0) || 0
-      };
-    })
-    .filter(Boolean);
-
-  for (const descriptor of actualFolders) {
-    descriptorMap.set(descriptor.key, descriptor);
-  }
-
-  const rootDescriptorByName = new Map(
-    Array.from(descriptorMap.values())
-      .filter((descriptor) => !descriptor.parentKey)
-      .map((descriptor) => [getLootManifestFolderNameKey(descriptor.name), descriptor.key])
-  );
+  let usedMetadata = false;
 
   for (const item of Array.isArray(itemRows) ? itemRows : []) {
-    const sourceFolderId = String(item?.folderId ?? "").trim();
-    if (sourceFolderId && descriptorMap.has(`folder:${sourceFolderId}`)) continue;
-    const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
-    const label = getLootManifestFolderLabelForType(normalizedType);
-    const existingRootKey = rootDescriptorByName.get(getLootManifestFolderNameKey(label));
-    if (existingRootKey) continue;
-    const key = `type:${normalizedType}`;
-    if (descriptorMap.has(key)) continue;
-    descriptorMap.set(key, {
-      key,
-      sourceFolderId: "",
-      name: label,
-      parentKey: "",
-      sort: getLootManifestFolderSortPriority(normalizedType) * 1000
-    });
-    rootDescriptorByName.set(getLootManifestFolderNameKey(label), key);
+    const folderMeta = item?.folderMeta;
+    const path = Array.isArray(folderMeta?.path) ? folderMeta.path : [];
+    if (path.length <= 0) continue;
+    usedMetadata = true;
+
+    let parentKey = "";
+    const pathKeys = [];
+    for (const segment of path) {
+      const segmentKey = String(segment?.key ?? "").trim().toLowerCase();
+      const segmentLabel = String(segment?.label ?? "").trim();
+      if (!segmentKey || !segmentLabel) continue;
+      pathKeys.push(segmentKey);
+      const descriptorKey = `meta:${pathKeys.join("/")}`;
+      if (!descriptorMap.has(descriptorKey)) {
+        descriptorMap.set(descriptorKey, {
+          key: descriptorKey,
+          sourceFolderId: "",
+          name: segmentLabel,
+          parentKey,
+          sort: Number(segment?.sort ?? ((pathKeys.length) * 1000)) || ((pathKeys.length) * 1000)
+        });
+      }
+      parentKey = descriptorKey;
+    }
+  }
+
+  if (!usedMetadata) {
+    const actualFolders = getCompendiumFolderRows(pack)
+      .map((folder) => {
+        const id = String(folder?.id ?? folder?._id ?? "").trim();
+        if (!id) return null;
+        return {
+          key: `folder:${id}`,
+          sourceFolderId: id,
+          name: String(folder?.name ?? "").trim() || "Other",
+          parentKey: (() => {
+            const parentId = getDocumentFolderParentId(folder);
+            return parentId ? `folder:${parentId}` : "";
+          })(),
+          sort: Number(folder?.sort ?? 0) || 0
+        };
+      })
+      .filter(Boolean);
+
+    for (const descriptor of actualFolders) {
+      descriptorMap.set(descriptor.key, descriptor);
+    }
+
+    const rootDescriptorByName = new Map(
+      Array.from(descriptorMap.values())
+        .filter((descriptor) => !descriptor.parentKey)
+        .map((descriptor) => [getLootManifestFolderNameKey(descriptor.name), descriptor.key])
+    );
+
+    for (const item of Array.isArray(itemRows) ? itemRows : []) {
+      const sourceFolderId = String(item?.folderId ?? "").trim();
+      if (sourceFolderId && descriptorMap.has(`folder:${sourceFolderId}`)) continue;
+      const normalizedType = normalizeLootManifestItemType(item?.type) || "other";
+      const label = getLootManifestFolderLabelForType(normalizedType);
+      const existingRootKey = rootDescriptorByName.get(getLootManifestFolderNameKey(label));
+      if (existingRootKey) continue;
+      const key = `type:${normalizedType}`;
+      if (descriptorMap.has(key)) continue;
+      descriptorMap.set(key, {
+        key,
+        sourceFolderId: "",
+        name: label,
+        parentKey: "",
+        sort: getLootManifestFolderSortPriority(normalizedType) * 1000
+      });
+      rootDescriptorByName.set(getLootManifestFolderNameKey(label), key);
+    }
   }
 
   const getDepth = (descriptor) => {
@@ -13897,6 +13983,7 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
   });
   const descriptorFolderMap = new Map();
   const existingBySourceFolderId = new Map();
+  const existingBySourceFolderKey = new Map();
   const existingByParentAndName = new Map();
 
   for (const folder of worldItemFolders) {
@@ -13905,6 +13992,10 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
     const sourceFolderId = String(importFlag?.sourceFolderId ?? "").trim();
     if (sourceFolderId && String(importFlag?.sourcePackId ?? "").trim() === packId) {
       existingBySourceFolderId.set(sourceFolderId, folder);
+    }
+    const sourceFolderKey = String(importFlag?.sourceFolderKey ?? "").trim();
+    if (sourceFolderKey && String(importFlag?.sourcePackId ?? "").trim() === packId) {
+      existingBySourceFolderKey.set(sourceFolderKey, folder);
     }
     const parentId = getDocumentFolderParentId(folder) || rootFolder.id;
     const nameKey = getLootManifestFolderNameKey(folder?.name);
@@ -13919,8 +14010,10 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
       ? (descriptorFolderMap.get(descriptor.parentKey)?.id ?? rootFolder.id)
       : rootFolder.id;
     const sourceFolderId = String(descriptor?.sourceFolderId ?? "").trim();
+    const sourceFolderKey = String(descriptor?.key ?? "").trim();
     const nameKey = getLootManifestFolderNameKey(descriptor?.name);
-    let folder = sourceFolderId ? existingBySourceFolderId.get(sourceFolderId) ?? null : null;
+    let folder = sourceFolderKey ? existingBySourceFolderKey.get(sourceFolderKey) ?? null : null;
+    if (!folder) folder = sourceFolderId ? existingBySourceFolderId.get(sourceFolderId) ?? null : null;
     if (!folder) folder = existingByParentAndName.get(`${parentFolderId}::${nameKey}`) ?? null;
 
     const flagData = {
@@ -13928,7 +14021,7 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
       isRoot: false,
       sourcePackId: packId,
       sourceFolderId,
-      sourceFolderKey: String(descriptor?.key ?? "").trim(),
+      sourceFolderKey,
       importedAt: Date.now()
     };
 
@@ -13953,6 +14046,7 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
         || String(getDocumentFolderParentId(folder) || rootFolder.id).trim() !== String(parentFolderId).trim()
         || String(currentImportFlag?.sourcePackId ?? "").trim() !== packId
         || String(currentImportFlag?.sourceFolderId ?? "").trim() !== sourceFolderId
+        || String(currentImportFlag?.sourceFolderKey ?? "").trim() !== sourceFolderKey
         || currentImportFlag?.isRoot === true;
       if (needsUpdate) {
         await folder.update({
@@ -13973,6 +14067,7 @@ async function ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows =
     const folderParentId = getDocumentFolderParentId(folder) || rootFolder.id;
     existingByParentAndName.set(`${folderParentId}::${nameKey}`, folder);
     if (sourceFolderId) existingBySourceFolderId.set(sourceFolderId, folder);
+    if (sourceFolderKey) existingBySourceFolderKey.set(sourceFolderKey, folder);
   }
 
   return {
@@ -14126,12 +14221,24 @@ async function importLootManifestCompendiumToWorld() {
     }
   }
 
-  const itemRows = await getLootManifestPackItemRows(pack);
   const documents = typeof pack?.getDocuments === "function" ? await pack.getDocuments() : [];
   if (!Array.isArray(documents) || documents.length <= 0) {
     ui.notifications?.warn("The built-items compendium is empty.");
     return { ok: false, reason: "pack-empty" };
   }
+  const indexedRows = await getLootManifestPackItemRows(pack);
+  const indexedRowMap = new Map((Array.isArray(indexedRows) ? indexedRows : []).map((row) => [String(row?.id ?? "").trim(), row]));
+  const itemRows = documents.map((entry) => {
+    const id = String(entry?.id ?? entry?._id ?? "").trim();
+    const indexed = indexedRowMap.get(id) ?? {};
+    return {
+      id,
+      type: normalizeLootManifestItemType(entry?.type ?? indexed?.type),
+      name: String(entry?.name ?? indexed?.name ?? "").trim(),
+      folderId: String(entry?.folder?.id ?? entry?.folder ?? indexed?.folderId ?? "").trim(),
+      folderMeta: getLootItemFolderProfileFromData(entry) ?? indexed?.folderMeta ?? null
+    };
+  }).filter((entry) => entry.id);
 
   const rootFolder = await ensureLootManifestWorldImportRootFolder(pack);
   const { descriptorFolderMap, createdFolders, updatedFolders } = await ensureLootManifestWorldImportFolders(pack, rootFolder, itemRows);
@@ -14157,8 +14264,11 @@ async function importLootManifestCompendiumToWorld() {
     const sourceKey = buildLootManifestImportSourceKey(pack.collection, sourceItemId);
     if (!sourceKey) continue;
     const row = itemRowById.get(sourceItemId) ?? {};
+    const folderMeta = getLootItemFolderProfileFromData(documentRef) ?? row?.folderMeta ?? null;
     const sourceFolderId = String(documentRef?.folder?.id ?? documentRef?.folder ?? row?.folderId ?? "").trim();
-    let descriptorKey = sourceFolderId ? `folder:${sourceFolderId}` : "";
+    let descriptorKey = String(folderMeta?.pathKey ?? "").trim();
+    if (descriptorKey) descriptorKey = `meta:${descriptorKey}`;
+    if (!descriptorKey) descriptorKey = sourceFolderId ? `folder:${sourceFolderId}` : "";
     if (!descriptorFolderMap.has(descriptorKey)) {
       const typeLabel = getLootManifestFolderLabelForType(documentRef?.type ?? row?.type ?? "other");
       descriptorKey = rootDescriptorByName.get(getLootManifestFolderNameKey(typeLabel)) ?? "";
@@ -14178,6 +14288,7 @@ async function importLootManifestCompendiumToWorld() {
       sourceItemId,
       sourceUuid,
       sourceFolderId,
+      sourceFolderPathKey: String(folderMeta?.pathKey ?? "").trim(),
       sourceFolderKey: descriptorKey,
       importedAt: timestamp
     };
@@ -15330,6 +15441,35 @@ function getPartyOperationsItemFlags(data = {}) {
   return {};
 }
 
+function getLootItemFolderProfileFromData(data = {}) {
+  const poFlags = getPartyOperationsItemFlags(data);
+  const rawFolder = poFlags?.folder;
+  if (!rawFolder || typeof rawFolder !== "object") return null;
+
+  const path = (Array.isArray(rawFolder?.path) ? rawFolder.path : [])
+    .map((entry, index) => {
+      const key = String(entry?.key ?? "").trim().toLowerCase();
+      const label = String(entry?.label ?? "").trim();
+      const sort = Number(entry?.sort ?? ((index + 1) * 1000)) || ((index + 1) * 1000);
+      if (!key || !label) return null;
+      return { key, label, sort };
+    })
+    .filter(Boolean);
+
+  if (path.length <= 0) return null;
+  return {
+    schema: String(rawFolder?.schema ?? "").trim().toLowerCase(),
+    familyKey: String(rawFolder?.familyKey ?? path[0]?.key ?? "").trim().toLowerCase(),
+    familyLabel: String(rawFolder?.familyLabel ?? path[0]?.label ?? "").trim(),
+    sectionKey: String(rawFolder?.sectionKey ?? path[1]?.key ?? "").trim().toLowerCase(),
+    sectionLabel: String(rawFolder?.sectionLabel ?? path[1]?.label ?? "").trim(),
+    leafKey: String(rawFolder?.leafKey ?? path[2]?.key ?? "").trim().toLowerCase(),
+    leafLabel: String(rawFolder?.leafLabel ?? path[2]?.label ?? "").trim(),
+    path,
+    pathKey: path.map((entry) => String(entry?.key ?? "").trim().toLowerCase()).filter(Boolean).join("/")
+  };
+}
+
 function formatPartyOperationsWordLabel(value = "", fallback = "Unspecified") {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized) return fallback;
@@ -15363,6 +15503,7 @@ function formatPartyOperationsPriceDenominationLabel(value = "") {
 function formatPartyOperationsTagSchemaLabel(value = "") {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (!normalized) return "Legacy Tags";
+  if (normalized === "po-loot-v3") return "PO Loot V3";
   if (normalized === "po-loot-v2") return "PO Loot V2";
   return formatPartyOperationsWordLabel(normalized, "Legacy Tags");
 }
@@ -17862,6 +18003,7 @@ function buildDefaultOperationsLedger() {
         isOpen: false,
         restrictToSelected: false,
         allowedUserIds: [],
+        userSettlements: {},
         lastOpenedAt: 0,
         lastOpenedBy: "",
         lastClosedAt: 0,
@@ -19929,21 +20071,70 @@ function normalizeMerchantShopAllowedUserIds(values = [], users = null) {
   return rows;
 }
 
+function normalizeMerchantShopUserSettlements(values = {}, users = null) {
+  const source = values && typeof values === "object" && !Array.isArray(values) ? values : {};
+  const allowedById = new Set(
+    (Array.isArray(users) ? users : getMerchantShopPlayerUsers())
+      .map((user) => String(user?.id ?? "").trim())
+      .filter(Boolean)
+  );
+  const rows = {};
+  for (const [rawUserId, rawSettlement] of Object.entries(source)) {
+    const userId = String(rawUserId ?? "").trim();
+    if (!userId) continue;
+    if (allowedById.size > 0 && !allowedById.has(userId)) continue;
+    const settlement = normalizeMerchantSettlementSelection(rawSettlement ?? "");
+    if (!settlement) continue;
+    rows[userId] = settlement;
+  }
+  return rows;
+}
+
 function normalizeMerchantShopSession(raw = {}, options = {}) {
   const source = raw && typeof raw === "object" ? raw : {};
   const playerUsers = Array.isArray(options?.playerUsers) ? options.playerUsers : getMerchantShopPlayerUsers();
   const allowedUserIds = normalizeMerchantShopAllowedUserIds(source.allowedUserIds ?? [], playerUsers);
+  const userSettlements = normalizeMerchantShopUserSettlements(source.userSettlements ?? {}, playerUsers);
   const lastOpenedAtRaw = Number(source.lastOpenedAt ?? source.openedAt ?? 0);
   const lastClosedAtRaw = Number(source.lastClosedAt ?? source.closedAt ?? 0);
   return {
     isOpen: source.isOpen === true,
     restrictToSelected: source.restrictToSelected === true,
     allowedUserIds,
+    userSettlements,
     lastOpenedAt: Number.isFinite(lastOpenedAtRaw) ? Math.max(0, Math.floor(lastOpenedAtRaw)) : 0,
     lastOpenedBy: String(source.lastOpenedBy ?? source.openedBy ?? "").trim(),
     lastClosedAt: Number.isFinite(lastClosedAtRaw) ? Math.max(0, Math.floor(lastClosedAtRaw)) : 0,
     lastClosedBy: String(source.lastClosedBy ?? source.closedBy ?? "").trim()
   };
+}
+
+function getMerchantShopUserSettlement(sessionInput = {}, userInput = game.user, fallbackInput = "") {
+  const userId = typeof userInput === "string"
+    ? String(userInput ?? "").trim()
+    : String(userInput?.id ?? "").trim();
+  const session = normalizeMerchantShopSession(sessionInput);
+  const assignedSettlement = normalizeMerchantSettlementSelection(session.userSettlements?.[userId] ?? "");
+  if (assignedSettlement) return assignedSettlement;
+  return normalizeMerchantSettlementSelection(fallbackInput);
+}
+
+function resolveMerchantSettlementForUser(user = game.user, merchantsState = null, settlementInput = undefined, options = {}) {
+  const requestUser = user ?? game.user;
+  const explicitSettlement = settlementInput === undefined
+    ? undefined
+    : normalizeMerchantSettlementSelection(settlementInput);
+  const state = merchantsState && typeof merchantsState === "object"
+    ? merchantsState
+    : ensureMerchantsState(getOperationsLedger());
+  if (!canAccessAllPlayerOps(requestUser)) {
+    return getMerchantShopUserSettlement(state?.shopSession ?? {}, requestUser, "");
+  }
+  if (explicitSettlement !== undefined) return explicitSettlement;
+  if (options?.allowStoredPreference !== false && hasSelectedMerchantSettlementPreference()) {
+    return getSelectedMerchantSettlement();
+  }
+  return normalizeMerchantSettlementSelection(state?.currentSettlement ?? "");
 }
 
 function getMerchantShopAccessStateForUser(user = game.user, merchantsState = null) {
@@ -20278,6 +20469,16 @@ async function updateMerchantCatalogLocation(originalLocationInput = "", nextLoc
     });
     const currentSettlement = normalizeMerchantSettlementSelection(merchants.currentSettlement ?? "");
     if (currentSettlement.toLowerCase() === originalLocation.toLowerCase()) merchants.currentSettlement = nextLocation;
+    const shopSession = normalizeMerchantShopSession(merchants.shopSession ?? {});
+    const nextUserSettlements = { ...(shopSession.userSettlements ?? {}) };
+    for (const [userId, settlement] of Object.entries(nextUserSettlements)) {
+      if (normalizeMerchantSettlementSelection(settlement).toLowerCase() !== originalLocation.toLowerCase()) continue;
+      nextUserSettlements[userId] = nextLocation;
+    }
+    merchants.shopSession = normalizeMerchantShopSession({
+      ...shopSession,
+      userSettlements: nextUserSettlements
+    });
   });
   if (originalLocation && originalLocation.toLowerCase() !== nextLocation.toLowerCase()) {
     syncStoredMerchantSettlementPreference(originalLocation, nextLocation);
@@ -20307,6 +20508,16 @@ async function removeMerchantCatalogLocation(locationInput = "") {
     });
     const currentSettlement = normalizeMerchantSettlementSelection(merchants.currentSettlement ?? "");
     if (currentSettlement.toLowerCase() === location.toLowerCase()) merchants.currentSettlement = "";
+    const shopSession = normalizeMerchantShopSession(merchants.shopSession ?? {});
+    const nextUserSettlements = { ...(shopSession.userSettlements ?? {}) };
+    for (const [userId, settlement] of Object.entries(nextUserSettlements)) {
+      if (normalizeMerchantSettlementSelection(settlement).toLowerCase() !== location.toLowerCase()) continue;
+      delete nextUserSettlements[userId];
+    }
+    merchants.shopSession = normalizeMerchantShopSession({
+      ...shopSession,
+      userSettlements: nextUserSettlements
+    });
   });
   syncStoredMerchantSettlementPreference(location, "");
   syncMerchantGmCollectionFilterLocation(location, "");
@@ -21131,6 +21342,47 @@ function buildMerchantSettlementOptions(definitions = [], selectionInput = "", f
   };
 }
 
+function buildMerchantPlayerLocationOptions(merchantsState = {}, definitions = [], selectionInput = "", fallbackInput = "") {
+  const selection = normalizeMerchantSettlementSelection(selectionInput);
+  const fallback = normalizeMerchantSettlementSelection(fallbackInput);
+  const catalog = new Map();
+  for (const location of buildMerchantCityCatalogRows(merchantsState, definitions)) {
+    const settlement = normalizeMerchantSettlementSelection(location);
+    if (!settlement) continue;
+    const key = settlement.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, settlement);
+  }
+  if (fallback) {
+    const key = fallback.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, fallback);
+  }
+  if (selection) {
+    const key = selection.toLowerCase();
+    if (!catalog.has(key)) catalog.set(key, selection);
+  }
+  const options = [
+    { value: "", label: "All Locations", selected: false },
+    ...Array.from(catalog.values())
+      .sort((left, right) => left.localeCompare(right))
+      .map((value) => ({
+        value,
+        label: getMerchantSettlementLabel(value),
+        selected: false
+      }))
+  ];
+  const activeValue = options.some((entry) => entry.value.toLowerCase() === selection.toLowerCase())
+    ? selection
+    : (options.some((entry) => entry.value.toLowerCase() === fallback.toLowerCase()) ? fallback : "");
+  for (const entry of options) {
+    entry.selected = entry.value.toLowerCase() === activeValue.toLowerCase();
+  }
+  return {
+    activeValue,
+    activeLabel: activeValue ? getMerchantSettlementLabel(activeValue) : "All Locations",
+    options
+  };
+}
+
 function buildMerchantInventoryRowsForDisplay(merchant = {}) {
   const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
   const merchantActorId = String(merchantActor?.id ?? "").trim();
@@ -21275,6 +21527,7 @@ function filterMerchantDefinitionsForGm(definitions = [], filterState = {}) {
 function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const user = options?.user ?? game.user;
   const merchantsState = ensureMerchantsState(ledger);
+  const viewerIsGm = canAccessAllPlayerOps(user);
   const definitions = sortMerchantDefinitions(merchantsState.definitions ?? []);
   const stockStateById = merchantsState.stockStateById ?? {};
   const selectableActors = getDowntimeSelectableActorsForUser(user);
@@ -21302,11 +21555,20 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const shopAllowedUserSet = new Set(shopSession.allowedUserIds);
   const shopPlayerRows = shopPlayerUsers.map((shopUser) => {
     const userId = String(shopUser?.id ?? "").trim();
+    const locationView = buildMerchantPlayerLocationOptions(
+      merchantsState,
+      definitions,
+      shopSession.userSettlements?.[userId] ?? "",
+      ""
+    );
     return {
       userId,
       userName: String(shopUser?.name ?? "Player").trim() || "Player",
       isActive: Boolean(shopUser?.active),
-      selected: Boolean(userId && shopAllowedUserSet.has(userId))
+      selected: Boolean(userId && shopAllowedUserSet.has(userId)),
+      location: locationView.activeValue,
+      locationLabel: locationView.activeLabel,
+      locationOptions: locationView.options
     };
   });
   const shopSelectedRows = shopPlayerRows.filter((row) => row.selected);
@@ -21488,12 +21750,21 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     0
   );
   const cityCatalogRows = buildMerchantCityCatalogRows(merchantsState, definitionsForDisplay);
-  const settlementView = buildMerchantSettlementOptions(
-    definitionsForDisplay,
-    storedSettlement,
-    hasStoredSettlement ? "" : merchantsState.currentSettlement
-  );
-  if (hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
+  const viewerAssignedSettlement = resolveMerchantSettlementForUser(user, merchantsState, undefined, {
+    allowStoredPreference: true
+  });
+  const settlementView = viewerIsGm
+    ? buildMerchantSettlementOptions(
+      definitionsForDisplay,
+      storedSettlement,
+      hasStoredSettlement ? "" : merchantsState.currentSettlement
+    )
+    : {
+      activeValue: viewerAssignedSettlement,
+      activeLabel: viewerAssignedSettlement ? getMerchantSettlementLabel(viewerAssignedSettlement) : "All Locations",
+      options: []
+    };
+  if (viewerIsGm && hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
 
   const availableMerchants = (!activeActor || !viewerCanUseShop)
     ? []
@@ -22661,10 +22932,9 @@ async function applyMerchantTradeForUser(user, payload = {}) {
   }
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
   if (!merchant) return { ok: false, message: "Merchant not found." };
-  const settlementPreference = hasSelectedMerchantSettlementPreference()
-    ? getSelectedMerchantSettlement()
-    : merchants.currentSettlement;
-  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? settlementPreference);
+  const settlement = resolveMerchantSettlementForUser(user, merchants, payload?.settlement, {
+    allowStoredPreference: false
+  });
   if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
     return { ok: false, message: "Merchant is not currently available to this actor." };
   }
@@ -23061,7 +23331,6 @@ async function resolveMerchantBarterForUser(user, payload = {}) {
   const userId = String(user?.id ?? "").trim();
   const actorId = String(payload?.actorId ?? "").trim();
   const merchantId = String(payload?.merchantId ?? "").trim();
-  const settlement = normalizeMerchantSettlementSelection(payload?.settlement ?? "");
   if (!userId || !actorId || !merchantId) return { ok: false, message: "Missing barter payload." };
 
   const actor = game.actors.get(actorId);
@@ -23070,6 +23339,9 @@ async function resolveMerchantBarterForUser(user, payload = {}) {
 
   const ledger = getOperationsLedger();
   const merchants = ensureMerchantsState(ledger);
+  const settlement = resolveMerchantSettlementForUser(user, merchants, payload?.settlement, {
+    allowStoredPreference: false
+  });
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "").trim() === merchantId);
   if (!merchant) return { ok: false, message: "Merchant not found." };
   if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
@@ -23237,12 +23509,9 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
     ui.notifications?.warn(shopAccess.message || "Shops are currently unavailable.");
     return;
   }
-  const settlementPreference = hasSelectedMerchantSettlementPreference()
-    ? getSelectedMerchantSettlement()
-    : merchants.currentSettlement;
-  const settlement = normalizeMerchantSettlementSelection(
-    settlementInput === undefined ? settlementPreference : settlementInput
-  );
+  const settlement = resolveMerchantSettlementForUser(game.user, merchants, settlementInput, {
+    allowStoredPreference: true
+  });
   const merchant = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
   if (!merchant) {
     ui.notifications?.warn("Merchant not found.");
@@ -24086,6 +24355,27 @@ async function setMerchantShopRestrictionFromElement(element) {
   const current = getMerchantShopSessionState();
   if (current.restrictToSelected === enabled) return false;
   await updateMerchantShopSessionState({ restrictToSelected: enabled });
+  return true;
+}
+
+async function setMerchantShopPlayerLocationFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can manage shop player locations.");
+    return false;
+  }
+  const userId = String(element?.dataset?.userId ?? "").trim();
+  if (!userId) return false;
+  const playerUsers = getMerchantShopPlayerUsers();
+  const validUserIds = new Set(playerUsers.map((user) => String(user?.id ?? "").trim()).filter(Boolean));
+  if (!validUserIds.has(userId)) return false;
+  const settlement = normalizeMerchantSettlementSelection(element?.value ?? "");
+  const current = getMerchantShopSessionState();
+  const currentSettlement = normalizeMerchantSettlementSelection(current.userSettlements?.[userId] ?? "");
+  if (currentSettlement === settlement) return false;
+  const nextUserSettlements = { ...(current.userSettlements ?? {}) };
+  if (settlement) nextUserSettlements[userId] = settlement;
+  else delete nextUserSettlements[userId];
+  await updateMerchantShopSessionState({ userSettlements: nextUserSettlements });
   return true;
 }
 
@@ -37968,8 +38258,11 @@ async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
   if (!requester) return;
   const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
   if (!merchantId || !actorId) return;
+  const merchants = ensureMerchantsState(getOperationsLedger());
+  const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
+    allowStoredPreference: false
+  });
 
   const resolved = await resolveMerchantBarterForUser(requester, { merchantId, actorId, settlement });
   const resolutionPayload = resolved?.ok && resolved?.resolution
@@ -37993,7 +38286,7 @@ async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
     userId: String(requester?.id ?? ""),
     merchantId,
     actorId,
-    settlement,
+    settlement: normalizeMerchantSettlementSelection(resolved?.settlement ?? settlement),
     ok: Boolean(resolved?.ok),
     summary: resolved?.ok
       ? String(resolved?.summary ?? "Barter resolved.")
@@ -38013,8 +38306,11 @@ async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
   if (!requester) return;
   const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
   const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  const settlement = normalizeMerchantSettlementSelection(clampSocketText(message?.settlement, 120));
   if (!merchantId || !actorId) return;
+  const merchants = ensureMerchantsState(getOperationsLedger());
+  const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
+    allowStoredPreference: false
+  });
   const normalizeLines = (raw) => {
     const source = Array.isArray(raw) ? raw : [];
     const rows = [];

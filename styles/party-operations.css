@@ -358,6 +358,81 @@
 }
 
 .party-operations .po-audio-preview-player {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
+  border-radius: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 96%, transparent), color-mix(in srgb, var(--po-bg) 92%, transparent));
+}
+
+.party-operations .po-audio-preview-media {
+  display: none;
+}
+
+.party-operations .po-audio-preview-controls {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.party-operations .po-audio-preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 52%, var(--po-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
+  color: var(--po-accent-contrast);
+  cursor: pointer;
+}
+
+.party-operations .po-audio-preview-toggle:hover {
+  border-color: color-mix(in srgb, var(--po-accent) 68%, var(--po-border-strong));
+  background: color-mix(in srgb, var(--po-accent) 14%, var(--po-bg-alt));
+}
+
+.party-operations .po-audio-preview-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 88px;
+  color: var(--po-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-operations .po-audio-preview-seek,
+.party-operations .po-audio-preview-volume-slider {
+  width: 100%;
+  accent-color: var(--po-accent);
+  cursor: pointer;
+}
+
+.party-operations .po-audio-preview-volume {
+  display: inline-grid;
+  grid-template-columns: auto minmax(88px, 120px) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 210px;
+  color: var(--po-muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.party-operations .po-audio-preview-volume i {
+  color: var(--po-accent-contrast);
+}
+
+.party-operations .po-audio-preview-seek:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.party-operations .po-audio-preview-player[data-po-audio-player] {
   width: 100%;
 }
 
@@ -365,6 +440,20 @@
   .party-operations .po-audio-grid,
   .party-operations .po-audio-results-grid {
     grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-audio-preview-controls {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .party-operations .po-audio-preview-toggle {
+    justify-self: start;
+  }
+
+  .party-operations .po-audio-preview-volume {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    min-width: 0;
   }
 }
 
@@ -4525,14 +4614,38 @@
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
+  gap: 10px;
+  min-height: 44px;
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 25%, var(--po-border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--po-bg-alt) 70%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-toggle span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-location {
+  margin: 0;
+  min-width: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-location .po-select {
+  width: 100%;
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-session-toolbar {
@@ -4950,6 +5063,10 @@
   .party-operations [data-tool="gm-merchants"] .po-merchant-rarity-grid,
   .party-operations [data-tool="gm-merchants"] .po-merchant-buyback-grid,
   .party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations [data-tool="gm-merchants"] .po-merchant-shop-player-row {
     grid-template-columns: 1fr;
   }
 
