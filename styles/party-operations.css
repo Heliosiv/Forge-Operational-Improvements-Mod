@@ -6154,8 +6154,9 @@
   padding: 2px 10px;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-management-actions .po-btn,
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-actions .po-btn {
-  min-width: 112px;
+  min-width: 0;
   justify-content: center;
 }
 
@@ -6256,16 +6257,19 @@
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
   justify-content: flex-end;
+  align-items: center;
+  max-width: 260px;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions .po-btn {
-  min-height: 26px;
-  padding: 2px 8px;
+  min-height: 24px;
+  padding: 1px 7px;
+  font-size: 0.72rem;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list) .po-audio-track-row {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -6273,6 +6277,18 @@
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-assigned-list .po-audio-track-row {
   grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-hidden-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-hidden-list {
+  max-height: 220px;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-card .po-section-title + .po-audio-track-list {
@@ -6295,8 +6311,13 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list) .po-audio-track-row {
+  .party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
     grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
+    max-width: none;
+    justify-content: flex-start;
   }
 }
 

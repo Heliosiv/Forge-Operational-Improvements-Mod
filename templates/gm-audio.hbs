@@ -36,6 +36,7 @@
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Hidden</span><strong>{{audio.summary.hiddenCount}}</strong></div>
           </div>
           <div class="po-op-summary po-gm-loot-updated">Catalog updated {{audio.summary.scannedAtLabel}} by {{audio.summary.scannedBy}}</div>
         </div>
@@ -113,6 +114,9 @@
             {{/each}}
           </div>
           <div class="po-op-summary">Showing {{audio.results.visibleCount}} of {{audio.results.totalMatches}} matching tracks.</div>
+          {{#if audio.hidden.hasTracks}}
+          <div class="po-op-summary">Hidden tracks are excluded from the library, saved lists, and mix suggestions until restored.</div>
+          {{/if}}
         </section>
       </div>
       {{/if}}
@@ -222,9 +226,10 @@
             </div>
           </div>
           {{/if}}
-          {{#if audio.mix.queue.hasLiveQueue}}
-          <div class="po-section-title">Live Queue</div>
-          <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Live mix queue">
+          {{#if audio.mix.queue.hasTracks}}
+          <div class="po-section-title">Current Queue</div>
+          <div class="po-op-summary">{{audio.mix.queue.sourceLabel}}</div>
+          <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Current mix queue">
             {{#each audio.mix.queue.tracks}}
             <div class="po-audio-track-row {{#if isActive}}is-selected{{/if}}" role="listitem">
               <div class="po-audio-track-main">
@@ -240,11 +245,19 @@
                 <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
                 {{#if ../audio.mix.editor.canEdit}}
                 <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Queue Next</button>
+                {{#if ../audio.mix.queue.hasSavedTrackList}}
+                <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="up">Up</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="down">Down</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="remove-audio-mix-track" data-track-id="{{id}}">Remove</button>
+                {{/if}}
+                <button type="button" class="po-btn po-btn-sm" data-action="hide-audio-track" data-track-id="{{id}}">Hide</button>
                 {{/if}}
               </div>
             </div>
             {{/each}}
           </div>
+          {{else}}
+          <div class="po-op-summary">Add tracks below to build the current queue for this preset.</div>
           {{/if}}
           {{#if audio.mix.playback.hasActiveTrack}}
           <div class="po-audio-preview-meta">
@@ -264,33 +277,6 @@
       </div>
 
       <section class="po-gm-section po-audio-results-card">
-        <div class="po-section-title">Saved Track List</div>
-        {{#if audio.mix.hasAssignedTracks}}
-        <div class="po-audio-track-list po-audio-assigned-list" role="list" aria-label="Assigned mix tracks">
-          {{#each audio.mix.assignedTracks}}
-          <div class="po-audio-track-row {{#if selected}}is-selected{{/if}}" role="listitem">
-            <div class="po-audio-track-main">
-              <div class="po-audio-track-name">{{name}}</div>
-              <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}}</div>
-            </div>
-            <div class="po-audio-track-badges">
-              <span class="po-pill">{{kindLabel}}</span>
-              <span class="po-pill">{{usageLabel}}</span>
-            </div>
-            <div class="po-audio-inline-actions">
-              <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Queue Next</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="up">Up</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="down">Down</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="remove-audio-mix-track" data-track-id="{{id}}">Remove</button>
-            </div>
-          </div>
-          {{/each}}
-        </div>
-        {{else}}
-        <div class="po-op-summary">This preset does not have a saved track list yet. Add tracks from the suggestions below or from the selected Library track to make it fully curatable.</div>
-        {{/if}}
-
         <div class="po-section-title">Suggested Tracks</div>
         {{#if audio.mix.hasSuggestedTracks}}
         <div class="po-audio-track-list po-audio-candidate-list" role="list" aria-label="Suggested mix tracks">
@@ -308,6 +294,7 @@
               <button type="button" class="po-btn po-btn-sm" data-action="add-audio-mix-track" data-track-id="{{id}}">Add</button>
               <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Add Next</button>
               <button type="button" class="po-btn po-btn-sm" data-action="play-audio-mix-candidate" data-track-id="{{id}}">Play Now</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="hide-audio-track" data-track-id="{{id}}">Hide</button>
             </div>
           </div>
           {{/each}}
@@ -356,6 +343,9 @@
           </div>
           <audio class="po-audio-preview-player" controls preload="none" src="{{audio.selectedTrack.path}}"></audio>
           <div class="po-op-summary po-audio-preview-path">{{audio.selectedTrack.path}}</div>
+          <div class="po-op-action-row po-audio-card-actions po-audio-management-actions">
+            <button type="button" class="po-btn po-btn-sm" data-action="hide-audio-track" data-track-id="{{audio.selectedTrack.id}}">Hide Track</button>
+          </div>
           {{#if audio.selectedTrack.hasTags}}
           <div class="po-audio-chip-list">
             {{#each audio.selectedTrack.tags}}
@@ -365,6 +355,29 @@
           {{/if}}
           {{else}}
           <div class="po-op-summary">Select a result to preview it here.</div>
+          {{/if}}
+          {{#if audio.hidden.hasTracks}}
+          <div class="po-audio-hidden-header">
+            <div class="po-section-title">Hidden Tracks</div>
+            <button type="button" class="po-btn po-btn-sm" data-action="restore-all-hidden-audio-tracks">Restore All</button>
+          </div>
+          <div class="po-audio-track-list po-audio-hidden-list" role="list" aria-label="Hidden audio tracks">
+            {{#each audio.hidden.tracks}}
+            <div class="po-audio-track-row" role="listitem">
+              <div class="po-audio-track-main">
+                <div class="po-audio-track-name">{{name}}</div>
+                <div class="po-audio-track-meta">{{category}}{{#if hasSubcategory}} / {{subcategory}}{{/if}}</div>
+              </div>
+              <div class="po-audio-track-badges">
+                <span class="po-pill">{{kindLabel}}</span>
+                <span class="po-pill">{{usageLabel}}</span>
+              </div>
+              <div class="po-audio-inline-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="restore-hidden-audio-track" data-track-id="{{id}}">Restore</button>
+              </div>
+            </div>
+            {{/each}}
+          </div>
           {{/if}}
         </section>
       </div>

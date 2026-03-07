@@ -23,9 +23,12 @@ export function createGmAudioPageApp(deps) {
     addTrackToSelectedAudioMixPreset,
     addSelectedLibraryTrackToAudioMixPreset,
     clearSelectedAudioMixPresetTrackList,
+    hideAudioLibraryTrack,
     queueSelectedTrackNext,
     moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
+    restoreAllHiddenAudioLibraryTracks,
+    restoreHiddenAudioLibraryTrack,
     playSelectedAudioMixPreset,
     playSelectedAudioMixCandidate,
     playNextAudioMixTrack,
@@ -135,6 +138,9 @@ export function createGmAudioPageApp(deps) {
         "clear-audio-mix-track-list": rerenderAlways(() => {
           return clearSelectedAudioMixPresetTrackList();
         }),
+        "hide-audio-track": rerenderAlways((actionElement) => {
+          return hideAudioLibraryTrack(actionElement?.dataset?.trackId);
+        }),
         "queue-selected-audio-track-next": rerenderAlways((actionElement) => {
           return queueSelectedTrackNext(actionElement);
         }),
@@ -143,6 +149,12 @@ export function createGmAudioPageApp(deps) {
         }),
         "remove-audio-mix-track": rerenderAlways((actionElement) => {
           return removeTrackFromSelectedAudioMixPreset(actionElement?.dataset?.trackId);
+        }),
+        "restore-hidden-audio-track": rerenderAlways((actionElement) => {
+          return restoreHiddenAudioLibraryTrack(actionElement?.dataset?.trackId);
+        }),
+        "restore-all-hidden-audio-tracks": rerenderAlways(() => {
+          return restoreAllHiddenAudioLibraryTracks();
         }),
         "play-audio-mix": rerenderAlways(() => {
           return playSelectedAudioMixPreset();

@@ -161,6 +161,7 @@ export const SETTINGS = {
   AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
   AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
   AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
+  AUDIO_LIBRARY_HIDDEN_TRACKS: "audioLibraryHiddenTracks",
   AUDIO_MIX_PRESETS: "audioMixPresets",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
@@ -732,6 +733,7 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
     case SETTINGS.AUDIO_LIBRARY_SOURCE:
     case SETTINGS.AUDIO_LIBRARY_ROOT:
     case SETTINGS.AUDIO_LIBRARY_CATALOG:
+    case SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS:
     case SETTINGS.AUDIO_MIX_PRESETS:
       return [REFRESH_SCOPE_KEYS.LOOT];
     case SETTINGS.INJURY_RECOVERY:
@@ -4803,6 +4805,40 @@ function clearMerchantEditorDraftState() {
   sessionStorage.removeItem(getMerchantEditorDraftStorageKey());
 }
 
+function getMerchantCityCatalogDraftStorageKey() {
+  const worldId = String(game.world?.id ?? "world").trim() || "world";
+  const userId = String(game.user?.id ?? "anon").trim() || "anon";
+  return `${MODULE_ID}.merchantCityCatalogDraft.${worldId}.${userId}`;
+}
+
+function getMerchantCityCatalogDraftValue() {
+  try {
+    const raw = sessionStorage.getItem(getMerchantCityCatalogDraftStorageKey());
+    if (raw === null || raw === undefined) return null;
+    return String(raw);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function setMerchantCityCatalogDraftValue(value) {
+  try {
+    const text = String(value ?? "");
+    sessionStorage.setItem(getMerchantCityCatalogDraftStorageKey(), text);
+    return text;
+  } catch (_error) {
+    return String(value ?? "");
+  }
+}
+
+function clearMerchantCityCatalogDraftValue() {
+  try {
+    sessionStorage.removeItem(getMerchantCityCatalogDraftStorageKey());
+  } catch (_error) {
+    // Ignore storage failures outside browser execution contexts.
+  }
+}
+
 function getMerchantEditorViewTabStorageKey() {
   return `po-merchant-editor-view-tab-${game.user?.id ?? "anon"}`;
 }
@@ -6113,6 +6149,113 @@ function getLootPreviewDraft() {
 function setLootPreviewDraft(draft = {}) {
   const normalized = normalizeLootPreviewDraft(draft);
   sessionStorage.setItem(getLootPreviewDraftStorageKey(), JSON.stringify(normalized));
+}
+
+function getDowntimeUiDraftStorageKey() {
+  const worldId = String(game.world?.id ?? "world").trim() || "world";
+  const userId = String(game.user?.id ?? "anon").trim() || "anon";
+  return `${MODULE_ID}.downtimeUiDraft.${worldId}.${userId}`;
+}
+
+function getDowntimeUiDraft() {
+  try {
+    const raw = sessionStorage.getItem(getDowntimeUiDraftStorageKey());
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_error) {
+    return {};
+  }
+}
+
+function writeDowntimeUiDraft(draft = {}) {
+  try {
+    const next = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+    if (Object.keys(next).length <= 0) {
+      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
+      return {};
+    }
+    sessionStorage.setItem(getDowntimeUiDraftStorageKey(), JSON.stringify(next));
+    return next;
+  } catch (_error) {
+    return draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
+  }
+}
+
+function setDowntimeUiDraftSection(sectionKey, patch = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) return getDowntimeUiDraft();
+  const current = getDowntimeUiDraft();
+  const next = { ...current };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
+    delete next[section];
+    return writeDowntimeUiDraft(next);
+  }
+  next[section] = {
+    ...(current?.[section] && typeof current[section] === "object" && !Array.isArray(current[section]) ? current[section] : {}),
+    ...patch
+  };
+  return writeDowntimeUiDraft(next);
+}
+
+function replaceDowntimeUiDraftSection(sectionKey, patch = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) return getDowntimeUiDraft();
+  const current = getDowntimeUiDraft();
+  const next = { ...current };
+  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
+    delete next[section];
+    return writeDowntimeUiDraft(next);
+  }
+  next[section] = { ...patch };
+  return writeDowntimeUiDraft(next);
+}
+
+function clearDowntimeUiDraft(sectionKey = null) {
+  const section = String(sectionKey ?? "").trim().toLowerCase();
+  if (!section) {
+    try {
+      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
+    } catch (_error) {
+      // Ignore storage failures outside browser execution contexts.
+    }
+    return {};
+  }
+  return replaceDowntimeUiDraftSection(section, null);
+}
+
+function syncDowntimeSubmissionDraftFromRoot(root) {
+  if (!(root instanceof HTMLElement)) return {};
+  return setDowntimeUiDraftSection("submission", {
+    actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
+    actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
+    hours: String(root.querySelector("input[name='downtimeHours']")?.value ?? ""),
+    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
+  });
+}
+
+function syncDowntimeResolverDraftFromRoot(root) {
+  if (!(root instanceof HTMLElement)) return {};
+  return setDowntimeUiDraftSection("resolution", {
+    actorId: String(root.querySelector("select[name='resolveDowntimeActorId']")?.value ?? "").trim(),
+    summary: String(root.querySelector("input[name='resolveDowntimeSummary']")?.value ?? ""),
+    gpAward: String(root.querySelector("input[name='resolveDowntimeGp']")?.value ?? ""),
+    gpCost: String(root.querySelector("input[name='resolveDowntimeCost']")?.value ?? ""),
+    rumorCount: String(root.querySelector("input[name='resolveDowntimeRumors']")?.value ?? ""),
+    socialContractKey: String(root.querySelector("select[name='resolveDowntimeContractKey']")?.value ?? "").trim(),
+    socialContractNotes: String(root.querySelector("textarea[name='resolveDowntimeContractNotes']")?.value ?? ""),
+    itemRewardsText: String(root.querySelector("textarea[name='resolveDowntimeItems']")?.value ?? ""),
+    itemRewardDropsJson: String(root.querySelector("input[name='resolveDowntimeItemDrops']")?.value ?? "[]"),
+    gmNotes: String(root.querySelector("textarea[name='resolveDowntimeNotes']")?.value ?? "")
+  });
+}
+
+function syncDowntimeUiDraftFromElement(element) {
+  const panelRoot = element?.closest?.(".po-downtime-panel");
+  if (panelRoot instanceof HTMLElement) syncDowntimeSubmissionDraftFromRoot(panelRoot);
+  const resolverRoot = element?.closest?.(".po-downtime-resolver");
+  if (resolverRoot instanceof HTMLElement) syncDowntimeResolverDraftFromRoot(resolverRoot);
+  return getDowntimeUiDraft();
 }
 
 function getLootPreviewResult() {
@@ -7610,6 +7753,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          syncDowntimeUiDraftFromElement(event.target);
+        } else if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
         }
       });
 
@@ -7642,6 +7789,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         }
         if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          syncDowntimeUiDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          setMerchantCityCatalogDraftValue(event.target?.value ?? "");
           return;
         }
       });
@@ -8997,7 +9152,21 @@ function buildGmMerchantsPageContext() {
 }
 
 function buildGmAudioPageContext() {
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
   const catalog = getAudioLibraryCatalog();
+  const hiddenTrackIds = getHiddenAudioLibraryTrackIds();
+  const hiddenTrackIdSet = new Set(hiddenTrackIds);
+  const hiddenMatches = rawCatalog.items
+    .filter((item) => hiddenTrackIdSet.has(String(item?.id ?? "").trim()))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const hiddenTracks = hiddenMatches
+    .slice(0, 24)
+    .map((item) => ({
+      ...item,
+      hasSubcategory: Boolean(item.subcategory),
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage)
+    }));
   const hasSelectedTrack = catalog.items.some((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim());
   if (!hasSelectedTrack) {
     audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
@@ -9015,10 +9184,15 @@ function buildGmAudioPageContext() {
       viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
       filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
       filterOptions: buildAudioLibraryFilterOptions(),
-      summary: buildAudioLibrarySummary(catalog),
+      summary: buildAudioLibrarySummary(catalog, { hiddenCount: hiddenMatches.length }),
       results,
       mix: buildAudioMixContext(catalog),
       selectedTrack,
+      hidden: {
+        count: hiddenMatches.length,
+        tracks: hiddenTracks,
+        hasTracks: hiddenMatches.length > 0
+      },
       hasCatalog: catalog.items.length > 0,
       hasError: Boolean(audioLibraryUiState.error),
       error: audioLibraryUiState.error
@@ -9377,6 +9551,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   addDowntimeResolverCraftingItemDropFromDropEvent,
   addDowntimeResolverItemRewardFromDropEvent,
   renderDowntimeResolverItemDropList,
+  syncDowntimeUiDraftFromElement,
   openGmPanelByKey
 });
 
@@ -9422,6 +9597,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   setMerchantAssignmentAllEnabledFromElement,
   setMerchantAssignmentAllDisabledFromElement,
   openMerchantActorFromElement,
+  setMerchantCityCatalogDraftValue,
   openGmPanelByKey
 });
 
@@ -9467,9 +9643,12 @@ export const GmAudioPageApp = createGmAudioPageApp({
   addTrackToSelectedAudioMixPreset,
   addSelectedLibraryTrackToAudioMixPreset,
   clearSelectedAudioMixPresetTrackList,
+  hideAudioLibraryTrack,
   queueSelectedTrackNext,
   moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
+  restoreAllHiddenAudioLibraryTracks,
+  restoreHiddenAudioLibraryTrack,
   playSelectedAudioMixPreset: async () => {
     try {
       clearAudioLibraryError();
@@ -9886,6 +10065,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+          syncDowntimeUiDraftFromElement(event.target);
         }
       });
 
@@ -9898,6 +10079,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         }
         if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
+          return;
+        }
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+          syncDowntimeUiDraftFromElement(event.target);
           return;
         }
       });
@@ -10712,6 +10897,7 @@ function buildDefaultLootSourceConfig() {
 
 const AUDIO_LIBRARY_DEFAULT_SOURCE = "data";
 const AUDIO_LIBRARY_VERSION = 1;
+const AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION = 1;
 const AUDIO_LIBRARY_EXTENSIONS = Object.freeze(["mp3", "wav", "ogg", "webm", "flac", "m4a"]);
 const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
   all: "All Kinds",
@@ -10865,6 +11051,13 @@ function buildDefaultAudioLibraryCatalog() {
   };
 }
 
+function buildDefaultAudioLibraryHiddenTrackStore() {
+  return {
+    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+    trackIds: []
+  };
+}
+
 function buildDefaultAudioMixPresetStore() {
   return {
     version: AUDIO_MIX_PRESET_STORE_VERSION,
@@ -10915,6 +11108,13 @@ function normalizeAudioMixPresetTrackIds(value) {
   return source
     .map((entry) => normalizeAudioLibraryRootPath(entry))
     .filter((entry, index, rows) => entry && rows.indexOf(entry) === index);
+}
+
+function normalizeAudioLibraryHiddenTrackStore(store = {}) {
+  return {
+    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+    trackIds: normalizeAudioMixPresetTrackIds(store?.trackIds ?? [])
+  };
 }
 
 function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false, allowTrackIds = false } = {}) {
@@ -11234,9 +11434,39 @@ function normalizeAudioLibraryCatalog(catalog = {}) {
   };
 }
 
-function getAudioLibraryCatalog() {
+function getStoredAudioLibraryCatalog() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_CATALOG);
   return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+}
+
+function getStoredAudioLibraryHiddenTrackStore() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS);
+  return normalizeAudioLibraryHiddenTrackStore(stored ?? buildDefaultAudioLibraryHiddenTrackStore());
+}
+
+function getHiddenAudioLibraryTrackIds() {
+  return getStoredAudioLibraryHiddenTrackStore().trackIds;
+}
+
+function getHiddenAudioLibraryTrackIdSet() {
+  return new Set(getHiddenAudioLibraryTrackIds());
+}
+
+function applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds = []) {
+  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog);
+  const hiddenIds = new Set(normalizeAudioMixPresetTrackIds(hiddenTrackIds));
+  if (hiddenIds.size <= 0) return normalizedCatalog;
+  return {
+    ...normalizedCatalog,
+    items: normalizedCatalog.items.filter((item) => !hiddenIds.has(String(item?.id ?? "").trim()))
+  };
+}
+
+function getAudioLibraryCatalog(options = {}) {
+  const includeHidden = Boolean(options?.includeHidden);
+  const catalog = getStoredAudioLibraryCatalog();
+  if (includeHidden) return catalog;
+  return applyHiddenTracksToAudioLibraryCatalog(catalog, getHiddenAudioLibraryTrackIds());
 }
 
 function setAudioLibraryError(message = "") {
@@ -11649,6 +11879,23 @@ async function saveAudioMixPresetStore(store) {
   return normalized;
 }
 
+async function saveAudioLibraryHiddenTrackStore(store) {
+  const normalized = normalizeAudioLibraryHiddenTrackStore(store);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS, normalized);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return normalized;
+}
+
+async function updateStoredAudioLibraryHiddenTracks(mutator) {
+  const current = getStoredAudioLibraryHiddenTrackStore();
+  const next = normalizeAudioLibraryHiddenTrackStore(typeof mutator === "function"
+    ? (mutator(foundry.utils.deepClone(current)) ?? current)
+    : current);
+  await saveAudioLibraryHiddenTrackStore(next);
+  return next;
+}
+
 async function updateStoredAudioMixPresets(mutator) {
   const current = getStoredAudioMixPresetStore();
   const next = normalizeAudioMixPresetStore(typeof mutator === "function" ? (mutator(foundry.utils.deepClone(current)) ?? current) : current);
@@ -11852,10 +12099,12 @@ async function addTrackToSelectedAudioMixPreset(trackId) {
     return false;
   }
 
+  const nextTrackIds = normalizeAudioMixPresetTrackIds([...(preset.trackIds ?? []), normalizedTrackId]);
   await updateSelectedAudioMixPreset((entry) => ({
     ...entry,
-    trackIds: normalizeAudioMixPresetTrackIds([...(entry.trackIds ?? []), normalizedTrackId])
+    trackIds: nextTrackIds
   }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
   if (!preset.isCustom) {
     setAudioMixStatus(`Saved ${preset.label} curated track list.`);
   }
@@ -11869,6 +12118,7 @@ async function clearSelectedAudioMixPresetTrackList() {
     ...entry,
     trackIds: []
   }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue([], preset);
   setAudioMixStatus(`Cleared saved track list for ${preset.label}.`);
   return true;
 }
@@ -11896,16 +12146,37 @@ function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
   return existing;
 }
 
+async function syncSelectedAudioMixPresetTrackIdsToLiveQueue(trackIds, preset = getSelectedEditableAudioMixPreset()) {
+  const normalizedTrackIds = normalizeAudioMixPresetTrackIds(trackIds);
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || !preset || String(mixState.presetId ?? "").trim() !== String(preset.id ?? "").trim()) {
+    return false;
+  }
+  const activeTrackId = String(mixState.activeTrackId ?? "").trim();
+  const activeIndex = normalizedTrackIds.indexOf(activeTrackId);
+  const fallbackIndex = Math.min(Math.max(0, mixState.currentIndex), Math.max(0, normalizedTrackIds.length - 1));
+  await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    queueTrackIds: normalizedTrackIds,
+    currentIndex: activeIndex >= 0 ? activeIndex : fallbackIndex,
+    updatedAt: Date.now()
+  });
+  return true;
+}
+
 async function queueTrackNextInSelectedAudioMixPreset(trackId) {
   const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
   const insertionIndex = getAudioMixCurrentInsertionIndex(preset);
   const targetIndex = insertionIndex >= 0 ? insertionIndex + 1 : 0;
+  const nextTrackIds = buildReorderedAudioMixTrackIds(preset.trackIds ?? [], normalizedTrackId, targetIndex);
   await updateSelectedAudioMixPreset((entry) => ({
     ...entry,
-    trackIds: buildReorderedAudioMixTrackIds(entry.trackIds ?? [], normalizedTrackId, targetIndex)
+    trackIds: nextTrackIds
   }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
   return true;
 }
 
@@ -11913,6 +12184,7 @@ async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") 
   const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
+  let nextTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
   await updateSelectedAudioMixPreset((entry) => {
     const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
     const index = rows.indexOf(normalizedTrackId);
@@ -11922,11 +12194,13 @@ async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") 
     if (targetIndex === index) return entry;
     const [moved] = rows.splice(index, 1);
     rows.splice(targetIndex, 0, moved);
+    nextTrackIds = rows;
     return {
       ...entry,
       trackIds: rows
     };
   });
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
   return true;
 }
 
@@ -11935,10 +12209,88 @@ async function removeTrackFromSelectedAudioMixPreset(trackId) {
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
 
+  const nextTrackIds = normalizeAudioMixPresetTrackIds((preset.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId));
   await updateSelectedAudioMixPreset((entry) => ({
     ...entry,
-    trackIds: normalizeAudioMixPresetTrackIds((entry.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
+    trackIds: nextTrackIds
   }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  return true;
+}
+
+async function removeTrackFromAllAudioMixPresets(trackId) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = (store.presets ?? []).map((entry) => ({
+      ...entry,
+      trackIds: normalizeAudioMixPresetTrackIds((entry?.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
+    }));
+
+    const nextOverrides = {};
+    for (const [presetId, entry] of Object.entries(store.overrides ?? {})) {
+      nextOverrides[presetId] = {
+        ...entry,
+        trackIds: normalizeAudioMixPresetTrackIds((entry?.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
+      };
+    }
+    store.overrides = nextOverrides;
+    return store;
+  });
+  return true;
+}
+
+async function hideAudioLibraryTrack(trackId) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can hide Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  const track = rawCatalog.items.find((item) => item.id === normalizedTrackId) ?? null;
+  if (!track) return false;
+  const activePresetId = getAudioMixStateFlag(getManagedAudioMixPlaylist()).presetId;
+
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds([...(store?.trackIds ?? []), normalizedTrackId])
+  }));
+  await removeTrackFromAllAudioMixPresets(normalizedTrackId);
+  const activePreset = getAudioMixPresetById(activePresetId || getSelectedAudioMixPreset().id);
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(activePreset.trackIds ?? [], activePreset);
+
+  const visibleCatalog = getAudioLibraryCatalog();
+  if (String(audioLibraryUiState.selectedTrackId ?? "").trim() === normalizedTrackId) {
+    audioLibraryUiState.selectedTrackId = visibleCatalog.items[0]?.id ?? "";
+  }
+  setAudioMixStatus(`Hidden audio track: ${track.name}`);
+  return true;
+}
+
+async function restoreHiddenAudioLibraryTrack(trackId) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!normalizedTrackId) return false;
+  await updateStoredAudioLibraryHiddenTracks((store) => ({
+    ...store,
+    trackIds: normalizeAudioMixPresetTrackIds((store?.trackIds ?? []).filter((entry) => entry !== normalizedTrackId))
+  }));
+  audioLibraryUiState.selectedTrackId = normalizedTrackId;
+  setAudioMixStatus("Restored audio track to the library.");
+  return true;
+}
+
+async function restoreAllHiddenAudioLibraryTracks() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can restore Party Operations audio tracks.");
+    return false;
+  }
+  await saveAudioLibraryHiddenTrackStore(buildDefaultAudioLibraryHiddenTrackStore());
+  setAudioMixStatus("Restored all hidden audio tracks.");
   return true;
 }
 
@@ -12122,7 +12474,7 @@ function buildOrderedAudioMixCandidates(candidates, options = {}) {
     .filter(Boolean);
   if (ordered.length <= 0) ordered = rows;
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
-  if (!queuedIds.length && preferredTrackId) {
+  if (preferredTrackId) {
     const preferred = candidateMap.get(preferredTrackId) ?? null;
     if (preferred) {
       ordered = [preferred, ...ordered.filter((entry) => String(entry?.item?.id ?? "").trim() !== preferredTrackId)];
@@ -12384,10 +12736,11 @@ function buildAudioLibraryFilterOptions() {
   return { kindOptions, usageOptions };
 }
 
-function buildAudioLibrarySummary(catalog) {
+function buildAudioLibrarySummary(catalog, options = {}) {
   const categoryCount = new Set(catalog.items.map((item) => item.category).filter(Boolean)).size;
   const kindCount = new Set(catalog.items.map((item) => item.kind).filter(Boolean)).size;
   const usageCount = new Set(catalog.items.map((item) => item.usage).filter(Boolean)).size;
+  const hiddenCount = Math.max(0, Math.floor(Number(options?.hiddenCount ?? 0) || 0));
   const usageSummaryOrder = ["music", "ambience", "sfx", "voice", "combat", "tension", "rest", "travel"];
   const cards = usageSummaryOrder.map((key) => {
     const count = catalog.items.filter((item) => item.kind === key || item.usage === key).length;
@@ -12403,6 +12756,7 @@ function buildAudioLibrarySummary(catalog) {
     categoryCount,
     kindCount,
     usageCount,
+    hiddenCount,
     scannedAtLabel: catalog.scannedAt ? new Date(catalog.scannedAt).toLocaleString() : "-",
     scannedBy: catalog.scannedBy || "-",
     cards
@@ -12504,7 +12858,24 @@ function buildAudioMixContext(catalog) {
   const playback = getAudioMixPlaybackState(catalog);
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
   const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
-  const liveQueueTracks = playbackMatchesSelection && playback.hasQueue ? playback.queueTracks : [];
+  const queueRows = hasSavedTrackList
+    ? assignedCandidates.map(({ item }, index) => ({
+      ...item,
+      order: index + 1,
+      isActive: item.id === playback?.activeTrack?.id,
+      isCurrentIndex: index === playback.currentIndex
+    }))
+    : (playbackMatchesSelection && playback.hasQueue
+      ? playback.queueTracks
+      : suggestedCandidates.slice(0, 12).map(({ item }, index) => ({
+        ...item,
+        order: index + 1,
+        isActive: item.id === playback?.activeTrack?.id,
+        isCurrentIndex: false
+      })));
+  const queueSourceLabel = hasSavedTrackList
+    ? "Preset Queue"
+    : (playbackMatchesSelection && playback.hasQueue ? "Live Queue" : "Suggested Queue");
   return {
     status: audioLibraryUiState.mixStatus,
     hasStatus: Boolean(audioLibraryUiState.mixStatus),
@@ -12580,15 +12951,18 @@ function buildAudioMixContext(catalog) {
       hasAssignedTracks: assignedCandidates.length > 0
     },
     queue: {
-      hasLiveQueue: liveQueueTracks.length > 0,
-      tracks: liveQueueTracks.map((track) => ({
+      hasTracks: queueRows.length > 0,
+      sourceLabel: queueSourceLabel,
+      tracks: queueRows.map((track) => ({
         ...track,
         kindLabel: getAudioLibraryKindLabel(track.kind),
         usageLabel: getAudioLibraryUsageLabel(track.usage)
       })),
       hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
       selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
-      canControl: playbackMatchesSelection || selectedPreset.isCustom
+      canControl: playbackMatchesSelection || selectedPreset.isCustom,
+      hasSavedTrackList,
+      hasLiveQueue: playbackMatchesSelection && playback.hasQueue
     },
     playback: {
       ...playback,
@@ -21122,7 +21496,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       editorViewTab,
       editorViewTabEditor: editorViewTab !== "settings",
       editorViewTabSettings: editorViewTab === "settings",
-      cityCatalogInput: formatMerchantCityListInput(merchantsState?.cityCatalog ?? []),
+      cityCatalogInput: (() => {
+        const draftValue = getMerchantCityCatalogDraftValue();
+        return draftValue !== null ? draftValue : formatMerchantCityListInput(merchantsState?.cityCatalog ?? []);
+      })(),
       savedCityCatalogRows,
       hasSavedCityCatalogRows: savedCityCatalogRows.length > 0,
       savedCityCatalogCount: savedCityCatalogRows.length,
@@ -22716,6 +23093,7 @@ async function saveMerchantCityCatalogFromElement(element) {
   if (!root) return false;
   const rawInput = String(root.querySelector("input[name='merchantCityCatalog']")?.value ?? "").trim();
   const cityCatalog = await saveMerchantCityCatalog(rawInput);
+  clearMerchantCityCatalogDraftValue();
   ui.notifications?.info(`Saved merchant cities (${cityCatalog.length}).`);
   return true;
 }
@@ -24383,8 +24761,51 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       baseHint: base.hint
     };
   });
+  const uiDraft = getDowntimeUiDraft();
+  const submitDraft = uiDraft?.submission && typeof uiDraft.submission === "object" && !Array.isArray(uiDraft.submission)
+    ? uiDraft.submission
+    : null;
+  const resolutionDraft = uiDraft?.resolution && typeof uiDraft.resolution === "object" && !Array.isArray(uiDraft.resolution)
+    ? uiDraft.resolution
+    : null;
+
+  const draftedSubmitActorId = String(submitDraft?.actorId ?? "").trim();
+  const resolvedSubmitActorId = actorOptions.some((entry) => entry.id === draftedSubmitActorId)
+    ? draftedSubmitActorId
+    : defaultActorId;
+  for (const option of actorOptions) {
+    option.selected = option.id === resolvedSubmitActorId;
+  }
+
+  const draftedSubmitActionKey = String(submitDraft?.actionKey ?? "").trim();
+  const submitActionOptions = actionOptions.map((entry) => ({
+    ...entry,
+    selected: entry.key === draftedSubmitActionKey
+  }));
+  if (!submitActionOptions.some((entry) => entry.selected)) {
+    const fallbackActionKey = String(currentEntry?.actionKey ?? submitActionOptions[0]?.key ?? "").trim();
+    for (const option of submitActionOptions) {
+      option.selected = option.key === fallbackActionKey;
+    }
+  }
+
+  const draftedResolutionActorId = String(resolutionDraft?.actorId ?? "").trim();
+  const resolvedPendingActorId = pendingOptions.some((entry) => entry.actorId === draftedResolutionActorId)
+    ? draftedResolutionActorId
+    : String(pendingOptions.find((entry) => entry.selected)?.actorId ?? pendingOptions[0]?.actorId ?? "").trim();
+  for (const option of pendingOptions) {
+    option.selected = option.actorId === resolvedPendingActorId;
+  }
+
   const selectedPending = pendingOptions.find((entry) => entry.selected) ?? null;
   const selectedPendingItemRewardDrops = parseDowntimeItemRewardDrops(String(selectedPending?.baseItemRewardDropsJson ?? "[]"));
+  const draftedResolutionSocialContractKey = Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "socialContractKey")
+    ? String(resolutionDraft?.socialContractKey ?? "").trim()
+    : String(selectedPending?.baseSocialContractKey ?? "").trim();
+  const draftedResolutionItemRewardDropsJson = Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "itemRewardDropsJson")
+    ? String(resolutionDraft?.itemRewardDropsJson ?? "[]")
+    : String(selectedPending?.baseItemRewardDropsJson ?? "[]");
+  const draftedResolutionItemRewardDrops = parseDowntimeItemRewardDrops(draftedResolutionItemRewardDropsJson);
 
   return {
     hoursGranted,
@@ -24407,9 +24828,13 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     },
     submit: {
       actorOptions,
-      actionOptions,
-      hours: submitHours,
-      note: currentEntry?.note ?? ""
+      actionOptions: submitActionOptions,
+      hours: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "hours")
+        ? String(submitDraft?.hours ?? "")
+        : submitHours,
+      note: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "note")
+        ? String(submitDraft?.note ?? "")
+        : (currentEntry?.note ?? "")
     },
     entriesSort,
     entriesSortOptions: DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => ({
@@ -24431,21 +24856,35 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     gmResolve: {
       hasPending: pendingOptions.length > 0,
       pendingOptions,
-      selectedActorId: String(selectedPending?.actorId ?? ""),
+      selectedActorId: resolvedPendingActorId,
       selectedIsPreResolved: selectedPending?.isPreResolved === true,
       selectedPreResolvedLabel: String(selectedPending?.preResolvedLabel ?? ""),
-      summary: String(selectedPending?.baseSummary ?? ""),
-      gpAward: Number(selectedPending?.baseGpAward ?? 0),
-      gpCost: Number(selectedPending?.baseGpCost ?? 0),
-      rumorCount: Number(selectedPending?.baseRumorCount ?? 0),
-      itemRewardsText: String(selectedPending?.baseItemRewardsText ?? ""),
-      itemRewardDrops: selectedPendingItemRewardDrops,
-      hasItemRewardDrops: selectedPendingItemRewardDrops.length > 0,
-      itemRewardDropsJson: String(selectedPending?.baseItemRewardDropsJson ?? "[]"),
-      gmNotes: String(selectedPending?.baseNotes ?? ""),
-      socialContractKey: String(selectedPending?.baseSocialContractKey ?? ""),
-      socialContractNotes: String(selectedPending?.baseSocialContractNotes ?? ""),
-      socialContractOptions: buildDowntimeSocialContractOptions(String(selectedPending?.baseSocialContractKey ?? "")),
+      summary: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "summary")
+        ? String(resolutionDraft?.summary ?? "")
+        : String(selectedPending?.baseSummary ?? ""),
+      gpAward: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gpAward")
+        ? String(resolutionDraft?.gpAward ?? "")
+        : Number(selectedPending?.baseGpAward ?? 0),
+      gpCost: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gpCost")
+        ? String(resolutionDraft?.gpCost ?? "")
+        : Number(selectedPending?.baseGpCost ?? 0),
+      rumorCount: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "rumorCount")
+        ? String(resolutionDraft?.rumorCount ?? "")
+        : Number(selectedPending?.baseRumorCount ?? 0),
+      itemRewardsText: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "itemRewardsText")
+        ? String(resolutionDraft?.itemRewardsText ?? "")
+        : String(selectedPending?.baseItemRewardsText ?? ""),
+      itemRewardDrops: draftedResolutionItemRewardDrops,
+      hasItemRewardDrops: draftedResolutionItemRewardDrops.length > 0,
+      itemRewardDropsJson: draftedResolutionItemRewardDropsJson,
+      gmNotes: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "gmNotes")
+        ? String(resolutionDraft?.gmNotes ?? "")
+        : String(selectedPending?.baseNotes ?? ""),
+      socialContractKey: draftedResolutionSocialContractKey,
+      socialContractNotes: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "socialContractNotes")
+        ? String(resolutionDraft?.socialContractNotes ?? "")
+        : String(selectedPending?.baseSocialContractNotes ?? ""),
+      socialContractOptions: buildDowntimeSocialContractOptions(draftedResolutionSocialContractKey),
       hint: String(selectedPending?.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT)
     }
   };
@@ -25406,6 +25845,7 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
 async function submitDowntimeAction(element) {
   const submission = readDowntimeSubmissionFromUi(element);
   if (!submission) return;
+  syncDowntimeUiDraftFromElement(element);
   if (!submission.actorId) {
     ui.notifications?.warn("Select an actor for downtime submission.");
     return;
@@ -25435,6 +25875,7 @@ async function submitDowntimeAction(element) {
 async function clearDowntimeEntry(element) {
   const actorId = String(element?.dataset?.actorId ?? readDowntimeSubmissionFromUi(element)?.actorId ?? "").trim();
   if (!actorId) return;
+  const currentDraft = getDowntimeUiDraft();
   const actor = game.actors.get(actorId);
   if (!actor) {
     ui.notifications?.warn("Actor for downtime entry was not found.");
@@ -25447,6 +25888,9 @@ async function clearDowntimeEntry(element) {
       if (!downtime.entries) return;
       delete downtime.entries[actorId];
     });
+    if (String(currentDraft?.resolution?.actorId ?? "").trim() === actorId) {
+      clearDowntimeUiDraft("resolution");
+    }
     ui.notifications?.info(`Cleared downtime entry for ${actor.name}.`);
     return;
   }
@@ -25540,6 +25984,7 @@ async function addDowntimeResolverItemRewardFromDropEvent(event) {
   currentRewards.push(itemName);
   rewardsField.value = currentRewards.join("\n");
   rewardsField.dispatchEvent(new Event("input", { bubbles: true }));
+  if (resolverRoot instanceof HTMLElement) syncDowntimeResolverDraftFromRoot(resolverRoot);
   ui.notifications?.info(`Added item reward: ${itemName}`);
   return true;
 }
@@ -25587,6 +26032,7 @@ function removeDowntimeResolverItemDropFromUi(element) {
   if (next.length === current.length) return false;
   setDowntimeResolverItemDropsInUi(root, next);
   renderDowntimeResolverItemDropList(root);
+  syncDowntimeResolverDraftFromRoot(root);
   return true;
 }
 
@@ -25626,6 +26072,7 @@ async function addDowntimeResolverCraftingItemDropFromDropEvent(event) {
   current.push(nextDrop);
   setDowntimeResolverItemDropsInUi(resolverRoot, current);
   renderDowntimeResolverItemDropList(resolverRoot);
+  syncDowntimeResolverDraftFromRoot(resolverRoot);
   ui.notifications?.info(`Queued crafted item grant: ${nextDrop.name}`);
   return true;
 }
@@ -25674,6 +26121,7 @@ function applyDowntimeResolverBaseToUi(element, options = {}) {
   if (contractNotesTextarea && (force || !String(contractNotesTextarea.value ?? "").trim())) contractNotesTextarea.value = String(selectedOption.dataset.baseContractNotes ?? "");
   if (hintNode) hintNode.textContent = String(selectedOption.dataset.baseHint ?? DOWNTIME_RESOLVE_DEFAULT_HINT);
   renderDowntimeResolverItemDropList(root);
+  syncDowntimeResolverDraftFromRoot(root);
 }
 
 function readDowntimeResolutionFromUi(element) {
@@ -25864,6 +26312,7 @@ async function preResolveSelectedDowntimeEntry(element) {
   });
 
   const actorName = getDowntimeActorName(resolution.actorId, entry.actorName);
+  replaceDowntimeUiDraftSection("resolution", { actorId: resolution.actorId });
   ui.notifications?.info(`Pre-resolved downtime for ${actorName}. Edit fields, then Final Resolve.`);
 }
 
@@ -25926,6 +26375,7 @@ async function resolveSelectedDowntimeEntry(element) {
     });
   });
 
+  clearDowntimeUiDraft("resolution");
   ui.notifications?.info(`Resolved downtime for ${actorName}.`);
 }
 
@@ -25976,6 +26426,7 @@ async function editDowntimeResult(element) {
     ui.notifications?.warn(`No resolved downtime result found for ${actorName}.`);
     return;
   }
+  replaceDowntimeUiDraftSection("resolution", { actorId });
   ui.notifications?.info(`Moved ${actorName} back to pending for editing.`);
 }
 
@@ -36112,8 +36563,12 @@ function buildPartyOperationsApi() {
     audio: {
       open: () => openGmAudioPage({ force: true }),
       getCatalog: () => foundry.utils.deepClone(getAudioLibraryCatalog()),
+      getCatalogWithHidden: () => foundry.utils.deepClone(getAudioLibraryCatalog({ includeHidden: true })),
       scan: (options = {}) => scanAudioLibraryCatalog(options),
       clear: () => clearAudioLibraryCatalog(),
+      hideTrack: (trackId) => hideAudioLibraryTrack(trackId),
+      restoreTrack: (trackId) => restoreHiddenAudioLibraryTrack(trackId),
+      restoreAllTracks: () => restoreAllHiddenAudioLibraryTracks(),
       getMixPresets: () => foundry.utils.deepClone(getAllAudioMixPresets()),
       createMixPreset: () => createAudioMixPresetFromSelection(),
       deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
@@ -36795,6 +37250,7 @@ export function onPartyOperationsInit() {
     buildDefaultInjuryRecoveryState,
     buildDefaultLootSourceConfig,
     buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
     buildDefaultAudioMixPresetStore
   });
   syncAudioLibraryDraftFromSettings();
