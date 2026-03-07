@@ -57,6 +57,7 @@ export function createGmAudioPageApp(deps) {
     playNextAudioMixTrack,
     restartCurrentAudioMixTrack,
     stopAudioMixPlayback,
+    syncManagedAudioMixPlaybackForCurrentUser,
     openGmPanelByKey
   } = deps;
 
@@ -103,7 +104,13 @@ export function createGmAudioPageApp(deps) {
         window.clearTimeout(this._audioPreviewVolumeSaveTimer);
         this._audioPreviewVolumeSaveTimer = null;
       }
-      return super.close(options);
+      const result = await super.close(options);
+      if (typeof syncManagedAudioMixPlaybackForCurrentUser === "function") {
+        window.setTimeout(() => {
+          void syncManagedAudioMixPlaybackForCurrentUser();
+        }, 40);
+      }
+      return result;
     }
 
     _shouldHandleInputAction(action) {

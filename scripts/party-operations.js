@@ -237,6 +237,18 @@ const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
+const managedAudioMixLocalState = {
+  playbackId: "",
+  playlistId: "",
+  playlistSoundId: "",
+  trackId: "",
+  presetId: "",
+  sound: null,
+  volume: 0.5,
+  fade: 0,
+  startedAt: 0
+};
+let managedAudioMixResyncTimerId = null;
 let refreshOpenAppsQueueAll = false;
 const refreshOpenAppsScopeQueue = new Set();
 const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
@@ -9359,29 +9371,25 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
     return null;
   }
 
+  let app = null;
   if (key === "faction") {
     setActiveGmQuickPanel("faction");
-    return openMainTab("gm", { ...renderOptions, suppressHistory });
+    app = openMainTab("gm", { ...renderOptions, suppressHistory });
+  } else if (key === "global-modifiers") {
+    app = openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
+  } else if (key === "environment") {
+    app = openGmEnvironmentPage({ ...renderOptions, suppressHistory });
+  } else if (key === "downtime") {
+    app = openGmDowntimePage({ ...renderOptions, suppressHistory });
+  } else if (key === "merchants") {
+    app = openGmMerchantsPage({ ...renderOptions, suppressHistory });
+  } else if (key === "audio") {
+    app = openGmAudioPage({ ...renderOptions, suppressHistory });
+  } else if (key === "loot") {
+    app = openGmLootPage({ ...renderOptions, suppressHistory });
   }
-  if (key === "global-modifiers") {
-    return openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
-  }
-  if (key === "environment") {
-    return openGmEnvironmentPage({ ...renderOptions, suppressHistory });
-  }
-  if (key === "downtime") {
-    return openGmDowntimePage({ ...renderOptions, suppressHistory });
-  }
-  if (key === "merchants") {
-    return openGmMerchantsPage({ ...renderOptions, suppressHistory });
-  }
-  if (key === "audio") {
-    return openGmAudioPage({ ...renderOptions, suppressHistory });
-  }
-  if (key === "loot") {
-    return openGmLootPage({ ...renderOptions, suppressHistory });
-  }
-  return null;
+  queueManagedAudioMixPlaybackResync();
+  return app;
 }
 
 function openGmLootClaimsBoard(renderOptions = { force: true }) {
@@ -9727,6 +9735,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
       ui.notifications?.warn(`Audio stop failed: ${message}`);
     }
   },
+  syncManagedAudioMixPlaybackForCurrentUser,
   openGmPanelByKey
 });
 
@@ -10959,6 +10968,13 @@ const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
 });
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
+const AUDIO_MIX_SOCKET_TYPE = "ops:audio-mix";
+const AUDIO_MIX_SOCKET_COMMANDS = Object.freeze({
+  PLAY: "play",
+  STOP: "stop",
+  VOLUME: "volume"
+});
+const AUDIO_MIX_TRANSPORT_LABEL = "Party Operations Shared Mix";
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
 const AUDIO_MIX_PRESET_STORE_VERSION = 1;
 const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
@@ -11079,6 +11095,16 @@ function normalizeAudioPreviewVolume(value) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return AUDIO_PREVIEW_VOLUME_DEFAULT;
   return Math.max(0, Math.min(1, Math.round(numeric * 100) / 100));
+}
+
+function normalizeAudioMixVolume(value, fallback = 0.5) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return Math.max(0, Math.min(1, Number(fallback ?? 0.5) || 0.5));
+  return Math.max(0, Math.min(1, Math.round(numeric * 100) / 100));
+}
+
+function getAudioMixVolumePercent(value, fallback = 0.5) {
+  return Math.round(normalizeAudioMixVolume(value, fallback) * 100);
 }
 
 function getStoredAudioPreviewVolume() {
@@ -12172,6 +12198,7 @@ async function setSelectedAudioMixPresetOption(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   const value = actionElement?.value;
   if (!field) return false;
+  const normalizedPresetId = String(preset.id ?? "").trim();
 
   await updateSelectedAudioMixPreset((entry) => {
     const next = { ...entry };
@@ -12185,9 +12212,15 @@ async function setSelectedAudioMixPresetOption(actionElement) {
     } else if (field === "playbackMode") {
       next.playbackMode = normalizeAudioMixPlaybackMode(value);
       next.repeat = next.playbackMode === "repeat";
+    } else if (field === "volume") {
+      next.volume = normalizeAudioMixVolume(Number(value) / 100, entry.volume);
     }
     return next;
   });
+  if (field === "volume") {
+    const livePreset = getAudioMixPresetById(normalizedPresetId);
+    await syncLiveAudioMixPresetVolume(livePreset);
+  }
   return true;
 }
 
@@ -12562,6 +12595,24 @@ function getManagedAudioMixPlaylist() {
     ?? null;
 }
 
+function hideManagedAudioMixPlaylistUi(root = document) {
+  const playlist = getManagedAudioMixPlaylist();
+  const playlistId = String(playlist?.id ?? "").trim();
+  if (!playlistId || !root?.querySelectorAll) return;
+  const selectors = [
+    `[data-tab="playlists"] [data-document-id="${playlistId}"]`,
+    `[data-tab="playlists"] [data-entry-id="${playlistId}"]`,
+    `#playlists [data-document-id="${playlistId}"]`,
+    `#playlists [data-entry-id="${playlistId}"]`
+  ];
+  for (const selector of selectors) {
+    for (const element of root.querySelectorAll(selector)) {
+      const row = element.closest("li, section, article, .directory-item") ?? element;
+      row.style.display = "none";
+    }
+  }
+}
+
 function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
   return Number(candidateCount ?? 0) > 1;
 }
@@ -12593,6 +12644,7 @@ async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
         }
       }
     });
+    hideManagedAudioMixPlaylistUi(document);
     return playlist;
   }
 
@@ -12600,6 +12652,7 @@ async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
   if (!playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) {
     await playlist.setFlag(MODULE_ID, "managedAudioMixboard", true);
   }
+  hideManagedAudioMixPlaylistUi(document);
   return playlist;
 }
 
@@ -12640,11 +12693,6 @@ function pickAudioMixCandidate(candidates, excludedTrackId = "") {
   return topSlice[Math.floor(Math.random() * topSlice.length)] ?? effectivePool[0];
 }
 
-function getCurrentManagedAudioMixSound(playlist) {
-  const sounds = Array.from(playlist?.sounds?.contents ?? []);
-  return sounds.find((sound) => Boolean(sound?.playing)) ?? null;
-}
-
 function normalizeAudioMixQueueTrackIds(trackIds = [], candidates = []) {
   const available = new Set((Array.isArray(candidates) ? candidates : []).map(({ item }) => String(item?.id ?? "").trim()).filter(Boolean));
   return normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => available.has(entry));
@@ -12681,43 +12729,265 @@ async function stopManagedAudioMixPlaylist(playlist) {
   return false;
 }
 
-async function playManagedAudioMixSound(playlist, sound) {
-  if (!playlist || !sound) return false;
-  if (typeof playlist.playSound === "function") {
-    await playlist.playSound(sound);
-    return true;
-  }
-  if (typeof sound?.update === "function") {
-    await sound.update({ playing: true });
-    return true;
-  }
-  return false;
+function getManagedAudioMixPlaybackStateInput(input = {}) {
+  return {
+    presetId: String(input?.presetId ?? "").trim(),
+    activeTrackId: normalizeAudioLibraryRootPath(input?.activeTrackId ?? ""),
+    activeTrackName: String(input?.activeTrackName ?? "").trim(),
+    activeTrackPath: normalizeAudioLibraryRootPath(input?.activeTrackPath ?? ""),
+    playlistSoundId: String(input?.playlistSoundId ?? "").trim(),
+    playbackId: String(input?.playbackId ?? "").trim(),
+    queueTrackIds: normalizeAudioMixPresetTrackIds(input?.queueTrackIds ?? []),
+    currentIndex: Math.max(0, Math.floor(Number(input?.currentIndex ?? 0) || 0)),
+    volume: normalizeAudioMixVolume(input?.volume ?? 0.5),
+    channel: normalizeAudioMixChannel(input?.channel),
+    fade: Math.max(0, Math.floor(Number(input?.fade ?? 0) || 0)),
+    isPlaying: Boolean(input?.isPlaying),
+    startedAt: Math.max(0, Number(input?.startedAt ?? 0) || 0),
+    updatedAt: Math.max(0, Number(input?.updatedAt ?? 0) || 0)
+  };
 }
 
 function getAudioMixStateFlag(playlist = getManagedAudioMixPlaylist()) {
-  const raw = playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {};
-  return {
-    presetId: String(raw?.presetId ?? "").trim(),
-    activeTrackId: normalizeAudioLibraryRootPath(raw?.activeTrackId ?? ""),
-    activeTrackName: String(raw?.activeTrackName ?? "").trim(),
-    queueTrackIds: normalizeAudioMixPresetTrackIds(raw?.queueTrackIds ?? []),
-    currentIndex: Math.max(0, Math.floor(Number(raw?.currentIndex ?? 0) || 0)),
-    updatedAt: Number(raw?.updatedAt ?? 0) || 0
-  };
+  return getManagedAudioMixPlaybackStateInput(playlist?.getFlag?.(MODULE_ID, "audioMixState") ?? {});
 }
 
 async function setAudioMixStateFlag(playlist, input = {}) {
   if (!playlist?.setFlag) return null;
-  const next = {
-    presetId: String(input?.presetId ?? "").trim(),
-    activeTrackId: normalizeAudioLibraryRootPath(input?.activeTrackId ?? ""),
-    activeTrackName: String(input?.activeTrackName ?? "").trim(),
-    queueTrackIds: normalizeAudioMixPresetTrackIds(input?.queueTrackIds ?? []),
-    currentIndex: Math.max(0, Math.floor(Number(input?.currentIndex ?? 0) || 0)),
+  const next = getManagedAudioMixPlaybackStateInput({
+    ...input,
     updatedAt: Number(input?.updatedAt ?? Date.now()) || Date.now()
-  };
+  });
   await playlist.setFlag(MODULE_ID, "audioMixState", next);
   return next;
+}
+
+function waitForAudioMixTransportTick(delayMs = 50) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, Math.max(0, Math.floor(Number(delayMs ?? 0) || 0)));
+  });
+}
+
+function getManagedAudioMixPlaylistSoundByTrackId(playlist, trackId) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!playlist || !normalizedTrackId) return null;
+  return Array.from(playlist?.sounds?.contents ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === normalizedTrackId) ?? null;
+}
+
+async function resolveManagedAudioMixPlaylistSound(message, attempts = 10) {
+  const playlistId = String(message?.playlistId ?? "").trim();
+  const playlistSoundId = String(message?.playlistSoundId ?? "").trim();
+  const trackId = normalizeAudioLibraryRootPath(message?.trackId ?? "");
+  const maxAttempts = Math.max(1, Math.floor(Number(attempts ?? 10) || 10));
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const playlist = game?.playlists?.get?.(playlistId) ?? getManagedAudioMixPlaylist();
+    const playlistSound = playlist?.sounds?.get?.(playlistSoundId)
+      ?? getManagedAudioMixPlaylistSoundByTrackId(playlist, trackId)
+      ?? null;
+    if (playlistSound) return { playlist, playlistSound };
+    await waitForAudioMixTransportTick(60);
+  }
+  return {
+    playlist: game?.playlists?.get?.(playlistId) ?? getManagedAudioMixPlaylist(),
+    playlistSound: null
+  };
+}
+
+function clearManagedAudioMixLocalState() {
+  managedAudioMixLocalState.playbackId = "";
+  managedAudioMixLocalState.playlistId = "";
+  managedAudioMixLocalState.playlistSoundId = "";
+  managedAudioMixLocalState.trackId = "";
+  managedAudioMixLocalState.presetId = "";
+  managedAudioMixLocalState.sound = null;
+  managedAudioMixLocalState.volume = 0.5;
+  managedAudioMixLocalState.fade = 0;
+  managedAudioMixLocalState.startedAt = 0;
+}
+
+async function stopLocalManagedAudioMixPlayback(options = {}) {
+  const sound = managedAudioMixLocalState.sound ?? null;
+  clearManagedAudioMixLocalState();
+  if (!sound) return false;
+  const fade = Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0));
+  try {
+    if (fade > 0 && sound.playing && typeof sound.fade === "function") {
+      const fadeResult = sound.fade(0, { duration: fade });
+      if (fadeResult && typeof fadeResult.then === "function") await fadeResult;
+    }
+    if (typeof sound.stop === "function") {
+      const stopResult = sound.stop();
+      if (stopResult && typeof stopResult.then === "function") await stopResult;
+    } else if (typeof sound.pause === "function") {
+      const pauseResult = sound.pause();
+      if (pauseResult && typeof pauseResult.then === "function") await pauseResult;
+    }
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: failed to stop managed audio mix playback`, error);
+    }
+    return false;
+  }
+}
+
+async function setLocalManagedAudioMixPlaybackVolume(message = {}) {
+  const playbackId = String(message?.playbackId ?? "").trim();
+  if (!managedAudioMixLocalState.sound || !playbackId || managedAudioMixLocalState.playbackId !== playbackId) return false;
+  const volume = normalizeAudioMixVolume(message?.volume ?? managedAudioMixLocalState.volume);
+  const fade = Math.max(0, Math.floor(Number(message?.fade ?? 120) || 0));
+  managedAudioMixLocalState.volume = volume;
+  try {
+    if (managedAudioMixLocalState.sound.playing && fade > 0 && typeof managedAudioMixLocalState.sound.fade === "function") {
+      const fadeResult = managedAudioMixLocalState.sound.fade(volume, { duration: fade });
+      if (fadeResult && typeof fadeResult.then === "function") await fadeResult;
+    } else {
+      managedAudioMixLocalState.sound.volume = volume;
+    }
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: failed to update managed audio mix volume`, error);
+    }
+    return false;
+  }
+}
+
+async function handleManagedAudioMixTrackEnd(playbackId) {
+  if (!game.user?.isGM) return false;
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.isPlaying || String(mixState.playbackId ?? "").trim() !== String(playbackId ?? "").trim()) return false;
+  const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length <= 1) {
+    if (preset.repeat && queueTrackIds.length === 1) {
+      return playManagedAudioMixQueueAtIndex(0, { excludeTrackId: "" });
+    }
+    await stopAudioMixPlayback({ preserveQueue: true, statusMessage: `${preset.label} finished playing.` });
+    return true;
+  }
+  return playNextAudioMixTrack();
+}
+
+async function startLocalManagedAudioMixPlayback(message = {}) {
+  await stopLocalManagedAudioMixPlayback({ fade: 0 });
+  const { playlist, playlistSound } = await resolveManagedAudioMixPlaylistSound(message);
+  const fade = Math.max(0, Math.floor(Number(message?.fade ?? 0) || 0));
+  const loop = Boolean(message?.loop);
+  const volume = normalizeAudioMixVolume(message?.volume ?? 0.5);
+  const playbackId = String(message?.playbackId ?? "").trim();
+  const trackId = normalizeAudioLibraryRootPath(message?.trackId ?? "");
+  let sound = playlistSound?.sound ?? null;
+  try {
+    if (!sound && typeof AudioHelper?.play === "function" && message?.trackPath) {
+      const fallback = AudioHelper.play({
+        src: String(message.trackPath),
+        volume,
+        autoplay: false,
+        loop
+      }, false);
+      sound = fallback && typeof fallback.then === "function" ? await fallback : fallback;
+    }
+    if (!sound) return false;
+    if (typeof sound.load === "function") {
+      const loadResult = sound.load();
+      if (loadResult && typeof loadResult.then === "function") await loadResult;
+    }
+    let offset = 0;
+    const startedAt = Math.max(0, Number(message?.startedAt ?? 0) || 0);
+    const duration = Number(sound?.duration ?? 0) || 0;
+    if (startedAt > 0 && duration > 0) {
+      const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
+      offset = loop ? (elapsedSeconds % duration) : Math.min(duration, elapsedSeconds);
+    }
+    const playResult = typeof sound.play === "function"
+      ? sound.play({ loop, volume, fade, offset })
+      : null;
+    if (playResult && typeof playResult.then === "function") await playResult;
+    managedAudioMixLocalState.playbackId = playbackId;
+    managedAudioMixLocalState.playlistId = String(playlist?.id ?? message?.playlistId ?? "").trim();
+    managedAudioMixLocalState.playlistSoundId = String(playlistSound?.id ?? message?.playlistSoundId ?? "").trim();
+    managedAudioMixLocalState.trackId = trackId;
+    managedAudioMixLocalState.presetId = String(message?.presetId ?? "").trim();
+    managedAudioMixLocalState.sound = sound;
+    managedAudioMixLocalState.volume = volume;
+    managedAudioMixLocalState.fade = fade;
+    managedAudioMixLocalState.startedAt = startedAt;
+    if (!loop && game.user?.isGM && typeof sound.on === "function" && playbackId) {
+      sound.on("end", () => {
+        void handleManagedAudioMixTrackEnd(playbackId);
+      });
+    }
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: failed to start managed audio mix playback`, error);
+    }
+    clearManagedAudioMixLocalState();
+    return false;
+  }
+}
+
+async function applyAudioMixSocketMessage(message, options = {}) {
+  if (!message || message.type !== AUDIO_MIX_SOCKET_TYPE) return false;
+  const allowOrigin = options?.allowOrigin === true;
+  const originUserId = String(message?.originUserId ?? "").trim();
+  if (!allowOrigin && originUserId && originUserId === String(game.user?.id ?? "").trim()) return true;
+  const command = String(message?.command ?? "").trim().toLowerCase();
+  if (command === AUDIO_MIX_SOCKET_COMMANDS.PLAY) return startLocalManagedAudioMixPlayback(message);
+  if (command === AUDIO_MIX_SOCKET_COMMANDS.STOP) return stopLocalManagedAudioMixPlayback({ fade: message?.fade });
+  if (command === AUDIO_MIX_SOCKET_COMMANDS.VOLUME) return setLocalManagedAudioMixPlaybackVolume(message);
+  return false;
+}
+
+async function dispatchAudioMixSocketMessage(command, payload = {}) {
+  const message = {
+    ...payload,
+    type: AUDIO_MIX_SOCKET_TYPE,
+    command,
+    originUserId: String(game.user?.id ?? "").trim(),
+    sentAt: Date.now()
+  };
+  await applyAudioMixSocketMessage(message, { allowOrigin: true });
+  emitModuleSocket(message, { channel: SOCKET_CHANNEL });
+  return true;
+}
+
+async function syncManagedAudioMixPlaybackForCurrentUser() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!mixState.isPlaying || !mixState.playbackId) {
+    await stopLocalManagedAudioMixPlayback({ fade: 0 });
+    return false;
+  }
+  if (managedAudioMixLocalState.playbackId === mixState.playbackId && managedAudioMixLocalState.sound?.playing) return true;
+  return startLocalManagedAudioMixPlayback({
+    type: AUDIO_MIX_SOCKET_TYPE,
+    command: AUDIO_MIX_SOCKET_COMMANDS.PLAY,
+    originUserId: "",
+    playbackId: mixState.playbackId,
+    playlistId: String(playlist?.id ?? "").trim(),
+    playlistSoundId: mixState.playlistSoundId,
+    presetId: mixState.presetId,
+    trackId: mixState.activeTrackId,
+    trackPath: mixState.activeTrackPath,
+    volume: mixState.volume,
+    fade: mixState.fade,
+    loop: normalizeAudioMixPresetTrackIds(mixState.queueTrackIds).length <= 1 && getAudioMixPresetById(mixState.presetId).repeat,
+    startedAt: mixState.startedAt
+  });
+}
+
+function queueManagedAudioMixPlaybackResync(delayMs = 60) {
+  if (managedAudioMixResyncTimerId) {
+    window.clearTimeout(managedAudioMixResyncTimerId);
+    managedAudioMixResyncTimerId = null;
+  }
+  managedAudioMixResyncTimerId = window.setTimeout(() => {
+    managedAudioMixResyncTimerId = null;
+    void syncManagedAudioMixPlaybackForCurrentUser();
+  }, Math.max(0, Math.floor(Number(delayMs ?? 60) || 60)));
 }
 
 async function playAudioMixPresetById(presetId, options = {}) {
@@ -12738,13 +13008,13 @@ async function playAudioMixPresetById(presetId, options = {}) {
 
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
   if (!playlist) throw new Error("The managed mix playlist could not be created.");
-  const currentSound = getCurrentManagedAudioMixSound(playlist);
+  const priorState = getAudioMixStateFlag(playlist);
   await stopManagedAudioMixPlaylist(playlist);
   const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
   const chosenCandidate = preferredTrackId
-    ? orderedCandidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
-    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
+    ? orderedCandidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId)
+    : pickAudioMixCandidate(orderedCandidates, options.excludeTrackId ?? priorState.activeTrackId);
   const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
   const chosenSound = Array.from(createdSounds ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id)
     ?? createdSounds?.[0]
@@ -12755,19 +13025,36 @@ async function playAudioMixPresetById(presetId, options = {}) {
 
   const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
   const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
-  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function" && currentIndex === 0) {
-    await playlist.playAll();
-  } else {
-    const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
-    if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
-  }
-  await setAudioMixStateFlag(playlist, {
+  const shouldLoopTrack = !shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && Boolean(preset.repeat);
+  const playbackId = foundry.utils.randomID();
+  const nextState = await setAudioMixStateFlag(playlist, {
     presetId: preset.id,
     activeTrackId: String(chosenCandidate?.item?.id ?? ""),
     activeTrackName: String(chosenCandidate?.item?.name ?? chosenSound.name ?? ""),
+    activeTrackPath: String(chosenCandidate?.item?.path ?? chosenSound.path ?? ""),
+    playlistSoundId: String(chosenSound?.id ?? ""),
+    playbackId,
     queueTrackIds,
     currentIndex,
+    volume: normalizeAudioMixVolume(preset.volume),
+    channel: normalizeAudioMixChannel(preset.channel),
+    fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
+    isPlaying: true,
+    startedAt: Date.now(),
     updatedAt: Date.now()
+  });
+  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.PLAY, {
+    playbackId,
+    playlistId: String(playlist.id ?? ""),
+    playlistSoundId: String(chosenSound?.id ?? ""),
+    presetId: preset.id,
+    trackId: String(chosenCandidate?.item?.id ?? ""),
+    trackPath: String(chosenCandidate?.item?.path ?? chosenSound.path ?? ""),
+    volume: nextState?.volume ?? preset.volume,
+    channel: nextState?.channel ?? preset.channel,
+    fade: nextState?.fade ?? preset.fade,
+    loop: shouldLoopTrack,
+    startedAt: nextState?.startedAt ?? Date.now()
   });
   audioLibraryUiState.selectedMixPresetId = preset.id;
   audioLibraryUiState.selectedTrackId = String(chosenCandidate?.item?.id ?? audioLibraryUiState.selectedTrackId);
@@ -12782,26 +13069,56 @@ async function playAudioMixPresetById(presetId, options = {}) {
   };
 }
 
-async function stopAudioMixPlayback() {
+async function stopAudioMixPlayback(options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can stop Party Operations mix playback.");
     return false;
   }
   const playlist = getManagedAudioMixPlaylist();
-  if (!playlist) return false;
-  await stopManagedAudioMixPlaylist(playlist);
   const priorState = getAudioMixStateFlag(playlist);
-  await setAudioMixStateFlag(playlist, {
-    presetId: getSelectedAudioMixPreset().id,
-    activeTrackId: "",
-    activeTrackName: "",
-    queueTrackIds: priorState.queueTrackIds,
-    currentIndex: priorState.currentIndex,
-    updatedAt: Date.now()
+  if (playlist) await stopManagedAudioMixPlaylist(playlist);
+  if (playlist) {
+    await setAudioMixStateFlag(playlist, {
+      ...priorState,
+      presetId: priorState.presetId || getSelectedAudioMixPreset().id,
+      activeTrackId: "",
+      activeTrackName: "",
+      activeTrackPath: "",
+      playlistSoundId: "",
+      playbackId: "",
+      queueTrackIds: options?.preserveQueue ? priorState.queueTrackIds : normalizeAudioMixPresetTrackIds(priorState.queueTrackIds),
+      currentIndex: Math.max(0, Math.floor(Number(priorState.currentIndex ?? 0) || 0)),
+      isPlaying: false,
+      startedAt: 0,
+      updatedAt: Date.now()
+    });
+  }
+  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.STOP, {
+    playbackId: priorState.playbackId,
+    fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0))
   });
-  setAudioMixStatus("Mix playback stopped.");
+  setAudioMixStatus(String(options?.statusMessage ?? "Mix playback stopped."));
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return true;
+}
+
+async function syncLiveAudioMixPresetVolume(preset = getSelectedAudioMixPreset()) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (!playlist || !mixState.isPlaying) return false;
+  if (String(mixState.presetId ?? "").trim() !== String(preset?.id ?? "").trim()) return false;
+  const nextState = await setAudioMixStateFlag(playlist, {
+    ...mixState,
+    volume: normalizeAudioMixVolume(preset?.volume ?? mixState.volume),
+    fade: Math.max(0, Math.floor(Number(preset?.fade ?? mixState.fade ?? 0) || 0)),
+    updatedAt: Date.now()
+  });
+  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.VOLUME, {
+    playbackId: nextState.playbackId,
+    volume: nextState.volume,
+    fade: Math.min(220, nextState.fade)
+  });
   return true;
 }
 
@@ -12986,9 +13303,11 @@ function buildAudioLibraryResults(catalog) {
 function getAudioMixPlaybackState(catalog) {
   const playlist = getManagedAudioMixPlaylist();
   const mixFlag = getAudioMixStateFlag(playlist);
-  const playingSound = getCurrentManagedAudioMixSound(playlist);
-  const activeTrackId = String(playingSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? mixFlag?.activeTrackId ?? "").trim();
-  const activeTrack = catalog.items.find((item) => item.id === activeTrackId) ?? null;
+  const activeTrackId = String(mixFlag?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixFlag?.activeTrackPath ?? "");
+  const activeTrack = catalog.items.find((item) => item.id === activeTrackId)
+    ?? catalog.items.find((item) => normalizeAudioLibraryRootPath(item?.path ?? "") === activeTrackPath)
+    ?? null;
   const activePreset = getAudioMixPresetById(mixFlag?.presetId ?? getSelectedAudioMixPreset().id);
   const queueTrackIds = normalizeAudioMixPresetTrackIds(mixFlag.queueTrackIds ?? []);
   const queueTracks = queueTrackIds
@@ -13008,12 +13327,23 @@ function getAudioMixPlaybackState(catalog) {
   return {
     hasPlaylist: Boolean(playlist),
     playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
-    isPlaying: Boolean(playingSound?.playing),
+    transportLabel: AUDIO_MIX_TRANSPORT_LABEL,
+    isPlaying: Boolean(mixFlag?.isPlaying),
     presetId: activePreset.id,
     presetLabel: activePreset.label,
     activeTrack,
     activeTrackId,
     activeTrackName: String(activeTrack?.name ?? mixFlag?.activeTrackName ?? "").trim(),
+    activeTrackPath,
+    playlistSoundId: String(mixFlag?.playlistSoundId ?? "").trim(),
+    playbackId: String(mixFlag?.playbackId ?? "").trim(),
+    volume: normalizeAudioMixVolume(mixFlag?.volume ?? activePreset.volume),
+    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? activePreset.volume),
+    channel: normalizeAudioMixChannel(mixFlag?.channel ?? activePreset.channel),
+    channelLabel: getAudioMixChannelLabel(mixFlag?.channel ?? activePreset.channel),
+    fade: Math.max(0, Math.floor(Number(mixFlag?.fade ?? activePreset.fade ?? 0) || 0)),
+    startedAt: Math.max(0, Number(mixFlag?.startedAt ?? 0) || 0),
+    startedAtLabel: mixFlag?.startedAt ? new Date(Number(mixFlag.startedAt)).toLocaleTimeString() : "-",
     updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-",
     queueTrackIds,
     queueTracks,
@@ -13100,6 +13430,7 @@ function buildAudioMixContext(catalog) {
       missingTrackCount,
       hasSavedTrackList,
       channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
+      volumePercent: getAudioMixVolumePercent(selectedPreset.volume),
       playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
       kindFocusLabel: getAudioLibraryKindLabel(selectedPreset.kindFocus),
       usageFocusLabel: getAudioLibraryUsageLabel(selectedPreset.usageFocus),
@@ -13149,6 +13480,7 @@ function buildAudioMixContext(catalog) {
       kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
       usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
       playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode),
+      volumePercent: getAudioMixVolumePercent(selectedPreset.volume),
       hasAssignedTracks: assignedCandidates.length > 0
     },
     queue: {
@@ -13172,6 +13504,7 @@ function buildAudioMixContext(catalog) {
       hasActiveTrack: Boolean(playback.activeTrack),
       activeTrackName: playback.activeTrackName || "No track playing",
       activeTrackPath: String(playback.activeTrack?.path ?? ""),
+      volumePercent: getAudioMixVolumePercent(playback.volume ?? selectedPreset.volume),
       activeTrackKindLabel: playback.activeTrack ? getAudioLibraryKindLabel(playback.activeTrack.kind) : "",
       activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : ""
     }
@@ -14342,7 +14675,14 @@ async function importLootManifestCompendiumToWorld() {
     createdItems: createData.length,
     updatedItems: updateData.length
   };
-  ui.notifications?.info(`Imported ${report.createdItems + report.updatedItems} built item(s) into organized world folders.`);
+  const importedItemCount = report.createdItems + report.updatedItems;
+  const touchedFolderCount = report.createdFolders + report.updatedFolders;
+  const sourceCompendiumFlat = syncReport?.reason === "pack-read-only" || syncReport?.reason === "pack-locked";
+  ui.notifications?.info(
+    `Imported ${importedItemCount} built item(s) into organized world folders `
+    + `(${touchedFolderCount} folder ${touchedFolderCount === 1 ? "change" : "changes"}).`
+    + (sourceCompendiumFlat ? " The source compendium stays flat because that pack is read-only." : "")
+  );
   return report;
 }
 
@@ -17814,7 +18154,7 @@ function buildLootClaimsContext(user = game.user) {
 
   const publishedAt = Number(displayRun?.publishedAt ?? claims.publishedAt ?? 0);
   const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
-  const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const selectableActors = getLootClaimSelectableActorsForUser(user);
   const actorOptions = selectableActors.map((actor) => ({
     id: String(actor.id),
     name: String(actor.name ?? `Actor ${actor.id}`),
@@ -17829,9 +18169,13 @@ function buildLootClaimsContext(user = game.user) {
     setLootClaimActorSelection(selectedActorId);
   }
   const selectedActorName = actorOptions.find((entry) => entry.id === selectedActorId)?.name ?? "";
-  const ownedPcActors = getOwnedPcActors();
-  const eligibleActorIds = new Set(ownedPcActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
-  const actorNameById = new Map(ownedPcActors.map((actor) => [String(actor?.id ?? "").trim(), String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`]));
+  const voucherEligibleActorIds = new Set(selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const currencyEligibleActorIds = new Set(getOwnedPcActors().map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const actorNameById = new Map(
+    (game.actors?.contents ?? [])
+      .filter((actor) => actor?.type === "character" && actor?.id)
+      .map((actor) => [String(actor.id), String(actor.name ?? `Actor ${actor.id}`).trim() || `Actor ${actor.id}`])
+  );
   const displayCurrencyClaimedActorIds = Array.isArray(displayRun?.currencyClaimedActorIds)
     ? displayRun.currencyClaimedActorIds
     : [];
@@ -17881,7 +18225,7 @@ function buildLootClaimsContext(user = game.user) {
   const canClaimCurrency = hasSelectedRun
     && !displayRunIsArchived
     && Boolean(selectedActorId)
-    && eligibleActorIds.has(selectedActorId)
+    && currencyEligibleActorIds.has(selectedActorId)
     && hasCurrencyRemaining
     && !selectedActorClaimedCurrency;
   return {
@@ -17937,10 +18281,10 @@ function buildLootClaimsContext(user = game.user) {
       hasVouchers: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 0,
       selectedActorVouched: Boolean(selectedActorId) && Array.isArray(entry.vouchedByActorIds)
         && entry.vouchedByActorIds.includes(selectedActorId),
-      canVouch: !displayRunIsArchived && Boolean(selectedActorId) && eligibleActorIds.has(selectedActorId),
+      canVouch: !displayRunIsArchived && Boolean(selectedActorId) && voucherEligibleActorIds.has(selectedActorId),
       requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
       canRunRollOff: !displayRunIsArchived && Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
-      canClaimDirect: !displayRunIsArchived && !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
+      canClaimDirect: !displayRunIsArchived && Boolean(selectedActorId) && !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
       vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
         .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
         .filter(Boolean)
@@ -18261,6 +18605,22 @@ function getOwnedPcActors() {
     }
   }
   return Array.from(unique.values());
+}
+
+function getLootClaimSelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!canUserManageDowntimeActor(user, actor)) return;
+    unique.set(String(actor.id), actor);
+  };
+
+  if (user.character?.type === "character") addActor(user.character);
+  for (const actor of getOwnedPcActors()) addActor(actor);
+  for (const actor of game.actors?.contents ?? []) addActor(actor);
+
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
 function getNeutralFriendlyActors() {
@@ -31023,13 +31383,20 @@ function formatLootCurrencyRemainingLabel(currency = {}) {
 function openOperationsLootClaimsTabForPlayer(options = {}) {
   setActiveOperationsPage("planning");
   setActiveOperationsPlanningTab("loot");
+  const openBoard = options?.openBoard === true;
+  const suppressHistory = Boolean(options?.suppressHistory);
   const app = openMainTab("operations", {
     force: options?.force !== false,
-    suppressHistory: Boolean(options?.suppressHistory)
+    suppressHistory: openBoard ? true : suppressHistory
   });
   app?.render?.({ force: true, parts: ["main"], focus: true });
   app?.bringToTop?.();
-  return app;
+  if (!openBoard) return app;
+  return openGmLootClaimsBoard({
+    force: options?.force !== false,
+    suppressHistory,
+    runId: options?.runId
+  });
 }
 
 async function promptLootClaimsDialogForPlayer(options = {}) {
@@ -31052,7 +31419,7 @@ async function promptLootClaimsDialogForPlayer(options = {}) {
       <p><strong>Published:</strong> ${poEscapeHtml(publishedAtLabel)} by ${poEscapeHtml(publishedBy)}</p>
       <p><strong>Items:</strong> ${itemCount}</p>
       <p><strong>Currency:</strong> ${poEscapeHtml(formatLootCurrencyRemainingLabel(currencyRemaining))}</p>
-      <p>Open the Planning <strong>Loot</strong> tab now?</p>
+      <p>Open the <strong>Live Claim Board</strong> now?</p>
     </div>
   `;
   return await new Promise((resolve) => {
@@ -31067,7 +31434,7 @@ async function promptLootClaimsDialogForPlayer(options = {}) {
       content,
       buttons: {
         open: {
-          label: "Open Loot Claims",
+          label: "Open Claim Board",
           callback: () => finish(true)
         },
         later: {
@@ -31326,7 +31693,7 @@ async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouc
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
   if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
-  const eligibleActorIds = new Set(getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
+  const eligibleActorIds = new Set(getLootClaimSelectableActorsForUser(user).map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
   if (!eligibleActorIds.has(actorId)) return { ok: false, message: "Actor is not eligible for claim vouchers." };
 
   const ledger = getOperationsLedger();
@@ -37079,6 +37446,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
       ? marchingOrderAppInstance
       : new MarchingOrderApp(getResponsiveWindowOptions("marching-order"));
     app.render(renderOptions);
+    queueManagedAudioMixPlaybackResync();
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "marching-order" });
     return app;
   }
@@ -37104,6 +37472,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
       : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "gm";
     app.render(renderOptions);
+    queueManagedAudioMixPlaybackResync();
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "gm" });
     return app;
   }
@@ -37115,6 +37484,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
       : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "operations";
     app.render(renderOptions);
+    queueManagedAudioMixPlaybackResync();
     if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "operations" });
     return app;
   }
@@ -37125,6 +37495,7 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
   app._activePanel = "rest-watch";
   app.render(renderOptions);
+  queueManagedAudioMixPlaybackResync();
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "rest-watch" });
   return app;
 }
@@ -37853,8 +38224,10 @@ function setupPartyOperationsUI() {
     ensureLauncherUi();
   });
 
-  Hooks.on("renderSidebarTab", () => {
+  Hooks.on("renderSidebarTab", (_app, html) => {
     ensureLauncherUi();
+    hideManagedAudioMixPlaylistUi(html?.[0] ?? html ?? document);
+    window.setTimeout(() => hideManagedAudioMixPlaylistUi(document), 30);
   });
 
   Hooks.on("renderNavigation", () => {
@@ -38090,6 +38463,9 @@ export function onPartyOperationsReady() {
     });
   }, 4200);
   notifyDailyInjuryReminders();
+  window.setTimeout(() => {
+    void syncManagedAudioMixPlaybackForCurrentUser();
+  }, 450);
 
   // Auto-open player UI for non-GM players
   if (!game.user?.isGM) {
@@ -38129,6 +38505,7 @@ async function handlePartyOperationsSocketMessage(message) {
     refreshOpenApps,
     schedulePendingSopNoteSync,
     syncMerchantBarterStatusForOpenDialogs,
+    applyAudioMixSocketMessage,
     getSocketRequester,
     sanitizeSocketIdentifier,
     normalizeSocketActivityType,

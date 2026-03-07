@@ -19,6 +19,7 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     refreshOpenApps,
     schedulePendingSopNoteSync,
     syncMerchantBarterStatusForOpenDialogs,
+    applyAudioMixSocketMessage,
     getSocketRequester,
     sanitizeSocketIdentifier,
     normalizeSocketActivityType,
@@ -82,7 +83,11 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
       lootClaims
     });
     if (!shouldOpen) return true;
-    openOperationsLootClaimsTabForPlayer({ force: true });
+    openOperationsLootClaimsTabForPlayer({
+      force: true,
+      openBoard: true,
+      runId: selectedRunId
+    });
     return true;
   }
 
@@ -101,6 +106,11 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
 
   if (message.type === "ops:merchant-barter-result") {
     syncMerchantBarterStatusForOpenDialogs(message);
+    return true;
+  }
+
+  if (message.type === "ops:audio-mix") {
+    await applyAudioMixSocketMessage(message);
     return true;
   }
 

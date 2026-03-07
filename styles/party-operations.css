@@ -3,9 +3,20 @@
 /* =========================================================
    Root + Variables
    ========================================================= */
-:is(.window-app, .application).party-operations > .window-content,
-:is(.window-app, .application).party-operations-app > .window-content,
-#party-operations-app > .window-content {
+:is(
+  #rest-watch-app,
+  #rest-watch-player-app,
+  #marching-order-app,
+  #party-operations-global-modifier-summary,
+  #party-operations-gm-environment-page,
+  #party-operations-gm-downtime-page,
+  #party-operations-gm-merchants-page,
+  #party-operations-gm-audio-page,
+  #party-operations-gm-loot-page,
+  #party-operations-gm-loot-claims-board,
+  #party-operations-settings-hub,
+  #party-operations-app
+) > .window-content {
   padding: 0;
   height: 100%;
   overflow: hidden;
@@ -3792,9 +3803,20 @@
 /* =========================================================
    Marching Order Single-Scroll + Column Layout Fixes
    ========================================================= */
-:is(.window-app, .application).party-operations > .window-content,
-:is(.window-app, .application).party-operations-app > .window-content,
-#party-operations-app > .window-content {
+:is(
+  #rest-watch-app,
+  #rest-watch-player-app,
+  #marching-order-app,
+  #party-operations-global-modifier-summary,
+  #party-operations-gm-environment-page,
+  #party-operations-gm-downtime-page,
+  #party-operations-gm-merchants-page,
+  #party-operations-gm-audio-page,
+  #party-operations-gm-loot-page,
+  #party-operations-gm-loot-claims-board,
+  #party-operations-settings-hub,
+  #party-operations-app
+) > .window-content {
   overflow: auto;
 }
 
@@ -6473,6 +6495,24 @@
   justify-content: flex-start;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-live-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-live-slider-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-live-volume-slider {
+  width: 100%;
+  min-width: 0;
+  accent-color: color-mix(in srgb, var(--po-accent) 78%, white 22%);
+}
+
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-console-actions {
   gap: 8px;
 }
@@ -6532,6 +6572,11 @@
   width: 100%;
   min-width: 0;
   min-height: 30px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row input[type="range"] {
+  width: 100%;
+  min-width: 0;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-card-actions {
