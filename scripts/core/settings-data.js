@@ -7,7 +7,8 @@ export function registerPartyOpsDataSettings({
   buildDefaultOperationsLedger,
   buildDefaultInjuryRecoveryState,
   buildDefaultLootSourceConfig,
-  buildDefaultAudioLibraryCatalog
+  buildDefaultAudioLibraryCatalog,
+  buildDefaultAudioMixPresetStore
 } = {}) {
   game.settings.register(moduleId, settings.REST_STATE, {
     scope: "world",
@@ -91,5 +92,12 @@ export function registerPartyOpsDataSettings({
     config: false,
     type: Object,
     default: buildDefaultAudioLibraryCatalog()
+  });
+
+  game.settings.register(moduleId, settings.AUDIO_MIX_PRESETS, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultAudioMixPresetStore()
   });
 }

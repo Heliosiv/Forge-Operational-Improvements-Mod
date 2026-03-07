@@ -16,6 +16,13 @@ export function createGmAudioPageApp(deps) {
     setAudioLibraryView,
     selectAudioLibraryTrack,
     selectAudioMixPreset,
+    createAudioMixPresetFromSelection,
+    promptAndUpdateSelectedAudioMixPresetField,
+    setSelectedAudioMixPresetOption,
+    deleteSelectedAudioMixPreset,
+    addTrackToSelectedAudioMixPreset,
+    addSelectedLibraryTrackToAudioMixPreset,
+    removeTrackFromSelectedAudioMixPreset,
     playSelectedAudioMixPreset,
     playSelectedAudioMixCandidate,
     stopAudioMixPlayback,
@@ -56,7 +63,9 @@ export function createGmAudioPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return action === "set-audio-library-draft-field" || action === "set-audio-library-filter";
+      return action === "set-audio-library-draft-field"
+        || action === "set-audio-library-filter"
+        || action === "set-audio-mix-preset-option";
     }
 
     _getActionHandlers() {
@@ -99,6 +108,27 @@ export function createGmAudioPageApp(deps) {
         }),
         "select-audio-mix-preset": rerenderAlways((actionElement) => {
           selectAudioMixPreset(actionElement);
+        }),
+        "create-audio-mix-preset": rerenderAlways(() => {
+          return createAudioMixPresetFromSelection();
+        }),
+        "edit-audio-mix-preset-field": rerenderAlways((actionElement) => {
+          return promptAndUpdateSelectedAudioMixPresetField(actionElement?.dataset?.field);
+        }),
+        "set-audio-mix-preset-option": rerenderUnlessInput((actionElement) => {
+          return setSelectedAudioMixPresetOption(actionElement);
+        }),
+        "delete-audio-mix-preset": rerenderAlways(() => {
+          return deleteSelectedAudioMixPreset();
+        }),
+        "add-audio-mix-track": rerenderAlways((actionElement) => {
+          return addTrackToSelectedAudioMixPreset(actionElement?.dataset?.trackId);
+        }),
+        "add-selected-audio-track-to-mix": rerenderAlways(() => {
+          return addSelectedLibraryTrackToAudioMixPreset();
+        }),
+        "remove-audio-mix-track": rerenderAlways((actionElement) => {
+          return removeTrackFromSelectedAudioMixPreset(actionElement?.dataset?.trackId);
         }),
         "play-audio-mix": rerenderAlways(() => {
           return playSelectedAudioMixPreset();

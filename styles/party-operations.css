@@ -6121,7 +6121,7 @@
   gap: 6px;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 3px;
@@ -6129,13 +6129,13 @@
   margin: 0;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row > span {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row > span {
   margin: 0;
   font-size: 0.68rem;
   line-height: 1.1;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card) .po-resource-row :is(.po-input, .po-select) {
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row :is(.po-input, .po-select) {
   width: 100%;
   min-width: 0;
   min-height: 30px;
@@ -6157,6 +6157,10 @@
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-actions .po-btn {
   min-width: 112px;
   justify-content: center;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-toolbar {
+  margin-bottom: 6px;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-filters-card .po-audio-chip-list {
@@ -6235,6 +6239,38 @@
   max-width: 72ch;
 }
 
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-custom-editor {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(128, 198, 255, 0.14);
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-inline-actions .po-btn {
+  min-height: 26px;
+  padding: 2px 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list) .po-audio-track-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+}
+
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-preview-player {
   width: 100%;
   min-height: 34px;
@@ -6244,6 +6280,10 @@
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-hero,
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-grid,
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-results-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-editor-grid {
     grid-template-columns: 1fr;
   }
 }

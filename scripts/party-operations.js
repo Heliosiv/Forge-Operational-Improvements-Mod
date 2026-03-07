@@ -161,6 +161,7 @@ export const SETTINGS = {
   AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
   AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
   AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
+  AUDIO_MIX_PRESETS: "audioMixPresets",
   INTEGRATION_MODE: "integrationMode",
   SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
   LAUNCHER_PLACEMENT: "launcherPlacement",
@@ -731,6 +732,7 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
     case SETTINGS.AUDIO_LIBRARY_SOURCE:
     case SETTINGS.AUDIO_LIBRARY_ROOT:
     case SETTINGS.AUDIO_LIBRARY_CATALOG:
+    case SETTINGS.AUDIO_MIX_PRESETS:
       return [REFRESH_SCOPE_KEYS.LOOT];
     case SETTINGS.INJURY_RECOVERY:
     case SETTINGS.INJURY_REMINDER_DAY:
@@ -9458,6 +9460,13 @@ export const GmAudioPageApp = createGmAudioPageApp({
   setAudioLibraryFilterField,
   selectAudioLibraryTrack,
   selectAudioMixPreset,
+  createAudioMixPresetFromSelection,
+  promptAndUpdateSelectedAudioMixPresetField,
+  setSelectedAudioMixPresetOption,
+  deleteSelectedAudioMixPreset,
+  addTrackToSelectedAudioMixPreset,
+  addSelectedLibraryTrackToAudioMixPreset,
+  removeTrackFromSelectedAudioMixPreset,
   playSelectedAudioMixPreset: async () => {
     try {
       clearAudioLibraryError();
@@ -10709,7 +10718,17 @@ const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
 });
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
-const AUDIO_MIX_PRESETS = Object.freeze([
+const AUDIO_MIX_PRESET_STORE_VERSION = 1;
+const AUDIO_MIX_CHANNEL_LABELS = Object.freeze({
+  music: "Music",
+  environment: "Environment",
+  interface: "Interface"
+});
+const AUDIO_MIX_PLAYBACK_MODE_LABELS = Object.freeze({
+  repeat: "Loop / Repeat",
+  single: "Single Pass"
+});
+const AUDIO_MIX_BUILT_IN_PRESETS = Object.freeze([
   {
     id: "camp",
     label: "Camp",
@@ -10717,7 +10736,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["rest", "ambience", "general"],
     searchTokens: ["camp", "night", "sleep", "blissful", "harp", "fire", "rest"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.48,
     fade: 1800,
     repeat: true
@@ -10729,7 +10748,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["travel", "ambience", "general"],
     searchTokens: ["travel", "journey", "road", "march", "path", "adventure"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.52,
     fade: 1400,
     repeat: true
@@ -10741,7 +10760,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music"],
     preferredUsage: ["intrigue", "tension", "general"],
     searchTokens: ["intrigue", "court", "waltz", "curiosity", "mystery", "shadow", "noble", "palace", "whisper"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.46,
     fade: 1600,
     repeat: true
@@ -10753,7 +10772,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "sfx"],
     preferredUsage: ["combat", "stinger", "general"],
     searchTokens: ["action", "battle", "combat", "war", "spell", "melee", "archer", "fight"],
-    channel: CONST?.AUDIO_CHANNELS?.music ?? "music",
+    channel: "music",
     volume: 0.64,
     fade: 900,
     repeat: true
@@ -10765,7 +10784,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["tension", "ambience", "intrigue"],
     searchTokens: ["horror", "anxiety", "dark", "undead", "fear", "whisper", "creep", "shadow"],
-    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    channel: "environment",
     volume: 0.44,
     fade: 1900,
     repeat: true
@@ -10777,7 +10796,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["music", "ambience"],
     preferredUsage: ["town", "foley", "general"],
     searchTokens: ["town", "tavern", "market", "city", "courtyard", "folk", "cooking", "village"],
-    channel: CONST?.AUDIO_CHANNELS?.environment ?? "environment",
+    channel: "environment",
     volume: 0.42,
     fade: 1500,
     repeat: true
@@ -10789,7 +10808,7 @@ const AUDIO_MIX_PRESETS = Object.freeze([
     preferredKinds: ["sfx", "voice"],
     preferredUsage: ["stinger", "voice", "combat"],
     searchTokens: ["stinger", "shot", "cinematic", "spell", "impact", "voice"],
-    channel: CONST?.AUDIO_CHANNELS?.interface ?? "interface",
+    channel: "interface",
     volume: 0.6,
     fade: 300,
     repeat: false
@@ -10823,35 +10842,126 @@ function buildDefaultAudioLibraryCatalog() {
   };
 }
 
+function buildDefaultAudioMixPresetStore() {
+  return {
+    version: AUDIO_MIX_PRESET_STORE_VERSION,
+    presets: []
+  };
+}
+
+function normalizeAudioMixChannel(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(AUDIO_MIX_CHANNEL_LABELS, normalized) ? normalized : "music";
+}
+
+function getAudioMixChannelLabel(value) {
+  return AUDIO_MIX_CHANNEL_LABELS[normalizeAudioMixChannel(value)] ?? AUDIO_MIX_CHANNEL_LABELS.music;
+}
+
+function normalizeAudioMixPlaybackMode(value) {
+  return String(value ?? "").trim().toLowerCase() === "single" ? "single" : "repeat";
+}
+
+function getAudioMixPlaybackModeLabel(value) {
+  return AUDIO_MIX_PLAYBACK_MODE_LABELS[normalizeAudioMixPlaybackMode(value)] ?? AUDIO_MIX_PLAYBACK_MODE_LABELS.repeat;
+}
+
+function inferAudioMixChannelForKind(kindFocus) {
+  const normalizedKind = normalizeAudioLibraryKind(kindFocus);
+  if (normalizedKind === "ambience") return "environment";
+  if (normalizedKind === "sfx" || normalizedKind === "voice") return "interface";
+  return "music";
+}
+
+function normalizeAudioMixPresetSearchTokens(value) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(/[\n,;]+/);
+  return source
+    .flatMap((entry) => String(entry ?? "").split(/\s+/g))
+    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index)
+    .slice(0, 16);
+}
+
+function formatAudioMixPresetSearchTokens(value) {
+  return normalizeAudioMixPresetSearchTokens(value).join(", ");
+}
+
+function normalizeAudioMixPresetTrackIds(value) {
+  const source = Array.isArray(value) ? value : [value];
+  return source
+    .map((entry) => normalizeAudioLibraryRootPath(entry))
+    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index);
+}
+
+function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false } = {}) {
+  const preferredKinds = Array.isArray(input.preferredKinds)
+    ? input.preferredKinds.map((entry) => normalizeAudioLibraryKind(entry)).filter((entry) => entry !== "all")
+    : [];
+  const preferredUsage = Array.isArray(input.preferredUsage)
+    ? input.preferredUsage.map((entry) => normalizeAudioLibraryUsage(entry)).filter((entry) => entry !== "all")
+    : [];
+  const kindFocus = isCustom
+    ? normalizeAudioLibraryKind(input.kindFocus ?? preferredKinds[0] ?? "music")
+    : normalizeAudioLibraryKind(preferredKinds[0] ?? "all");
+  const usageFocus = isCustom
+    ? normalizeAudioLibraryUsage(input.usageFocus ?? preferredUsage[0] ?? "general")
+    : normalizeAudioLibraryUsage(preferredUsage[0] ?? "all");
+  const playbackMode = normalizeAudioMixPlaybackMode(input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single"));
+  const channel = normalizeAudioMixChannel(input.channel ?? inferAudioMixChannelForKind(kindFocus));
+  const volumeRaw = Number(input.volume ?? 0.5);
+  const fadeRaw = Number(input.fade ?? 1200);
+  return {
+    id: String(input.id ?? "").trim() || foundry.utils.randomID(),
+    label: String(input.label ?? "").trim() || "New Mix",
+    description: String(input.description ?? "").trim() || "Custom ambient playlist.",
+    preferredKinds: preferredKinds.length > 0 ? preferredKinds : (kindFocus !== "all" ? [kindFocus] : []),
+    preferredUsage: preferredUsage.length > 0 ? preferredUsage : (usageFocus !== "all" ? [usageFocus] : []),
+    kindFocus,
+    usageFocus,
+    searchTokens: normalizeAudioMixPresetSearchTokens(input.searchTokens),
+    channel,
+    volume: Math.max(0, Math.min(1, Number.isFinite(volumeRaw) ? volumeRaw : 0.5)),
+    fade: Math.max(0, Math.floor(Number.isFinite(fadeRaw) ? fadeRaw : 1200)),
+    repeat: playbackMode === "repeat",
+    playbackMode,
+    isCustom,
+    trackIds: isCustom ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
+  };
+}
+
+function normalizeAudioMixPresetStore(store = {}) {
+  const presets = Array.isArray(store?.presets)
+    ? store.presets
+      .map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true }))
+      .filter(Boolean)
+    : [];
+  return {
+    version: AUDIO_MIX_PRESET_STORE_VERSION,
+    presets
+  };
+}
+
+function getBuiltInAudioMixPresets() {
+  return AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => normalizeAudioMixPresetDefinition(preset, { isCustom: false }));
+}
+
 function normalizeAudioLibrarySource(value) {
   const normalized = String(value ?? "").trim();
   return normalized || AUDIO_LIBRARY_DEFAULT_SOURCE;
 }
 
-function normalizeAudioLibraryRawPath(value) {
-  const normalized = String(value ?? "")
-    .replace(/\\/g, "/")
-    .trim();
-  return normalized.replace(/^(https?):\/(?!\/)/i, "$1://");
-}
-
-function isAbsoluteAudioLibraryUrl(value) {
-  return /^https?:\/\//i.test(String(value ?? "").trim());
+function isAbsoluteUrl(value) {
+  return /^[a-z]+:\/\//i.test(String(value ?? "").trim());
 }
 
 function normalizeAudioLibraryRootPath(value) {
-  const normalized = normalizeAudioLibraryRawPath(value);
-  if (!normalized) return "";
-  if (isAbsoluteAudioLibraryUrl(normalized)) {
-    try {
-      const url = new URL(normalized);
-      const pathname = url.pathname.replace(/\/+/g, "/").replace(/\/$/, "");
-      return `${url.protocol}//${url.host}${pathname}${url.search}${url.hash}`;
-    } catch (error) {
-      console.warn(`${MODULE_ID}: failed to normalize audio library URL`, normalized, error);
-    }
+  const raw = String(value ?? "").trim().replace(/\\/g, "/");
+  if (!raw) return "";
+  if (isAbsoluteUrl(raw)) {
+    const [scheme, ...rest] = raw.split("://");
+    return `${scheme}://${rest.join("://").replace(/\/+/g, "/").replace(/\/$/, "")}`;
   }
-  return normalized
+  return raw
     .replace(/\/+/g, "/")
     .replace(/\/$/, "");
 }
@@ -10861,7 +10971,7 @@ function isAbsoluteWindowsFilesystemPath(value) {
   return /^[a-z]:[\\/]/i.test(normalized) || normalized.startsWith("//?/") || normalized.startsWith("\\\\?\\");
 }
 
-function decodeAudioLibraryPathSegment(value = "") {
+function safeDecodeAudioText(value) {
   const raw = String(value ?? "");
   if (!raw) return "";
   try {
@@ -10871,59 +10981,61 @@ function decodeAudioLibraryPathSegment(value = "") {
   }
 }
 
-function getAudioLibraryUrlPathSegments(value = "") {
+function extractForgeAssetRelativePath(value) {
   const normalized = normalizeAudioLibraryRootPath(value);
-  if (!isAbsoluteAudioLibraryUrl(normalized)) return [];
+  if (!isAbsoluteUrl(normalized)) return "";
   try {
     const url = new URL(normalized);
-    return url.pathname
-      .split("/")
-      .filter(Boolean)
-      .map((segment) => decodeAudioLibraryPathSegment(segment));
-  } catch {
-    return [];
-  }
-}
-
-function getAudioLibrarySourcePath(value = "") {
-  const normalized = normalizeAudioLibraryRootPath(value);
-  if (!normalized) return "";
-  if (!isAbsoluteAudioLibraryUrl(normalized)) return normalized;
-  const segments = getAudioLibraryUrlPathSegments(normalized);
-  if (segments.length <= 0) return "";
-  if (/forge-vtt\.com$/i.test(new URL(normalized).hostname) && segments.length >= 2) {
+    if (!/assets\.forge-vtt\.com$/i.test(String(url.hostname ?? "").trim())) return "";
+    const segments = safeDecodeAudioText(url.pathname).split("/").filter(Boolean);
+    if (segments.length <= 1) return "";
     return normalizeAudioLibraryRootPath(segments.slice(1).join("/"));
+  } catch {
+    return "";
   }
-  return normalizeAudioLibraryRootPath(segments.join("/"));
 }
 
-function getAudioLibraryComparablePath(value = "") {
-  const sourcePath = getAudioLibrarySourcePath(value);
-  return sourcePath || normalizeAudioLibraryRootPath(value);
-}
-
-function getAudioLibraryFilename(value = "") {
-  const comparable = getAudioLibraryComparablePath(value);
-  return decodeAudioLibraryPathSegment(String(comparable.split("/").pop() ?? value).trim());
+function buildAudioLibraryRelativePath(path, rootPath = "") {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  if (!normalizedPath) return "";
+  if (normalizedRoot) {
+    const pathLower = normalizedPath.toLowerCase();
+    const rootLower = normalizedRoot.toLowerCase();
+    if (pathLower === rootLower) return normalizedPath;
+    if (pathLower.startsWith(`${rootLower}/`)) return normalizedPath;
+    const needle = `/${rootLower}`;
+    const index = pathLower.indexOf(needle);
+    if (index >= 0) return normalizedPath.slice(index + 1);
+  }
+  const forgeRelative = extractForgeAssetRelativePath(normalizedPath);
+  if (forgeRelative) return forgeRelative;
+  return normalizedPath;
 }
 
 function buildAudioLibraryPathHelpText(path = "") {
-  const normalizedPath = getAudioLibrarySourcePath(path);
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
   if (!normalizedPath) return "Paste the host-served folder path where your private audio library lives.";
   if (isAbsoluteWindowsFilesystemPath(path)) {
     return "This must be a Foundry or Forge asset path, not a local D:\\ path. Use Upload Local Folder or browse to a server folder like music/Fantasy Complete II MP3.";
+  }
+  if (isAbsoluteUrl(normalizedPath)) {
+    return "Use a source-relative asset path like music/Fantasy Complete II MP3, not the full Forge asset URL.";
   }
   return "Scan reads the configured server folder recursively and classifies tracks into curated buckets.";
 }
 
 function validateAudioLibraryPathForSource(source, rootPath) {
   const normalizedSource = normalizeAudioLibrarySource(source);
-  const normalizedRootPath = getAudioLibrarySourcePath(rootPath);
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
   if (!normalizedRootPath) {
     return "Set an audio root path before scanning.";
   }
   if (isAbsoluteWindowsFilesystemPath(rootPath)) {
     return `Audio scanning only works on ${normalizedSource} asset paths served by Foundry or Forge. Use a server path like music/Fantasy Complete II MP3, not ${rootPath}.`;
+  }
+  if (isAbsoluteUrl(normalizedRootPath)) {
+    return `Audio scanning expects a source-relative asset path like music/Fantasy Complete II MP3, not a full URL like ${normalizedRootPath}.`;
   }
   return "";
 }
@@ -10956,9 +11068,22 @@ function normalizeAudioLibraryView(value) {
     : AUDIO_LIBRARY_VIEW_IDS.LIBRARY;
 }
 
+function getStoredAudioMixPresetStore() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_MIX_PRESETS);
+  return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
+}
+
+function getAllAudioMixPresets() {
+  return [
+    ...getBuiltInAudioMixPresets(),
+    ...getStoredAudioMixPresetStore().presets
+  ];
+}
+
 function getAudioMixPresetById(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
-  return AUDIO_MIX_PRESETS.find((preset) => preset.id === normalized) ?? AUDIO_MIX_PRESETS[0];
+  const presets = getAllAudioMixPresets();
+  return presets.find((preset) => preset.id === normalized) ?? presets[0];
 }
 
 function getSelectedAudioMixPreset() {
@@ -10968,7 +11093,7 @@ function getSelectedAudioMixPreset() {
 function getAudioLibraryDraftState() {
   return {
     source: normalizeAudioLibrarySource(audioLibraryUiState.draft.source),
-    rootPath: getAudioLibrarySourcePath(audioLibraryUiState.draft.rootPath)
+    rootPath: normalizeAudioLibraryRootPath(audioLibraryUiState.draft.rootPath)
   };
 }
 
@@ -10982,23 +11107,23 @@ function getAudioLibrarySourceSetting() {
 }
 
 function getAudioLibraryRootSetting() {
-  return getAudioLibrarySourcePath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
+  return normalizeAudioLibraryRootPath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
 }
 
 function normalizeAudioLibraryItem(entry = {}) {
   const path = normalizeAudioLibraryRootPath(entry.path);
   if (!path) return null;
-  const id = String(entry.id ?? path).trim() || path;
-  const name = decodeAudioLibraryPathSegment(String(entry.name ?? "").trim()) || getAudioLibraryFilename(path);
-  const category = String(entry.category ?? "Uncategorized").trim() || "Uncategorized";
-  const subcategory = String(entry.subcategory ?? "").trim();
+  const id = normalizeAudioLibraryRootPath(entry.id ?? path) || path;
+  const name = safeDecodeAudioText(String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim());
+  const category = safeDecodeAudioText(String(entry.category ?? "Uncategorized").trim() || "Uncategorized");
+  const subcategory = safeDecodeAudioText(String(entry.subcategory ?? "").trim());
   const kind = normalizeAudioLibraryKind(entry.kind === "all" ? "" : entry.kind);
   const usage = normalizeAudioLibraryUsage(entry.usage === "all" ? "" : entry.usage);
   const extensionRaw = String(entry.extension ?? "").trim().replace(/^\./, "").toLowerCase();
   const extension = AUDIO_LIBRARY_EXTENSIONS.includes(extensionRaw) ? extensionRaw : "mp3";
   const tags = Array.isArray(entry.tags)
     ? entry.tags
-      .map((tag) => String(tag ?? "").trim())
+      .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
       .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
       .slice(0, 12)
     : [];
@@ -11025,7 +11150,7 @@ function normalizeAudioLibraryCatalog(catalog = {}) {
   return {
     version: AUDIO_LIBRARY_VERSION,
     source: normalizeAudioLibrarySource(catalog?.source),
-    rootPath: getAudioLibrarySourcePath(catalog?.rootPath),
+    rootPath: normalizeAudioLibraryRootPath(catalog?.rootPath),
     scannedAt: Number.isFinite(scannedAtRaw) ? scannedAtRaw : 0,
     scannedBy: String(catalog?.scannedBy ?? "").trim(),
     items
@@ -11064,16 +11189,17 @@ function extractAudioLibraryTokens(value) {
 }
 
 function inferAudioLibraryClassification(path, rootPath = "") {
-  const normalizedPath = getAudioLibraryComparablePath(path);
-  const normalizedRoot = getAudioLibrarySourcePath(rootPath);
-  const relativePath = normalizedRoot && normalizedPath.startsWith(`${normalizedRoot}/`)
-    ? normalizedPath.slice(normalizedRoot.length + 1)
-    : normalizedPath;
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  const normalizedRoot = normalizeAudioLibraryRootPath(rootPath);
+  const candidateRelativePath = buildAudioLibraryRelativePath(normalizedPath, normalizedRoot);
+  const relativePath = normalizedRoot && candidateRelativePath.startsWith(`${normalizedRoot}/`)
+    ? candidateRelativePath.slice(normalizedRoot.length + 1)
+    : candidateRelativePath;
   const segments = relativePath.split("/").filter(Boolean);
   const filename = segments.at(-1) ?? normalizedPath;
-  const stem = filename.replace(/\.[^.]+$/u, "");
-  const categoryRaw = segments[0] ?? "Uncategorized";
-  const subcategoryRaw = segments.length > 2 ? segments[1] : "";
+  const stem = safeDecodeAudioText(filename.replace(/\.[^.]+$/u, ""));
+  const categoryRaw = safeDecodeAudioText(segments[0] ?? "Uncategorized");
+  const subcategoryRaw = safeDecodeAudioText(segments.length > 2 ? segments[1] : "");
   const category = categoryRaw.replace(/^\d+\s*/u, "").trim() || categoryRaw;
   const subcategory = subcategoryRaw.replace(/^\d+\s*/u, "").trim();
   const tokens = [
@@ -11121,12 +11247,12 @@ function inferAudioLibraryClassification(path, rootPath = "") {
 }
 
 function isAudioLibraryFile(path) {
-  const normalized = getAudioLibraryComparablePath(path).toLowerCase();
+  const normalized = normalizeAudioLibraryRootPath(path).toLowerCase();
   return AUDIO_LIBRARY_EXTENSIONS.some((extension) => normalized.endsWith(`.${extension}`));
 }
 
 function normalizeAudioLibraryDirectorySelection(path = "") {
-  const normalizedPath = getAudioLibrarySourcePath(path);
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
   if (!normalizedPath) return "";
   if (!isAudioLibraryFile(normalizedPath)) return normalizedPath;
   const segments = normalizedPath.split("/").filter(Boolean);
@@ -11136,7 +11262,12 @@ function normalizeAudioLibraryDirectorySelection(path = "") {
 
 function getAudioLibraryPickerCurrentPath(path = "") {
   if (isAbsoluteWindowsFilesystemPath(path)) return "";
-  return normalizeAudioLibraryDirectorySelection(path);
+  return normalizeAudioLibraryDirectorySelection(extractForgeAssetRelativePath(path) || path);
+}
+
+function normalizeAudioLibraryPickerSelection(path = "") {
+  const forgeRelativePath = extractForgeAssetRelativePath(path);
+  return normalizeAudioLibraryDirectorySelection(forgeRelativePath || path);
 }
 
 function getAudioLibraryUploadRelativePath(file) {
@@ -11156,9 +11287,9 @@ function isUploadableAudioLibraryFile(file) {
 }
 
 function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
-  const normalizedRootPath = normalizeAudioLibraryDirectorySelection(rootPath);
+  const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
   if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
-    return normalizedRootPath;
+    return normalizeAudioLibraryDirectorySelection(normalizedRootPath);
   }
   const normalizedFolderName = normalizeAudioLibraryRootPath(localFolderName).split("/").filter(Boolean).pop() ?? "";
   const fallbackFolderName = normalizedFolderName || "audio-library";
@@ -11209,8 +11340,9 @@ async function ensureAudioLibraryUploadDirectories(source, destinationRoot, rela
     }
   }
 }
+
 async function browseAudioLibraryTree(source, rootPath) {
-  const queue = [normalizeAudioLibraryDirectorySelection(rootPath)];
+  const queue = [normalizeAudioLibraryRootPath(rootPath)];
   const visited = new Set();
   const files = [];
 
@@ -11231,7 +11363,7 @@ async function browseAudioLibraryTree(source, rootPath) {
       if (isAudioLibraryFile(file)) files.push(normalizeAudioLibraryRootPath(file));
     }
     for (const dir of nextDirs) {
-      const normalizedDir = normalizeAudioLibraryDirectorySelection(dir);
+      const normalizedDir = normalizeAudioLibraryPickerSelection(dir);
       if (normalizedDir && !visited.has(normalizedDir)) queue.push(normalizedDir);
     }
   }
@@ -11244,7 +11376,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
     throw new Error("GM permissions are required to scan audio libraries.");
   }
   const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
-  const nextRootPath = normalizeAudioLibraryDirectorySelection(rootPath ?? getAudioLibraryDraftState().rootPath);
+  const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
   const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
   if (pathValidationMessage) throw new Error(pathValidationMessage);
 
@@ -11254,8 +11386,9 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
   }
   const items = files.map((path) => {
     const inferred = inferAudioLibraryClassification(path, nextRootPath);
+    const stableId = normalizeAudioLibraryRootPath(path);
     return normalizeAudioLibraryItem({
-      id: foundry.utils.randomID(),
+      id: stableId,
       path,
       ...inferred
     });
@@ -11304,7 +11437,7 @@ function setAudioLibraryDraftField(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   if (!field) return;
   if (field === "source") audioLibraryUiState.draft.source = normalizeAudioLibrarySource(actionElement?.value);
-  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(actionElement?.value);
+  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(actionElement?.value);
 }
 
 async function openAudioLibraryRootPicker() {
@@ -11315,12 +11448,12 @@ async function openAudioLibraryRootPicker() {
   const { source, rootPath } = getAudioLibraryDraftState();
   return new Promise((resolve) => {
     const picker = new FilePicker({
-      type: "audio",
+      type: "folder",
       activeSource: source,
       current: getAudioLibraryPickerCurrentPath(rootPath),
       callback: (selectedPath) => {
         audioLibraryUiState.draft.source = normalizeAudioLibrarySource(picker.activeSource ?? source);
-        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryDirectorySelection(selectedPath);
+        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryPickerSelection(selectedPath);
         clearAudioLibraryError();
         resolve(true);
       }
@@ -11405,9 +11538,10 @@ async function uploadLocalAudioFolderToLibrary() {
       finalize(false);
     }, { once: true });
 
-  input.click();
+    input.click();
   });
 }
+
 function setAudioLibraryFilterField(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   if (!field) return;
@@ -11428,6 +11562,202 @@ function selectAudioLibraryTrack(actionElement) {
 function selectAudioMixPreset(actionElement) {
   const preset = getAudioMixPresetById(actionElement?.dataset?.presetId);
   audioLibraryUiState.selectedMixPresetId = preset.id;
+}
+
+async function saveAudioMixPresetStore(store) {
+  const normalized = normalizeAudioMixPresetStore(store);
+  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_MIX_PRESETS, normalized);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  return normalized;
+}
+
+async function updateStoredAudioMixPresets(mutator) {
+  const current = getStoredAudioMixPresetStore();
+  const next = normalizeAudioMixPresetStore(typeof mutator === "function" ? (mutator(foundry.utils.deepClone(current)) ?? current) : current);
+  await saveAudioMixPresetStore(next);
+  if (!getAllAudioMixPresets().some((preset) => preset.id === audioLibraryUiState.selectedMixPresetId)) {
+    audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
+  }
+  return next;
+}
+
+function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset()) {
+  const baseLabel = String(seedPreset?.label ?? "Mix").trim() || "Mix";
+  return normalizeAudioMixPresetDefinition({
+    id: `custom-${foundry.utils.randomID()}`,
+    label: `New ${baseLabel} Mix`,
+    description: String(seedPreset?.description ?? "Custom ambient playlist.").trim() || "Custom ambient playlist.",
+    kindFocus: seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0] ?? "music",
+    usageFocus: seedPreset?.usageFocus ?? seedPreset?.preferredUsage?.[0] ?? "general",
+    searchTokens: seedPreset?.searchTokens ?? [],
+    channel: seedPreset?.channel ?? inferAudioMixChannelForKind(seedPreset?.kindFocus ?? seedPreset?.preferredKinds?.[0]),
+    volume: seedPreset?.volume ?? 0.5,
+    fade: seedPreset?.fade ?? 1200,
+    playbackMode: seedPreset?.playbackMode ?? (seedPreset?.repeat ? "repeat" : "single"),
+    trackIds: []
+  }, { isCustom: true });
+}
+
+async function createAudioMixPresetFromSelection() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create Party Operations mix presets.");
+    return null;
+  }
+  const preset = buildCustomAudioMixPresetSeed(getSelectedAudioMixPreset());
+  await updateStoredAudioMixPresets((store) => {
+    store.presets.push(preset);
+    return store;
+  });
+  audioLibraryUiState.selectedMixPresetId = preset.id;
+  setAudioMixStatus(`Created custom preset: ${preset.label}`);
+  return preset;
+}
+
+function getSelectedCustomAudioMixPreset() {
+  const preset = getSelectedAudioMixPreset();
+  return preset?.isCustom ? preset : null;
+}
+
+async function promptAndUpdateSelectedAudioMixPresetField(field) {
+  const preset = getSelectedCustomAudioMixPreset();
+  if (!preset) {
+    ui.notifications?.warn("Select a custom preset to edit it.");
+    return false;
+  }
+
+  const config = {
+    label: {
+      title: "Rename Mix Preset",
+      message: "Preset name",
+      value: preset.label
+    },
+    description: {
+      title: "Edit Mix Description",
+      message: "Preset description",
+      value: preset.description
+    },
+    searchTokens: {
+      title: "Edit Mix Search Tokens",
+      message: "Comma-separated search tokens",
+      value: formatAudioMixPresetSearchTokens(preset.searchTokens)
+    }
+  }[field];
+  if (!config) return false;
+
+  const response = window.prompt(config.message, config.value);
+  if (response === null) return false;
+  const nextValue = field === "searchTokens"
+    ? normalizeAudioMixPresetSearchTokens(response)
+    : String(response ?? "").trim();
+  if ((field === "label" || field === "description") && !nextValue) return false;
+
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      return {
+        ...entry,
+        [field]: nextValue
+      };
+    });
+    return store;
+  });
+  return true;
+}
+
+async function setSelectedAudioMixPresetOption(actionElement) {
+  const preset = getSelectedCustomAudioMixPreset();
+  if (!preset) return false;
+  const field = String(actionElement?.dataset?.field ?? "").trim();
+  const value = actionElement?.value;
+  if (!field) return false;
+
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      const next = { ...entry };
+      if (field === "kindFocus") {
+        next.kindFocus = normalizeAudioLibraryKind(value);
+        next.preferredKinds = next.kindFocus === "all" ? [] : [next.kindFocus];
+        next.channel = inferAudioMixChannelForKind(next.kindFocus);
+      } else if (field === "usageFocus") {
+        next.usageFocus = normalizeAudioLibraryUsage(value);
+        next.preferredUsage = next.usageFocus === "all" ? [] : [next.usageFocus];
+      } else if (field === "playbackMode") {
+        next.playbackMode = normalizeAudioMixPlaybackMode(value);
+        next.repeat = next.playbackMode === "repeat";
+      }
+      return next;
+    });
+    return store;
+  });
+  return true;
+}
+
+async function deleteSelectedAudioMixPreset() {
+  const preset = getSelectedCustomAudioMixPreset();
+  if (!preset) {
+    ui.notifications?.warn("Built-in presets cannot be deleted.");
+    return false;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Delete Mix Preset",
+    content: `<p>Delete <strong>${poEscapeHtml(preset.label)}</strong>?</p>`
+  });
+  if (!confirmed) return false;
+
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.filter((entry) => entry.id !== preset.id);
+    return store;
+  });
+  audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
+  setAudioMixStatus(`Deleted custom preset: ${preset.label}`);
+  return true;
+}
+
+async function addTrackToSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedCustomAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) {
+    ui.notifications?.warn("Select a custom preset before adding tracks.");
+    return false;
+  }
+
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      const nextTrackIds = normalizeAudioMixPresetTrackIds([...(entry.trackIds ?? []), normalizedTrackId]);
+      return {
+        ...entry,
+        trackIds: nextTrackIds
+      };
+    });
+    return store;
+  });
+  return true;
+}
+
+async function addSelectedLibraryTrackToAudioMixPreset() {
+  const trackId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
+  return addTrackToSelectedAudioMixPreset(trackId);
+}
+
+async function removeTrackFromSelectedAudioMixPreset(trackId) {
+  const preset = getSelectedCustomAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+
+  await updateStoredAudioMixPresets((store) => {
+    store.presets = store.presets.map((entry) => {
+      if (entry.id !== preset.id) return entry;
+      return {
+        ...entry,
+        trackIds: normalizeAudioMixPresetTrackIds((entry.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId))
+      };
+    });
+    return store;
+  });
+  return true;
 }
 
 function clearAudioMixStatus() {
@@ -11467,13 +11797,28 @@ function scoreAudioTrackForMixPreset(item, preset) {
   return score;
 }
 
-function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+function buildAudioMixAssignedCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  const trackIds = Array.isArray(preset?.trackIds) ? preset.trackIds : [];
+  return trackIds
+    .map((trackId, index) => {
+      const item = catalog.items.find((entry) => entry.id === trackId);
+      if (!item) return null;
+      return {
+        item,
+        score: Math.max(1, 1000 - index)
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset(), { excludeTrackIds = [] } = {}) {
+  const excluded = new Set(normalizeAudioMixPresetTrackIds(excludeTrackIds));
   const scored = catalog.items
     .map((item) => ({
       item,
       score: scoreAudioTrackForMixPreset(item, preset)
     }))
-    .filter((entry) => entry.score > 0)
+    .filter((entry) => entry.score > 0 && !excluded.has(entry.item.id))
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return left.item.name.localeCompare(right.item.name);
@@ -11481,9 +11826,14 @@ function buildAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) 
   if (scored.length > 0) return scored;
 
   return catalog.items
-    .filter((item) => (preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage))
+    .filter((item) => ((preset.preferredKinds ?? []).includes(item.kind) || (preset.preferredUsage ?? []).includes(item.usage)) && !excluded.has(item.id))
     .map((item) => ({ item, score: 1 }))
     .sort((left, right) => left.item.name.localeCompare(right.item.name));
+}
+
+function getPlayableAudioMixCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  if (preset?.isCustom) return buildAudioMixAssignedCandidates(catalog, preset);
+  return buildAudioMixCandidates(catalog, preset);
 }
 
 function getManagedAudioMixPlaylist() {
@@ -11493,13 +11843,25 @@ function getManagedAudioMixPlaylist() {
     ?? null;
 }
 
-async function ensureManagedAudioMixPlaylist(preset) {
+function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
+  return Boolean(preset?.isCustom) && Number(candidateCount ?? 0) > 1;
+}
+
+function getAudioMixPlaylistMode(preset, candidateCount = 0) {
+  const disabled = CONST?.PLAYLIST_MODES?.DISABLED ?? 0;
+  const sequential = CONST?.PLAYLIST_MODES?.SEQUENTIAL ?? disabled;
+  const shuffle = CONST?.PLAYLIST_MODES?.SHUFFLE ?? sequential;
+  if (!shouldSequenceAudioMixPresetPlayback(preset, candidateCount)) return disabled;
+  return preset?.repeat ? shuffle : sequential;
+}
+
+async function ensureManagedAudioMixPlaylist(preset, candidateCount = 0) {
   const baseData = {
     name: AUDIO_MIX_PLAYLIST_NAME,
     description: `Managed by Party Operations for the ${preset.label} mix preset.`,
-    mode: CONST?.PLAYLIST_MODES?.DISABLED ?? 0,
+    mode: getAudioMixPlaylistMode(preset, candidateCount),
     sorting: CONST?.PLAYLIST_SORT_MODES?.MANUAL ?? 0,
-    channel: preset.channel,
+    channel: normalizeAudioMixChannel(preset.channel),
     fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0))
   };
   let playlist = getManagedAudioMixPlaylist();
@@ -11530,11 +11892,12 @@ async function syncAudioMixPlaylistSounds(playlist, preset, candidates) {
   }
   if (rows.length <= 0) return [];
 
+  const shouldSequence = shouldSequenceAudioMixPresetPlayback(preset, rows.length);
   const sounds = rows.map(({ item, score }, index) => ({
     name: item.name,
     path: item.path,
-    channel: preset.channel,
-    repeat: Boolean(preset.repeat),
+    channel: normalizeAudioMixChannel(preset.channel),
+    repeat: shouldSequence ? false : Boolean(preset.repeat),
     fade: Math.max(0, Math.floor(Number(preset.fade ?? 0) || 0)),
     volume: Math.max(0, Math.min(1, Number(preset.volume ?? 0.5) || 0.5)),
     sort: index * 10,
@@ -11563,6 +11926,32 @@ function getCurrentManagedAudioMixSound(playlist) {
   return sounds.find((sound) => Boolean(sound?.playing)) ?? null;
 }
 
+async function stopManagedAudioMixPlaylist(playlist) {
+  if (!playlist) return false;
+  if (typeof playlist.stopAll === "function") {
+    await playlist.stopAll();
+    return true;
+  }
+  if (typeof playlist.stopAllSounds === "function") {
+    await playlist.stopAllSounds();
+    return true;
+  }
+  return false;
+}
+
+async function playManagedAudioMixSound(playlist, sound) {
+  if (!playlist || !sound) return false;
+  if (typeof playlist.playSound === "function") {
+    await playlist.playSound(sound);
+    return true;
+  }
+  if (typeof sound?.update === "function") {
+    await sound.update({ playing: true });
+    return true;
+  }
+  return false;
+}
+
 async function playAudioMixPresetById(presetId, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
@@ -11570,19 +11959,25 @@ async function playAudioMixPresetById(presetId, options = {}) {
   }
   const preset = getAudioMixPresetById(presetId);
   const catalog = getAudioLibraryCatalog();
-  const candidates = buildAudioMixCandidates(catalog, preset);
+  const candidates = getPlayableAudioMixCandidates(catalog, preset);
   if (candidates.length <= 0) {
-    throw new Error(`No audio tracks matched the ${preset.label} mix.`);
+    throw new Error(preset.isCustom
+      ? `Add tracks to the ${preset.label} mix before playing it.`
+      : `No audio tracks matched the ${preset.label} mix.`);
   }
 
-  const playlist = await ensureManagedAudioMixPlaylist(preset);
+  const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
+  if (!playlist) throw new Error("The managed mix playlist could not be created.");
   const currentSound = getCurrentManagedAudioMixSound(playlist);
-  await playlist.stopAll();
-  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, candidates);
+  await stopManagedAudioMixPlaylist(playlist);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
   const chosenCandidate = preferredTrackId
     ? candidates.find(({ item }) => item.id === preferredTrackId) ?? pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"))
     : pickAudioMixCandidate(candidates, options.excludeTrackId ?? currentSound?.getFlag?.(MODULE_ID, "audioLibraryTrackId"));
+  const orderedCandidates = chosenCandidate
+    ? [chosenCandidate, ...candidates.filter(({ item }) => item.id !== chosenCandidate.item.id)]
+    : candidates;
+  const createdSounds = await syncAudioMixPlaylistSounds(playlist, preset, orderedCandidates);
   const chosenSound = Array.from(createdSounds ?? []).find((sound) => String(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "").trim() === chosenCandidate?.item?.id)
     ?? createdSounds?.[0]
     ?? null;
@@ -11590,7 +11985,12 @@ async function playAudioMixPresetById(presetId, options = {}) {
     throw new Error(`Failed to prepare playback for the ${preset.label} mix.`);
   }
 
-  await playlist.playSound(chosenSound);
+  if (shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && typeof playlist.playAll === "function") {
+    await playlist.playAll();
+  } else {
+    const didPlaySound = await playManagedAudioMixSound(playlist, chosenSound);
+    if (!didPlaySound) throw new Error("The managed mix playlist could not start playback.");
+  }
   await playlist.setFlag(MODULE_ID, "audioMixState", {
     presetId: preset.id,
     activeTrackId: String(chosenCandidate?.item?.id ?? ""),
@@ -11617,7 +12017,7 @@ async function stopAudioMixPlayback() {
   }
   const playlist = getManagedAudioMixPlaylist();
   if (!playlist) return false;
-  await playlist.stopAll();
+  await stopManagedAudioMixPlaylist(playlist);
   await playlist.setFlag(MODULE_ID, "audioMixState", {
     presetId: getSelectedAudioMixPreset().id,
     activeTrackId: "",
@@ -11723,24 +12123,63 @@ function getAudioMixPlaybackState(catalog) {
   };
 }
 
+function buildAudioMixKindFocusOptions(selectedValue = "music") {
+  return Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryKind(selectedValue) === value
+  }));
+}
+
+function buildAudioMixUsageFocusOptions(selectedValue = "general") {
+  return Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioLibraryUsage(selectedValue) === value
+  }));
+}
+
+function buildAudioMixPlaybackModeOptions(selectedValue = "repeat") {
+  return Object.entries(AUDIO_MIX_PLAYBACK_MODE_LABELS).map(([value, label]) => ({
+    value,
+    label,
+    selected: normalizeAudioMixPlaybackMode(selectedValue) === value
+  }));
+}
+
 function buildAudioMixContext(catalog) {
   const selectedPreset = getSelectedAudioMixPreset();
-  const candidates = buildAudioMixCandidates(catalog, selectedPreset);
+  const assignedCandidates = buildAudioMixAssignedCandidates(catalog, selectedPreset);
+  const suggestedCandidates = buildAudioMixCandidates(catalog, selectedPreset, {
+    excludeTrackIds: assignedCandidates.map(({ item }) => item.id)
+  });
+  const candidates = selectedPreset.isCustom ? assignedCandidates : suggestedCandidates;
   const playback = getAudioMixPlaybackState(catalog);
+  const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
   return {
     status: audioLibraryUiState.mixStatus,
     hasStatus: Boolean(audioLibraryUiState.mixStatus),
     selectedPresetId: selectedPreset.id,
-    presets: AUDIO_MIX_PRESETS.map((preset) => ({
+    presets: getAllAudioMixPresets().map((preset) => ({
       id: preset.id,
       label: preset.label,
       description: preset.description,
+      isCustom: Boolean(preset.isCustom),
       selected: preset.id === selectedPreset.id,
-      candidateCount: buildAudioMixCandidates(catalog, preset).length
+      candidateCount: preset.isCustom ? buildAudioMixAssignedCandidates(catalog, preset).length : buildAudioMixCandidates(catalog, preset).length,
+      playbackModeLabel: getAudioMixPlaybackModeLabel(preset.playbackMode)
     })),
     selectedPreset: {
       ...selectedPreset,
-      candidateCount: candidates.length
+      candidateCount: candidates.length,
+      assignedCount: assignedCandidates.length,
+      suggestedCount: suggestedCandidates.length,
+      channelLabel: getAudioMixChannelLabel(selectedPreset.channel),
+      playbackModeLabel: getAudioMixPlaybackModeLabel(selectedPreset.playbackMode),
+      kindFocusLabel: getAudioLibraryKindLabel(selectedPreset.kindFocus),
+      usageFocusLabel: getAudioLibraryUsageLabel(selectedPreset.usageFocus),
+      searchTokensLabel: formatAudioMixPresetSearchTokens(selectedPreset.searchTokens),
+      canDelete: Boolean(selectedPreset.isCustom)
     },
     candidates: candidates.slice(0, 14).map(({ item, score }) => ({
       id: item.id,
@@ -11752,7 +12191,37 @@ function buildAudioMixContext(catalog) {
       usageLabel: getAudioLibraryUsageLabel(item.usage),
       selected: item.id === playback?.activeTrack?.id
     })),
+    assignedTracks: assignedCandidates.slice(0, 20).map(({ item, score }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      score,
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage),
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    hasAssignedTracks: assignedCandidates.length > 0,
+    suggestedTracks: suggestedCandidates.slice(0, 20).map(({ item, score }) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      subcategory: item.subcategory,
+      score,
+      kindLabel: getAudioLibraryKindLabel(item.kind),
+      usageLabel: getAudioLibraryUsageLabel(item.usage),
+      selected: item.id === playback?.activeTrack?.id
+    })),
+    hasSuggestedTracks: suggestedCandidates.length > 0,
     hasCandidates: candidates.length > 0,
+    editor: {
+      canEdit: Boolean(selectedPreset.isCustom),
+      hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
+      selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
+      kindOptions: buildAudioMixKindFocusOptions(selectedPreset.kindFocus),
+      usageOptions: buildAudioMixUsageFocusOptions(selectedPreset.usageFocus),
+      playbackOptions: buildAudioMixPlaybackModeOptions(selectedPreset.playbackMode)
+    },
     playback: {
       ...playback,
       hasActiveTrack: Boolean(playback.activeTrack),
@@ -35277,7 +35746,11 @@ function buildPartyOperationsApi() {
       getCatalog: () => foundry.utils.deepClone(getAudioLibraryCatalog()),
       scan: (options = {}) => scanAudioLibraryCatalog(options),
       clear: () => clearAudioLibraryCatalog(),
-      getMixPresets: () => foundry.utils.deepClone(AUDIO_MIX_PRESETS),
+      getMixPresets: () => foundry.utils.deepClone(getAllAudioMixPresets()),
+      createMixPreset: () => createAudioMixPresetFromSelection(),
+      deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
+      addTrackToSelectedMixPreset: (trackId) => addTrackToSelectedAudioMixPreset(trackId),
+      removeTrackFromSelectedMixPreset: (trackId) => removeTrackFromSelectedAudioMixPreset(trackId),
       playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
       stopMix: () => stopAudioMixPlayback(),
       pick: ({ kind = "all", usage = "all", search = "" } = {}) => {
@@ -35949,7 +36422,8 @@ export function onPartyOperationsInit() {
     buildDefaultOperationsLedger,
     buildDefaultInjuryRecoveryState,
     buildDefaultLootSourceConfig,
-    buildDefaultAudioLibraryCatalog
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioMixPresetStore
   });
   syncAudioLibraryDraftFromSettings();
   registerPartyOpsFeatureSettings({
