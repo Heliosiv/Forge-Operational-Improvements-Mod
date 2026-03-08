@@ -16834,7 +16834,20 @@ function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountO
       const baseItems = Math.max(1, Math.min(8, Math.round(creatures * 0.6)));
       const adjusted = Math.round((baseItems + challengeBonus) * scaleModifier * profileModifier);
       const budgetSafetyCap = Math.max(1, Math.round(Math.max(1, Number(encounterTargetGp) || 1) / 15));
-      return Math.max(1, Math.min(24, Math.max(1, Math.min(adjusted, budgetSafetyCap))));
+      const budgetDrivenFloor = Math.max(
+        1,
+        Math.min(
+          24,
+          Math.ceil(Math.max(0, Number(encounterTargetGp) || 0) / 125)
+        )
+      );
+      return Math.max(
+        1,
+        Math.min(
+          24,
+          Math.max(1, Math.min(Math.max(adjusted, budgetDrivenFloor), budgetSafetyCap))
+        )
+      );
     }
 
     if (mode === "defeated") {
