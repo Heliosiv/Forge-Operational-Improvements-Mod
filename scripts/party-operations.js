@@ -17801,10 +17801,33 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   const typeWeight = Math.max(0, Number(getLootBuilderItemTypeWeight(state?.draft ?? {}, entry?.itemType) || 0));
   const distance = Math.abs(value - desiredNextValue) / Math.max(1, desiredNextValue);
   const closenessWeight = 1 / (1 + (phase === "fill" ? distance * 1.1 : distance * 1.85));
+  const budgetDrivenWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext);
+  const projectedTotalGp = selectedTotalValueGp + value;
+  const rangeMinGp = Math.max(0, Number(
+    budgetContext?.itemTargetValueRangeMinGp
+      ?? budgetContext?.selectionRangeMinGp
+      ?? budgetContext?.targetValueRangeMinGp
+      ?? 0
+  ) || 0);
+  const rangeMaxGp = Math.max(rangeMinGp, Number(
+    budgetContext?.itemTargetValueRangeMaxGp
+      ?? budgetContext?.selectionRangeMaxGp
+      ?? budgetContext?.targetValueRangeMaxGp
+      ?? 0
+  ) || 0);
+  const projectedWithinRange = rangeMaxGp > 0 && projectedTotalGp >= rangeMinGp && projectedTotalGp <= rangeMaxGp;
+  const progressRatio = rangeMinGp > 0
+    ? Math.max(0, Math.min(1.25, projectedTotalGp / Math.max(1, rangeMinGp)))
+    : Math.max(0, Math.min(1.25, projectedTotalGp / Math.max(1, targetTotal)));
   const cheapFillBoost = phase === "fill" && value <= remaining
     ? 1 + Math.min(0.85, (remaining - value) / Math.max(1, remaining))
     : 1;
-  const budgetWeight = Math.max(0.000001, closenessWeight * cheapFillBoost);
+  let budgetWeight = Math.max(0.000001, ((closenessWeight * 0.2) + (budgetDrivenWeight * 0.8)) * cheapFillBoost);
+  if (phase === "spend" && projectedWithinRange) {
+    budgetWeight *= 2.2;
+  } else if (phase === "spend" && rangeMinGp > 0 && projectedTotalGp < rangeMinGp) {
+    budgetWeight *= 0.5 + progressRatio;
+  }
   const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
   return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight;
 }
