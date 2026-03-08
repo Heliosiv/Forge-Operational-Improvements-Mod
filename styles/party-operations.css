@@ -1211,38 +1211,83 @@
   margin-bottom: var(--po-space-1);
 }
 
+.party-operations .po-loot-claim-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+
 .party-operations .po-loot-claim-card {
-  gap: var(--po-space-1);
-  padding: var(--po-space-2) var(--po-space-3);
+  gap: 8px;
+  padding: 10px;
 }
 
-.party-operations .po-loot-claim-card .po-op-role-head {
-  align-items: flex-start;
+.party-operations .po-loot-claim-card-head {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
 }
 
-.party-operations .po-loot-claim-card .po-op-role-name {
+.party-operations .po-loot-claim-thumb {
+  width: 58px;
+  height: 58px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 50%, var(--po-border));
+  box-shadow: 0 10px 18px color-mix(in srgb, black 18%, transparent);
+}
+
+.party-operations .po-loot-claim-copy {
+  min-width: 0;
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.party-operations .po-loot-claim-name-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.party-operations .po-loot-claim-name-row .po-op-role-name {
   line-height: 1.2;
 }
 
-.party-operations .po-loot-claim-card .po-op-role-status {
+.party-operations .po-loot-claim-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.party-operations .po-loot-claim-card .po-op-role-status,
+.party-operations .po-loot-claim-side .po-op-role-status {
   font-size: 0.74rem;
+  text-align: right;
 }
 
 .party-operations .po-loot-claim-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--po-space-1);
+  align-items: center;
+  gap: 4px;
 }
 
 .party-operations .po-loot-claim-vouched-row {
   display: grid;
-  grid-template-columns: minmax(84px, auto) minmax(0, 1fr);
+  grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
   align-items: start;
-  gap: var(--po-space-1) var(--po-space-2);
+  gap: 4px 8px;
 }
 
 .party-operations .po-loot-claim-vouched-label {
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--po-muted);
   padding-top: 2px;
@@ -1267,17 +1312,57 @@
 
 .party-operations .po-loot-claim-major-toggle {
   margin: 0;
+  justify-self: flex-end;
 }
 
 .party-operations .po-loot-claim-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
-  gap: var(--po-space-1);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border) 72%, transparent);
 }
 
 .party-operations .po-loot-claim-actions .po-btn {
   width: 100%;
   margin: 0;
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
+.party-operations .po-window[data-tool="gm-loot-claims-board"] {
+  --po-layout-max: clamp(1100px, 95vw, 1560px);
+}
+
+@media (min-width: 1500px) {
+  .party-operations .po-loot-claim-items-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 980px) {
+  .party-operations .po-loot-claim-items-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-loot-claim-card-head {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .party-operations .po-loot-claim-side {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 760px) {
+  .party-operations .po-loot-claim-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1100px) {

@@ -6290,8 +6290,9 @@ function normalizeLootPreviewDraft(input = {}) {
   const scale = String(input?.scale ?? "medium").trim().toLowerCase();
   const creaturesRaw = parseLootPreviewNumericInput(input?.creatures ?? input?.actorCount, 1);
   const creatures = Number.isFinite(creaturesRaw) ? Math.max(1, Math.min(100, Math.floor(creaturesRaw))) : 1;
-  const currencyScalarRaw = parseLootPreviewNumericInput(input?.currencyScalar, 100);
-  const itemScalarRaw = parseLootPreviewNumericInput(input?.itemScalar, 100);
+  const distributionMixRaw = parseLootPreviewNumericInput(input?.distributionMix, NaN);
+  const currencyScalarRaw = parseLootPreviewNumericInput(input?.currencyScalar, NaN);
+  const itemScalarRaw = parseLootPreviewNumericInput(input?.itemScalar, NaN);
   const tableScalarRaw = parseLootPreviewNumericInput(input?.tableScalar, 100);
   const valueBudgetScalarRaw = parseLootPreviewNumericInput(input?.valueBudgetScalar, LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
   const valueStrictnessRaw = parseLootPreviewNumericInput(input?.valueStrictness, LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
@@ -6300,8 +6301,16 @@ function normalizeLootPreviewDraft(input = {}) {
   const deterministic = shouldUseDeterministicLootRng(input);
   const seed = String(input?.seed ?? "").trim();
   const dateBucket = String(input?.dateBucket ?? "").trim();
-  const currencyScalar = Number.isFinite(currencyScalarRaw) ? Math.max(25, Math.min(300, Math.floor(currencyScalarRaw))) : 100;
-  const itemScalar = Number.isFinite(itemScalarRaw) ? Math.max(25, Math.min(300, Math.floor(itemScalarRaw))) : 100;
+  const fallbackDistributionMix = (() => {
+    const legacyItem = Number.isFinite(itemScalarRaw) ? Math.max(1, Number(itemScalarRaw)) : 100;
+    const legacyCurrency = Number.isFinite(currencyScalarRaw) ? Math.max(1, Number(currencyScalarRaw)) : 100;
+    return Math.round((legacyItem / Math.max(1, legacyItem + legacyCurrency)) * 100);
+  })();
+  const distributionMix = Number.isFinite(distributionMixRaw)
+    ? Math.max(0, Math.min(100, Math.floor(distributionMixRaw)))
+    : fallbackDistributionMix;
+  const itemScalar = Math.max(25, Math.min(300, Math.round(25 + (distributionMix * 2.75))));
+  const currencyScalar = Math.max(25, Math.min(300, Math.round(25 + ((100 - distributionMix) * 2.75))));
   const tableScalar = Number.isFinite(tableScalarRaw) ? Math.max(25, Math.min(300, Math.floor(tableScalarRaw))) : 100;
   const valueBudgetScalar = Number.isFinite(valueBudgetScalarRaw)
     ? Math.max(25, Math.min(300, Math.floor(valueBudgetScalarRaw)))
@@ -6326,6 +6335,7 @@ function normalizeLootPreviewDraft(input = {}) {
     scale: scaleAllowed.has(scale) ? scale : "medium",
     creatures,
     actorCount: creatures,
+    distributionMix,
     currencyScalar,
     itemScalar,
     tableScalar,
@@ -7200,7 +7210,12 @@ function buildOperationsContextFallback() {
           candidateCount: 0,
           itemCountGenerated: 0,
           itemCountTarget: 0,
-          tableRollCount: 0
+          tableRollCount: 0,
+          finalItemsValueGp: 0,
+          finalCurrencyValueGp: 0,
+          finalCombinedValueGp: 0,
+          itemDeltaGp: 0,
+          deltaGp: 0
         },
         items: [],
         tableRolls: [],
@@ -9459,7 +9474,17 @@ function buildGmLootPageContext() {
     generatedAtLabel: "-",
     generatedBy: "-",
     currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0, formula: "-" },
-    stats: { candidateCount: 0, itemCountGenerated: 0, itemCountTarget: 0, tableRollCount: 0 },
+    stats: {
+      candidateCount: 0,
+      itemCountGenerated: 0,
+      itemCountTarget: 0,
+      tableRollCount: 0,
+      finalItemsValueGp: 0,
+      finalCurrencyValueGp: 0,
+      finalCombinedValueGp: 0,
+      itemDeltaGp: 0,
+      deltaGp: 0
+    },
     items: [],
     tableRolls: [],
     warnings: []
@@ -12893,6 +12918,88 @@ function getManagedAudioMixPlaylist() {
     ?? null;
 }
 
+function isManagedAudioMixPlaylist(playlist) {
+  if (!playlist) return false;
+  if (playlist.getFlag?.(MODULE_ID, "managedAudioMixboard")) return true;
+  return String(playlist?.name ?? "").trim() === AUDIO_MIX_PLAYLIST_NAME;
+}
+
+function getManagedAudioMixTrackIdFromPlaylistSound(sound) {
+  return normalizeAudioLibraryRootPath(sound?.getFlag?.(MODULE_ID, "audioLibraryTrackId") ?? "");
+}
+
+function getManagedAudioMixPlayingSound(playlist = getManagedAudioMixPlaylist(), preferredSoundId = "") {
+  const sounds = Array.from(playlist?.sounds?.contents ?? []);
+  const normalizedPreferredId = String(preferredSoundId ?? "").trim();
+  return sounds.find((sound) => Boolean(sound?.playing) && String(sound?.id ?? "").trim() === normalizedPreferredId)
+    ?? sounds.find((sound) => Boolean(sound?.playing))
+    ?? null;
+}
+
+async function syncManagedAudioMixStateFromPlaylist(playlist = getManagedAudioMixPlaylist(), options = {}) {
+  if (!game.user?.isGM || !playlist) return null;
+  const priorState = options?.priorState ?? getAudioMixStateFlag(playlist);
+  const preferredSoundId = String(options?.playlistSoundId ?? priorState.playlistSoundId ?? "").trim();
+  const activeSound = getManagedAudioMixPlayingSound(playlist, preferredSoundId);
+  const shouldRefresh = options?.refresh === true;
+  const fallbackPreset = getAudioMixPresetById(priorState.presetId || options?.presetId || getSelectedAudioMixPreset().id);
+
+  if (!activeSound) {
+    const nextState = await setAudioMixStateFlag(playlist, {
+      ...priorState,
+      presetId: String(priorState.presetId ?? fallbackPreset?.id ?? "").trim(),
+      activeTrackId: "",
+      activeTrackName: "",
+      activeTrackPath: "",
+      playlistSoundId: "",
+      playbackId: options?.preservePlaybackId ? String(priorState.playbackId ?? "").trim() : "",
+      isPlaying: false,
+      startedAt: 0,
+      updatedAt: Date.now()
+    });
+    if (shouldRefresh) {
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+      emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    }
+    return nextState;
+  }
+
+  const activeSoundId = String(activeSound?.id ?? "").trim();
+  const activeTrackId = getManagedAudioMixTrackIdFromPlaylistSound(activeSound)
+    || normalizeAudioLibraryRootPath(activeSound?.path ?? "")
+    || String(priorState.activeTrackId ?? "").trim();
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(priorState.queueTrackIds ?? []);
+  const currentIndex = queueTrackIds.indexOf(activeTrackId);
+  const isSameActiveSound = Boolean(priorState.isPlaying) && String(priorState.playlistSoundId ?? "").trim() === activeSoundId;
+  const nextState = await setAudioMixStateFlag(playlist, {
+    ...priorState,
+    presetId: String(activeSound?.getFlag?.(MODULE_ID, "mixPresetId") ?? options?.presetId ?? priorState.presetId ?? fallbackPreset?.id ?? "").trim(),
+    activeTrackId,
+    activeTrackName: String(activeSound?.name ?? priorState.activeTrackName ?? "").trim(),
+    activeTrackPath: normalizeAudioLibraryRootPath(activeSound?.path ?? priorState.activeTrackPath ?? ""),
+    playlistSoundId: activeSoundId,
+    playbackId: isSameActiveSound
+      ? (String(priorState.playbackId ?? "").trim() || foundry.utils.randomID())
+      : (String(options?.playbackId ?? "").trim() || foundry.utils.randomID()),
+    currentIndex: currentIndex >= 0
+      ? currentIndex
+      : Math.max(0, Math.floor(Number(options?.currentIndex ?? priorState.currentIndex ?? 0) || 0)),
+    volume: normalizeAudioMixVolume(activeSound?.volume ?? priorState.volume ?? fallbackPreset?.volume ?? 0.5),
+    channel: normalizeAudioMixChannel(activeSound?.channel ?? priorState.channel ?? fallbackPreset?.channel),
+    fade: Math.max(0, Math.floor(Number(activeSound?.fade ?? priorState.fade ?? fallbackPreset?.fade ?? 0) || 0)),
+    isPlaying: true,
+    startedAt: isSameActiveSound
+      ? Math.max(0, Number(priorState.startedAt ?? 0) || 0)
+      : Math.max(0, Number(options?.startedAt ?? Date.now()) || Date.now()),
+    updatedAt: Date.now()
+  });
+  if (shouldRefresh) {
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  }
+  return nextState;
+}
+
 function hideManagedAudioMixPlaylistUi(root = document) {
   const playlist = getManagedAudioMixPlaylist();
   const playlistId = String(playlist?.id ?? "").trim();
@@ -13220,11 +13327,8 @@ async function applyAudioMixSocketMessage(message, options = {}) {
   const allowOrigin = options?.allowOrigin === true;
   const originUserId = String(message?.originUserId ?? "").trim();
   if (!allowOrigin && originUserId && originUserId === String(game.user?.id ?? "").trim()) return true;
-  const command = String(message?.command ?? "").trim().toLowerCase();
-  if (command === AUDIO_MIX_SOCKET_COMMANDS.PLAY) return startLocalManagedAudioMixPlayback(message);
-  if (command === AUDIO_MIX_SOCKET_COMMANDS.STOP) return stopLocalManagedAudioMixPlayback({ fade: message?.fade });
-  if (command === AUDIO_MIX_SOCKET_COMMANDS.VOLUME) return setLocalManagedAudioMixPlaybackVolume(message);
-  return false;
+  await stopLocalManagedAudioMixPlayback({ fade: Math.max(0, Math.floor(Number(message?.fade ?? 0) || 0)) });
+  return true;
 }
 
 async function dispatchAudioMixSocketMessage(command, payload = {}) {
@@ -13241,31 +13345,12 @@ async function dispatchAudioMixSocketMessage(command, payload = {}) {
 }
 
 async function syncManagedAudioMixPlaybackForCurrentUser() {
+  await stopLocalManagedAudioMixPlayback({ fade: 0 });
   const playlist = getManagedAudioMixPlaylist();
-  const mixState = getAudioMixStateFlag(playlist);
-  if (!mixState.isPlaying || !mixState.playbackId) {
-    await stopLocalManagedAudioMixPlayback({ fade: 0 });
-    return false;
-  }
-  if (managedAudioMixLocalState.playbackId === mixState.playbackId && managedAudioMixLocalState.sound?.playing) return true;
-  return startLocalManagedAudioMixPlayback({
-    type: AUDIO_MIX_SOCKET_TYPE,
-    command: AUDIO_MIX_SOCKET_COMMANDS.PLAY,
-    originUserId: "",
-    playbackId: mixState.playbackId,
-    playlistId: String(playlist?.id ?? "").trim(),
-    playlistSoundId: mixState.playlistSoundId,
-    presetId: mixState.presetId,
-    trackId: mixState.activeTrackId,
-    trackPath: mixState.activeTrackPath,
-    volume: mixState.volume,
-    fade: mixState.fade,
-    loop: normalizeAudioMixPresetTrackIds(mixState.queueTrackIds).length <= 1 && getAudioMixPresetById(mixState.presetId).repeat,
-    startedAt: mixState.startedAt
-  });
+  return Boolean(getAudioMixStateFlag(playlist).isPlaying);
 }
 
-function queueManagedAudioMixPlaybackResync(delayMs = 60) {
+function queueManagedAudioMixPlaybackResync(delayMs = 60, options = {}) {
   if (managedAudioMixResyncTimerId) {
     window.clearTimeout(managedAudioMixResyncTimerId);
     managedAudioMixResyncTimerId = null;
@@ -13273,6 +13358,11 @@ function queueManagedAudioMixPlaybackResync(delayMs = 60) {
   managedAudioMixResyncTimerId = window.setTimeout(() => {
     managedAudioMixResyncTimerId = null;
     void syncManagedAudioMixPlaybackForCurrentUser();
+    if (game.user?.isGM && options?.syncState !== false) {
+      void syncManagedAudioMixStateFromPlaylist(options?.playlist ?? getManagedAudioMixPlaylist(), {
+        refresh: options?.refresh === true
+      });
+    }
   }, Math.max(0, Math.floor(Number(delayMs ?? 60) || 60)));
 }
 
@@ -13311,7 +13401,6 @@ async function playAudioMixPresetById(presetId, options = {}) {
 
   const queueTrackIds = orderedCandidates.map(({ item }) => item.id);
   const currentIndex = Math.max(0, queueTrackIds.indexOf(String(chosenCandidate?.item?.id ?? "").trim()));
-  const shouldLoopTrack = !shouldSequenceAudioMixPresetPlayback(preset, createdSounds?.length ?? 0) && Boolean(preset.repeat);
   const playbackId = foundry.utils.randomID();
   const nextState = await setAudioMixStateFlag(playlist, {
     presetId: preset.id,
@@ -13329,17 +13418,20 @@ async function playAudioMixPresetById(presetId, options = {}) {
     startedAt: Date.now(),
     updatedAt: Date.now()
   });
-  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.PLAY, {
-    playbackId,
-    playlistId: String(playlist.id ?? ""),
+  if (typeof playlist.playSound === "function") {
+    await playlist.playSound(chosenSound);
+  } else if (chosenSound?.id) {
+    await playlist.updateEmbeddedDocuments("PlaylistSound", [{
+      _id: String(chosenSound.id),
+      playing: true
+    }]);
+  }
+  await syncManagedAudioMixStateFromPlaylist(playlist, {
+    priorState: nextState,
     playlistSoundId: String(chosenSound?.id ?? ""),
     presetId: preset.id,
-    trackId: String(chosenCandidate?.item?.id ?? ""),
-    trackPath: String(chosenCandidate?.item?.path ?? chosenSound.path ?? ""),
-    volume: nextState?.volume ?? preset.volume,
-    channel: nextState?.channel ?? preset.channel,
-    fade: nextState?.fade ?? preset.fade,
-    loop: shouldLoopTrack,
+    playbackId,
+    currentIndex,
     startedAt: nextState?.startedAt ?? Date.now()
   });
   audioLibraryUiState.selectedMixPresetId = preset.id;
@@ -13379,10 +13471,7 @@ async function stopAudioMixPlayback(options = {}) {
       updatedAt: Date.now()
     });
   }
-  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.STOP, {
-    playbackId: priorState.playbackId,
-    fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0))
-  });
+  await stopLocalManagedAudioMixPlayback({ fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0)) });
   setAudioMixStatus(String(options?.statusMessage ?? "Mix playback stopped."));
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
@@ -13397,14 +13486,28 @@ async function syncLiveAudioMixPresetVolume(preset = getSelectedAudioMixPreset()
   const nextState = await setAudioMixStateFlag(playlist, {
     ...mixState,
     volume: normalizeAudioMixVolume(preset?.volume ?? mixState.volume),
+    channel: normalizeAudioMixChannel(preset?.channel ?? mixState.channel),
     fade: Math.max(0, Math.floor(Number(preset?.fade ?? mixState.fade ?? 0) || 0)),
     updatedAt: Date.now()
   });
-  await dispatchAudioMixSocketMessage(AUDIO_MIX_SOCKET_COMMANDS.VOLUME, {
-    playbackId: nextState.playbackId,
-    volume: nextState.volume,
-    fade: Math.min(220, nextState.fade)
+  await playlist.update({
+    channel: nextState.channel,
+    fade: nextState.fade
   });
+  const soundUpdates = Array.from(playlist?.sounds?.contents ?? [])
+    .map((sound) => ({
+      _id: String(sound?.id ?? "").trim(),
+      volume: nextState.volume,
+      channel: nextState.channel,
+      fade: nextState.fade
+    }))
+    .filter((update) => update._id);
+  if (soundUpdates.length > 0) {
+    await playlist.updateEmbeddedDocuments("PlaylistSound", soundUpdates);
+  }
+  await stopLocalManagedAudioMixPlayback({ fade: 0 });
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
   return true;
 }
 
@@ -16610,6 +16713,64 @@ function resolveTolerance(encounterTargetGp = 0, strictnessInput = LOOT_PREVIEW_
   }
 }
 
+function resolveLootBudgetShareContext(draft = {}, totalTargetGp = 0) {
+  try {
+    const mixRaw = Number(draft?.distributionMix ?? NaN);
+    const hasMix = Number.isFinite(mixRaw);
+    const itemScalarRaw = Number(draft?.itemScalar ?? 100);
+    const currencyScalarRaw = Number(draft?.currencyScalar ?? 100);
+    const distributionMix = hasMix
+      ? Math.max(0, Math.min(100, Math.floor(mixRaw)))
+      : Math.round((
+        (Number.isFinite(itemScalarRaw) ? Math.max(1, itemScalarRaw) : 100)
+        / Math.max(
+          1,
+          (Number.isFinite(itemScalarRaw) ? Math.max(1, itemScalarRaw) : 100)
+          + (Number.isFinite(currencyScalarRaw) ? Math.max(1, currencyScalarRaw) : 100)
+        )
+      ) * 100);
+    const itemWeight = Math.max(0, distributionMix);
+    const currencyWeight = Math.max(0, 100 - distributionMix);
+    const totalWeight = Math.max(1, itemWeight + currencyWeight);
+    const safeTargetGp = Math.max(0, Number(totalTargetGp) || 0);
+    const itemRatio = itemWeight / totalWeight;
+    const currencyRatio = currencyWeight / totalWeight;
+    const targetItemBudgetGp = Number((safeTargetGp * itemRatio).toFixed(2));
+    const targetCurrencyBudgetGp = Number((safeTargetGp - targetItemBudgetGp).toFixed(2));
+    return {
+      itemWeight,
+      currencyWeight,
+      distributionMix,
+      totalWeight,
+      itemRatio,
+      currencyRatio,
+      itemPercent: Math.max(0, Math.round(itemRatio * 100)),
+      currencyPercent: Math.max(0, Math.round(currencyRatio * 100)),
+      targetItemBudgetGp,
+      targetCurrencyBudgetGp
+    };
+  } catch (error) {
+    logLootBuilderFailure("resolveLootBudgetShareContext", error, {
+      distributionMix: draft?.distributionMix,
+      itemScalar: draft?.itemScalar,
+      currencyScalar: draft?.currencyScalar,
+      totalTargetGp
+    });
+    return {
+      itemWeight: 100,
+      currencyWeight: 100,
+      distributionMix: 50,
+      totalWeight: 200,
+      itemRatio: 0.5,
+      currencyRatio: 0.5,
+      itemPercent: 50,
+      currencyPercent: 50,
+      targetItemBudgetGp: Math.max(0, Number(totalTargetGp) || 0) / 2,
+      targetCurrencyBudgetGp: Math.max(0, Number(totalTargetGp) || 0) / 2
+    };
+  }
+}
+
 function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountOverride = 0) {
   try {
     const manualTargetCount = Math.max(0, Math.floor(Number(targetCountOverride) || 0));
@@ -16620,25 +16781,24 @@ function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountO
     const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
     const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
     const creatures = Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1);
-    const itemScale = Math.max(0.5, Math.min(2.5, Number(draft?.itemScalar ?? 100) / 100));
     const scaleModifier = scale === "small" ? 0.9 : scale === "major" ? 1.2 : 1;
     const profileModifier = profile === "poor" ? 0.88 : profile === "well" ? 1.12 : 1;
     const challengeBonus = challenge === "low" ? 0 : challenge === "mid" ? 1 : challenge === "high" ? 2 : 3;
 
     if (mode === "encounter") {
       const baseItems = Math.max(1, Math.min(8, Math.round(creatures * 0.6)));
-      const adjusted = Math.round((baseItems + challengeBonus) * scaleModifier * profileModifier * itemScale);
+      const adjusted = Math.round((baseItems + challengeBonus) * scaleModifier * profileModifier);
       const budgetSafetyCap = Math.max(1, Math.round(Math.max(1, Number(encounterTargetGp) || 1) / 15));
       return Math.max(1, Math.min(24, Math.max(1, Math.min(adjusted, budgetSafetyCap))));
     }
 
     if (mode === "defeated") {
       const base = challenge === "low" ? 0 : challenge === "mid" ? 1 : challenge === "high" ? 2 : 3;
-      return Math.max(0, Math.min(16, Math.round(base * scaleModifier * profileModifier * itemScale)));
+      return Math.max(0, Math.min(16, Math.round(base * scaleModifier * profileModifier)));
     }
 
     const base = challenge === "low" ? 3 : challenge === "mid" ? 5 : challenge === "high" ? 8 : 12;
-    const adjusted = Math.round(base * scaleModifier * profileModifier * itemScale);
+    const adjusted = Math.round(base * scaleModifier * profileModifier);
     return Math.max(1, Math.min(60, adjusted));
   } catch (error) {
     logLootBuilderFailure("resolveDesiredItemCount", error, {
@@ -16665,13 +16825,14 @@ function resolveLootSelectionSeed(draft = {}, budgetContext = {}) {
     String(draft?.scale ?? "medium"),
     String(draft?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
     String(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
-    String(draft?.itemScalar ?? 100),
+    String(draft?.distributionMix ?? 50),
     String(draft?.tableScalar ?? 100),
-    String(draft?.currencyScalar ?? 100),
     String(draft?.targetItemsValueGp ?? 0),
     String(draft?.maxItemValueGp ?? 0),
     String(draft?.creatures ?? draft?.actorCount ?? 1),
-    String(budgetContext?.effectiveTotalTargetGp ?? 0)
+    String(budgetContext?.effectiveTotalTargetGp ?? 0),
+    String(budgetContext?.targetItemBudgetGp ?? 0),
+    String(budgetContext?.targetCurrencyBudgetGp ?? 0)
   ];
   if (dateBucket) parts.push(dateBucket);
   return parts.join("|");
@@ -16700,8 +16861,10 @@ function buildLootRandomContext(draft = {}, budgetContext = {}) {
 function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
   try {
     const target = resolveTargetGP(draft);
+    const share = resolveLootBudgetShareContext(draft, target.effectiveTotalTargetGp);
     const tolerance = resolveTolerance(target.effectiveTotalTargetGp, draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
-    const desiredItemCount = Math.max(1, resolveDesiredItemCount(draft, target.effectiveTotalTargetGp, targetCount));
+    const itemTolerance = resolveTolerance(share.targetItemBudgetGp, draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+    const desiredItemCount = Math.max(1, resolveDesiredItemCount(draft, share.targetItemBudgetGp, targetCount));
     const challenge = String(target.challenge ?? "mid").trim().toLowerCase();
     const profile = String(target.profile ?? "standard").trim().toLowerCase();
     const scale = String(target.scale ?? "medium").trim().toLowerCase();
@@ -16715,13 +16878,13 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
     const autoCapBase = Number(autoCapBaseTable[challenge] ?? autoCapBaseTable.mid);
     const profileCapMod = profile === "poor" ? 0.75 : profile === "well" ? 1.2 : 1;
     const scaleCapMod = scale === "small" ? 0.85 : scale === "major" ? 1.3 : 1;
-    const targetCapFloor = Math.max(25, target.effectiveTotalTargetGp * (0.8 + tolerance.ratio));
+    const targetCapFloor = Math.max(25, share.targetItemBudgetGp * (0.8 + itemTolerance.ratio));
     const autoMaxItemValueGp = Math.max(
       targetCapFloor,
       Number((autoCapBase * profileCapMod * scaleCapMod * Math.sqrt(Math.max(0.25, target.budgetScalar))).toFixed(2))
     );
     const effectiveMaxItemValueGp = manualMaxItemValueGp > 0 ? manualMaxItemValueGp : autoMaxItemValueGp;
-    const targetPerItemGp = Math.max(0.5, Number((target.effectiveTotalTargetGp / Math.max(1, desiredItemCount)).toFixed(2)));
+    const targetPerItemGp = Math.max(0.5, Number((share.targetItemBudgetGp / Math.max(1, desiredItemCount)).toFixed(2)));
     const maxItems = Math.max(desiredItemCount, Math.min(80, Math.ceil(desiredItemCount * (1.4 + tolerance.ratio))));
     const valueStrictnessRaw = Number(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
     const valueStrictness = Number.isFinite(valueStrictnessRaw)
@@ -16736,6 +16899,11 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       maxItems,
       targetPerItemGp,
       totalBudgetGp: target.effectiveTotalTargetGp,
+      targetItemBudgetGp: share.targetItemBudgetGp,
+      targetCurrencyBudgetGp: share.targetCurrencyBudgetGp,
+      distributionMix: share.distributionMix,
+      itemSharePercent: share.itemPercent,
+      currencySharePercent: share.currencyPercent,
       autoTotalTargetGp: target.autoTotalTargetGp,
       manualTotalTargetGp: target.manualTotalTargetGp,
       effectiveTotalTargetGp: target.effectiveTotalTargetGp,
@@ -16743,6 +16911,9 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       targetValueRangeMaxGp: tolerance.maxGp,
       toleranceGp: tolerance.toleranceGp,
       tolerancePercent: tolerance.percent,
+      itemTargetValueRangeMinGp: itemTolerance.minGp,
+      itemTargetValueRangeMaxGp: itemTolerance.maxGp,
+      itemToleranceGp: itemTolerance.toleranceGp,
       strictnessBandKey: tolerance.bandKey,
       strictnessBandLabel: tolerance.bandLabel,
       autoMaxItemValueGp,
@@ -16768,6 +16939,11 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       maxItems: 1,
       targetPerItemGp: 1,
       totalBudgetGp: 1,
+      targetItemBudgetGp: 0.5,
+      targetCurrencyBudgetGp: 0.5,
+      distributionMix: 50,
+      itemSharePercent: 50,
+      currencySharePercent: 50,
       autoTotalTargetGp: 1,
       manualTotalTargetGp: 0,
       effectiveTotalTargetGp: 1,
@@ -16775,6 +16951,9 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       targetValueRangeMaxGp: 2,
       toleranceGp: 1,
       tolerancePercent: 20,
+      itemTargetValueRangeMinGp: 0,
+      itemTargetValueRangeMaxGp: 1,
+      itemToleranceGp: 1,
       strictnessBandKey: "normal",
       strictnessBandLabel: "Normal",
       autoMaxItemValueGp: 25,
@@ -16793,7 +16972,13 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
   const targetCount = Math.max(1, Math.floor(Number(budgetContext?.targetCount ?? (selectedCount + 1)) || (selectedCount + 1)));
   const picksUsed = Math.max(0, Math.floor(Number(selectedCount) || 0));
   const remainingPicks = Math.max(1, targetCount - picksUsed);
-  const totalBudgetGp = Math.max(0.5, Number(budgetContext?.totalBudgetGp ?? budgetContext?.targetPerItemGp ?? 0.5) || 0.5);
+  const totalBudgetGp = Math.max(0.5, Number(
+    budgetContext?.targetItemBudgetGp
+      ?? budgetContext?.selectionBudgetGp
+      ?? budgetContext?.totalBudgetGp
+      ?? budgetContext?.targetPerItemGp
+      ?? 0.5
+  ) || 0.5);
   const consumedBudgetGp = Math.max(0, Number(selectedTotalValueGp) || 0);
   const remainingBudgetGp = Math.max(0.5, totalBudgetGp - consumedBudgetGp);
   const mode = String(budgetContext?.mode ?? "horde").trim().toLowerCase();
@@ -16833,8 +17018,18 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
     }
   }
 
-  const rangeMinGp = Math.max(0, Number(budgetContext?.targetValueRangeMinGp ?? 0) || 0);
-  const rangeMaxGp = Math.max(rangeMinGp, Number(budgetContext?.targetValueRangeMaxGp ?? 0) || 0);
+  const rangeMinGp = Math.max(0, Number(
+    budgetContext?.itemTargetValueRangeMinGp
+      ?? budgetContext?.selectionRangeMinGp
+      ?? budgetContext?.targetValueRangeMinGp
+      ?? 0
+  ) || 0);
+  const rangeMaxGp = Math.max(rangeMinGp, Number(
+    budgetContext?.itemTargetValueRangeMaxGp
+      ?? budgetContext?.selectionRangeMaxGp
+      ?? budgetContext?.targetValueRangeMaxGp
+      ?? 0
+  ) || 0);
   if (rangeMaxGp > 0) {
     const projectedTotalGp = consumedBudgetGp + value;
     if (projectedTotalGp < rangeMinGp) {
@@ -17252,7 +17447,7 @@ function rollSimpleDiceFormulaDeterministic(formula = "", randomFn = Math.random
   return total;
 }
 
-async function rollLootCurrency(draft = {}, randomContext = null) {
+async function rollLootCurrency(draft = {}, randomContext = null, budgetContext = null, selectedItemsValueGp = 0) {
   const profile = getLootCurrencyProfile(draft);
   const random = randomContext?.random ?? Math.random;
   let rollTotal = 0;
@@ -17269,25 +17464,72 @@ async function rollLootCurrency(draft = {}, randomContext = null) {
     rollTotal = Number(roll?.total ?? 0);
   }
   const modeFactor = 1;
-  const scaled = (Math.max(0, rollTotal) + Math.max(0, Number(profile.bonus ?? 0)))
+  const rolledBaseGp = (Math.max(0, rollTotal) + Math.max(0, Number(profile.bonus ?? 0)))
     * getLootScaleMultiplier(String(draft.scale ?? "medium"))
     * getLootProfileMultiplier(String(draft.profile ?? "standard"))
     * modeFactor;
-  const currencyScale = Math.max(0.25, Math.min(3, Number(draft.currencyScalar ?? 100) / 100));
-  const gpEquivalent = Math.max(0, Number((scaled * currencyScale).toFixed(2)));
+  const resolvedBudgetContext = (budgetContext && typeof budgetContext === "object") ? budgetContext : null;
+  const resolvedSelectedItemsValueGp = Math.max(0, Number(selectedItemsValueGp) || 0);
+  const targetCurrencyGp = Math.max(0, Number(
+    resolvedBudgetContext?.effectiveTotalTargetGp
+      ? Math.max(0, Number(resolvedBudgetContext.effectiveTotalTargetGp) - resolvedSelectedItemsValueGp)
+      : (resolvedBudgetContext?.targetCurrencyBudgetGp ?? rolledBaseGp)
+  ) || 0);
+  const gpEquivalent = Math.max(0, Number(targetCurrencyGp.toFixed(2)));
+  const adjusted = Math.abs(gpEquivalent - Number(rolledBaseGp.toFixed(2))) > 0.01;
   return {
-    formula: `${profile.dice} + ${profile.bonus}`,
+    formula: adjusted ? `${profile.dice} + ${profile.bonus} (target-adjusted)` : `${profile.dice} + ${profile.bonus}`,
     rolled: Math.max(0, Math.floor(rollTotal)),
     modeFactor,
     scaleMultiplier: getLootScaleMultiplier(String(draft.scale ?? "medium")),
     profileMultiplier: getLootProfileMultiplier(String(draft.profile ?? "standard")),
+    rolledGpEquivalent: Math.max(0, Number(rolledBaseGp.toFixed(2))),
+    targetGpEquivalent: gpEquivalent,
+    adjustedToTarget: adjusted,
     ...convertGpToCurrency(gpEquivalent)
   };
 }
 
 function getLootItemCount(draft = {}) {
-  const target = resolveTargetGP(draft);
-  return resolveDesiredItemCount(draft, target.effectiveTotalTargetGp, 0);
+  const budgetContext = buildLootValueBudgetContext(draft, 0);
+  return Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1);
+}
+
+function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
+  const items = Array.isArray(result?.items) ? result.items : [];
+  const currencyGpEquivalent = getLootPreviewCurrencyGpEquivalent(result?.currency ?? {});
+  const finalItemsValueGp = Number(items.reduce((sum, entry) => {
+    return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  }, 0).toFixed(2));
+  const finalCurrencyValueGp = Number(currencyGpEquivalent.toFixed(2));
+  const finalCombinedValueGp = Number((finalItemsValueGp + finalCurrencyValueGp).toFixed(2));
+  const encounterTargetGp = Number(
+    result?.stats?.encounterTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? budgetContext?.totalBudgetGp
+      ?? 0
+  );
+  const itemTargetGp = Number(
+    result?.stats?.itemTargetGp
+      ?? budgetContext?.targetItemBudgetGp
+      ?? 0
+  );
+  const currencyTargetGp = Number(
+    result?.stats?.currencyTargetGp
+      ?? budgetContext?.targetCurrencyBudgetGp
+      ?? Math.max(0, encounterTargetGp - itemTargetGp)
+  );
+  return {
+    encounterTargetGp: Number.isFinite(encounterTargetGp) ? Number(encounterTargetGp.toFixed(2)) : 0,
+    itemTargetGp: Number.isFinite(itemTargetGp) ? Number(itemTargetGp.toFixed(2)) : 0,
+    currencyTargetGp: Number.isFinite(currencyTargetGp) ? Number(currencyTargetGp.toFixed(2)) : 0,
+    finalItemsValueGp,
+    finalCurrencyValueGp,
+    finalCombinedValueGp,
+    itemDeltaGp: Number((finalItemsValueGp - (Number.isFinite(itemTargetGp) ? itemTargetGp : 0)).toFixed(2)),
+    currencyDeltaGp: Number((finalCurrencyValueGp - (Number.isFinite(currencyTargetGp) ? currencyTargetGp : 0)).toFixed(2)),
+    deltaGp: Number((finalCombinedValueGp - (Number.isFinite(encounterTargetGp) ? encounterTargetGp : 0)).toFixed(2))
+  };
 }
 
 async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
@@ -17381,8 +17623,8 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   const budgetContext = state?.budgetContext ?? {};
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
   const selectedCount = Math.max(0, Number(state?.selected?.length ?? 0) || 0);
-  const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
-  const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+  const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+  const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
   const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
   const remainingSlots = Math.max(1, Number(budgetContext?.targetCount ?? 1) - selectedCount);
   const desiredNextValue = Math.max(0.5, remaining / remainingSlots);
@@ -17444,8 +17686,8 @@ function commitLootBudgetPick(state = {}, picked = null) {
 function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
   const budgetContext = state?.budgetContext ?? {};
   const effectiveCapGp = Math.max(0, Number(budgetContext?.effectiveMaxItemValueGp ?? 0) || 0);
-  const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
-  const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+  const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+  const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
   const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
   const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
@@ -17475,8 +17717,8 @@ function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
 function spendBudgetLoop(state = {}) {
   try {
     const budgetContext = state?.budgetContext ?? {};
-    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
-    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
     let safety = 0;
     while (safety < 600) {
@@ -17524,8 +17766,8 @@ function spendBudgetLoop(state = {}) {
 function fillPass(state = {}) {
   try {
     const budgetContext = state?.budgetContext ?? {};
-    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
-    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
     let safety = 0;
     while (safety < 400) {
@@ -17573,8 +17815,8 @@ function fillPass(state = {}) {
 function trimPass(state = {}) {
   try {
     const budgetContext = state?.budgetContext ?? {};
-    const targetTotal = Math.max(1, Number(budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
-    const toleranceGp = Math.max(1, Number(budgetContext?.toleranceGp ?? 1) || 1);
+    const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+    const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     let safety = 0;
     while (safety < 200) {
       safety += 1;
@@ -17731,15 +17973,20 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
     trimPass(state);
 
     const finalTotalValueGp = Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0);
-    const targetTotalValueGp = Math.max(0, Number(budgetContext?.effectiveTotalTargetGp ?? 0) || 0);
+    const targetTotalValueGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 0) || 0);
     const deltaGp = Number((finalTotalValueGp - targetTotalValueGp).toFixed(2));
     const meta = {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
       desiredItemCount: Math.max(0, Number(budgetContext?.targetCount ?? targetCount) || 0),
       maxItems: Math.max(0, Number(state.maxItems ?? 0) || 0),
-      encounterTargetGp: targetTotalValueGp,
+      encounterTargetGp: Math.max(0, Number(budgetContext?.effectiveTotalTargetGp ?? targetTotalValueGp) || 0),
+      itemTargetGp: targetTotalValueGp,
+      currencyTargetGp: Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0),
       finalItemsValueGp: Number(finalTotalValueGp.toFixed(2)),
+      finalCurrencyValueGp: 0,
+      finalCombinedValueGp: Number(finalTotalValueGp.toFixed(2)),
+      itemDeltaGp: deltaGp,
       deltaGp,
       toleranceGp: Math.max(0, Number(budgetContext?.toleranceGp ?? 0) || 0),
       tolerancePercent: Math.max(0, Number(budgetContext?.tolerancePercent ?? 0) || 0),
@@ -17937,7 +18184,6 @@ async function generateLootPreviewPayload(draftInput = {}) {
     const warnings = [];
     const previewBudgetContext = buildLootValueBudgetContext(draft, 0);
     const randomContext = buildLootRandomContext(draft, previewBudgetContext);
-    const currency = await rollLootCurrency(draft, randomContext);
     const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
     const desiredItemCount = previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
     const itemCountTarget = Math.max(1, Number(desiredItemCount));
@@ -17953,14 +18199,22 @@ async function generateLootPreviewPayload(draftInput = {}) {
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       ...entry
     }));
+    const itemTotals = calculateLootPreviewValueTotals({ items, currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 } }, previewBudgetContext);
+    const currency = await rollLootCurrency(draft, randomContext, previewBudgetContext, itemTotals.finalItemsValueGp);
     const generatedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
+    const valueTotals = calculateLootPreviewValueTotals({ items, currency }, previewBudgetContext);
     const resolvedSelectionMeta = selectionMeta ?? {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
       desiredItemCount: itemCountTarget,
       maxItems: Math.max(itemCountTarget, Number(previewBudgetContext?.maxItems ?? itemCountTarget) || itemCountTarget),
       encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
-      finalItemsValueGp: Number(items.reduce((sum, entry) => sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0), 0).toFixed(2)),
+      itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
+      currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+      finalItemsValueGp: valueTotals.finalItemsValueGp,
+      finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
+      finalCombinedValueGp: valueTotals.finalCombinedValueGp,
+      itemDeltaGp: valueTotals.itemDeltaGp,
       deltaGp: 0,
       toleranceGp: Number(previewBudgetContext?.toleranceGp ?? 0),
       tolerancePercent: Number(previewBudgetContext?.tolerancePercent ?? 0),
@@ -17969,7 +18223,11 @@ async function generateLootPreviewPayload(draftInput = {}) {
       candidateCount: candidates.length,
       diagnostics: []
     };
-    resolvedSelectionMeta.deltaGp = Number((resolvedSelectionMeta.finalItemsValueGp - resolvedSelectionMeta.encounterTargetGp).toFixed(2));
+    resolvedSelectionMeta.finalItemsValueGp = valueTotals.finalItemsValueGp;
+    resolvedSelectionMeta.finalCurrencyValueGp = valueTotals.finalCurrencyValueGp;
+    resolvedSelectionMeta.finalCombinedValueGp = valueTotals.finalCombinedValueGp;
+    resolvedSelectionMeta.itemDeltaGp = valueTotals.itemDeltaGp;
+    resolvedSelectionMeta.deltaGp = valueTotals.deltaGp;
     const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings, randomContext);
     if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
     const seenDiagnostics = new Set();
@@ -17990,6 +18248,9 @@ async function generateLootPreviewPayload(draftInput = {}) {
       strictnessToleranceGp: resolvedSelectionMeta.toleranceGp,
       candidateCount: candidates.length,
       finalItemsValueGp: resolvedSelectionMeta.finalItemsValueGp,
+      finalCurrencyValueGp: resolvedSelectionMeta.finalCurrencyValueGp,
+      finalCombinedValueGp: resolvedSelectionMeta.finalCombinedValueGp,
+      itemDeltaGp: resolvedSelectionMeta.itemDeltaGp,
       deltaGp: resolvedSelectionMeta.deltaGp,
       deterministic: resolvedSelectionMeta.deterministic,
       seed: resolvedSelectionMeta.seed
@@ -18012,7 +18273,12 @@ async function generateLootPreviewPayload(draftInput = {}) {
         desiredItemCount: Math.max(0, Number(resolvedSelectionMeta.desiredItemCount ?? itemCountTarget) || itemCountTarget),
         maxItems: Math.max(0, Number(resolvedSelectionMeta.maxItems ?? itemCountTarget) || itemCountTarget),
         encounterTargetGp: Number(resolvedSelectionMeta.encounterTargetGp ?? 0),
+        itemTargetGp: Number(resolvedSelectionMeta.itemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+        currencyTargetGp: Number(resolvedSelectionMeta.currencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
         finalItemsValueGp: Number(resolvedSelectionMeta.finalItemsValueGp ?? 0),
+        finalCurrencyValueGp: Number(resolvedSelectionMeta.finalCurrencyValueGp ?? 0),
+        finalCombinedValueGp: Number(resolvedSelectionMeta.finalCombinedValueGp ?? 0),
+        itemDeltaGp: Number(resolvedSelectionMeta.itemDeltaGp ?? 0),
         deltaGp: Number(resolvedSelectionMeta.deltaGp ?? 0),
         strictnessToleranceGp: Number(resolvedSelectionMeta.toleranceGp ?? 0),
         strictnessTolerancePercent: Number(resolvedSelectionMeta.tolerancePercent ?? 0),
@@ -18050,7 +18316,12 @@ async function generateLootPreviewPayload(draftInput = {}) {
         desiredItemCount: 0,
         maxItems: 0,
         encounterTargetGp: 0,
+        itemTargetGp: 0,
+        currencyTargetGp: 0,
         finalItemsValueGp: 0,
+        finalCurrencyValueGp: 0,
+        finalCombinedValueGp: 0,
+        itemDeltaGp: 0,
         deltaGp: 0,
         strictnessToleranceGp: 0,
         strictnessTolerancePercent: 0,
@@ -18174,10 +18445,12 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
       profile: String(input?.profile ?? "standard"),
       scale: String(input?.scale ?? "medium"),
       creatures,
+      distributionMix: Number(input?.distributionMix ?? NaN),
       valueBudgetScalar: Number(input?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
       valueStrictness: Number(input?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
       maxItemValueGp: Number(input?.maxItemValueGp ?? 0),
       targetItemsValueGp: Number(input?.targetItemsValueGp ?? 0),
+      currencyScalar: Number(input?.currencyScalar ?? 100),
       itemScalar: Number(input?.itemScalar ?? 100),
       deterministic: shouldUseDeterministicLootRng(input),
       seed: String(input?.seed ?? "").trim(),
@@ -18238,6 +18511,7 @@ function buildLootPreviewContext() {
   const scale = String(draft.scale ?? "medium");
   const itemCountTarget = getLootItemCount(draft);
   const valueBudgetContext = buildLootValueBudgetContext(draft, itemCountTarget);
+  const displayTotals = calculateLootPreviewValueTotals(result, valueBudgetContext);
   const generatedAt = Number(result?.generatedAt ?? 0);
   const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
   return {
@@ -18249,6 +18523,10 @@ function buildLootPreviewContext() {
     budget: {
       targetPerItemGp: Number(valueBudgetContext.targetPerItemGp ?? 0),
       totalBudgetGp: Number(valueBudgetContext.totalBudgetGp ?? 0),
+      targetItemBudgetGp: Number(valueBudgetContext.targetItemBudgetGp ?? 0),
+      targetCurrencyBudgetGp: Number(valueBudgetContext.targetCurrencyBudgetGp ?? 0),
+      itemSharePercent: Number(valueBudgetContext.itemSharePercent ?? 0),
+      currencySharePercent: Number(valueBudgetContext.currencySharePercent ?? 0),
       autoTotalTargetGp: Number(valueBudgetContext.autoTotalTargetGp ?? 0),
       manualTotalTargetGp: Number(valueBudgetContext.manualTotalTargetGp ?? 0),
       effectiveTotalTargetGp: Number(valueBudgetContext.effectiveTotalTargetGp ?? 0),
@@ -18285,9 +18563,14 @@ function buildLootPreviewContext() {
       enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0),
       desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
       maxItems: Math.max(0, Number(result?.stats?.maxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
-      encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? valueBudgetContext.effectiveTotalTargetGp ?? 0),
-      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? 0),
-      deltaGp: Number(result?.stats?.deltaGp ?? 0),
+      encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? displayTotals.encounterTargetGp ?? valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      itemTargetGp: Number(result?.stats?.itemTargetGp ?? displayTotals.itemTargetGp ?? valueBudgetContext.targetItemBudgetGp ?? 0),
+      currencyTargetGp: Number(result?.stats?.currencyTargetGp ?? displayTotals.currencyTargetGp ?? valueBudgetContext.targetCurrencyBudgetGp ?? 0),
+      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? displayTotals.finalItemsValueGp ?? 0),
+      finalCurrencyValueGp: Number(result?.stats?.finalCurrencyValueGp ?? displayTotals.finalCurrencyValueGp ?? result?.currency?.gpEquivalent ?? 0),
+      finalCombinedValueGp: Number(result?.stats?.finalCombinedValueGp ?? displayTotals.finalCombinedValueGp ?? 0),
+      itemDeltaGp: Number(result?.stats?.itemDeltaGp ?? displayTotals.itemDeltaGp ?? 0),
+      deltaGp: Number(result?.stats?.deltaGp ?? displayTotals.deltaGp ?? 0),
       strictnessToleranceGp: Number(result?.stats?.strictnessToleranceGp ?? valueBudgetContext.toleranceGp ?? 0),
       strictnessTolerancePercent: Number(result?.stats?.strictnessTolerancePercent ?? valueBudgetContext.tolerancePercent ?? 0),
       strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? valueBudgetContext.strictnessBandLabel ?? "Normal"),
@@ -31597,6 +31880,7 @@ function setLootPreviewField(element) {
   const numericFields = new Set([
     "creatures",
     "actorCount",
+    "distributionMix",
     "currencyScalar",
     "itemScalar",
     "tableScalar",
@@ -31665,8 +31949,7 @@ function readLootPreviewDraftFromUi(element) {
     challenge: readFieldValue("lootPreviewChallenge", "challenge", current?.challenge ?? "mid"),
     scale: readFieldValue("lootPreviewScale", "scale", current?.scale ?? "medium"),
     creatures: readFieldValue("lootPreviewCreatures", "creatures", current?.creatures ?? 1),
-    currencyScalar: readFieldValue("lootPreviewCurrencyScalar", "currencyScalar", current?.currencyScalar ?? 100),
-    itemScalar: readFieldValue("lootPreviewItemScalar", "itemScalar", current?.itemScalar ?? 100),
+    distributionMix: readFieldValue("lootPreviewDistributionMix", "distributionMix", current?.distributionMix ?? 50),
     tableScalar: readFieldValue("lootPreviewTableScalar", "tableScalar", current?.tableScalar ?? 100),
     valueBudgetScalar: readFieldValue("lootPreviewValueBudgetScalar", "valueBudgetScalar", current?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
     valueStrictness: readFieldValue("lootPreviewValueStrictness", "valueStrictness", current?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
@@ -31897,6 +32180,14 @@ function buildLootPreviewResultSkeleton() {
       itemCountTarget: 0,
       itemCountGenerated: 0,
       tableRollCount: 0,
+      encounterTargetGp: 0,
+      itemTargetGp: 0,
+      currencyTargetGp: 0,
+      finalItemsValueGp: 0,
+      finalCurrencyValueGp: 0,
+      finalCombinedValueGp: 0,
+      itemDeltaGp: 0,
+      deltaGp: 0,
       enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
       enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length
     },
@@ -31916,11 +32207,6 @@ function refreshLootPreviewResultStats(result) {
   const itemCountGenerated = items.length;
   const tableRollCount = Array.isArray(result?.tableRolls) ? result.tableRolls.length : 0;
   const currentTarget = Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0);
-  const finalItemsValueGp = Number(items.reduce((sum, entry) => {
-    return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
-  }, 0).toFixed(2));
-  const encounterTargetGp = Number(result?.stats?.encounterTargetGp ?? 0);
-  const deltaGp = Number((finalItemsValueGp - (Number.isFinite(encounterTargetGp) ? encounterTargetGp : 0)).toFixed(2));
   const strictnessToleranceGp = Number(
     result?.stats?.strictnessToleranceGp
       ?? result?.stats?.toleranceGp
@@ -31931,6 +32217,7 @@ function refreshLootPreviewResultStats(result) {
       ?? result?.stats?.tolerancePercent
       ?? 0
   );
+  const totals = calculateLootPreviewValueTotals(result);
   result.stats = {
     candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
     itemCountTarget: Math.max(currentTarget, itemCountGenerated),
@@ -31940,9 +32227,14 @@ function refreshLootPreviewResultStats(result) {
     enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
     desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? currentTarget) || 0),
     maxItems: Math.max(0, Number(result?.stats?.maxItems ?? currentTarget) || 0),
-    encounterTargetGp: Number.isFinite(encounterTargetGp) ? encounterTargetGp : 0,
-    finalItemsValueGp,
-    deltaGp,
+    encounterTargetGp: totals.encounterTargetGp,
+    itemTargetGp: totals.itemTargetGp,
+    currencyTargetGp: totals.currencyTargetGp,
+    finalItemsValueGp: totals.finalItemsValueGp,
+    finalCurrencyValueGp: totals.finalCurrencyValueGp,
+    finalCombinedValueGp: totals.finalCombinedValueGp,
+    itemDeltaGp: totals.itemDeltaGp,
+    deltaGp: totals.deltaGp,
     strictnessToleranceGp,
     strictnessTolerancePercent,
     toleranceGp: strictnessToleranceGp,
@@ -32287,6 +32579,7 @@ function adjustLootPreviewCurrency(element) {
   next.currency.gpEquivalent = getLootPreviewCurrencyGpEquivalent(next.currency);
   next.generatedAt = Date.now();
   next.generatedBy = String(game.user?.name ?? "GM");
+  refreshLootPreviewResultStats(next);
   setLootPreviewResult(next);
   return true;
 }
@@ -39287,6 +39580,36 @@ function buildIntegrationHookModule() {
   };
 }
 
+function buildAudioPlaybackHookModule() {
+  return {
+    id: "audio-playback",
+    registrations: [
+      ["updatePlaylistSound", (sound, changed) => {
+        const playlist = sound?.parent ?? null;
+        if (!game.user?.isGM || !isManagedAudioMixPlaylist(playlist)) return;
+        if (!changed || typeof changed !== "object") return;
+        const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")
+          || Object.prototype.hasOwnProperty.call(changed, "volume")
+          || Object.prototype.hasOwnProperty.call(changed, "fade")
+          || Object.prototype.hasOwnProperty.call(changed, "channel")
+          || Object.prototype.hasOwnProperty.call(changed, "path");
+        if (!touchesPlayback) return;
+        queueManagedAudioMixPlaybackResync(80, { playlist, refresh: true });
+      }],
+      ["updatePlaylist", (playlist, changed) => {
+        if (!game.user?.isGM || !isManagedAudioMixPlaylist(playlist)) return;
+        if (!changed || typeof changed !== "object") return;
+        const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")
+          || Object.prototype.hasOwnProperty.call(changed, "mode")
+          || Object.prototype.hasOwnProperty.call(changed, "channel")
+          || Object.prototype.hasOwnProperty.call(changed, "fade");
+        if (!touchesPlayback) return;
+        queueManagedAudioMixPlaybackResync(80, { playlist, refresh: true });
+      }]
+    ]
+  };
+}
+
 function getPartyOpsHookModules() {
   return [
     buildTimeHookModule(),
@@ -39294,7 +39617,8 @@ function getPartyOpsHookModules() {
     buildTokenHookModule(),
     buildInventoryHookModule(),
     buildSettingHookModule(),
-    buildIntegrationHookModule()
+    buildIntegrationHookModule(),
+    buildAudioPlaybackHookModule()
   ];
 }
 

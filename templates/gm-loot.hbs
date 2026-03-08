@@ -59,7 +59,9 @@
               </div>
               <div class="po-loot-builder-status">
                 <span class="po-pill">Target {{preview.budget.desiredItemCount}} items</span>
-                <span class="po-pill">Budget {{preview.budget.totalBudgetGp}} gp</span>
+                <span class="po-pill">Total {{preview.budget.totalBudgetGp}} gp</span>
+                <span class="po-pill">Items {{preview.budget.targetItemBudgetGp}} gp</span>
+                <span class="po-pill">Coin {{preview.budget.targetCurrencyBudgetGp}} gp</span>
                 <span class="po-pill">Cap {{preview.budget.effectiveMaxItemValueGp}} gp</span>
               </div>
             </div>
@@ -79,12 +81,13 @@
 
               <div class="po-loot-control-card">
                 <div class="po-loot-control-card-head">
-                  <div class="po-section-title">Yield + Scaling</div>
-                  <div class="po-op-summary">Push more coins, more items, or more table influence without rewriting source data.</div>
+                  <div class="po-section-title">Distribution</div>
+                  <div class="po-op-summary">Shift the reward mix toward more coin or more items, and control how often bonus tables add extras.</div>
                 </div>
-                <label class="po-resource-row"><span>Currency Scale ({{preview.draft.currencyScalar}}%)</span><input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{preview.draft.currencyScalar}}" /></label>
-                <label class="po-resource-row"><span>Item Count Scale ({{preview.draft.itemScalar}}%)</span><input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{preview.draft.itemScalar}}" /></label>
-                <label class="po-resource-row"><span>Table Roll Scale ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
+                <label class="po-resource-row"><span>Distribution Mix ({{preview.budget.itemSharePercent}}% items / {{preview.budget.currencySharePercent}}% coin)</span><input name="lootPreviewDistributionMix" type="range" min="0" max="100" step="5" class="po-input" data-action="set-loot-preview-field" data-field="distributionMix" value="{{preview.draft.distributionMix}}" /></label>
+                <div class="po-op-summary">Slide left for more coin. Slide right for more items.</div>
+                <label class="po-resource-row"><span>Bonus Table Frequency ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
+                <div class="po-op-summary">Higher values pull more extra roll-table results into the loot build.</div>
                 <div class="po-loot-mini-metrics">
                   <div class="po-loot-mini-metric"><span>Desired</span><strong>{{preview.budget.desiredItemCount}}</strong></div>
                   <div class="po-loot-mini-metric"><span>Max Items</span><strong>{{preview.budget.maxItems}}</strong></div>
@@ -100,7 +103,7 @@
                 <label class="po-resource-row"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
                 <label class="po-resource-row"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
                 <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{preview.draft.maxItemValueGp}}" /></label>
-                <label class="po-resource-row"><span>Target Items Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
+                <label class="po-resource-row"><span>Target Total Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
                 <div class="po-op-summary">Strictness band: {{preview.budget.strictnessBandLabel}}</div>
               </div>
             </div>
@@ -127,7 +130,8 @@
               <div class="po-loot-builder-status">
                 <span class="po-pill">{{preview.stats.itemCountGenerated}} generated</span>
                 <span class="po-pill">{{preview.stats.itemCountTarget}} target</span>
-                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp value</span>
+                <span class="po-pill">{{preview.stats.finalCombinedValueGp}} gp total</span>
+                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp items</span>
               </div>
             </div>
             <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>
@@ -238,13 +242,17 @@
               </div>
             </div>
             <div class="po-loot-sidebar-metrics">
-              <div class="po-loot-sidebar-metric"><span>Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Total Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Item Target</span><strong>{{preview.budget.targetItemBudgetGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Coin Target</span><strong>{{preview.budget.targetCurrencyBudgetGp}} gp</strong></div>
               <div class="po-loot-sidebar-metric"><span>Per Item</span><strong>{{preview.budget.targetPerItemGp}} gp</strong></div>
               <div class="po-loot-sidebar-metric"><span>Cap</span><strong>{{preview.budget.effectiveMaxItemValueGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Total Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
             </div>
             <div class="po-op-summary">Strictness: {{preview.stats.strictnessBandLabel}}</div>
-            <div class="po-op-summary">Value delta: {{preview.stats.deltaGp}} gp</div>
+            <div class="po-op-summary">Combined total: {{preview.stats.finalCombinedValueGp}} gp</div>
+            <div class="po-op-summary">Item delta: {{preview.stats.itemDeltaGp}} gp</div>
+            <div class="po-op-summary">Total delta: {{preview.stats.deltaGp}} gp</div>
           </section>
 
           <section class="po-gm-section po-loot-sidebar-card">
@@ -260,6 +268,7 @@
               <div class="po-loot-currency-pill"><span>SP</span><strong>{{preview.currency.sp}}</strong></div>
               <div class="po-loot-currency-pill"><span>CP</span><strong>{{preview.currency.cp}}</strong></div>
             </div>
+            <div class="po-op-summary">Target: {{preview.budget.targetCurrencyBudgetGp}} gp</div>
             <div class="po-op-summary">Equivalent value: {{preview.currency.gpEquivalent}} gp</div>
             <div class="po-op-summary">Formula: {{preview.currency.formula}}</div>
 
