@@ -345,7 +345,7 @@
               <input id="po-sop-toggle-{{key}}" name="poSopToggle_{{key}}" type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
               <span>{{label}}</span>
             </label>
-            <div class="po-sop-note-grid">
+            <div class="po-sop-note-grid po-sop-note-block" data-sop-note-block="{{key}}">
               <div class="po-sop-note-editor">
                 <label class="po-resource-row po-notes-row-lg">
                   <span>Notes</span>
@@ -356,8 +356,11 @@
                 </div>
               </div>
               <div class="po-sop-note-view">
-                <div class="po-note-label">View Notes</div>
+                <div class="po-note-label">Shared Notes</div>
                 <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}" data-sop-note-view="{{key}}">{{#if note}}{{note}}{{else}}No notes recorded yet.{{/if}}</div>
+                {{#if pendingLocalSync}}
+                <div class="po-note-label">Pending GM sync...</div>
+                {{/if}}
               </div>
               {{#if @root.notesDebugHint}}
               <div class="po-note-label">{{@root.notesDebugHint}}</div>

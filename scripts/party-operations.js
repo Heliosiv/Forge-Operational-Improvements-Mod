@@ -16,7 +16,12 @@ import {
 } from "./features/operations-player-handlers.js";
 import { applyRestRequest, createRestFeatureModule, normalizeSocketRestRequest } from "./features/rest-feature.js";
 import { attachModuleApi } from "./core/api-registry.js";
-import { MODULE_ID, SOCKET_CHANNEL } from "./core/constants.js";
+import {
+  MODULE_ID,
+  PARTY_OPS_MODULE_ID as PRIMARY_MODULE_ID,
+  PARTY_OPS_PREMIUM_MODULE_ID as PREMIUM_MODULE_ID,
+  SOCKET_CHANNEL
+} from "./core/constants.js";
 import { createLogger } from "./core/logger.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
@@ -5423,8 +5428,9 @@ function clearScheduledSopNoteSave(app, sopKey) {
 
 function scheduleOperationalSopNoteSave(app, element) {
   if (!app || !element) return;
-  const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
+  const context = getOperationalSopNoteContextFromElement(element);
+  const sopKey = String(context?.sopKey ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey) || !context?.noteInput) return;
   let timersByKey = sopNoteDebounceTimers.get(app);
   if (!timersByKey) {
     timersByKey = new Map();
@@ -5434,7 +5440,7 @@ function scheduleOperationalSopNoteSave(app, element) {
   if (existing) window.clearTimeout(existing);
   const timer = window.setTimeout(async () => {
     try {
-      await setOperationalSopNote(element, { suppressUiWarning: true });
+      await setOperationalSopNote(context.noteInput, { suppressUiWarning: true });
     } finally {
       clearScheduledSopNoteSave(app, sopKey);
     }
@@ -5443,25 +5449,35 @@ function scheduleOperationalSopNoteSave(app, element) {
 }
 
 function cacheOperationalSopNoteDraftFromElement(element) {
-  const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
-  const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
-  writeSopCachedNoteEntry(sopKey, note, { pendingSync: false });
+  const context = getOperationalSopNoteContextFromElement(element);
+  if (!context?.sopKey) return;
+  writeSopCachedNoteEntry(context.sopKey, context.text, { pendingSync: false });
+}
+
+function getOperationalSopNoteContextFromElement(element) {
+  if (!element) return null;
+  const noteBlock = element?.closest?.(".po-sop-note-block, [data-sop-row]") ?? null;
+  const directTextarea = element?.matches?.("textarea[data-action='set-sop-note'][data-sop]") ? element : null;
+  const scopedTextarea = noteBlock?.querySelector?.("textarea[data-action='set-sop-note'][data-sop]") ?? null;
+  const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
+  const fallbackSopKey = String(element?.dataset?.sop ?? noteBlock?.dataset?.sopRow ?? "").trim();
+  const noteInput = directTextarea
+    ?? scopedTextarea
+    ?? (fallbackSopKey
+      ? root?.querySelector?.(`textarea[data-action='set-sop-note'][data-sop='${fallbackSopKey}']`) ?? null
+      : null);
+  const sopKey = String(noteInput?.dataset?.sop ?? fallbackSopKey).trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return null;
+  return {
+    sopKey,
+    noteInput,
+    root,
+    text: clampSocketText(noteInput?.value, SOCKET_NOTE_MAX_LENGTH)
+  };
 }
 
 function getSopNoteTextareaFromElement(element) {
-  const directTextarea = element?.matches?.("textarea[data-action='set-sop-note']") ? element : null;
-  if (directTextarea) return directTextarea;
-  const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey) return null;
-  const noteBlock = element?.closest?.(".po-sop-note-block");
-  if (noteBlock) {
-    const scoped = noteBlock.querySelector(`textarea[data-action='set-sop-note'][data-sop='${sopKey}']`)
-      ?? noteBlock.querySelector("textarea[data-action='set-sop-note']");
-    if (scoped) return scoped;
-  }
-  const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
-  return root?.querySelector?.(`textarea[data-action='set-sop-note'][data-sop='${sopKey}']`) ?? null;
+  return getOperationalSopNoteContextFromElement(element)?.noteInput ?? null;
 }
 
 function getSopNoteViewElement(root, sopKeyInput) {
@@ -5471,13 +5487,12 @@ function getSopNoteViewElement(root, sopKeyInput) {
 }
 
 function syncOperationalSopNoteViewFromElement(element, noteOverride = null) {
-  const sopKey = String(element?.dataset?.sop ?? "").trim();
-  if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
-  const root = element?.closest?.("#po-ops-sops, .po-window, .window-content, form") ?? document;
-  const viewNode = getSopNoteViewElement(root, sopKey);
+  const context = getOperationalSopNoteContextFromElement(element);
+  const sopKey = String(context?.sopKey ?? "").trim();
+  if (!sopKey) return;
+  const viewNode = getSopNoteViewElement(context?.root ?? document, sopKey);
   if (!viewNode) return;
-  const noteTextarea = getSopNoteTextareaFromElement(element);
-  const rawNote = clampSocketText(noteOverride ?? noteTextarea?.value, SOCKET_NOTE_MAX_LENGTH);
+  const rawNote = clampSocketText(noteOverride ?? context?.text, SOCKET_NOTE_MAX_LENGTH);
   const hasText = rawNote.trim().length > 0;
   viewNode.textContent = hasText ? rawNote : SOP_NOTE_EMPTY_LABEL;
   viewNode.classList.toggle("is-empty", !hasText);
@@ -5934,6 +5949,14 @@ function hydrateCachedNoteDraftInputs(root) {
     const cached = getNoteDraftCacheValue(cacheKey);
     if (cached === "") return;
     if (String(input.value ?? "") !== cached) input.value = cached;
+  });
+
+  root.querySelectorAll("textarea[data-action='set-sop-note'][data-sop]").forEach((input) => {
+    const sopKey = String(input?.dataset?.sop ?? "").trim();
+    if (!sopKey || !SOP_KEYS.includes(sopKey)) return;
+    const cached = readSopCachedNoteEntry(sopKey);
+    if (!cached) return;
+    if (String(input.value ?? "") !== cached.text) input.value = cached.text;
   });
 
   syncOperationalSopNoteViews(root);

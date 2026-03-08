@@ -4708,6 +4708,21 @@
   }
 }
 
+:is(.window-app, .application).party-operations.po-merchant-shop-dialog-app {
+  --po-bg: #34465e;
+  --po-bg-alt: #415876;
+  --po-surface: #4b6689;
+  --po-border: #7189a6;
+  --po-border-strong: #9db4cf;
+  --po-text: #edf4fb;
+  --po-muted: #cbd7e5;
+  --po-accent: #8ec5ff;
+  --po-accent-contrast: #fff7ea;
+  --po-success: #7bcf9d;
+  --po-warn: #e6bd68;
+  --po-danger: #da7f7f;
+}
+
 :is(.window-app, .application).party-operations.po-merchant-shop-dialog-app > .window-content {
   display: flex;
   flex-direction: column;
@@ -4715,8 +4730,9 @@
   min-height: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--po-accent) 14%, transparent), transparent 34%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 88%, transparent), var(--po-bg));
+    radial-gradient(circle at top left, color-mix(in srgb, var(--po-accent) 24%, transparent), transparent 38%),
+    radial-gradient(circle at right 18%, color-mix(in srgb, var(--po-success) 14%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 90%, transparent), var(--po-bg));
 }
 
 .party-operations.po-merchant-shop-dialog-app .dialog-content {
@@ -4729,7 +4745,7 @@
   flex: 0 0 auto;
   padding: 10px 14px 14px;
   border-top: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
-  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
+  background: color-mix(in srgb, var(--po-bg-alt) 94%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .dialog-buttons button {
@@ -4762,8 +4778,8 @@
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-total-card {
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 35%, var(--po-border));
   border-radius: 14px;
-  background: color-mix(in srgb, var(--po-surface) 82%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 10px 30px color-mix(in srgb, black 14%, transparent);
+  background: color-mix(in srgb, var(--po-surface) 90%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent), 0 10px 30px color-mix(in srgb, black 10%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-merchant {
@@ -4772,8 +4788,9 @@
   gap: 12px;
   padding: 14px;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--po-accent) 10%, transparent), transparent 56%),
-    color-mix(in srgb, var(--po-surface) 82%, transparent);
+    linear-gradient(135deg, color-mix(in srgb, var(--po-accent) 18%, transparent), transparent 56%),
+    linear-gradient(180deg, color-mix(in srgb, white 8%, transparent), transparent 40%),
+    color-mix(in srgb, var(--po-surface) 94%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-art {
@@ -4782,7 +4799,7 @@
   border-radius: 18px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--po-accent) 35%, var(--po-border));
-  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
+  background: color-mix(in srgb, var(--po-bg-alt) 94%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-art img {
@@ -4806,7 +4823,7 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--po-accent-contrast) 78%, var(--po-muted));
+  color: color-mix(in srgb, var(--po-accent-contrast) 68%, var(--po-text));
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-title,
@@ -4822,7 +4839,7 @@
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-subtitle {
-  color: color-mix(in srgb, var(--po-accent-contrast) 70%, var(--po-muted));
+  color: color-mix(in srgb, var(--po-accent-contrast) 52%, var(--po-text));
   font-weight: 600;
 }
 
@@ -4854,7 +4871,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--po-muted);
+  color: color-mix(in srgb, var(--po-muted) 82%, var(--po-text));
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stat-card strong,
@@ -4897,7 +4914,7 @@
   padding: 6px 10px;
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
-  background: color-mix(in srgb, var(--po-bg-alt) 76%, transparent);
+  background: color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
   color: var(--po-text);
   font-size: 0.79rem;
   line-height: 1.35;
@@ -4945,6 +4962,7 @@
   gap: 10px;
   padding: 14px 14px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+  background: linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 75%);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-accepted-types {
@@ -4967,8 +4985,10 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: color-mix(in srgb, var(--po-bg-alt) 96%, var(--po-surface));
-  color: color-mix(in srgb, var(--po-accent-contrast) 92%, white 8%);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 8%, transparent), transparent 80%),
+    color-mix(in srgb, var(--po-bg-alt) 96%, var(--po-surface));
+  color: color-mix(in srgb, var(--po-accent-contrast) 78%, var(--po-text));
   font-size: 0.76rem;
   font-weight: 800;
   letter-spacing: 0.05em;
@@ -4976,14 +4996,18 @@
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table tbody tr {
-  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-border-strong) 22%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 78%),
+    color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
   transition: background-color 140ms ease, box-shadow 140ms ease;
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table tbody tr:hover {
-  background: color-mix(in srgb, var(--po-accent) 12%, var(--po-bg-alt));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-accent) 35%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, white 6%, transparent), transparent 76%),
+    color-mix(in srgb, var(--po-accent) 20%, var(--po-bg-alt));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-accent) 40%, var(--po-border));
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table tbody tr[data-item-id] {
@@ -4991,7 +5015,7 @@
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table tbody td {
-  color: color-mix(in srgb, var(--po-accent-contrast) 86%, white 14%);
+  color: var(--po-text);
   font-size: 0.9rem;
   font-weight: 520;
   vertical-align: middle;
@@ -5021,7 +5045,7 @@
   border-radius: 8px;
   object-fit: cover;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
-  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-item span {
@@ -5029,7 +5053,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--po-accent-contrast) 92%, white 8%);
+  color: color-mix(in srgb, var(--po-accent-contrast) 70%, var(--po-text));
   font-weight: 700;
 }
 
@@ -5037,7 +5061,7 @@
   min-width: 70px;
   text-align: center;
   color: var(--po-accent-contrast);
-  background: color-mix(in srgb, var(--po-bg) 78%, var(--po-bg-alt));
+  background: color-mix(in srgb, var(--po-surface) 72%, var(--po-bg-alt));
   border-color: color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
 }
 
