@@ -223,6 +223,9 @@ const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
 const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
+const pendingGatherYieldRequests = new Map();
+const MONKS_REQUEST_RESULT_TIMEOUT_MS = 8000;
+const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
 let integrationSyncInFlight = false;
@@ -1441,10 +1444,11 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-role",
   "toggle-sop",
   "set-resource",
-  "gather-resource-check",
   "run-gather-preset",
   "clear-gather-history",
   "remove-gather-history-entry",
+  "approve-gather-request",
+  "decline-gather-request",
   "set-recon-field",
   "run-recon-check",
   "set-reputation-score",
@@ -2078,6 +2082,47 @@ function isStewardPoolInfinite(pool) {
   return normalizeStewardPoolMode(pool.mode) === STEWARD_POOL_MODES.INFINITE;
 }
 
+function getGatherSelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!canUserManageDowntimeActor(user, actor)) return;
+    unique.set(String(actor.id), actor);
+  };
+
+  if (user.character?.type === "character") addActor(user.character);
+  for (const actor of getOwnedPcActors()) addActor(actor);
+  for (const actor of game.actors?.contents ?? []) addActor(actor);
+
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
+function normalizeGatherRequestPayload(input = {}) {
+  const source = (input && typeof input === "object" && !Array.isArray(input)) ? input : {};
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim(),
+    requesterUserId: String(source.requesterUserId ?? "").trim(),
+    requesterName: String(source.requesterName ?? "").trim(),
+    requestedAt: Number.isFinite(Number(source.requestedAt)) ? Number(source.requestedAt) : Date.now(),
+    resourceType: normalizeGatherResourceType(source.resourceType),
+    environment: normalizeGatherEnvironmentKey(source.environment),
+    gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+    hoursSpent: Math.max(1, Math.floor(Number(source.hoursSpent ?? 4) || 4)),
+    seasonMod: clampGatherModifier(source.seasonMod, 0),
+    weatherMod: clampGatherModifier(source.weatherMod, 0),
+    corruptionMod: clampGatherModifier(source.corruptionMod, 0),
+    isCorruptedRegion: Boolean(source.isCorruptedRegion),
+    hostileTerrain: Boolean(source.hostileTerrain),
+    waterAutoFound: Boolean(source.waterAutoFound),
+    duringTravel: Boolean(source.duringTravel),
+    travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff),
+    applyToLedger: source.applyToLedger !== false
+  };
+}
+
 function ensureOperationalResourceConfig(resources) {
   if (!resources) return;
   const legacyFoodPool = Number(resources.partyRations);
@@ -2100,6 +2145,35 @@ function ensureOperationalResourceConfig(resources) {
   }
   if (!resources.gather) resources.gather = {};
   if (!resources.gather.weatherMods) resources.gather.weatherMods = {};
+  if (!Array.isArray(resources.gather.requests)) resources.gather.requests = [];
+  resources.gather.requests = resources.gather.requests
+    .map((entry) => {
+      const source = (entry && typeof entry === "object") ? entry : {};
+      const requestedAtRaw = Number(source.requestedAt ?? source.timestamp ?? Date.now());
+      const requestedAt = Number.isFinite(requestedAtRaw) ? requestedAtRaw : Date.now();
+      return {
+        id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        actorId: String(source.actorId ?? "").trim(),
+        actorName: String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+        requesterUserId: String(source.requesterUserId ?? "").trim(),
+        requesterName: String(source.requesterName ?? "Player").trim() || "Player",
+        requestedAt,
+        resourceType: normalizeGatherResourceType(source.resourceType),
+        environment: normalizeGatherEnvironmentKey(source.environment),
+        gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+        hoursSpent: Math.max(1, Math.floor(Number(source.hoursSpent ?? 4) || 4)),
+        seasonMod: clampGatherModifier(source.seasonMod, 0),
+        weatherMod: clampGatherModifier(source.weatherMod, 0),
+        corruptionMod: clampGatherModifier(source.corruptionMod, 0),
+        isCorruptedRegion: Boolean(source.isCorruptedRegion),
+        hostileTerrain: Boolean(source.hostileTerrain),
+        waterAutoFound: Boolean(source.waterAutoFound),
+        duringTravel: Boolean(source.duringTravel),
+        travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff),
+        applyToLedger: source.applyToLedger !== false
+      };
+    })
+    .sort((a, b) => Number(b.requestedAt ?? 0) - Number(a.requestedAt ?? 0));
   if (!Array.isArray(resources.gather.history)) resources.gather.history = [];
   resources.gather.history = resources.gather.history
     .map((entry) => {
@@ -2128,7 +2202,13 @@ function ensureOperationalResourceConfig(resources) {
         appliedToLedger: Boolean(source.appliedToLedger),
         inventoryGainSource: String(source.inventoryGainSource ?? "").trim(),
         inventoryGainAmount: Math.max(0, Math.floor(Number(source.inventoryGainAmount ?? 0) || 0)),
-        createdBy: String(source.createdBy ?? "GM").trim() || "GM"
+        createdBy: String(source.createdBy ?? "GM").trim() || "GM",
+        requesterUserId: String(source.requesterUserId ?? "").trim(),
+        requesterName: String(source.requesterName ?? "").trim(),
+        approvedBy: String(source.approvedBy ?? "").trim(),
+        rationDieTotal: Number.isFinite(Number(source.rationDieTotal)) ? clampGatherInteger(source.rationDieTotal, 1, 6, 1) : null,
+        yieldRollSource: String(source.yieldRollSource ?? "").trim(),
+        yieldRolledBy: String(source.yieldRolledBy ?? "").trim()
       };
     })
     .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
@@ -2582,9 +2662,19 @@ function buildGatherHistoryContext(resourcesState = null, options = {}) {
     if (notes.length > 0) detailParts.push(`Notes: ${notes.join(" | ")}`);
     const inventoryGainAmount = Math.max(0, Number(source.inventoryGainAmount ?? 0) || 0);
     const inventoryGainSource = String(source.inventoryGainSource ?? "").trim();
+    const requesterName = String(source.requesterName ?? "").trim();
+    const approvedBy = String(source.approvedBy ?? "").trim();
+    const rationDieTotal = Number(source.rationDieTotal);
+    const yieldRolledBy = String(source.yieldRolledBy ?? "").trim();
     if (inventoryGainAmount > 0) {
       const sourceLabel = inventoryGainSource ? ` (${inventoryGainSource})` : "";
       detailParts.push(`Inventory +${inventoryGainAmount}${sourceLabel}`);
+    }
+    if (requesterName) detailParts.push(`Requested by ${requesterName}`);
+    if (approvedBy) detailParts.push(`Approved by ${approvedBy}`);
+    if (Number.isFinite(rationDieTotal)) {
+      const yieldByLabel = yieldRolledBy ? ` by ${yieldRolledBy}` : "";
+      detailParts.push(`Yield d6 ${Math.max(1, Math.floor(rationDieTotal))}${yieldByLabel}`);
     }
     if (source.appliedToLedger === false && Math.max(0, Number(source.rations ?? 0) || 0) > 0) {
       detailParts.push("Not applied to party pools");
@@ -2735,6 +2825,45 @@ function buildGatherHistoryContext(resourcesState = null, options = {}) {
   };
 }
 
+function buildGatherRequestContext(resourcesState = null, options = {}) {
+  const requests = Array.isArray(resourcesState?.gather?.requests) ? resourcesState.gather.requests : [];
+  const viewer = options?.viewer ?? game.user;
+  const canManage = canAccessAllPlayerOps(viewer);
+  const viewerId = String(viewer?.id ?? "").trim();
+  const rows = requests
+    .filter((entry) => canManage || String(entry?.requesterUserId ?? "").trim() === viewerId)
+    .map((entry) => {
+      const source = normalizeGatherRequestPayload(entry);
+      const requestedAtDate = new Date(Number(source.requestedAt ?? Date.now()));
+      const tagParts = [
+        source.gatherMode === "plant" ? "Plant" : "Standard",
+        source.duringTravel ? "Travel" : null,
+        source.waterAutoFound ? "Obvious Water" : null,
+        source.hostileTerrain ? "Hostile" : null,
+        source.isCorruptedRegion ? "Corrupted" : null
+      ].filter(Boolean);
+      return {
+        ...source,
+        resourceTypeLabel: getGatherResourceTypeLabel(source.resourceType),
+        environmentLabel: GATHER_ENVIRONMENT_LABELS[source.environment] ?? source.environment,
+        requestedAtLabel: Number.isFinite(requestedAtDate.getTime()) ? requestedAtDate.toLocaleString() : "Unknown",
+        summary: `${getGatherResourceTypeLabel(source.resourceType)} - ${GATHER_ENVIRONMENT_LABELS[source.environment] ?? source.environment} - ${Math.max(1, Number(source.hoursSpent ?? 4) || 4)}h`,
+        modifierSummary: `Season ${formatSignedModifier(source.seasonMod) || "0"} | Weather ${formatSignedModifier(source.weatherMod) || "0"} | Corruption ${formatSignedModifier(source.corruptionMod) || "0"}`,
+        tagText: tagParts.join(" | "),
+        hasTags: tagParts.length > 0
+      };
+    })
+    .sort((left, right) => Number(right.requestedAt ?? 0) - Number(left.requestedAt ?? 0));
+
+  return {
+    rows,
+    hasRows: rows.length > 0,
+    count: rows.length,
+    isManager: canManage,
+    emptyMessage: canManage ? "No pending gather requests." : "You have no pending gather requests."
+  };
+}
+
 function getGatherDayKey(timestamp = getCurrentWorldTimestamp()) {
   const api = getSimpleCalendarApi();
   if (isSimpleCalendarActive() && api?.timestampToDate) {
@@ -2875,13 +3004,15 @@ function resolveGatherResourceOutcome(input = {}) {
   let bonusRations = 0;
 
   const waterAutoFound = Boolean(input.waterAutoFound) && resourceType === "water";
+  const hasManualYieldDie = Number.isFinite(Number(input.rationDieTotal));
   if (success) {
-    if (waterAutoFound) {
+    if (waterAutoFound && !hasManualYieldDie) {
       baseRations = 1;
       notes.push("Water auto-found near obvious source.");
     } else {
       rationDieTotal = clampGatherInteger(input.rationDieTotal, 1, 6, 1);
       baseRations = mapGatherRationsFromD6(rationDieTotal);
+      if (waterAutoFound) notes.push("Water auto-found near obvious source; player rolled yield.");
     }
 
     if (Boolean(input.successBy5DoubleEnabled) && successBy >= 5) {
@@ -5038,6 +5169,16 @@ function resetMerchantGmCollectionFilterState() {
   });
   sessionStorage.setItem(getMerchantGmCollectionFilterStorageKey(), JSON.stringify(normalized));
   return normalized;
+}
+
+function hasActiveMerchantGmCollectionFilter(state = {}) {
+  const normalized = normalizeMerchantGmCollectionFilterState(state);
+  return Boolean(
+    normalized.search
+    || normalized.city
+    || normalized.access !== MERCHANT_GM_FILTER_ACCESS_VALUES.ALL
+    || normalized.stock !== MERCHANT_GM_FILTER_STOCK_VALUES.ALL
+  );
 }
 
 function setMerchantGmCollectionFilterStateFromElement(element) {
@@ -7208,6 +7349,7 @@ function buildOperationsContextFallback() {
   }
   const fallbackGatherHistoryView = getGatherHistoryViewState();
   const fallbackGatherPresets = buildGatherPresetContext();
+  const fallbackGatherRequests = buildGatherRequestContext(fallbackResourcesState, { viewer: game.user });
   const fallbackGatherHistory = buildGatherHistoryContext(fallbackResourcesState, { viewState: fallbackGatherHistoryView });
   const fallbackEnvironmentPreset = getEnvironmentPresetByKey(String(ledger.environment?.presetKey ?? "none"));
   const fallbackEnvironmentCheck = getEnvironmentCheckMeta(fallbackEnvironmentPreset);
@@ -7431,6 +7573,8 @@ function buildOperationsContextFallback() {
       gatherWaterCoveredNextUpkeep: fallbackGatherWaterCoveredNextUpkeep,
       gatherPresets: fallbackGatherPresets,
       hasGatherPresets: fallbackGatherPresets.length > 0,
+      gatherRequests: fallbackGatherRequests,
+      hasGatherRequests: fallbackGatherRequests.hasRows,
       gatherHistory: fallbackGatherHistory,
       hasGatherHistory: fallbackGatherHistory.hasRows,
       summary: {
@@ -8389,7 +8533,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           syncOperationalSopNoteViewFromElement(noteInput);
         },
         "set-resource": async () => {
-          await setOperationalResource(element);
+          const result = await setOperationalResource(element);
+          if (result?.rerender) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
         },
         "set-downtime-hours": async () => {
           await setDowntimeHoursGranted(element);
@@ -8478,6 +8625,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "run-gather-preset": async () => {
           await runGatherPresetAction(element);
+        },
+        "approve-gather-request": async () => {
+          await approveGatherRequestAction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "decline-gather-request": async () => {
+          await declineGatherRequestAction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "set-gather-history-filter": async () => {
           setGatherHistoryViewFromElement(element);
@@ -18453,6 +18608,7 @@ function buildDefaultOperationsLedger() {
         },
         foodCoverageDueKey: null,
         waterCoverageDueKey: null,
+        requests: [],
         history: []
       },
       encumbrance: "light",
@@ -19058,6 +19214,7 @@ function buildOperationsContext() {
   const gatherHistoryView = getGatherHistoryViewState();
   const gatherWeatherOptions = getGatherWeatherOptions(resourcesState);
   const gatherPresets = buildGatherPresetContext();
+  const gatherRequests = buildGatherRequestContext(resourcesState, { viewer: game.user });
   const gatherHistory = buildGatherHistoryContext(resourcesState, { viewState: gatherHistoryView });
   const foodDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.foodPerMember * upkeep.foodMultiplier));
   const waterDrainPerDay = Math.max(0, Math.ceil(upkeep.partySize * upkeep.waterPerMember * upkeep.waterMultiplier));
@@ -19339,6 +19496,8 @@ function buildOperationsContext() {
       gatherWaterCoveredNextUpkeep,
       gatherPresets,
       hasGatherPresets: gatherPresets.length > 0,
+      gatherRequests,
+      hasGatherRequests: gatherRequests.hasRows,
       gatherHistory,
       hasGatherHistory: gatherHistory.hasRows,
       summary: {
@@ -21854,9 +22013,9 @@ function buildMerchantGmCollectionCityOptions(definitions = [], selectedCityInpu
     const key = city.toLowerCase();
     if (!cityMap.has(key)) cityMap.set(key, city);
   }
-  if (selectedCity && !cityMap.has(selectedCity.toLowerCase())) cityMap.set(selectedCity.toLowerCase(), selectedCity);
+  const hasSelectedCity = selectedCity && cityMap.has(selectedCity.toLowerCase());
   const options = [
-    { value: "", label: "All Locations", selected: !selectedCity },
+    { value: "", label: "All Locations", selected: !hasSelectedCity },
     ...Array.from(cityMap.values())
       .sort((left, right) => left.localeCompare(right))
       .map((value) => ({
@@ -22078,16 +22237,35 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       accessModeOptions: getMerchantAccessModeOptions(accessMode)
     };
   });
-  const gmCollectionCityOptions = buildMerchantGmCollectionCityOptions(definitionsForDisplay, gmCollectionFilterState.city);
-  const gmCollectionCity = normalizeMerchantSettlementSelection(
+  let gmCollectionCityOptions = buildMerchantGmCollectionCityOptions(definitionsForDisplay, gmCollectionFilterState.city);
+  let gmCollectionCity = normalizeMerchantSettlementSelection(
     gmCollectionCityOptions.find((entry) => entry.selected)?.value ?? ""
   );
-  const gmCollectionFilter = {
+  let gmCollectionFilter = {
     search: normalizeMerchantGmCollectionSearch(gmCollectionFilterState.search),
     city: gmCollectionCity,
     access: normalizeMerchantGmCollectionAccess(gmCollectionFilterState.access),
     stock: normalizeMerchantGmCollectionStock(gmCollectionFilterState.stock)
   };
+  let gmFilteredDefinitions = filterMerchantDefinitionsForGm(definitionsForDisplay, gmCollectionFilter);
+  if (
+    definitionsForDisplay.length > 0
+    && gmFilteredDefinitions.length <= 0
+    && hasActiveMerchantGmCollectionFilter(gmCollectionFilter)
+  ) {
+    const resetFilterState = resetMerchantGmCollectionFilterState();
+    gmCollectionCityOptions = buildMerchantGmCollectionCityOptions(definitionsForDisplay, resetFilterState.city);
+    gmCollectionCity = normalizeMerchantSettlementSelection(
+      gmCollectionCityOptions.find((entry) => entry.selected)?.value ?? ""
+    );
+    gmCollectionFilter = {
+      search: normalizeMerchantGmCollectionSearch(resetFilterState.search),
+      city: gmCollectionCity,
+      access: normalizeMerchantGmCollectionAccess(resetFilterState.access),
+      stock: normalizeMerchantGmCollectionStock(resetFilterState.stock)
+    };
+    gmFilteredDefinitions = filterMerchantDefinitionsForGm(definitionsForDisplay, gmCollectionFilter);
+  }
   const gmCollectionAccessOptions = [
     {
       value: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
@@ -22122,7 +22300,6 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       selected: gmCollectionFilter.stock === MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY
     }
   ];
-  const gmFilteredDefinitions = filterMerchantDefinitionsForGm(definitionsForDisplay, gmCollectionFilter);
   const tradableMerchantCount = definitionsForDisplay.reduce(
     (sum, merchant) => sum + ((merchant?.shopTradable === false) ? 0 : 1),
     0
@@ -26704,10 +26881,10 @@ async function toggleOperationalSOP(element, options = {}) {
 async function setOperationalResource(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can edit resources.");
-    return;
+    return { rerender: false };
   }
   const resourceKey = element?.dataset?.resource;
-  if (!resourceKey) return;
+  if (!resourceKey) return { rerender: false };
   const upkeepNumericKeys = new Set([
     "partySize",
     "foodPerMember",
@@ -26722,6 +26899,7 @@ async function setOperationalResource(element) {
     partyWaterRations: "water",
     torches: "torches"
   };
+  const shouldRerender = resourceKey.startsWith("itemSelectionActor:") || resourceKey.startsWith("itemSelectionItem:");
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -26809,6 +26987,8 @@ async function setOperationalResource(element) {
     const value = Number(element?.value ?? 0);
     ledger.resources[resourceKey] = Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
   });
+
+  return { rerender: shouldRerender };
 }
 
 function normalizeDowntimeSubmission(raw = {}, downtimeState = {}) {
@@ -28569,7 +28749,7 @@ async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) 
         if (response !== undefined) {
           setTimeout(() => {
             if (!settled) settle({ total: null, passed: null, source: "monks", response });
-          }, 180000);
+          }, MONKS_REQUEST_RESULT_TIMEOUT_MS);
           return;
         }
       } catch (error) {
@@ -28626,6 +28806,36 @@ async function addToSelectedInventoryItem(selection, amount) {
     gained,
     added: gained,
     source: `${actor.name} - ${item.name}`
+  };
+}
+
+async function applyGatherInventoryAllocation(resourceType, amount) {
+  const gained = Math.max(0, Math.floor(Number(amount) || 0));
+  const selectionKey = normalizeGatherResourceType(resourceType);
+  if (gained <= 0 || !RESOURCE_TRACK_KEYS.includes(selectionKey)) {
+    return {
+      requested: gained,
+      added: 0,
+      remaining: gained,
+      source: "",
+      hadConfiguredTarget: false
+    };
+  }
+
+  const ledger = getOperationsLedger();
+  const resources = foundry.utils.deepClone(ledger.resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const selection = resources.itemSelections?.[selectionKey] ?? {};
+  const hadConfiguredTarget = Boolean(String(selection.actorId ?? "").trim() && String(selection.itemId ?? "").trim());
+  const inventoryGain = await addToSelectedInventoryItem(selection, gained);
+  const added = Math.max(0, Number(inventoryGain?.added ?? 0) || 0);
+
+  return {
+    requested: gained,
+    added,
+    remaining: Math.max(0, gained - added),
+    source: String(inventoryGain?.source ?? "").trim(),
+    hadConfiguredTarget
   };
 }
 
@@ -28843,15 +29053,34 @@ function buildGatherResourceChatCard(result) {
     const dc = Number(result?.travelConSave?.dc ?? 0);
     saveRows.push(`<p><strong>Travel Save:</strong> CON ${total} vs DC ${dc} (${passed ? "Pass" : "Fail"})</p>`);
   }
+  const appliedLabel = result?.appliedToLedger
+    ? (result?.inventoryGainAmount > 0 && result?.inventoryGainSource
+      ? `Applied to ${String(result.inventoryGainSource)}`
+      : "Applied")
+    : "Preview Only";
+  const requesterRow = String(result?.requesterName ?? "").trim()
+    ? `<p><strong>Requested By:</strong> ${poEscapeHtml(String(result.requesterName))}</p>`
+    : "";
+  const approvedByRow = String(result?.approvedBy ?? "").trim()
+    ? `<p><strong>Approved By:</strong> ${poEscapeHtml(String(result.approvedBy))}</p>`
+    : "";
+  const yieldDieTotal = Number(outcome?.rationDieTotal);
+  const yieldRolledBy = String(result?.yieldRolledBy ?? "").trim();
+  const yieldDieRow = Number.isFinite(yieldDieTotal)
+    ? `<p><strong>Yield D6:</strong> ${Math.max(1, Math.floor(yieldDieTotal))}${yieldRolledBy ? ` (${poEscapeHtml(yieldRolledBy)})` : ""}</p>`
+    : "";
   return `
     <div class="po-chat-card po-chat-card-gather">
       <p><strong>Gather Resources</strong></p>
       <p><strong>Actor:</strong> ${poEscapeHtml(String(result?.actorName ?? "Unknown Actor"))}</p>
+      ${requesterRow}
+      ${approvedByRow}
       <p><strong>Check:</strong> Wisdom (Survival) ${Number(outcome.checkTotal ?? 0)} vs DC ${Number(outcome.dc ?? 0)} (${outcome.success ? "Success" : "Failure"})</p>
       <p><strong>Natural:</strong> ${Number(outcome.natural ?? 0) || "-"}</p>
       <p><strong>Environment:</strong> ${poEscapeHtml(String(result?.environmentLabel ?? "-"))}</p>
       <p><strong>Resource Type:</strong> ${poEscapeHtml(String(outcome.resourceType ?? "food"))}</p>
-      <p><strong>Rations Gained:</strong> ${Number(outcome.finalRations ?? 0)}${result?.appliedToLedger ? " (Applied)" : " (Preview Only)"}</p>
+      ${yieldDieRow}
+      <p><strong>Rations Gained:</strong> ${Number(outcome.finalRations ?? 0)} (${poEscapeHtml(appliedLabel)})</p>
       <p><strong>Flags:</strong> ${poEscapeHtml(flagText)}</p>
       <p><strong>Complications:</strong> ${poEscapeHtml(complicationText)}</p>
       <p><strong>Notes:</strong> ${poEscapeHtml(noteText)}</p>
@@ -28887,7 +29116,13 @@ function buildGatherHistoryEntryFromResult(result = {}) {
     appliedToLedger: Boolean(result?.appliedToLedger),
     inventoryGainSource: String(result?.inventoryGainSource ?? "").trim(),
     inventoryGainAmount: Math.max(0, Number(result?.inventoryGainAmount ?? 0) || 0),
-    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
+    createdBy: String(result?.requesterName ?? game.user?.name ?? "GM").trim() || "GM",
+    requesterUserId: String(result?.requesterUserId ?? "").trim(),
+    requesterName: String(result?.requesterName ?? "").trim(),
+    approvedBy: String(result?.approvedBy ?? "").trim(),
+    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? clampGatherInteger(outcome.rationDieTotal, 1, 6, 1) : null,
+    yieldRollSource: String(result?.yieldRollSource ?? "").trim(),
+    yieldRolledBy: String(result?.yieldRolledBy ?? "").trim()
   };
 }
 
@@ -28921,6 +29156,150 @@ async function ensureGatherHistoryRecorded(result = {}) {
     recorded = true;
   });
   return recorded || duplicate;
+}
+
+function resolvePendingGatherYieldRequest(requestId, payload = {}) {
+  const key = String(requestId ?? "").trim();
+  if (!key) return false;
+  const pending = pendingGatherYieldRequests.get(key);
+  if (!pending) return false;
+  pendingGatherYieldRequests.delete(key);
+  window.clearTimeout(pending.timeoutId);
+  pending.resolve(payload);
+  return true;
+}
+
+async function requestGatherYieldRollFromPlayer(options = {}) {
+  const targetUserId = String(options?.targetUserId ?? "").trim();
+  if (!targetUserId || targetUserId === String(game.user?.id ?? "").trim()) return null;
+  const targetUser = game.users?.get?.(targetUserId) ?? null;
+  if (!targetUser?.active) return null;
+
+  const requestId = foundry.utils.randomID();
+  const timeoutId = window.setTimeout(() => {
+    resolvePendingGatherYieldRequest(requestId, { ok: false, timedOut: true });
+  }, GATHER_YIELD_RESULT_TIMEOUT_MS);
+
+  const responsePromise = new Promise((resolve) => {
+    pendingGatherYieldRequests.set(requestId, { resolve, timeoutId });
+  });
+
+  emitModuleSocket({
+    type: "ops:gather-yield-request",
+    requestId,
+    targetUserId,
+    actorId: String(options?.actorId ?? "").trim(),
+    actorName: String(options?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
+    resourceType: normalizeGatherResourceType(options?.resourceType),
+    gmUserId: String(game.user?.id ?? "").trim(),
+    gmName: String(game.user?.name ?? "GM").trim() || "GM"
+  }, { channel: SOCKET_CHANNEL });
+
+  return responsePromise;
+}
+
+async function promptLocalGatherYieldRoll(message = {}) {
+  const requestId = String(message?.requestId ?? "").trim();
+  const targetUserId = String(message?.targetUserId ?? "").trim();
+  if (!requestId || !targetUserId || targetUserId !== String(game.user?.id ?? "").trim()) return false;
+
+  const actorName = String(message?.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+  const resourceType = normalizeGatherResourceType(message?.resourceType);
+  const resourceLabel = getGatherResourceTypeLabel(resourceType);
+  const gmName = String(message?.gmName ?? "GM").trim() || "GM";
+
+  let settled = false;
+  const sendResponse = (payload = {}) => {
+    if (settled) return;
+    settled = true;
+    emitModuleSocket({
+      type: "ops:gather-yield-response",
+      requestId,
+      gmUserId: String(message?.gmUserId ?? "").trim(),
+      userId: String(game.user?.id ?? "").trim(),
+      userName: String(game.user?.name ?? "Player").trim() || "Player",
+      ...payload
+    }, { channel: SOCKET_CHANNEL });
+  };
+
+  const content = `
+    <div class="po-help">
+      <p><strong>${poEscapeHtml(gmName)}</strong> approved a gather check for <strong>${poEscapeHtml(actorName)}</strong>.</p>
+      <p>Roll <strong>1d6</strong> for the ${poEscapeHtml(resourceLabel.toLowerCase())} yield.</p>
+    </div>
+  `;
+
+  const dialog = new Dialog({
+    title: "Gather Yield",
+    content,
+    buttons: {
+      roll: {
+        label: "Roll 1d6",
+        callback: async () => {
+          const roll = await (new Roll("1d6")).evaluate();
+          sendResponse({
+            ok: true,
+            total: clampGatherInteger(roll.total, 1, 6, 1),
+            formula: "1d6"
+          });
+        }
+      },
+      cancel: {
+        label: "Cancel",
+        callback: () => {
+          sendResponse({ ok: false, cancelled: true });
+        }
+      }
+    },
+    default: "roll",
+    close: () => {
+      sendResponse({ ok: false, cancelled: true });
+    }
+  });
+  dialog.render(true);
+  return true;
+}
+
+async function removeGatherRequestById(requestId) {
+  const targetId = String(requestId ?? "").trim();
+  if (!targetId) return false;
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    const current = Array.isArray(ledger.resources.gather?.requests) ? ledger.resources.gather.requests : [];
+    const next = current.filter((entry) => String(entry?.id ?? "").trim() !== targetId);
+    removed = next.length !== current.length;
+    ledger.resources.gather.requests = next;
+  });
+  return removed;
+}
+
+async function applyPlayerGatherRequest(message, requesterRef = null) {
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const request = normalizeGatherRequestPayload(message?.request);
+  if (!request.actorId) return;
+  const actor = game.actors?.get?.(request.actorId) ?? null;
+  if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
+  request.actorName = String(actor.name ?? request.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+  request.requesterUserId = String(requester.id ?? "").trim();
+  request.requesterName = String(requester.name ?? "Player").trim() || "Player";
+
+  let added = false;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    const current = Array.isArray(ledger.resources.gather?.requests) ? ledger.resources.gather.requests : [];
+    if (current.some((entry) => String(entry?.id ?? "").trim() === request.id)) return;
+    current.unshift(request);
+    ledger.resources.gather.requests = current.slice(0, 100);
+    added = true;
+  });
+
+  if (added) {
+    ui.notifications?.info(`Gather request received from ${request.requesterName} for ${request.actorName}.`);
+  }
 }
 
 async function executeGatherResourcesAction(options = {}) {
@@ -28971,6 +29350,9 @@ async function executeGatherResourcesAction(options = {}) {
   const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase();
   const herbalismAdvantage = Boolean(config.herbalismAdvantageEnabled && gatherMode === "plant" && options?.enableHerbalismAdvantage !== false);
   const rollMode = String(options?.rollMode ?? getGatherRollModeSetting() ?? "prefer-monks");
+  const requesterUserId = String(options?.requesterUserId ?? "").trim();
+  const requesterName = String(options?.requesterName ?? "").trim();
+  const approvedBy = String(options?.approvedBy ?? game.user?.name ?? "GM").trim() || "GM";
   const survival = await rollWisdomSurvival(actor, {
     dc: effectiveDc,
     flavor: "Gather Resources: Wisdom (Survival)",
@@ -28983,11 +29365,37 @@ async function executeGatherResourcesAction(options = {}) {
 
   let rationDieTotal = null;
   let nat20BonusDieTotal = null;
+  let yieldRollSource = "";
+  let yieldRolledBy = "";
   const waterAutoFound = Boolean(config.waterAutoFoundEnabled && options?.waterAutoFound && resourceType === "water");
   const success = checkTotal >= effectiveDc;
-  if (success && !waterAutoFound) {
-    const rationRoll = await (new Roll("1d6")).evaluate();
-    rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
+  if (success) {
+    if (options?.promptYieldRoll === true && requesterUserId) {
+      const yieldResponse = await requestGatherYieldRollFromPlayer({
+        targetUserId: requesterUserId,
+        actorId: actor.id,
+        actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+        resourceType
+      });
+      if (Number.isFinite(Number(yieldResponse?.total))) {
+        rationDieTotal = clampGatherInteger(yieldResponse.total, 1, 6, 1);
+        yieldRollSource = "player";
+        yieldRolledBy = String(yieldResponse?.userName ?? requesterName).trim();
+      } else if (!waterAutoFound) {
+        if (yieldResponse?.timedOut) {
+          ui.notifications?.warn("Gather yield prompt timed out; using GM fallback d6.");
+        }
+        const rationRoll = await (new Roll("1d6")).evaluate();
+        rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
+        yieldRollSource = "gm-fallback";
+        yieldRolledBy = approvedBy;
+      }
+    } else if (!waterAutoFound) {
+      const rationRoll = await (new Roll("1d6")).evaluate();
+      rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
+      yieldRollSource = "system";
+      yieldRolledBy = approvedBy;
+    }
   }
   if (success && config.nat20BonusEnabled && natural === 20) {
     const nat20Roll = await (new Roll("1d4")).evaluate();
@@ -29036,6 +29444,8 @@ async function executeGatherResourcesAction(options = {}) {
     travelTradeoff,
     travelConSavePassed: travelConSave ? Boolean(travelConSave.passed) : true
   });
+  if (success && yieldRollSource === "gm-fallback") outcome.notes.push("Player yield roll unavailable; GM fallback d6 used.");
+  if (success && yieldRollSource === "player" && yieldRolledBy) outcome.notes.push(`Yield d6 rolled by ${yieldRolledBy}.`);
   if (herbalismAdvantage) outcome.notes.push("Herbalism advantage applied for plant gathering mode.");
 
   const applyToLedgerRequested = options?.applyToLedger !== false;
@@ -29048,14 +29458,15 @@ async function executeGatherResourcesAction(options = {}) {
   let historyRecorded = false;
   let inventoryGainSource = "";
   let inventoryGainAmount = 0;
+  let stewardPoolGain = 0;
   if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
-    const ledger = getOperationsLedger();
-    const resources = foundry.utils.deepClone(ledger.resources ?? {});
-    ensureOperationalResourceConfig(resources);
-    const selection = resourceType === "water" ? resources.itemSelections?.water : resources.itemSelections?.food;
-    const inventoryGain = await addToSelectedInventoryItem(selection, outcome.finalRations);
-    inventoryGainSource = String(inventoryGain?.source ?? "").trim();
-    inventoryGainAmount = Math.max(0, Number(inventoryGain?.added ?? 0) || 0);
+    const inventoryAllocation = await applyGatherInventoryAllocation(resourceType, outcome.finalRations);
+    inventoryGainSource = String(inventoryAllocation.source ?? "").trim();
+    inventoryGainAmount = Math.max(0, Number(inventoryAllocation.added ?? 0) || 0);
+    stewardPoolGain = Math.max(0, Number(inventoryAllocation.remaining ?? outcome.finalRations) || 0);
+    if (inventoryAllocation.hadConfiguredTarget && inventoryGainAmount <= 0) {
+      outcome.notes.push("Configured resource target could not be updated; remainder fell back to the party pool.");
+    }
   }
 
   const historyEntryBase = {
@@ -29075,7 +29486,13 @@ async function executeGatherResourcesAction(options = {}) {
     complications: Array.isArray(outcome.complications) ? [...outcome.complications] : [],
     notes: Array.isArray(outcome.notes) ? [...outcome.notes] : [],
     gatherMode,
-    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
+    createdBy: requesterName || String(game.user?.name ?? "GM").trim() || "GM",
+    requesterUserId,
+    requesterName,
+    approvedBy,
+    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? clampGatherInteger(outcome.rationDieTotal, 1, 6, 1) : null,
+    yieldRollSource,
+    yieldRolledBy
   };
 
   if (canWriteLedger) {
@@ -29086,26 +29503,27 @@ async function executeGatherResourcesAction(options = {}) {
       if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
         if (resourceType === "water") {
           const waterPool = getStewardPoolEntry(nextLedger.resources, "water");
-          if (normalizeStewardPoolMode(waterPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
+          if (stewardPoolGain > 0 && normalizeStewardPoolMode(waterPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
             waterPool.mode = STEWARD_POOL_MODES.FINITE;
-            waterPool.amount = Math.max(0, Number(waterPool.amount ?? 0) + outcome.finalRations);
+            waterPool.amount = Math.max(0, Number(waterPool.amount ?? 0) + stewardPoolGain);
             nextLedger.resources.stewardPools.water = waterPool;
             ensureStewardPoolsState(nextLedger.resources);
           }
           nextLedger.resources.gather.waterCoverageDueKey = nextCoverageDueKey;
           nextLedger.resources.gather.waterCoveredNextUpkeep = true;
+          appliedToLedger = inventoryGainAmount > 0 || stewardPoolGain > 0 || normalizeStewardPoolMode(waterPool.mode) === STEWARD_POOL_MODES.INFINITE;
         } else {
           const foodPool = getStewardPoolEntry(nextLedger.resources, "food");
-          if (normalizeStewardPoolMode(foodPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
+          if (stewardPoolGain > 0 && normalizeStewardPoolMode(foodPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
             foodPool.mode = STEWARD_POOL_MODES.FINITE;
-            foodPool.amount = Math.max(0, Number(foodPool.amount ?? 0) + outcome.finalRations);
+            foodPool.amount = Math.max(0, Number(foodPool.amount ?? 0) + stewardPoolGain);
             nextLedger.resources.stewardPools.food = foodPool;
             ensureStewardPoolsState(nextLedger.resources);
           }
           nextLedger.resources.gather.foodCoverageDueKey = nextCoverageDueKey;
           nextLedger.resources.gather.foodCoveredNextUpkeep = true;
+          appliedToLedger = inventoryGainAmount > 0 || stewardPoolGain > 0 || normalizeStewardPoolMode(foodPool.mode) === STEWARD_POOL_MODES.INFINITE;
         }
-        appliedToLedger = true;
       }
 
       nextLedger.resources.gather.history.unshift({
@@ -29125,6 +29543,9 @@ async function executeGatherResourcesAction(options = {}) {
     blocked: false,
     actorId: actor.id,
     actorName: String(actor.name ?? "").trim() || "Unknown Actor",
+    requesterUserId,
+    requesterName,
+    approvedBy,
     environment,
     environmentLabel: GATHER_ENVIRONMENT_LABELS[environment] ?? environment,
     baseDc,
@@ -29143,7 +29564,9 @@ async function executeGatherResourcesAction(options = {}) {
     applyToLedgerRequested,
     historyRecorded,
     inventoryGainSource,
-    inventoryGainAmount
+    inventoryGainAmount,
+    yieldRollSource,
+    yieldRolledBy
   };
 
   if (options?.suppressChat !== true) {
@@ -29628,7 +30051,142 @@ function triggerGatherResourceButtonAnimation(element) {
 }
 
 async function runGatherResourceCheck() {
+  if (!canAccessAllPlayerOps()) {
+    return promptPlayerGatherRequestDialog();
+  }
   return runGatherResourcesAction({ showDialog: true });
+}
+
+async function promptPlayerGatherRequestDialog(options = {}) {
+  const actors = getGatherSelectableActorsForUser(game.user);
+  if (actors.length <= 0) {
+    ui.notifications?.warn("You do not have an eligible character for gather requests.");
+    return { ok: false, blocked: true, reason: "No eligible actor." };
+  }
+  if (!hasActiveGmClient()) {
+    ui.notifications?.warn("No active GM client is available to approve a gather request.");
+    return { ok: false, blocked: true, reason: "No active GM client." };
+  }
+
+  const config = getGatherResourceConfig();
+  if (!config.enabled) {
+    ui.notifications?.warn("Gather resources is disabled in module settings.");
+    return { ok: false, blocked: true, reason: "Gather resources disabled." };
+  }
+
+  const actorOptions = actors
+    .map((actor) => `<option value="${actor.id}" ${String(options?.actorId ?? game.user?.character?.id ?? "") === String(actor.id) ? "selected" : ""}>${poEscapeHtml(actor.name)}</option>`)
+    .join("");
+  const environmentOptions = getGatherEnvironmentChoices(config)
+    .map((entry) => `<option value="${entry.value}" ${normalizeGatherEnvironmentKey(options?.environment ?? GATHER_ENVIRONMENT_KEYS[0]) === entry.value ? "selected" : ""}>${poEscapeHtml(entry.label)}</option>`)
+    .join("");
+  const resourceType = normalizeGatherResourceType(options?.resourceType);
+  const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
+  const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
+
+  const content = `
+    <div class="form-group">
+      <label>Actor</label>
+      <select name="actorId">${actorOptions}</select>
+    </div>
+    <div class="form-group">
+      <label>Resource Type</label>
+      <select name="resourceType">
+        <option value="food" ${resourceType === "food" ? "selected" : ""}>Food</option>
+        <option value="water" ${resourceType === "water" ? "selected" : ""}>Water</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Gather Environment</label>
+      <select name="environment">${environmentOptions}</select>
+    </div>
+    <div class="form-group">
+      <label>Gather Mode</label>
+      <select name="gatherMode">
+        <option value="standard" ${gatherMode === "standard" ? "selected" : ""}>Standard Search</option>
+        <option value="plant" ${gatherMode === "plant" ? "selected" : ""}>Plant Gathering</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Hours Spent</label>
+      <input type="number" name="hoursSpent" value="${Math.max(1, Number(options?.hoursSpent ?? config.minimumHours) || config.minimumHours)}" min="1" max="24" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Season Modifier</label>
+      <input type="number" name="seasonMod" value="${clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Weather Modifier</label>
+      <input type="number" name="weatherMod" value="${clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Corruption Modifier</label>
+      <input type="number" name="corruptionMod" value="${clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="isCorruptedRegion" ${options?.isCorruptedRegion ? "checked" : ""} /> Corrupted Region</label>
+      <label><input type="checkbox" name="hostileTerrain" ${options?.hostileTerrain ? "checked" : ""} /> Hostile Terrain</label>
+      <label><input type="checkbox" name="waterAutoFound" ${(options?.waterAutoFound ?? config.waterAutoFoundEnabled) ? "checked" : ""} ${config.waterAutoFoundEnabled ? "" : "disabled"} /> Obvious Water Source</label>
+      <label><input type="checkbox" name="duringTravel" ${options?.duringTravel ? "checked" : ""} /> Gather During Travel</label>
+    </div>
+    <div class="form-group">
+      <label>Travel Tradeoff</label>
+      <select name="travelTradeoff">
+        <option value="${GATHER_TRAVEL_CHOICES.PACE}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.PACE ? "selected" : ""}>Reduce pace by one step</option>
+        <option value="${GATHER_TRAVEL_CHOICES.FELL_BEHIND}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "selected" : ""}>Fell behind + Con save</option>
+      </select>
+    </div>
+    <p class="notes">This sends a request to the GM. The GM can review it before the Survival prompt and the success yield d6 are requested.</p>
+  `;
+
+  const dialog = new Dialog({
+    title: "Request Gather Check",
+    content,
+    buttons: {
+      submit: {
+        label: "Send Request",
+        callback: async (html) => {
+          const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+          const actor = game.actors?.get?.(actorId) ?? null;
+          if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+            ui.notifications?.warn("You can only request gather checks for a character you manage.");
+            return;
+          }
+          const request = normalizeGatherRequestPayload({
+            id: foundry.utils.randomID(),
+            actorId,
+            actorName: String(actor.name ?? "").trim() || "Unknown Actor",
+            requesterUserId: String(game.user?.id ?? "").trim(),
+            requesterName: String(game.user?.name ?? "Player").trim() || "Player",
+            requestedAt: Date.now(),
+            resourceType: String(html.find("select[name=resourceType]").val() ?? "food"),
+            environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
+            gatherMode: String(html.find("select[name=gatherMode]").val() ?? "standard"),
+            hoursSpent: Number(html.find("input[name=hoursSpent]").val() ?? config.minimumHours),
+            seasonMod: Number(html.find("input[name=seasonMod]").val() ?? config.seasonMod),
+            weatherMod: Number(html.find("input[name=weatherMod]").val() ?? config.weatherMod),
+            corruptionMod: Number(html.find("input[name=corruptionMod]").val() ?? config.corruptionMod),
+            isCorruptedRegion: Boolean(html.find("input[name=isCorruptedRegion]").is(":checked")),
+            hostileTerrain: Boolean(html.find("input[name=hostileTerrain]").is(":checked")),
+            waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
+            duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
+            travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
+            applyToLedger: true
+          });
+          emitModuleSocket({
+            type: "ops:gather-request",
+            userId: String(game.user?.id ?? "").trim(),
+            request
+          }, { channel: SOCKET_CHANNEL });
+          ui.notifications?.info(`Gather request sent for ${request.actorName}.`);
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "submit"
+  });
+  dialog.render(true);
+  return { ok: true, blocked: false, prompted: true };
 }
 
 async function runGatherPresetAction(element) {
@@ -29647,6 +30205,50 @@ async function runGatherPresetAction(element) {
     ...foundry.utils.deepClone(preset.options ?? {}),
     applyToLedger: true
   });
+}
+
+async function approveGatherRequestAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can finalize gather requests.");
+    return false;
+  }
+  const requestId = String(element?.dataset?.requestId ?? "").trim();
+  if (!requestId) return false;
+  const ledger = getOperationsLedger();
+  const resources = foundry.utils.deepClone(ledger.resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const request = Array.isArray(resources.gather?.requests)
+    ? resources.gather.requests.find((entry) => String(entry?.id ?? "").trim() === requestId)
+    : null;
+  if (!request) {
+    ui.notifications?.warn("Gather request not found.");
+    return false;
+  }
+  return promptGatherResourceDialog({
+    ...normalizeGatherRequestPayload(request),
+    showDialog: true,
+    requestId,
+    requesterUserId: String(request.requesterUserId ?? "").trim(),
+    requesterName: String(request.requesterName ?? "").trim(),
+    promptYieldRoll: true,
+    approvedBy: String(game.user?.name ?? "GM").trim() || "GM",
+    onResolved: async (result) => {
+      if (result?.ok) await removeGatherRequestById(requestId);
+    }
+  });
+}
+
+async function declineGatherRequestAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can decline gather requests.");
+    return false;
+  }
+  const requestId = String(element?.dataset?.requestId ?? "").trim();
+  if (!requestId) return false;
+  const removed = await removeGatherRequestById(requestId);
+  if (removed) ui.notifications?.info("Gather request removed.");
+  else ui.notifications?.warn("Gather request not found.");
+  return removed;
 }
 
 function setGatherHistoryViewFromElement(element) {
@@ -29786,6 +30388,9 @@ async function promptGatherResourceDialog(options = {}) {
   const resourceType = normalizeGatherResourceType(options?.resourceType);
   const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
   const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
+  const dialogTitle = String(options?.requesterName ?? "").trim()
+    ? `Finalize Gather Request: ${String(options.requesterName).trim()}`
+    : "Gather Resources";
   const content = `
     <div class="form-group">
       <label>Gathering Actor</label>
@@ -29846,7 +30451,7 @@ async function promptGatherResourceDialog(options = {}) {
   `;
 
   const dialog = new Dialog({
-    title: "Gather Resources",
+    title: dialogTitle,
     content,
     buttons: {
       roll: {
@@ -29867,13 +30472,19 @@ async function promptGatherResourceDialog(options = {}) {
             waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
             duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
             travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
-            applyToLedger: Boolean(html.find("input[name=applyToLedger]").is(":checked"))
+            applyToLedger: Boolean(html.find("input[name=applyToLedger]").is(":checked")),
+            requestId: String(options?.requestId ?? "").trim(),
+            requesterUserId: String(options?.requesterUserId ?? "").trim(),
+            requesterName: String(options?.requesterName ?? "").trim(),
+            promptYieldRoll: options?.promptYieldRoll === true,
+            approvedBy: String(options?.approvedBy ?? game.user?.name ?? "GM").trim() || "GM"
           };
           const result = await runGatherResourcesAction(payload);
           if (!result?.ok && result?.blocked) {
             ui.notifications?.warn(String(result?.reason ?? "Gather attempt blocked."));
             return;
           }
+          if (typeof options?.onResolved === "function") await options.onResolved(result);
           ui.notifications?.info(`Gather check resolved for ${result?.actorName ?? "actor"}.`);
         }
       },
@@ -35275,6 +35886,35 @@ function stampUpdate(state, user = game.user) {
   state.lastUpdatedBy = user?.name ?? "-";
 }
 
+function ensureRestSlotEntriesList(slot) {
+  if (!slot || typeof slot !== "object") return [];
+  if (!slot.entries && slot.actorId) {
+    slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+    slot.actorId = null;
+    slot.notes = "";
+  }
+  if (!Array.isArray(slot.entries)) slot.entries = [];
+  return slot.entries;
+}
+
+function restSlotHasActor(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slot || !actorId) return false;
+  const entries = ensureRestSlotEntriesList(slot);
+  return entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId);
+}
+
+function addActorToRestSlot(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slot || !actorId) return false;
+  const entries = ensureRestSlotEntriesList(slot);
+  if (entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId)) return false;
+  entries.push({ actorId, notes: "" });
+  slot.actorId = null;
+  slot.notes = "";
+  return true;
+}
+
 async function assignSlotToUser(element) {
   const state = getRestWatchState();
   if (isLockedForUser(state, canAccessAllPlayerOps())) {
@@ -35293,19 +35933,12 @@ async function assignSlotToUser(element) {
   if (!canAccessAllPlayerOps()) {
     const slotId = element?.closest(".po-card")?.dataset?.slotId;
     const clicked = state.slots.find((s) => s.id === slotId);
-    const clickedHasEntries = (clicked?.entries?.length ?? 0) > 0 || Boolean(clicked?.actorId);
-    const targetSlotId = (clicked && !clickedHasEntries)
-      ? clicked.id
-      : state.slots.find((s) => (s.entries?.length ?? 0) === 0 && !s.actorId)?.id;
-    if (!targetSlotId) {
-      ui.notifications?.warn("All rest watch slots are full.");
+    if (!clicked) return;
+    if (restSlotHasActor(clicked, actor.id)) {
+      ui.notifications?.info(`${actor.name} is already assigned to this watch.`);
       return;
     }
-    // Warn if we're redirecting from a filled slot
-    if (clicked && clickedHasEntries && targetSlotId !== clicked.id) {
-      ui.notifications?.info("That slot is already taken; assigning you to the next available slot.");
-    }
-    await updateRestWatchState({ op: "assignMe", slotId: targetSlotId, actorId: actor.id });
+    await updateRestWatchState({ op: "assignMe", slotId: clicked.id, actorId: actor.id });
     return;
   }
   const slotId = element?.closest(".po-card")?.dataset?.slotId;
@@ -35313,14 +35946,7 @@ async function assignSlotToUser(element) {
   await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
-    if (!slot.entries && slot.actorId) {
-      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-      slot.actorId = null;
-      slot.notes = "";
-    }
-    slot.entries = [{ actorId: actor.id, notes: "" }];
-    slot.actorId = null;
-    slot.notes = "";
+    addActorToRestSlot(slot, actor.id);
   });
 }
 
@@ -35368,21 +35994,16 @@ async function assignSlotByPicker(element, config = {}) {
           const targetSlotId = String(slotIdFromCard ?? html.find("select[name=slotId]").val() ?? "").trim();
           const actorId = html.find("select[name=actorId]").val();
           if (!targetSlotId || !actorId) return;
+          let added = false;
           await updateRestWatchState((state) => {
             const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
-            // Migrate old format
-            if (!slot.entries && slot.actorId) {
-              slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-              slot.actorId = null;
-              slot.notes = "";
-            }
-            if (!slot.entries) slot.entries = [];
-            // Add new entry
-            slot.entries.push({ actorId, notes: "" });
-            slot.actorId = null;
-            slot.notes = "";
+            added = addActorToRestSlot(slot, actorId);
           });
+          if (!added) {
+            const actorName = game.actors.get(actorId)?.name ?? "That actor";
+            ui.notifications?.info(`${actorName} is already assigned to that watch.`);
+          }
           if (canAccessAllPlayerOps()) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
         }
       },
@@ -38498,6 +39119,21 @@ export function onPartyOperationsReady() {
 }
 
 async function handlePartyOperationsSocketMessage(message) {
+  if (message?.type === "ops:gather-request") {
+    if (game.user?.isGM) await applyPlayerGatherRequest(message);
+    return;
+  }
+  if (message?.type === "ops:gather-yield-request") {
+    await promptLocalGatherYieldRoll(message);
+    return;
+  }
+  if (message?.type === "ops:gather-yield-response") {
+    if (game.user?.isGM) {
+      resolvePendingGatherYieldRequest(message?.requestId, message);
+    }
+    return;
+  }
+
   await routePartyOperationsSocketMessage(message, {
     game,
     settings: SETTINGS,
@@ -38931,19 +39567,15 @@ function setupRestWatchDragAndDrop(html) {
 
       await updateRestWatchState((state) => {
         const slots = state.slots ?? [];
-        slots.forEach((slot) => {
-          if (!slot.entries && slot.actorId) {
-            slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-            slot.actorId = null;
-            slot.notes = "";
-          }
-          if (!slot.entries) slot.entries = [];
-          slot.entries = slot.entries.filter((entry) => entry.actorId !== actorId);
-        });
+        const source = slots.find((slot) => slot.id === fromSlotId);
+        if (source) {
+          ensureRestSlotEntriesList(source);
+          source.entries = source.entries.filter((entry) => entry.actorId !== actorId);
+        }
 
         const target = slots.find((slot) => slot.id === targetSlotId);
         if (!target) return;
-        target.entries.push({ actorId, notes: "" });
+        addActorToRestSlot(target, actorId);
       }, { skipLocalRefresh: true });
 
       refreshSingleAppPreservingView(restWatchAppInstance);

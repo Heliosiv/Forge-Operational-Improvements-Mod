@@ -566,6 +566,41 @@
           <div class="po-op-divider"></div>
           <div class="po-gather-history-panel">
             <div class="po-section-head-row po-gather-history-head">
+              <div class="po-section-title">Gather Requests</div>
+              <div class="po-gather-history-head-tools">
+                <div class="po-op-summary">{{operations.resources.gatherRequests.count}} pending</div>
+              </div>
+            </div>
+            {{#if operations.resources.gatherRequests.hasRows}}
+            <div class="po-gather-preset-grid">
+              {{#each operations.resources.gatherRequests.rows}}
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{actorName}}</div>
+                  <div class="po-op-role-status">{{resourceTypeLabel}}</div>
+                </div>
+                <div class="po-op-summary">Requested by {{requesterName}} at {{requestedAtLabel}}</div>
+                <div class="po-op-summary">{{summary}}</div>
+                <div class="po-op-summary">{{modifierSummary}}</div>
+                {{#if hasTags}}
+                <div class="po-op-summary">{{tagText}}</div>
+                {{/if}}
+                {{#if @root.operations.resources.gatherRequests.isManager}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="approve-gather-request" data-request-id="{{id}}">Finalize & Prompt</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="decline-gather-request" data-request-id="{{id}}">Remove</button>
+                </div>
+                {{/if}}
+              </div>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
+            {{/if}}
+          </div>
+          <div class="po-op-divider"></div>
+          <div class="po-gather-history-panel">
+            <div class="po-section-head-row po-gather-history-head">
               <div class="po-section-title">Gather History</div>
               <div class="po-gather-history-head-tools">
                 <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
