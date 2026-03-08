@@ -180,24 +180,44 @@
             <div class="po-section-title">Now Playing</div>
             <div class="po-op-summary">{{audio.mix.playback.presetLabel}} · Updated {{audio.mix.playback.updatedAtLabel}}</div>
             {{#if audio.mix.playback.hasActiveTrack}}
-            <div class="po-audio-preview-meta">
-              <div class="po-audio-preview-name">{{audio.mix.playback.activeTrackName}}</div>
-              <div class="po-op-summary">{{audio.mix.playback.activeTrack.category}}{{#if audio.mix.playback.activeTrack.subcategory}} / {{audio.mix.playback.activeTrack.subcategory}}{{/if}}</div>
-              <div class="po-audio-chip-list">
-                <span class="po-pill">{{audio.mix.playback.activeTrackKindLabel}}</span>
-                <span class="po-pill">{{audio.mix.playback.activeTrackUsageLabel}}</span>
-                <span class="po-pill">{{audio.mix.playback.channelLabel}}</span>
-                <span class="po-pill">{{audio.mix.playback.transportLabel}}</span>
-              </div>
-            </div>
-            <div class="po-audio-live-controls">
-              <label class="po-resource-row">
-                <span>Live Mix Volume</span>
-                <div class="po-audio-live-slider-row">
-                  <input type="range" class="po-audio-live-volume-slider" min="0" max="100" step="1" value="{{audio.mix.selectedPreset.volumePercent}}" data-action="set-audio-mix-preset-option" data-field="volume" aria-label="Live mix volume" />
-                  <span class="po-pill">{{audio.mix.playback.volumePercent}}%</span>
+            <div class="po-audio-live-preview" data-po-audio-live-monitor data-playback-id="{{audio.mix.playback.playbackId}}">
+              <div class="po-audio-preview-meta">
+                <div class="po-audio-preview-name">{{audio.mix.playback.activeTrackName}}</div>
+                <div class="po-op-summary">{{audio.mix.playback.activeTrack.category}}{{#if audio.mix.playback.activeTrackHasSubcategory}} / {{audio.mix.playback.activeTrack.subcategory}}{{/if}}</div>
+                <div class="po-audio-chip-list">
+                  <span class="po-pill">{{audio.mix.playback.activeTrackKindLabel}}</span>
+                  <span class="po-pill">{{audio.mix.playback.activeTrackUsageLabel}}</span>
+                  <span class="po-pill">{{audio.mix.playback.channelLabel}}</span>
+                  <span class="po-pill">{{audio.mix.playback.transportLabel}}</span>
+                  {{#if audio.mix.playback.activeTrackQueueLabel}}<span class="po-pill">{{audio.mix.playback.activeTrackQueueLabel}}</span>{{/if}}
                 </div>
-              </label>
+              </div>
+              <div class="po-audio-preview-player po-audio-preview-player-live">
+                <div class="po-audio-preview-controls po-audio-preview-controls-live">
+                  <div class="po-audio-preview-toggle po-audio-live-indicator" aria-hidden="true">
+                    <i class="fa-solid fa-wave-square"></i>
+                  </div>
+                  <div class="po-audio-preview-time">
+                    <span data-role="current">0:00</span>
+                    <span>/</span>
+                    <span data-role="duration">--:--</span>
+                  </div>
+                  <input type="range" class="po-audio-preview-seek po-audio-live-progress" data-role="live-progress" min="0" max="1000" step="1" value="0" aria-label="Current track progress" disabled />
+                  <label class="po-audio-preview-volume">
+                    <i class="fa-solid fa-volume-low"></i>
+                    <input type="range" class="po-audio-preview-volume-slider" data-role="live-volume" min="0" max="100" step="1" value="{{audio.mix.playback.volumePercent}}" data-action="set-audio-mix-preset-option" data-field="volume" aria-label="Live mix volume" />
+                    <span data-role="live-volume-label">{{audio.mix.playback.volumePercent}}%</span>
+                  </label>
+                </div>
+              </div>
+              <div class="po-op-summary po-audio-preview-path">{{audio.mix.playback.activeTrackPath}}</div>
+              {{#if audio.mix.playback.hasActiveTrackTags}}
+              <div class="po-audio-chip-list">
+                {{#each audio.mix.playback.activeTrackTags}}
+                <span class="po-pill">{{this}}</span>
+                {{/each}}
+              </div>
+              {{/if}}
               <div class="po-op-summary">Shared from Party Operations for all connected users. Personal user volume sliders still scale locally.</div>
             </div>
             {{else}}

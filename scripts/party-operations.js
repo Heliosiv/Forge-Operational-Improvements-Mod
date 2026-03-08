@@ -9923,6 +9923,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   hideSelectedAudioLibraryTracks,
   getAudioPreviewVolumeSetting,
   setAudioPreviewVolumeSetting,
+  getManagedAudioMixPlaybackMonitorSnapshot,
   queueSelectedTrackNext,
   moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
@@ -9978,6 +9979,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
       ui.notifications?.warn(`Audio stop failed: ${message}`);
     }
   },
+  getManagedAudioMixPlaybackMonitorSnapshot,
   syncManagedAudioMixPlaybackForCurrentUser,
   openGmPanelByKey
 });
@@ -13112,7 +13114,9 @@ function buildOrderedAudioMixCandidates(candidates, options = {}) {
     .filter(Boolean);
   if (ordered.length <= 0) ordered = rows;
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
-  if (preferredTrackId) {
+  // Preserve the live/manual queue order when one already exists. Preferred
+  // track selection should choose the active row, not rewrite the queue.
+  if (preferredTrackId && queuedIds.length <= 0) {
     const preferred = candidateMap.get(preferredTrackId) ?? null;
     if (preferred) {
       ordered = [preferred, ...ordered.filter((entry) => String(entry?.item?.id ?? "").trim() !== preferredTrackId)];
@@ -13713,6 +13717,7 @@ function getAudioMixPlaybackState(catalog) {
     .filter(Boolean);
   const currentIndex = queueTracks.findIndex((entry) => entry.id === activeTrackId);
   const normalizedCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(Math.max(0, mixFlag.currentIndex), Math.max(0, queueTracks.length - 1));
+  const activeTrackTags = Array.isArray(activeTrack?.tags) ? activeTrack.tags.filter(Boolean) : [];
   return {
     hasPlaylist: Boolean(playlist),
     playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
@@ -13736,11 +13741,47 @@ function getAudioMixPlaybackState(catalog) {
     updatedAtLabel: mixFlag?.updatedAt ? new Date(Number(mixFlag.updatedAt)).toLocaleString() : "-",
     queueTrackIds,
     queueTracks,
+    activeTrackHasSubcategory: Boolean(activeTrack?.subcategory),
+    activeTrackTags,
+    hasActiveTrackTags: activeTrackTags.length > 0,
     hasQueue: queueTracks.length > 0,
     queueLength: queueTracks.length,
     currentIndex: normalizedCurrentIndex,
     canSkipNext: queueTracks.length > 1 || Boolean(activePreset.repeat),
     canRestart: Boolean(activeTrackId)
+  };
+}
+
+function getManagedAudioMixPlaybackMonitorSnapshot() {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixFlag = getAudioMixStateFlag(playlist);
+  const sound = managedAudioMixLocalState.sound ?? null;
+  const playbackId = String(mixFlag?.playbackId ?? "").trim();
+  const startedAt = Math.max(0, Number(mixFlag?.startedAt ?? managedAudioMixLocalState.startedAt ?? 0) || 0);
+  const durationSeconds = Math.max(0, Number(sound?.duration ?? 0) || 0);
+  const soundCurrentTime = Number(sound?.currentTime ?? sound?._currentTime ?? NaN);
+  let currentSeconds = 0;
+  if (Number.isFinite(soundCurrentTime) && soundCurrentTime >= 0) {
+    currentSeconds = soundCurrentTime;
+  } else if (startedAt > 0) {
+    const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
+    const shouldLoop = Boolean(sound?.loop);
+    currentSeconds = durationSeconds > 0
+      ? (shouldLoop ? (elapsedSeconds % durationSeconds) : Math.min(durationSeconds, elapsedSeconds))
+      : elapsedSeconds;
+  }
+  const normalizedCurrentSeconds = durationSeconds > 0
+    ? Math.max(0, Math.min(durationSeconds, currentSeconds))
+    : Math.max(0, currentSeconds);
+  return {
+    playbackId,
+    startedAt,
+    durationSeconds: Number(durationSeconds.toFixed(2)),
+    currentSeconds: Number(normalizedCurrentSeconds.toFixed(2)),
+    progressPermille: durationSeconds > 0
+      ? Math.max(0, Math.min(1000, Math.round((normalizedCurrentSeconds / durationSeconds) * 1000)))
+      : 0,
+    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? managedAudioMixLocalState.volume ?? 0.5)
   };
 }
 
@@ -13895,7 +13936,11 @@ function buildAudioMixContext(catalog) {
       activeTrackPath: String(playback.activeTrack?.path ?? ""),
       volumePercent: getAudioMixVolumePercent(playback.volume ?? selectedPreset.volume),
       activeTrackKindLabel: playback.activeTrack ? getAudioLibraryKindLabel(playback.activeTrack.kind) : "",
-      activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : ""
+      activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : "",
+      activeTrackQueuePosition: playback.currentIndex >= 0 ? playback.currentIndex + 1 : 0,
+      activeTrackQueueLabel: playback.currentIndex >= 0 && playback.queueLength > 0
+        ? `Track ${playback.currentIndex + 1} of ${playback.queueLength}`
+        : ""
     }
   };
 }
@@ -16965,6 +17010,77 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
   }
 }
 
+function createLootRuntimeBudgetRandom(draft = {}, budgetContext = {}) {
+  if (!shouldUseDeterministicLootRng(draft)) return Math.random;
+  const seed = `${resolveLootSelectionSeed(draft, budgetContext)}|runtime-budget-target`;
+  return createLootSeededRandom(seed);
+}
+
+function resolveLootRuntimeBudgetContext(draft = {}, budgetContext = {}) {
+  try {
+    const configuredTotalTargetGp = Math.max(0, Number(
+      budgetContext?.effectiveTotalTargetGp
+      ?? budgetContext?.totalBudgetGp
+      ?? 0
+    ) || 0);
+    if (configuredTotalTargetGp <= 0) {
+      return {
+        ...budgetContext,
+        configuredTotalTargetGp: 0,
+        configuredItemBudgetGp: 0,
+        configuredCurrencyBudgetGp: 0,
+        configuredTargetPerItemGp: 0,
+        resolvedTotalTargetGp: 0
+      };
+    }
+    const configuredItemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
+    const configuredCurrencyBudgetGp = Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0);
+    const configuredTargetPerItemGp = Math.max(0, Number(budgetContext?.targetPerItemGp ?? 0) || 0);
+    const minGp = Math.max(0, Number(budgetContext?.targetValueRangeMinGp ?? configuredTotalTargetGp) || configuredTotalTargetGp);
+    const maxGp = Math.max(minGp, Number(budgetContext?.targetValueRangeMaxGp ?? configuredTotalTargetGp) || configuredTotalTargetGp);
+    const spanGp = Math.max(0, Number((maxGp - minGp).toFixed(2)));
+    const random = createLootRuntimeBudgetRandom(draft, budgetContext);
+    const resolvedTotalTargetGp = spanGp > 0
+      ? Number((minGp + (random() * spanGp)).toFixed(2))
+      : configuredTotalTargetGp;
+    const itemRatio = configuredTotalTargetGp > 0
+      ? Math.max(0, Math.min(1, configuredItemBudgetGp / configuredTotalTargetGp))
+      : Math.max(0, Math.min(1, Number(budgetContext?.itemSharePercent ?? 50) / 100));
+    const targetCount = Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1);
+    const resolvedItemBudgetGp = Number((resolvedTotalTargetGp * itemRatio).toFixed(2));
+    const resolvedCurrencyBudgetGp = Number((resolvedTotalTargetGp - resolvedItemBudgetGp).toFixed(2));
+    const itemTolerance = resolveTolerance(
+      resolvedItemBudgetGp,
+      draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS
+    );
+    return {
+      ...budgetContext,
+      configuredTotalTargetGp,
+      configuredItemBudgetGp,
+      configuredCurrencyBudgetGp,
+      configuredTargetPerItemGp,
+      resolvedTotalTargetGp,
+      effectiveTotalTargetGp: resolvedTotalTargetGp,
+      totalBudgetGp: resolvedTotalTargetGp,
+      targetItemBudgetGp: resolvedItemBudgetGp,
+      targetCurrencyBudgetGp: resolvedCurrencyBudgetGp,
+      targetPerItemGp: Math.max(0.5, Number((resolvedItemBudgetGp / targetCount).toFixed(2))),
+      itemTargetValueRangeMinGp: itemTolerance.minGp,
+      itemTargetValueRangeMaxGp: itemTolerance.maxGp,
+      itemToleranceGp: itemTolerance.toleranceGp
+    };
+  } catch (error) {
+    logLootBuilderFailure("resolveLootRuntimeBudgetContext", error, {
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      profile: draft?.profile,
+      scale: draft?.scale,
+      targetCount: budgetContext?.targetCount ?? 0
+    });
+    return budgetContext;
+  }
+}
+
 function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, budgetContext = {}) {
   const value = Math.max(0, Number(itemValueGp) || 0);
   if (value <= 0) return 0.9;
@@ -17975,14 +18091,50 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
     const finalTotalValueGp = Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0);
     const targetTotalValueGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 0) || 0);
     const deltaGp = Number((finalTotalValueGp - targetTotalValueGp).toFixed(2));
+    const configuredEncounterTargetGp = Math.max(0, Number(
+      budgetContext?.configuredTotalTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? targetTotalValueGp
+      ?? 0
+    ) || 0);
+    const configuredItemTargetGp = Math.max(0, Number(
+      budgetContext?.configuredItemBudgetGp
+      ?? budgetContext?.targetItemBudgetGp
+      ?? targetTotalValueGp
+      ?? 0
+    ) || 0);
+    const configuredCurrencyTargetGp = Math.max(0, Number(
+      budgetContext?.configuredCurrencyBudgetGp
+      ?? budgetContext?.targetCurrencyBudgetGp
+      ?? 0
+    ) || 0);
+    const resolvedEncounterTargetGp = Math.max(0, Number(
+      budgetContext?.resolvedTotalTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? configuredEncounterTargetGp
+      ?? 0
+    ) || 0);
+    const resolvedItemTargetGp = Math.max(0, Number(
+      budgetContext?.targetItemBudgetGp
+      ?? configuredItemTargetGp
+      ?? 0
+    ) || 0);
+    const resolvedCurrencyTargetGp = Math.max(0, Number(
+      budgetContext?.targetCurrencyBudgetGp
+      ?? configuredCurrencyTargetGp
+      ?? 0
+    ) || 0);
     const meta = {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
       desiredItemCount: Math.max(0, Number(budgetContext?.targetCount ?? targetCount) || 0),
       maxItems: Math.max(0, Number(state.maxItems ?? 0) || 0),
-      encounterTargetGp: Math.max(0, Number(budgetContext?.effectiveTotalTargetGp ?? targetTotalValueGp) || 0),
-      itemTargetGp: targetTotalValueGp,
-      currencyTargetGp: Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0),
+      encounterTargetGp: configuredEncounterTargetGp,
+      itemTargetGp: configuredItemTargetGp,
+      currencyTargetGp: configuredCurrencyTargetGp,
+      resolvedEncounterTargetGp,
+      resolvedItemTargetGp,
+      resolvedCurrencyTargetGp,
       finalItemsValueGp: Number(finalTotalValueGp.toFixed(2)),
       finalCurrencyValueGp: 0,
       finalCombinedValueGp: Number(finalTotalValueGp.toFixed(2)),
@@ -18183,12 +18335,13 @@ async function generateLootPreviewPayload(draftInput = {}) {
     const sourceConfig = getLootSourceConfig();
     const warnings = [];
     const previewBudgetContext = buildLootValueBudgetContext(draft, 0);
+    const runtimeBudgetContext = resolveLootRuntimeBudgetContext(draft, previewBudgetContext);
     const randomContext = buildLootRandomContext(draft, previewBudgetContext);
     const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
-    const desiredItemCount = previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
+    const desiredItemCount = runtimeBudgetContext?.targetCount ?? previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
     const itemCountTarget = Math.max(1, Number(desiredItemCount));
     const selectedItems = pickLootItemsFromCandidates(candidates, itemCountTarget, draft, {
-      budgetContext: previewBudgetContext,
+      budgetContext: runtimeBudgetContext,
       randomContext
     });
     const selectionMeta = (Array.isArray(selectedItems) && selectedItems.__meta && typeof selectedItems.__meta === "object")
@@ -18199,21 +18352,24 @@ async function generateLootPreviewPayload(draftInput = {}) {
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       ...entry
     }));
-    const itemTotals = calculateLootPreviewValueTotals({ items, currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 } }, previewBudgetContext);
-    const currency = await rollLootCurrency(draft, randomContext, previewBudgetContext, itemTotals.finalItemsValueGp);
+    const itemTotals = calculateLootPreviewValueTotals({ items, currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 } }, runtimeBudgetContext);
+    const currency = await rollLootCurrency(draft, randomContext, runtimeBudgetContext, itemTotals.finalItemsValueGp);
     const generatedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
     const valueTotals = calculateLootPreviewValueTotals({ items, currency }, previewBudgetContext);
     const resolvedSelectionMeta = selectionMeta ?? {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
-      desiredItemCount: itemCountTarget,
-      maxItems: Math.max(itemCountTarget, Number(previewBudgetContext?.maxItems ?? itemCountTarget) || itemCountTarget),
-      encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
-      itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
-      currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
-      finalItemsValueGp: valueTotals.finalItemsValueGp,
-      finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
-      finalCombinedValueGp: valueTotals.finalCombinedValueGp,
+        desiredItemCount: itemCountTarget,
+        maxItems: Math.max(itemCountTarget, Number(previewBudgetContext?.maxItems ?? itemCountTarget) || itemCountTarget),
+        encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+        itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
+        currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+        resolvedEncounterTargetGp: Number(runtimeBudgetContext?.resolvedTotalTargetGp ?? runtimeBudgetContext?.effectiveTotalTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+        resolvedItemTargetGp: Number(runtimeBudgetContext?.targetItemBudgetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+        resolvedCurrencyTargetGp: Number(runtimeBudgetContext?.targetCurrencyBudgetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+        finalItemsValueGp: valueTotals.finalItemsValueGp,
+        finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
+        finalCombinedValueGp: valueTotals.finalCombinedValueGp,
       itemDeltaGp: valueTotals.itemDeltaGp,
       deltaGp: 0,
       toleranceGp: Number(previewBudgetContext?.toleranceGp ?? 0),
@@ -18246,6 +18402,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
       maxItems: resolvedSelectionMeta.maxItems,
       strictnessBand: resolvedSelectionMeta.strictnessBandLabel,
       strictnessToleranceGp: resolvedSelectionMeta.toleranceGp,
+      resolvedEncounterTargetGp: resolvedSelectionMeta.resolvedEncounterTargetGp,
       candidateCount: candidates.length,
       finalItemsValueGp: resolvedSelectionMeta.finalItemsValueGp,
       finalCurrencyValueGp: resolvedSelectionMeta.finalCurrencyValueGp,
@@ -18275,6 +18432,9 @@ async function generateLootPreviewPayload(draftInput = {}) {
         encounterTargetGp: Number(resolvedSelectionMeta.encounterTargetGp ?? 0),
         itemTargetGp: Number(resolvedSelectionMeta.itemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
         currencyTargetGp: Number(resolvedSelectionMeta.currencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+        resolvedEncounterTargetGp: Number(resolvedSelectionMeta.resolvedEncounterTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+        resolvedItemTargetGp: Number(resolvedSelectionMeta.resolvedItemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+        resolvedCurrencyTargetGp: Number(resolvedSelectionMeta.resolvedCurrencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
         finalItemsValueGp: Number(resolvedSelectionMeta.finalItemsValueGp ?? 0),
         finalCurrencyValueGp: Number(resolvedSelectionMeta.finalCurrencyValueGp ?? 0),
         finalCombinedValueGp: Number(resolvedSelectionMeta.finalCombinedValueGp ?? 0),
@@ -18457,14 +18617,15 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
       dateBucket: String(input?.dateBucket ?? "").trim()
     };
     const valueBudgetContext = buildLootValueBudgetContext(selectionDraft, desiredItemCount);
+    const runtimeBudgetContext = resolveLootRuntimeBudgetContext(selectionDraft, valueBudgetContext);
     const randomContext = buildLootRandomContext(selectionDraft, valueBudgetContext);
-    const manualCapGp = Math.max(0, Number(valueBudgetContext?.manualMaxItemValueGp ?? 0) || 0);
+    const manualCapGp = Math.max(0, Number(runtimeBudgetContext?.manualMaxItemValueGp ?? valueBudgetContext?.manualMaxItemValueGp ?? 0) || 0);
     const selectionCandidates = manualCapGp > 0
       ? candidates.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= manualCapGp)
       : candidates;
     if (!selectionCandidates.length) return { gold, items: [] };
     const pickedItems = pickLootItemsFromCandidates(selectionCandidates, desiredItemCount, selectionDraft, {
-      budgetContext: valueBudgetContext,
+      budgetContext: runtimeBudgetContext,
       randomContext
     });
     const selected = new Map();

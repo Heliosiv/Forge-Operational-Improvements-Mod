@@ -47,6 +47,7 @@ export function createGmAudioPageApp(deps) {
     hideSelectedAudioLibraryTracks,
     getAudioPreviewVolumeSetting,
     setAudioPreviewVolumeSetting,
+    getManagedAudioMixPlaybackMonitorSnapshot,
     queueSelectedTrackNext,
     moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
@@ -65,6 +66,7 @@ export function createGmAudioPageApp(deps) {
     constructor(options = {}) {
       super(options);
       this._audioPreviewVolumeSaveTimer = null;
+      this._audioLiveMonitorTimer = null;
     }
 
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -104,6 +106,10 @@ export function createGmAudioPageApp(deps) {
         window.clearTimeout(this._audioPreviewVolumeSaveTimer);
         this._audioPreviewVolumeSaveTimer = null;
       }
+      if (this._audioLiveMonitorTimer) {
+        window.clearInterval(this._audioLiveMonitorTimer);
+        this._audioLiveMonitorTimer = null;
+      }
       const result = await super.close(options);
       if (typeof syncManagedAudioMixPlaybackForCurrentUser === "function") {
         window.setTimeout(() => {
@@ -122,6 +128,7 @@ export function createGmAudioPageApp(deps) {
     async _onPostRender(context, options) {
       await super._onPostRender(context, options);
       this._bindAudioPreviewPlayers();
+      this._bindLiveAudioMonitorCards();
     }
 
     _queueAudioPreviewVolumeSave(volume) {
@@ -225,6 +232,50 @@ export function createGmAudioPageApp(deps) {
           syncVolumeState(Number(volume.value) / 100, { persist: true });
         });
       }
+    }
+
+    _bindLiveAudioMonitorCards() {
+      if (this._audioLiveMonitorTimer) {
+        window.clearInterval(this._audioLiveMonitorTimer);
+        this._audioLiveMonitorTimer = null;
+      }
+      const root = this.element;
+      if (!root) return;
+      const cards = Array.from(root.querySelectorAll("[data-po-audio-live-monitor]"));
+      if (cards.length < 1 || typeof getManagedAudioMixPlaybackMonitorSnapshot !== "function") return;
+
+      const syncCards = () => {
+        const snapshot = getManagedAudioMixPlaybackMonitorSnapshot() ?? {};
+        const livePlaybackId = String(snapshot?.playbackId ?? "").trim();
+        for (const card of cards) {
+          const expectedPlaybackId = String(card?.dataset?.playbackId ?? "").trim();
+          const isActive = !expectedPlaybackId || !livePlaybackId || expectedPlaybackId === livePlaybackId;
+          const currentLabel = card.querySelector("[data-role='current']");
+          const durationLabel = card.querySelector("[data-role='duration']");
+          const progress = card.querySelector("[data-role='live-progress']");
+          const volumeInput = card.querySelector("[data-role='live-volume']");
+          const volumeLabel = card.querySelector("[data-role='live-volume-label']");
+          const currentSeconds = isActive ? Math.max(0, Number(snapshot?.currentSeconds ?? 0) || 0) : 0;
+          const durationSeconds = isActive ? Math.max(0, Number(snapshot?.durationSeconds ?? 0) || 0) : 0;
+          const progressPermille = isActive ? Math.max(0, Math.min(1000, Number(snapshot?.progressPermille ?? 0) || 0)) : 0;
+          const volumePercent = isActive ? Math.max(0, Math.min(100, Number(snapshot?.volumePercent ?? 0) || 0)) : 0;
+
+          if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(currentSeconds);
+          if (durationLabel) durationLabel.textContent = durationSeconds > 0 ? formatAudioPreviewTime(durationSeconds) : "--:--";
+
+          if (progress instanceof HTMLInputElement) {
+            progress.disabled = durationSeconds <= 0;
+            progress.value = String(progressPermille);
+          }
+          if (volumeLabel) volumeLabel.textContent = `${volumePercent}%`;
+          if (volumeInput instanceof HTMLInputElement && document.activeElement !== volumeInput) {
+            volumeInput.value = String(volumePercent);
+          }
+        }
+      };
+
+      syncCards();
+      this._audioLiveMonitorTimer = window.setInterval(syncCards, 250);
     }
 
     _getActionHandlers() {
