@@ -1102,6 +1102,7 @@ const LOOT_PREVIEW_SCALE_OPTIONS = [
 ];
 const LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR = 100;
 const LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS = 180;
+const LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT = 80;
 const LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT = 100000;
 const LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT = 1000000;
 const LOOT_PREVIEW_STRICTNESS_BANDS = Object.freeze([
@@ -6296,6 +6297,7 @@ function normalizeLootPreviewDraft(input = {}) {
   const tableScalarRaw = parseLootPreviewNumericInput(input?.tableScalar, 100);
   const valueBudgetScalarRaw = parseLootPreviewNumericInput(input?.valueBudgetScalar, LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR);
   const valueStrictnessRaw = parseLootPreviewNumericInput(input?.valueStrictness, LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
+  const maxItemsRaw = parseLootPreviewNumericInput(input?.maxItems, 0);
   const maxItemValueGpRaw = parseLootPreviewNumericInput(input?.maxItemValueGp, 0);
   const targetItemsValueGpRaw = parseLootPreviewNumericInput(input?.targetItemsValueGp, 0);
   const deterministic = shouldUseDeterministicLootRng(input);
@@ -6318,6 +6320,9 @@ function normalizeLootPreviewDraft(input = {}) {
   const valueStrictness = Number.isFinite(valueStrictnessRaw)
     ? Math.max(50, Math.min(300, Math.floor(valueStrictnessRaw)))
     : LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS;
+  const maxItems = Number.isFinite(maxItemsRaw)
+    ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, Math.floor(maxItemsRaw)))
+    : 0;
   const maxItemValueGp = Number.isFinite(maxItemValueGpRaw)
     ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Math.floor(maxItemValueGpRaw)))
     : 0;
@@ -6341,6 +6346,7 @@ function normalizeLootPreviewDraft(input = {}) {
     tableScalar,
     valueBudgetScalar,
     valueStrictness,
+    maxItems,
     maxItemValueGp,
     targetItemsValueGp,
     deterministic,
@@ -16885,6 +16891,7 @@ function resolveLootSelectionSeed(draft = {}, budgetContext = {}) {
     String(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
     String(draft?.distributionMix ?? 50),
     String(draft?.tableScalar ?? 100),
+    String(draft?.maxItems ?? 0),
     String(draft?.targetItemsValueGp ?? 0),
     String(draft?.maxItemValueGp ?? 0),
     String(draft?.creatures ?? draft?.actorCount ?? 1),
@@ -16928,8 +16935,12 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
     const scale = String(target.scale ?? "medium").trim().toLowerCase();
     const combatants = getLootCombatantCount(draft, target.mode);
     const manualCapRaw = Number(draft?.maxItemValueGp ?? 0);
+    const manualMaxItemsRaw = Number(draft?.maxItems ?? 0);
     const manualMaxItemValueGp = Number.isFinite(manualCapRaw)
       ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT, Math.floor(manualCapRaw)))
+      : 0;
+    const manualMaxItems = Number.isFinite(manualMaxItemsRaw)
+      ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, Math.floor(manualMaxItemsRaw)))
       : 0;
 
     const autoCapBaseTable = { low: 150, mid: 650, high: 2400, epic: 8500 };
@@ -16942,8 +16953,15 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       Number((autoCapBase * profileCapMod * scaleCapMod * Math.sqrt(Math.max(0.25, target.budgetScalar))).toFixed(2))
     );
     const effectiveMaxItemValueGp = manualMaxItemValueGp > 0 ? manualMaxItemValueGp : autoMaxItemValueGp;
-    const targetPerItemGp = Math.max(0.5, Number((share.targetItemBudgetGp / Math.max(1, desiredItemCount)).toFixed(2)));
-    const maxItems = Math.max(desiredItemCount, Math.min(80, Math.ceil(desiredItemCount * (1.4 + tolerance.ratio))));
+    const autoMaxItems = Math.max(
+      desiredItemCount,
+      Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, Math.ceil(desiredItemCount * (1.4 + tolerance.ratio)))
+    );
+    const effectiveMaxItems = manualMaxItems > 0
+      ? Math.max(1, Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, manualMaxItems))
+      : autoMaxItems;
+    const effectiveTargetCount = Math.max(1, Math.min(desiredItemCount, effectiveMaxItems));
+    const targetPerItemGp = Math.max(0.5, Number((share.targetItemBudgetGp / Math.max(1, effectiveTargetCount)).toFixed(2)));
     const valueStrictnessRaw = Number(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
     const valueStrictness = Number.isFinite(valueStrictnessRaw)
       ? Math.max(0.5, Math.min(3, valueStrictnessRaw / 100))
@@ -16952,9 +16970,11 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       mode: target.mode,
       challenge,
       combatants,
-      targetCount: desiredItemCount,
+      targetCount: effectiveTargetCount,
       desiredItemCount,
-      maxItems,
+      autoMaxItems,
+      manualMaxItems,
+      maxItems: effectiveMaxItems,
       targetPerItemGp,
       totalBudgetGp: target.effectiveTotalTargetGp,
       targetItemBudgetGp: share.targetItemBudgetGp,
@@ -16994,6 +17014,8 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       combatants: 1,
       targetCount: 1,
       desiredItemCount: 1,
+      autoMaxItems: 1,
+      manualMaxItems: 0,
       maxItems: 1,
       targetPerItemGp: 1,
       totalBudgetGp: 1,
@@ -17115,6 +17137,20 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
   const soloEncounter = mode === "encounter" && combatants <= 1;
   let desiredNextValueGp = Math.max(0.5, remainingBudgetGp / remainingPicks);
   const strictness = Math.max(0.5, Number(budgetContext?.valueStrictness ?? 1) || 1);
+  const projectedTotalGp = consumedBudgetGp + value;
+  const rangeMinGp = Math.max(0, Number(
+    budgetContext?.itemTargetValueRangeMinGp
+      ?? budgetContext?.selectionRangeMinGp
+      ?? budgetContext?.targetValueRangeMinGp
+      ?? 0
+  ) || 0);
+  const rangeMaxGp = Math.max(rangeMinGp, Number(
+    budgetContext?.itemTargetValueRangeMaxGp
+      ?? budgetContext?.selectionRangeMaxGp
+      ?? budgetContext?.targetValueRangeMaxGp
+      ?? 0
+  ) || 0);
+  const projectedWithinRange = rangeMaxGp > 0 && projectedTotalGp >= rangeMinGp && projectedTotalGp <= rangeMaxGp;
 
   const manualCapGp = Math.max(0, Number(budgetContext?.manualMaxItemValueGp ?? 0) || 0);
   if (manualCapGp > 0 && value > manualCapGp) return 0;
@@ -17127,10 +17163,11 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
   let weight = 1;
   if (value <= desiredNextValueGp) {
     const savingsRatio = Math.max(0, 1 - (value / Math.max(0.01, desiredNextValueGp)));
-    weight *= 1 + Math.min(0.2, savingsRatio * 0.2);
+    weight *= 1 + Math.min(0.08, savingsRatio * 0.08);
   } else {
     const overRatio = value / Math.max(0.01, desiredNextValueGp);
-    weight *= Math.exp(-(overRatio - 1) * (2.2 * strictness));
+    const oversizePenaltyScale = projectedWithinRange ? 0.75 : 2.2;
+    weight *= Math.exp(-(overRatio - 1) * (oversizePenaltyScale * strictness));
   }
 
   if (effectiveCapGp > 0 && value > effectiveCapGp) {
@@ -17147,28 +17184,22 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
     }
   }
 
-  const rangeMinGp = Math.max(0, Number(
-    budgetContext?.itemTargetValueRangeMinGp
-      ?? budgetContext?.selectionRangeMinGp
-      ?? budgetContext?.targetValueRangeMinGp
-      ?? 0
-  ) || 0);
-  const rangeMaxGp = Math.max(rangeMinGp, Number(
-    budgetContext?.itemTargetValueRangeMaxGp
-      ?? budgetContext?.selectionRangeMaxGp
-      ?? budgetContext?.targetValueRangeMaxGp
-      ?? 0
-  ) || 0);
   if (rangeMaxGp > 0) {
-    const projectedTotalGp = consumedBudgetGp + value;
-    if (projectedTotalGp < rangeMinGp) {
-      const gapRatio = (rangeMinGp - projectedTotalGp) / Math.max(1, rangeMinGp);
-      weight *= 1 + Math.min(0.45, gapRatio * 0.45);
+    if (projectedWithinRange) {
+      const rangeMidGp = rangeMinGp + ((rangeMaxGp - rangeMinGp) / 2);
+      const midDistanceRatio = Math.abs(projectedTotalGp - rangeMidGp) / Math.max(1, rangeMaxGp - rangeMinGp, rangeMidGp);
+      weight *= 1.75 + Math.max(0, (1 - midDistanceRatio) * 0.65);
+    } else if (projectedTotalGp < rangeMinGp) {
+      const progressRatio = projectedTotalGp / Math.max(1, rangeMinGp);
+      weight *= 1 + Math.min(0.65, Math.max(0, progressRatio) * 0.65);
     } else if (projectedTotalGp > rangeMaxGp) {
       const overRatio = (projectedTotalGp - rangeMaxGp) / Math.max(1, rangeMaxGp);
       weight *= Math.exp(-overRatio * (2.8 * strictness));
     }
   }
+
+  const projectedDistanceRatio = Math.abs(projectedTotalGp - totalBudgetGp) / Math.max(1, totalBudgetGp);
+  weight *= 1 + Math.max(0, 1 - projectedDistanceRatio) * 0.45;
 
   if (soloEncounter && nearMaxReferenceGp > 0 && value <= nearMaxReferenceGp) {
     const normalized = value / Math.max(0.01, nearMaxReferenceGp);
@@ -18710,8 +18741,12 @@ function buildLootPreviewContext() {
       tolerancePercent: Number(valueBudgetContext.tolerancePercent ?? 0),
       strictnessBandLabel: String(valueBudgetContext.strictnessBandLabel ?? "Normal"),
       desiredItemCount: Math.max(0, Number(valueBudgetContext.targetCount ?? 0) || 0),
+      baselineDesiredItemCount: Math.max(0, Number(valueBudgetContext.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
+      autoMaxItems: Math.max(0, Number(valueBudgetContext.autoMaxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      manualMaxItems: Math.max(0, Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) || 0),
       maxItems: Math.max(0, Number(valueBudgetContext.maxItems ?? 0) || 0),
       usingManualTotalTarget: Number(valueBudgetContext.manualTotalTargetGp ?? 0) > 0,
+      usingManualMaxItems: Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) > 0,
       autoMaxItemValueGp: Number(valueBudgetContext.autoMaxItemValueGp ?? 0),
       manualMaxItemValueGp: Number(valueBudgetContext.manualMaxItemValueGp ?? 0),
       effectiveMaxItemValueGp: Number(valueBudgetContext.effectiveMaxItemValueGp ?? 0),
@@ -32060,6 +32095,7 @@ function setLootPreviewField(element) {
     "tableScalar",
     "valueBudgetScalar",
     "valueStrictness",
+    "maxItems",
     "maxItemValueGp",
     "targetItemsValueGp"
   ]);
@@ -32127,6 +32163,7 @@ function readLootPreviewDraftFromUi(element) {
     tableScalar: readFieldValue("lootPreviewTableScalar", "tableScalar", current?.tableScalar ?? 100),
     valueBudgetScalar: readFieldValue("lootPreviewValueBudgetScalar", "valueBudgetScalar", current?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
     valueStrictness: readFieldValue("lootPreviewValueStrictness", "valueStrictness", current?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
+    maxItems: readFieldValue("lootPreviewMaxItems", "maxItems", current?.maxItems ?? 0),
     maxItemValueGp: readFieldValue("lootPreviewMaxItemValueGp", "maxItemValueGp", current?.maxItemValueGp ?? 0),
     targetItemsValueGp: readFieldValue("lootPreviewTargetItemsValueGp", "targetItemsValueGp", current?.targetItemsValueGp ?? 0)
   });
