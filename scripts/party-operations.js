@@ -22311,20 +22311,22 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const settlementView = viewerIsGm
     ? buildMerchantSettlementOptions(
       definitionsForDisplay,
-      storedSettlement,
-      hasStoredSettlement ? "" : merchantsState.currentSettlement
+      "",
+      ""
     )
     : {
       activeValue: viewerAssignedSettlement,
       activeLabel: viewerAssignedSettlement ? getMerchantSettlementLabel(viewerAssignedSettlement) : "All Locations",
       options: []
     };
-  if (viewerIsGm && hasStoredSettlement) setSelectedMerchantSettlement(settlementView.activeValue);
+  if (viewerIsGm && hasStoredSettlement && settlementView.activeValue !== getSelectedMerchantSettlement()) {
+    setSelectedMerchantSettlement(settlementView.activeValue);
+  }
 
   const availableMerchants = (!activeActor || !viewerCanUseShop)
     ? []
     : definitionsForDisplay
-      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: false }))
+      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: viewerIsGm }))
       .map((merchant) => {
         const hasMerchantActor = Boolean(merchant.actorId && game.actors.get(merchant.actorId));
         const canOpenShop = Boolean(activeActorId) && hasMerchantActor;
