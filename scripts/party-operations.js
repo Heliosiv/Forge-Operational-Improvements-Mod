@@ -8663,10 +8663,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await showReconBrief();
         },
         "set-reputation-score": async () => {
-          await setReputationScore(element);
+          await setReputationScore(element, { skipLocalRefresh: true });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "adjust-reputation-score": async () => {
-          await adjustReputationScore(element);
+          await adjustReputationScore(element, { skipLocalRefresh: true });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "set-reputation-note": async () => {
           await setReputationNote(element);
@@ -23239,6 +23241,39 @@ async function transferItemBetweenActors(sourceActor, targetActor, sourceItem, q
   return true;
 }
 
+async function rollbackMerchantTradeTransfers(transfers = []) {
+  const entries = Array.isArray(transfers) ? [...transfers].reverse() : [];
+  const failures = [];
+  for (const entry of entries) {
+    const sourceActor = entry?.sourceActor ?? null;
+    const targetActor = entry?.targetActor ?? null;
+    const referenceItem = entry?.referenceItem ?? null;
+    const qty = Math.max(0, Math.floor(Number(entry?.qty ?? 0) || 0));
+    if (!sourceActor || !targetActor || !referenceItem || qty <= 0) continue;
+    const rollbackSource = findTradeTargetItem(targetActor, referenceItem);
+    if (!rollbackSource) {
+      failures.push({
+        itemName: String(referenceItem?.name ?? "Item"),
+        qty
+      });
+      continue;
+    }
+    // Reverse previously completed item moves if the trade fails after transfer.
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await transferItemBetweenActors(targetActor, sourceActor, rollbackSource, qty);
+    if (!ok) {
+      failures.push({
+        itemName: String(referenceItem?.name ?? "Item"),
+        qty
+      });
+    }
+  }
+  return {
+    ok: failures.length === 0,
+    failures
+  };
+}
+
 function getMerchantBarterResolutionKey({ userId, actorId, merchantId, settlement } = {}) {
   const normalizedUserId = String(userId ?? "").trim();
   const normalizedActorId = String(actorId ?? "").trim();
@@ -23603,21 +23638,39 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     };
   }
 
+  const completedTransfers = [];
   try {
     for (const line of buyLines) {
       // eslint-disable-next-line no-await-in-loop
       const ok = await transferItemBetweenActors(merchantActor, actor, line.sourceItem, line.qty, { clearGeneratedFlag: true });
-      if (!ok) return { ok: false, message: "Buy transfer failed due to stock changes. Reopen shop and retry." };
+      if (!ok) throw new Error("Buy transfer failed due to stock changes. Reopen shop and retry.");
+      completedTransfers.push({
+        sourceActor: merchantActor,
+        targetActor: actor,
+        referenceItem: line.sourceItem,
+        qty: line.qty
+      });
     }
     for (const line of sellLines) {
       // eslint-disable-next-line no-await-in-loop
       const ok = await transferItemBetweenActors(actor, merchantActor, line.sourceItem, line.qty);
-      if (!ok) return { ok: false, message: "Sell transfer failed due to inventory changes. Reopen shop and retry." };
+      if (!ok) throw new Error("Sell transfer failed due to inventory changes. Reopen shop and retry.");
+      completedTransfers.push({
+        sourceActor: actor,
+        targetActor: merchantActor,
+        referenceItem: line.sourceItem,
+        qty: line.qty
+      });
     }
     const actorCurrencyAfterCp = actorCurrencyBeforeCp - netCp;
     const merchantCurrencyAfterCp = merchantCurrencyBeforeCp + netCp;
     await setActorCurrencyFromCp(actor, actorCurrencyAfterCp);
     await setActorCurrencyFromCp(merchantActor, merchantCurrencyAfterCp);
+    const actorCurrencyVerifiedCp = currencyBundleToCp(getActorCurrencyBundle(actor));
+    const merchantCurrencyVerifiedCp = currencyBundleToCp(getActorCurrencyBundle(merchantActor));
+    if (actorCurrencyVerifiedCp !== actorCurrencyAfterCp || merchantCurrencyVerifiedCp !== merchantCurrencyAfterCp) {
+      throw new Error("Currency update did not persist.");
+    }
 
     const outcome = {
       ok: true,
@@ -23661,8 +23714,31 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     await postMerchantTradeToChat(outcome);
     return outcome;
   } catch (error) {
+    try {
+      await setActorCurrencyFromCp(actor, actorCurrencyBeforeCp);
+      await setActorCurrencyFromCp(merchantActor, merchantCurrencyBeforeCp);
+    } catch (rollbackCurrencyError) {
+      console.warn(`${MODULE_ID}: merchant trade currency rollback failed`, {
+        merchantId,
+        actorId,
+        error: rollbackCurrencyError
+      });
+    }
+    const rollback = await rollbackMerchantTradeTransfers(completedTransfers);
+    if (!rollback.ok) {
+      console.warn(`${MODULE_ID}: merchant trade item rollback incomplete`, {
+        merchantId,
+        actorId,
+        failures: rollback.failures
+      });
+    }
     console.warn(`${MODULE_ID}: merchant trade failed`, { merchantId, actorId, error });
-    return { ok: false, message: String(error?.message ?? "Trade failed.") };
+    return {
+      ok: false,
+      message: rollback.ok
+        ? String(error?.message ?? "Trade failed.")
+        : "Trade failed and item rollback was incomplete. Review inventories and currency manually."
+    };
   }
 }
 
@@ -30616,7 +30692,7 @@ async function showReconBrief() {
   });
 }
 
-async function setReputationScore(element) {
+async function setReputationScore(element, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
@@ -30630,10 +30706,10 @@ async function setReputationScore(element) {
     const entry = reputation.factions.find((row) => row.id === faction);
     if (!entry) return;
     entry.score = score;
-  });
+  }, options);
 }
 
-async function adjustReputationScore(element) {
+async function adjustReputationScore(element, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
@@ -30648,7 +30724,7 @@ async function adjustReputationScore(element) {
     const entry = reputation.factions.find((row) => row.id === faction);
     if (!entry) return;
     entry.score = Math.max(-5, Math.min(5, Number(entry.score ?? 0) + delta));
-  });
+  }, options);
 }
 
 async function setReputationNote(element) {

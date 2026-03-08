@@ -45,6 +45,13 @@ function ensureRestSlotEntries(slot) {
   if (!slot.entries) slot.entries = [];
 }
 
+function restSlotHasActor(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return false;
+  ensureRestSlotEntries(slot);
+  return slot.entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId);
+}
+
 export async function applyRestRequest(request, requesterRef, deps = {}) {
   const {
     getRestWatchState,
@@ -72,6 +79,7 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     const slot = state.slots.find((entry) => entry.id === request.slotId);
     if (!slot) return;
     ensureRestSlotEntries(slot);
+    if (restSlotHasActor(slot, request.actorId)) return;
     slot.entries.push({ actorId: request.actorId, notes: "" });
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
