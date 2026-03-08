@@ -349,15 +349,24 @@
               <div class="po-sop-note-editor">
                 <label class="po-resource-row po-notes-row-lg">
                   <span>Notes</span>
-                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{note}}</textarea>
+                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{draftNote}}</textarea>
                 </label>
                 <div class="po-notes-actions">
                   <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Note</button>
                 </div>
               </div>
               <div class="po-sop-note-view">
-                <div class="po-note-label">Shared Notes</div>
-                <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}" data-sop-note-view="{{key}}">{{#if note}}{{note}}{{else}}No notes recorded yet.{{/if}}</div>
+                <div class="po-note-label">Saved Notes</div>
+                {{#if hasNoteEntries}}
+                {{#each noteEntries}}
+                <div class="po-sop-note-entry">
+                  <div class="po-note-label">{{userName}}{{#if hasActor}} as {{actorName}}{{/if}} - {{createdAtLabel}}</div>
+                  <div class="po-sop-note-view-body">{{text}}</div>
+                </div>
+                {{/each}}
+                {{else}}
+                <div class="po-sop-note-view-body is-empty">No saved notes yet.</div>
+                {{/if}}
                 {{#if pendingLocalSync}}
                 <div class="po-note-label">Pending GM sync...</div>
                 {{/if}}
@@ -1095,6 +1104,7 @@
           <div class="po-merchant-showcase">
             <div class="po-merchant-showcase-head">
               <div class="po-op-summary">Assigned Location: {{operations.merchants.selectedSettlementLabel}}</div>
+              {{#if operations.merchants.canChooseActor}}
               <label class="po-resource-row">
                 <span>Trading As</span>
                 <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
@@ -1103,6 +1113,9 @@
                   {{/each}}
                 </select>
               </label>
+              {{else}}
+              <div class="po-op-summary">Trading As: {{operations.merchants.activeActorName}}</div>
+              {{/if}}
               <div class="po-op-summary">Viewer: {{operations.merchants.viewerName}}</div>
               <div class="po-op-summary">Last Access Logged: {{operations.merchants.viewerLastAccessLabel}}</div>
               <div class="po-op-summary">Shop Status: {{operations.merchants.shopStatusLabel}}</div>
@@ -1246,6 +1259,7 @@
                   <div class="po-op-role-name">Submit Downtime Action</div>
                   <div class="po-op-role-status">Per actor</div>
                 </div>
+                {{#if operations.downtime.submit.canChooseActor}}
                 <label class="po-resource-row">
                   <span>Actor</span>
                   <select name="downtimeActorId" class="po-select">
@@ -1254,6 +1268,9 @@
                     {{/each}}
                   </select>
                 </label>
+                {{else}}
+                <div class="po-op-summary">Actor: {{operations.downtime.submit.actorName}}</div>
+                {{/if}}
                 <label class="po-resource-row">
                   <span>Action</span>
                   <select name="downtimeActionKey" class="po-select">

@@ -6825,10 +6825,13 @@
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-live-indicator {
-  cursor: default;
-  pointer-events: none;
   background: color-mix(in srgb, var(--po-accent) 16%, var(--po-bg-alt));
   border-color: color-mix(in srgb, var(--po-accent) 52%, var(--po-border-strong));
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-live-indicator.is-paused {
+  background: color-mix(in srgb, var(--po-bg-alt) 86%, var(--po-surface));
+  border-color: color-mix(in srgb, var(--po-border-strong) 58%, var(--po-border));
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-live-progress:disabled {
@@ -6916,6 +6919,19 @@
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-card-actions {
   justify-content: flex-start;
+  gap: 6px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-track-browser-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-mix-track-tabs {
+  padding: 0;
   gap: 6px;
 }
 
@@ -7106,6 +7122,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-candidate-list .po-audio-track-row {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-assigned-list .po-audio-track-row {

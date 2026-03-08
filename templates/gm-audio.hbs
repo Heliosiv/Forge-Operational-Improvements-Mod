@@ -37,6 +37,7 @@
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip" role="listitem"><span>Durations Cached</span><strong>{{audio.summary.resolvedDurationCount}}</strong></div>
             <div class="po-gm-loot-summary-chip" role="listitem"><span>Hidden</span><strong>{{audio.summary.hiddenCount}}</strong></div>
           </div>
           <div class="po-op-summary po-gm-loot-updated">Catalog updated {{audio.summary.scannedAtLabel}} by {{audio.summary.scannedBy}}</div>
@@ -194,9 +195,15 @@
               </div>
               <div class="po-audio-preview-player po-audio-preview-player-live">
                 <div class="po-audio-preview-controls po-audio-preview-controls-live">
-                  <div class="po-audio-preview-toggle po-audio-live-indicator" aria-hidden="true">
-                    <i class="fa-solid fa-wave-square"></i>
-                  </div>
+                  <button
+                    type="button"
+                    class="po-audio-preview-toggle po-audio-live-indicator {{#unless audio.mix.playback.isPlaying}}is-paused{{/unless}}"
+                    data-action="toggle-audio-mix-playback"
+                    aria-label="{{audio.mix.playback.transportActionLabel}}"
+                    title="{{audio.mix.playback.transportActionLabel}}"
+                    {{#unless audio.mix.playback.canTogglePlayback}}disabled{{/unless}}>
+                    <i class="fa-solid {{audio.mix.playback.transportActionIcon}}"></i>
+                  </button>
                   <div class="po-audio-preview-time">
                     <span data-role="current">0:00</span>
                     <span>/</span>
@@ -318,7 +325,7 @@
             <div class="po-audio-track-row {{#if isActive}}is-selected{{/if}}" role="listitem">
               <div class="po-audio-track-main">
                 <div class="po-audio-track-name">{{order}}. {{name}}</div>
-                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}}</div>
+                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}</div>
               </div>
               <div class="po-audio-track-badges">
                 {{#if isActive}}<span class="po-pill">Live</span>{{/if}}
@@ -351,14 +358,39 @@
         </section>
 
         <section class="po-gm-section po-audio-results-card">
-          <div class="po-section-title">Suggested Tracks</div>
-          {{#if audio.mix.hasSuggestedTracks}}
-          <div class="po-audio-track-list po-audio-candidate-list" data-po-scroll-preserve="audio-mix-suggestions" role="list" aria-label="Suggested mix tracks">
-            {{#each audio.mix.suggestedTracks}}
-            <div class="po-audio-track-row {{#if selected}}is-selected{{/if}}" role="listitem">
+          <div class="po-audio-track-browser-head">
+            <div class="po-section-title">Track Browser</div>
+            <div class="po-tabs po-tabs-sub po-audio-mix-track-tabs" aria-label="Mix track browser tabs">
+              <button type="button" class="po-tab {{#if audio.mix.trackBrowser.viewSuggested}}is-active{{/if}}" data-action="set-audio-mix-track-browser-view" data-view="suggested">
+                Suggested ({{audio.mix.trackBrowser.suggestedCount}})
+              </button>
+              <button type="button" class="po-tab {{#if audio.mix.trackBrowser.viewAll}}is-active{{/if}}" data-action="set-audio-mix-track-browser-view" data-view="all">
+                All Tracks ({{audio.mix.trackBrowser.allCount}})
+              </button>
+            </div>
+          </div>
+          <div class="po-op-summary">{{audio.mix.trackBrowser.summaryLabel}}</div>
+          <div class="po-op-action-row po-audio-card-actions po-audio-results-toolbar">
+            <button type="button" class="po-btn po-btn-sm" data-action="select-visible-audio-mix-tracks" {{#unless audio.mix.trackBrowser.hasTracks}}disabled{{/unless}}>Select Visible</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-selected-audio-mix-tracks" {{#unless audio.mix.trackBrowser.selection.hasSelection}}disabled{{/unless}}>Clear Selected</button>
+            <button type="button" class="po-btn po-btn-sm is-primary" data-action="add-selected-audio-mix-tracks" {{#unless audio.mix.trackBrowser.selection.hasSelection}}disabled{{/unless}}>Add Selected</button>
+          </div>
+          <div class="po-op-summary">{{audio.mix.trackBrowser.selection.label}}</div>
+          {{#if audio.mix.trackBrowser.hasTracks}}
+          <div class="po-audio-track-list po-audio-candidate-list" data-po-scroll-preserve="audio-mix-suggestions" role="list" aria-label="Mix track browser">
+            {{#each audio.mix.trackBrowser.tracks}}
+            <div class="po-audio-track-row {{#if selected}}is-selected{{/if}} {{#if checked}}is-bulk-selected{{/if}}" role="listitem">
+              <div class="po-audio-track-checkbox">
+                <input id="po-audio-mix-track-check-{{@index}}" type="checkbox" data-action="toggle-audio-mix-track-selection" data-track-id="{{id}}" aria-label="Select {{name}} for bulk add" {{#if checked}}checked{{/if}} />
+              </div>
               <div class="po-audio-track-main">
-                <div class="po-audio-track-name">{{name}}</div>
-                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} - score {{score}}</div>
+                <div class="po-audio-track-name">
+                  {{name}}
+                  {{#if isAssigned}}<span class="po-pill">Queued</span>{{/if}}
+                </div>
+                <div class="po-audio-track-meta">
+                  {{category}}{{#if subcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}{{#if ../audio.mix.trackBrowser.viewSuggested}} · score {{score}}{{/if}}
+                </div>
               </div>
               <div class="po-audio-track-badges">
                 <span class="po-pill">{{kindLabel}}</span>
@@ -379,7 +411,7 @@
             {{/each}}
           </div>
           {{else}}
-          <div class="po-op-summary">No suggestions matched this preset yet. Broaden the focus or adjust the search tokens.</div>
+          <div class="po-op-summary">{{audio.mix.trackBrowser.emptyLabel}}</div>
           {{/if}}
         </section>
       </div>
@@ -399,7 +431,7 @@
               <button type="button" class="po-audio-track-select-button" data-action="select-audio-track" data-track-id="{{id}}">
                 <span class="po-audio-track-main">
                   <span class="po-audio-track-name">{{name}}</span>
-                  <span class="po-audio-track-meta">{{category}}{{#if hasSubcategory}} / {{subcategory}}{{/if}}</span>
+                  <span class="po-audio-track-meta">{{category}}{{#if hasSubcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}</span>
                 </span>
                 <span class="po-audio-track-badges">
                   <span class="po-pill">{{kindLabel}}</span>
@@ -424,10 +456,11 @@
               <span class="po-pill">{{audio.selectedTrack.kindLabel}}</span>
               <span class="po-pill">{{audio.selectedTrack.usageLabel}}</span>
               <span class="po-pill">{{audio.selectedTrack.extension}}</span>
+              <span class="po-pill">{{audio.selectedTrack.durationLabel}}</span>
             </div>
           </div>
-          <div class="po-audio-preview-player" data-po-audio-player data-default-volume="{{audio.preview.defaultVolume}}">
-            <audio class="po-audio-preview-media" preload="metadata" src="{{audio.selectedTrack.path}}"></audio>
+          <div class="po-audio-preview-player" data-po-audio-player data-default-volume="{{audio.preview.defaultVolume}}" data-default-duration="{{audio.selectedTrack.durationSeconds}}" data-preload-mode="none">
+            <audio class="po-audio-preview-media" preload="none" data-default-duration="{{audio.selectedTrack.durationSeconds}}" src="{{audio.selectedTrack.path}}"></audio>
             <div class="po-audio-preview-controls">
               <button type="button" class="po-audio-preview-toggle" data-role="toggle" aria-label="Play audio preview">
                 <i class="fa-solid fa-play" data-role="toggle-icon"></i>

@@ -35,6 +35,10 @@ export function createGmAudioPageApp(deps) {
     toggleAudioLibraryTrackSelection,
     selectVisibleAudioLibraryTracks,
     clearAudioLibraryTrackSelections,
+    setAudioMixTrackBrowserView,
+    toggleAudioMixTrackSelection,
+    selectVisibleAudioMixTracks,
+    clearAudioMixTrackSelections,
     selectAudioMixPreset,
     createAudioMixPresetFromSelection,
     promptAndUpdateSelectedAudioMixPresetField,
@@ -42,6 +46,7 @@ export function createGmAudioPageApp(deps) {
     deleteSelectedAudioMixPreset,
     addTrackToSelectedAudioMixPreset,
     addSelectedLibraryTrackToAudioMixPreset,
+    addSelectedAudioMixTracksToPreset,
     clearSelectedAudioMixPresetTrackList,
     hideAudioLibraryTrack,
     hideSelectedAudioLibraryTracks,
@@ -55,6 +60,7 @@ export function createGmAudioPageApp(deps) {
     restoreHiddenAudioLibraryTrack,
     playSelectedAudioMixPreset,
     playSelectedAudioMixCandidate,
+    toggleAudioMixPlayback,
     playNextAudioMixTrack,
     restartCurrentAudioMixTrack,
     stopAudioMixPlayback,
@@ -161,6 +167,7 @@ export function createGmAudioPageApp(deps) {
         if (!(media instanceof HTMLAudioElement) || !(seek instanceof HTMLInputElement) || !(volume instanceof HTMLInputElement)) continue;
 
         let isSeeking = false;
+        const defaultDuration = Math.max(0, Number(player.dataset.defaultDuration ?? media.dataset.defaultDuration ?? 0) || 0);
         const syncPlayState = () => {
           const isPlaying = !media.paused && !media.ended;
           toggle?.setAttribute("aria-label", isPlaying ? "Pause audio preview" : "Play audio preview");
@@ -173,7 +180,9 @@ export function createGmAudioPageApp(deps) {
           const duration = Number.isFinite(media.duration) && media.duration > 0 ? media.duration : 0;
           const current = Number.isFinite(media.currentTime) && media.currentTime > 0 ? media.currentTime : 0;
           if (currentLabel) currentLabel.textContent = formatAudioPreviewTime(current);
-          if (durationLabel) durationLabel.textContent = duration > 0 ? formatAudioPreviewTime(duration) : "--:--";
+          if (durationLabel) durationLabel.textContent = duration > 0
+            ? formatAudioPreviewTime(duration)
+            : (defaultDuration > 0 ? formatAudioPreviewTime(defaultDuration) : "--:--");
           if (!isSeeking) {
             seek.disabled = duration <= 0;
             seek.value = duration > 0 ? String(Math.round((current / duration) * 1000)) : "0";
@@ -188,7 +197,7 @@ export function createGmAudioPageApp(deps) {
           if (persist) this._queueAudioPreviewVolumeSave(normalized);
         };
 
-        media.preload = "metadata";
+        media.preload = player.dataset.preloadMode ?? media.preload ?? "none";
         syncVolumeState(Number(player.dataset.defaultVolume ?? defaultVolume));
         syncPlayState();
         syncTimeState();
@@ -325,6 +334,18 @@ export function createGmAudioPageApp(deps) {
         "clear-selected-audio-tracks": rerenderAlways(() => {
           clearAudioLibraryTrackSelections();
         }),
+        "set-audio-mix-track-browser-view": rerenderAlways((actionElement) => {
+          setAudioMixTrackBrowserView(actionElement);
+        }),
+        "toggle-audio-mix-track-selection": rerenderAlways((actionElement) => {
+          toggleAudioMixTrackSelection(actionElement);
+        }),
+        "select-visible-audio-mix-tracks": rerenderAlways(() => {
+          selectVisibleAudioMixTracks();
+        }),
+        "clear-selected-audio-mix-tracks": rerenderAlways(() => {
+          clearAudioMixTrackSelections();
+        }),
         "select-audio-mix-preset": rerenderAlways((actionElement) => {
           selectAudioMixPreset(actionElement);
         }),
@@ -345,6 +366,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "add-selected-audio-track-to-mix": rerenderAlways(() => {
           return addSelectedLibraryTrackToAudioMixPreset();
+        }),
+        "add-selected-audio-mix-tracks": rerenderAlways(() => {
+          return addSelectedAudioMixTracksToPreset();
         }),
         "clear-audio-mix-track-list": rerenderAlways(() => {
           return clearSelectedAudioMixPresetTrackList();
@@ -375,6 +399,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "play-audio-mix-candidate": rerenderAlways((actionElement) => {
           return playSelectedAudioMixCandidate(actionElement);
+        }),
+        "toggle-audio-mix-playback": rerenderAlways(() => {
+          return toggleAudioMixPlayback();
         }),
         "play-audio-mix-next": rerenderAlways(() => {
           return playNextAudioMixTrack();

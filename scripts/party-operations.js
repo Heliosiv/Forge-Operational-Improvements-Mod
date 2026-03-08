@@ -259,6 +259,12 @@ const managedAudioMixLocalState = {
   fade: 0,
   startedAt: 0
 };
+const audioLibraryMetadataWarmupState = {
+  queued: false,
+  inFlight: false,
+  timerId: null,
+  catalogKey: ""
+};
 let managedAudioMixResyncTimerId = null;
 let refreshOpenAppsQueueAll = false;
 const refreshOpenAppsScopeQueue = new Set();
@@ -5401,6 +5407,29 @@ function getPlayerHubModeSetting() {
   }
 }
 
+function isMarchingOrderPlayerLocked(user = game.user) {
+  if (canAccessAllPlayerOps(user)) return false;
+  try {
+    return Boolean(game.settings.get(MODULE_ID, SETTINGS.MARCHING_ORDER_LOCK_PLAYERS));
+  } catch {
+    return false;
+  }
+}
+
+function getSelectablePlayerActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!canUserManageDowntimeActor(user, actor)) return;
+    unique.set(String(actor.id), actor);
+  };
+  if (user.character?.type === "character") addActor(user.character);
+  for (const actor of getOwnedPcActors()) addActor(actor);
+  for (const actor of game.actors?.contents ?? []) addActor(actor);
+  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+}
+
 function normalizePlayerHubActionType(value) {
   const normalized = String(value ?? "").trim();
   switch (normalized) {
@@ -5806,6 +5835,26 @@ function clearSopCachedNoteEntry(sopKeyInput) {
   const cacheKey = getSopNoteCacheKey(sopKeyInput);
   if (!cacheKey) return;
   clearNoteDraftCacheValue(cacheKey);
+}
+
+function resolveSopDraftForView(sopKeyInput, savedEntries = []) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  const cached = readSopCachedNoteEntry(sopKey);
+  if (!cached) return { note: "", pendingSync: false };
+  const latestSavedEntry = Array.isArray(savedEntries) ? savedEntries[0] ?? null : null;
+  if (
+    cached.pendingSync
+    && latestSavedEntry
+    && String(latestSavedEntry?.text ?? "") === String(cached.text ?? "")
+    && String(latestSavedEntry?.userId ?? "") === String(game.user?.id ?? "")
+  ) {
+    clearSopCachedNoteEntry(sopKey);
+    return { note: "", pendingSync: false };
+  }
+  return {
+    note: String(cached.text ?? ""),
+    pendingSync: Boolean(cached.pendingSync)
+  };
 }
 
 function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
@@ -7295,14 +7344,16 @@ function buildOperationsContextFallback() {
     { key: "retreatProtocol", label: "Retreat protocol" }
   ];
   const sops = sopMeta.map((sop) => {
-    const worldNote = String(ledger.sopNotes?.[sop.key] ?? "");
-    const resolved = resolveSopNoteForView(sop.key, worldNote);
+    const noteEntries = getSopNoteEntriesForView(ledger, sop.key);
+    const resolved = resolveSopDraftForView(sop.key, noteEntries);
     return {
       key: sop.key,
       label: sop.label,
       active: Boolean(ledger.sops?.[sop.key]),
-      note: resolved.note,
-      pendingLocalSync: resolved.pendingSync
+      draftNote: resolved.note,
+      pendingLocalSync: resolved.pendingSync,
+      noteEntries,
+      hasNoteEntries: noteEntries.length > 0
     };
   });
   schedulePendingSopNoteSync("operations-fallback-context");
@@ -8011,9 +8062,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return;
         }
         if (event.target?.matches("textarea[data-action='set-sop-note']")) {
-          syncOperationalSopNoteViewFromElement(event.target);
           cacheOperationalSopNoteDraftFromElement(event.target);
-          scheduleOperationalSopNoteSave(this, event.target);
           return;
         }
         if (event.target?.matches("input[data-action='set-journal-filter']")) {
@@ -8558,8 +8607,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "set-sop-note": async () => {
           clearScheduledSopNoteSave(this, String(element?.dataset?.sop ?? "").trim());
-          await setOperationalSopNote(element, { suppressUiWarning: true });
-          syncOperationalSopNoteViewFromElement(element);
+          cacheOperationalSopNoteDraftFromElement(element);
         },
         "save-sop-note": async () => {
           const sopKey = String(element?.dataset?.sop ?? "").trim();
@@ -8577,7 +8625,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             suppressUiWarning: false,
             notify: true
           });
-          syncOperationalSopNoteViewFromElement(noteInput);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "set-resource": async () => {
           const result = await setOperationalResource(element);
@@ -9414,8 +9462,12 @@ function buildGmMerchantsPageContext() {
 
 function buildGmAudioPageContext() {
   const rawCatalog = getAudioLibraryCatalog({ includeHidden: true });
+  if (game.user?.isGM && rawCatalog.items.some((item) => !isAudioLibraryDurationResolved(item))) {
+    queueAudioLibraryMetadataWarmup({ catalog: rawCatalog, delayMs: 120 });
+  }
   pruneSelectedAudioLibraryTrackSelectionIds(rawCatalog.items.map((item) => item.id));
   const catalog = getAudioLibraryCatalog();
+  pruneSelectedAudioMixTrackSelectionIds(catalog.items.map((item) => item.id));
   const hiddenTrackIds = getHiddenAudioLibraryTrackIds();
   const hiddenTrackIdSet = new Set(hiddenTrackIds);
   const hiddenMatches = rawCatalog.items
@@ -9423,12 +9475,7 @@ function buildGmAudioPageContext() {
     .sort((left, right) => left.name.localeCompare(right.name));
   const hiddenTracks = hiddenMatches
     .slice(0, 24)
-    .map((item) => ({
-      ...item,
-      hasSubcategory: Boolean(item.subcategory),
-      kindLabel: getAudioLibraryKindLabel(item.kind),
-      usageLabel: getAudioLibraryUsageLabel(item.usage)
-    }));
+    .map((item) => buildAudioLibraryTrackDisplay(item));
   const hasSelectedTrack = catalog.items.some((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim());
   if (!hasSelectedTrack) {
     audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
@@ -9917,6 +9964,10 @@ export const GmAudioPageApp = createGmAudioPageApp({
   toggleAudioLibraryTrackSelection,
   selectVisibleAudioLibraryTracks,
   clearAudioLibraryTrackSelections,
+  setAudioMixTrackBrowserView,
+  toggleAudioMixTrackSelection,
+  selectVisibleAudioMixTracks,
+  clearAudioMixTrackSelections,
   selectAudioMixPreset,
   createAudioMixPresetFromSelection,
   promptAndUpdateSelectedAudioMixPresetField,
@@ -9924,6 +9975,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   deleteSelectedAudioMixPreset,
   addTrackToSelectedAudioMixPreset,
   addSelectedLibraryTrackToAudioMixPreset,
+  addSelectedAudioMixTracksToPreset,
   clearSelectedAudioMixPresetTrackList,
   hideAudioLibraryTrack,
   hideSelectedAudioLibraryTracks,
@@ -9949,6 +10001,16 @@ export const GmAudioPageApp = createGmAudioPageApp({
     try {
       clearAudioLibraryError();
       await playAudioMixCandidateByTrackId(actionElement?.dataset?.trackId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio mix failed: ${message}`);
+    }
+  },
+  toggleAudioMixPlayback: async () => {
+    try {
+      clearAudioLibraryError();
+      await toggleAudioMixPlayback();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
       setAudioLibraryError(message);
@@ -10285,6 +10347,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         downtime: {
           submit: {
             actorOptions: [],
+            canChooseActor: false,
+            actorName: "",
             actionOptions: [],
             hours: 4,
             note: ""
@@ -11268,9 +11332,15 @@ function buildDefaultLootSourceConfig() {
 }
 
 const AUDIO_LIBRARY_DEFAULT_SOURCE = "data";
-const AUDIO_LIBRARY_VERSION = 1;
+const AUDIO_LIBRARY_VERSION = 2;
 const AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION = 1;
 const AUDIO_LIBRARY_EXTENSIONS = Object.freeze(["mp3", "wav", "ogg", "webm", "flac", "m4a"]);
+const AUDIO_LIBRARY_FORGE_SOURCE = "forgevtt";
+const AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_MAX_FILES = 24;
+const AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_DELAY_MS = 200;
+const AUDIO_LIBRARY_METADATA_WARMUP_DELAY_MS = 1200;
+const AUDIO_LIBRARY_METADATA_WARMUP_CONCURRENCY = 2;
+const AUDIO_LIBRARY_METADATA_TIMEOUT_MS = 8000;
 const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
   all: "All Kinds",
   music: "Music",
@@ -11296,6 +11366,10 @@ const AUDIO_LIBRARY_USAGE_LABELS = Object.freeze({
 const AUDIO_LIBRARY_VIEW_IDS = Object.freeze({
   LIBRARY: "library",
   MIX: "mix"
+});
+const AUDIO_MIX_TRACK_BROWSER_VIEW_IDS = Object.freeze({
+  SUGGESTED: "suggested",
+  ALL: "all"
 });
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
@@ -11416,6 +11490,8 @@ const audioLibraryUiState = {
   },
   selectedTrackId: "",
   selectedTrackIds: [],
+  mixTrackBrowserView: AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED,
+  selectedMixTrackIds: [],
   selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
   previewVolume: AUDIO_PREVIEW_VOLUME_DEFAULT,
   mixStatus: "",
@@ -11794,6 +11870,29 @@ function normalizeAudioLibraryView(value) {
     : AUDIO_LIBRARY_VIEW_IDS.LIBRARY;
 }
 
+function normalizeAudioMixTrackBrowserView(value) {
+  return String(value ?? "").trim().toLowerCase() === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+    ? AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+    : AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED;
+}
+
+function getSelectedAudioMixTrackSelectionIds() {
+  return normalizeAudioLibraryTrackSelectionIds(audioLibraryUiState.selectedMixTrackIds ?? []);
+}
+
+function setSelectedAudioMixTrackSelectionIds(values = []) {
+  const normalized = normalizeAudioLibraryTrackSelectionIds(values);
+  audioLibraryUiState.selectedMixTrackIds = normalized;
+  return normalized;
+}
+
+function pruneSelectedAudioMixTrackSelectionIds(availableTrackIds = []) {
+  const available = new Set(normalizeAudioLibraryTrackSelectionIds(availableTrackIds));
+  return setSelectedAudioMixTrackSelectionIds(
+    getSelectedAudioMixTrackSelectionIds().filter((trackId) => available.has(trackId))
+  );
+}
+
 function getStoredAudioMixPresetStore() {
   const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_MIX_PRESETS);
   return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
@@ -11849,6 +11948,8 @@ function normalizeAudioLibraryItem(entry = {}) {
   const usage = normalizeAudioLibraryUsage(entry.usage === "all" ? "" : entry.usage);
   const extensionRaw = String(entry.extension ?? "").trim().replace(/^\./, "").toLowerCase();
   const extension = AUDIO_LIBRARY_EXTENSIONS.includes(extensionRaw) ? extensionRaw : "mp3";
+  const durationSeconds = normalizeAudioLibraryDurationSeconds(entry.durationSeconds ?? entry.duration ?? 0);
+  const durationResolvedAt = normalizeAudioLibraryDurationResolvedAt(entry.durationResolvedAt ?? 0);
   const tags = Array.isArray(entry.tags)
     ? entry.tags
       .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
@@ -11864,6 +11965,8 @@ function normalizeAudioLibraryItem(entry = {}) {
     kind: kind === "all" ? "music" : kind,
     usage: usage === "all" ? "general" : usage,
     extension,
+    durationSeconds,
+    durationResolvedAt,
     tags
   };
 }
@@ -11918,6 +12021,30 @@ function getAudioLibraryCatalog(options = {}) {
   const catalog = getStoredAudioLibraryCatalog();
   if (includeHidden) return catalog;
   return applyHiddenTracksToAudioLibraryCatalog(catalog, getHiddenAudioLibraryTrackIds());
+}
+
+function getAudioLibraryCatalogWarmupKey(catalog = null) {
+  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog ?? getStoredAudioLibraryCatalog());
+  return [
+    String(normalizedCatalog.rootPath ?? "").trim(),
+    String(normalizedCatalog.source ?? "").trim(),
+    String(normalizedCatalog.scannedAt ?? 0),
+    String(normalizedCatalog.items.length ?? 0)
+  ].join("|");
+}
+
+function buildAudioLibraryTrackDisplay(item = {}) {
+  const durationSeconds = normalizeAudioLibraryDurationSeconds(item?.durationSeconds ?? 0);
+  return {
+    ...item,
+    hasSubcategory: Boolean(item?.subcategory),
+    kindLabel: getAudioLibraryKindLabel(item?.kind),
+    usageLabel: getAudioLibraryUsageLabel(item?.usage),
+    durationSeconds,
+    durationLabel: formatAudioLibraryDurationLabel(durationSeconds),
+    hasDuration: durationSeconds > 0,
+    hasTags: Array.isArray(item?.tags) && item.tags.length > 0
+  };
 }
 
 function setAudioLibraryError(message = "") {
@@ -12044,6 +12171,27 @@ function isUploadableAudioLibraryFile(file) {
   return isAudioLibraryFile(candidatePath);
 }
 
+function isForgeAudioLibrarySource(source) {
+  return String(source ?? "").trim().toLowerCase() === AUDIO_LIBRARY_FORGE_SOURCE;
+}
+
+function getAudioLibraryUploadSelectionError(source, files = []) {
+  const uploadCount = Array.isArray(files) ? files.length : 0;
+  if (!isForgeAudioLibrarySource(source)) return "";
+  if (uploadCount <= AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_MAX_FILES) return "";
+  return `This folder contains ${uploadCount} audio files. Party Operations uploads to Forge one file at a time, which will trigger Forge asset rate warnings for large libraries. Upload this folder with Forge's native Assets Library uploader first, then scan that server folder here.`;
+}
+
+async function pauseAudioLibraryUpload(source) {
+  if (!isForgeAudioLibrarySource(source)) return;
+  const delayMs = Math.max(0, Math.floor(Number(AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_DELAY_MS) || 0));
+  if (delayMs <= 0) return;
+  const sleep = foundry.utils?.sleep
+    ? (ms) => foundry.utils.sleep(ms)
+    : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  await sleep(delayMs);
+}
+
 function buildAudioLibraryUploadRootPath(rootPath = "", localFolderName = "") {
   const normalizedRootPath = normalizeAudioLibraryRootPath(rootPath);
   if (normalizedRootPath && !isAbsoluteWindowsFilesystemPath(rootPath)) {
@@ -12167,6 +12315,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
 
   audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
   setSelectedAudioLibraryTrackSelectionIds([]);
+  setSelectedAudioMixTrackSelectionIds([]);
   audioLibraryUiState.draft.source = catalog.source;
   audioLibraryUiState.draft.rootPath = catalog.rootPath;
   clearAudioLibraryError();
@@ -12174,6 +12323,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
     key: "audio-library-scan-complete",
     ttlMs: 1800
   });
+  queueAudioLibraryMetadataWarmup({ catalog, delayMs: 120 });
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
   return catalog;
@@ -12187,6 +12337,7 @@ async function clearAudioLibraryCatalog() {
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, buildDefaultAudioLibraryCatalog());
   audioLibraryUiState.selectedTrackId = "";
   setSelectedAudioLibraryTrackSelectionIds([]);
+  setSelectedAudioMixTrackSelectionIds([]);
   clearAudioLibraryError();
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
@@ -12260,6 +12411,8 @@ async function uploadLocalAudioFolderToLibrary() {
             finalize(false);
             return;
           }
+          const selectionError = getAudioLibraryUploadSelectionError(activeSource, selectedFiles);
+          if (selectionError) throw new Error(selectionError);
 
           const localRootName = String(selectedFiles[0]?.webkitRelativePath ?? "")
             .split(/[\\/]/)
@@ -12272,11 +12425,12 @@ async function uploadLocalAudioFolderToLibrary() {
           await ensureAudioLibraryUploadDirectories(activeSource, destinationRoot, relativePaths);
 
           let uploadedCount = 0;
-          for (const file of selectedFiles) {
+          for (const [index, file] of selectedFiles.entries()) {
             const relativePath = getAudioLibraryUploadRelativePath(file);
             const destinationDirectory = getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath);
             await FilePicker.upload(activeSource, destinationDirectory, file, {}, { notify: false });
             uploadedCount += 1;
+            if (index < selectedFiles.length - 1) await pauseAudioLibraryUpload(activeSource);
           }
 
           audioLibraryUiState.draft.source = activeSource;
@@ -12315,6 +12469,11 @@ function setAudioLibraryView(actionElement) {
   audioLibraryUiState.view = view;
 }
 
+function setAudioMixTrackBrowserView(actionElement) {
+  const view = normalizeAudioMixTrackBrowserView(actionElement?.dataset?.view ?? actionElement?.value);
+  audioLibraryUiState.mixTrackBrowserView = view;
+}
+
 function selectAudioLibraryTrack(actionElement) {
   audioLibraryUiState.selectedTrackId = String(actionElement?.dataset?.trackId ?? "").trim();
 }
@@ -12341,6 +12500,61 @@ function selectVisibleAudioLibraryTracks() {
 
 function clearAudioLibraryTrackSelections() {
   setSelectedAudioLibraryTrackSelectionIds([]);
+  return true;
+}
+
+function toggleAudioMixTrackSelection(actionElement) {
+  const normalizedTrackId = normalizeAudioLibraryRootPath(actionElement?.dataset?.trackId);
+  if (!normalizedTrackId) return false;
+  const selected = new Set(getSelectedAudioMixTrackSelectionIds());
+  const shouldSelect = actionElement instanceof HTMLInputElement
+    ? Boolean(actionElement.checked)
+    : !selected.has(normalizedTrackId);
+  if (shouldSelect) selected.add(normalizedTrackId);
+  else selected.delete(normalizedTrackId);
+  setSelectedAudioMixTrackSelectionIds([...selected]);
+  return true;
+}
+
+function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedAudioMixPreset()) {
+  const assignedTrackIds = buildAudioMixAssignedCandidates(catalog, preset).map(({ item }) => item.id);
+  const suggestedCandidates = buildAudioMixCandidates(catalog, preset, {
+    excludeTrackIds: assignedTrackIds
+  });
+  const allCandidates = catalog.items
+    .map((item) => ({
+      item,
+      score: scoreAudioTrackForMixPreset(item, preset)
+    }))
+    .sort((left, right) => {
+      const categoryCompare = String(left.item.category ?? "").localeCompare(String(right.item.category ?? ""));
+      if (categoryCompare !== 0) return categoryCompare;
+      const subcategoryCompare = String(left.item.subcategory ?? "").localeCompare(String(right.item.subcategory ?? ""));
+      if (subcategoryCompare !== 0) return subcategoryCompare;
+      return String(left.item.name ?? "").localeCompare(String(right.item.name ?? ""));
+    });
+  const view = normalizeAudioMixTrackBrowserView(audioLibraryUiState.mixTrackBrowserView);
+  return {
+    view,
+    suggestedCandidates,
+    allCandidates,
+    visibleCandidates: view === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL ? allCandidates : suggestedCandidates
+  };
+}
+
+function selectVisibleAudioMixTracks() {
+  const catalog = getAudioLibraryCatalog();
+  const preset = getSelectedAudioMixPreset();
+  const visibleTrackIds = getVisibleAudioMixTrackBrowserCandidates(catalog, preset)
+    .visibleCandidates
+    .slice(0, 40)
+    .map(({ item }) => item.id);
+  setSelectedAudioMixTrackSelectionIds(visibleTrackIds);
+  return visibleTrackIds.length;
+}
+
+function clearAudioMixTrackSelections() {
+  setSelectedAudioMixTrackSelectionIds([]);
   return true;
 }
 
@@ -12602,6 +12816,31 @@ async function addTrackToSelectedAudioMixPreset(trackId) {
   return true;
 }
 
+async function addTracksToSelectedAudioMixPreset(trackIds = []) {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackIds = normalizeAudioMixPresetTrackIds(trackIds);
+  if (!preset || normalizedTrackIds.length < 1) {
+    ui.notifications?.warn("Select one or more tracks before adding them to the mix.");
+    return false;
+  }
+
+  const currentTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
+  const nextTrackIds = normalizeAudioMixPresetTrackIds([...currentTrackIds, ...normalizedTrackIds]);
+  await updateSelectedAudioMixPreset((entry) => ({
+    ...entry,
+    trackIds: nextTrackIds
+  }));
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  setSelectedAudioMixTrackSelectionIds([]);
+  const addedCount = Math.max(0, nextTrackIds.length - currentTrackIds.length);
+  setAudioMixStatus(
+    addedCount > 0
+      ? `Added ${addedCount} track${addedCount === 1 ? "" : "s"} to ${preset.label}.`
+      : `${preset.label} already included the selected tracks.`
+  );
+  return true;
+}
+
 async function clearSelectedAudioMixPresetTrackList() {
   const preset = getSelectedEditableAudioMixPreset();
   if (!preset) return false;
@@ -12622,6 +12861,10 @@ async function clearSelectedAudioMixPresetTrackList() {
 async function addSelectedLibraryTrackToAudioMixPreset() {
   const trackId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
   return addTrackToSelectedAudioMixPreset(trackId);
+}
+
+async function addSelectedAudioMixTracksToPreset() {
+  return addTracksToSelectedAudioMixPreset(getSelectedAudioMixTrackSelectionIds());
 }
 
 function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
@@ -13389,7 +13632,7 @@ async function playAudioMixPresetById(presetId, options = {}) {
     trackIds: queuedTrackIds
   });
   if (candidates.length <= 0) {
-    throw new Error(`Add tracks from Suggested Tracks to the ${preset.label} queue before playing it.`);
+    throw new Error(`Add tracks from the Track Browser to the ${preset.label} queue before playing it.`);
   }
 
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
@@ -13466,14 +13709,16 @@ async function stopAudioMixPlayback(options = {}) {
   const priorState = getAudioMixStateFlag(playlist);
   if (playlist) await stopManagedAudioMixPlaylist(playlist);
   if (playlist) {
+    const preserveActiveTrack = options?.preserveActiveTrack === true;
+    const preservePlaybackId = options?.preservePlaybackId === true;
     await setAudioMixStateFlag(playlist, {
       ...priorState,
       presetId: priorState.presetId || getSelectedAudioMixPreset().id,
-      activeTrackId: "",
-      activeTrackName: "",
-      activeTrackPath: "",
+      activeTrackId: preserveActiveTrack ? String(priorState.activeTrackId ?? "").trim() : "",
+      activeTrackName: preserveActiveTrack ? String(priorState.activeTrackName ?? "").trim() : "",
+      activeTrackPath: preserveActiveTrack ? normalizeAudioLibraryRootPath(priorState.activeTrackPath ?? "") : "",
       playlistSoundId: "",
-      playbackId: "",
+      playbackId: preservePlaybackId ? String(priorState.playbackId ?? "").trim() : "",
       queueTrackIds: options?.preserveQueue ? priorState.queueTrackIds : normalizeAudioMixPresetTrackIds(priorState.queueTrackIds),
       currentIndex: Math.max(0, Math.floor(Number(priorState.currentIndex ?? 0) || 0)),
       isPlaying: false,
@@ -13486,6 +13731,32 @@ async function stopAudioMixPlayback(options = {}) {
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
   return true;
+}
+
+async function toggleAudioMixPlayback() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can control Party Operations mix playback.");
+    return false;
+  }
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  if (mixState.isPlaying) {
+    const preset = getAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id);
+    return stopAudioMixPlayback({
+      preserveQueue: true,
+      preserveActiveTrack: true,
+      preservePlaybackId: true,
+      statusMessage: `${preset.label} paused.`
+    });
+  }
+
+  const queueTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds);
+  if (queueTrackIds.length > 0) {
+    const resumeIndex = Math.max(0, Math.min(queueTrackIds.length - 1, Math.floor(Number(mixState.currentIndex ?? 0) || 0)));
+    return Boolean(await playManagedAudioMixQueueAtIndex(resumeIndex));
+  }
+
+  return Boolean(await playAudioMixPresetById(mixState.presetId || getSelectedAudioMixPreset().id));
 }
 
 async function syncLiveAudioMixPresetVolume(preset = getSelectedAudioMixPreset()) {
@@ -13645,6 +13916,7 @@ function buildAudioLibrarySummary(catalog, options = {}) {
   const kindCount = new Set(catalog.items.map((item) => item.kind).filter(Boolean)).size;
   const usageCount = new Set(catalog.items.map((item) => item.usage).filter(Boolean)).size;
   const hiddenCount = Math.max(0, Math.floor(Number(options?.hiddenCount ?? 0) || 0));
+  const resolvedDurationCount = catalog.items.filter((item) => isAudioLibraryDurationResolved(item)).length;
   const usageSummaryOrder = ["music", "ambience", "sfx", "voice", "combat", "tension", "rest", "travel"];
   const cards = usageSummaryOrder.map((key) => {
     const count = catalog.items.filter((item) => item.kind === key || item.usage === key).length;
@@ -13661,6 +13933,7 @@ function buildAudioLibrarySummary(catalog, options = {}) {
     kindCount,
     usageCount,
     hiddenCount,
+    resolvedDurationCount,
     scannedAtLabel: catalog.scannedAt ? new Date(catalog.scannedAt).toLocaleString() : "-",
     scannedBy: catalog.scannedBy || "-",
     cards
@@ -13672,12 +13945,9 @@ function buildAudioLibraryResults(catalog) {
   const selectedId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
   const selectedTrackIdSet = new Set(getSelectedAudioLibraryTrackSelectionIds());
   const visibleTracks = filtered.slice(0, 160).map((item) => ({
-    ...item,
+    ...buildAudioLibraryTrackDisplay(item),
     selected: item.id === selectedId,
-    checked: selectedTrackIdSet.has(item.id),
-    hasSubcategory: Boolean(item.subcategory),
-    kindLabel: getAudioLibraryKindLabel(item.kind),
-    usageLabel: getAudioLibraryUsageLabel(item.usage)
+    checked: selectedTrackIdSet.has(item.id)
   }));
   const visibleSelectedCount = visibleTracks.filter((item) => item.checked).length;
   const selectedCount = selectedTrackIdSet.size;
@@ -13724,11 +13994,14 @@ function getAudioMixPlaybackState(catalog) {
   const currentIndex = queueTracks.findIndex((entry) => entry.id === activeTrackId);
   const normalizedCurrentIndex = currentIndex >= 0 ? currentIndex : Math.min(Math.max(0, mixFlag.currentIndex), Math.max(0, queueTracks.length - 1));
   const activeTrackTags = Array.isArray(activeTrack?.tags) ? activeTrack.tags.filter(Boolean) : [];
+  const hasToggleTarget = Boolean(activeTrackId || activeTrackPath || queueTracks.length > 0);
+  const isPlaying = Boolean(mixFlag?.isPlaying);
   return {
     hasPlaylist: Boolean(playlist),
     playlistName: String(playlist?.name ?? AUDIO_MIX_PLAYLIST_NAME),
     transportLabel: AUDIO_MIX_TRANSPORT_LABEL,
-    isPlaying: Boolean(mixFlag?.isPlaying),
+    isPlaying,
+    isPaused: !isPlaying && hasToggleTarget,
     presetId: activePreset.id,
     presetLabel: activePreset.label,
     activeTrack,
@@ -13753,9 +14026,38 @@ function getAudioMixPlaybackState(catalog) {
     hasQueue: queueTracks.length > 0,
     queueLength: queueTracks.length,
     currentIndex: normalizedCurrentIndex,
+    canTogglePlayback: hasToggleTarget,
+    transportActionLabel: isPlaying ? "Pause shared mix" : "Resume shared mix",
+    transportActionIcon: isPlaying ? "fa-pause" : "fa-play",
     canSkipNext: queueTracks.length > 1 || Boolean(activePreset.repeat),
     canRestart: Boolean(activeTrackId)
   };
+}
+
+function normalizeAudioLibraryDurationSeconds(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Number(numeric.toFixed(2));
+}
+
+function normalizeAudioLibraryDurationResolvedAt(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(0, Math.floor(numeric));
+}
+
+function isAudioLibraryDurationResolved(item) {
+  return normalizeAudioLibraryDurationResolvedAt(item?.durationResolvedAt ?? 0) > 0;
+}
+
+function formatAudioLibraryDurationLabel(value) {
+  const totalSeconds = Math.max(0, Math.floor(normalizeAudioLibraryDurationSeconds(value)));
+  if (totalSeconds <= 0) return "--:--";
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function getManagedAudioMixPlaybackMonitorSnapshot() {
@@ -13819,12 +14121,16 @@ function buildAudioMixContext(catalog) {
   const selectedPreset = getSelectedAudioMixPreset();
   const savedTrackIds = normalizeAudioMixPresetTrackIds(selectedPreset?.trackIds ?? []);
   const assignedCandidates = buildAudioMixAssignedCandidates(catalog, selectedPreset);
-  const suggestedCandidates = buildAudioMixCandidates(catalog, selectedPreset, {
-    excludeTrackIds: assignedCandidates.map(({ item }) => item.id)
-  });
+  const {
+    view: trackBrowserView,
+    suggestedCandidates,
+    allCandidates,
+    visibleCandidates
+  } = getVisibleAudioMixTrackBrowserCandidates(catalog, selectedPreset);
   const hasSavedTrackList = savedTrackIds.length > 0;
   const playback = getAudioMixPlaybackState(catalog);
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
+  const selectedMixTrackIdSet = new Set(getSelectedAudioMixTrackSelectionIds());
   const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
   const queueRows = assignedCandidates.map(({ item }, index) => ({
     ...item,
@@ -13832,9 +14138,18 @@ function buildAudioMixContext(catalog) {
     isActive: item.id === playback?.activeTrack?.id,
     isCurrentIndex: index === playback.currentIndex
   }));
+  const visibleTrackRows = visibleCandidates.slice(0, 40).map(({ item, score }) => ({
+    ...buildAudioLibraryTrackDisplay(item),
+    score,
+    checked: selectedMixTrackIdSet.has(item.id),
+    selected: item.id === playback?.activeTrack?.id,
+    isAssigned: savedTrackIds.includes(item.id)
+  }));
+  const visibleSelectedCount = visibleTrackRows.filter((track) => track.checked).length;
+  const selectedCount = selectedMixTrackIdSet.size;
   const queueSourceLabel = hasSavedTrackList
     ? "Manual queue saved to this preset"
-    : "Add tracks from Suggested Tracks to build this queue";
+    : "Add tracks from the Track Browser to build this queue";
   const missingTrackCount = Math.max(0, savedTrackIds.length - assignedCandidates.length);
   const queueEmptyLabel = hasSavedTrackList
     ? (missingTrackCount > 0
@@ -13875,39 +14190,52 @@ function buildAudioMixContext(catalog) {
       canRename: Boolean(selectedPreset.isCustom)
     },
     candidates: suggestedCandidates.slice(0, 14).map(({ item, score }) => ({
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      subcategory: item.subcategory,
+      ...buildAudioLibraryTrackDisplay(item),
       score,
-      kindLabel: getAudioLibraryKindLabel(item.kind),
-      usageLabel: getAudioLibraryUsageLabel(item.usage),
       selected: item.id === playback?.activeTrack?.id
     })),
     assignedTracks: assignedCandidates.slice(0, 20).map(({ item, score }) => ({
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      subcategory: item.subcategory,
+      ...buildAudioLibraryTrackDisplay(item),
       score,
-      kindLabel: getAudioLibraryKindLabel(item.kind),
-      usageLabel: getAudioLibraryUsageLabel(item.usage),
       selected: item.id === playback?.activeTrack?.id,
       isActive: item.id === playback?.activeTrack?.id
     })),
     hasAssignedTracks: assignedCandidates.length > 0,
     suggestedTracks: suggestedCandidates.slice(0, 20).map(({ item, score }) => ({
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      subcategory: item.subcategory,
+      ...buildAudioLibraryTrackDisplay(item),
       score,
-      kindLabel: getAudioLibraryKindLabel(item.kind),
-      usageLabel: getAudioLibraryUsageLabel(item.usage),
       selected: item.id === playback?.activeTrack?.id
     })),
     hasSuggestedTracks: suggestedCandidates.length > 0,
     hasCandidates: assignedCandidates.length > 0,
+    trackBrowser: {
+      viewSuggested: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED,
+      viewAll: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL,
+      suggestedCount: suggestedCandidates.length,
+      allCount: allCandidates.length,
+      tracks: visibleTrackRows,
+      hasTracks: visibleTrackRows.length > 0,
+      totalCount: visibleCandidates.length,
+      visibleCount: visibleTrackRows.length,
+      summaryLabel: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+        ? `Browsing ${visibleTrackRows.length} of ${allCandidates.length} library tracks.`
+        : `Showing ${visibleTrackRows.length} of ${suggestedCandidates.length} tag-matched suggestions.`,
+      emptyLabel: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
+        ? "No tracks are available in the current library scan."
+        : "No suggestions matched this preset yet. Broaden the focus or adjust the search tokens.",
+      selection: {
+        selectedCount,
+        visibleSelectedCount,
+        hasSelection: selectedCount > 0,
+        hasVisibleSelection: visibleSelectedCount > 0,
+        allVisibleSelected: visibleTrackRows.length > 0 && visibleSelectedCount === visibleTrackRows.length,
+        label: selectedCount < 1
+          ? "No tracks selected for bulk add."
+          : selectedCount === 1
+          ? "1 track selected for bulk add."
+          : `${selectedCount} tracks selected for bulk add.`
+      }
+    },
     editor: {
       canEdit: true,
       canRename: Boolean(selectedPreset.isCustom),
@@ -13923,11 +14251,7 @@ function buildAudioMixContext(catalog) {
       hasTracks: queueRows.length > 0,
       sourceLabel: queueSourceLabel,
       emptyLabel: queueEmptyLabel,
-      tracks: queueRows.map((track) => ({
-        ...track,
-        kindLabel: getAudioLibraryKindLabel(track.kind),
-        usageLabel: getAudioLibraryUsageLabel(track.usage)
-      })),
+      tracks: queueRows.map((track) => buildAudioLibraryTrackDisplay(track)),
       hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
       selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
       canControl: playbackMatchesSelection || selectedPreset.isCustom,
@@ -13937,9 +14261,9 @@ function buildAudioMixContext(catalog) {
     },
     playback: {
       ...playback,
-      hasActiveTrack: Boolean(playback.activeTrack),
+      hasActiveTrack: Boolean(playback.activeTrack || playback.activeTrackName || playback.activeTrackPath),
       activeTrackName: playback.activeTrackName || "No track playing",
-      activeTrackPath: String(playback.activeTrack?.path ?? ""),
+      activeTrackPath: String(playback.activeTrack?.path ?? playback.activeTrackPath ?? ""),
       volumePercent: getAudioMixVolumePercent(playback.volume ?? selectedPreset.volume),
       activeTrackKindLabel: playback.activeTrack ? getAudioLibraryKindLabel(playback.activeTrack.kind) : "",
       activeTrackUsageLabel: playback.activeTrack ? getAudioLibraryUsageLabel(playback.activeTrack.usage) : "",
@@ -13956,13 +14280,7 @@ function getSelectedAudioLibraryTrack(catalog, results) {
   const fromCatalog = catalog.items.find((item) => item.id === selectedId);
   const fallback = fromCatalog ?? filteredFallback(results.tracks);
   if (!fallback) return null;
-  return {
-    ...fallback,
-    hasSubcategory: Boolean(fallback.subcategory),
-    kindLabel: getAudioLibraryKindLabel(fallback.kind),
-    usageLabel: getAudioLibraryUsageLabel(fallback.usage),
-    hasTags: Array.isArray(fallback.tags) && fallback.tags.length > 0
-  };
+  return buildAudioLibraryTrackDisplay(fallback);
 }
 
 function filteredFallback(tracks = []) {
@@ -16764,6 +17082,126 @@ function resolveTolerance(encounterTargetGp = 0, strictnessInput = LOOT_PREVIEW_
   }
 }
 
+async function readAudioLibraryDurationSeconds(path, options = {}) {
+  const normalizedPath = normalizeAudioLibraryRootPath(path);
+  if (!normalizedPath || typeof document?.createElement !== "function") return 0;
+  const timeoutMs = Math.max(1000, Math.floor(Number(options?.timeoutMs ?? AUDIO_LIBRARY_METADATA_TIMEOUT_MS) || AUDIO_LIBRARY_METADATA_TIMEOUT_MS));
+  return new Promise((resolve) => {
+    const audio = document.createElement("audio");
+    let settled = false;
+    let timeoutId = null;
+    const finalize = (value = 0) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("error", handleError);
+      audio.preload = "none";
+      audio.src = "";
+      try {
+        audio.load();
+      } catch {
+        // Ignore cleanup failures from browser audio internals.
+      }
+      resolve(normalizeAudioLibraryDurationSeconds(value));
+    };
+    const handleLoadedMetadata = () => finalize(audio.duration);
+    const handleError = () => finalize(0);
+
+    timeoutId = window.setTimeout(() => finalize(0), timeoutMs);
+    audio.preload = "metadata";
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata, { once: true });
+    audio.addEventListener("error", handleError, { once: true });
+    audio.src = normalizedPath;
+    try {
+      audio.load();
+    } catch {
+      finalize(0);
+    }
+  });
+}
+
+async function warmAudioLibraryCatalogMetadata(catalog = null, options = {}) {
+  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog ?? getStoredAudioLibraryCatalog());
+  const unresolvedIndexes = normalizedCatalog.items
+    .map((item, index) => (isAudioLibraryDurationResolved(item) ? -1 : index))
+    .filter((index) => index >= 0);
+  if (unresolvedIndexes.length <= 0) return normalizedCatalog;
+
+  const nextItems = normalizedCatalog.items.slice();
+  const concurrency = Math.max(1, Math.floor(Number(options?.concurrency ?? AUDIO_LIBRARY_METADATA_WARMUP_CONCURRENCY) || AUDIO_LIBRARY_METADATA_WARMUP_CONCURRENCY));
+  let cursor = 0;
+
+  const workers = Array.from({ length: Math.min(concurrency, unresolvedIndexes.length) }, async () => {
+    while (cursor < unresolvedIndexes.length) {
+      const currentCursor = cursor;
+      cursor += 1;
+      const index = unresolvedIndexes[currentCursor];
+      const item = nextItems[index];
+      if (!item) continue;
+      const durationSeconds = await readAudioLibraryDurationSeconds(item.path, options);
+      nextItems[index] = normalizeAudioLibraryItem({
+        ...item,
+        durationSeconds,
+        durationResolvedAt: Date.now()
+      });
+    }
+  });
+
+  await Promise.all(workers);
+  return normalizeAudioLibraryCatalog({
+    ...normalizedCatalog,
+    items: nextItems
+  });
+}
+
+function queueAudioLibraryMetadataWarmup(options = {}) {
+  if (!game.user?.isGM) return false;
+  const catalog = normalizeAudioLibraryCatalog(options?.catalog ?? getStoredAudioLibraryCatalog());
+  if (catalog.items.length <= 0 || catalog.items.every((item) => isAudioLibraryDurationResolved(item))) return false;
+
+  const nextCatalogKey = getAudioLibraryCatalogWarmupKey(catalog);
+  if (audioLibraryMetadataWarmupState.inFlight) {
+    audioLibraryMetadataWarmupState.queued = true;
+    audioLibraryMetadataWarmupState.catalogKey = nextCatalogKey;
+    return true;
+  }
+
+  if (audioLibraryMetadataWarmupState.timerId) {
+    window.clearTimeout(audioLibraryMetadataWarmupState.timerId);
+    audioLibraryMetadataWarmupState.timerId = null;
+  }
+
+  const delayMs = Math.max(0, Math.floor(Number(options?.delayMs ?? AUDIO_LIBRARY_METADATA_WARMUP_DELAY_MS) || AUDIO_LIBRARY_METADATA_WARMUP_DELAY_MS));
+  audioLibraryMetadataWarmupState.catalogKey = nextCatalogKey;
+  audioLibraryMetadataWarmupState.timerId = window.setTimeout(async () => {
+    audioLibraryMetadataWarmupState.timerId = null;
+    audioLibraryMetadataWarmupState.inFlight = true;
+    try {
+      const latestCatalog = getStoredAudioLibraryCatalog();
+      const latestCatalogKey = getAudioLibraryCatalogWarmupKey(latestCatalog);
+      if (latestCatalogKey !== audioLibraryMetadataWarmupState.catalogKey && !options?.force) return;
+      const warmedCatalog = await warmAudioLibraryCatalogMetadata(latestCatalog, options);
+      if (JSON.stringify(warmedCatalog.items) !== JSON.stringify(latestCatalog.items)) {
+        await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, warmedCatalog);
+        refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+      }
+    } catch (error) {
+      if (isModuleDebugEnabled()) {
+        console.warn(`${MODULE_ID}: failed to warm audio library metadata`, error);
+      }
+    } finally {
+      audioLibraryMetadataWarmupState.inFlight = false;
+      if (audioLibraryMetadataWarmupState.queued) {
+        audioLibraryMetadataWarmupState.queued = false;
+        queueAudioLibraryMetadataWarmup({ delayMs: 180 });
+      }
+    }
+  }, delayMs);
+  return true;
+}
+
 function resolveLootBudgetShareContext(draft = {}, totalTargetGp = 0) {
   try {
     const mixRaw = Number(draft?.distributionMix ?? NaN);
@@ -18956,17 +19394,20 @@ function buildLootClaimsContext(user = game.user) {
   const publishedAt = Number(displayRun?.publishedAt ?? claims.publishedAt ?? 0);
   const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
   const selectableActors = getLootClaimSelectableActorsForUser(user);
+  const canChooseActor = canAccessAllPlayerOps(user);
   const actorOptions = selectableActors.map((actor) => ({
     id: String(actor.id),
     name: String(actor.name ?? `Actor ${actor.id}`),
     selected: false
   }));
-  const storedActorId = getLootClaimActorSelection();
-  const preferredActorId = storedActorId || String(user?.character?.id ?? "").trim();
+  const storedActorId = canChooseActor ? getLootClaimActorSelection() : "";
+  const preferredActorId = canChooseActor
+    ? (storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim())
+    : String(getActiveActorForUser(user)?.id ?? "").trim();
   const fallbackActorId = actorOptions[0]?.id ?? "";
   const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
   for (const option of actorOptions) option.selected = option.id === selectedActorId;
-  if (!storedActorId || storedActorId !== selectedActorId) {
+  if (canChooseActor && (!storedActorId || storedActorId !== selectedActorId)) {
     setLootClaimActorSelection(selectedActorId);
   }
   const selectedActorName = actorOptions.find((entry) => entry.id === selectedActorId)?.name ?? "";
@@ -19058,6 +19499,7 @@ function buildLootClaimsContext(user = game.user) {
     canClaimCurrency,
     currencyClaimedCount: claimedActorIds.size,
     tableRolls: foundry.utils.deepClone(displayTableRolls),
+    canChooseActor,
     actorOptions,
     selectedActorId,
     selectedActorName,
@@ -19118,6 +19560,14 @@ function buildDefaultOperationsLedger() {
       urbanEntry: "",
       prisonerHandling: "",
       retreatProtocol: ""
+    },
+    sopNoteLedger: {
+      campSetup: [],
+      watchRotation: [],
+      dungeonBreach: [],
+      urbanEntry: [],
+      prisonerHandling: [],
+      retreatProtocol: []
     },
     reputation: {
       factions: getDefaultReputationFactions()
@@ -19303,6 +19753,7 @@ function getOperationsLedger() {
   merged.roles = ensureObject(merged.roles, defaults.roles);
   merged.sops = ensureObject(merged.sops, defaults.sops);
   merged.sopNotes = ensureObject(merged.sopNotes, defaults.sopNotes);
+  merged.sopNoteLedger = ensureObject(merged.sopNoteLedger, defaults.sopNoteLedger);
   merged.reputation = ensureObject(merged.reputation, defaults.reputation);
   merged.supplyLines = ensureObject(merged.supplyLines, defaults.supplyLines);
   merged.recon = ensureObject(merged.recon, defaults.recon);
@@ -19318,6 +19769,9 @@ function getOperationsLedger() {
   merged.reputation.factions = Array.isArray(merged.reputation.factions)
     ? merged.reputation.factions
     : foundry.utils.deepClone(defaults.reputation.factions);
+  for (const key of SOP_KEYS) {
+    merged.sopNoteLedger[key] = Array.isArray(merged.sopNoteLedger[key]) ? merged.sopNoteLedger[key] : [];
+  }
   merged.supplyLines.caches = Array.isArray(merged.supplyLines.caches) ? merged.supplyLines.caches : [];
   merged.supplyLines.safehouses = Array.isArray(merged.supplyLines.safehouses) ? merged.supplyLines.safehouses : [];
   merged.baseOperations.sites = Array.isArray(merged.baseOperations.sites) ? merged.baseOperations.sites : [];
@@ -19693,11 +20147,13 @@ function buildOperationsContext() {
     label: sop.label,
     active: Boolean(ledger.sops?.[sop.key]),
     ...(() => {
-      const worldNote = String(ledger.sopNotes?.[sop.key] ?? "");
-      const resolved = resolveSopNoteForView(sop.key, worldNote);
+      const noteEntries = getSopNoteEntriesForView(ledger, sop.key);
+      const resolved = resolveSopDraftForView(sop.key, noteEntries);
       return {
-        note: resolved.note,
-        pendingLocalSync: resolved.pendingSync
+        draftNote: resolved.note,
+        pendingLocalSync: resolved.pendingSync,
+        noteEntries,
+        hasNoteEntries: noteEntries.length > 0
       };
     })()
   }));
@@ -22757,19 +23213,20 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const definitions = sortMerchantDefinitions(merchantsState.definitions ?? []);
   const stockStateById = merchantsState.stockStateById ?? {};
   const selectableActors = getDowntimeSelectableActorsForUser(user);
+  const canChooseActor = viewerIsGm;
   const actorOptions = selectableActors.map((actor) => ({
     id: String(actor?.id ?? ""),
     name: String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`,
     selected: false
   }));
-  const storedActorId = getSelectedMerchantActorId();
-  const preferredActorId = storedActorId
-    || String(getActiveActorForUser()?.id ?? "").trim()
-    || String(user?.character?.id ?? "").trim();
+  const storedActorId = canChooseActor ? getSelectedMerchantActorId() : "";
+  const preferredActorId = canChooseActor
+    ? (storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim() || String(user?.character?.id ?? "").trim())
+    : String(getActiveActorForUser(user)?.id ?? "").trim();
   const fallbackActorId = actorOptions[0]?.id ?? "";
   const activeActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
   for (const option of actorOptions) option.selected = option.id === activeActorId;
-  if (!storedActorId || storedActorId !== activeActorId) setSelectedMerchantActorId(activeActorId);
+  if (canChooseActor && (!storedActorId || storedActorId !== activeActorId)) setSelectedMerchantActorId(activeActorId);
   const activeActor = activeActorId ? game.actors.get(activeActorId) : null;
   const activeActorContracts = activeActor ? getActorMerchantContracts(activeActor) : {};
   const activeActorSocialScore = activeActor ? computeActorSocialScore(activeActor) : 0;
@@ -23207,6 +23664,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     settlementOptions: settlementView.options,
     selectedSettlement: settlementView.activeValue,
     selectedSettlementLabel: settlementView.activeLabel,
+    canChooseActor,
     actorOptions,
     hasActorOptions: actorOptions.length > 0,
     activeActorId,
@@ -26360,25 +26818,7 @@ function ensureLootClaimsState(ledger) {
 }
 
 function getDowntimeSelectableActorsForUser(user = game.user) {
-  if (!user) return [];
-  const unique = new Map();
-  const addActor = (actor) => {
-    if (!actor || actor.type !== "character" || !actor.id) return;
-    if (!canUserManageDowntimeActor(user, actor)) return;
-    unique.set(String(actor.id), actor);
-  };
-
-  if (canAccessAllPlayerOps(user)) {
-    for (const actor of getOwnedPcActors()) addActor(actor);
-  } else {
-    for (const actor of getOwnedPcActors()) addActor(actor);
-    if (unique.size === 0) {
-      for (const actor of game.actors.contents) addActor(actor);
-    }
-    if (user.character && user.character.type === "character") addActor(user.character);
-  }
-
-  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  return getSelectablePlayerActorsForUser(user);
 }
 
 function canUserManageDowntimeActor(user, actor) {
@@ -26387,15 +26827,14 @@ function canUserManageDowntimeActor(user, actor) {
   if (actor.type !== "character") return false;
   try {
     if (typeof actor.testUserPermission === "function") {
-      return Boolean(
-        actor.testUserPermission(user, "OWNER")
-        || actor.testUserPermission(user, "OBSERVER")
-      );
+      return Boolean(actor.testUserPermission(user, "OWNER"));
     }
   } catch {
     // Fall through to conservative rejection.
   }
-  return false;
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
 }
 
 function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
@@ -26488,18 +26927,27 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const risk = String(tuning.risk ?? "standard");
   const discovery = String(tuning.discovery ?? "standard");
   const selectableActors = getDowntimeSelectableActorsForUser(user);
-  const activeActorId = String(getActiveActorForUser()?.id ?? "").trim();
+  const activeActorId = String(getActiveActorForUser(user)?.id ?? "").trim();
   const defaultActorId = selectableActors.some((actor) => String(actor.id) === activeActorId)
     ? activeActorId
     : String(selectableActors[0]?.id ?? "");
-  const actorOptions = [
-    { id: "", name: "Select actor", selected: !defaultActorId },
-    ...selectableActors.map((actor) => ({
-      id: actor.id,
-      name: actor.name,
-      selected: String(actor.id) === defaultActorId
-    }))
-  ];
+  const canChooseActor = isGMUser;
+  const actorOptions = canChooseActor
+    ? [
+      { id: "", name: "Select actor", selected: !defaultActorId },
+      ...selectableActors.map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        selected: String(actor.id) === defaultActorId
+      }))
+    ]
+    : selectableActors
+      .filter((actor) => String(actor.id) === defaultActorId)
+      .map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        selected: true
+      }));
 
   const actorEntries = Object.values(downtimeState?.entries ?? {}).map((entry) => {
     const actor = game.actors.get(String(entry?.actorId ?? "").trim());
@@ -26831,6 +27279,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     },
     submit: {
       actorOptions,
+      canChooseActor,
+      actorName: actorOptions.find((entry) => entry.selected)?.name ?? "",
       actionOptions: submitActionOptions,
       hours: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "hours")
         ? String(submitDraft?.hours ?? "")
@@ -26895,7 +27345,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
 
 function buildPlayerMarchQuickContext() {
   const state = getMarchingOrderState();
-  const actor = getActiveActorForUser();
+  const actor = getActiveActorForUser(game.user);
   const actorId = String(actor?.id ?? "").trim();
   const rankRows = [
     { id: "front", label: "Front" },
@@ -26913,7 +27363,7 @@ function buildPlayerMarchQuickContext() {
     }
   }
   const currentRankLabel = rankRows.find((row) => row.id === currentRankId)?.label ?? "Unassigned";
-  const canSetRank = Boolean(actorId) && !isLockedForUser(state, canAccessAllPlayerOps());
+  const canSetRank = Boolean(actorId) && !isLockedForUser(state, canAccessAllPlayerOps()) && !isMarchingOrderPlayerLocked(game.user);
   return {
     hasActor: Boolean(actorId),
     actorId,
@@ -27633,6 +28083,80 @@ function ensureSopNotesState(ledger) {
   return ledger.sopNotes;
 }
 
+function ensureSopNoteLedgerState(ledger) {
+  if (!ledger.sopNoteLedger || typeof ledger.sopNoteLedger !== "object") ledger.sopNoteLedger = {};
+  for (const key of SOP_KEYS) {
+    if (!Array.isArray(ledger.sopNoteLedger[key])) ledger.sopNoteLedger[key] = [];
+  }
+  return ledger.sopNoteLedger;
+}
+
+function normalizeSopNoteLedgerEntry(rawEntry = {}, fallbackId = "") {
+  const text = clampSocketText(rawEntry?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+  return {
+    id: String(rawEntry?.id ?? fallbackId ?? "").trim() || foundry.utils.randomID(),
+    text,
+    userId: String(rawEntry?.userId ?? "").trim(),
+    userName: String(rawEntry?.userName ?? "Player").trim() || "Player",
+    actorId: String(rawEntry?.actorId ?? "").trim(),
+    actorName: String(rawEntry?.actorName ?? "").trim(),
+    createdAt: Math.max(0, Number(rawEntry?.createdAt ?? 0) || 0)
+  };
+}
+
+function getSopNoteEntriesForView(ledger, sopKeyInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return [];
+  const sopNoteLedger = ensureSopNoteLedgerState(ledger);
+  const storedEntries = Array.isArray(sopNoteLedger[sopKey]) ? sopNoteLedger[sopKey] : [];
+  const normalizedEntries = storedEntries
+    .map((entry, index) => normalizeSopNoteLedgerEntry(entry, `${sopKey}-${index}`))
+    .filter((entry) => entry.text.trim().length > 0)
+    .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
+  if (normalizedEntries.length > 0) {
+    return normalizedEntries.map((entry) => ({
+      ...entry,
+      hasActor: Boolean(entry.actorName),
+      createdAtLabel: entry.createdAt > 0 ? new Date(entry.createdAt).toLocaleString() : "Saved"
+    }));
+  }
+  const legacyNote = clampSocketText(ledger?.sopNotes?.[sopKey] ?? "", SOCKET_NOTE_MAX_LENGTH);
+  if (!legacyNote.trim()) return [];
+  return [{
+    id: `legacy-${sopKey}`,
+    text: legacyNote,
+    userId: "",
+    userName: "Legacy Note",
+    actorId: "",
+    actorName: "",
+    createdAt: 0,
+    createdAtLabel: "Legacy",
+    hasActor: false,
+    isLegacy: true
+  }];
+}
+
+function appendSopNoteEntry(ledger, sopKeyInput, noteInput, requester = game.user) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  const note = clampSocketText(noteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
+  if (!sopKey || !SOP_KEYS.includes(sopKey) || !note.trim()) return null;
+  const actingActor = getActiveActorForUser(requester);
+  const sopNoteLedger = ensureSopNoteLedgerState(ledger);
+  const nextEntry = normalizeSopNoteLedgerEntry({
+    id: foundry.utils.randomID(),
+    text: note,
+    userId: String(requester?.id ?? "").trim(),
+    userName: String(requester?.name ?? "Player").trim() || "Player",
+    actorId: String(actingActor?.id ?? "").trim(),
+    actorName: String(actingActor?.name ?? "").trim(),
+    createdAt: Date.now()
+  }, foundry.utils.randomID());
+  const entries = Array.isArray(sopNoteLedger[sopKey]) ? sopNoteLedger[sopKey] : [];
+  entries.unshift(nextEntry);
+  sopNoteLedger[sopKey] = entries.slice(0, 40);
+  return nextEntry;
+}
+
 async function setOperationalRole(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can assign operational roles.");
@@ -27806,8 +28330,12 @@ function normalizeDowntimeSubmission(raw = {}, downtimeState = {}) {
 function readDowntimeSubmissionFromUi(element) {
   const root = element?.closest(".po-downtime-panel");
   if (!root) return null;
+  const selectedActorId = String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim();
+  const actorId = canAccessAllPlayerOps()
+    ? selectedActorId
+    : String(getActiveActorForUser(game.user)?.id ?? selectedActorId).trim();
   return {
-    actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
+    actorId,
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
     hours: Number(root.querySelector("input[name='downtimeHours']")?.value ?? 0),
     note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
@@ -29038,10 +29566,8 @@ async function setOperationalSopNote(element, options = {}) {
   if (!sopKey || !SOP_KEYS.includes(sopKey)) return false;
   try {
     const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
-    const existing = clampSocketText(getOperationsLedger()?.sopNotes?.[sopKey] ?? "", SOCKET_NOTE_MAX_LENGTH);
-    if (note === existing) {
-      clearSopCachedNoteEntry(sopKey);
-      if (notify) ui.notifications?.info("No note changes to save.");
+    if (!note.trim()) {
+      if (!suppressUiWarning) ui.notifications?.warn("Enter a note before saving it to the ledger.");
       return false;
     }
     if (!game.user?.isGM) {
@@ -29076,10 +29602,10 @@ async function setOperationalSopNote(element, options = {}) {
       return true;
     }
     await updateOperationsLedger((ledger) => {
-      const sopNotes = ensureSopNotesState(ledger);
-      sopNotes[sopKey] = note;
+      appendSopNoteEntry(ledger, sopKey, note, game.user);
     });
     clearSopCachedNoteEntry(sopKey);
+    if (typeof element?.value === "string") element.value = "";
     logUiDebug("operations-sop", "saved SOP note on GM client", {
       sopKey,
       noteLength: note.length,
@@ -33083,6 +33609,9 @@ async function clearLootClaimsPool(runIdInput = "") {
 }
 
 function getLootClaimActorIdFromElement(element) {
+  if (!canAccessAllPlayerOps()) {
+    return normalizeLootClaimActorId(String(getActiveActorForUser(game.user)?.id ?? ""));
+  }
   const root = element?.closest(".po-loot-claims-panel");
   const actorId = normalizeLootClaimActorId(root?.querySelector("select[name='lootClaimActorId']")?.value);
   if (actorId) {
@@ -36580,8 +37109,12 @@ function getDoctrineCheckPrompt(formation) {
   }
 }
 
-function getActiveActorForUser() {
-  return game.user?.character ?? null;
+function getActiveActorForUser(user = game.user) {
+  if (!user) return null;
+  if (user.character?.type === "character" && canUserManageDowntimeActor(user, user.character)) {
+    return user.character;
+  }
+  return getSelectablePlayerActorsForUser(user)[0] ?? null;
 }
 
 function getOrderedMarchingActors(state) {
@@ -36666,6 +37199,10 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
+    if (isMarchingOrderPlayerLocked(game.user)) {
+      ui.notifications?.warn("Marching order is locked for players.");
+      return;
+    }
     const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
       marchOps: SOCKET_MARCH_OPS,
       marchRanks: SOCKET_MARCH_RANKS,
@@ -37630,7 +38167,7 @@ async function resetAllActivities() {
 
 function buildWatchSlotsView(state, isGM, visibility) {
   const lockedForUser = isLockedForUser(state, isGM);
-  const activeActorId = !isGM ? getActiveCharacterId() : null;
+  const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
   const activities = getRestActivities();
   const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0
     ? state.slots
@@ -37643,7 +38180,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
     const entriesView = entries.map((entry) => {
       const actor = game.actors.get(entry.actorId);
       if (!actor) return null;
-      const canEditNotes = !lockedForUser;
+      const canEditNotes = !lockedForUser && (isGM || userOwnsActor(actor));
       const activityData = activities.activities[entry.actorId] ?? {};
       return {
         actorId: entry.actorId,
@@ -37717,7 +38254,7 @@ function buildRanksView(state, isGM) {
         const lightTooltip = hasLight
           ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.`
           : "";
-        const canEditNote = !lockedForUser;
+        const canEditNote = !lockedForUser && !isMarchingOrderPlayerLocked(game.user) && (isGM || userOwnsActor(actor));
         return {
           actorId,
           actor: buildActorView(actor, isGM, "names-passives"),
@@ -38376,10 +38913,7 @@ function canUserControlActor(actor, user = game.user) {
   if (canAccessAllPlayerOps(user)) return true;
   try {
     if (typeof actor.testUserPermission === "function") {
-      return Boolean(
-        actor.testUserPermission(user, "OWNER")
-        || actor.testUserPermission(user, "OBSERVER")
-      );
+      return Boolean(actor.testUserPermission(user, "OWNER"));
     }
   } catch {
     // Fall through to conservative checks.
@@ -39941,6 +40475,9 @@ export function onPartyOperationsReady() {
     schedulePendingSopNoteSync("ready");
   } else {
     scheduleIntegrationSync("ready");
+    window.setTimeout(() => {
+      queueAudioLibraryMetadataWarmup({ delayMs: 0 });
+    }, 900);
     ensureOperationsJournalFolderTree().catch((error) => {
       console.warn(`${MODULE_ID}: failed to initialize operations journal folder tree`, error);
     });
@@ -40004,7 +40541,9 @@ async function handlePartyOperationsSocketMessage(message) {
     }),
     applyRestRequest: (request, requesterRef) => applyRestRequest(request, requesterRef, {
       getRestWatchState,
+      game,
       resolveRequester,
+      canUserControlActor,
       stampUpdate,
       setModuleSettingWithLocalRefreshSuppressed,
       settings: SETTINGS,
@@ -40034,7 +40573,10 @@ async function handlePartyOperationsSocketMessage(message) {
     }),
     applyMarchRequest: (request, requesterRef) => applyMarchRequest(request, requesterRef, {
       getMarchingOrderState,
+      game,
       resolveRequester,
+      canUserControlActor,
+      isMarchingOrderPlayerLocked,
       stampUpdate,
       setModuleSettingWithLocalRefreshSuppressed,
       settings: SETTINGS,
@@ -40076,7 +40618,7 @@ async function handlePartyOperationsSocketMessage(message) {
       clampSocketText,
       noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
       updateOperationsLedger,
-      ensureSopNotesState
+      appendSopNoteEntry
     }),
     applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
       resolveRequester,

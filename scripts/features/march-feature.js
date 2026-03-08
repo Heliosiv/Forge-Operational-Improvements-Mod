@@ -38,7 +38,10 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
 export async function applyMarchRequest(request, requesterRef, deps = {}) {
   const {
     getMarchingOrderState,
+    game,
     resolveRequester,
+    canUserControlActor,
+    isMarchingOrderPlayerLocked,
     stampUpdate,
     setModuleSettingWithLocalRefreshSuppressed,
     settings,
@@ -53,10 +56,15 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
   const state = getMarchingOrderState();
   const requester = resolveRequester(requesterRef, { allowGM: true });
   if (!requester) return;
-  const requesterActor = requester.character;
+  const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
+  const requesterCanControlActor = Boolean(
+    requestedActor
+    && (requester?.isGM || canUserControlActor?.(requestedActor, requester))
+  );
 
   if (request.op === "joinRank") {
-    if (!requesterActor || requesterActor.id !== request.actorId) return;
+    if (!requesterCanControlActor) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
     }
@@ -71,6 +79,8 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
   }
 
   if (request.op === "setNote") {
+    if (!requesterCanControlActor) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
     const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
       Array.isArray(actorIds) && actorIds.includes(request.actorId)
     ));

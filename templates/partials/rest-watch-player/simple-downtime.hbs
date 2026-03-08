@@ -1,6 +1,7 @@
 <section class="po-player-hub-panel po-downtime-panel" aria-label="Downtime">
   <div class="po-section-title">Submit Downtime Action</div>
   <div class="po-hint">Submit one downtime action for a character you can manage.</div>
+  {{#if downtime.submit.canChooseActor}}
   <label class="po-resource-row">
     <span>Actor</span>
     <select name="downtimeActorId" class="po-select">
@@ -9,6 +10,9 @@
       {{/each}}
     </select>
   </label>
+  {{else}}
+  <div class="po-op-summary"><strong>Actor:</strong> {{downtime.submit.actorName}}</div>
+  {{/if}}
   <label class="po-resource-row">
     <span>Action</span>
     <select name="downtimeActionKey" class="po-select">

@@ -48,6 +48,7 @@
       {{#if lootClaims.selectedActorClaimedCurrency}}
       <div class="po-op-summary">Selected actor already claimed a currency share.</div>
       {{/if}}
+      {{#if lootClaims.canChooseActor}}
       <label class="po-resource-row po-loot-claims-actor-row">
         <span>Claim As</span>
         <select name="lootClaimActorId" class="po-select" data-action="set-loot-claim-actor">
@@ -56,6 +57,9 @@
           {{/each}}
         </select>
       </label>
+      {{else}}
+      <div class="po-op-summary"><strong>Claim As:</strong> {{lootClaims.selectedActorName}}</div>
+      {{/if}}
       <div class="po-op-action-row">
         <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Claim Currency Share</button>
       </div>

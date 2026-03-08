@@ -161,9 +161,6 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
   }
 
   if (message.type === "ops:ledger-write") {
-    const requester = getActivePlayerRequester();
-    if (!requester) return true;
-    await applyPlayerOperationsLedgerWriteRequest(message, requester);
     return true;
   }
 
