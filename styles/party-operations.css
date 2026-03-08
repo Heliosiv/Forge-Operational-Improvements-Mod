@@ -2175,6 +2175,195 @@
   justify-content: flex-start;
 }
 
+.party-operations .po-reputation-panel {
+  display: grid;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-reputation-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--po-space-2);
+  padding: var(--po-space-1) 0;
+}
+
+.party-operations .po-reputation-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-reputation-stat {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 55%),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 86%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
+}
+
+.party-operations .po-reputation-stat strong {
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--po-text-strong);
+}
+
+.party-operations .po-reputation-stat-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--po-muted);
+}
+
+.party-operations .po-reputation-stat-meta {
+  font-size: 0.76rem;
+  color: var(--po-muted);
+}
+
+.party-operations .po-reputation-filters {
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--po-bg-alt) 82%, transparent);
+}
+
+.party-operations .po-reputation-filters .po-btn {
+  align-self: end;
+}
+
+.party-operations .po-reputation-faction-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border-width: 1px;
+  backdrop-filter: blur(4px);
+}
+
+.party-operations .po-reputation-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.party-operations .po-reputation-card-title {
+  display: grid;
+  gap: 4px;
+}
+
+.party-operations .po-reputation-card-subtitle {
+  font-size: 0.76rem;
+  color: var(--po-muted);
+}
+
+.party-operations .po-reputation-edit-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(180px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.party-operations .po-reputation-score-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.party-operations .po-reputation-score-actions,
+.party-operations .po-reputation-primary-actions,
+.party-operations .po-reputation-log-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.party-operations .po-reputation-score-actions .po-btn,
+.party-operations .po-reputation-primary-actions .po-btn,
+.party-operations .po-reputation-log-actions .po-btn {
+  flex: 1 1 140px;
+}
+
+.party-operations .po-reputation-note {
+  min-height: 128px;
+}
+
+.party-operations .po-reputation-log-row {
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--po-rep-accent) 18%, var(--po-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--po-rep-bg) 72%, var(--po-bg-alt));
+}
+
+.party-operations .po-reputation-log-view {
+  gap: 10px;
+  min-height: 146px;
+  border-color: color-mix(in srgb, var(--po-rep-accent) 26%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 90%, transparent), color-mix(in srgb, var(--po-rep-bg) 58%, transparent));
+}
+
+.party-operations .po-reputation-log-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.party-operations .po-reputation-log-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 10px;
+  border: 1px solid color-mix(in srgb, var(--po-rep-accent) 28%, var(--po-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--po-rep-pill-bg) 78%, transparent);
+  color: var(--po-rep-pill-text);
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.party-operations .po-reputation-log-chip.is-muted {
+  border-color: color-mix(in srgb, var(--po-border-strong) 18%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 84%, transparent);
+  color: var(--po-muted);
+}
+
+.party-operations .po-reputation-log-view .po-sop-note-view-body {
+  min-height: 90px;
+  padding: 2px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.party-operations .po-reputation-remove-btn {
+  margin-top: 2px;
+}
+
+.party-operations .po-reputation-readonly {
+  display: grid;
+  gap: 10px;
+}
+
+.party-operations .po-reputation-gm-tools {
+  gap: 14px;
+  padding: 16px;
+  border: 1px dashed color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 78%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent));
+}
+
+.party-operations .po-reputation-gm-tools-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
 .party-operations .po-log-manager-list {
   max-height: 55vh;
   overflow: auto;
@@ -3728,9 +3917,22 @@
   .party-operations .po-reputation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .party-operations .po-reputation-edit-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @container (max-width: 860px) {
+  .party-operations .po-reputation-toolbar,
+  .party-operations .po-reputation-card-head {
+    flex-direction: column;
+  }
+
+  .party-operations .po-reputation-gm-tools-row {
+    grid-template-columns: 1fr;
+  }
+
   .party-operations .po-tabs .po-tab {
     clip-path: none;
     border-radius: 8px;

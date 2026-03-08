@@ -49,6 +49,13 @@ export const MERCHANT_EDITOR_CANDIDATE_LIMIT = 400;
 export const MERCHANT_PREVIEW_ITEM_LIMIT = 240;
 export const MERCHANT_ACCESS_LOG_LIMIT = 120;
 export const MERCHANT_ACCESS_LOG_THROTTLE_MS = 45000;
+export const MERCHANT_DEFAULT_VALUE_STRICTNESS = 180;
+export const MERCHANT_VALUE_STRICTNESS_BANDS = Object.freeze([
+  Object.freeze({ key: "very-strict", label: "Very Strict", min: 240, ratio: 0.05 }),
+  Object.freeze({ key: "strict", label: "Strict", min: 180, ratio: 0.1 }),
+  Object.freeze({ key: "normal", label: "Normal", min: 120, ratio: 0.2 }),
+  Object.freeze({ key: "loose", label: "Loose", min: 0, ratio: 0.35 })
+]);
 
 const MERCHANT_MAX_MARKUP_PERCENT = 1000;
 const MERCHANT_MAX_ITEM_COUNT = 100;
@@ -291,6 +298,7 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     curatedItemUuids: Object.freeze([]),
     maxItems: 20,
     targetValueGp: 0,
+    valueStrictness: MERCHANT_DEFAULT_VALUE_STRICTNESS,
     scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
     duplicateChance: 25,
     maxStackSize: 20,
@@ -378,6 +386,12 @@ function clampMerchantMaxStackSize(value, fallback = MERCHANT_DEFAULTS.stock.max
   const raw = Number(value);
   if (!Number.isFinite(raw)) return Math.max(1, Math.min(MERCHANT_MAX_STACK_SIZE, Math.floor(Number(fallback) || 1)));
   return Math.max(1, Math.min(MERCHANT_MAX_STACK_SIZE, Math.floor(raw)));
+}
+
+export function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return Math.max(50, Math.min(300, Math.round(Number(fallback) || MERCHANT_DEFAULT_VALUE_STRICTNESS)));
+  return Math.max(50, Math.min(300, Math.round(raw)));
 }
 
 export function normalizeMerchantTagList(values = []) {
@@ -506,6 +520,31 @@ export function getMerchantScarcityProfile(scarcityInput = MERCHANT_SCARCITY_LEV
   return MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === scarcity)
     ?? MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === MERCHANT_SCARCITY_LEVELS.NORMAL)
     ?? { value: MERCHANT_SCARCITY_LEVELS.NORMAL, label: "6 - Normal", multiplier: 1 };
+}
+
+export function resolveMerchantValueTolerance(
+  targetValueGp = 0,
+  strictnessInput = MERCHANT_DEFAULT_VALUE_STRICTNESS
+) {
+  const strictness = clampMerchantValueStrictness(strictnessInput, MERCHANT_DEFAULT_VALUE_STRICTNESS);
+  const band = MERCHANT_VALUE_STRICTNESS_BANDS.find((entry) => strictness >= entry.min)
+    ?? MERCHANT_VALUE_STRICTNESS_BANDS[MERCHANT_VALUE_STRICTNESS_BANDS.length - 1]
+    ?? { key: "normal", label: "Normal", ratio: 0.2 };
+  const target = Math.max(1, Number(targetValueGp) || 1);
+  const ratio = Math.max(0.01, Number(band?.ratio ?? 0.2) || 0.2);
+  const toleranceGp = Math.max(1, Number((target * ratio).toFixed(2)));
+  const minGp = Math.max(0, Number((target - toleranceGp).toFixed(2)));
+  const maxGp = Math.max(minGp, Number((target + toleranceGp).toFixed(2)));
+  return {
+    strictness,
+    bandKey: String(band?.key ?? "normal"),
+    bandLabel: String(band?.label ?? "Normal"),
+    ratio,
+    percent: Math.max(1, Math.round(ratio * 100)),
+    toleranceGp,
+    minGp,
+    maxGp
+  };
 }
 
 export function normalizeMerchantRace(value) {
@@ -688,6 +727,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       curatedItemUuids: [],
       maxItems,
       targetValueGp: 0,
+      valueStrictness: MERCHANT_DEFAULTS.stock.valueStrictness,
       scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
       duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
       maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
@@ -774,6 +814,10 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const keywordExclude = normalizeMerchantKeywordList(source?.keywordExclude ?? existingStock?.keywordExclude ?? []);
   const targetValueGpRaw = Number(source?.targetValueGp ?? existingStock?.targetValueGp ?? 0);
   const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, Number(targetValueGpRaw.toFixed(2))) : 0;
+  const valueStrictness = clampMerchantValueStrictness(
+    source?.valueStrictness ?? existingStock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+    MERCHANT_DEFAULTS.stock.valueStrictness
+  );
   const scarcity = normalizeMerchantScarcity(source?.scarcity ?? existingStock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
   const duplicateChance = clampMerchantDuplicateChance(
     MERCHANT_DEFAULTS.stock.duplicateChance,
@@ -822,6 +866,7 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       curatedItemUuids: normalizeMerchantCuratedItemUuids(existingStock?.curatedItemUuids ?? []),
       maxItems: stockCount,
       targetValueGp,
+      valueStrictness,
       scarcity,
       duplicateChance,
       maxStackSize,
@@ -1050,6 +1095,14 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   const targetCount = Math.max(1, Number(getTargetCount(stock)) || 1);
   const targetValueGpRaw = Number(stock?.targetValueGp ?? 0);
   const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, targetValueGpRaw) : 0;
+  const valueTolerance = resolveMerchantValueTolerance(
+    targetValueGp,
+    stock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness
+  );
+  const valueStrictnessScale = Math.max(
+    0.5,
+    Math.min(3, Number(valueTolerance?.strictness ?? MERCHANT_DEFAULT_VALUE_STRICTNESS) / 100)
+  );
   const duplicateChance = clampMerchantDuplicateChance(stock?.duplicateChance, MERCHANT_DEFAULTS.stock.duplicateChance) / 100;
   const maxStackSize = clampMerchantMaxStackSize(stock?.maxStackSize, MERCHANT_DEFAULTS.stock.maxStackSize);
   const rarityWeights = normalizeRarityWeights(stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
@@ -1068,9 +1121,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   let totalUnits = 0;
   let runningValue = 0;
   const budgetEnabled = targetValueGp > 0;
-  const budgetTolerance = budgetEnabled ? Math.max(25, targetValueGp * 0.1) : Infinity;
-  const budgetSoftCap = budgetEnabled ? targetValueGp : Infinity;
-  const budgetHardCap = budgetEnabled ? (targetValueGp + budgetTolerance) : Infinity;
+  const budgetTolerance = budgetEnabled ? valueTolerance.toleranceGp : Infinity;
+  const budgetHardCap = budgetEnabled ? valueTolerance.maxGp : Infinity;
   const canAddUnits = () => totalUnits < targetCount;
 
   const getCandidateBudgetValue = (candidate) => {
@@ -1087,7 +1139,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const candidateValue = getCandidateBudgetValue(candidate) * qty;
     if (candidateValue <= 0) return true;
     if (selected.length <= 0) return true;
-    if (runningValue >= budgetSoftCap) return false;
+    if (runningValue >= budgetHardCap) return false;
     const projectedValue = runningValue + candidateValue;
     return projectedValue <= budgetHardCap;
   };
@@ -1128,11 +1180,28 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const value = getCandidateBudgetValue(candidate);
     const remainingValue = Math.max(0, targetValueGp - runningValue);
     const remainingSlots = Math.max(1, targetCount - totalUnits);
-    const desiredValue = Math.max(0.01, remainingValue / remainingSlots);
-    const distance = Math.abs(value - desiredValue) / Math.max(1, desiredValue);
-    let weight = 1 / (1 + (distance * 1.45));
-    if (totalUnits > 0 && remainingValue > 0 && value > (remainingValue * 1.45)) {
-      weight *= 0.2;
+    const desiredValue = Math.max(
+      0.01,
+      remainingValue > 0
+        ? (remainingValue / remainingSlots)
+        : (targetValueGp / Math.max(1, targetCount))
+    );
+    const ratio = Math.max(0.01, value / Math.max(0.01, desiredValue));
+    const logDistance = Math.abs(Math.log(ratio));
+    let weight = Math.exp(-(logDistance * (2.35 * valueStrictnessScale)));
+    const acceptableCeiling = Math.max(desiredValue, remainingValue + budgetTolerance);
+    if (value > acceptableCeiling) {
+      const overshootRatio = value / Math.max(0.01, acceptableCeiling);
+      weight *= Math.exp(-((overshootRatio - 1) * (3.8 * valueStrictnessScale)));
+    }
+    const lateSelection = remainingSlots <= Math.max(2, Math.ceil(targetCount * 0.25));
+    if (lateSelection && value < desiredValue) {
+      const shortfallRatio = (desiredValue - value) / Math.max(0.01, desiredValue);
+      weight *= Math.exp(-(shortfallRatio * (1.8 * valueStrictnessScale)));
+    }
+    if (remainingValue > 0 && value <= Math.max(0.01, remainingValue + budgetTolerance)) {
+      const closenessToGap = 1 - Math.min(1, Math.abs(remainingValue - value) / Math.max(1, remainingValue));
+      weight *= 1 + (Math.max(0, closenessToGap) * 0.45 * valueStrictnessScale);
     }
     return Math.max(0.01, weight);
   };
@@ -1153,7 +1222,6 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   let safety = 0;
   while (canAddUnits() && safety < (targetCount * 30)) {
-    if (budgetEnabled && runningValue >= budgetSoftCap && selected.length > 0) break;
     safety += 1;
     const remainingCandidates = shuffled
       .filter((entry) => !selectedByKey.has(String(entry?.key ?? "").trim()));

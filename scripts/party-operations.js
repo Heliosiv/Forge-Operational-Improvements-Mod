@@ -40,8 +40,10 @@ import {
   MERCHANT_PREVIEW_ITEM_LIMIT as DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT,
   MERCHANT_ACCESS_LOG_LIMIT as DOMAIN_MERCHANT_ACCESS_LOG_LIMIT,
   MERCHANT_ACCESS_LOG_THROTTLE_MS as DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS,
+  MERCHANT_DEFAULT_VALUE_STRICTNESS as DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS,
   MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
   MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
+  clampMerchantValueStrictness as clampMerchantValueStrictnessDomain,
   normalizeMerchantTagList as normalizeMerchantTagListDomain,
   normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
   normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
@@ -52,6 +54,7 @@ import {
   normalizeMerchantSourceType as normalizeMerchantSourceTypeDomain,
   normalizeMerchantScarcity as normalizeMerchantScarcityDomain,
   getMerchantScarcityProfile as getMerchantScarcityProfileDomain,
+  resolveMerchantValueTolerance as resolveMerchantValueToleranceDomain,
   normalizeMerchantRace as normalizeMerchantRaceDomain,
   normalizeMerchantRarity as normalizeMerchantRarityDomain,
   getMerchantRarityBucket as getMerchantRarityBucketDomain,
@@ -1414,6 +1417,7 @@ const MERCHANT_EDITOR_CANDIDATE_LIMIT = DOMAIN_MERCHANT_EDITOR_CANDIDATE_LIMIT;
 const MERCHANT_PREVIEW_ITEM_LIMIT = DOMAIN_MERCHANT_PREVIEW_ITEM_LIMIT;
 const MERCHANT_ACCESS_LOG_LIMIT = DOMAIN_MERCHANT_ACCESS_LOG_LIMIT;
 const MERCHANT_ACCESS_LOG_THROTTLE_MS = DOMAIN_MERCHANT_ACCESS_LOG_THROTTLE_MS;
+const MERCHANT_DEFAULT_VALUE_STRICTNESS = DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS;
 const MERCHANT_DEFAULTS = DOMAIN_MERCHANT_DEFAULTS;
 const MERCHANT_STARTER_BLUEPRINTS = DOMAIN_MERCHANT_STARTER_BLUEPRINTS;
 const MERCHANT_ACCESS_MODES = Object.freeze({
@@ -1456,6 +1460,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-reputation-note",
   "log-reputation-note",
   "load-reputation-note-log",
+  "use-reputation-note-log",
   "post-reputation-note-log",
   "set-reputation-label",
   "add-reputation-faction",
@@ -4588,6 +4593,24 @@ function getReputationNoteLogSelection(factionIdInput) {
   return String(state[factionId] ?? "").trim();
 }
 
+function getReputationNoteLogSelect(root, factionIdInput) {
+  const factionId = String(factionIdInput ?? "").trim();
+  if (!root || !factionId) return null;
+  const escapedFactionId = typeof escapeCssValue === "function" ? escapeCssValue(factionId) : factionId;
+  return root.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${escapedFactionId}']`)
+    ?? root.querySelector("select[data-action='load-reputation-note-log']");
+}
+
+function getSelectedReputationNoteLogId(element, factionIdInput) {
+  const factionId = String(factionIdInput ?? "").trim();
+  if (!factionId) return "";
+  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
+  const logSelect = getReputationNoteLogSelect(root, factionId);
+  const selectedFromUi = String(logSelect?.value ?? "").trim();
+  const selectedFromState = getReputationNoteLogSelection(factionId);
+  return selectedFromUi || selectedFromState;
+}
+
 function getGatherHistoryViewStorageKey() {
   return `po-gather-history-view-${game.user?.id ?? "anon"}`;
 }
@@ -7483,6 +7506,9 @@ function buildOperationsContextFallback() {
           maxItems: MERCHANT_DEFAULTS.stock.maxItems,
           stockCount: MERCHANT_DEFAULTS.stock.maxItems,
           targetValueGp: MERCHANT_DEFAULTS.stock.targetValueGp,
+          valueStrictness: MERCHANT_DEFAULTS.stock.valueStrictness,
+          valueStrictnessBandLabel: "Strict",
+          valueTolerancePercent: 10,
           scarcity: MERCHANT_DEFAULTS.stock.scarcity,
           scarcityLabel: String(getMerchantScarcityProfile(MERCHANT_DEFAULTS.stock.scarcity)?.label ?? "6 - Normal"),
           duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
@@ -8675,27 +8701,39 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "log-reputation-note": async () => {
           await logReputationNote(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "load-reputation-note-log": async () => {
           await loadReputationNoteLog(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "use-reputation-note-log": async () => {
+          await useReputationNoteLog(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "post-reputation-note-log": async () => {
           await postReputationNoteLog(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "clear-reputation-note": async () => {
           await clearReputationNote(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "remove-reputation-note-log": async () => {
           await removeReputationNoteLog(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "set-reputation-label": async () => {
           await setReputationLabel(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "add-reputation-faction": async () => {
           await addReputationFaction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "remove-reputation-faction": async () => {
           await removeReputationFaction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "set-reputation-filter-keyword": async () => {
           setReputationFilterState({ keyword: String(element?.value ?? "") });
@@ -10918,6 +10956,86 @@ function buildStoredWatchSlots() {
     timeRange: "",
     entries: [] // each entry: { actorId, notes }
   }));
+}
+
+function getRestWatchSlotNumber(slotIdInput, fallbackIndex = null) {
+  const slotId = String(slotIdInput ?? "").trim().toLowerCase();
+  const match = slotId.match(/^watch-(\d+)$/);
+  if (match) {
+    const slotNumber = Number(match[1]);
+    if (Number.isFinite(slotNumber) && slotNumber > 0) return Math.floor(slotNumber);
+  }
+  if (Number.isInteger(fallbackIndex) && fallbackIndex >= 0) return fallbackIndex + 1;
+  return null;
+}
+
+function getRestWatchSlotLabel(slotIdInput, fallbackIndex = null) {
+  const slotNumber = getRestWatchSlotNumber(slotIdInput, fallbackIndex);
+  return slotNumber ? `Watch ${slotNumber}` : "Watch";
+}
+
+function sanitizeRestWatchEntries(slot) {
+  const rawEntries = Array.isArray(slot?.entries) ? slot.entries : [];
+  const entries = rawEntries
+    .map((entry) => {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId) return null;
+      return {
+        actorId,
+        notes: String(entry?.notes ?? "")
+      };
+    })
+    .filter(Boolean);
+  if (entries.length > 0) return entries;
+  const legacyActorId = String(slot?.actorId ?? "").trim();
+  if (!legacyActorId) return [];
+  return [{
+    actorId: legacyActorId,
+    notes: String(slot?.notes ?? "")
+  }];
+}
+
+function normalizeRestWatchSlots(slotsInput) {
+  const canonicalSlots = buildStoredWatchSlots();
+  const expectedIds = new Set(canonicalSlots.map((slot) => slot.id));
+  const slotsById = new Map();
+  const fallbackSlots = [];
+  const slots = Array.isArray(slotsInput) ? slotsInput : [];
+
+  for (const slot of slots) {
+    if (!slot || typeof slot !== "object") continue;
+    const slotId = String(slot?.id ?? "").trim();
+    const normalizedSlot = {
+      id: slotId,
+      timeRange: String(slot?.timeRange ?? ""),
+      entries: sanitizeRestWatchEntries(slot)
+    };
+    if (expectedIds.has(slotId) && !slotsById.has(slotId)) {
+      slotsById.set(slotId, normalizedSlot);
+      continue;
+    }
+    fallbackSlots.push(normalizedSlot);
+  }
+
+  return canonicalSlots.map((slot) => {
+    const exactMatch = slotsById.get(slot.id);
+    if (exactMatch) {
+      return {
+        id: slot.id,
+        timeRange: exactMatch.timeRange,
+        entries: exactMatch.entries
+      };
+    }
+    const fallback = fallbackSlots.shift();
+    if (fallback) {
+      return {
+        id: slot.id,
+        timeRange: fallback.timeRange,
+        entries: fallback.entries
+      };
+    }
+    return slot;
+  });
 }
 
 function buildDefaultRestWatchState() {
@@ -19901,16 +20019,17 @@ function getDefaultReputationFactions() {
 }
 
 function normalizeReputationNoteLog(entry = {}) {
-  const loggedAt = Number(entry?.loggedAt ?? Date.now());
+  const loggedAt = Number(entry?.loggedAt ?? getCurrentWorldTimestamp());
   return {
     id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     note: String(entry?.note ?? "").trim(),
     score: Math.max(-5, Math.min(5, Math.floor(Number(entry?.score ?? 0) || 0))),
-    loggedAt: Number.isFinite(loggedAt) ? loggedAt : Date.now(),
+    loggedAt: Number.isFinite(loggedAt) ? loggedAt : getCurrentWorldTimestamp(),
     loggedBy: String(entry?.loggedBy ?? "GM").trim() || "GM",
     dayLabel: String(entry?.dayLabel ?? "").trim(),
     clockLabel: String(entry?.clockLabel ?? "").trim(),
-    calendarEntryId: String(entry?.calendarEntryId ?? "").trim()
+    calendarEntryId: String(entry?.calendarEntryId ?? "").trim(),
+    journalEntryId: String(entry?.journalEntryId ?? "").trim()
   };
 }
 
@@ -20048,7 +20167,8 @@ function buildReputationContext(reputationState, filters = {}) {
     const selectedScore = Number(selectedNoteLog?.score ?? 0);
     const selectedScoreLabel = selectedScore > 0 ? `+${selectedScore}` : String(selectedScore);
     const selectedDayLabel = String(selectedNoteLog?.dayLabel ?? "").trim()
-      || formatRecoveryDueLabel(Number(selectedNoteLog?.loggedAt ?? Date.now()));
+      || formatRecoveryDueLabel(Number(selectedNoteLog?.loggedAt ?? getCurrentWorldTimestamp()));
+    const selectedNoteLogText = String(selectedNoteLog?.note ?? "").trim();
     const selectedPreviewSource = String(selectedNoteLog?.note ?? "").trim();
     const selectedPreview = selectedPreviewSource.length > 160
       ? `${selectedPreviewSource.slice(0, 157)}...`
@@ -20069,7 +20189,14 @@ function buildReputationContext(reputationState, filters = {}) {
       hasSelectedNoteLog: Boolean(selectedNoteLog),
       selectedNoteLogScoreLabel: selectedScoreLabel,
       selectedNoteLogDayLabel: selectedDayLabel,
-      selectedNoteLogPreview: selectedPreview
+      selectedNoteLogPreview: selectedPreview,
+      selectedNoteLogText,
+      selectedNoteLogClockLabel: String(selectedNoteLog?.clockLabel ?? "").trim(),
+      selectedNoteLogLoggedBy: String(selectedNoteLog?.loggedBy ?? "GM").trim() || "GM",
+      selectedNoteLogJournalEntryId: String(selectedNoteLog?.journalEntryId ?? "").trim(),
+      selectedNoteLogCalendarEntryId: String(selectedNoteLog?.calendarEntryId ?? "").trim(),
+      hasSelectedNoteLogJournal: Boolean(String(selectedNoteLog?.journalEntryId ?? "").trim()),
+      hasSelectedNoteLogCalendar: Boolean(String(selectedNoteLog?.calendarEntryId ?? "").trim())
     };
   });
 
@@ -20327,6 +20454,14 @@ function getMerchantScarcityProfile(value) {
   return getMerchantScarcityProfileDomain(value);
 }
 
+function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
+  return clampMerchantValueStrictnessDomain(value, fallback);
+}
+
+function resolveMerchantValueTolerance(targetValueGp = 0, strictnessInput = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
+  return resolveMerchantValueToleranceDomain(targetValueGp, strictnessInput);
+}
+
 function normalizeMerchantRace(value) {
   return normalizeMerchantRaceDomain(value);
 }
@@ -20500,6 +20635,10 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const targetValueGp = Number.isFinite(targetValueGpRaw)
     ? Math.max(0, Math.min(1000000, Number(targetValueGpRaw.toFixed(2))))
     : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const valueStrictness = clampMerchantValueStrictness(
+    stock.valueStrictness ?? source.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+    MERCHANT_DEFAULTS.stock.valueStrictness
+  );
   const scarcity = normalizeMerchantScarcity(stock.scarcity ?? source.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
   const duplicateChanceRaw = Number(stock.duplicateChance ?? source.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance ?? 25);
   const duplicateChance = Number.isFinite(duplicateChanceRaw)
@@ -20549,6 +20688,7 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
       curatedItemUuids,
       maxItems,
       targetValueGp,
+      valueStrictness,
       scarcity,
       duplicateChance,
       maxStackSize,
@@ -21441,6 +21581,38 @@ function getMerchantCompendiumPackOptionsForEditor(stock = {}) {
   return options;
 }
 
+function getMerchantWorldFolderAndDescendantIds(selectedFolderIds = []) {
+  const selectedValues = normalizeMerchantSourcePackIds(selectedFolderIds);
+  if (selectedValues.length <= 0) return [];
+  const itemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+  const childFolderIdsByParentId = new Map();
+  for (const folder of itemFolders) {
+    const folderId = String(folder?.id ?? "").trim();
+    const parentId = String(getDocumentFolderParentId(folder) ?? "").trim();
+    if (!folderId || !parentId) continue;
+    const childIds = childFolderIdsByParentId.get(parentId) ?? [];
+    childIds.push(folderId);
+    childFolderIdsByParentId.set(parentId, childIds);
+  }
+
+  const resolved = [];
+  const seen = new Set();
+  const queue = [...selectedValues];
+  while (queue.length > 0) {
+    const folderId = String(queue.shift() ?? "").trim();
+    if (!folderId || seen.has(folderId)) continue;
+    seen.add(folderId);
+    resolved.push(folderId);
+    for (const childId of childFolderIdsByParentId.get(folderId) ?? []) {
+      if (!seen.has(childId)) queue.push(childId);
+    }
+  }
+  return resolved;
+}
+
 function getMerchantWorldFolderOptions(selectedFolderIds = []) {
   const selectedValues = normalizeMerchantSourcePackIds(selectedFolderIds);
   const selectedSet = new Set(selectedValues);
@@ -21772,7 +21944,7 @@ function getMerchantSourceDocumentsSync(merchant = {}) {
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
     const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
     if (!sourceRefs.length) return [];
-    const sourceRefSet = new Set(sourceRefs);
+    const sourceRefSet = new Set(getMerchantWorldFolderAndDescendantIds(sourceRefs));
     return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
   }
   return game.items?.contents ?? [];
@@ -22127,6 +22299,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
     const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
     const scarcityProfile = getMerchantScarcityProfile(merchant?.stock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
+    const targetStockValueGp = Math.max(0, Number(merchant?.stock?.targetValueGp ?? 0) || 0);
+    const valueStrictness = clampMerchantValueStrictness(
+      merchant?.stock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+      MERCHANT_DEFAULTS.stock.valueStrictness
+    );
+    const valueTolerance = resolveMerchantValueTolerance(targetStockValueGp, valueStrictness);
     const buyMarkupRaw = Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0;
     const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
     const sellRate = Number.isFinite(sellRateRaw)
@@ -22223,6 +22401,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       offerTagSummary: offerTagLabels.join(", ") || "All",
       curatedItemCount: normalizeMerchantCuratedItemUuids(merchant?.stock?.curatedItemUuids ?? []).length,
       maxStackSize: 20,
+      targetStockValueGp,
+      targetStockValueGpLabel: `${targetStockValueGp.toLocaleString(undefined, { maximumFractionDigits: 0 })} gp`,
+      valueStrictness,
+      valueStrictnessBandLabel: String(valueTolerance?.bandLabel ?? "Strict"),
+      valueTolerancePercent: Math.max(1, Number(valueTolerance?.percent ?? 10) || 10),
       stockItemCount,
       hasStock: stockItemCount > 0,
       actorName: String(merchantActor?.name ?? "").trim(),
@@ -22476,6 +22659,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorTargetValueGp = Number.isFinite(editorTargetValueGpRaw)
     ? Math.max(0, Math.min(1000000, Number(editorTargetValueGpRaw.toFixed(2))))
     : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const editorValueStrictness = clampMerchantValueStrictness(
+    editorDraft?.stock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+    MERCHANT_DEFAULTS.stock.valueStrictness
+  );
+  const editorValueTolerance = resolveMerchantValueTolerance(editorTargetValueGp, editorValueStrictness);
   const editorRarityWeights = normalizeMerchantRarityWeights(
     editorDraft?.stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
     MERCHANT_DEFAULTS.stock.rarityWeights
@@ -22638,6 +22826,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         maxItems: editorStockCount,
         stockCount: editorStockCount,
         targetValueGp: editorTargetValueGp,
+        valueStrictness: editorValueStrictness,
+        valueStrictnessBandLabel: String(editorValueTolerance?.bandLabel ?? "Strict"),
+        valueTolerancePercent: Math.max(1, Number(editorValueTolerance?.percent ?? 10) || 10),
         scarcity: editorScarcity,
         scarcityLabel: String(getMerchantScarcityProfile(editorScarcity)?.label ?? "6 - Normal"),
         duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
@@ -22875,6 +23066,10 @@ function readMerchantDefinitionPatchFromElement(element) {
     barterAbility,
     stockCount: Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
     targetValueGp: getNumber("input[name='merchantTargetValueGp']", Number(existingStock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp)),
+    valueStrictness: getNumber(
+      "input[name='merchantValueStrictness']",
+      Number(existingStock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness ?? MERCHANT_DEFAULT_VALUE_STRICTNESS)
+    ),
     duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
     maxStackSize: 20,
     rarityWeights,
@@ -22900,7 +23095,7 @@ async function getMerchantSourceDocuments(merchant = {}) {
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
     const sourceRefs = getMerchantSourceRefIdsFromStock(stock);
     if (!sourceRefs.length) return [];
-    const sourceRefSet = new Set(sourceRefs);
+    const sourceRefSet = new Set(getMerchantWorldFolderAndDescendantIds(sourceRefs));
     return (game.items?.contents ?? []).filter((item) => sourceRefSet.has(String(item?.folder?.id ?? "")));
   }
   return game.items?.contents ?? [];
@@ -22972,6 +23167,10 @@ function getMerchantStockBudgetValueForCandidate(candidate = {}) {
 function constrainMerchantStockSelectionByBudget(selectedRowsInput = [], merchant = {}) {
   const selectedRows = Array.isArray(selectedRowsInput) ? selectedRowsInput : [];
   const targetValueGp = getMerchantStockTargetValueGp(merchant);
+  const valueTolerance = resolveMerchantValueTolerance(
+    targetValueGp,
+    merchant?.stock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness
+  );
   const buildTotals = (rows) => rows.reduce((sum, row) => {
     const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
     return sum + (getMerchantStockBudgetValueForCandidate(row) * quantity);
@@ -22980,14 +23179,15 @@ function constrainMerchantStockSelectionByBudget(selectedRowsInput = [], merchan
     return {
       rows: selectedRows,
       targetValueGp,
-      hardCapGp: targetValueGp > 0 ? (targetValueGp + Math.max(25, targetValueGp * 0.1)) : 0,
+      hardCapGp: targetValueGp > 0 ? Number(valueTolerance?.maxGp ?? targetValueGp) : 0,
+      tolerancePercent: Math.max(1, Number(valueTolerance?.percent ?? 10) || 10),
+      strictnessBandLabel: String(valueTolerance?.bandLabel ?? "Strict"),
       totalValueGp: buildTotals(selectedRows),
       constrained: false
     };
   }
 
-  const tolerance = Math.max(25, targetValueGp * 0.1);
-  const hardCapGp = targetValueGp + tolerance;
+  const hardCapGp = Math.max(targetValueGp, Number(valueTolerance?.maxGp ?? targetValueGp));
   const unitRows = [];
   for (const row of selectedRows) {
     const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
@@ -23046,6 +23246,8 @@ function constrainMerchantStockSelectionByBudget(selectedRowsInput = [], merchan
     rows: constrainedRows.length > 0 ? constrainedRows : selectedRows,
     targetValueGp,
     hardCapGp,
+    tolerancePercent: Math.max(1, Number(valueTolerance?.percent ?? 10) || 10),
+    strictnessBandLabel: String(valueTolerance?.bandLabel ?? "Strict"),
     totalValueGp,
     constrained
   };
@@ -30790,7 +30992,7 @@ async function logReputationNote(element) {
     return;
   }
 
-  const loggedAt = Date.now();
+  const loggedAt = getCurrentWorldTimestamp();
   const dayLabel = formatRecoveryDueLabel(loggedAt);
   const clock = getClockContext();
   let createdLog = null;
@@ -30818,26 +31020,9 @@ async function logReputationNote(element) {
   });
 
   if (!createdLog) return;
-  setReputationNoteLogSelection(factionId, "");
-  const calendarEntryId = await syncReputationLogToSimpleCalendar({ label: factionLabel }, createdLog);
-  if (calendarEntryId) {
-    await updateOperationsLedger((ledger) => {
-      const reputation = ensureReputationState(ledger);
-      const entry = reputation.factions.find((row) => row.id === factionId);
-      if (!entry || !Array.isArray(entry.noteLogs)) return;
-      const logRow = entry.noteLogs.find((row) => String(row.id ?? "") === String(createdLog.id ?? ""));
-      if (!logRow) return;
-      logRow.calendarEntryId = String(calendarEntryId);
-    });
-  }
-
-  ui.notifications?.info(`Logged reputation note for ${factionLabel}.`);
+  setReputationNoteLogSelection(factionId, String(createdLog.id ?? ""));
   const signedScore = Number(createdLog.score ?? 0) > 0 ? `+${Number(createdLog.score)}` : String(Number(createdLog.score ?? 0));
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Reputation Log:</strong> ${poEscapeHtml(factionLabel)} - ${signedScore}</p><p>${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p><p>${poEscapeHtml(String(createdLog.note ?? ""))}</p>`
-  });
-  await createOperationsJournalEntry({
+  const archiveEntry = await createOperationsJournalEntry({
     category: "reputation",
     sensitivity: "gm",
     title: `Reputation - ${factionLabel}`,
@@ -30847,14 +31032,37 @@ async function logReputationNote(element) {
       <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
       <p><strong>Score:</strong> ${poEscapeHtml(signedScore)}</p>
       <p><strong>Day:</strong> ${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p>
+      <p><strong>Time:</strong> ${poEscapeHtml(String(createdLog.clockLabel ?? ""))}</p>
+      <p><strong>Logged by:</strong> ${poEscapeHtml(String(createdLog.loggedBy ?? "GM"))}</p>
       <p><strong>Note:</strong> ${poEscapeHtml(String(createdLog.note ?? ""))}</p>
     `,
     redactedBody: `
       <p><strong>Faction:</strong> ${poEscapeHtml(factionLabel)}</p>
       <p><strong>Score:</strong> ${poEscapeHtml(signedScore)}</p>
       <p><strong>Day:</strong> ${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p>
+      <p><strong>Time:</strong> ${poEscapeHtml(String(createdLog.clockLabel ?? ""))}</p>
+      <p><strong>Logged by:</strong> ${poEscapeHtml(String(createdLog.loggedBy ?? "GM"))}</p>
       <p><em>Detailed notes are redacted.</em></p>
     `
+  });
+  const journalEntryId = String(archiveEntry?.id ?? "").trim();
+  const calendarEntryId = await syncReputationLogToSimpleCalendar({ label: factionLabel }, createdLog);
+  if (calendarEntryId || journalEntryId) {
+    await updateOperationsLedger((ledger) => {
+      const reputation = ensureReputationState(ledger);
+      const entry = reputation.factions.find((row) => row.id === factionId);
+      if (!entry || !Array.isArray(entry.noteLogs)) return;
+      const logRow = entry.noteLogs.find((row) => String(row.id ?? "") === String(createdLog.id ?? ""));
+      if (!logRow) return;
+      if (calendarEntryId) logRow.calendarEntryId = String(calendarEntryId);
+      if (journalEntryId) logRow.journalEntryId = String(journalEntryId);
+    });
+  }
+
+  ui.notifications?.info(`Logged reputation note for ${factionLabel}.`);
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `<p><strong>Reputation Log:</strong> ${poEscapeHtml(factionLabel)} - ${signedScore}</p><p>${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p><p>${poEscapeHtml(String(createdLog.note ?? ""))}</p>`
   });
 }
 
@@ -30869,12 +31077,36 @@ async function loadReputationNoteLog(element) {
 
   if (!logId) {
     setReputationNoteLogSelection(factionId, "");
-    await updateOperationsLedger((ledger) => {
-      const reputation = ensureReputationState(ledger);
-      const entry = reputation.factions.find((row) => row.id === factionId);
-      if (!entry) return;
-      entry.note = "";
-    });
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const reputation = ensureReputationState(ledger);
+  const entry = reputation.factions.find((row) => row.id === factionId);
+  if (!entry || !Array.isArray(entry.noteLogs)) {
+    setReputationNoteLogSelection(factionId, "");
+    ui.notifications?.warn("Faction note log not found.");
+    return;
+  }
+  const logRow = entry.noteLogs.find((row) => String(row.id ?? "") === logId);
+  if (!logRow) {
+    setReputationNoteLogSelection(factionId, "");
+    ui.notifications?.warn("Logged reputation note not found.");
+    return;
+  }
+  setReputationNoteLogSelection(factionId, logId);
+}
+
+async function useReputationNoteLog(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const factionId = String(element?.dataset?.faction ?? "").trim();
+  if (!factionId) return;
+  const logId = getSelectedReputationNoteLogId(element, factionId);
+  if (!logId) {
+    ui.notifications?.warn("Select a logged note to load.");
     return;
   }
 
@@ -30888,8 +31120,10 @@ async function loadReputationNoteLog(element) {
     entry.note = String(logRow.note ?? "");
     loaded = true;
   });
-  if (loaded) setReputationNoteLogSelection(factionId, logId);
-  if (loaded) ui.notifications?.info("Loaded historical reputation note into editor.");
+  if (loaded) {
+    setReputationNoteLogSelection(factionId, logId);
+    ui.notifications?.info("Archived reputation note loaded into editor.");
+  }
 }
 
 async function clearReputationNote(element) {
@@ -30918,12 +31152,7 @@ async function removeReputationNoteLog(element) {
   }
   const factionId = String(element?.dataset?.faction ?? "").trim();
   if (!factionId) return;
-  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
-  const logSelect = root?.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${factionId}']`)
-    ?? root?.querySelector("select[data-action='load-reputation-note-log']");
-  const selectedFromUi = String(logSelect?.value ?? "").trim();
-  const selectedFromState = getReputationNoteLogSelection(factionId);
-  const logId = selectedFromUi || selectedFromState;
+  const logId = getSelectedReputationNoteLogId(element, factionId);
   if (!logId) {
     ui.notifications?.warn("Select a logged note to delete.");
     return;
@@ -30959,12 +31188,7 @@ async function postReputationNoteLog(element) {
   }
   const factionId = String(element?.dataset?.faction ?? "").trim();
   if (!factionId) return;
-  const root = element?.closest(".po-op-role-row[data-faction]") ?? element?.closest(".po-op-role-row");
-  const logSelect = root?.querySelector(`select[data-action='load-reputation-note-log'][data-faction='${factionId}']`)
-    ?? root?.querySelector("select[data-action='load-reputation-note-log']");
-  const selectedFromUi = String(logSelect?.value ?? "").trim();
-  const selectedFromState = getReputationNoteLogSelection(factionId);
-  const logId = selectedFromUi || selectedFromState;
+  const logId = getSelectedReputationNoteLogId(element, factionId);
   if (!logId) {
     ui.notifications?.warn("Select a logged note to post.");
     return;
@@ -30988,7 +31212,7 @@ async function postReputationNoteLog(element) {
   const factionLabel = String(entry.label ?? "Faction").trim() || "Faction";
   const score = Math.max(-5, Math.min(5, Math.floor(Number(logRow.score ?? 0) || 0)));
   const scoreLabel = score > 0 ? `+${score}` : String(score);
-  const dayLabel = String(logRow.dayLabel ?? "").trim() || formatRecoveryDueLabel(Number(logRow.loggedAt ?? Date.now()));
+  const dayLabel = String(logRow.dayLabel ?? "").trim() || formatRecoveryDueLabel(Number(logRow.loggedAt ?? getCurrentWorldTimestamp()));
   const postedBy = String(game.user?.name ?? "GM").trim() || "GM";
 
   await ChatMessage.create({
@@ -36283,15 +36507,16 @@ async function copyRestWatchText(asMarkdown) {
     state.slots.forEach((slot, index) => {
       const entries = slot.entries ?? [];
       const timeRange = slot.timeRange || "-";
+      const slotNumber = getRestWatchSlotNumber(slot?.id, index) ?? index + 1;
       if (entries.length === 0) {
-        rows.push(`| ${index + 1} | (empty) | - | ${timeRange} | - |`);
+        rows.push(`| ${slotNumber} | (empty) | - | ${timeRange} | - |`);
       } else {
         entries.forEach((entry) => {
           const actor = game.actors.get(entry.actorId);
           const name = actor?.name ?? "(unknown)";
           const pp = actor ? getPassive(actor, "prc") ?? "-" : "-";
           const notes = entry.notes ? `${entry.notes.substring(0, 30)}...` : "-";
-          rows.push(`| ${index + 1} | ${name} | ${pp} | ${timeRange} | ${notes} |`);
+          rows.push(`| ${slotNumber} | ${name} | ${pp} | ${timeRange} | ${notes} |`);
         });
       }
     });
@@ -36300,7 +36525,7 @@ async function copyRestWatchText(asMarkdown) {
     const lines = [];
     state.slots.forEach((slot, index) => {
       const entries = slot.entries ?? [];
-      const label = `Watch ${index + 1}`;
+      const label = getRestWatchSlotLabel(slot?.id, index);
       if (entries.length === 0) {
         lines.push(asMarkdown ? `| ${label} | (empty) |` : `${label}: (empty)`);
       } else {
@@ -36693,25 +36918,7 @@ function getRestWatchState() {
     insertKeys: true,
     insertValues: true
   });
-  const sourceSlots = Array.isArray(merged?.slots) ? merged.slots : buildStoredWatchSlots();
-  merged.slots = sourceSlots.map((slot, index) => {
-    const entrySource = Array.isArray(slot?.entries) ? slot.entries : [];
-    const entries = entrySource
-      .map((entry) => {
-        const actorId = String(entry?.actorId ?? "").trim();
-        if (!actorId) return null;
-        return {
-          actorId,
-          notes: String(entry?.notes ?? "")
-        };
-      })
-      .filter(Boolean);
-    return {
-      id: String(slot?.id ?? `watch-${index + 1}`),
-      timeRange: String(slot?.timeRange ?? ""),
-      entries
-    };
-  });
+  merged.slots = normalizeRestWatchSlots(merged?.slots);
   if (merged.slots.length === 0) merged.slots = buildStoredWatchSlots();
   merged.locked = false;
   merged.lockedBy = "";
@@ -36903,12 +37110,9 @@ function buildWatchSlotsView(state, isGM, visibility) {
     : buildStoredWatchSlots();
   
   return sourceSlots.map((slot, index) => {
-    // Migrate old format: if slot has actorId, convert to entries
-    let entries = slot.entries ?? [];
-    if (slot.actorId && entries.length === 0) {
-      entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
-    }
-    
+    const slotId = String(slot?.id ?? `watch-${index + 1}`);
+    const entries = sanitizeRestWatchEntries(slot);
+
     const entriesView = entries.map((entry) => {
       const actor = game.actors.get(entry.actorId);
       if (!actor) return null;
@@ -36931,8 +37135,8 @@ function buildWatchSlotsView(state, isGM, visibility) {
     const slotNoDarkvision = computeNoDarkvisionForEntries(entriesView);
 
     return {
-      id: slot.id ?? `watch-${index + 1}`,
-      label: `Watch ${index + 1}`,
+      id: slotId,
+      label: getRestWatchSlotLabel(slotId, index),
       timeRange: slot.timeRange ?? "",
       entries: entriesView,
       hasEntries: entriesView.length > 0,
@@ -37556,12 +37760,8 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
 
   const watchByActorId = {};
   const restSlots = (restState.slots ?? []).map((slot, index) => {
-    const entries = slot.entries?.length
-      ? slot.entries
-      : slot.actorId
-        ? [{ actorId: slot.actorId, notes: slot.notes ?? "" }]
-        : [];
-    const slotId = slot.id ?? `watch-${index + 1}`;
+    const entries = sanitizeRestWatchEntries(slot);
+    const slotId = String(slot?.id ?? `watch-${index + 1}`);
     const isActive = slotId === activeWatchSlotId;
     const actors = entries
       .map((entry) => game.actors.get(entry.actorId))
@@ -37586,7 +37786,7 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
 
     return {
       id: slotId,
-      label: `Watch ${index + 1}`,
+      label: getRestWatchSlotLabel(slotId, index),
       timeRange: slot.timeRange || "",
       isActive,
       actors,
@@ -37858,7 +38058,7 @@ function buildQuickNotes(state) {
       const text = String(entry.notes ?? "").trim();
       if (text.length > 0) {
         notes.push({
-          label: `Watch ${index + 1}`,
+          label: getRestWatchSlotLabel(slot?.id, index),
           actorName: actor?.name ?? "Unknown",
           text
         });

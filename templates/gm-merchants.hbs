@@ -233,6 +233,11 @@
               <span>Target Stock Value (gp)</span>
               <input type="number" min="0" max="1000000" step="1" name="merchantTargetValueGp" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.targetValueGp}}" />
             </label>
+            <label class="po-resource-row">
+              <span>Target Value Strictness ({{merchants.gm.editor.valueStrictness}}%)</span>
+              <input type="range" min="50" max="300" step="5" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
+            </label>
+            <div class="po-op-summary">Strictness band: {{merchants.gm.editor.valueStrictnessBandLabel}} | When a target is set, stock can drift by about +/-{{merchants.gm.editor.valueTolerancePercent}}%.</div>
             <div class="po-op-summary">Stock amount is scarcity-driven. Max stack size is fixed at 20.</div>
           </div>
         </div>
@@ -642,6 +647,7 @@
                   <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
                   <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
                   <div class="po-op-summary">Scarcity: {{scarcityLabel}} ({{scarcityMultiplierPercent}}%) | Max Stack: {{maxStackSize}}</div>
+                  {{#if targetStockValueGp}}<div class="po-op-summary">Target Value: {{targetStockValueGpLabel}} | Strictness: {{valueStrictnessBandLabel}} (+/-{{valueTolerancePercent}}%)</div>{{/if}}
                   <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
                   <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
                   {{#if hasIncludeTags}}<div class="po-op-summary">Require Tags: {{includeTagsText}}</div>{{/if}}
