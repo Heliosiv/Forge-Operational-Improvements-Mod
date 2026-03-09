@@ -108,13 +108,13 @@
             </label>
           </div>
           <div class="po-audio-filter-group">
-            <div class="po-op-summary">Tag Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any tag){{/if}}</div>
+            <div class="po-op-summary">Folder Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any folder){{/if}}</div>
             {{#if audio.filterOptions.hasTagOptions}}
-            <div class="po-audio-tag-chip-grid" role="list" aria-label="Audio tag filters">
-              {{#each audio.filterOptions.tagOptions}}
+            <div class="po-audio-folder-group-list" role="list" aria-label="Audio folder filters">
+              {{#each audio.filterOptions.simpleFolderOptions}}
               <button
                 type="button"
-                class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                class="po-pill po-audio-filter-chip po-audio-folder-leaf {{#if selected}}is-selected{{/if}}"
                 data-action="set-audio-library-filter"
                 data-field="selectedTags"
                 data-tag="{{value}}"
@@ -122,9 +122,44 @@
                 {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
               </button>
               {{/each}}
+              {{#each audio.filterOptions.categoryGroups}}
+              <details class="po-audio-folder-group" {{#if isOpen}}open{{/if}}>
+                <summary class="po-audio-folder-summary">
+                  <span class="po-audio-folder-summary-main">
+                    <span class="po-audio-folder-label">{{label}}</span>
+                    <span class="po-audio-folder-count">{{count}}</span>
+                  </span>
+                  {{#if hasSelected}}<span class="po-pill">{{selectedCount}} selected</span>{{/if}}
+                </summary>
+                <div class="po-audio-folder-body">
+                  <button
+                    type="button"
+                    class="po-pill po-audio-filter-chip po-audio-folder-parent-chip {{#if selected}}is-selected{{/if}}"
+                    data-action="set-audio-library-filter"
+                    data-field="selectedTags"
+                    data-tag="{{value}}"
+                    aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                    All {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+                  </button>
+                  <div class="po-audio-tag-chip-grid" role="list" aria-label="{{label}} subfolders">
+                    {{#each subcategoryOptions}}
+                    <button
+                      type="button"
+                      class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                      data-action="set-audio-library-filter"
+                      data-field="selectedTags"
+                      data-tag="{{value}}"
+                      aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                      {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+                    </button>
+                    {{/each}}
+                  </div>
+                </div>
+              </details>
+              {{/each}}
             </div>
             {{else}}
-            <div class="po-op-summary">No track tags are available yet. Scan a library first.</div>
+            <div class="po-op-summary">No catalog folders are available yet. Scan a library first.</div>
             {{/if}}
           </div>
 
@@ -432,12 +467,12 @@
           </div>
           {{#if audio.filterOptions.hasTagOptions}}
           <div class="po-audio-filter-group">
-            <div class="po-op-summary">Tag Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any tag){{/if}}</div>
-            <div class="po-audio-tag-chip-grid" role="list" aria-label="Mix track browser tag filters">
-              {{#each audio.filterOptions.tagOptions}}
+            <div class="po-op-summary">Folder Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any folder){{/if}}</div>
+            <div class="po-audio-folder-group-list" role="list" aria-label="Mix track browser folder filters">
+              {{#each audio.filterOptions.simpleFolderOptions}}
               <button
                 type="button"
-                class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                class="po-pill po-audio-filter-chip po-audio-folder-leaf {{#if selected}}is-selected{{/if}}"
                 data-action="set-audio-library-filter"
                 data-field="selectedTags"
                 data-tag="{{value}}"
@@ -445,8 +480,45 @@
                 {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
               </button>
               {{/each}}
+              {{#each audio.filterOptions.categoryGroups}}
+              <details class="po-audio-folder-group" {{#if isOpen}}open{{/if}}>
+                <summary class="po-audio-folder-summary">
+                  <span class="po-audio-folder-summary-main">
+                    <span class="po-audio-folder-label">{{label}}</span>
+                    <span class="po-audio-folder-count">{{count}}</span>
+                  </span>
+                  {{#if hasSelected}}<span class="po-pill">{{selectedCount}} selected</span>{{/if}}
+                </summary>
+                <div class="po-audio-folder-body">
+                  <button
+                    type="button"
+                    class="po-pill po-audio-filter-chip po-audio-folder-parent-chip {{#if selected}}is-selected{{/if}}"
+                    data-action="set-audio-library-filter"
+                    data-field="selectedTags"
+                    data-tag="{{value}}"
+                    aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                    All {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+                  </button>
+                  <div class="po-audio-tag-chip-grid" role="list" aria-label="{{label}} subfolders">
+                    {{#each subcategoryOptions}}
+                    <button
+                      type="button"
+                      class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                      data-action="set-audio-library-filter"
+                      data-field="selectedTags"
+                      data-tag="{{value}}"
+                      aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                      {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+                    </button>
+                    {{/each}}
+                  </div>
+                </div>
+              </details>
+              {{/each}}
             </div>
           </div>
+          {{else}}
+          <div class="po-op-summary">No catalog folders are available yet. Scan a library first.</div>
           {{/if}}
           <div class="po-audio-track-browser-meta">
             <div class="po-op-summary">{{audio.mix.trackBrowser.summaryLabel}}</div>

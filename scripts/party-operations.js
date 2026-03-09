@@ -6744,6 +6744,121 @@ async function saveMarchingNoteFromElement(element, options = {}) {
   return saveMarchingNoteByContext(context, options);
 }
 
+function getMarchingNoteDialogText(actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return "";
+  const cacheKey = getMarchingNoteCacheKey(actorId);
+  const cached = getNoteDraftCacheValue(cacheKey);
+  if (cached) return cached;
+  const state = getMarchingOrderState();
+  return String(state.notes?.[actorId] ?? "");
+}
+
+function buildMarchingNoteDialogContent(actor, options = {}) {
+  const actorName = String(actor?.name ?? "Actor");
+  const text = String(options?.text ?? "");
+  const readOnly = options?.readOnly === true;
+  const intro = readOnly
+    ? "This marching note is currently read-only."
+    : "Write a short marching note for this actor. It will be shared with the current marching plan.";
+  const emptyHint = text.trim()
+    ? ""
+    : `<p><em>${readOnly ? "No note saved yet." : "No note saved yet. Add one if you need extra context."}</em></p>`;
+  return `
+    <div class="po-march-note-dialog">
+      <p>${poEscapeHtml(intro)}</p>
+      ${emptyHint}
+      <div class="form-group">
+        <label for="po-march-note-dialog-input"><strong>${poEscapeHtml(actorName)}</strong></label>
+        <textarea id="po-march-note-dialog-input" name="marchingNote" rows="8" ${readOnly ? "disabled" : ""}>${poEscapeHtml(text)}</textarea>
+      </div>
+    </div>
+  `;
+}
+
+function readMarchingNoteDialogValue(html) {
+  const root = html?.[0] ?? html;
+  const textarea = root?.querySelector?.("textarea[name='marchingNote']");
+  return String(textarea?.value ?? "");
+}
+
+async function openMarchingNoteDialogForActor(actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return false;
+  const actor = game.actors.get(actorId);
+  if (!actor) return false;
+
+  const state = getMarchingOrderState();
+  const isGM = canAccessAllPlayerOps();
+  const readOnly = isLockedForUser(state, isGM)
+    || isMarchingOrderPlayerLocked(game.user)
+    || (!isGM && !userOwnsActor(actor));
+  const cacheKey = getMarchingNoteCacheKey(actorId);
+  const initialText = getMarchingNoteDialogText(actorId);
+
+  const result = await Dialog.wait({
+    title: `${actor.name} - Marching Note`,
+    content: buildMarchingNoteDialogContent(actor, {
+      text: initialText,
+      readOnly
+    }),
+    buttons: readOnly
+      ? {
+          close: {
+            label: "Close",
+            callback: () => null
+          }
+        }
+      : {
+          save: {
+            label: "Save Note",
+            callback: (html) => ({
+              action: "save",
+              text: readMarchingNoteDialogValue(html)
+            })
+          },
+          clear: {
+            label: "Clear Note",
+            callback: () => ({ action: "clear" })
+          },
+          cancel: {
+            label: "Cancel",
+            callback: () => null
+          }
+        },
+    default: readOnly ? "close" : "save",
+    render: (html) => {
+      const root = html?.[0] ?? html;
+      const textarea = root?.querySelector?.("textarea[name='marchingNote']");
+      if (!textarea) return;
+      textarea.addEventListener("input", () => {
+        setNoteDraftCacheValue(cacheKey, textarea.value);
+      });
+      window.setTimeout(() => {
+        textarea.focus?.({ preventScroll: true });
+        const length = textarea.value.length;
+        textarea.setSelectionRange?.(length, length);
+      }, 0);
+    },
+    close: () => null
+  });
+
+  if (!result?.action) return false;
+  if (result.action === "clear") {
+    return saveMarchingNoteByContext({ actorId, text: "" }, { notify: true });
+  }
+  if (result.action === "save") {
+    return saveMarchingNoteByContext({ actorId, text: result.text ?? "" }, { notify: true });
+  }
+  return false;
+}
+
+async function openMarchingNoteDialogFromElement(element) {
+  const actorId = String(element?.closest?.("[data-actor-id]")?.dataset?.actorId ?? "").trim();
+  if (!actorId) return false;
+  return openMarchingNoteDialogForActor(actorId);
+}
+
 function clearScheduledMarchingNoteSave(app, actorIdInput) {
   if (!app) return;
   const actorId = String(actorIdInput ?? "").trim();
@@ -7018,13 +7133,15 @@ function normalizeLootPreviewDraft(input = {}) {
   const profileAllowed = new Set(LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => entry.value));
   const challengeAllowed = new Set(LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => entry.value));
   const scaleAllowed = new Set(LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => entry.value));
+  const normalizedMode = modeAllowed.has(mode) ? mode : "horde";
+  const normalizedCreatures = normalizedMode === "encounter" ? creatures : 1;
   return {
-    mode: modeAllowed.has(mode) ? mode : "horde",
+    mode: normalizedMode,
     profile: profileAllowed.has(profile) ? profile : "standard",
     challenge: challengeAllowed.has(challenge) ? challenge : "mid",
     scale: scaleAllowed.has(scale) ? scale : "medium",
-    creatures,
-    actorCount: creatures,
+    creatures: normalizedCreatures,
+    actorCount: normalizedCreatures,
     distributionMix,
     currencyScalar,
     itemScalar,
@@ -11664,15 +11781,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "doctrine-check":
           await runDoctrineCheckPrompt();
           break;
-        case "toggle-notes":
-            toggleNotesDrawer(element);
-          break;
-        case "save-entry-notes":
-          {
-            const context = getMarchingNoteContextFromElement(element);
-            if (context?.actorId) clearScheduledMarchingNoteSave(this, context.actorId);
-          }
-          await saveMarchingNoteFromElement(element, { notify: true });
+        case "open-entry-notes":
+          await openMarchingNoteDialogFromElement(element);
           break;
         default:
           break;
@@ -12568,12 +12678,43 @@ function normalizeAudioLibraryTagList(values = []) {
     .filter(Boolean)));
 }
 
+function buildAudioLibraryFilterToken(type = "tag", value = "") {
+  const normalizedType = String(type ?? "").trim().toLowerCase();
+  const normalizedValue = normalizeAudioLibraryTag(value);
+  if (!normalizedValue) return "";
+  const resolvedType = ["category", "subcategory", "tag"].includes(normalizedType) ? normalizedType : "tag";
+  return `${resolvedType}:${normalizedValue}`;
+}
+
+function normalizeAudioLibrarySelectedTag(value = "") {
+  const normalized = normalizeAudioLibraryTag(value);
+  if (!normalized) return "";
+  const separatorIndex = normalized.indexOf(":");
+  if (separatorIndex > 0) {
+    const type = normalized.slice(0, separatorIndex);
+    const tokenValue = normalized.slice(separatorIndex + 1);
+    if (["category", "subcategory", "tag"].includes(type) && tokenValue) {
+      return buildAudioLibraryFilterToken(type, tokenValue);
+    }
+  }
+  return buildAudioLibraryFilterToken("tag", normalized);
+}
+
+function normalizeAudioLibrarySelectedTagList(values = []) {
+  const source = Array.isArray(values)
+    ? values
+    : String(values ?? "").split(/[,\n;]+/g);
+  return Array.from(new Set(source
+    .map((entry) => normalizeAudioLibrarySelectedTag(entry))
+    .filter(Boolean)));
+}
+
 function normalizeAudioLibraryFilters(filters = {}) {
   return {
     search: normalizeAudioLibrarySearch(filters.search),
     kind: normalizeAudioLibraryKind(filters.kind),
     usage: normalizeAudioLibraryUsage(filters.usage),
-    selectedTags: normalizeAudioLibraryTagList(filters.selectedTags ?? [])
+    selectedTags: normalizeAudioLibrarySelectedTagList(filters.selectedTags ?? [])
   };
 }
 
@@ -14799,13 +14940,26 @@ function getAudioLibraryItemSearchValues(item = {}) {
   ].filter(Boolean);
 }
 
+function buildAudioLibraryItemFilterTokenSet(item = {}) {
+  const tokens = new Set();
+  const categoryToken = buildAudioLibraryFilterToken("category", item?.category);
+  if (categoryToken) tokens.add(categoryToken);
+  const subcategoryToken = buildAudioLibraryFilterToken("subcategory", item?.subcategory);
+  if (subcategoryToken) tokens.add(subcategoryToken);
+  for (const tag of normalizeAudioLibraryTagList(item?.tags ?? [])) {
+    const token = buildAudioLibraryFilterToken("tag", tag);
+    if (token) tokens.add(token);
+  }
+  return tokens;
+}
+
 function matchesAudioLibraryItemFilters(item = {}, filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)) {
   const normalizedFilters = normalizeAudioLibraryFilters(filters);
   if (normalizedFilters.kind !== "all" && item.kind !== normalizedFilters.kind) return false;
   if (normalizedFilters.usage !== "all" && item.usage !== normalizedFilters.usage) return false;
   if (normalizedFilters.selectedTags.length > 0) {
-    const itemTags = new Set(normalizeAudioLibraryTagList(item?.tags ?? []));
-    if (!normalizedFilters.selectedTags.some((tag) => itemTags.has(tag))) return false;
+    const itemFilterTokens = buildAudioLibraryItemFilterTokenSet(item);
+    if (!normalizedFilters.selectedTags.some((tag) => itemFilterTokens.has(tag))) return false;
   }
   const searchTokens = normalizedFilters.search.split(/\s+/g).filter(Boolean);
   if (searchTokens.length <= 0) return true;
@@ -14820,6 +14974,7 @@ function filterAudioMixTrackCandidates(candidates = [], filters = normalizeAudio
 
 function buildAudioLibraryFilterOptions(catalog = getAudioLibraryCatalog()) {
   const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  const selectedTagSet = new Set(filters.selectedTags);
   const kindOptions = Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
     value,
     label,
@@ -14830,36 +14985,80 @@ function buildAudioLibraryFilterOptions(catalog = getAudioLibraryCatalog()) {
     label,
     selected: filters.usage === value
   }));
-  const tagCounts = new Map();
+  const categoryGroupsByValue = new Map();
   for (const item of Array.isArray(catalog?.items) ? catalog.items : []) {
-    const seenItemTags = new Set();
-    for (const tag of Array.isArray(item?.tags) ? item.tags : []) {
-      const value = normalizeAudioLibraryTag(tag);
-      const label = String(tag ?? "").trim();
-      if (!value || !label || seenItemTags.has(value)) continue;
-      seenItemTags.add(value);
-      const existing = tagCounts.get(value) ?? { value, label, count: 0 };
-      existing.count += 1;
-      tagCounts.set(value, existing);
+    const categoryLabel = String(item?.category ?? "").trim() || "Uncategorized";
+    const categoryValue = normalizeAudioLibraryTag(categoryLabel);
+    if (!categoryValue) continue;
+    let categoryGroup = categoryGroupsByValue.get(categoryValue);
+    if (!categoryGroup) {
+      categoryGroup = {
+        value: categoryValue,
+        label: categoryLabel,
+        count: 0,
+        subcategories: new Map()
+      };
+      categoryGroupsByValue.set(categoryValue, categoryGroup);
     }
+    categoryGroup.count += 1;
+
+    const subcategoryLabel = String(item?.subcategory ?? "").trim();
+    const subcategoryValue = normalizeAudioLibraryTag(subcategoryLabel);
+    if (!subcategoryValue) continue;
+    const existingSubcategory = categoryGroup.subcategories.get(subcategoryValue) ?? {
+      value: subcategoryValue,
+      label: subcategoryLabel,
+      count: 0
+    };
+    existingSubcategory.count += 1;
+    categoryGroup.subcategories.set(subcategoryValue, existingSubcategory);
   }
-  const tagOptions = Array.from(tagCounts.values())
-    .sort((left, right) => {
-      const selectedCompare = Number(filters.selectedTags.includes(right.value)) - Number(filters.selectedTags.includes(left.value));
-      if (selectedCompare !== 0) return selectedCompare;
-      const countCompare = Number(right.count ?? 0) - Number(left.count ?? 0);
-      if (countCompare !== 0) return countCompare;
-      return String(left.label ?? "").localeCompare(String(right.label ?? ""));
+  const compareAudioLibraryFilterRows = (left, right) => {
+    const selectedCompare = Number(Boolean(right?.selected)) - Number(Boolean(left?.selected));
+    if (selectedCompare !== 0) return selectedCompare;
+    const countCompare = Number(right?.count ?? 0) - Number(left?.count ?? 0);
+    if (countCompare !== 0) return countCompare;
+    return String(left?.label ?? "").localeCompare(String(right?.label ?? ""));
+  };
+  const categoryGroups = Array.from(categoryGroupsByValue.values())
+    .map((group) => {
+      const categoryToken = buildAudioLibraryFilterToken("category", group.value);
+      const selected = selectedTagSet.has(categoryToken);
+      const subcategoryOptions = Array.from(group.subcategories.values())
+        .map((entry) => {
+          const token = buildAudioLibraryFilterToken("subcategory", entry.value);
+          return {
+            value: token,
+            label: entry.label,
+            count: entry.count,
+            selected: selectedTagSet.has(token)
+          };
+        })
+        .sort(compareAudioLibraryFilterRows);
+      const selectedChildCount = subcategoryOptions.filter((entry) => entry.selected).length;
+      return {
+        value: categoryToken,
+        label: group.label,
+        count: group.count,
+        selected,
+        selectedCount: selectedChildCount + (selected ? 1 : 0),
+        hasSelected: selected || selectedChildCount > 0,
+        hasSubcategories: subcategoryOptions.length > 0,
+        isOpen: selected || selectedChildCount > 0,
+        subcategoryOptions
+      };
     })
-    .map((entry) => ({
-      ...entry,
-      selected: filters.selectedTags.includes(entry.value)
-    }));
+    .sort(compareAudioLibraryFilterRows);
+  const simpleFolderOptions = categoryGroups.filter((group) => !group.hasSubcategories);
+  const nestedFolderGroups = categoryGroups.filter((group) => group.hasSubcategories);
   return {
     kindOptions,
     usageOptions,
-    tagOptions,
-    hasTagOptions: tagOptions.length > 0,
+    categoryGroups: nestedFolderGroups,
+    simpleFolderOptions,
+    hasCategoryGroups: nestedFolderGroups.length > 0,
+    hasSimpleFolderOptions: simpleFolderOptions.length > 0,
+    hasTagOptions: nestedFolderGroups.length > 0 || simpleFolderOptions.length > 0,
     selectedTagCount: filters.selectedTags.length,
     hasActiveFilters: hasActiveAudioLibraryFilters(filters)
   };
@@ -20153,6 +20352,7 @@ function buildLootPreviewContext() {
   const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
   return {
     draft,
+    showEncounterCreatures: mode === "encounter",
     modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === mode })),
     profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === profile })),
     challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === challenge })),
@@ -34551,6 +34751,10 @@ function setLootPreviewField(element) {
       ? parseLootPreviewNumericInput(element?.value, currentNumericValue)
       : String(element?.value ?? current[normalizedField] ?? "")
   };
+  if (normalizedField === "mode" && String(next.mode ?? "").trim().toLowerCase() !== "encounter") {
+    next.creatures = 1;
+    next.actorCount = 1;
+  }
   setLootPreviewDraft(next);
 }
 

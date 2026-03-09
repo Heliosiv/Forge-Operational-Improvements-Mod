@@ -67,7 +67,7 @@
             </div>
 
             <div class="po-loot-builder-control-grid">
-              <div class="po-loot-control-card">
+              <div class="po-loot-control-card po-loot-control-card-encounter-shape">
                 <div class="po-loot-control-card-head">
                   <div class="po-section-title">Encounter Shape</div>
                   <div class="po-op-summary">Set the baseline identity for this loot drop.</div>
@@ -76,7 +76,9 @@
                 <label class="po-resource-row"><span>Equipment Profile</span><select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">{{#each preview.profileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
                 <label class="po-resource-row"><span>Challenge Tier</span><select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">{{#each preview.challengeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
                 <label class="po-resource-row"><span>Scale</span><select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">{{#each preview.scaleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                {{#if preview.showEncounterCreatures}}
                 <label class="po-resource-row"><span>Creatures</span><input name="lootPreviewCreatures" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="creatures" value="{{preview.draft.creatures}}" /></label>
+                {{/if}}
               </div>
 
               <div class="po-loot-control-card">
