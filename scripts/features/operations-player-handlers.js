@@ -154,7 +154,7 @@ export async function applyPlayerSopNoteRequest(message, requesterRef = null, de
     clampSocketText,
     noteMaxLength,
     updateOperationsLedger,
-    appendSopNoteEntry
+    setSharedSopNoteText
   } = deps;
 
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
@@ -163,10 +163,9 @@ export async function applyPlayerSopNoteRequest(message, requesterRef = null, de
   const sopKey = String(message?.sopKey ?? "").trim();
   if (!sopKeys.includes(sopKey)) return;
   const note = clampSocketText(message?.note, noteMaxLength);
-  if (!note.trim()) return;
 
   await updateOperationsLedger((ledger) => {
-    appendSopNoteEntry(ledger, sopKey, note, requester);
+    setSharedSopNoteText(ledger, sopKey, note);
   });
 }
 

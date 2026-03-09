@@ -229,6 +229,7 @@ const suppressedSettingRefreshKeys = new Map();
 const pendingGatherYieldRequests = new Map();
 const MONKS_REQUEST_RESULT_TIMEOUT_MS = 8000;
 const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
+let automaticUpkeepTickInFlight = false;
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
 let integrationSyncInFlight = false;
@@ -342,6 +343,16 @@ const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
 const GATHER_TRAVEL_CHOICES = Object.freeze({
   PACE: "pace",
   FELL_BEHIND: "fell-behind"
+});
+const AUTO_UPKEEP_PROMPT_STATES = Object.freeze({
+  IDLE: "idle",
+  DECISION: "decision",
+  AWAITING_GATHER: "awaiting-gather"
+});
+const AUTO_UPKEEP_CHAT_ACTIONS = Object.freeze({
+  START_GATHER: "start-gather",
+  APPLY_NOW: "apply-now",
+  OPEN_RESOURCES: "open-resources"
 });
 const GATHER_ENVIRONMENT_KEYS = Object.freeze([
   "lush_forest_or_river_valley",
@@ -1470,7 +1481,16 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "use-reputation-note-log",
   "post-reputation-note-log",
   "set-reputation-label",
+  "set-reputation-detail",
+  "set-reputation-player-impact",
   "add-reputation-faction",
+  "add-reputation-player-impact",
+  "remove-reputation-player-impact",
+  "set-reputation-builder-field",
+  "set-reputation-builder-impact",
+  "add-reputation-builder-impact",
+  "remove-reputation-builder-impact",
+  "clear-reputation-builder",
   "remove-reputation-faction",
   "set-base-ops-config",
   "upsert-base-site",
@@ -1540,6 +1560,19 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "set-environment-dc",
   "set-environment-note",
   "set-environment-successive",
+  "select-environment-config-preset",
+  "create-environment-preset",
+  "duplicate-environment-preset",
+  "restore-environment-preset-defaults",
+  "delete-environment-preset",
+  "set-environment-preset-field",
+  "add-environment-preset-effect-change",
+  "remove-environment-preset-effect-change",
+  "set-environment-preset-effect-change",
+  "select-environment-config-action",
+  "create-environment-action",
+  "delete-environment-action",
+  "set-environment-action-field",
   "set-environment-sync-non-party",
   "reset-environment-successive-defaults",
   "toggle-environment-actor",
@@ -1579,12 +1612,51 @@ const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes"]);
 const SOCKET_MARCH_OPS = new Set(["joinRank", "setNote"]);
 const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
 
+const ENVIRONMENT_ACTIONS = [
+  {
+    key: "move",
+    label: "Move",
+    description: "Cross ground, reposition, or push through hazardous terrain."
+  },
+  {
+    key: "climb",
+    label: "Climb",
+    description: "Ascend, descend, or traverse surfaces where footing matters."
+  },
+  {
+    key: "dash",
+    label: "Dash",
+    description: "Sprint or force a fast advance through the environment."
+  },
+  {
+    key: "scout",
+    label: "Scout",
+    description: "Survey, spot threats, or read terrain and visibility."
+  },
+  {
+    key: "forage",
+    label: "Forage",
+    description: "Search, gather, or work carefully within the environment."
+  },
+  {
+    key: "endure",
+    label: "Endure Exposure",
+    description: "Hold up against weather, pressure, heat, cold, or corruption."
+  },
+  {
+    key: "operate",
+    label: "Operate",
+    description: "Manipulate equipment, rituals, or other environmental interactions."
+  }
+];
+
 const ENVIRONMENT_PRESETS = [
   {
     key: "none",
     label: "None",
     description: "No active environmental penalty.",
     icon: "icons/svg/sun.svg",
+    actionKey: "move",
     movementCheck: false,
     checkType: "skill",
     checkKey: "",
@@ -1596,6 +1668,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Slippery Surface",
     description: "Ice, wet stone, blood-slick floors, or algae force balance control.",
     icon: "icons/svg/falling.svg",
+    actionKey: "move",
     movementCheck: true,
     checkType: "skill",
     checkKey: "acr",
@@ -1610,6 +1683,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Unstable Footing",
     description: "Loose gravel, rubble, corpses, and shifting sand punish hard movement.",
     icon: "icons/svg/hazard.svg",
+    actionKey: "move",
     movementCheck: true,
     checkType: "save",
     checkKey: "dex",
@@ -1624,6 +1698,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Extreme Cold",
     description: "Freezing exposure tests endurance and shelter discipline.",
     icon: "icons/svg/snowflake.svg",
+    actionKey: "endure",
     movementCheck: true,
     checkType: "save",
     checkKey: "con",
@@ -1637,6 +1712,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Extreme Heat",
     description: "Heat stress drains stamina and worsens resource pressure.",
     icon: "icons/svg/fire.svg",
+    actionKey: "endure",
     movementCheck: true,
     checkType: "save",
     checkKey: "con",
@@ -1652,6 +1728,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Heavy Obscurement",
     description: "Thick fog, smoke, or magical darkness blinds line-of-sight engagement.",
     icon: "icons/svg/blind.svg",
+    actionKey: "scout",
     movementCheck: false,
     checkType: "skill",
     checkKey: "prc",
@@ -1664,6 +1741,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Necrotic Saturation",
     description: "Blighted ritual zones erode flesh and vitality.",
     icon: "icons/svg/skull.svg",
+    actionKey: "endure",
     movementCheck: true,
     checkType: "save",
     checkKey: "con",
@@ -1679,6 +1757,7 @@ const ENVIRONMENT_PRESETS = [
     label: "High Wind",
     description: "Gale force winds disrupt ranged pressure and force balance saves.",
     icon: "icons/svg/windmill.svg",
+    actionKey: "move",
     movementCheck: true,
     checkType: "save",
     checkKey: "str",
@@ -1695,6 +1774,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Shifting Ground",
     description: "Quicksand or moving stone catches and restrains movement.",
     icon: "icons/svg/swirl.svg",
+    actionKey: "move",
     movementCheck: true,
     checkType: "skill",
     checkKey: "ath",
@@ -1708,6 +1788,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Psychic Pressure Field",
     description: "Fractured timeline pressure and sigil echoes fracture resolve.",
     icon: "icons/svg/terror.svg",
+    actionKey: "endure",
     movementCheck: true,
     checkType: "save",
     checkKey: "wis",
@@ -1722,6 +1803,7 @@ const ENVIRONMENT_PRESETS = [
     label: "Corrosive Atmosphere",
     description: "Acid mist and caustic vapors burn flesh and degrade gear.",
     icon: "icons/svg/acid.svg",
+    actionKey: "endure",
     movementCheck: true,
     checkType: "save",
     checkKey: "con",
@@ -2224,6 +2306,22 @@ function ensureOperationalResourceConfig(resources) {
       };
     })
     .sort((a, b) => Number(b.timestamp ?? 0) - Number(a.timestamp ?? 0));
+  if (!resources.gather.pendingPools || typeof resources.gather.pendingPools !== "object") {
+    resources.gather.pendingPools = { food: 0, water: 0 };
+  }
+  resources.gather.pendingPools.food = Math.max(0, Math.floor(Number(resources.gather.pendingPools.food ?? 0) || 0));
+  resources.gather.pendingPools.water = Math.max(0, Math.floor(Number(resources.gather.pendingPools.water ?? 0) || 0));
+  if (!resources.gather.autoUpkeepPrompt || typeof resources.gather.autoUpkeepPrompt !== "object") {
+    resources.gather.autoUpkeepPrompt = {};
+  }
+  const rawPromptState = String(resources.gather.autoUpkeepPrompt.state ?? AUTO_UPKEEP_PROMPT_STATES.IDLE).trim().toLowerCase();
+  resources.gather.autoUpkeepPrompt.state = Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(rawPromptState)
+    ? rawPromptState
+    : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+  resources.gather.autoUpkeepPrompt.messageId = String(resources.gather.autoUpkeepPrompt.messageId ?? "").trim();
+  resources.gather.autoUpkeepPrompt.createdAt = Math.max(0, Number(resources.gather.autoUpkeepPrompt.createdAt ?? 0) || 0);
+  resources.gather.autoUpkeepPrompt.dayKey = String(resources.gather.autoUpkeepPrompt.dayKey ?? "").trim();
+  resources.gather.autoUpkeepPrompt.lastResolvedAt = Math.max(0, Number(resources.gather.autoUpkeepPrompt.lastResolvedAt ?? 0) || 0);
   if (typeof resources.gather.foodCoveredNextUpkeep !== "boolean") resources.gather.foodCoveredNextUpkeep = false;
   if (typeof resources.gather.waterCoveredNextUpkeep !== "boolean") resources.gather.waterCoveredNextUpkeep = false;
   const foodCoverageDueKey = Number(resources.gather.foodCoverageDueKey);
@@ -2244,6 +2342,89 @@ function ensureOperationalResourceConfig(resources) {
   }
   if (!resources.upkeep) resources.upkeep = {};
   ensureStewardPoolsState(resources);
+}
+
+function getGatherPendingPoolAmount(resourcesState, resourceType) {
+  const key = normalizeGatherResourceType(resourceType);
+  if (!["food", "water"].includes(key)) return 0;
+  return Math.max(0, Math.floor(Number(resourcesState?.gather?.pendingPools?.[key] ?? 0) || 0));
+}
+
+function getAutoUpkeepPromptState(resourcesState) {
+  const rawState = String(resourcesState?.gather?.autoUpkeepPrompt?.state ?? AUTO_UPKEEP_PROMPT_STATES.IDLE).trim().toLowerCase();
+  return Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(rawState)
+    ? rawState
+    : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+}
+
+function getAutoUpkeepPromptData(resourcesState) {
+  return {
+    state: getAutoUpkeepPromptState(resourcesState),
+    messageId: String(resourcesState?.gather?.autoUpkeepPrompt?.messageId ?? "").trim(),
+    createdAt: Math.max(0, Number(resourcesState?.gather?.autoUpkeepPrompt?.createdAt ?? 0) || 0),
+    dayKey: String(resourcesState?.gather?.autoUpkeepPrompt?.dayKey ?? "").trim(),
+    lastResolvedAt: Math.max(0, Number(resourcesState?.gather?.autoUpkeepPrompt?.lastResolvedAt ?? 0) || 0)
+  };
+}
+
+function hasGatherAttemptsForDay(resourcesState, dayKey) {
+  const targetDayKey = String(dayKey ?? "").trim();
+  if (!targetDayKey) return false;
+  const history = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
+  return history.some((entry) => String(entry?.dayKey ?? "").trim() === targetDayKey);
+}
+
+function hasPendingGatherRequests(resourcesState) {
+  return Array.isArray(resourcesState?.gather?.requests) && resourcesState.gather.requests.length > 0;
+}
+
+async function setAutomaticUpkeepPromptState(nextState, updates = {}) {
+  const normalizedState = Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(String(nextState ?? "").trim().toLowerCase())
+    ? String(nextState).trim().toLowerCase()
+    : AUTO_UPKEEP_PROMPT_STATES.IDLE;
+  await updateOperationsLedger((ledger) => {
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+    ledger.resources.gather.autoUpkeepPrompt.state = normalizedState;
+    if (Object.prototype.hasOwnProperty.call(updates, "messageId")) {
+      ledger.resources.gather.autoUpkeepPrompt.messageId = String(updates.messageId ?? "").trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "createdAt")) {
+      ledger.resources.gather.autoUpkeepPrompt.createdAt = Math.max(0, Number(updates.createdAt ?? 0) || 0);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "dayKey")) {
+      ledger.resources.gather.autoUpkeepPrompt.dayKey = String(updates.dayKey ?? "").trim();
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, "lastResolvedAt")) {
+      ledger.resources.gather.autoUpkeepPrompt.lastResolvedAt = Math.max(0, Number(updates.lastResolvedAt ?? 0) || 0);
+    }
+  }, { skipLocalRefresh: true });
+}
+
+async function clearAutomaticUpkeepPromptState(reason = "Automatic upkeep prompt resolved.") {
+  const resources = getOperationsLedger().resources ?? {};
+  ensureOperationalResourceConfig(resources);
+  const prompt = getAutoUpkeepPromptData(resources);
+  const existing = prompt.messageId ? game.messages?.get?.(prompt.messageId) ?? null : null;
+  if (existing) {
+    await existing.update({
+      content: `<div class="po-chat-card po-chat-card-gather"><p><strong>Automatic Upkeep</strong></p><p>${poEscapeHtml(String(reason))}</p></div>`,
+      flags: {
+        [MODULE_ID]: {
+          autoUpkeepPrompt: {
+            state: AUTO_UPKEEP_PROMPT_STATES.IDLE,
+            dayKey: prompt.dayKey
+          }
+        }
+      }
+    });
+  }
+  return setAutomaticUpkeepPromptState(AUTO_UPKEEP_PROMPT_STATES.IDLE, {
+    messageId: "",
+    createdAt: 0,
+    dayKey: "",
+    lastResolvedAt: Date.now()
+  });
 }
 
 function ensurePartyOperationsClass(appOrElement) {
@@ -2282,7 +2463,9 @@ function applyNonGmOperationsReadonly(appOrElement) {
     ".po-injury-editor input",
     ".po-injury-editor select",
     ".po-injury-editor textarea",
-    ".po-reputation-gm-tools input[name='repFactionName']"
+    ".po-reputation-builder input",
+    ".po-reputation-builder select",
+    ".po-reputation-builder textarea"
   ].join(", ");
   operationsWindow.querySelectorAll(selector).forEach((element) => {
     if ("disabled" in element) element.disabled = true;
@@ -3214,6 +3397,7 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
   const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
   const environmentApplies = forceEnvironmentApply || (Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId));
   const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
+  const environmentAction = getEnvironmentActionMeta(environmentPreset);
   const summaryEffects = globalContext.operations.summary?.effects ?? {};
   const globalModifiers = isNonParty && includeWorldGlobal
     ? (summaryEffects.worldGlobalModifiers ?? {})
@@ -3273,6 +3457,8 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       active: Boolean(environmentApplies && environmentPreset && environmentPreset.key !== "none"),
       presetKey: String(environmentPreset?.key ?? "none"),
       label: String(environmentPreset?.label ?? "None"),
+      actionKey: environmentAction.actionKey,
+      actionLabel: environmentAction.actionLabel,
       movementCheck: Boolean(environmentPreset?.movementCheck),
       checkType: environmentCheck.checkType,
       checkKey: environmentCheck.checkKey,
@@ -3313,8 +3499,184 @@ function getEnvironmentStatusEffect(actor) {
   });
 }
 
-function getEnvironmentPresetByKey(key) {
-  return ENVIRONMENT_PRESETS.find((preset) => preset.key === key) ?? ENVIRONMENT_PRESETS[0];
+function slugifyEnvironmentIdentifier(value, fallbackPrefix = "environment") {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallbackPrefix;
+}
+
+function buildUniqueEnvironmentIdentifier(label, existingKeys = [], fallbackPrefix = "environment") {
+  const existing = new Set(Array.from(existingKeys ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
+  const base = slugifyEnvironmentIdentifier(label, fallbackPrefix);
+  if (!existing.has(base)) return base;
+  let index = 2;
+  while (existing.has(`${base}-${index}`)) index += 1;
+  return `${base}-${index}`;
+}
+
+function normalizeEnvironmentActionDefinition(raw = {}, fallback = {}) {
+  const key = slugifyEnvironmentIdentifier(raw?.key ?? fallback?.key, "action");
+  const fallbackLabel = String(fallback?.label ?? key).trim();
+  const label = String(raw?.label ?? fallbackLabel).trim() || fallbackLabel || "Action";
+  return {
+    key,
+    label,
+    description: String(raw?.description ?? fallback?.description ?? "").trim()
+  };
+}
+
+function buildEnvironmentActionCatalog(environmentState = null) {
+  const defaults = ENVIRONMENT_ACTIONS.map((entry) => normalizeEnvironmentActionDefinition(entry));
+  const catalog = new Map(defaults.map((entry) => [entry.key, entry]));
+  const definitions = environmentState?.actionDefinitions && typeof environmentState.actionDefinitions === "object"
+    ? environmentState.actionDefinitions
+    : {};
+
+  for (const [rawKey, rawDefinition] of Object.entries(definitions)) {
+    const key = slugifyEnvironmentIdentifier(rawKey, "action");
+    const fallback = catalog.get(key) ?? { key, label: key };
+    catalog.set(key, normalizeEnvironmentActionDefinition({ ...(rawDefinition ?? {}), key }, fallback));
+  }
+
+  const orderedKeys = [];
+  const pushed = new Set();
+  const pushKey = (rawKey) => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || pushed.has(key) || !catalog.has(key)) return;
+    pushed.add(key);
+    orderedKeys.push(key);
+  };
+
+  const rawOrder = Array.isArray(environmentState?.actionOrder) ? environmentState.actionOrder : [];
+  rawOrder.forEach((rawKey) => pushKey(slugifyEnvironmentIdentifier(rawKey, "action")));
+  defaults.forEach((entry) => pushKey(entry.key));
+  Array.from(catalog.keys()).forEach((key) => pushKey(key));
+
+  return orderedKeys.map((key) => catalog.get(key)).filter(Boolean);
+}
+
+function getEnvironmentActionByKey(key, environmentState = null) {
+  const catalog = buildEnvironmentActionCatalog(environmentState);
+  const normalizedKey = slugifyEnvironmentIdentifier(key, "action");
+  return catalog.find((entry) => entry.key === normalizedKey) ?? catalog[0] ?? normalizeEnvironmentActionDefinition({ key: "move", label: "Move" });
+}
+
+function normalizeEnvironmentEffectChange(raw = {}, options = {}) {
+  const fallbackId = options?.fallbackId ?? foundry.utils.randomID();
+  return {
+    id: String(raw?.id ?? fallbackId).trim() || fallbackId,
+    key: String(raw?.key ?? "").trim(),
+    value: String(raw?.value ?? "").trim()
+  };
+}
+
+function normalizeEnvironmentPresetDefinition(raw = {}, fallback = {}, options = {}) {
+  const actionCatalog = Array.isArray(options?.actionCatalog) ? options.actionCatalog : buildEnvironmentActionCatalog(options?.environmentState ?? null);
+  const validActionKeys = new Set(actionCatalog.map((entry) => entry.key));
+  const resolvedKey = slugifyEnvironmentIdentifier(raw?.key ?? fallback?.key, "preset");
+  const resolvedActionKey = slugifyEnvironmentIdentifier(raw?.actionKey ?? fallback?.actionKey ?? "move", "action");
+  const actionKey = validActionKeys.has(resolvedActionKey)
+    ? resolvedActionKey
+    : (actionCatalog[0]?.key ?? "move");
+  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
+  const rawDaeMode = Math.floor(Number(raw?.successiveFailDaeChangeMode ?? fallback?.successiveFailDaeChangeMode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+  const effectChangesRaw = Array.isArray(raw?.effectChanges)
+    ? raw.effectChanges
+    : (Array.isArray(fallback?.effectChanges) ? fallback.effectChanges : []);
+  const effectChanges = effectChangesRaw
+    .map((entry, index) => normalizeEnvironmentEffectChange(entry, { fallbackId: `${resolvedKey}-change-${index + 1}` }));
+  const preset = {
+    key: resolvedKey,
+    label: String(raw?.label ?? fallback?.label ?? resolvedKey).trim() || "Environment Preset",
+    description: String(raw?.description ?? fallback?.description ?? "").trim(),
+    icon: String(raw?.icon ?? fallback?.icon ?? "icons/svg/hazard.svg").trim() || "icons/svg/hazard.svg",
+    actionKey,
+    movementCheck: Boolean(raw?.movementCheck ?? fallback?.movementCheck ?? false),
+    checkType: String(raw?.checkType ?? fallback?.checkType ?? "skill").trim().toLowerCase() === "save" ? "save" : "skill",
+    checkKey: String(raw?.checkKey ?? raw?.checkSkill ?? fallback?.checkKey ?? fallback?.checkSkill ?? "").trim().toLowerCase(),
+    checkLabel: String(raw?.checkLabel ?? fallback?.checkLabel ?? "").trim(),
+    defaultDc: Math.max(1, Math.min(30, Math.floor(Number(raw?.defaultDc ?? fallback?.defaultDc ?? 12) || 12))),
+    failStatusId: String(raw?.failStatusId ?? fallback?.failStatusId ?? "").trim(),
+    failSlideFeet: Math.max(0, Math.min(500, Math.floor(Number(raw?.failSlideFeet ?? fallback?.failSlideFeet ?? 0) || 0))),
+    failSpeedZeroTurns: Math.max(0, Math.min(10, Math.floor(Number(raw?.failSpeedZeroTurns ?? fallback?.failSpeedZeroTurns ?? 0) || 0))),
+    failDamageFormula: String(raw?.failDamageFormula ?? fallback?.failDamageFormula ?? "").trim(),
+    failDamageType: String(raw?.failDamageType ?? fallback?.failDamageType ?? "").trim(),
+    failExhaustion: Math.max(0, Math.min(6, Math.floor(Number(raw?.failExhaustion ?? fallback?.failExhaustion ?? 0) || 0))),
+    failBy5StatusId: String(raw?.failBy5StatusId ?? fallback?.failBy5StatusId ?? "").trim(),
+    failBy5SlideFeet: Math.max(0, Math.min(500, Math.floor(Number(raw?.failBy5SlideFeet ?? fallback?.failBy5SlideFeet ?? 0) || 0))),
+    failBy5DamageFormula: String(raw?.failBy5DamageFormula ?? fallback?.failBy5DamageFormula ?? "").trim(),
+    failBy5DamageType: String(raw?.failBy5DamageType ?? fallback?.failBy5DamageType ?? "").trim(),
+    failBy5MaxHpReductionFormula: String(raw?.failBy5MaxHpReductionFormula ?? fallback?.failBy5MaxHpReductionFormula ?? "").trim(),
+    successiveFailStatusId: String(raw?.successiveFailStatusId ?? fallback?.successiveFailStatusId ?? "").trim(),
+    successiveFailSlideFeet: Math.max(0, Math.min(500, Math.floor(Number(raw?.successiveFailSlideFeet ?? fallback?.successiveFailSlideFeet ?? 0) || 0))),
+    successiveFailExhaustion: Math.max(
+      0,
+      Math.min(6, Math.floor(Number(raw?.successiveFailExhaustion ?? fallback?.successiveFailExhaustion ?? 0) || 0))
+    ),
+    successiveFailDamageFormula: String(raw?.successiveFailDamageFormula ?? fallback?.successiveFailDamageFormula ?? "").trim(),
+    successiveFailDamageType: String(raw?.successiveFailDamageType ?? fallback?.successiveFailDamageType ?? "").trim(),
+    successiveFailMaxHpReductionFormula: String(
+      raw?.successiveFailMaxHpReductionFormula ?? fallback?.successiveFailMaxHpReductionFormula ?? ""
+    ).trim(),
+    successiveFailDaeChangeKey: String(raw?.successiveFailDaeChangeKey ?? fallback?.successiveFailDaeChangeKey ?? "").trim(),
+    successiveFailDaeChangeMode: validModes.has(rawDaeMode) ? rawDaeMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
+    successiveFailDaeChangeValue: String(raw?.successiveFailDaeChangeValue ?? fallback?.successiveFailDaeChangeValue ?? "").trim(),
+    alwaysStatusId: String(raw?.alwaysStatusId ?? fallback?.alwaysStatusId ?? "").trim(),
+    effectChanges
+  };
+  const checkMeta = getEnvironmentCheckMeta(preset);
+  preset.checkType = checkMeta.checkType;
+  preset.checkKey = checkMeta.checkKey;
+  preset.checkLabel = checkMeta.checkLabel;
+  return preset;
+}
+
+function buildEnvironmentPresetCatalog(environmentState = null) {
+  const actionCatalog = buildEnvironmentActionCatalog(environmentState);
+  const defaults = ENVIRONMENT_PRESETS.map((entry) => normalizeEnvironmentPresetDefinition(entry, {}, {
+    actionCatalog,
+    environmentState
+  }));
+  const catalog = new Map(defaults.map((entry) => [entry.key, entry]));
+  const definitions = environmentState?.presetDefinitions && typeof environmentState.presetDefinitions === "object"
+    ? environmentState.presetDefinitions
+    : {};
+
+  for (const [rawKey, rawDefinition] of Object.entries(definitions)) {
+    const key = slugifyEnvironmentIdentifier(rawKey, "preset");
+    const fallback = catalog.get(key) ?? { key, label: key };
+    catalog.set(key, normalizeEnvironmentPresetDefinition({ ...(rawDefinition ?? {}), key }, fallback, {
+      actionCatalog,
+      environmentState
+    }));
+  }
+
+  const orderedKeys = [];
+  const pushed = new Set();
+  const pushKey = (rawKey) => {
+    const key = String(rawKey ?? "").trim();
+    if (!key || pushed.has(key) || !catalog.has(key)) return;
+    pushed.add(key);
+    orderedKeys.push(key);
+  };
+
+  pushKey("none");
+  const rawOrder = Array.isArray(environmentState?.presetOrder) ? environmentState.presetOrder : [];
+  rawOrder.forEach((rawKey) => pushKey(slugifyEnvironmentIdentifier(rawKey, "preset")));
+  defaults.forEach((entry) => pushKey(entry.key));
+  Array.from(catalog.keys()).forEach((key) => pushKey(key));
+
+  return orderedKeys.map((key) => catalog.get(key)).filter(Boolean);
+}
+
+function getEnvironmentPresetByKey(key, environmentState = null) {
+  const resolvedEnvironmentState = environmentState ?? (getOperationsLedger()?.environment ?? null);
+  const catalog = buildEnvironmentPresetCatalog(resolvedEnvironmentState);
+  const normalizedKey = slugifyEnvironmentIdentifier(key, "preset");
+  return catalog.find((entry) => entry.key === normalizedKey) ?? catalog.find((entry) => entry.key === "none") ?? catalog[0];
 }
 
 function getEnvironmentCheckMeta(source = {}) {
@@ -3331,6 +3693,16 @@ function getEnvironmentCheckMeta(source = {}) {
     checkType,
     checkKey,
     checkLabel
+  };
+}
+
+function getEnvironmentActionMeta(source = {}, environmentState = null) {
+  const action = getEnvironmentActionByKey(source?.actionKey ?? "move", environmentState);
+  return {
+    actionKey: action.key,
+    actionLabel: action.label,
+    actionDescription: action.description,
+    actionLabelLower: String(action.label ?? "action").trim().toLowerCase()
   };
 }
 
@@ -3472,7 +3844,7 @@ function buildDaeModifierCatalog() {
     map.set(key, { key, label: humanizeDaeKey(key), hint: `${hintPrefix}: ${key}` });
   };
 
-  for (const preset of ENVIRONMENT_PRESETS) {
+  for (const preset of buildEnvironmentPresetCatalog(getOperationsLedger()?.environment ?? null)) {
     for (const change of preset.effectChanges ?? []) {
       addCatalogKey(change?.key, "System field");
     }
@@ -3552,11 +3924,84 @@ function buildDamageTypeOptions(selected = "") {
   return options;
 }
 
+function buildStatusEffectOptions(selected = "") {
+  const selectedValue = String(selected ?? "").trim();
+  return [
+    { value: "", label: "None", selected: !selectedValue },
+    ...(CONFIG.statusEffects ?? []).map((entry) => {
+      const value = String(entry?.id ?? "").trim();
+      return {
+        value,
+        label: String((entry?.name ?? value) || "Status").trim(),
+        selected: value === selectedValue
+      };
+    }).filter((entry) => entry.value)
+  ];
+}
+
+function buildEnvironmentCheckTypeOptions(selected = "skill") {
+  const selectedValue = String(selected ?? "").trim().toLowerCase() === "save" ? "save" : "skill";
+  return [
+    { value: "skill", label: "Skill Check", selected: selectedValue === "skill" },
+    { value: "save", label: "Saving Throw", selected: selectedValue === "save" }
+  ];
+}
+
+function buildEnvironmentCheckKeyOptions(checkType = "skill", selected = "") {
+  const normalizedType = String(checkType ?? "").trim().toLowerCase() === "save" ? "save" : "skill";
+  const selectedValue = String(selected ?? "").trim().toLowerCase();
+  const source = normalizedType === "save"
+    ? (CONFIG?.DND5E?.abilities ?? CONFIG?.abilities ?? {})
+    : (CONFIG?.DND5E?.skills ?? CONFIG?.skills ?? {});
+  const fallbackKeys = normalizedType === "save"
+    ? ["str", "dex", "con", "int", "wis", "cha"]
+    : ["acr", "ath", "prc", "ste", "sur"];
+  const options = [];
+
+  const resolveLabel = (rawValue, fallback) => {
+    if (typeof rawValue === "string") {
+      return rawValue.includes(".") ? (game.i18n?.localize?.(rawValue) ?? rawValue) : rawValue;
+    }
+    if (rawValue && typeof rawValue === "object") {
+      const candidate = String(rawValue.label ?? rawValue.name ?? rawValue.value ?? "").trim();
+      if (candidate) return candidate.includes(".") ? (game.i18n?.localize?.(candidate) ?? candidate) : candidate;
+    }
+    return fallback;
+  };
+
+  for (const [valueRaw, labelRaw] of Object.entries(source)) {
+    const value = String(valueRaw ?? "").trim().toLowerCase();
+    if (!value) continue;
+    options.push({
+      value,
+      label: resolveLabel(labelRaw, value.toUpperCase()),
+      selected: value === selectedValue
+    });
+  }
+
+  if (options.length === 0) {
+    fallbackKeys.forEach((value) => {
+      options.push({
+        value,
+        label: value.toUpperCase(),
+        selected: value === selectedValue
+      });
+    });
+  }
+
+  if (selectedValue && !options.some((entry) => entry.value === selectedValue)) {
+    options.push({ value: selectedValue, label: selectedValue.toUpperCase(), selected: true });
+  }
+
+  return options.sort((left, right) => String(left.label ?? "").localeCompare(String(right.label ?? "")));
+}
+
 function buildPartyHealthModifierKeyCatalog() {
   return getDaeModifierCatalog();
 }
 
 function buildEnvironmentOutcomeSummary(preset) {
+  const actionMeta = getEnvironmentActionMeta(preset);
   const statusLabel = getStatusLabelById(preset?.failStatusId);
   const failParts = [];
   if (statusLabel) failParts.push(`Apply ${statusLabel}`);
@@ -3618,8 +4063,8 @@ function buildEnvironmentOutcomeSummary(preset) {
 
   return {
     onSuccess: preset?.movementCheck
-      ? "No failure consequences are applied."
-      : "No movement check required.",
+      ? `No failure consequences are applied when the ${actionMeta.actionLabelLower} check succeeds.`
+      : `No check required for ${actionMeta.actionLabelLower}.`,
     onFail: failParts.length > 0 ? failParts.join("; ") : "No additional failure consequence.",
     onFailBy5: failBy5Parts.length > 0 ? failBy5Parts.join("; ") : "No additional fail-by-5 consequence.",
     onSuccessiveFail: successiveFailParts.length > 0
@@ -3702,14 +4147,66 @@ function ensureEnvironmentState(ledger) {
       movementDc: 12,
       appliedActorIds: [],
       syncToSceneNonParty: true,
+      configurePresetKey: "slippery-surface",
+      configureActionKey: "move",
       note: "",
       logs: [],
       failureStreaks: {},
       checkResults: [],
-      successiveByPreset: {}
+      successiveByPreset: {},
+      presetDefinitions: {},
+      presetOrder: [],
+      actionDefinitions: {},
+      actionOrder: []
     };
   }
-  ledger.environment.presetKey = getEnvironmentPresetByKey(String(ledger.environment.presetKey ?? "none")).key;
+  if (!ledger.environment.actionDefinitions || typeof ledger.environment.actionDefinitions !== "object") {
+    ledger.environment.actionDefinitions = {};
+  }
+  if (!Array.isArray(ledger.environment.actionOrder)) ledger.environment.actionOrder = [];
+  const normalizedActionDefinitions = {};
+  for (const [actionKeyRaw, definitionRaw] of Object.entries(ledger.environment.actionDefinitions)) {
+    const key = slugifyEnvironmentIdentifier(actionKeyRaw, "action");
+    const fallback = ENVIRONMENT_ACTIONS.find((entry) => entry.key === key) ?? { key, label: key };
+    normalizedActionDefinitions[key] = normalizeEnvironmentActionDefinition({ ...(definitionRaw ?? {}), key }, fallback);
+  }
+  ledger.environment.actionDefinitions = normalizedActionDefinitions;
+  const actionCatalog = buildEnvironmentActionCatalog(ledger.environment);
+  const actionKeySet = new Set(actionCatalog.map((entry) => entry.key));
+  ledger.environment.actionOrder = ledger.environment.actionOrder
+    .map((rawKey) => slugifyEnvironmentIdentifier(rawKey, "action"))
+    .filter((key, index, arr) => actionKeySet.has(key) && arr.indexOf(key) === index);
+
+  if (!ledger.environment.presetDefinitions || typeof ledger.environment.presetDefinitions !== "object") {
+    ledger.environment.presetDefinitions = {};
+  }
+  if (!Array.isArray(ledger.environment.presetOrder)) ledger.environment.presetOrder = [];
+  const normalizedPresetDefinitions = {};
+  for (const [presetKeyRaw, definitionRaw] of Object.entries(ledger.environment.presetDefinitions)) {
+    const key = slugifyEnvironmentIdentifier(presetKeyRaw, "preset");
+    const fallback = ENVIRONMENT_PRESETS.find((entry) => entry.key === key) ?? { key, label: key };
+    normalizedPresetDefinitions[key] = normalizeEnvironmentPresetDefinition({ ...(definitionRaw ?? {}), key }, fallback, {
+      actionCatalog,
+      environmentState: ledger.environment
+    });
+  }
+  ledger.environment.presetDefinitions = normalizedPresetDefinitions;
+  const presetCatalog = buildEnvironmentPresetCatalog(ledger.environment);
+  const presetKeySet = new Set(presetCatalog.map((entry) => entry.key));
+  ledger.environment.presetOrder = ledger.environment.presetOrder
+    .map((rawKey) => slugifyEnvironmentIdentifier(rawKey, "preset"))
+    .filter((key, index, arr) => presetKeySet.has(key) && arr.indexOf(key) === index);
+
+  ledger.environment.presetKey = getEnvironmentPresetByKey(String(ledger.environment.presetKey ?? "none"), ledger.environment).key;
+  const defaultConfigurePresetKey = presetCatalog.find((entry) => entry.key !== "none")?.key ?? presetCatalog[0]?.key ?? "none";
+  ledger.environment.configurePresetKey = getEnvironmentPresetByKey(
+    String(ledger.environment.configurePresetKey ?? defaultConfigurePresetKey),
+    ledger.environment
+  ).key;
+  ledger.environment.configureActionKey = getEnvironmentActionByKey(
+    String(ledger.environment.configureActionKey ?? "move"),
+    ledger.environment
+  ).key;
   const dc = Number(ledger.environment.movementDc ?? 12);
   ledger.environment.movementDc = Number.isFinite(dc) ? Math.max(1, Math.min(30, Math.floor(dc))) : 12;
   if (!Array.isArray(ledger.environment.appliedActorIds)) ledger.environment.appliedActorIds = [];
@@ -3735,7 +4232,7 @@ function ensureEnvironmentState(ledger) {
   }
   const normalizedSuccessiveByPreset = {};
   for (const [presetKeyRaw, overrideRaw] of Object.entries(ledger.environment.successiveByPreset)) {
-    const presetKey = getEnvironmentPresetByKey(String(presetKeyRaw ?? "none")).key;
+    const presetKey = getEnvironmentPresetByKey(String(presetKeyRaw ?? "none"), ledger.environment).key;
     if (presetKey === "none") continue;
     normalizedSuccessiveByPreset[presetKey] = normalizeEnvironmentSuccessiveOverride(overrideRaw);
   }
@@ -3770,7 +4267,9 @@ function ensureEnvironmentState(ledger) {
       return {
         id: String(entry?.id ?? foundry.utils.randomID()),
         logType,
-        presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none")).key,
+        presetKey: getEnvironmentPresetByKey(String(entry?.presetKey ?? "none"), ledger.environment).key,
+        presetLabel: String(entry?.presetLabel ?? "").trim(),
+        actionLabel: String(entry?.actionLabel ?? "").trim(),
         movementDc: Math.max(1, Math.min(30, Math.floor(Number(entry?.movementDc ?? 12) || 12))),
         actorIds,
         syncToSceneNonParty: entry?.syncToSceneNonParty !== false,
@@ -4130,8 +4629,9 @@ function buildEnvironmentStatusEffectData(payload, actor = null) {
   const icon = String(getEnvironmentPresetByKey(environment.presetKey).icon ?? "icons/svg/hazard.svg");
   const movementCheck = Boolean(environment.movementCheck);
   const check = getEnvironmentCheckMeta(environment);
+  const actionMeta = getEnvironmentActionMeta(environment);
   const description = movementCheck
-    ? `${label} active. Movement checks required (${check.checkLabel || "check"}).`
+    ? `${label} active. ${actionMeta.actionLabel} checks required (${check.checkLabel || "check"}).`
     : `${label} active.`;
 
   const changes = [
@@ -4178,6 +4678,8 @@ function buildEnvironmentStatusEffectData(payload, actor = null) {
         environment: {
           presetKey: String(environment.presetKey ?? "none"),
           label,
+          actionKey: actionMeta.actionKey,
+          actionLabel: actionMeta.actionLabel,
           movementCheck,
           alwaysStatusId,
           checkType: check.checkType,
@@ -4559,6 +5061,10 @@ function getReputationNoteLogSelectionStorageKey() {
   return `po-reputation-note-log-selection-${game.user?.id ?? "anon"}`;
 }
 
+function getReputationBuilderStorageKey() {
+  return `po-reputation-builder-${game.user?.id ?? "anon"}`;
+}
+
 function getReputationNoteLogSelections() {
   const raw = sessionStorage.getItem(getReputationNoteLogSelectionStorageKey());
   if (!raw) return {};
@@ -4598,6 +5104,152 @@ function getReputationNoteLogSelection(factionIdInput) {
   if (!factionId) return "";
   const state = getReputationNoteLogSelections();
   return String(state[factionId] ?? "").trim();
+}
+
+function clampReputationStandingValue(value) {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? Math.max(-5, Math.min(5, Math.floor(numeric))) : 0;
+}
+
+function getEmptyReputationPlayerImpact() {
+  return {
+    id: foundry.utils.randomID(),
+    actorId: "",
+    delta: 0,
+    note: ""
+  };
+}
+
+function normalizeReputationPlayerImpact(entry = {}) {
+  return {
+    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    actorId: String(entry?.actorId ?? "").trim(),
+    delta: clampReputationStandingValue(entry?.delta ?? 0),
+    note: String(entry?.note ?? "")
+  };
+}
+
+function getDefaultReputationBuilderDraft() {
+  return {
+    label: "",
+    category: "",
+    represents: "",
+    linkedActorId: "",
+    score: 0,
+    summary: "",
+    note: "",
+    playerImpacts: [getEmptyReputationPlayerImpact()]
+  };
+}
+
+function normalizeReputationBuilderDraft(entry = {}) {
+  const impacts = Array.isArray(entry?.playerImpacts)
+    ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
+    : [];
+  return {
+    label: String(entry?.label ?? "").trim().slice(0, 120),
+    category: String(entry?.category ?? "").trim().slice(0, 120),
+    represents: String(entry?.represents ?? "").trim().slice(0, 180),
+    linkedActorId: String(entry?.linkedActorId ?? "").trim(),
+    score: clampReputationStandingValue(entry?.score ?? 0),
+    summary: String(entry?.summary ?? ""),
+    note: String(entry?.note ?? ""),
+    playerImpacts: impacts.length ? impacts : [getEmptyReputationPlayerImpact()]
+  };
+}
+
+function getReputationBuilderState() {
+  const raw = sessionStorage.getItem(getReputationBuilderStorageKey());
+  if (!raw) return getDefaultReputationBuilderDraft();
+  try {
+    return normalizeReputationBuilderDraft(JSON.parse(raw));
+  } catch (_error) {
+    return getDefaultReputationBuilderDraft();
+  }
+}
+
+function saveReputationBuilderState(draft = {}) {
+  const next = normalizeReputationBuilderDraft(draft);
+  sessionStorage.setItem(getReputationBuilderStorageKey(), JSON.stringify(next));
+  return next;
+}
+
+function updateReputationBuilderState(mutator) {
+  const next = foundry.utils.deepClone(getReputationBuilderState());
+  if (typeof mutator === "function") mutator(next);
+  return saveReputationBuilderState(next);
+}
+
+function clearReputationBuilderState() {
+  sessionStorage.removeItem(getReputationBuilderStorageKey());
+  return getDefaultReputationBuilderDraft();
+}
+
+function getReputationActorName(actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return "";
+  const actor = game.actors?.get(actorId) ?? null;
+  return String(actor?.name ?? "").trim();
+}
+
+function buildReputationActorOptions(selectedActorId = "", options = {}) {
+  const actorId = String(selectedActorId ?? "").trim();
+  const includeBlank = options?.includeBlank !== false;
+  const blankLabel = String(options?.blankLabel ?? "No linked player").trim() || "No linked player";
+  const rows = includeBlank
+    ? [{ value: "", label: blankLabel, selected: !actorId }]
+    : [];
+  const actorRows = getOwnedPcActors()
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
+    .map((actor) => ({
+      value: actor.id,
+      label: actor.name,
+      selected: actor.id === actorId
+    }));
+  if (!actorRows.some((row) => row.selected) && rows.length > 0) rows[0].selected = true;
+  return [...rows, ...actorRows];
+}
+
+function formatReputationDeltaLabel(value) {
+  const numeric = clampReputationStandingValue(value);
+  return numeric > 0 ? `+${numeric}` : String(numeric);
+}
+
+function buildReputationPlayerImpactRows(entries = []) {
+  return entries.map((entry) => {
+    const impact = normalizeReputationPlayerImpact(entry);
+    const actorName = getReputationActorName(impact.actorId);
+    const configured = Boolean(impact.actorId || String(impact.note ?? "").trim() || Number(impact.delta ?? 0) !== 0);
+    return {
+      ...impact,
+      actorName,
+      actorLabel: actorName || "No player linked",
+      actorOptions: buildReputationActorOptions(impact.actorId, { blankLabel: "Select player" }),
+      deltaLabel: formatReputationDeltaLabel(impact.delta),
+      configured,
+      impactToneClass: impact.delta > 0 ? "is-positive" : (impact.delta < 0 ? "is-negative" : "is-neutral")
+    };
+  });
+}
+
+function buildReputationBuilderContext(draft = getReputationBuilderState()) {
+  const normalized = normalizeReputationBuilderDraft(draft);
+  const playerImpacts = buildReputationPlayerImpactRows(normalized.playerImpacts);
+  const configuredPlayerImpacts = playerImpacts.filter((entry) => entry.configured);
+  const playerImpactTotal = configuredPlayerImpacts.reduce((sum, entry) => sum + Number(entry.delta ?? 0), 0);
+  return {
+    ...normalized,
+    access: getReputationAccessLabel(normalized.score),
+    actorOptions: buildReputationActorOptions(normalized.linkedActorId),
+    linkedActorName: getReputationActorName(normalized.linkedActorId),
+    playerImpacts,
+    configuredPlayerImpacts,
+    playerImpactCount: configuredPlayerImpacts.length,
+    hasPlayerImpacts: configuredPlayerImpacts.length > 0,
+    playerImpactTotal,
+    playerImpactTotalLabel: formatReputationDeltaLabel(playerImpactTotal),
+    playerImpactToneClass: playerImpactTotal > 0 ? "is-positive" : (playerImpactTotal < 0 ? "is-negative" : "is-neutral")
+  };
 }
 
 function getReputationNoteLogSelect(root, factionIdInput) {
@@ -5837,27 +6489,7 @@ function clearSopCachedNoteEntry(sopKeyInput) {
   clearNoteDraftCacheValue(cacheKey);
 }
 
-function resolveSopDraftForView(sopKeyInput, savedEntries = []) {
-  const sopKey = String(sopKeyInput ?? "").trim();
-  const cached = readSopCachedNoteEntry(sopKey);
-  if (!cached) return { note: "", pendingSync: false };
-  const latestSavedEntry = Array.isArray(savedEntries) ? savedEntries[0] ?? null : null;
-  if (
-    cached.pendingSync
-    && latestSavedEntry
-    && String(latestSavedEntry?.text ?? "") === String(cached.text ?? "")
-    && String(latestSavedEntry?.userId ?? "") === String(game.user?.id ?? "")
-  ) {
-    clearSopCachedNoteEntry(sopKey);
-    return { note: "", pendingSync: false };
-  }
-  return {
-    note: String(cached.text ?? ""),
-    pendingSync: Boolean(cached.pendingSync)
-  };
-}
-
-function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
+function resolveSopDraftForView(sopKeyInput, worldNoteInput = "") {
   const sopKey = String(sopKeyInput ?? "").trim();
   const worldNote = clampSocketText(worldNoteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
   const cached = readSopCachedNoteEntry(sopKey);
@@ -5866,10 +6498,14 @@ function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
     clearSopCachedNoteEntry(sopKey);
     return { note: worldNote, pendingSync: false };
   }
-  if (!cached.pendingSync) {
-    return { note: worldNote, pendingSync: false };
-  }
-  return { note: cached.text, pendingSync: cached.pendingSync };
+  return {
+    note: String(cached.text ?? ""),
+    pendingSync: Boolean(cached.pendingSync)
+  };
+}
+
+function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
+  return resolveSopDraftForView(sopKeyInput, worldNoteInput);
 }
 
 function getPendingSopCachedNotes() {
@@ -7344,16 +7980,14 @@ function buildOperationsContextFallback() {
     { key: "retreatProtocol", label: "Retreat protocol" }
   ];
   const sops = sopMeta.map((sop) => {
-    const noteEntries = getSopNoteEntriesForView(ledger, sop.key);
-    const resolved = resolveSopDraftForView(sop.key, noteEntries);
+    const sharedNote = getSharedSopNoteText(ledger, sop.key);
+    const resolved = resolveSopDraftForView(sop.key, sharedNote);
     return {
       key: sop.key,
       label: sop.label,
       active: Boolean(ledger.sops?.[sop.key]),
       draftNote: resolved.note,
-      pendingLocalSync: resolved.pendingSync,
-      noteEntries,
-      hasNoteEntries: noteEntries.length > 0
+      pendingLocalSync: resolved.pendingSync
     };
   });
   schedulePendingSopNoteSync("operations-fallback-context");
@@ -7433,9 +8067,16 @@ function buildOperationsContextFallback() {
     const selected = fallbackResourcesState.itemSelections?.[key] ?? {};
     return Boolean(String(selected.actorId ?? "").trim() && String(selected.itemId ?? "").trim());
   }).length;
-  const fallbackNextDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
-  const fallbackGatherFoodCoveredNextUpkeep = Number(fallbackResourcesState.gather?.foodCoverageDueKey) === fallbackNextDueKey;
-  const fallbackGatherWaterCoveredNextUpkeep = Number(fallbackResourcesState.gather?.waterCoverageDueKey) === fallbackNextDueKey;
+  const fallbackPendingGatherFood = getGatherPendingPoolAmount(fallbackResourcesState, "food");
+  const fallbackPendingGatherWater = getGatherPendingPoolAmount(fallbackResourcesState, "water");
+  const fallbackGatherFoodCoveredNextUpkeep = fallbackPendingGatherFood > 0;
+  const fallbackGatherWaterCoveredNextUpkeep = fallbackPendingGatherWater > 0;
+  const fallbackAutoUpkeepPrompt = getAutoUpkeepPromptData(fallbackResourcesState);
+  const fallbackAutoUpkeepPromptLabel = fallbackAutoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER
+    ? "Awaiting gather"
+    : fallbackAutoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.DECISION
+      ? "Awaiting GM decision"
+      : "Idle";
   let fallbackGatherWeatherOptions = [];
   try {
     fallbackGatherWeatherOptions = getGatherWeatherOptions(fallbackResourcesState);
@@ -7675,6 +8316,9 @@ function buildOperationsContextFallback() {
       hasGatherRequests: fallbackGatherRequests.hasRows,
       gatherHistory: fallbackGatherHistory,
       hasGatherHistory: fallbackGatherHistory.hasRows,
+      pendingGatherFood: fallbackPendingGatherFood,
+      pendingGatherWater: fallbackPendingGatherWater,
+      autoUpkeepPrompt: fallbackAutoUpkeepPrompt,
       summary: {
         foodDrainPerDay: fallbackFoodDrainPerDay,
         waterDrainPerDay: fallbackWaterDrainPerDay,
@@ -7689,6 +8333,9 @@ function buildOperationsContextFallback() {
         foodRationCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalFoodReserve, fallbackFoodDrainPerDay, fallbackInfiniteFoodSteward),
         waterCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay, fallbackInfiniteWaterSteward),
         waterRationCyclesLeft: fallbackFormatCyclesLeft(fallbackTotalWaterReserve, fallbackWaterDrainPerDay, fallbackInfiniteWaterSteward),
+        pendingGatherFood: fallbackPendingGatherFood,
+        pendingGatherWater: fallbackPendingGatherWater,
+        autoUpkeepPromptLabel: fallbackAutoUpkeepPromptLabel,
         selectedBindingCount: fallbackSelectedBindingCount
       },
       upkeep: fallbackUpkeep,
@@ -8627,6 +9274,22 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           });
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
+        "clear-sop-note": async () => {
+          const sopKey = String(element?.dataset?.sop ?? "").trim();
+          clearScheduledSopNoteSave(this, sopKey);
+          const noteInput = getSopNoteTextareaFromElement(element);
+          if (!noteInput) {
+            ui.notifications?.warn("Could not find the SOP note input to clear.");
+            return;
+          }
+          noteInput.value = "";
+          cacheOperationalSopNoteDraftFromElement(noteInput);
+          await setOperationalSopNote(noteInput, {
+            suppressUiWarning: false,
+            notify: true
+          });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
         "set-resource": async () => {
           const result = await setOperationalResource(element);
           if (result?.rerender) {
@@ -8796,8 +9459,44 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await setReputationLabel(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
+        "set-reputation-detail": async () => {
+          await setReputationDetail(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-reputation-player-impact": async () => {
+          await setReputationPlayerImpactField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
         "add-reputation-faction": async () => {
           await addReputationFaction(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "add-reputation-player-impact": async () => {
+          await addReputationPlayerImpact(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-reputation-player-impact": async () => {
+          await removeReputationPlayerImpact(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-reputation-builder-field": async () => {
+          await setReputationBuilderField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-reputation-builder-impact": async () => {
+          await setReputationBuilderImpactField(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "add-reputation-builder-impact": async () => {
+          await addReputationBuilderImpact();
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "remove-reputation-builder-impact": async () => {
+          await removeReputationBuilderImpact(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "clear-reputation-builder": async () => {
+          await clearReputationBuilder();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "remove-reputation-faction": async () => {
@@ -9829,9 +10528,24 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   setOperationalEnvironmentDc,
   setOperationalEnvironmentSuccessive,
   setOperationalEnvironmentNote,
+  selectOperationalEnvironmentConfigurePreset,
+  createOperationalEnvironmentPreset,
+  duplicateOperationalEnvironmentPreset,
+  restoreOperationalEnvironmentPresetDefaults,
+  deleteOperationalEnvironmentPreset,
+  setOperationalEnvironmentPresetField,
+  addOperationalEnvironmentPresetEffectChange,
+  removeOperationalEnvironmentPresetEffectChange,
+  setOperationalEnvironmentPresetEffectChange,
+  selectOperationalEnvironmentConfigureAction,
+  createOperationalEnvironmentAction,
+  deleteOperationalEnvironmentAction,
+  setOperationalEnvironmentActionField,
   toggleOperationalEnvironmentActor,
   resetOperationalEnvironmentSuccessiveDefaults,
   addOperationalEnvironmentLog,
+  editOperationalEnvironmentLog,
+  removeOperationalEnvironmentLog,
   clearOperationalEnvironmentEffects,
   showOperationalEnvironmentBrief,
   gmQuickLogCurrentWeather,
@@ -9965,6 +10679,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   selectVisibleAudioLibraryTracks,
   clearAudioLibraryTrackSelections,
   setAudioMixTrackBrowserView,
+  changeAudioMixTrackBrowserPage,
   toggleAudioMixTrackSelection,
   selectVisibleAudioMixTracks,
   clearAudioMixTrackSelections,
@@ -9983,6 +10698,8 @@ export const GmAudioPageApp = createGmAudioPageApp({
   setAudioPreviewVolumeSetting,
   getManagedAudioMixPlaybackMonitorSnapshot,
   queueSelectedTrackNext,
+  moveTrackToIndexInSelectedAudioMixPreset,
+  moveTrackToTopInSelectedAudioMixPreset,
   moveTrackWithinSelectedAudioMixPreset,
   removeTrackFromSelectedAudioMixPreset,
   restoreAllHiddenAudioLibraryTracks,
@@ -11371,6 +12088,7 @@ const AUDIO_MIX_TRACK_BROWSER_VIEW_IDS = Object.freeze({
   SUGGESTED: "suggested",
   ALL: "all"
 });
+const AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE = 40;
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
 const AUDIO_MIX_SOCKET_TYPE = "ops:audio-mix";
@@ -11491,6 +12209,10 @@ const audioLibraryUiState = {
   selectedTrackId: "",
   selectedTrackIds: [],
   mixTrackBrowserView: AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED,
+  mixTrackBrowserPages: {
+    [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED]: 0,
+    [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL]: 0
+  },
   selectedMixTrackIds: [],
   selectedMixPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
   previewVolume: AUDIO_PREVIEW_VOLUME_DEFAULT,
@@ -11874,6 +12596,66 @@ function normalizeAudioMixTrackBrowserView(value) {
   return String(value ?? "").trim().toLowerCase() === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
     ? AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
     : AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED;
+}
+
+function normalizeAudioMixTrackBrowserPage(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.floor(numeric));
+}
+
+function getAudioMixTrackBrowserPageForView(view = audioLibraryUiState.mixTrackBrowserView) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  const pages = audioLibraryUiState.mixTrackBrowserPages;
+  return normalizeAudioMixTrackBrowserPage(pages?.[normalizedView] ?? 0);
+}
+
+function setAudioMixTrackBrowserPageForView(view, page) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  if (!audioLibraryUiState.mixTrackBrowserPages || typeof audioLibraryUiState.mixTrackBrowserPages !== "object") {
+    audioLibraryUiState.mixTrackBrowserPages = {
+      [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED]: 0,
+      [AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL]: 0
+    };
+  }
+  const normalizedPage = normalizeAudioMixTrackBrowserPage(page);
+  audioLibraryUiState.mixTrackBrowserPages[normalizedView] = normalizedPage;
+  return normalizedPage;
+}
+
+function resetAudioMixTrackBrowserPages() {
+  setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED, 0);
+  setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL, 0);
+}
+
+function buildAudioMixTrackBrowserPagination(totalCount, view = audioLibraryUiState.mixTrackBrowserView) {
+  const normalizedView = normalizeAudioMixTrackBrowserView(view);
+  const pageSize = AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE;
+  const normalizedTotalCount = Math.max(0, Math.floor(Number(totalCount ?? 0) || 0));
+  const totalPages = normalizedTotalCount > 0 ? Math.ceil(normalizedTotalCount / pageSize) : 1;
+  const currentPage = Math.min(getAudioMixTrackBrowserPageForView(normalizedView), totalPages - 1);
+  const startIndex = currentPage * pageSize;
+  const endIndex = Math.min(normalizedTotalCount, startIndex + pageSize);
+  const rangeStart = normalizedTotalCount > 0 ? startIndex + 1 : 0;
+  const rangeEnd = normalizedTotalCount > 0 ? endIndex : 0;
+  return {
+    view: normalizedView,
+    pageSize,
+    totalCount: normalizedTotalCount,
+    totalPages,
+    currentPage,
+    currentPageNumber: normalizedTotalCount > 0 ? currentPage + 1 : 0,
+    startIndex,
+    endIndex,
+    rangeStart,
+    rangeEnd,
+    hasPrevious: currentPage > 0,
+    hasNext: currentPage + 1 < totalPages,
+    hasMultiplePages: normalizedTotalCount > pageSize,
+    label: normalizedTotalCount > 0
+      ? `Tracks ${rangeStart}-${rangeEnd} of ${normalizedTotalCount} · Page ${currentPage + 1} of ${totalPages}`
+      : "No tracks available."
+  };
 }
 
 function getSelectedAudioMixTrackSelectionIds() {
@@ -12472,6 +13254,7 @@ function setAudioLibraryView(actionElement) {
 function setAudioMixTrackBrowserView(actionElement) {
   const view = normalizeAudioMixTrackBrowserView(actionElement?.dataset?.view ?? actionElement?.value);
   audioLibraryUiState.mixTrackBrowserView = view;
+  setAudioMixTrackBrowserPageForView(view, 0);
 }
 
 function selectAudioLibraryTrack(actionElement) {
@@ -12545,9 +13328,10 @@ function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedA
 function selectVisibleAudioMixTracks() {
   const catalog = getAudioLibraryCatalog();
   const preset = getSelectedAudioMixPreset();
-  const visibleTrackIds = getVisibleAudioMixTrackBrowserCandidates(catalog, preset)
-    .visibleCandidates
-    .slice(0, 40)
+  const { view, visibleCandidates } = getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
+  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, view);
+  const visibleTrackIds = visibleCandidates
+    .slice(pagination.startIndex, pagination.endIndex)
     .map(({ item }) => item.id);
   setSelectedAudioMixTrackSelectionIds(visibleTrackIds);
   return visibleTrackIds.length;
@@ -12561,6 +13345,22 @@ function clearAudioMixTrackSelections() {
 function selectAudioMixPreset(actionElement) {
   const preset = getAudioMixPresetById(actionElement?.dataset?.presetId ?? actionElement?.value);
   audioLibraryUiState.selectedMixPresetId = preset.id;
+  resetAudioMixTrackBrowserPages();
+}
+
+function changeAudioMixTrackBrowserPage(actionElement) {
+  const catalog = getAudioLibraryCatalog();
+  const preset = getSelectedAudioMixPreset();
+  const { view, visibleCandidates } = getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
+  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, view);
+  const direction = String(actionElement?.dataset?.direction ?? "").trim().toLowerCase();
+  let nextPage = pagination.currentPage;
+  if (direction === "prev") nextPage -= 1;
+  if (direction === "next") nextPage += 1;
+  if (Object.is(nextPage, pagination.currentPage)) return pagination.currentPage;
+  nextPage = Math.max(0, Math.min(pagination.totalPages - 1, nextPage));
+  setAudioMixTrackBrowserPageForView(view, nextPage);
+  return nextPage;
 }
 
 async function saveAudioMixPresetStore(store) {
@@ -12945,28 +13745,49 @@ async function queueTrackNextInSelectedAudioMixPreset(trackId) {
   return true;
 }
 
+async function moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex = 0) {
+  const preset = getSelectedEditableAudioMixPreset();
+  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
+  if (!preset || !normalizedTrackId) return false;
+
+  let nextTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
+  let didChange = false;
+  await updateSelectedAudioMixPreset((entry) => {
+    const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
+    const currentIndex = rows.indexOf(normalizedTrackId);
+    if (currentIndex < 0) return entry;
+    const boundedTargetIndex = Math.max(0, Math.min(rows.length, Math.floor(Number(targetIndex) || 0)));
+    const reordered = buildReorderedAudioMixTrackIds(rows, normalizedTrackId, boundedTargetIndex);
+    const changed = reordered.length !== rows.length || reordered.some((entryTrackId, index) => entryTrackId !== rows[index]);
+    if (!changed) return entry;
+    nextTrackIds = reordered;
+    didChange = true;
+    return {
+      ...entry,
+      trackIds: reordered
+    };
+  });
+
+  if (!didChange) return false;
+  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
+  return true;
+}
+
 async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
   const preset = getSelectedEditableAudioMixPreset();
   const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
   if (!preset || !normalizedTrackId) return false;
-  let nextTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
-  await updateSelectedAudioMixPreset((entry) => {
-    const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
-    const index = rows.indexOf(normalizedTrackId);
-    if (index < 0) return entry;
-    const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
-    const targetIndex = Math.max(0, Math.min(rows.length - 1, index + delta));
-    if (targetIndex === index) return entry;
-    const [moved] = rows.splice(index, 1);
-    rows.splice(targetIndex, 0, moved);
-    nextTrackIds = rows;
-    return {
-      ...entry,
-      trackIds: rows
-    };
-  });
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  return true;
+  const rows = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
+  const currentIndex = rows.indexOf(normalizedTrackId);
+  if (currentIndex < 0) return false;
+  const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
+  const targetIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + delta));
+  if (targetIndex === currentIndex) return false;
+  return moveTrackToIndexInSelectedAudioMixPreset(normalizedTrackId, targetIndex);
+}
+
+async function moveTrackToTopInSelectedAudioMixPreset(trackId) {
+  return moveTrackToIndexInSelectedAudioMixPreset(trackId, 0);
 }
 
 async function removeTrackFromSelectedAudioMixPreset(trackId) {
@@ -14132,13 +14953,14 @@ function buildAudioMixContext(catalog) {
   const selectedLibraryTrack = catalog.items.find((item) => item.id === String(audioLibraryUiState.selectedTrackId ?? "").trim()) ?? null;
   const selectedMixTrackIdSet = new Set(getSelectedAudioMixTrackSelectionIds());
   const playbackMatchesSelection = String(playback.presetId ?? "").trim() === String(selectedPreset.id ?? "").trim();
+  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, trackBrowserView);
   const queueRows = assignedCandidates.map(({ item }, index) => ({
     ...item,
     order: index + 1,
     isActive: item.id === playback?.activeTrack?.id,
     isCurrentIndex: index === playback.currentIndex
   }));
-  const visibleTrackRows = visibleCandidates.slice(0, 40).map(({ item, score }) => ({
+  const visibleTrackRows = visibleCandidates.slice(pagination.startIndex, pagination.endIndex).map(({ item, score }) => ({
     ...buildAudioLibraryTrackDisplay(item),
     score,
     checked: selectedMixTrackIdSet.has(item.id),
@@ -14217,9 +15039,16 @@ function buildAudioMixContext(catalog) {
       hasTracks: visibleTrackRows.length > 0,
       totalCount: visibleCandidates.length,
       visibleCount: visibleTrackRows.length,
+      pagination: {
+        ...pagination
+      },
       summaryLabel: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
-        ? `Browsing ${visibleTrackRows.length} of ${allCandidates.length} library tracks.`
-        : `Showing ${visibleTrackRows.length} of ${suggestedCandidates.length} tag-matched suggestions.`,
+        ? (pagination.totalCount > 0
+          ? `Browsing ${pagination.label}.`
+          : "No library tracks are available in the current scan.")
+        : (pagination.totalCount > 0
+          ? `Showing ${pagination.label} from ${suggestedCandidates.length} tag-matched suggestions.`
+          : "No suggestions matched this preset yet."),
       emptyLabel: trackBrowserView === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL
         ? "No tracks are available in the current library scan."
         : "No suggestions matched this preset yet. Broaden the focus or adjust the search tokens.",
@@ -14255,6 +15084,7 @@ function buildAudioMixContext(catalog) {
       hasSelectedLibraryTrack: Boolean(selectedLibraryTrack),
       selectedLibraryTrackName: String(selectedLibraryTrack?.name ?? ""),
       canControl: playbackMatchesSelection || selectedPreset.isCustom,
+      canEdit: Boolean(hasSavedTrackList && selectedPreset.isCustom),
       hasSavedTrackList,
       missingTrackCount,
       hasLiveQueue: playbackMatchesSelection && playback.hasQueue
@@ -17395,10 +18225,13 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       desiredItemCount,
       Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, Math.ceil(desiredItemCount * (1.4 + tolerance.ratio)))
     );
-    const effectiveMaxItems = manualMaxItems > 0
+    const hasManualMaxItemsCap = manualMaxItems > 0;
+    const effectiveMaxItems = hasManualMaxItemsCap
       ? Math.max(1, Math.min(LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT, manualMaxItems))
-      : autoMaxItems;
-    const effectiveTargetCount = Math.max(1, Math.min(desiredItemCount, effectiveMaxItems));
+      : 0;
+    const effectiveTargetCount = hasManualMaxItemsCap
+      ? Math.max(1, Math.min(desiredItemCount, effectiveMaxItems))
+      : desiredItemCount;
     const targetPerItemGp = Math.max(0.5, Number((share.targetItemBudgetGp / Math.max(1, effectiveTargetCount)).toFixed(2)));
     const valueStrictnessRaw = Number(draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS);
     const valueStrictness = Number.isFinite(valueStrictnessRaw)
@@ -17454,7 +18287,7 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       desiredItemCount: 1,
       autoMaxItems: 1,
       manualMaxItems: 0,
-      maxItems: 1,
+      maxItems: 0,
       targetPerItemGp: 1,
       totalBudgetGp: 1,
       targetItemBudgetGp: 0.5,
@@ -18340,13 +19173,15 @@ function spendBudgetLoop(state = {}) {
     const budgetContext = state?.budgetContext ?? {};
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
-    const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
+    const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
+    const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
+    const hasMaxItemsCap = maxItems > 0;
     let safety = 0;
     while (safety < 600) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
       if (remaining <= toleranceGp) return;
-      if ((state.selected?.length ?? 0) >= maxItems) return;
+      if (hasMaxItemsCap && (state.selected?.length ?? 0) >= maxItems) return;
       const selectionPool = buildLootPhaseSelectionPool(state, "spend");
       if (!selectionPool.length) {
         state.diagnostics.push("No spend-phase candidates in the current budget range.");
@@ -18389,13 +19224,15 @@ function fillPass(state = {}) {
     const budgetContext = state?.budgetContext ?? {};
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
-    const maxItems = Math.max(1, Number(state?.maxItems ?? budgetContext?.maxItems ?? 1) || 1);
+    const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
+    const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
+    const hasMaxItemsCap = maxItems > 0;
     let safety = 0;
     while (safety < 400) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
       if (remaining <= toleranceGp) return;
-      if ((state.selected?.length ?? 0) >= maxItems) {
+      if (hasMaxItemsCap && (state.selected?.length ?? 0) >= maxItems) {
         state.diagnostics.push("Fill pass stopped at max item cap before target tolerance was reached.");
         logLootBuilderDebug("fillPass stopped at max items", {
           remaining,
@@ -18578,10 +19415,10 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
         "very-rare": 0,
         legendary: 0
       },
-      rarityCaps: getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? targetCount) || targetCount)),
+      rarityCaps: getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? 0) || 0)),
       budgetContext,
       targetCount: Math.max(1, Number(budgetContext?.targetCount ?? targetCount) || targetCount),
-      maxItems: Math.max(targetCount, Number(budgetContext?.maxItems ?? targetCount) || targetCount),
+      maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
       draft,
       random: randomContext?.random ?? Math.random,
       diagnostics: []
@@ -18864,16 +19701,16 @@ async function generateLootPreviewPayload(draftInput = {}) {
     const resolvedSelectionMeta = selectionMeta ?? {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
-        desiredItemCount: itemCountTarget,
-        maxItems: Math.max(itemCountTarget, Number(previewBudgetContext?.maxItems ?? itemCountTarget) || itemCountTarget),
-        encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
-        itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
-        currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
-        resolvedEncounterTargetGp: Number(runtimeBudgetContext?.resolvedTotalTargetGp ?? runtimeBudgetContext?.effectiveTotalTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
-        resolvedItemTargetGp: Number(runtimeBudgetContext?.targetItemBudgetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
-        resolvedCurrencyTargetGp: Number(runtimeBudgetContext?.targetCurrencyBudgetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
-        finalItemsValueGp: valueTotals.finalItemsValueGp,
-        finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
+      desiredItemCount: itemCountTarget,
+      maxItems: Math.max(0, Number(previewBudgetContext?.maxItems ?? 0) || 0),
+      encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+      itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
+      currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+      resolvedEncounterTargetGp: Number(runtimeBudgetContext?.resolvedTotalTargetGp ?? runtimeBudgetContext?.effectiveTotalTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+      resolvedItemTargetGp: Number(runtimeBudgetContext?.targetItemBudgetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+      resolvedCurrencyTargetGp: Number(runtimeBudgetContext?.targetCurrencyBudgetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+      finalItemsValueGp: valueTotals.finalItemsValueGp,
+      finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
         finalCombinedValueGp: valueTotals.finalCombinedValueGp,
       itemDeltaGp: valueTotals.itemDeltaGp,
       deltaGp: 0,
@@ -18933,7 +19770,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
         enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
         enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
         desiredItemCount: Math.max(0, Number(resolvedSelectionMeta.desiredItemCount ?? itemCountTarget) || itemCountTarget),
-        maxItems: Math.max(0, Number(resolvedSelectionMeta.maxItems ?? itemCountTarget) || itemCountTarget),
+        maxItems: Math.max(0, Number(resolvedSelectionMeta.maxItems ?? 0) || 0),
         encounterTargetGp: Number(resolvedSelectionMeta.encounterTargetGp ?? 0),
         itemTargetGp: Number(resolvedSelectionMeta.itemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
         currencyTargetGp: Number(resolvedSelectionMeta.currencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
@@ -19651,11 +20488,17 @@ function buildDefaultOperationsLedger() {
       movementDc: 12,
       appliedActorIds: [],
       syncToSceneNonParty: true,
+      configurePresetKey: "slippery-surface",
+      configureActionKey: "move",
       note: "",
       logs: [],
       failureStreaks: {},
       checkResults: [],
-      successiveByPreset: {}
+      successiveByPreset: {},
+      presetDefinitions: {},
+      presetOrder: [],
+      actionDefinitions: {},
+      actionOrder: []
     },
     weather: {
       current: null,
@@ -19690,6 +20533,17 @@ function buildDefaultOperationsLedger() {
           wind: 2,
           fog: 3,
           extreme: 5
+        },
+        pendingPools: {
+          food: 0,
+          water: 0
+        },
+        autoUpkeepPrompt: {
+          state: AUTO_UPKEEP_PROMPT_STATES.IDLE,
+          messageId: "",
+          createdAt: 0,
+          dayKey: "",
+          lastResolvedAt: 0
         },
         foodCoverageDueKey: null,
         waterCoverageDueKey: null,
@@ -20056,7 +20910,7 @@ function buildResourceSelectionContext(resourcesState, resourceKey) {
   if (selectedActor) {
     const items = getResourceInventoryItems(selectedActor);
     for (const item of items) {
-      const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+      const qty = Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
       itemOptions.push({
         id: item.id,
         name: `${item.name} (${qty})`,
@@ -20081,7 +20935,7 @@ function getSelectedResourceItemQuantity(resourcesState, resourceKey) {
   const actor = game.actors.get(actorId);
   const item = actor?.items?.get(itemId);
   if (!item) return 0;
-  return Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+  return Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
 }
 
 function buildOperationsContext() {
@@ -20147,13 +21001,11 @@ function buildOperationsContext() {
     label: sop.label,
     active: Boolean(ledger.sops?.[sop.key]),
     ...(() => {
-      const noteEntries = getSopNoteEntriesForView(ledger, sop.key);
-      const resolved = resolveSopDraftForView(sop.key, noteEntries);
+      const sharedNote = getSharedSopNoteText(ledger, sop.key);
+      const resolved = resolveSopDraftForView(sop.key, sharedNote);
       return {
         draftNote: resolved.note,
-        pendingLocalSync: resolved.pendingSync,
-        noteEntries,
-        hasNoteEntries: noteEntries.length > 0
+        pendingLocalSync: resolved.pendingSync
       };
     })()
   }));
@@ -20184,10 +21036,25 @@ function buildOperationsContext() {
   const merchants = buildMerchantsContext(ledger, { user: game.user });
   const environmentState = ensureEnvironmentState(ledger);
   const weatherState = ensureWeatherState(ledger);
-  const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey);
+  const environmentActionCatalog = buildEnvironmentActionCatalog(environmentState);
+  const environmentPresetCatalog = buildEnvironmentPresetCatalog(environmentState);
+  const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey, environmentState);
   const environmentPreset = applyEnvironmentSuccessiveConfigToPreset(environmentPresetBase, environmentState);
+  const environmentAction = getEnvironmentActionMeta(environmentPreset, environmentState);
   const environmentOutcomes = buildEnvironmentOutcomeSummary(environmentPreset);
   const environmentSuccessiveConfig = getEnvironmentSuccessiveConfig(environmentState, environmentPresetBase);
+  const configurePresetBase = getEnvironmentPresetByKey(environmentState.configurePresetKey, environmentState);
+  const configurePreset = applyEnvironmentSuccessiveConfigToPreset(configurePresetBase, environmentState);
+  const configurePresetAction = getEnvironmentActionMeta(configurePreset, environmentState);
+  const configureAction = getEnvironmentActionByKey(
+    environmentState.configureActionKey || configurePreset.actionKey,
+    environmentState
+  );
+  const configureActionUsage = environmentPresetCatalog
+    .filter((preset) => preset.key !== "none" && preset.actionKey === configureAction.key)
+    .map((preset) => preset.label);
+  const builtInPresetKeys = new Set(ENVIRONMENT_PRESETS.map((preset) => preset.key));
+  const builtInActionKeys = new Set(ENVIRONMENT_ACTIONS.map((action) => action.key));
   const daeAvailable = isDaeAvailable();
   const partyModifierKeyCatalog = buildPartyHealthModifierKeyCatalog();
   const partyModifierKeyOptions = partyModifierKeyCatalog.map((entry) => ({
@@ -20205,31 +21072,34 @@ function buildOperationsContext() {
       selected: Number(value) === Number(environmentSuccessiveConfig.daeChangeMode)
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
-  const daeKeyOptions = buildEnvironmentDaeChangeKeyCatalog().map((entry) => ({
+  const environmentDaeKeyCatalog = buildEnvironmentDaeChangeKeyCatalog();
+  const daeKeyOptions = environmentDaeKeyCatalog.map((entry) => ({
     value: entry.key,
     label: entry.label,
     hint: entry.hint,
     selected: entry.key === environmentSuccessiveConfig.daeChangeKey
   }));
   const selectedEnvDaeHint = daeKeyOptions.find((entry) => entry.selected)?.hint ?? "Select a system field to change on successive failure.";
-  const statusEffectOptions = [
-    { value: "", label: "None", selected: !environmentSuccessiveConfig.statusId },
-    ...(CONFIG.statusEffects ?? []).map((entry) => {
-      const value = String(entry?.id ?? "").trim();
-      return {
-        value,
-        label: String((entry?.name ?? value) || "Status").trim(),
-        selected: value && value === environmentSuccessiveConfig.statusId
-      };
-    }).filter((option) => option.value)
-  ];
+  const statusEffectOptions = buildStatusEffectOptions(environmentSuccessiveConfig.statusId);
   const damageTypeOptions = buildDamageTypeOptions(environmentSuccessiveConfig.damageType);
+  const configurePresetDaeHint = environmentDaeKeyCatalog.find((entry) => entry.key === configurePreset.successiveFailDaeChangeKey)?.hint
+    ?? "Select a system field to change on successive failure.";
+  const configurePresetEffectChanges = Array.isArray(configurePreset.effectChanges)
+    ? configurePreset.effectChanges.map((change, index) => ({
+      id: String(change?.id ?? `${configurePreset.key}-change-${index + 1}`),
+      index,
+      key: String(change?.key ?? "").trim(),
+      value: String(change?.value ?? "").trim(),
+      hint: environmentDaeKeyCatalog.find((entry) => entry.key === String(change?.key ?? "").trim())?.hint ?? ""
+    }))
+    : [];
   const gmQuickPanel = getActiveGmQuickPanel();
   const environmentTargets = getOwnedPcActors()
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
     .map((actor) => ({
       actorId: actor.id,
       actorName: actor.name,
+      actorImg: actor.img,
       selected: environmentState.appliedActorIds.includes(actor.id),
       failureStreak: Math.max(0, Number(environmentState.failureStreaks?.[actor.id] ?? 0) || 0)
     }));
@@ -20237,18 +21107,20 @@ function buildOperationsContext() {
   const environmentLogs = (environmentState.logs ?? [])
     .filter((entry) => String(entry?.logType ?? "environment").trim().toLowerCase() !== "weather")
     .map((entry) => {
-      const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
       const check = getEnvironmentCheckMeta({
         checkType: entry.checkType ?? preset.checkType,
         checkKey: entry.checkKey ?? preset.checkKey,
         checkLabel: entry.checkLabel ?? preset.checkLabel
       });
+      const action = getEnvironmentActionMeta(preset, environmentState);
       const actorNames = (entry.actorIds ?? []).map((actorId) => environmentActorNames.get(actorId) ?? (game.actors.get(actorId)?.name ?? `Actor ${actorId}`));
       const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
       return {
         id: entry.id,
         presetKey: entry.presetKey,
-        presetLabel: preset.label,
+        presetLabel: String(entry.presetLabel ?? "").trim() || preset.label,
+        actionLabel: String(entry.actionLabel ?? "").trim() || action.actionLabel,
         checkLabel: check.checkLabel,
         movementDc: Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12)),
         actorNames,
@@ -20262,7 +21134,7 @@ function buildOperationsContext() {
     });
   const environmentCheckResults = (environmentState.checkResults ?? [])
     .map((entry) => {
-      const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
       const actorName = String(entry.actorName ?? "").trim()
         || (entry.actorId ? String(game.actors.get(entry.actorId)?.name ?? `Actor ${entry.actorId}`) : "Unknown Actor");
       const createdAtDate = new Date(Number(entry.createdAt ?? Date.now()));
@@ -20336,9 +21208,16 @@ function buildOperationsContext() {
     return Boolean(String(selected.actorId ?? "").trim() && String(selected.itemId ?? "").trim());
   }).length;
 
-  const nextDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
-  const gatherFoodCoveredNextUpkeep = Number(resourcesState.gather?.foodCoverageDueKey) === nextDueKey;
-  const gatherWaterCoveredNextUpkeep = Number(resourcesState.gather?.waterCoverageDueKey) === nextDueKey;
+  const pendingGatherFood = getGatherPendingPoolAmount(resourcesState, "food");
+  const pendingGatherWater = getGatherPendingPoolAmount(resourcesState, "water");
+  const gatherFoodCoveredNextUpkeep = pendingGatherFood > 0;
+  const gatherWaterCoveredNextUpkeep = pendingGatherWater > 0;
+  const autoUpkeepPrompt = getAutoUpkeepPromptData(resourcesState);
+  const autoUpkeepPromptLabel = autoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER
+    ? "Awaiting gather"
+    : autoUpkeepPrompt.state === AUTO_UPKEEP_PROMPT_STATES.DECISION
+      ? "Awaiting GM decision"
+      : "Idle";
   const archivedSyncActorIds = new Set(
     (partyHealthState.archivedSyncEffects ?? [])
       .map((entry) => String(entry?.actorId ?? "").trim())
@@ -20407,16 +21286,17 @@ function buildOperationsContext() {
           createdAtLabel
         };
       }
-      const preset = getEnvironmentPresetByKey(entry.presetKey);
+      const preset = getEnvironmentPresetByKey(entry.presetKey, environmentState);
       const check = getEnvironmentCheckMeta(entry);
+      const action = String(entry.actionLabel ?? "").trim() || getEnvironmentActionMeta(preset, environmentState).actionLabel;
       const actorNames = (entry.actorIds ?? []).map((actorId) => environmentActorNames.get(actorId) ?? (game.actors.get(actorId)?.name ?? `Actor ${actorId}`));
       return {
         id: `env:${entry.id}`,
         sourceId: entry.id,
         logType,
         logTypeLabel: "Environment",
-        title: preset.label,
-        summary: `${check.checkLabel} - DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
+        title: String(entry.presetLabel ?? "").trim() || preset.label,
+        summary: `${action} - ${check.checkLabel} - DC ${Math.max(1, Math.floor(Number(entry.movementDc ?? 12) || 12))}`,
         details: `Affected: ${actorNames.length > 0 ? actorNames.join(", ") : "No actors assigned"}${entry.syncToSceneNonParty !== false ? " - + non-party scene actors" : ""}`,
         note: String(entry.note ?? ""),
         hasNote: String(entry.note ?? "").trim().length > 0,
@@ -20591,6 +21471,9 @@ function buildOperationsContext() {
       hasGatherRequests: gatherRequests.hasRows,
       gatherHistory,
       hasGatherHistory: gatherHistory.hasRows,
+      pendingGatherFood,
+      pendingGatherWater,
+      autoUpkeepPrompt,
       summary: {
         foodDrainPerDay,
         waterDrainPerDay,
@@ -20605,6 +21488,9 @@ function buildOperationsContext() {
         foodRationCyclesLeft: formatCyclesLeft(totalFoodReserve, foodDrainPerDay, hasInfiniteFoodSteward),
         waterCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
         waterRationCyclesLeft: formatCyclesLeft(totalWaterReserve, waterDrainPerDay, hasInfiniteWaterSteward),
+        pendingGatherFood,
+        pendingGatherWater,
+        autoUpkeepPromptLabel,
         selectedBindingCount
       },
       upkeep,
@@ -20674,6 +21560,9 @@ function buildOperationsContext() {
     environment: {
       presetKey: environmentState.presetKey,
       preset: environmentPreset,
+      actionKey: environmentAction.actionKey,
+      actionLabel: environmentAction.actionLabel,
+      actionDescription: environmentAction.actionDescription,
       checkLabel: getEnvironmentCheckMeta(environmentPreset).checkLabel,
       movementDc: environmentState.movementDc,
       note: environmentState.note,
@@ -20696,11 +21585,78 @@ function buildOperationsContext() {
       hasLogs: environmentLogs.length > 0,
       checkResults: environmentCheckResults,
       hasCheckResults: environmentCheckResults.length > 0,
-      presetOptions: ENVIRONMENT_PRESETS.map((preset) => ({
+      presetOptions: environmentPresetCatalog.map((preset) => ({
         key: preset.key,
         label: preset.label,
         selected: preset.key === environmentState.presetKey
-      }))
+      })),
+      configure: {
+        presetCount: Math.max(0, environmentPresetCatalog.filter((preset) => preset.key !== "none").length),
+        customPresetCount: Math.max(0, environmentPresetCatalog.filter((preset) => preset.key !== "none" && !builtInPresetKeys.has(preset.key)).length),
+        actionCount: environmentActionCatalog.length,
+        customActionCount: Math.max(0, environmentActionCatalog.filter((action) => !builtInActionKeys.has(action.key)).length),
+        presetOptions: environmentPresetCatalog
+          .filter((preset) => preset.key !== "none")
+          .map((preset) => ({
+            key: preset.key,
+            label: preset.label,
+            selected: preset.key === configurePreset.key
+          })),
+        preset: {
+          ...configurePreset,
+          isBuiltIn: builtInPresetKeys.has(configurePreset.key),
+          isCustom: !builtInPresetKeys.has(configurePreset.key),
+          actionLabel: configurePresetAction.actionLabel,
+          actionDescription: configurePresetAction.actionDescription,
+          checkTypeOptions: buildEnvironmentCheckTypeOptions(configurePreset.checkType),
+          checkKeyOptions: buildEnvironmentCheckKeyOptions(configurePreset.checkType, configurePreset.checkKey),
+          alwaysStatusOptions: buildStatusEffectOptions(configurePreset.alwaysStatusId),
+          failStatusOptions: buildStatusEffectOptions(configurePreset.failStatusId),
+          failDamageTypeOptions: buildDamageTypeOptions(configurePreset.failDamageType),
+          failBy5StatusOptions: buildStatusEffectOptions(configurePreset.failBy5StatusId),
+          failBy5DamageTypeOptions: buildDamageTypeOptions(configurePreset.failBy5DamageType),
+          successiveFailStatusOptions: buildStatusEffectOptions(configurePreset.successiveFailStatusId),
+          successiveFailDamageTypeOptions: buildDamageTypeOptions(configurePreset.successiveFailDamageType),
+          successiveFailDaeModeOptions: Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
+            .map(([label, value]) => ({
+              value: Number(value),
+              label,
+              selected: Number(value) === Number(configurePreset.successiveFailDaeChangeMode)
+            }))
+            .sort((a, b) => a.label.localeCompare(b.label)),
+          successiveFailDaeKeyOptions: environmentDaeKeyCatalog.map((entry) => ({
+            value: entry.key,
+            label: entry.label,
+            hint: entry.hint,
+            selected: entry.key === configurePreset.successiveFailDaeChangeKey
+          })),
+          successiveFailDaeKeyHint: configurePresetDaeHint,
+          effectChanges: configurePresetEffectChanges,
+          hasEffectChanges: configurePresetEffectChanges.length > 0
+        },
+        actionOptions: environmentActionCatalog.map((action) => ({
+          key: action.key,
+          label: action.label,
+          selected: action.key === configurePreset.actionKey
+        })),
+        daeKeyOptions: environmentDaeKeyCatalog.map((entry) => ({
+          value: entry.key,
+          label: entry.label,
+          hint: entry.hint
+        })),
+        actionEditorOptions: environmentActionCatalog.map((action) => ({
+          key: action.key,
+          label: action.label,
+          selected: action.key === configureAction.key
+        })),
+        action: {
+          ...configureAction,
+          isBuiltIn: builtInActionKeys.has(configureAction.key),
+          isCustom: !builtInActionKeys.has(configureAction.key),
+          usedByPresetCount: configureActionUsage.length,
+          usedByPresetsText: configureActionUsage.length > 0 ? configureActionUsage.join(", ") : "No presets currently use this action."
+        }
+      }
     },
     weather: {
       current: currentWeather,
@@ -20982,10 +21938,58 @@ function getOperationalEffects(ledger, roles, sops) {
 
 function getDefaultReputationFactions() {
   return [
-    { id: "religious", label: "Religious Authority", score: 0, note: "", noteLogs: [], isCore: true },
-    { id: "nobility", label: "Nobility", score: 0, note: "", noteLogs: [], isCore: true },
-    { id: "criminal", label: "Criminal Factions", score: 0, note: "", noteLogs: [], isCore: true },
-    { id: "commoners", label: "Common Populace", score: 0, note: "", noteLogs: [], isCore: true }
+    {
+      id: "religious",
+      label: "Religious Authority",
+      category: "Institution",
+      represents: "Temples, shrines, clergy, and sacred orders",
+      summary: "Track how the party is perceived by faith leaders and religious institutions.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "nobility",
+      label: "Nobility",
+      category: "Power Bloc",
+      represents: "Courts, titled houses, heralds, and magistrates",
+      summary: "Track access to courts, patronage, and elite political leverage.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "criminal",
+      label: "Criminal Factions",
+      category: "Network",
+      represents: "Smugglers, thieves, fences, and underground brokers",
+      summary: "Track street access, favors, and retaliation risk from the underworld.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      noteLogs: [],
+      isCore: true
+    },
+    {
+      id: "commoners",
+      label: "Common Populace",
+      category: "Public",
+      represents: "Townsfolk, laborers, travelers, and day-to-day public sentiment",
+      summary: "Track public trust, rumor pressure, and how local communities react to the party.",
+      linkedActorId: "",
+      playerImpacts: [],
+      score: 0,
+      note: "",
+      noteLogs: [],
+      isCore: true
+    }
   ];
 }
 
@@ -21012,12 +22016,20 @@ function normalizeReputationFaction(entry = {}) {
       .sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
       .slice(0, 100)
     : [];
+  const playerImpacts = Array.isArray(entry?.playerImpacts)
+    ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
+    : [];
   return {
     id: String(entry.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     label: String(entry.label ?? "Faction").trim() || "Faction",
-    score: Math.max(-5, Math.min(5, Math.floor(Number(entry.score ?? 0) || 0))),
+    category: String(entry.category ?? "").trim(),
+    represents: String(entry.represents ?? "").trim(),
+    summary: String(entry.summary ?? ""),
+    linkedActorId: String(entry.linkedActorId ?? entry.actorId ?? "").trim(),
+    score: clampReputationStandingValue(entry.score ?? 0),
     note: String(entry.note ?? ""),
     noteLogs,
+    playerImpacts,
     isCore: Boolean(entry.isCore)
   };
 }
@@ -21109,6 +22121,7 @@ function getReputationAccessLabel(score) {
 
 function buildReputationContext(reputationState, filters = {}) {
   const noteLogSelections = getReputationNoteLogSelections();
+  const builder = buildReputationBuilderContext(getReputationBuilderState());
   const rawFactions = Array.isArray(reputationState?.factions)
     ? reputationState.factions.map((entry) => normalizeReputationFaction(entry))
     : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
@@ -21144,6 +22157,10 @@ function buildReputationContext(reputationState, filters = {}) {
     const selectedPreview = selectedPreviewSource.length > 160
       ? `${selectedPreviewSource.slice(0, 157)}...`
       : selectedPreviewSource;
+    const linkedActorName = getReputationActorName(faction.linkedActorId);
+    const playerImpacts = buildReputationPlayerImpactRows(faction.playerImpacts);
+    const configuredPlayerImpacts = playerImpacts.filter((entry) => entry.configured);
+    const playerImpactTotal = configuredPlayerImpacts.reduce((sum, entry) => sum + Number(entry.delta ?? 0), 0);
     return {
       ...faction,
       key: faction.id,
@@ -21151,6 +22168,20 @@ function buildReputationContext(reputationState, filters = {}) {
       standingClass: getReputationStandingClass(faction.score),
       standingStyle: getReputationStandingStyle(faction.score),
       access: getReputationAccessLabel(faction.score),
+      categoryLabel: String(faction.category ?? "").trim() || "Unspecified",
+      linkedActorName,
+      hasLinkedActor: Boolean(linkedActorName),
+      linkedActorOptions: buildReputationActorOptions(faction.linkedActorId),
+      hasCategory: Boolean(String(faction.category ?? "").trim()),
+      hasRepresents: Boolean(String(faction.represents ?? "").trim()),
+      hasSummary: Boolean(String(faction.summary ?? "").trim()),
+      playerImpacts,
+      configuredPlayerImpacts,
+      playerImpactCount: configuredPlayerImpacts.length,
+      hasPlayerImpacts: configuredPlayerImpacts.length > 0,
+      playerImpactTotal,
+      playerImpactTotalLabel: formatReputationDeltaLabel(playerImpactTotal),
+      playerImpactToneClass: playerImpactTotal > 0 ? "is-positive" : (playerImpactTotal < 0 ? "is-negative" : "is-neutral"),
       noteLogs,
       noteLogOptions,
       hasNoteLogs: noteLogOptions.length > 0,
@@ -21182,11 +22213,15 @@ function buildReputationContext(reputationState, filters = {}) {
     if (!standingMatch) return false;
     if (!filterKeyword) return true;
     const historical = (faction.noteLogs ?? []).map((row) => String(row.note ?? "")).join(" ");
-    const haystack = `${faction.label} ${faction.note} ${historical} ${faction.band} ${faction.access} ${faction.score}`.toLowerCase();
+    const playerDetails = (faction.configuredPlayerImpacts ?? [])
+      .map((row) => `${row.actorName} ${row.note} ${row.deltaLabel}`)
+      .join(" ");
+    const haystack = `${faction.label} ${faction.category} ${faction.represents} ${faction.summary} ${faction.note} ${historical} ${faction.band} ${faction.access} ${faction.score} ${faction.linkedActorName} ${playerDetails}`.toLowerCase();
     return haystack.includes(filterKeyword);
   });
 
   return {
+    builder,
     factions,
     filteredFactions,
     coreCount: factions.filter((faction) => faction.isCore).length,
@@ -28136,6 +29171,27 @@ function getSopNoteEntriesForView(ledger, sopKeyInput) {
   }];
 }
 
+function getSharedSopNoteText(ledger, sopKeyInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return "";
+  const sopNotes = ensureSopNotesState(ledger);
+  const directNote = clampSocketText(sopNotes?.[sopKey] ?? "", SOCKET_NOTE_MAX_LENGTH);
+  if (directNote.trim()) return directNote;
+  const legacyEntries = getSopNoteEntriesForView(ledger, sopKey);
+  return clampSocketText(legacyEntries[0]?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+}
+
+function setSharedSopNoteText(ledger, sopKeyInput, noteInput) {
+  const sopKey = String(sopKeyInput ?? "").trim();
+  if (!sopKey || !SOP_KEYS.includes(sopKey)) return false;
+  const sopNotes = ensureSopNotesState(ledger);
+  const note = clampSocketText(noteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const previous = clampSocketText(sopNotes?.[sopKey] ?? "", SOCKET_NOTE_MAX_LENGTH);
+  if (previous === note) return false;
+  sopNotes[sopKey] = note;
+  return true;
+}
+
 function appendSopNoteEntry(ledger, sopKeyInput, noteInput, requester = game.user) {
   const sopKey = String(sopKeyInput ?? "").trim();
   const note = clampSocketText(noteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
@@ -29566,10 +30622,6 @@ async function setOperationalSopNote(element, options = {}) {
   if (!sopKey || !SOP_KEYS.includes(sopKey)) return false;
   try {
     const note = clampSocketText(element?.value, SOCKET_NOTE_MAX_LENGTH);
-    if (!note.trim()) {
-      if (!suppressUiWarning) ui.notifications?.warn("Enter a note before saving it to the ledger.");
-      return false;
-    }
     if (!game.user?.isGM) {
       if (!hasActiveGmClient()) {
         writeSopCachedNoteEntry(sopKey, note, { pendingSync: true });
@@ -29580,7 +30632,9 @@ async function setOperationalSopNote(element, options = {}) {
           userName: String(game.user?.name ?? "Unknown")
         });
         if (notify) {
-          ui.notifications?.info("Note saved locally. It will sync when a GM reconnects.");
+          ui.notifications?.info(note.trim()
+            ? "Shared note saved locally. It will sync when a GM reconnects."
+            : "Shared note cleared locally. It will sync when a GM reconnects.");
         }
         schedulePendingSopNoteSync("player-save-no-gm");
         return true;
@@ -29592,37 +30646,206 @@ async function setOperationalSopNote(element, options = {}) {
         sopKey,
         note
       });
-      logUiDebug("operations-sop", "queued SOP note save via socket", {
-        sopKey,
-        noteLength: note.length,
-        userId: String(game.user?.id ?? ""),
-        userName: String(game.user?.name ?? "Unknown")
-      });
-      if (notify) ui.notifications?.info("Note saved.");
-      return true;
-    }
+        logUiDebug("operations-sop", "queued SOP note save via socket", {
+          sopKey,
+          noteLength: note.length,
+          userId: String(game.user?.id ?? ""),
+          userName: String(game.user?.name ?? "Unknown")
+        });
+        if (notify) ui.notifications?.info(note.trim() ? "Shared note saved." : "Shared note cleared.");
+        return true;
+      }
+    let changed = false;
     await updateOperationsLedger((ledger) => {
-      appendSopNoteEntry(ledger, sopKey, note, game.user);
+      changed = setSharedSopNoteText(ledger, sopKey, note);
     });
     clearSopCachedNoteEntry(sopKey);
-    if (typeof element?.value === "string") element.value = "";
     logUiDebug("operations-sop", "saved SOP note on GM client", {
       sopKey,
       noteLength: note.length,
       userId: String(game.user?.id ?? ""),
       userName: String(game.user?.name ?? "Unknown")
     });
-    if (notify) ui.notifications?.info("Note saved.");
-    return true;
+    if (notify) {
+      if (changed) ui.notifications?.info(note.trim() ? "Shared note saved." : "Shared note cleared.");
+      else ui.notifications?.info("No note changes to save.");
+    }
+    return changed;
   } catch (error) {
     logUiFailure("operations", "set SOP note failed", error, {
       sopKey,
       isGM: Boolean(game.user?.isGM)
     });
     if (!suppressUiWarning) {
-      ui.notifications?.warn("SOP note save failed. Please try again.");
+      ui.notifications?.warn("Shared SOP note save failed. Please try again.");
     }
     return false;
+  }
+}
+
+function buildBlankEnvironmentPreset(environment, label = "New Preset") {
+  const actionCatalog = buildEnvironmentActionCatalog(environment);
+  const existingKeys = buildEnvironmentPresetCatalog(environment).map((entry) => entry.key);
+  const key = buildUniqueEnvironmentIdentifier(label, existingKeys, "preset");
+  return normalizeEnvironmentPresetDefinition({
+    key,
+    label,
+    description: "Describe when this preset applies.",
+    icon: "icons/svg/hazard.svg",
+    actionKey: actionCatalog[0]?.key ?? "move",
+    movementCheck: true,
+    checkType: "skill",
+    checkKey: "ath",
+    checkLabel: "Athletics",
+    defaultDc: 12,
+    effectChanges: []
+  }, {}, { actionCatalog, environmentState: environment });
+}
+
+function buildBlankEnvironmentAction(environment, label = "New Action") {
+  const existingKeys = buildEnvironmentActionCatalog(environment).map((entry) => entry.key);
+  const key = buildUniqueEnvironmentIdentifier(label, existingKeys, "action");
+  return normalizeEnvironmentActionDefinition({
+    key,
+    label,
+    description: "Describe what characters are doing when this action is checked."
+  });
+}
+
+function upsertEnvironmentPresetDefinition(environment, presetDraft) {
+  if (!environment.presetDefinitions || typeof environment.presetDefinitions !== "object") environment.presetDefinitions = {};
+  if (!Array.isArray(environment.presetOrder)) environment.presetOrder = [];
+  const actionCatalog = buildEnvironmentActionCatalog(environment);
+  const current = getEnvironmentPresetByKey(presetDraft?.key ?? "none", environment);
+  const normalized = normalizeEnvironmentPresetDefinition(presetDraft, current, {
+    actionCatalog,
+    environmentState: environment
+  });
+  environment.presetDefinitions[normalized.key] = normalized;
+  if (!environment.presetOrder.includes(normalized.key)) environment.presetOrder.push(normalized.key);
+  if (environment.successiveByPreset && typeof environment.successiveByPreset === "object") {
+    delete environment.successiveByPreset[normalized.key];
+  }
+  return normalized;
+}
+
+function upsertEnvironmentActionDefinition(environment, actionDraft) {
+  if (!environment.actionDefinitions || typeof environment.actionDefinitions !== "object") environment.actionDefinitions = {};
+  if (!Array.isArray(environment.actionOrder)) environment.actionOrder = [];
+  const current = getEnvironmentActionByKey(actionDraft?.key ?? "move", environment);
+  const normalized = normalizeEnvironmentActionDefinition(actionDraft, current);
+  environment.actionDefinitions[normalized.key] = normalized;
+  if (!environment.actionOrder.includes(normalized.key)) environment.actionOrder.push(normalized.key);
+  return normalized;
+}
+
+function applyEnvironmentPresetFieldUpdate(preset, field, element) {
+  switch (field) {
+    case "label":
+      preset.label = String(element?.value ?? "").trim() || preset.label;
+      return true;
+    case "description":
+      preset.description = String(element?.value ?? "").trim();
+      return true;
+    case "icon":
+      preset.icon = String(element?.value ?? "").trim() || "icons/svg/hazard.svg";
+      return true;
+    case "actionKey":
+      preset.actionKey = String(element?.value ?? "").trim() || preset.actionKey;
+      return true;
+    case "movementCheck":
+      preset.movementCheck = Boolean(element?.checked);
+      return true;
+    case "checkType":
+      preset.checkType = String(element?.value ?? "").trim().toLowerCase() === "save" ? "save" : "skill";
+      return true;
+    case "checkKey":
+      preset.checkKey = String(element?.value ?? "").trim().toLowerCase();
+      return true;
+    case "checkLabel":
+      preset.checkLabel = String(element?.value ?? "").trim();
+      return true;
+    case "defaultDc":
+      preset.defaultDc = Math.max(1, Math.min(30, Math.floor(Number(element?.value ?? preset.defaultDc ?? 12) || 12)));
+      return true;
+    case "alwaysStatusId":
+      preset.alwaysStatusId = String(element?.value ?? "").trim();
+      return true;
+    case "failStatusId":
+      preset.failStatusId = String(element?.value ?? "").trim();
+      return true;
+    case "failSlideFeet":
+      preset.failSlideFeet = Math.max(0, Math.min(500, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "failSpeedZeroTurns":
+      preset.failSpeedZeroTurns = Math.max(0, Math.min(10, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "failDamageFormula":
+      preset.failDamageFormula = String(element?.value ?? "").trim();
+      return true;
+    case "failDamageType":
+      preset.failDamageType = String(element?.value ?? "").trim();
+      return true;
+    case "failExhaustion":
+      preset.failExhaustion = Math.max(0, Math.min(6, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "failBy5StatusId":
+      preset.failBy5StatusId = String(element?.value ?? "").trim();
+      return true;
+    case "failBy5SlideFeet":
+      preset.failBy5SlideFeet = Math.max(0, Math.min(500, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "failBy5DamageFormula":
+      preset.failBy5DamageFormula = String(element?.value ?? "").trim();
+      return true;
+    case "failBy5DamageType":
+      preset.failBy5DamageType = String(element?.value ?? "").trim();
+      return true;
+    case "failBy5MaxHpReductionFormula":
+      preset.failBy5MaxHpReductionFormula = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailStatusId":
+      preset.successiveFailStatusId = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailSlideFeet":
+      preset.successiveFailSlideFeet = Math.max(0, Math.min(500, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "successiveFailExhaustion":
+      preset.successiveFailExhaustion = Math.max(0, Math.min(6, Math.floor(Number(element?.value ?? 0) || 0)));
+      return true;
+    case "successiveFailDamageFormula":
+      preset.successiveFailDamageFormula = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailDamageType":
+      preset.successiveFailDamageType = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailMaxHpReductionFormula":
+      preset.successiveFailMaxHpReductionFormula = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailDaeChangeKey":
+      preset.successiveFailDaeChangeKey = String(element?.value ?? "").trim();
+      return true;
+    case "successiveFailDaeChangeMode":
+      preset.successiveFailDaeChangeMode = Math.floor(Number(element?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
+      return true;
+    case "successiveFailDaeChangeValue":
+      preset.successiveFailDaeChangeValue = String(element?.value ?? "").trim();
+      return true;
+    default:
+      return false;
+  }
+}
+
+function applyEnvironmentActionFieldUpdate(action, field, element) {
+  switch (field) {
+    case "label":
+      action.label = String(element?.value ?? "").trim() || action.label;
+      return true;
+    case "description":
+      action.description = String(element?.value ?? "").trim();
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -29631,10 +30854,11 @@ async function setOperationalEnvironmentPreset(element) {
     ui.notifications?.warn("Only the GM can change environment controls.");
     return;
   }
-  const presetKey = getEnvironmentPresetByKey(String(element?.value ?? "none")).key;
+  const requestedKey = String(element?.value ?? "none");
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const preset = getEnvironmentPresetByKey(presetKey);
+    const preset = getEnvironmentPresetByKey(requestedKey, environment);
+    const presetKey = preset.key;
     environment.presetKey = presetKey;
     const defaultDc = Number(preset.defaultDc ?? 12);
     if (Number.isFinite(defaultDc) && defaultDc > 0) {
@@ -29681,6 +30905,260 @@ async function setOperationalEnvironmentSyncNonParty(element) {
   });
 }
 
+async function selectOperationalEnvironmentConfigurePreset(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  const requestedKey = String(element?.value ?? "").trim();
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const preset = getEnvironmentPresetByKey(requestedKey, environment);
+    if (preset.key === "none") return;
+    environment.configurePresetKey = preset.key;
+    environment.configureActionKey = getEnvironmentActionByKey(preset.actionKey, environment).key;
+  });
+}
+
+async function createOperationalEnvironmentPreset() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const preset = buildBlankEnvironmentPreset(environment);
+    upsertEnvironmentPresetDefinition(environment, preset);
+    environment.configurePresetKey = preset.key;
+  });
+}
+
+async function duplicateOperationalEnvironmentPreset() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentPresetByKey(environment.configurePresetKey, environment));
+    if (!source || source.key === "none") return;
+    const duplicate = foundry.utils.deepClone(source);
+    duplicate.key = buildUniqueEnvironmentIdentifier(`${source.label} Copy`, buildEnvironmentPresetCatalog(environment).map((entry) => entry.key), "preset");
+    duplicate.label = `${source.label} Copy`;
+    duplicate.effectChanges = Array.isArray(source.effectChanges)
+      ? source.effectChanges.map((entry, index) => normalizeEnvironmentEffectChange(entry, { fallbackId: `${duplicate.key}-change-${index + 1}` }))
+      : [];
+    upsertEnvironmentPresetDefinition(environment, duplicate);
+    environment.configurePresetKey = duplicate.key;
+  });
+}
+
+async function restoreOperationalEnvironmentPresetDefaults() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  let restored = false;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const presetKey = getEnvironmentPresetByKey(environment.configurePresetKey, environment).key;
+    const isBuiltIn = ENVIRONMENT_PRESETS.some((entry) => entry.key === presetKey);
+    if (!isBuiltIn || presetKey === "none") return;
+    if (environment.presetDefinitions && typeof environment.presetDefinitions === "object") {
+      delete environment.presetDefinitions[presetKey];
+    }
+    if (environment.successiveByPreset && typeof environment.successiveByPreset === "object") {
+      delete environment.successiveByPreset[presetKey];
+    }
+    restored = true;
+  });
+  if (!restored) ui.notifications?.warn("Only built-in presets can be restored to defaults.");
+}
+
+async function deleteOperationalEnvironmentPreset() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const presetKey = getEnvironmentPresetByKey(environment.configurePresetKey, environment).key;
+    const isBuiltIn = ENVIRONMENT_PRESETS.some((entry) => entry.key === presetKey);
+    if (isBuiltIn || presetKey === "none") return;
+    if (environment.presetDefinitions && typeof environment.presetDefinitions === "object") {
+      delete environment.presetDefinitions[presetKey];
+    }
+    if (Array.isArray(environment.presetOrder)) {
+      environment.presetOrder = environment.presetOrder.filter((entry) => entry !== presetKey);
+    }
+    if (environment.successiveByPreset && typeof environment.successiveByPreset === "object") {
+      delete environment.successiveByPreset[presetKey];
+    }
+    if (environment.presetKey === presetKey) {
+      environment.presetKey = "none";
+      environment.appliedActorIds = [];
+    }
+    const fallbackPreset = buildEnvironmentPresetCatalog(environment).find((entry) => entry.key !== "none")?.key ?? "none";
+    environment.configurePresetKey = fallbackPreset;
+    removed = true;
+  });
+  if (!removed) ui.notifications?.warn("Only custom presets can be deleted.");
+}
+
+async function setOperationalEnvironmentPresetField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!field) return;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentPresetByKey(environment.configurePresetKey, environment));
+    if (!source || source.key === "none") return;
+    const changed = applyEnvironmentPresetFieldUpdate(source, field, element);
+    if (!changed) return;
+    const saved = upsertEnvironmentPresetDefinition(environment, source);
+    environment.configurePresetKey = saved.key;
+    if (field === "actionKey") {
+      environment.configureActionKey = getEnvironmentActionByKey(saved.actionKey, environment).key;
+    }
+  });
+}
+
+async function addOperationalEnvironmentPresetEffectChange() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentPresetByKey(environment.configurePresetKey, environment));
+    if (!source || source.key === "none") return;
+    if (!Array.isArray(source.effectChanges)) source.effectChanges = [];
+    source.effectChanges.push(normalizeEnvironmentEffectChange({
+      id: `${source.key}-change-${source.effectChanges.length + 1}`,
+      key: "",
+      value: ""
+    }));
+    upsertEnvironmentPresetDefinition(environment, source);
+  });
+}
+
+async function removeOperationalEnvironmentPresetEffectChange(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  const effectId = String(element?.dataset?.effectId ?? "").trim();
+  if (!effectId) return;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentPresetByKey(environment.configurePresetKey, environment));
+    if (!source || source.key === "none" || !Array.isArray(source.effectChanges)) return;
+    source.effectChanges = source.effectChanges.filter((entry) => String(entry?.id ?? "") !== effectId);
+    upsertEnvironmentPresetDefinition(environment, source);
+  });
+}
+
+async function setOperationalEnvironmentPresetEffectChange(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment presets.");
+    return;
+  }
+  const effectId = String(element?.dataset?.effectId ?? "").trim();
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!effectId || !field) return;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentPresetByKey(environment.configurePresetKey, environment));
+    if (!source || source.key === "none") return;
+    if (!Array.isArray(source.effectChanges)) source.effectChanges = [];
+    const nextChanges = source.effectChanges.map((entry, index) => normalizeEnvironmentEffectChange(entry, { fallbackId: `${source.key}-change-${index + 1}` }));
+    const target = nextChanges.find((entry) => entry.id === effectId);
+    if (!target) return;
+    if (field === "key") target.key = String(element?.value ?? "").trim();
+    else if (field === "value") target.value = String(element?.value ?? "").trim();
+    else return;
+    source.effectChanges = nextChanges;
+    upsertEnvironmentPresetDefinition(environment, source);
+  });
+}
+
+async function selectOperationalEnvironmentConfigureAction(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment actions.");
+    return;
+  }
+  const requestedKey = String(element?.value ?? "").trim();
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    environment.configureActionKey = getEnvironmentActionByKey(requestedKey, environment).key;
+  });
+}
+
+async function createOperationalEnvironmentAction() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment actions.");
+    return;
+  }
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const action = buildBlankEnvironmentAction(environment);
+    upsertEnvironmentActionDefinition(environment, action);
+    environment.configureActionKey = action.key;
+  });
+}
+
+async function deleteOperationalEnvironmentAction() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment actions.");
+    return;
+  }
+  let removed = false;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const actionKey = getEnvironmentActionByKey(environment.configureActionKey, environment).key;
+    const isBuiltIn = ENVIRONMENT_ACTIONS.some((entry) => entry.key === actionKey);
+    if (isBuiltIn) return;
+    if (environment.actionDefinitions && typeof environment.actionDefinitions === "object") {
+      delete environment.actionDefinitions[actionKey];
+    }
+    if (Array.isArray(environment.actionOrder)) {
+      environment.actionOrder = environment.actionOrder.filter((entry) => entry !== actionKey);
+    }
+    const fallbackActionKey = getEnvironmentActionByKey("move", environment).key;
+    const presetCatalog = buildEnvironmentPresetCatalog(environment);
+    for (const preset of presetCatalog) {
+      if (preset.key === "none" || preset.actionKey !== actionKey) continue;
+      const nextPreset = foundry.utils.deepClone(preset);
+      nextPreset.actionKey = fallbackActionKey;
+      upsertEnvironmentPresetDefinition(environment, nextPreset);
+    }
+    environment.configureActionKey = fallbackActionKey;
+    removed = true;
+  });
+  if (!removed) ui.notifications?.warn("Only custom actions can be deleted.");
+}
+
+async function setOperationalEnvironmentActionField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure environment actions.");
+    return;
+  }
+  const field = String(element?.dataset?.field ?? "").trim();
+  if (!field) return;
+  await updateOperationsLedger((ledger) => {
+    const environment = ensureEnvironmentState(ledger);
+    const source = foundry.utils.deepClone(getEnvironmentActionByKey(environment.configureActionKey, environment));
+    const changed = applyEnvironmentActionFieldUpdate(source, field, element);
+    if (!changed) return;
+    const saved = upsertEnvironmentActionDefinition(environment, source);
+    environment.configureActionKey = saved.key;
+  });
+}
+
 async function setOperationalEnvironmentSuccessive(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can change environment controls.");
@@ -29691,7 +31169,7 @@ async function setOperationalEnvironmentSuccessive(element) {
 
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const preset = getEnvironmentPresetByKey(environment.presetKey);
+    const preset = getEnvironmentPresetByKey(environment.presetKey, environment);
     if (preset.key === "none") return;
     if (!environment.successiveByPreset || typeof environment.successiveByPreset !== "object") {
       environment.successiveByPreset = {};
@@ -29735,7 +31213,7 @@ async function resetOperationalEnvironmentSuccessiveDefaults() {
   }
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const preset = getEnvironmentPresetByKey(environment.presetKey);
+    const preset = getEnvironmentPresetByKey(environment.presetKey, environment);
     if (preset.key === "none") return;
     if (!environment.successiveByPreset || typeof environment.successiveByPreset !== "object") {
       environment.successiveByPreset = {};
@@ -29775,12 +31253,15 @@ async function addOperationalEnvironmentLog() {
 
   await updateOperationsLedger((ledger) => {
     const environment = ensureEnvironmentState(ledger);
-    const preset = getEnvironmentPresetByKey(environment.presetKey);
+    const preset = getEnvironmentPresetByKey(environment.presetKey, environment);
+    const action = getEnvironmentActionMeta(preset, environment);
     const check = getEnvironmentCheckMeta(preset);
     environment.logs.unshift({
       id: foundry.utils.randomID(),
       logType: "environment",
       presetKey: environment.presetKey,
+      presetLabel: preset.label,
+      actionLabel: action.actionLabel,
       movementDc: environment.movementDc,
       actorIds: [...environment.appliedActorIds],
       syncToSceneNonParty: Boolean(environment.syncToSceneNonParty),
@@ -29804,10 +31285,11 @@ async function addOperationalEnvironmentLog() {
     category: "environment",
     sensitivity: "gm",
     title: `Environment - ${String(current.preset?.label ?? "Preset")}`,
-    summary: `${String(current.checkLabel ?? "Check")} DC ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}`,
+    summary: `${String(current.actionLabel ?? "Action")} | ${String(current.checkLabel ?? "Check")} DC ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}`,
     redactedSummary: `${String(current.preset?.label ?? "Environment")} update logged.`,
     body: `
       <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Actor Action:</strong> ${poEscapeHtml(String(current.actionLabel ?? "Action"))}</p>
       <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
       <p><strong>Targets:</strong> ${poEscapeHtml(actorNames.length > 0 ? actorNames.join(", ") : "No assigned actors")}</p>
@@ -29816,6 +31298,7 @@ async function addOperationalEnvironmentLog() {
     `,
     redactedBody: `
       <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
+      <p><strong>Actor Action:</strong> ${poEscapeHtml(String(current.actionLabel ?? "Action"))}</p>
       <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
       <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
@@ -29837,7 +31320,7 @@ async function editOperationalEnvironmentLog(element) {
     const environment = ensureEnvironmentState(ledger);
     const entry = environment.logs.find((candidate) => candidate.id === logId && String(candidate.logType ?? "environment") !== "weather");
     if (!entry) return;
-    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
+    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey, environment).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
     environment.appliedActorIds = [...(entry.actorIds ?? [])];
     environment.syncToSceneNonParty = entry.syncToSceneNonParty !== false;
@@ -29854,7 +31337,7 @@ async function editOperationalEnvironmentLogById(logId) {
     const environment = ensureEnvironmentState(ledger);
     const entry = environment.logs.find((candidate) => candidate.id === id && String(candidate.logType ?? "environment") !== "weather");
     if (!entry) return;
-    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey).key;
+    environment.presetKey = getEnvironmentPresetByKey(entry.presetKey, environment).key;
     environment.movementDc = Math.max(1, Math.min(30, Math.floor(Number(entry.movementDc ?? 12) || 12)));
     environment.appliedActorIds = [...(entry.actorIds ?? [])];
     environment.syncToSceneNonParty = entry.syncToSceneNonParty !== false;
@@ -29913,14 +31396,15 @@ async function showOperationalEnvironmentBrief() {
     <div class="po-help">
       <p><strong>Environment:</strong> ${environment.preset.label}</p>
       <p><strong>Description:</strong> ${environment.preset.description}</p>
-      <p><strong>Movement Check:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
+      <p><strong>Actor Action:</strong> ${environment.actionLabel || "Action"}</p>
+      <p><strong>Check Required:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
       <p><strong>Check:</strong> ${environment.preset.movementCheck ? (environment.checkLabel || "-") : "-"}</p>
       <p><strong>On Success:</strong> ${String(outcomes.onSuccess ?? "-")}</p>
       <p><strong>On Fail:</strong> ${String(outcomes.onFail ?? "-")}</p>
       <p><strong>On Fail by 5+:</strong> ${String(outcomes.onFailBy5 ?? "-")}</p>
       <p><strong>On Successive Fail:</strong> ${String(outcomes.onSuccessiveFail ?? "-")}</p>
       <p><strong>Always-On Status:</strong> ${alwaysStatusLabel}</p>
-      <p><strong>Movement DC (GM):</strong> ${environment.movementDc}</p>
+      <p><strong>DC (GM):</strong> ${environment.movementDc}</p>
       <p><strong>Scene Non-Party Sync:</strong> ${environment.syncToSceneNonParty ? "Enabled" : "Disabled"}</p>
       <p><strong>Applies To:</strong> ${selected.length > 0 ? selected.join(", ") : "No actors selected."}</p>
     </div>
@@ -29945,12 +31429,33 @@ function getResourceSyncActors() {
   return getOwnedPcActors();
 }
 
-function getItemTrackedQuantity(item) {
-  const quantity = Number(item.system?.quantity);
+function isWaterskinLikeItem(item) {
+  const name = String(item?.name ?? "").trim();
+  if (!name) return false;
+  return /\bwaterskin\b/i.test(name);
+}
+
+function getWaterskinChargeCapacity(item) {
+  const quantity = Math.max(1, Math.floor(Number(item?.system?.quantity ?? 1) || 1));
+  const perContainerMax = Math.max(0, Math.floor(Number(item?.system?.uses?.max ?? 0) || 0));
+  if (perContainerMax <= 0) return 0;
+  return perContainerMax * quantity;
+}
+
+function getResourceItemQuantity(item, resourceKey = "") {
+  const normalizedKey = String(resourceKey ?? "").trim().toLowerCase();
+  if (normalizedKey === "water" && isWaterskinLikeItem(item) && item?.system?.uses?.value !== undefined) {
+    return Math.max(0, Math.floor(Number(item.system.uses.value ?? 0) || 0));
+  }
+  const quantity = Number(item?.system?.quantity);
   if (Number.isFinite(quantity)) return quantity;
-  const uses = Number(item.system?.uses?.value);
+  const uses = Number(item?.system?.uses?.value);
   if (Number.isFinite(uses)) return uses;
   return 0;
+}
+
+function getItemTrackedQuantity(item) {
+  return getResourceItemQuantity(item);
 }
 
 async function setItemTrackedQuantity(item, value) {
@@ -30097,9 +31602,15 @@ async function consumeSelectedInventoryItem(selection, amount) {
   const item = actor?.items?.get(itemId);
   if (!actor || !item) return { needed, consumed: 0, missing: needed, source: "" };
 
-  const current = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+  const current = Math.max(0, Math.floor(getResourceItemQuantity(item, selection?.resourceKey)));
   const consumed = Math.min(current, needed);
-  if (consumed > 0) await setItemTrackedQuantity(item, current - consumed);
+  if (consumed > 0) {
+    if (String(selection?.resourceKey ?? "").trim().toLowerCase() === "water" && isWaterskinLikeItem(item) && item?.system?.uses?.value !== undefined) {
+      await item.update({ "system.uses.value": Math.max(0, current - consumed) });
+    } else {
+      await setItemTrackedQuantity(item, current - consumed);
+    }
+  }
 
   return {
     needed,
@@ -30120,12 +31631,25 @@ async function addToSelectedInventoryItem(selection, amount) {
   const item = actor?.items?.get(itemId);
   if (!actor || !item) return { gained, added: 0, source: "" };
 
-  const current = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
-  await setItemTrackedQuantity(item, current + gained);
+  const resourceKey = String(selection?.resourceKey ?? "").trim().toLowerCase();
+  const current = Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
+  let added = gained;
+  if (resourceKey === "water" && isWaterskinLikeItem(item)) {
+    if (item?.system?.uses?.value !== undefined) {
+      const capacity = getWaterskinChargeCapacity(item);
+      const target = capacity > 0 ? Math.min(capacity, current + gained) : current;
+      added = Math.max(0, target - current);
+      if (added > 0) await item.update({ "system.uses.value": target });
+    } else {
+      added = 0;
+    }
+  } else {
+    await setItemTrackedQuantity(item, current + gained);
+  }
 
   return {
     gained,
-    added: gained,
+    added,
     source: `${actor.name} - ${item.name}`
   };
 }
@@ -30148,7 +31672,7 @@ async function applyGatherInventoryAllocation(resourceType, amount) {
   ensureOperationalResourceConfig(resources);
   const selection = resources.itemSelections?.[selectionKey] ?? {};
   const hadConfiguredTarget = Boolean(String(selection.actorId ?? "").trim() && String(selection.itemId ?? "").trim());
-  const inventoryGain = await addToSelectedInventoryItem(selection, gained);
+  const inventoryGain = await addToSelectedInventoryItem({ ...selection, resourceKey: selectionKey }, gained);
   const added = Math.max(0, Number(inventoryGain?.added ?? 0) || 0);
 
   return {
@@ -30160,6 +31684,63 @@ async function applyGatherInventoryAllocation(resourceType, amount) {
   };
 }
 
+async function allocateGatherPendingPoolsToTargets(pools = {}) {
+  const foodPending = Math.max(0, Math.floor(Number(pools.food ?? 0) || 0));
+  const waterPending = Math.max(0, Math.floor(Number(pools.water ?? 0) || 0));
+  const results = [];
+
+  for (const [resourceType, amount] of [["food", foodPending], ["water", waterPending]]) {
+    if (amount <= 0) continue;
+    const inventoryAllocation = await applyGatherInventoryAllocation(resourceType, amount);
+    const added = Math.max(0, Number(inventoryAllocation?.added ?? 0) || 0);
+    const remaining = Math.max(0, Number(inventoryAllocation?.remaining ?? 0) || 0);
+    let stewardAdded = 0;
+
+    if (remaining > 0) {
+      await updateOperationsLedger((ledger) => {
+        if (!ledger.resources) ledger.resources = {};
+        ensureOperationalResourceConfig(ledger.resources);
+        const currentPending = Math.max(0, Number(ledger.resources.gather.pendingPools?.[resourceType] ?? 0) || 0);
+        const allocatable = Math.min(currentPending, remaining);
+        if (allocatable <= 0) return;
+        const pool = getStewardPoolEntry(ledger.resources, resourceType);
+        if (normalizeStewardPoolMode(pool.mode) === STEWARD_POOL_MODES.INFINITE) {
+          stewardAdded = allocatable;
+          return;
+        }
+        pool.mode = STEWARD_POOL_MODES.FINITE;
+        pool.amount = Math.max(0, Number(pool.amount ?? 0) + allocatable);
+        stewardAdded = allocatable;
+        ledger.resources.stewardPools[resourceType] = pool;
+        ensureStewardPoolsState(ledger.resources);
+      }, { skipLocalRefresh: true });
+    }
+
+    const distributed = Math.max(0, added + stewardAdded);
+    if (distributed > 0) {
+      await updateOperationsLedger((ledger) => {
+        if (!ledger.resources) ledger.resources = {};
+        ensureOperationalResourceConfig(ledger.resources);
+        const currentPending = Math.max(0, Number(ledger.resources.gather.pendingPools?.[resourceType] ?? 0) || 0);
+        ledger.resources.gather.pendingPools[resourceType] = Math.max(0, currentPending - distributed);
+        if (resourceType === "food") ledger.resources.gather.foodCoveredNextUpkeep = ledger.resources.gather.pendingPools[resourceType] > 0;
+        if (resourceType === "water") ledger.resources.gather.waterCoveredNextUpkeep = ledger.resources.gather.pendingPools[resourceType] > 0;
+      }, { skipLocalRefresh: true });
+    }
+
+    results.push({
+      resourceType,
+      added,
+      remaining: Math.max(0, remaining - stewardAdded),
+      stewardAdded,
+      source: String(inventoryAllocation?.source ?? "").trim(),
+      hadConfiguredTarget: Boolean(inventoryAllocation?.hadConfiguredTarget)
+    });
+  }
+
+  return results;
+}
+
 async function depleteLinkedResourceItems(drains, itemSelections) {
   const results = [];
   const rows = [
@@ -30169,7 +31750,7 @@ async function depleteLinkedResourceItems(drains, itemSelections) {
   ];
 
   for (const row of rows) {
-    const selectedResult = await consumeSelectedInventoryItem(itemSelections?.[row.key], row.drain);
+    const selectedResult = await consumeSelectedInventoryItem({ ...(itemSelections?.[row.key] ?? {}), resourceKey: row.key }, row.drain);
     results.push({
       key: row.key,
       name: selectedResult.source || row.key,
@@ -30779,15 +32360,12 @@ async function executeGatherResourcesAction(options = {}) {
   let historyRecorded = false;
   let inventoryGainSource = "";
   let inventoryGainAmount = 0;
-  let stewardPoolGain = 0;
+  let pendingPoolGain = 0;
   if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
-    const inventoryAllocation = await applyGatherInventoryAllocation(resourceType, outcome.finalRations);
-    inventoryGainSource = String(inventoryAllocation.source ?? "").trim();
-    inventoryGainAmount = Math.max(0, Number(inventoryAllocation.added ?? 0) || 0);
-    stewardPoolGain = Math.max(0, Number(inventoryAllocation.remaining ?? outcome.finalRations) || 0);
-    if (inventoryAllocation.hadConfiguredTarget && inventoryGainAmount <= 0) {
-      outcome.notes.push("Configured resource target could not be updated; remainder fell back to the party pool.");
-    }
+    pendingPoolGain = Math.max(0, Number(outcome.finalRations ?? 0) || 0);
+    inventoryGainSource = resourceType === "water" ? "Pending gathered water pool" : "Pending gathered food pool";
+    inventoryGainAmount = pendingPoolGain;
+    outcome.notes.push(`Queued ${pendingPoolGain} ${resourceType} ration(s) for upkeep-first allocation.`);
   }
 
   const historyEntryBase = {
@@ -30817,34 +32395,22 @@ async function executeGatherResourcesAction(options = {}) {
   };
 
   if (canWriteLedger) {
-    const nextCoverageDueKey = getNextUpkeepDueKey(getCurrentWorldTimestamp());
     await updateOperationsLedger((nextLedger) => {
       if (!nextLedger.resources) nextLedger.resources = {};
       ensureOperationalResourceConfig(nextLedger.resources);
       if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
+        nextLedger.resources.gather.pendingPools[resourceType] = Math.max(
+          0,
+          Number(nextLedger.resources.gather.pendingPools?.[resourceType] ?? 0) + pendingPoolGain
+        );
         if (resourceType === "water") {
-          const waterPool = getStewardPoolEntry(nextLedger.resources, "water");
-          if (stewardPoolGain > 0 && normalizeStewardPoolMode(waterPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
-            waterPool.mode = STEWARD_POOL_MODES.FINITE;
-            waterPool.amount = Math.max(0, Number(waterPool.amount ?? 0) + stewardPoolGain);
-            nextLedger.resources.stewardPools.water = waterPool;
-            ensureStewardPoolsState(nextLedger.resources);
-          }
-          nextLedger.resources.gather.waterCoverageDueKey = nextCoverageDueKey;
-          nextLedger.resources.gather.waterCoveredNextUpkeep = true;
-          appliedToLedger = inventoryGainAmount > 0 || stewardPoolGain > 0 || normalizeStewardPoolMode(waterPool.mode) === STEWARD_POOL_MODES.INFINITE;
+          nextLedger.resources.gather.waterCoverageDueKey = null;
+          nextLedger.resources.gather.waterCoveredNextUpkeep = nextLedger.resources.gather.pendingPools[resourceType] > 0;
         } else {
-          const foodPool = getStewardPoolEntry(nextLedger.resources, "food");
-          if (stewardPoolGain > 0 && normalizeStewardPoolMode(foodPool.mode) !== STEWARD_POOL_MODES.INFINITE) {
-            foodPool.mode = STEWARD_POOL_MODES.FINITE;
-            foodPool.amount = Math.max(0, Number(foodPool.amount ?? 0) + stewardPoolGain);
-            nextLedger.resources.stewardPools.food = foodPool;
-            ensureStewardPoolsState(nextLedger.resources);
-          }
-          nextLedger.resources.gather.foodCoverageDueKey = nextCoverageDueKey;
-          nextLedger.resources.gather.foodCoveredNextUpkeep = true;
-          appliedToLedger = inventoryGainAmount > 0 || stewardPoolGain > 0 || normalizeStewardPoolMode(foodPool.mode) === STEWARD_POOL_MODES.INFINITE;
+          nextLedger.resources.gather.foodCoverageDueKey = null;
+          nextLedger.resources.gather.foodCoveredNextUpkeep = nextLedger.resources.gather.pendingPools[resourceType] > 0;
         }
+        appliedToLedger = pendingPoolGain > 0;
       }
 
       nextLedger.resources.gather.history.unshift({
@@ -30889,6 +32455,16 @@ async function executeGatherResourcesAction(options = {}) {
     yieldRollSource,
     yieldRolledBy
   };
+
+  const autoPromptState = getAutoUpkeepPromptState(getOperationsLedger().resources ?? {});
+  if (result.ok && canWriteLedger && autoPromptState !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+    await clearAutomaticUpkeepPromptState(`Gather resolved for ${result.actorName}. Resuming upkeep.`);
+    const upkeepResult = await applyOperationalUpkeep({
+      automatic: true,
+      bypassGatherPrompt: true
+    });
+    result.autoUpkeepApplied = Boolean(upkeepResult?.applied);
+  }
 
   if (options?.suppressChat !== true) {
     await ChatMessage.create({
@@ -31567,6 +33143,14 @@ async function declineGatherRequestAction(element) {
   const requestId = String(element?.dataset?.requestId ?? "").trim();
   if (!requestId) return false;
   const removed = await removeGatherRequestById(requestId);
+  if (removed) {
+    const resources = getOperationsLedger().resources ?? {};
+    ensureOperationalResourceConfig(resources);
+    const promptState = getAutoUpkeepPromptState(resources);
+    if (promptState === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER && !hasPendingGatherRequests(resources)) {
+      await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.DECISION, resources);
+    }
+  }
   if (removed) ui.notifications?.info("Gather request removed.");
   else ui.notifications?.warn("Gather request not found.");
   return removed;
@@ -31942,8 +33526,7 @@ async function setReputationScore(element, options = {}) {
   }
   const faction = String(element?.dataset?.faction ?? "").trim();
   if (!faction) return;
-  const raw = Number(element?.value ?? 0);
-  const score = Number.isFinite(raw) ? Math.max(-5, Math.min(5, Math.floor(raw))) : 0;
+  const score = clampReputationStandingValue(element?.value ?? 0);
   await updateOperationsLedger((ledger) => {
     const reputation = ensureReputationState(ledger);
     const entry = reputation.factions.find((row) => row.id === faction);
@@ -31966,7 +33549,7 @@ async function adjustReputationScore(element, options = {}) {
     const reputation = ensureReputationState(ledger);
     const entry = reputation.factions.find((row) => row.id === faction);
     if (!entry) return;
-    entry.score = Math.max(-5, Math.min(5, Number(entry.score ?? 0) + delta));
+    entry.score = clampReputationStandingValue(Number(entry.score ?? 0) + delta);
   }, options);
 }
 
@@ -32306,13 +33889,182 @@ async function setReputationLabel(element) {
   });
 }
 
+function normalizeReputationDetailField(fieldInput) {
+  const field = String(fieldInput ?? "").trim();
+  const allowed = new Set(["category", "represents", "summary", "linkedActorId"]);
+  return allowed.has(field) ? field : "";
+}
+
+function normalizeReputationPlayerImpactField(fieldInput) {
+  const field = String(fieldInput ?? "").trim();
+  const allowed = new Set(["actorId", "delta", "note"]);
+  return allowed.has(field) ? field : "";
+}
+
+function normalizeReputationBuilderField(fieldInput) {
+  const field = String(fieldInput ?? "").trim();
+  const allowed = new Set(["label", "category", "represents", "linkedActorId", "score", "summary", "note"]);
+  return allowed.has(field) ? field : "";
+}
+
+async function setReputationDetail(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  const field = normalizeReputationDetailField(element?.dataset?.field);
+  if (!faction || !field) return;
+  const rawValue = String(element?.value ?? "");
+  const value = field === "summary" ? rawValue : rawValue.trim();
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
+    if (field === "linkedActorId") {
+      entry.linkedActorId = value;
+      return;
+    }
+    entry[field] = value;
+  });
+}
+
+async function setReputationPlayerImpactField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  const impactId = String(element?.dataset?.impactId ?? "").trim();
+  const field = normalizeReputationPlayerImpactField(element?.dataset?.field);
+  if (!faction || !impactId || !field) return;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
+    const impacts = Array.isArray(entry.playerImpacts) ? entry.playerImpacts : [];
+    const impact = impacts.find((row) => String(row?.id ?? "").trim() === impactId);
+    if (!impact) return;
+    if (field === "delta") {
+      impact.delta = clampReputationStandingValue(element?.value ?? 0);
+      return;
+    }
+    impact[field] = field === "note" ? String(element?.value ?? "") : String(element?.value ?? "").trim();
+  });
+}
+
+async function addReputationPlayerImpact(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  if (!faction) return;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
+    if (!Array.isArray(entry.playerImpacts)) entry.playerImpacts = [];
+    entry.playerImpacts.push(getEmptyReputationPlayerImpact());
+  });
+}
+
+async function removeReputationPlayerImpact(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  const impactId = String(element?.dataset?.impactId ?? "").trim();
+  if (!faction || !impactId) return;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
+    entry.playerImpacts = Array.isArray(entry.playerImpacts)
+      ? entry.playerImpacts.filter((row) => String(row?.id ?? "").trim() !== impactId)
+      : [];
+  });
+}
+
+async function setReputationBuilderField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const field = normalizeReputationBuilderField(element?.dataset?.field);
+  if (!field) return;
+  updateReputationBuilderState((draft) => {
+    if (field === "score") {
+      draft.score = clampReputationStandingValue(element?.value ?? 0);
+      return;
+    }
+    const rawValue = String(element?.value ?? "");
+    draft[field] = field === "summary" || field === "note" ? rawValue : rawValue.trim();
+  });
+}
+
+async function setReputationBuilderImpactField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const impactId = String(element?.dataset?.impactId ?? "").trim();
+  const field = normalizeReputationPlayerImpactField(element?.dataset?.field);
+  if (!impactId || !field) return;
+  updateReputationBuilderState((draft) => {
+    const impact = Array.isArray(draft.playerImpacts)
+      ? draft.playerImpacts.find((row) => String(row?.id ?? "").trim() === impactId)
+      : null;
+    if (!impact) return;
+    if (field === "delta") {
+      impact.delta = clampReputationStandingValue(element?.value ?? 0);
+      return;
+    }
+    impact[field] = field === "note" ? String(element?.value ?? "") : String(element?.value ?? "").trim();
+  });
+}
+
+async function addReputationBuilderImpact() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  updateReputationBuilderState((draft) => {
+    if (!Array.isArray(draft.playerImpacts)) draft.playerImpacts = [];
+    draft.playerImpacts.push(getEmptyReputationPlayerImpact());
+  });
+}
+
+async function removeReputationBuilderImpact(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const impactId = String(element?.dataset?.impactId ?? "").trim();
+  if (!impactId) return;
+  updateReputationBuilderState((draft) => {
+    draft.playerImpacts = Array.isArray(draft.playerImpacts)
+      ? draft.playerImpacts.filter((row) => String(row?.id ?? "").trim() !== impactId)
+      : [];
+  });
+}
+
+async function clearReputationBuilder() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  clearReputationBuilderState();
+}
+
 async function addReputationFaction(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
-  const root = element?.closest(".po-reputation-gm-tools") ?? element?.closest(".po-gm-section");
-  const label = String(root?.querySelector("input[name='repFactionName']")?.value ?? "").trim();
+  const draft = getReputationBuilderState();
+  const label = String(draft?.label ?? "").trim();
   if (!label) {
     ui.notifications?.warn("Faction name is required.");
     return;
@@ -32322,12 +34074,19 @@ async function addReputationFaction(element) {
     reputation.factions.push(normalizeReputationFaction({
       id: foundry.utils.randomID(),
       label,
-      score: 0,
-      note: "",
+      category: draft.category,
+      represents: draft.represents,
+      summary: draft.summary,
+      linkedActorId: draft.linkedActorId,
+      score: draft.score,
+      note: draft.note,
       noteLogs: [],
+      playerImpacts: draft.playerImpacts,
       isCore: false
     }));
   });
+  clearReputationBuilderState();
+  ui.notifications?.info(`Faction added: ${label}.`);
 }
 
 async function removeReputationFaction(element) {
@@ -34371,43 +36130,9 @@ async function gmQuickAddFaction() {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
-  const content = `
-    <div class="form-group">
-      <label>Faction Name</label>
-      <input type="text" name="quickFactionName" placeholder="e.g., Black Salt Consortium" />
-    </div>
-  `;
-  const dialog = new Dialog({
-    title: "Quick Add Faction",
-    content,
-    buttons: {
-      add: {
-        label: "Add Faction",
-        callback: async (html) => {
-          const label = String(html.find("input[name='quickFactionName']").val() ?? "").trim();
-          if (!label) {
-            ui.notifications?.warn("Faction name is required.");
-            return;
-          }
-          await updateOperationsLedger((ledger) => {
-            const reputation = ensureReputationState(ledger);
-            reputation.factions.push(normalizeReputationFaction({
-              id: foundry.utils.randomID(),
-              label,
-              score: 0,
-              note: "",
-              isCore: false
-            }));
-          });
-          setActiveGmQuickPanel("none");
-          ui.notifications?.info(`Faction added: ${label}.`);
-        }
-      },
-      cancel: { label: "Cancel" }
-    },
-    default: "add"
-  });
-  dialog.render(true);
+  setActiveGmQuickPanel("none");
+  setActiveRestMainTab("operations");
+  setActiveOperationsPage("reputation");
 }
 
 async function gmQuickSubmitFaction(element) {
@@ -34415,23 +36140,9 @@ async function gmQuickSubmitFaction(element) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const label = String(root?.querySelector("input[name='quickFactionName']")?.value ?? "").trim();
-  if (!label) {
-    ui.notifications?.warn("Faction name is required.");
-    return;
-  }
-  await updateOperationsLedger((ledger) => {
-    const reputation = ensureReputationState(ledger);
-    reputation.factions.push(normalizeReputationFaction({
-      id: foundry.utils.randomID(),
-      label,
-      score: 0,
-      note: "",
-      isCore: false
-    }));
-  });
-  setActiveGmQuickPanel("none");
+  setActiveRestMainTab("operations");
+  setActiveOperationsPage("reputation");
+  await addReputationFaction(element);
 }
 
 function getDaeModifierCategoryOptions() {
@@ -35447,6 +37158,176 @@ async function showBaseOperationsBrief() {
   });
 }
 
+function buildAutomaticUpkeepPromptChatCard(promptState, resourcesState = null) {
+  const resources = foundry.utils.deepClone(resourcesState ?? getOperationsLedger().resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const pendingFood = getGatherPendingPoolAmount(resources, "food");
+  const pendingWater = getGatherPendingPoolAmount(resources, "water");
+  const pendingRequests = Array.isArray(resources.gather?.requests) ? resources.gather.requests.length : 0;
+  const status = promptState === AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER
+    ? "Waiting for gather resolution before upkeep can finish."
+    : "Before upkeep applies, decide whether the party had a gather opportunity today.";
+
+  return `
+    <div class="po-chat-card po-chat-card-gather">
+      <p><strong>Automatic Upkeep Paused</strong></p>
+      <p>${poEscapeHtml(status)}</p>
+      <p><strong>Pending Gather Pool:</strong> Food ${pendingFood} | Water ${pendingWater}</p>
+      <p><strong>Pending Gather Requests:</strong> ${pendingRequests}</p>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.START_GATHER}">Gather Opportunity</button>
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.APPLY_NOW}">Apply Upkeep Now</button>
+        <button type="button" class="po-btn po-btn-sm" data-po-chat-action="${AUTO_UPKEEP_CHAT_ACTIONS.OPEN_RESOURCES}">Open Resources</button>
+      </div>
+    </div>
+  `;
+}
+
+async function upsertAutomaticUpkeepPromptMessage(promptState, resourcesState = null) {
+  const resources = foundry.utils.deepClone(resourcesState ?? getOperationsLedger().resources ?? {});
+  ensureOperationalResourceConfig(resources);
+  const prompt = getAutoUpkeepPromptData(resources);
+  const dayKey = getGatherDayKey(getCurrentWorldTimestamp());
+  const whisper = ChatMessage.getWhisperRecipients("GM").map((user) => user.id);
+  const content = buildAutomaticUpkeepPromptChatCard(promptState, resources);
+  const flags = {
+    [MODULE_ID]: {
+      autoUpkeepPrompt: {
+        state: promptState,
+        dayKey
+      }
+    }
+  };
+  const existing = prompt.messageId ? game.messages?.get?.(prompt.messageId) ?? null : null;
+
+  if (existing) {
+    await existing.update({ content, flags });
+    await setAutomaticUpkeepPromptState(promptState, {
+      messageId: existing.id,
+      createdAt: prompt.createdAt || Date.now(),
+      dayKey
+    });
+    return existing;
+  }
+
+  const message = await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    whisper,
+    content,
+    flags
+  });
+  await setAutomaticUpkeepPromptState(promptState, {
+    messageId: String(message?.id ?? "").trim(),
+    createdAt: Date.now(),
+    dayKey
+  });
+  return message;
+}
+
+async function createOperationalUpkeepCalendarNote(result = {}, timestamp = getCurrentWorldTimestamp()) {
+  const api = getSimpleCalendarMutationApi();
+  if (!isSimpleCalendarActive() || !api) return { created: false, reason: "simple-calendar-unavailable" };
+  try {
+    const label = formatRecoveryDueLabel(timestamp);
+    const parts = [
+      `<p><strong>Daily Upkeep Applied</strong></p>`,
+      `<p>${poEscapeHtml(String(result.summary ?? "Daily upkeep applied."))}</p>`
+    ];
+    if (String(result.pendingAllocationSummary ?? "").trim()) {
+      parts.push(`<p><strong>Post-Upkeep Gather Allocation:</strong> ${poEscapeHtml(String(result.pendingAllocationSummary))}</p>`);
+    }
+    if (String(result.itemSummary ?? "").trim()) {
+      parts.push(`<p><strong>Actor Item Depletion:</strong> ${poEscapeHtml(String(result.itemSummary))}</p>`);
+    }
+    const created = await createSimpleCalendarEntry(api, {
+      title: `Daily Upkeep Applied (${label})`,
+      content: parts.join(""),
+      timestamp,
+      endTimestamp: Number(timestamp) + 60,
+      allDay: false,
+      playerVisible: true,
+      visibleToPlayers: true
+    });
+    return {
+      created: Boolean(created?.success),
+      id: String(created?.id ?? "").trim()
+    };
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to create upkeep calendar note`, error);
+    return { created: false, reason: "calendar-note-failed" };
+  }
+}
+
+async function handleAutomaticOperationalUpkeepTick() {
+  if (!game.user?.isGM) return null;
+  if (automaticUpkeepTickInFlight) return null;
+  automaticUpkeepTickInFlight = true;
+
+  try {
+    const ledger = getOperationsLedger();
+    if (!ledger.resources) ledger.resources = {};
+    ensureOperationalResourceConfig(ledger.resources);
+
+    const currentTimestamp = getCurrentWorldTimestamp();
+    if (!Number.isFinite(Number(ledger.resources.upkeepLastAppliedTs))) {
+      return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true, suppressChat: true });
+    }
+
+    const upkeepDays = getUpkeepDaysFromCalendar(ledger.resources.upkeepLastAppliedTs, currentTimestamp);
+    if (upkeepDays <= 0) return null;
+
+    const dayKey = getGatherDayKey(currentTimestamp);
+    const prompt = getAutoUpkeepPromptData(ledger.resources);
+    if (prompt.state !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+      await upsertAutomaticUpkeepPromptMessage(prompt.state, ledger.resources);
+      return { prompted: true, state: prompt.state };
+    }
+
+    if (hasPendingGatherRequests(ledger.resources)) {
+      await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER, ledger.resources);
+      return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER };
+    }
+
+    const pendingFood = getGatherPendingPoolAmount(ledger.resources, "food");
+    const pendingWater = getGatherPendingPoolAmount(ledger.resources, "water");
+    if (hasGatherAttemptsForDay(ledger.resources, dayKey) || pendingFood > 0 || pendingWater > 0) {
+      return applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
+    }
+
+    await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.DECISION, ledger.resources);
+    return { prompted: true, state: AUTO_UPKEEP_PROMPT_STATES.DECISION };
+  } finally {
+    automaticUpkeepTickInFlight = false;
+  }
+}
+
+async function handleAutomaticUpkeepChatAction(action, message) {
+  if (!canAccessAllPlayerOps()) return;
+  const normalizedAction = String(action ?? "").trim().toLowerCase();
+  if (!normalizedAction) return;
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.OPEN_RESOURCES) {
+    openMainTab("operations", { force: true });
+    return;
+  }
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.START_GATHER) {
+    await setAutomaticUpkeepPromptState(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER, {
+      messageId: String(message?.id ?? "").trim(),
+      createdAt: Date.now(),
+      dayKey: getGatherDayKey(getCurrentWorldTimestamp())
+    });
+    await upsertAutomaticUpkeepPromptMessage(AUTO_UPKEEP_PROMPT_STATES.AWAITING_GATHER);
+    await promptGatherResourceDialog({ showDialog: true, applyToLedger: true });
+    return;
+  }
+
+  if (normalizedAction === AUTO_UPKEEP_CHAT_ACTIONS.APPLY_NOW) {
+    await clearAutomaticUpkeepPromptState("GM chose to skip gather opportunity and apply upkeep now.");
+    await applyOperationalUpkeep({ automatic: true, bypassGatherPrompt: true });
+  }
+}
+
 async function applyOperationalUpkeep(options = {}) {
   const before = getOperationsLedger();
   if (!before.resources) before.resources = {};
@@ -35489,16 +37370,14 @@ async function applyOperationalUpkeep(options = {}) {
   const waterDrain = waterDrainPerDay * upkeepDays;
   const torchDrain = torchDrainPerDay * upkeepDays;
 
-  const lastDueCount = Number.isFinite(Number(before.resources?.upkeepLastAppliedTs))
-    ? getUpkeepDueCount(Number(before.resources?.upkeepLastAppliedTs))
-    : getUpkeepDueCount(currentTimestamp) - upkeepDays;
-  const currentDueCount = getUpkeepDueCount(currentTimestamp);
-  const foodCoverageDueKey = Number(before.resources?.gather?.foodCoverageDueKey);
-  const waterCoverageDueKey = Number(before.resources?.gather?.waterCoverageDueKey);
-  const foodCoveredDays = Number.isFinite(foodCoverageDueKey) && foodCoverageDueKey > lastDueCount && foodCoverageDueKey <= currentDueCount ? 1 : 0;
-  const waterCoveredDays = Number.isFinite(waterCoverageDueKey) && waterCoverageDueKey > lastDueCount && waterCoverageDueKey <= currentDueCount ? 1 : 0;
-  const effectiveFoodDrain = Math.max(0, foodDrain - (foodCoveredDays * foodDrainPerDay));
-  const effectiveWaterDrain = Math.max(0, waterDrain - (waterCoveredDays * waterDrainPerDay));
+  const pendingFoodGatherPool = getGatherPendingPoolAmount(before.resources, "food");
+  const pendingWaterGatherPool = getGatherPendingPoolAmount(before.resources, "water");
+  const gatherFoodUsed = Math.min(foodDrain, pendingFoodGatherPool);
+  const gatherWaterUsed = Math.min(waterDrain, pendingWaterGatherPool);
+  const remainingPendingFoodGatherPool = Math.max(0, pendingFoodGatherPool - gatherFoodUsed);
+  const remainingPendingWaterGatherPool = Math.max(0, pendingWaterGatherPool - gatherWaterUsed);
+  const effectiveFoodDrain = Math.max(0, foodDrain - gatherFoodUsed);
+  const effectiveWaterDrain = Math.max(0, waterDrain - gatherWaterUsed);
   const itemSelections = foundry.utils.deepClone(before.resources?.itemSelections ?? {});
 
   let afterPartyFoodRations = 0;
@@ -35515,6 +37394,7 @@ async function applyOperationalUpkeep(options = {}) {
   let unmetFoodDrain = 0;
   let unmetWaterDrain = 0;
   let unmetTorchDrain = 0;
+  let pendingAllocations = [];
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -35569,14 +37449,16 @@ async function applyOperationalUpkeep(options = {}) {
     if (waterPoolMode === STEWARD_POOL_MODES.FINITE) waterPool.amount = afterPartyWaterRations;
     if (torchPoolMode === STEWARD_POOL_MODES.FINITE) torchPool.amount = afterTorches;
     ledger.resources.stewardPools.food = foodPool;
-    ledger.resources.stewardPools.water = waterPool;
+   ledger.resources.stewardPools.water = waterPool;
     ledger.resources.stewardPools.torches = torchPool;
     ensureStewardPoolsState(ledger.resources);
     ledger.resources.water = afterWater;
-    ledger.resources.gather.foodCoveredNextUpkeep = false;
-    ledger.resources.gather.waterCoveredNextUpkeep = false;
-    if (Number.isFinite(foodCoverageDueKey) && foodCoverageDueKey <= currentDueCount) ledger.resources.gather.foodCoverageDueKey = null;
-    if (Number.isFinite(waterCoverageDueKey) && waterCoverageDueKey <= currentDueCount) ledger.resources.gather.waterCoverageDueKey = null;
+    ledger.resources.gather.pendingPools.food = remainingPendingFoodGatherPool;
+    ledger.resources.gather.pendingPools.water = remainingPendingWaterGatherPool;
+    ledger.resources.gather.foodCoveredNextUpkeep = remainingPendingFoodGatherPool > 0;
+    ledger.resources.gather.waterCoveredNextUpkeep = remainingPendingWaterGatherPool > 0;
+    ledger.resources.gather.foodCoverageDueKey = null;
+    ledger.resources.gather.waterCoverageDueKey = null;
     ledger.resources.upkeepLastAppliedTs = currentTimestamp;
   });
 
@@ -35605,6 +37487,13 @@ async function applyOperationalUpkeep(options = {}) {
   unmetWaterDrain = Math.max(0, unmetWaterDrain - waterTargetedUsed);
   unmetTorchDrain = Math.max(0, unmetTorchDrain - torchTargetedUsed);
 
+  if (remainingPendingFoodGatherPool > 0 || remainingPendingWaterGatherPool > 0) {
+    pendingAllocations = await allocateGatherPendingPoolsToTargets({
+      food: remainingPendingFoodGatherPool,
+      water: remainingPendingWaterGatherPool
+    });
+  }
+
   const shortages = [];
   if (unmetFoodDrain > 0) shortages.push(`food short by ${unmetFoodDrain}`);
   if (unmetWaterDrain > 0) shortages.push(`water short by ${unmetWaterDrain}`);
@@ -35614,17 +37503,29 @@ async function applyOperationalUpkeep(options = {}) {
   const foodPoolLabel = beforeFoodPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Food Surplus" : "Steward Food Stock";
   const waterPoolLabel = beforeWaterPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Water Surplus" : "Steward Water Stock";
   const torchPoolLabel = beforeTorchPoolMode === STEWARD_POOL_MODES.INFINITE ? "Steward Torch Surplus" : "Steward Torch Stock";
-  const foodSummary = foodCoveredDays > 0
-    ? `Food -${effectiveFoodDrain} (${foodCoveredDays} day covered by successful gather check; ${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
-    : `Food -${effectiveFoodDrain} (${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
-  const waterSummary = waterCoveredDays > 0
-    ? `Water -${effectiveWaterDrain} (${waterCoveredDays} day covered by successful gather check; ${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
-    : `Water -${effectiveWaterDrain} (${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
+  const foodSummary = gatherFoodUsed > 0
+    ? `Food -${foodDrain} (Gathered Pool -${gatherFoodUsed}, ${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`
+    : `Food -${foodDrain} (${foodPoolLabel} -${foodRationUsed}, Targeted Food Item -${foodTargetedUsed})`;
+  const waterSummary = gatherWaterUsed > 0
+    ? `Water -${waterDrain} (Gathered Pool -${gatherWaterUsed}, ${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`
+    : `Water -${waterDrain} (${waterPoolLabel} -${waterRationUsed}, Water Stores -${waterStoreUsed}, Targeted Water Item -${waterTargetedUsed})`;
   const torchSummary = `Torches -${torchDrain} (${torchPoolLabel} -${torchPoolUsed}, Targeted Torch Item -${torchTargetedUsed})`;
   const summary = `Daily upkeep applied for ${upkeepDays} day(s): ${foodSummary}, ${waterSummary}, ${torchSummary}.`;
   const itemSummary = itemResults
     .filter((entry) => entry.needed > 0)
     .map((entry) => `${entry.name}: ${entry.consumed}/${entry.needed}${entry.missing > 0 ? ` (missing ${entry.missing})` : ""}`)
+    .join(" | ");
+  const pendingAllocationSummary = pendingAllocations
+    .map((entry) => {
+      const targetText = entry.added > 0
+        ? `${entry.resourceType} target +${entry.added}${entry.source ? ` (${entry.source})` : ""}`
+        : "";
+      const stewardText = entry.stewardAdded > 0
+        ? `${entry.resourceType} steward +${entry.stewardAdded}`
+        : "";
+      return [targetText, stewardText].filter(Boolean).join(", ");
+    })
+    .filter(Boolean)
     .join(" | ");
 
   if (!silent && shortages.length > 0) {
@@ -35641,12 +37542,20 @@ async function applyOperationalUpkeep(options = {}) {
       ? "Operational risk is MODERATE: keep one risk trigger in reserve."
       : "Operational risk is LOW.";
 
-  if (!suppressChat && (!isAutomatic || shortages.length > 0)) {
+  if (!suppressChat) {
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-      content: `<p><strong>Daily Upkeep</strong></p><p>${summary}</p>${itemSummary ? `<p><strong>Actor Item Depletion:</strong> ${itemSummary}</p>` : ""}<p>${riskLine}</p>`
+      content: `<p><strong>Daily Upkeep</strong></p><p>${summary}</p>${pendingAllocationSummary ? `<p><strong>Post-Upkeep Gather Allocation:</strong> ${pendingAllocationSummary}</p>` : ""}${itemSummary ? `<p><strong>Actor Item Depletion:</strong> ${itemSummary}</p>` : ""}<p>${riskLine}</p>`
     });
   }
+  if (getAutoUpkeepPromptState(before.resources) !== AUTO_UPKEEP_PROMPT_STATES.IDLE) {
+    await clearAutomaticUpkeepPromptState("Upkeep applied.");
+  }
+  await createOperationalUpkeepCalendarNote({
+    summary,
+    pendingAllocationSummary,
+    itemSummary
+  }, currentTimestamp);
 
   return {
     applied: true,
@@ -35654,6 +37563,9 @@ async function applyOperationalUpkeep(options = {}) {
     summary,
     shortages,
     itemSummary,
+    pendingAllocationSummary,
+    gatherFoodUsed,
+    gatherWaterUsed,
     riskLine
   };
 }
@@ -39709,6 +41621,8 @@ function buildPartyOperationsApi() {
       deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
       addTrackToSelectedMixPreset: (trackId) => addTrackToSelectedAudioMixPreset(trackId),
       queueTrackNext: (trackId) => queueSelectedTrackNext({ dataset: { trackId } }),
+      moveTrackToIndexInSelectedMixPreset: (trackId, targetIndex) => moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex),
+      moveTrackToTopInSelectedMixPreset: (trackId) => moveTrackToTopInSelectedAudioMixPreset(trackId),
       moveTrackInSelectedMixPreset: (trackId, direction) => moveTrackWithinSelectedAudioMixPreset(trackId, direction),
       removeTrackFromSelectedMixPreset: (trackId) => removeTrackFromSelectedAudioMixPreset(trackId),
       playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
@@ -40226,7 +42140,27 @@ function buildTimeHookModule() {
         // so avoid forcing a full app rerender on every tick.
         await notifyDailyInjuryReminders();
         if (!game.user?.isGM) return;
-        await applyOperationalUpkeep({ automatic: true });
+        await handleAutomaticOperationalUpkeepTick();
+      }]
+    ]
+  };
+}
+
+function buildChatHookModule() {
+  return {
+    id: "chat",
+    registrations: [
+      ["renderChatMessage", (message, html) => {
+        const promptState = String(message?.flags?.[MODULE_ID]?.autoUpkeepPrompt?.state ?? "").trim().toLowerCase();
+        if (!Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(promptState) || promptState === AUTO_UPKEEP_PROMPT_STATES.IDLE) return;
+        const root = html?.[0] ?? html;
+        if (!root?.querySelectorAll) return;
+        for (const button of root.querySelectorAll("[data-po-chat-action]")) {
+          button.addEventListener("click", async (event) => {
+            event.preventDefault();
+            await handleAutomaticUpkeepChatAction(button.dataset.poChatAction, message);
+          });
+        }
       }]
     ]
   };
@@ -40381,6 +42315,7 @@ function buildAudioPlaybackHookModule() {
 function getPartyOpsHookModules() {
   return [
     buildTimeHookModule(),
+    buildChatHookModule(),
     buildUserPresenceHookModule(),
     buildTokenHookModule(),
     buildInventoryHookModule(),
@@ -40618,7 +42553,7 @@ async function handlePartyOperationsSocketMessage(message) {
       clampSocketText,
       noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
       updateOperationsLedger,
-      appendSopNoteEntry
+      setSharedSopNoteText
     }),
     applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
       resolveRequester,

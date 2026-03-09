@@ -23,169 +23,499 @@
         <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
         <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="loot">Loot</button>
       </div>
-      <div class="po-grid is-operations-layout">
-        <div id="po-gm-environment" class="po-gm-section">
-          <details class="po-panel-disclosure po-panel-disclosure-lg" open>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">GM Environment Controls</span>
-              <span class="po-op-summary">Presets, assignments, movement checks, and logs</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <div class="po-hint">GM-only presets, assignments, notes, and environment history logs.</div>
-              <div class="po-environment-hazards-grid">
-                <div class="po-op-summary">Current: {{environment.preset.label}}</div>
-                <div class="po-op-summary">Assigned Actors: {{environment.targetCount}}</div>
-                {{#if environment.movementCheckActive}}
-                <div class="po-op-summary">Movement Check: {{environment.checkLabel}} vs hidden DC {{environment.movementDc}}</div>
-                {{else}}
-                <div class="po-op-summary">Movement Check: Off</div>
-                {{/if}}
-                <div class="po-op-summary">On Success: {{environment.outcomes.onSuccess}}</div>
-                <div class="po-op-summary">On Fail: {{environment.outcomes.onFail}}</div>
-                <div class="po-op-summary">On Fail by 5+: {{environment.outcomes.onFailBy5}}</div>
-                <div class="po-op-summary">On Successive Fail: {{environment.outcomes.onSuccessiveFail}}</div>
-                <div class="po-op-summary">Always-On Status: {{environment.outcomes.alwaysOn}}</div>
+
+      <section class="po-gm-section po-env-hero">
+        <div class="po-env-hero-copy">
+          <div class="po-pill">Active Environment</div>
+          <h2 class="po-section-title">{{environment.preset.label}}</h2>
+          <div class="po-op-summary">{{environment.preset.description}}</div>
+        </div>
+        <div class="po-env-metric-grid">
+          <div class="po-env-metric">
+            <div class="po-env-metric-label">Actor Action</div>
+            <div class="po-env-metric-value">{{environment.actionLabel}}</div>
+          </div>
+          <div class="po-env-metric">
+            <div class="po-env-metric-label">Check</div>
+            <div class="po-env-metric-value">{{#if environment.movementCheckActive}}{{environment.checkLabel}}{{else}}Passive{{/if}}</div>
+          </div>
+          <div class="po-env-metric">
+            <div class="po-env-metric-label">DC</div>
+            <div class="po-env-metric-value">{{environment.movementDc}}</div>
+          </div>
+          <div class="po-env-metric">
+            <div class="po-env-metric-label">Assigned</div>
+            <div class="po-env-metric-value">{{environment.targetCount}}</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="po-env-main-grid">
+        <section class="po-gm-section po-env-card">
+          <div class="po-collapsible-head">
+            <div>
+              <div class="po-section-title">Apply Preset</div>
+              <div class="po-hint">Clean runtime controls. Configure the library below.</div>
+            </div>
+            <div class="po-pill">GM Only</div>
+          </div>
+
+          <div class="po-env-field-grid is-compact">
+            <label class="po-resource-row">
+              <span>Preset</span>
+              <select class="po-select" data-action="set-environment-preset">
+                {{#each environment.presetOptions}}
+                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+
+            <label class="po-resource-row">
+              <span>Action DC</span>
+              <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{environment.movementDc}}" />
+            </label>
+          </div>
+
+          <label class="po-switch">
+            <input id="po-environment-sync-non-party" name="poEnvironmentSyncNonParty" type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
+            <span>Also apply preset effects to non-party scene actors</span>
+          </label>
+
+          <label class="po-resource-row">
+            <span>GM Note</span>
+            <textarea class="po-input" rows="3" data-action="set-environment-note" placeholder="Context, scene framing, or exceptions">{{environment.note}}</textarea>
+          </label>
+
+          <div class="po-section-title">Assigned Actors</div>
+          {{#if environment.targets.length}}
+          <div class="po-env-actor-list">
+            {{#each environment.targets}}
+            <label class="po-env-actor-row">
+              <span class="po-env-actor-main">
+                <img class="po-portrait" src="{{actorImg}}" alt="{{actorName}}" />
+                <span class="po-env-actor-copy">
+                  <span class="po-env-actor-name">{{actorName}}</span>
+                  <span class="po-env-actor-meta">{{#if failureStreak}}Failure streak {{failureStreak}}{{else}}No failure streak{{/if}}</span>
+                </span>
+              </span>
+              <input type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
+            </label>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="po-op-summary is-warn">No player actors available for assignment.</div>
+          {{/if}}
+
+          <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Log Current Setup</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Brief</button>
+            <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Clear Active Effects</button>
+          </div>
+        </section>
+
+        <section class="po-gm-section po-env-card">
+          <div class="po-section-title">Outcome Summary</div>
+          <div class="po-op-summary">{{environment.actionDescription}}</div>
+          <div class="po-env-summary-list">
+            <div class="po-env-summary-item">
+              <span class="po-env-summary-label">On Success</span>
+              <span class="po-env-summary-copy">{{environment.outcomes.onSuccess}}</span>
+            </div>
+            <div class="po-env-summary-item">
+              <span class="po-env-summary-label">On Fail</span>
+              <span class="po-env-summary-copy">{{environment.outcomes.onFail}}</span>
+            </div>
+            <div class="po-env-summary-item">
+              <span class="po-env-summary-label">On Fail by 5+</span>
+              <span class="po-env-summary-copy">{{environment.outcomes.onFailBy5}}</span>
+            </div>
+            <div class="po-env-summary-item">
+              <span class="po-env-summary-label">On Successive Fail</span>
+              <span class="po-env-summary-copy">{{environment.outcomes.onSuccessiveFail}}</span>
+            </div>
+            <div class="po-env-summary-item">
+              <span class="po-env-summary-label">Always On</span>
+              <span class="po-env-summary-copy">{{environment.outcomes.alwaysOn}}</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <details class="po-panel-disclosure po-panel-disclosure-lg" open>
+        <summary class="po-panel-disclosure-summary">
+          <span class="po-section-title">Configure Library</span>
+          <span class="po-op-summary">{{environment.configure.presetCount}} presets • {{environment.configure.actionCount}} actor actions • changes save immediately</span>
+        </summary>
+        <div class="po-panel-disclosure-body po-env-config-shell">
+          <div class="po-env-config-grid">
+            <section class="po-gm-section po-env-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Preset Editor</div>
+                  <div class="po-hint">Add, duplicate, restore, or tune environmental presets.</div>
+                </div>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="create-environment-preset">Add Preset</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="duplicate-environment-preset">Duplicate</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="restore-environment-preset-defaults">Restore Built-In</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="delete-environment-preset">Delete Custom</button>
+                </div>
               </div>
-              <label class="po-switch">
-                <input id="po-environment-sync-non-party" name="poEnvironmentSyncNonParty" type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
-                <span>Also apply environment preset effects to non-party scene actors</span>
-              </label>
 
               <label class="po-resource-row">
-                <span>Environment Preset</span>
-                <select class="po-select" data-action="set-environment-preset">
-                  {{#each environment.presetOptions}}
+                <span>Preset</span>
+                <select class="po-select" data-action="select-environment-config-preset">
+                  {{#each environment.configure.presetOptions}}
                   <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                   {{/each}}
                 </select>
               </label>
+
+              <div class="po-env-field-grid">
+                <label class="po-resource-row">
+                  <span>Name</span>
+                  <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="label" value="{{environment.configure.preset.label}}" />
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Icon</span>
+                  <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="icon" value="{{environment.configure.preset.icon}}" />
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Actor Action</span>
+                  <select class="po-select" data-action="set-environment-preset-field" data-field="actionKey">
+                    {{#each environment.configure.actionOptions}}
+                    <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+
+                <label class="po-switch">
+                  <input type="checkbox" data-action="set-environment-preset-field" data-field="movementCheck" {{#if environment.configure.preset.movementCheck}}checked{{/if}} />
+                  <span>Require a check for this preset</span>
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Check Type</span>
+                  <select class="po-select" data-action="set-environment-preset-field" data-field="checkType">
+                    {{#each environment.configure.preset.checkTypeOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Skill / Save</span>
+                  <select class="po-select" data-action="set-environment-preset-field" data-field="checkKey">
+                    {{#each environment.configure.preset.checkKeyOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Check Label</span>
+                  <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="checkLabel" value="{{environment.configure.preset.checkLabel}}" />
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Default DC</span>
+                  <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-preset-field" data-field="defaultDc" value="{{environment.configure.preset.defaultDc}}" />
+                </label>
+              </div>
+
               <label class="po-resource-row">
-                <span>Movement DC</span>
-                <input type="number" min="1" max="30" step="1" class="po-input" data-action="set-environment-dc" value="{{environment.movementDc}}" />
-              </label>
-              <div class="po-op-divider"></div>
-              <div class="po-section-title">Successive Failure Override (Per Preset)</div>
-              <div class="po-hint">These values apply on 2+ consecutive movement-check failures for the selected preset.</div>
-              <label class="po-resource-row">
-                <span>Status</span>
-                <select class="po-select" data-action="set-environment-successive" data-field="statusId">
-                  {{#each environment.successiveConfig.statusOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Slide (ft)</span>
-                <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-successive" data-field="slideFeet" value="{{environment.successiveConfig.slideFeet}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Exhaustion</span>
-                <input type="number" min="0" max="6" step="1" class="po-input" data-action="set-environment-successive" data-field="exhaustion" value="{{environment.successiveConfig.exhaustion}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Damage Formula</span>
-                <input type="text" class="po-input" data-action="set-environment-successive" data-field="damageFormula" placeholder="e.g. 1d6" value="{{environment.successiveConfig.damageFormula}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Damage Type</span>
-                <select class="po-select" data-action="set-environment-successive" data-field="damageType">
-                  {{#each environment.successiveConfig.damageTypeOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Max HP Reduction</span>
-                <input type="text" class="po-input" data-action="set-environment-successive" data-field="maxHpReductionFormula" placeholder="e.g. 1d4" value="{{environment.successiveConfig.maxHpReductionFormula}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>DAE Change Key</span>
-                <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-successive" data-field="daeChangeKey" placeholder="Search key (e.g. system.attributes.movement.walk)" value="{{environment.successiveConfig.daeChangeKey}}" />
-              </label>
-              <label class="po-resource-row">
-                <span>Key Presets</span>
-                <select class="po-select" data-action="set-environment-successive" data-field="daeChangeKey">
-                  <option value="">Select key preset</option>
-                  {{#each environment.successiveConfig.daeKeyOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <div class="po-op-summary">Selected Key Hint: {{environment.successiveConfig.daeKeyHint}}</div>
-              <datalist id="po-env-dae-key-options">
-                {{#each environment.successiveConfig.daeKeyOptions}}
-                <option value="{{value}}" label="{{label}}"></option>
-                {{/each}}
-              </datalist>
-              <label class="po-resource-row">
-                <span>DAE Change Mode</span>
-                <select class="po-select" data-action="set-environment-successive" data-field="daeChangeMode">
-                  {{#each environment.successiveConfig.daeModeOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>DAE Change Value</span>
-                <input type="text" class="po-input" data-action="set-environment-successive" data-field="daeChangeValue" placeholder="e.g. -10" value="{{environment.successiveConfig.daeChangeValue}}" />
-              </label>
-              {{#unless environment.successiveConfig.daeAvailable}}
-              <div class="po-op-summary is-warn">DAE module not active. Change fields still save and apply as Active Effect changes.</div>
-              {{/unless}}
-              <label class="po-resource-row">
-                <span>Notes</span>
-                <textarea class="po-input" rows="4" data-action="set-environment-note" placeholder="Add GM notes for this preset application">{{environment.note}}</textarea>
+                <span>Description</span>
+                <textarea class="po-input" rows="3" data-action="set-environment-preset-field" data-field="description">{{environment.configure.preset.description}}</textarea>
               </label>
 
-              {{#if environment.targets.length}}
-              {{#each environment.targets}}
-              <div class="po-checkbox-target">
-                <input id="po-env-target-{{actorId}}" type="checkbox" data-action="toggle-environment-actor" data-actor-id="{{actorId}}" {{#if selected}}checked{{/if}} />
-                <label class="po-checkbox-target-label" for="po-env-target-{{actorId}}">{{actorName}}{{#if failureStreak}} - Streak {{failureStreak}}{{/if}}</label>
-              </div>
-              {{/each}}
-              {{else}}
-              <div class="po-op-summary is-warn">No player actors available for assignment.</div>
-              {{/if}}
+              <label class="po-resource-row">
+                <span>Always-On Status</span>
+                <select class="po-select" data-action="set-environment-preset-field" data-field="alwaysStatusId">
+                  {{#each environment.configure.preset.alwaysStatusOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
 
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="reset-environment-successive-defaults">Reset to Preset Defaults</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Add Preset Log</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Remove Environment Effects</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Environment Brief</button>
+              <div class="po-env-config-subgrid">
+                <section class="po-usage-panel">
+                  <div class="po-section-title">Fail</div>
+                  <div class="po-env-field-grid is-compact">
+                    <label class="po-resource-row">
+                      <span>Status</span>
+                      <select class="po-select" data-action="set-environment-preset-field" data-field="failStatusId">
+                        {{#each environment.configure.preset.failStatusOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Slide (ft)</span>
+                      <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-preset-field" data-field="failSlideFeet" value="{{environment.configure.preset.failSlideFeet}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Speed 0 (turns)</span>
+                      <input type="number" min="0" max="10" step="1" class="po-input" data-action="set-environment-preset-field" data-field="failSpeedZeroTurns" value="{{environment.configure.preset.failSpeedZeroTurns}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Damage</span>
+                      <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="failDamageFormula" value="{{environment.configure.preset.failDamageFormula}}" placeholder="e.g. 1d6" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Damage Type</span>
+                      <select class="po-select" data-action="set-environment-preset-field" data-field="failDamageType">
+                        {{#each environment.configure.preset.failDamageTypeOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Exhaustion</span>
+                      <input type="number" min="0" max="6" step="1" class="po-input" data-action="set-environment-preset-field" data-field="failExhaustion" value="{{environment.configure.preset.failExhaustion}}" />
+                    </label>
+                  </div>
+                </section>
+
+                <section class="po-usage-panel">
+                  <div class="po-section-title">Fail by 5+</div>
+                  <div class="po-env-field-grid is-compact">
+                    <label class="po-resource-row">
+                      <span>Status</span>
+                      <select class="po-select" data-action="set-environment-preset-field" data-field="failBy5StatusId">
+                        {{#each environment.configure.preset.failBy5StatusOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Slide (ft)</span>
+                      <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-preset-field" data-field="failBy5SlideFeet" value="{{environment.configure.preset.failBy5SlideFeet}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Damage</span>
+                      <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="failBy5DamageFormula" value="{{environment.configure.preset.failBy5DamageFormula}}" placeholder="e.g. 2d6" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Damage Type</span>
+                      <select class="po-select" data-action="set-environment-preset-field" data-field="failBy5DamageType">
+                        {{#each environment.configure.preset.failBy5DamageTypeOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Max HP Reduction</span>
+                      <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="failBy5MaxHpReductionFormula" value="{{environment.configure.preset.failBy5MaxHpReductionFormula}}" placeholder="e.g. 1d4" />
+                    </label>
+                  </div>
+                </section>
               </div>
+
+              <section class="po-usage-panel">
+                <div class="po-section-title">Successive Failure</div>
+                <div class="po-env-field-grid is-compact">
+                  <label class="po-resource-row">
+                    <span>Status</span>
+                    <select class="po-select" data-action="set-environment-preset-field" data-field="successiveFailStatusId">
+                      {{#each environment.configure.preset.successiveFailStatusOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Slide (ft)</span>
+                    <input type="number" min="0" max="500" step="1" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailSlideFeet" value="{{environment.configure.preset.successiveFailSlideFeet}}" />
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Exhaustion</span>
+                    <input type="number" min="0" max="6" step="1" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailExhaustion" value="{{environment.configure.preset.successiveFailExhaustion}}" />
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Damage</span>
+                    <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailDamageFormula" value="{{environment.configure.preset.successiveFailDamageFormula}}" placeholder="e.g. 1d6" />
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Damage Type</span>
+                    <select class="po-select" data-action="set-environment-preset-field" data-field="successiveFailDamageType">
+                      {{#each environment.configure.preset.successiveFailDamageTypeOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Max HP Reduction</span>
+                    <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailMaxHpReductionFormula" value="{{environment.configure.preset.successiveFailMaxHpReductionFormula}}" placeholder="e.g. 1d4" />
+                  </label>
+                  <label class="po-resource-row">
+                    <span>DAE Key</span>
+                    <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailDaeChangeKey" value="{{environment.configure.preset.successiveFailDaeChangeKey}}" />
+                  </label>
+                  <label class="po-resource-row">
+                    <span>DAE Mode</span>
+                    <select class="po-select" data-action="set-environment-preset-field" data-field="successiveFailDaeChangeMode">
+                      {{#each environment.configure.preset.successiveFailDaeModeOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-resource-row">
+                    <span>DAE Value</span>
+                    <input type="text" class="po-input" data-action="set-environment-preset-field" data-field="successiveFailDaeChangeValue" value="{{environment.configure.preset.successiveFailDaeChangeValue}}" placeholder="e.g. -10" />
+                  </label>
+                </div>
+                <div class="po-op-summary">{{environment.configure.preset.successiveFailDaeKeyHint}}</div>
+              </section>
+
+              <section class="po-usage-panel">
+                <div class="po-collapsible-head">
+                  <div>
+                    <div class="po-section-title">Preset Changes</div>
+                    <div class="po-hint">Always-on changes applied with the preset effect.</div>
+                  </div>
+                  <button type="button" class="po-btn po-btn-sm" data-action="add-environment-preset-effect-change">Add Change</button>
+                </div>
+
+                {{#if environment.configure.preset.hasEffectChanges}}
+                <div class="po-env-change-list">
+                  {{#each environment.configure.preset.effectChanges}}
+                  <div class="po-env-change-row">
+                    <input type="text" list="po-env-dae-key-options" class="po-input" data-action="set-environment-preset-effect-change" data-effect-id="{{id}}" data-field="key" value="{{key}}" placeholder="System key" />
+                    <input type="text" class="po-input" data-action="set-environment-preset-effect-change" data-effect-id="{{id}}" data-field="value" value="{{value}}" placeholder="Value" />
+                    <button type="button" class="po-btn po-btn-sm" data-action="remove-environment-preset-effect-change" data-effect-id="{{id}}">Remove</button>
+                  </div>
+                  {{#if hint}}
+                  <div class="po-op-summary">{{hint}}</div>
+                  {{/if}}
+                  {{/each}}
+                </div>
+                {{else}}
+                <div class="po-op-summary">No preset changes configured.</div>
+                {{/if}}
+              </section>
+            </section>
+
+            <section class="po-gm-section po-env-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Actor Actions</div>
+                  <div class="po-hint">These labels drive the “what is the character doing?” workflow for presets.</div>
+                </div>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="create-environment-action">Add Action</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="delete-environment-action">Delete Custom</button>
+                </div>
+              </div>
+
+              <label class="po-resource-row">
+                <span>Action</span>
+                <select class="po-select" data-action="select-environment-config-action">
+                  {{#each environment.configure.actionEditorOptions}}
+                  <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+
+              <div class="po-env-field-grid is-compact">
+                <label class="po-resource-row">
+                  <span>Name</span>
+                  <input type="text" class="po-input" data-action="set-environment-action-field" data-field="label" value="{{environment.configure.action.label}}" />
+                </label>
+              </div>
+
+              <label class="po-resource-row">
+                <span>Description</span>
+                <textarea class="po-input" rows="4" data-action="set-environment-action-field" data-field="description">{{environment.configure.action.description}}</textarea>
+              </label>
+
+              <div class="po-env-summary-list">
+                <div class="po-env-summary-item">
+                  <span class="po-env-summary-label">Type</span>
+                  <span class="po-env-summary-copy">{{#if environment.configure.action.isBuiltIn}}Built-In{{else}}Custom{{/if}}</span>
+                </div>
+                <div class="po-env-summary-item">
+                  <span class="po-env-summary-label">Used By</span>
+                  <span class="po-env-summary-copy">{{environment.configure.action.usedByPresetCount}} preset(s)</span>
+                </div>
+                <div class="po-op-summary">{{environment.configure.action.usedByPresetsText}}</div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </details>
+
+      <div class="po-env-lower-grid">
+        <section class="po-gm-section po-env-card">
+          <div class="po-collapsible-head">
+            <div>
+              <div class="po-section-title">Environment Logs</div>
+              <div class="po-hint">Load a previous setup back into the active controls.</div>
             </div>
-          </details>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Environment Logs</div>
+          </div>
           {{#if hasLogs}}
-          {{#each logs}}
-          <div class="po-op-summary">{{presetLabel}} | {{checkLabel}} DC {{movementDc}} | {{createdAtLabel}} by {{createdBy}}</div>
-          {{#if hasNote}}
-          <div class="po-op-summary">Note: {{note}}</div>
-          {{/if}}
-          {{/each}}
+          <div class="po-env-log-list">
+            {{#each logs}}
+            <article class="po-env-log-row">
+              <div class="po-env-log-head">
+                <div>
+                  <div class="po-env-log-title">{{presetLabel}}</div>
+                  <div class="po-env-log-meta">{{actionLabel}} • {{checkLabel}} • DC {{movementDc}}</div>
+                </div>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="edit-environment-log" data-log-id="{{id}}">Load</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="remove-environment-log" data-log-id="{{id}}">Remove</button>
+                </div>
+              </div>
+              <div class="po-op-summary">Targets: {{actorNamesText}}</div>
+              <div class="po-op-summary">{{createdAtLabel}} by {{createdBy}}</div>
+              {{#if hasNote}}
+              <div class="po-op-summary">Note: {{note}}</div>
+              {{/if}}
+            </article>
+            {{/each}}
+          </div>
           {{else}}
-          <div class="po-op-summary">No environment logs.</div>
+          <div class="po-op-summary">No environment logs yet.</div>
           {{/if}}
-        </div>
+        </section>
 
-        <div class="po-gm-section">
-          <div class="po-section-title">Movement Check Results</div>
+        <section class="po-gm-section po-env-card">
+          <div class="po-collapsible-head">
+            <div>
+              <div class="po-section-title">Recent Check Results</div>
+              <div class="po-hint">Latest recorded pass/fail outcomes.</div>
+            </div>
+          </div>
           {{#if hasCheckResults}}
-          {{#each checkResults}}
-          <div class="po-op-summary {{#if isFail}}is-warn{{else}}is-good{{/if}}">{{actorName}} | {{presetLabel}} | {{rollVsDc}} | {{resultLabel}} | {{createdAtLabel}}</div>
-          {{#if hasOutcomeSummary}}
-          <div class="po-op-summary">Outcome: {{outcomeSummary}}</div>
-          {{/if}}
-          {{/each}}
+          <div class="po-env-log-list">
+            {{#each checkResults}}
+            <article class="po-env-log-row">
+              <div class="po-env-log-head">
+                <div>
+                  <div class="po-env-log-title">{{actorName}}</div>
+                  <div class="po-env-log-meta">{{presetLabel}} • {{rollVsDc}}</div>
+                </div>
+                <div class="po-pill {{#if isFail}}is-warn{{/if}}">{{resultLabel}}</div>
+              </div>
+              <div class="po-op-summary">Logged {{createdAtLabel}} by {{createdBy}}</div>
+              {{#if hasOutcomeSummary}}
+              <div class="po-op-summary">Outcome: {{outcomeSummary}}</div>
+              {{/if}}
+            </article>
+            {{/each}}
+          </div>
           {{else}}
-          <div class="po-op-summary">No movement check results recorded.</div>
+          <div class="po-op-summary">No environment check results recorded.</div>
           {{/if}}
-        </div>
+        </section>
       </div>
     </section>
   </div>
+
+  <datalist id="po-env-dae-key-options">
+    {{#each environment.configure.daeKeyOptions}}
+    <option value="{{value}}" label="{{label}}"></option>
+    {{/each}}
+  </datalist>
 </div>

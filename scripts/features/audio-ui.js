@@ -36,6 +36,7 @@ export function createGmAudioPageApp(deps) {
     selectVisibleAudioLibraryTracks,
     clearAudioLibraryTrackSelections,
     setAudioMixTrackBrowserView,
+    changeAudioMixTrackBrowserPage,
     toggleAudioMixTrackSelection,
     selectVisibleAudioMixTracks,
     clearAudioMixTrackSelections,
@@ -54,6 +55,8 @@ export function createGmAudioPageApp(deps) {
     setAudioPreviewVolumeSetting,
     getManagedAudioMixPlaybackMonitorSnapshot,
     queueSelectedTrackNext,
+    moveTrackToIndexInSelectedAudioMixPreset,
+    moveTrackToTopInSelectedAudioMixPreset,
     moveTrackWithinSelectedAudioMixPreset,
     removeTrackFromSelectedAudioMixPreset,
     restoreAllHiddenAudioLibraryTracks,
@@ -73,6 +76,7 @@ export function createGmAudioPageApp(deps) {
       super(options);
       this._audioPreviewVolumeSaveTimer = null;
       this._audioLiveMonitorTimer = null;
+      this._audioQueueDragState = null;
     }
 
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -116,6 +120,7 @@ export function createGmAudioPageApp(deps) {
         window.clearInterval(this._audioLiveMonitorTimer);
         this._audioLiveMonitorTimer = null;
       }
+      this._resetAudioMixQueueDragState();
       const result = await super.close(options);
       if (typeof syncManagedAudioMixPlaybackForCurrentUser === "function") {
         window.setTimeout(() => {
@@ -134,7 +139,125 @@ export function createGmAudioPageApp(deps) {
     async _onPostRender(context, options) {
       await super._onPostRender(context, options);
       this._bindAudioPreviewPlayers();
+      this._bindAudioMixQueueDragAndDrop();
       this._bindLiveAudioMonitorCards();
+    }
+
+    _clearAudioMixQueueDropIndicators() {
+      const root = this.element;
+      if (!root) return;
+      for (const row of root.querySelectorAll("[data-po-audio-queue-row]")) {
+        row.classList.remove("is-dragging", "is-drop-before", "is-drop-after");
+      }
+    }
+
+    _resetAudioMixQueueDragState() {
+      this._audioQueueDragState = null;
+      this._clearAudioMixQueueDropIndicators();
+    }
+
+    _getAudioMixQueueDropIndex(targetRow, clientY) {
+      if (!(targetRow instanceof HTMLElement)) return null;
+      const targetIndex = Math.max(0, Math.floor(Number(targetRow.dataset.queueIndex ?? 0) || 0));
+      const rect = targetRow.getBoundingClientRect();
+      const shouldInsertAfter = clientY >= rect.top + (rect.height / 2);
+      const proposedIndex = shouldInsertAfter ? targetIndex + 1 : targetIndex;
+      const sourceIndex = Math.max(0, Math.floor(Number(this._audioQueueDragState?.sourceIndex ?? 0) || 0));
+      const adjustedIndex = sourceIndex < proposedIndex ? proposedIndex - 1 : proposedIndex;
+      return {
+        shouldInsertAfter,
+        targetIndex: Math.max(0, adjustedIndex)
+      };
+    }
+
+    async _reorderAudioMixQueue(trackId, targetIndex) {
+      this._clearAudioMixQueueDropIndicators();
+      const moved = await moveTrackToIndexInSelectedAudioMixPreset?.(trackId, targetIndex);
+      this._audioQueueDragState = null;
+      if (moved) this._renderWithPreservedState({ force: true, parts: ["main"] });
+    }
+
+    _bindAudioMixQueueDragAndDrop() {
+      const root = this.element;
+      if (!root) return;
+      const queueList = root.querySelector("[data-po-audio-queue-list]");
+      if (!(queueList instanceof HTMLElement)) return;
+
+      const isEditable = queueList.dataset.poAudioQueueEditable === "1";
+      const rows = Array.from(queueList.querySelectorAll("[data-po-audio-queue-row]"));
+      if (!isEditable || rows.length < 2 || typeof moveTrackToIndexInSelectedAudioMixPreset !== "function") {
+        this._resetAudioMixQueueDragState();
+        return;
+      }
+
+      for (const row of rows) {
+        if (!(row instanceof HTMLElement)) continue;
+
+        row.addEventListener("dragstart", (event) => {
+          const trackId = String(row.dataset.trackId ?? "").trim();
+          const sourceIndex = Math.max(0, Math.floor(Number(row.dataset.queueIndex ?? 0) || 0));
+          if (!trackId) {
+            event.preventDefault();
+            return;
+          }
+          this._audioQueueDragState = { trackId, sourceIndex };
+          row.classList.add("is-dragging");
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", trackId);
+          }
+        });
+
+        row.addEventListener("dragover", (event) => {
+          if (!this._audioQueueDragState?.trackId) return;
+          event.preventDefault();
+          const dropState = this._getAudioMixQueueDropIndex(row, event.clientY);
+          if (!dropState) return;
+          this._audioQueueDragState.targetIndex = dropState.targetIndex;
+          this._clearAudioMixQueueDropIndicators();
+          row.classList.add(dropState.shouldInsertAfter ? "is-drop-after" : "is-drop-before");
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+        });
+
+        row.addEventListener("drop", async (event) => {
+          if (!this._audioQueueDragState?.trackId) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const dropState = this._getAudioMixQueueDropIndex(row, event.clientY);
+          if (!dropState) {
+            this._resetAudioMixQueueDragState();
+            return;
+          }
+          const { trackId } = this._audioQueueDragState;
+          await this._reorderAudioMixQueue(trackId, dropState.targetIndex);
+        });
+
+        row.addEventListener("dragend", () => {
+          this._resetAudioMixQueueDragState();
+        });
+      }
+
+      queueList.addEventListener("dragover", (event) => {
+        if (!this._audioQueueDragState?.trackId) return;
+        if (event.target?.closest?.("[data-po-audio-queue-row]")) return;
+        event.preventDefault();
+        const lastRow = rows.at(-1);
+        if (!(lastRow instanceof HTMLElement)) return;
+        const sourceIndex = Math.max(0, Math.floor(Number(this._audioQueueDragState.sourceIndex ?? 0) || 0));
+        this._audioQueueDragState.targetIndex = Math.max(0, rows.length - (sourceIndex < rows.length ? 1 : 0));
+        this._clearAudioMixQueueDropIndicators();
+        lastRow.classList.add("is-drop-after");
+        if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      });
+
+      queueList.addEventListener("drop", async (event) => {
+        if (!this._audioQueueDragState?.trackId) return;
+        if (event.target?.closest?.("[data-po-audio-queue-row]")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const { trackId, targetIndex = Math.max(0, rows.length - 1) } = this._audioQueueDragState;
+        await this._reorderAudioMixQueue(trackId, targetIndex);
+      });
     }
 
     _queueAudioPreviewVolumeSave(volume) {
@@ -337,6 +460,9 @@ export function createGmAudioPageApp(deps) {
         "set-audio-mix-track-browser-view": rerenderAlways((actionElement) => {
           setAudioMixTrackBrowserView(actionElement);
         }),
+        "change-audio-mix-track-browser-page": rerenderAlways((actionElement) => {
+          changeAudioMixTrackBrowserPage(actionElement);
+        }),
         "toggle-audio-mix-track-selection": rerenderAlways((actionElement) => {
           toggleAudioMixTrackSelection(actionElement);
         }),
@@ -384,6 +510,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "move-audio-mix-track": rerenderAlways((actionElement) => {
           return moveTrackWithinSelectedAudioMixPreset(actionElement?.dataset?.trackId, actionElement?.dataset?.direction);
+        }),
+        "move-audio-mix-track-to-top": rerenderAlways((actionElement) => {
+          return moveTrackToTopInSelectedAudioMixPreset(actionElement?.dataset?.trackId);
         }),
         "remove-audio-mix-track": rerenderAlways((actionElement) => {
           return removeTrackFromSelectedAudioMixPreset(actionElement?.dataset?.trackId);

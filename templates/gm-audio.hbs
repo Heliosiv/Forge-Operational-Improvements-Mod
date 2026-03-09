@@ -320,9 +320,26 @@
           <div class="po-section-title">Current Queue</div>
           <div class="po-op-summary">{{audio.mix.queue.sourceLabel}}</div>
           {{#if audio.mix.queue.hasTracks}}
-          <div class="po-audio-track-list po-audio-assigned-list" data-po-scroll-preserve="audio-mix-queue" role="list" aria-label="Current mix queue">
+          <div
+            class="po-audio-track-list po-audio-assigned-list"
+            data-po-scroll-preserve="audio-mix-queue"
+            data-po-audio-queue-list
+            data-po-audio-queue-editable="{{#if audio.mix.queue.canEdit}}1{{else}}0{{/if}}"
+            role="list"
+            aria-label="Current mix queue">
             {{#each audio.mix.queue.tracks}}
-            <div class="po-audio-track-row {{#if isActive}}is-selected{{/if}}" role="listitem">
+            <div
+              class="po-audio-track-row {{#if isActive}}is-selected{{/if}} {{#if ../audio.mix.queue.canEdit}}is-queue-draggable{{/if}}"
+              data-po-audio-queue-row
+              data-track-id="{{id}}"
+              data-queue-index="{{@index}}"
+              draggable="{{#if ../audio.mix.queue.canEdit}}true{{else}}false{{/if}}"
+              role="listitem">
+              {{#if ../audio.mix.queue.canEdit}}
+              <div class="po-audio-track-grip" aria-hidden="true" title="Drag to reorder queue">
+                <i class="fa-solid fa-grip-vertical"></i>
+              </div>
+              {{/if}}
               <div class="po-audio-track-main">
                 <div class="po-audio-track-name">{{order}}. {{name}}</div>
                 <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}</div>
@@ -340,6 +357,7 @@
                   <div class="po-audio-row-options-menu">
                     <button type="button" class="po-btn po-btn-sm" data-action="queue-selected-audio-track-next" data-track-id="{{id}}">Queue Next</button>
                     {{#if ../audio.mix.queue.hasSavedTrackList}}
+                    <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track-to-top" data-track-id="{{id}}">Move to Top</button>
                     <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="up">Move Up</button>
                     <button type="button" class="po-btn po-btn-sm" data-action="move-audio-mix-track" data-track-id="{{id}}" data-direction="down">Move Down</button>
                     <button type="button" class="po-btn po-btn-sm" data-action="remove-audio-mix-track" data-track-id="{{id}}">Remove</button>
@@ -369,7 +387,30 @@
               </button>
             </div>
           </div>
-          <div class="po-op-summary">{{audio.mix.trackBrowser.summaryLabel}}</div>
+          <div class="po-audio-track-browser-meta">
+            <div class="po-op-summary">{{audio.mix.trackBrowser.summaryLabel}}</div>
+            {{#if audio.mix.trackBrowser.pagination.hasMultiplePages}}
+            <div class="po-audio-track-browser-pagination" aria-label="Track browser pagination">
+              <button
+                type="button"
+                class="po-btn po-btn-sm"
+                data-action="change-audio-mix-track-browser-page"
+                data-direction="prev"
+                {{#unless audio.mix.trackBrowser.pagination.hasPrevious}}disabled{{/unless}}>
+                Previous 40
+              </button>
+              <span class="po-pill">Page {{audio.mix.trackBrowser.pagination.currentPageNumber}} / {{audio.mix.trackBrowser.pagination.totalPages}}</span>
+              <button
+                type="button"
+                class="po-btn po-btn-sm"
+                data-action="change-audio-mix-track-browser-page"
+                data-direction="next"
+                {{#unless audio.mix.trackBrowser.pagination.hasNext}}disabled{{/unless}}>
+                Next 40
+              </button>
+            </div>
+            {{/if}}
+          </div>
           <div class="po-op-action-row po-audio-card-actions po-audio-results-toolbar">
             <button type="button" class="po-btn po-btn-sm" data-action="select-visible-audio-mix-tracks" {{#unless audio.mix.trackBrowser.hasTracks}}disabled{{/unless}}>Select Visible</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-selected-audio-mix-tracks" {{#unless audio.mix.trackBrowser.selection.hasSelection}}disabled{{/unless}}>Clear Selected</button>
