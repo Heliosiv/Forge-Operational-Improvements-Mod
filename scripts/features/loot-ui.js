@@ -1,5 +1,24 @@
 import { createPageActionHelpers } from "./page-action-helpers.js";
 
+function bindLootItemCardIconOpeners(root, openLootItemFromElement) {
+  if (!(root instanceof HTMLElement) || root.dataset.poBoundLootItemCardOpeners === "1") return;
+  root.dataset.poBoundLootItemCardOpeners = "1";
+  root.addEventListener("dblclick", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const openTarget = target.closest("[data-po-item-open-target]");
+    if (!openTarget || !root.contains(openTarget)) return;
+    const itemCard = openTarget.closest("[data-po-item-card]") ?? openTarget.closest("[data-uuid]");
+    if (!itemCard) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+    void openLootItemFromElement(itemCard);
+  });
+}
+
 export function createGmLootPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -148,6 +167,7 @@ export function createGmLootPageApp(deps) {
     }
 
     _bindAdditionalListeners(root) {
+      bindLootItemCardIconOpeners(root, openLootItemFromElement);
       const setDropzoneState = (eventTarget, active) => {
         const dropZone = eventTarget?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return null;

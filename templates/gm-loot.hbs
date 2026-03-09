@@ -86,9 +86,9 @@
                   <div class="po-section-title">Distribution</div>
                   <div class="po-op-summary">Shift the reward mix toward more coin or more items, and control how often bonus tables add extras.</div>
                 </div>
-                <label class="po-resource-row"><span>Distribution Mix ({{preview.budget.itemSharePercent}}% items / {{preview.budget.currencySharePercent}}% coin)</span><input name="lootPreviewDistributionMix" type="range" min="0" max="100" step="5" class="po-input" data-action="set-loot-preview-field" data-field="distributionMix" value="{{preview.draft.distributionMix}}" /></label>
+                <label class="po-resource-row po-resource-row-stack"><span>Distribution Mix ({{preview.budget.itemSharePercent}}% items / {{preview.budget.currencySharePercent}}% coin)</span><input name="lootPreviewDistributionMix" type="range" min="0" max="100" step="5" class="po-input" data-action="set-loot-preview-field" data-field="distributionMix" value="{{preview.draft.distributionMix}}" /></label>
                 <div class="po-op-summary">Slide left for more coin. Slide right for more items.</div>
-                <label class="po-resource-row"><span>Bonus Table Frequency ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
+                <label class="po-resource-row po-resource-row-stack"><span>Bonus Table Frequency ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
                 <div class="po-op-summary">Higher values pull more extra roll-table results into the loot build.</div>
                 <div class="po-loot-mini-metrics">
                   <div class="po-loot-mini-metric"><span>Desired</span><strong>{{preview.budget.desiredItemCount}}</strong></div>
@@ -102,9 +102,9 @@
                   <div class="po-section-title">Budget Guardrails</div>
                   <div class="po-op-summary">Use manual caps only when you want to force the generator away from its normal budget curve.</div>
                 </div>
-                <label class="po-resource-row"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
-                <label class="po-resource-row"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
-                <label class="po-resource-row"><span>Max Items {{#if preview.budget.usingManualMaxItems}}({{preview.budget.manualMaxItems}}){{else}}(None){{/if}}</span><input name="lootPreviewMaxItems" type="range" min="0" max="80" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItems" value="{{preview.draft.maxItems}}" /></label>
+                <label class="po-resource-row po-resource-row-stack"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
+                <label class="po-resource-row po-resource-row-stack"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
+                <label class="po-resource-row po-resource-row-stack"><span>Max Items {{#if preview.budget.usingManualMaxItems}}({{preview.budget.manualMaxItems}}){{else}}(None){{/if}}</span><input name="lootPreviewMaxItems" type="range" min="0" max="80" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItems" value="{{preview.draft.maxItems}}" /></label>
                 <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{preview.draft.maxItemValueGp}}" /></label>
                 <label class="po-resource-row"><span>Target Total Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
                 <div class="po-op-summary">{{#if preview.budget.usingManualMaxItems}}Manual item cap active: up to {{preview.budget.maxItems}} items.{{else}}No item cap is applied unless you set one. The builder will keep generating toward the value target and tolerance band.{{/if}}</div>
@@ -124,6 +124,58 @@
               </div>
             </div>
           </section>
+
+          <div class="po-loot-builder-summary-row">
+            <section class="po-gm-section po-loot-sidebar-card po-loot-sidebar-card-highlight">
+              <div class="po-loot-section-head">
+                <div>
+                  <div class="po-section-title">Builder Snapshot</div>
+                  <div class="po-hint">{{#if preview.hasResult}}Last generated {{preview.generatedAtLabel}} by {{preview.generatedBy}}{{else}}Ready to generate using the current builder draft.{{/if}}</div>
+                </div>
+              </div>
+              <div class="po-loot-sidebar-metrics">
+                <div class="po-loot-sidebar-metric"><span>Total Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Item Target</span><strong>{{preview.budget.targetItemBudgetGp}} gp</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Coin Target</span><strong>{{preview.budget.targetCurrencyBudgetGp}} gp</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Per Item</span><strong>{{preview.budget.targetPerItemGp}} gp</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Cap</span><strong>{{preview.budget.effectiveMaxItemValueGp}} gp</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Total Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
+              </div>
+              <div class="po-op-summary">Strictness: {{preview.stats.strictnessBandLabel}}</div>
+              <div class="po-op-summary">Combined total: {{preview.stats.finalCombinedValueGp}} gp</div>
+              <div class="po-op-summary">Item delta: {{preview.stats.itemDeltaGp}} gp</div>
+              <div class="po-op-summary">Total delta: {{preview.stats.deltaGp}} gp</div>
+            </section>
+
+            <section class="po-gm-section po-loot-sidebar-card">
+              <div class="po-loot-section-head">
+                <div>
+                  <div class="po-section-title">Currency</div>
+                  <div class="po-hint">Adjust the generated coin pile before publishing.</div>
+                </div>
+              </div>
+              <div class="po-loot-currency-display">
+                <div class="po-loot-currency-pill"><span>PP</span><strong>{{preview.currency.pp}}</strong></div>
+                <div class="po-loot-currency-pill"><span>GP</span><strong>{{preview.currency.gp}}</strong></div>
+                <div class="po-loot-currency-pill"><span>SP</span><strong>{{preview.currency.sp}}</strong></div>
+                <div class="po-loot-currency-pill"><span>CP</span><strong>{{preview.currency.cp}}</strong></div>
+              </div>
+              <div class="po-op-summary">Target: {{preview.budget.targetCurrencyBudgetGp}} gp</div>
+              <div class="po-op-summary">Equivalent value: {{preview.currency.gpEquivalent}} gp</div>
+              <div class="po-op-summary">Formula: {{preview.currency.formula}}</div>
+
+              <div class="po-loot-currency-adjust-shell">
+                <label class="po-resource-row"><span>Currency</span><select name="lootPreviewCurrencyAdjustDenom" class="po-select"><option value="pp">PP</option><option value="gp" selected>GP</option><option value="sp">SP</option><option value="cp">CP</option></select></label>
+                <label class="po-resource-row"><span>Qty</span><input name="lootPreviewCurrencyAdjustQty" type="number" min="1" step="1" class="po-input" value="1" /></label>
+                <div class="po-loot-currency-adjust-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add">Add</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract">Subtract</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add" data-qty="10">+10</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract" data-qty="10">-10</button>
+                </div>
+              </div>
+            </section>
+          </div>
 
           <section class="po-gm-section po-loot-builder-items-section">
             <div class="po-loot-section-head">
@@ -146,9 +198,9 @@
             {{#if preview.items.length}}
             <div class="po-loot-preview-items-grid">
               {{#each preview.items}}
-              <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card">
+              <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card" data-po-item-card="loot-builder-item" data-item-id="{{id}}" data-uuid="{{uuid}}">
                 <div class="po-loot-builder-item-card-head">
-                  <img class="po-loot-builder-item-thumb" src="{{img}}" alt="{{name}}" loading="lazy" />
+                  <img class="po-loot-builder-item-thumb" src="{{img}}" alt="{{name}}" loading="lazy" {{#if canOpen}}data-po-item-open-target="true" title="Double-click to open {{name}}"{{/if}} />
                   <div class="po-loot-builder-item-copy">
                     <div class="po-loot-builder-item-name-row">
                       <div class="po-op-role-name">{{name}}</div>
@@ -170,7 +222,6 @@
                 </div>
                 <div class="po-loot-builder-item-actions">
                   <button type="button" class="po-btn po-btn-sm" data-action="edit-loot-preview-item" data-item-id="{{id}}" aria-label="Adjust {{name}}">Adjust</button>
-                  {{#if canOpen}}<button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>{{/if}}
                   <button type="button" class="po-icon-btn" data-action="remove-loot-preview-item" data-item-id="{{id}}" data-item-uuid="{{uuid}}" aria-label="Remove {{name}}">
                     <i class="fa-solid fa-xmark"></i>
                   </button>
@@ -220,6 +271,35 @@
             {{/if}}
           </section>
 
+          <section class="po-gm-section po-loot-sidebar-card po-loot-claim-readiness-section">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Claim Board Readiness</div>
+                <div class="po-hint">Keep one eye on the currently selected run while you build the next one.</div>
+              </div>
+              <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+            </div>
+            <div class="po-loot-claim-readiness-body">
+              <div class="po-loot-claim-readiness-copy">
+                {{#if lootClaims.hasSelectedRun}}
+                <div class="po-op-summary">Selected run: {{lootClaims.selectedRunCard.statusLabel}}</div>
+                <div class="po-op-summary">Published: {{lootClaims.selectedRunCard.publishedAtLabel}} by {{lootClaims.selectedRunCard.publishedBy}}</div>
+                {{#if lootClaims.selectedRunCard.isArchived}}
+                <div class="po-op-summary">Archived: {{lootClaims.selectedRunCard.archivedAtLabel}}</div>
+                {{/if}}
+                {{else}}
+                <div class="po-op-summary">No active claim run selected.</div>
+                {{/if}}
+              </div>
+              <div class="po-loot-sidebar-metrics">
+                <div class="po-loot-sidebar-metric"><span>Open Runs</span><strong>{{lootClaims.openRunCount}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Claimable Items</span><strong>{{lootClaims.itemCount}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Claims Logged</span><strong>{{lootClaims.claimsLogCount}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Currency Claims</span><strong>{{lootClaims.currencyClaimedCount}}</strong></div>
+              </div>
+            </div>
+          </section>
+
           {{#if preview.warnings.length}}
           <section class="po-gm-section po-loot-warning-section">
             <div class="po-loot-section-head">
@@ -236,83 +316,6 @@
           </section>
           {{/if}}
         </div>
-
-        <aside class="po-loot-workspace-sidebar">
-          <section class="po-gm-section po-loot-sidebar-card po-loot-sidebar-card-highlight">
-            <div class="po-loot-section-head">
-              <div>
-                <div class="po-section-title">Builder Snapshot</div>
-                <div class="po-hint">{{#if preview.hasResult}}Last generated {{preview.generatedAtLabel}} by {{preview.generatedBy}}{{else}}Ready to generate using the current builder draft.{{/if}}</div>
-              </div>
-            </div>
-            <div class="po-loot-sidebar-metrics">
-              <div class="po-loot-sidebar-metric"><span>Total Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Item Target</span><strong>{{preview.budget.targetItemBudgetGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Coin Target</span><strong>{{preview.budget.targetCurrencyBudgetGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Per Item</span><strong>{{preview.budget.targetPerItemGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Cap</span><strong>{{preview.budget.effectiveMaxItemValueGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Total Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
-            </div>
-            <div class="po-op-summary">Strictness: {{preview.stats.strictnessBandLabel}}</div>
-            <div class="po-op-summary">Combined total: {{preview.stats.finalCombinedValueGp}} gp</div>
-            <div class="po-op-summary">Item delta: {{preview.stats.itemDeltaGp}} gp</div>
-            <div class="po-op-summary">Total delta: {{preview.stats.deltaGp}} gp</div>
-          </section>
-
-          <section class="po-gm-section po-loot-sidebar-card">
-            <div class="po-loot-section-head">
-              <div>
-                <div class="po-section-title">Currency</div>
-                <div class="po-hint">Adjust the generated coin pile before publishing.</div>
-              </div>
-            </div>
-            <div class="po-loot-currency-display">
-              <div class="po-loot-currency-pill"><span>PP</span><strong>{{preview.currency.pp}}</strong></div>
-              <div class="po-loot-currency-pill"><span>GP</span><strong>{{preview.currency.gp}}</strong></div>
-              <div class="po-loot-currency-pill"><span>SP</span><strong>{{preview.currency.sp}}</strong></div>
-              <div class="po-loot-currency-pill"><span>CP</span><strong>{{preview.currency.cp}}</strong></div>
-            </div>
-            <div class="po-op-summary">Target: {{preview.budget.targetCurrencyBudgetGp}} gp</div>
-            <div class="po-op-summary">Equivalent value: {{preview.currency.gpEquivalent}} gp</div>
-            <div class="po-op-summary">Formula: {{preview.currency.formula}}</div>
-
-            <div class="po-loot-currency-adjust-shell">
-              <label class="po-resource-row"><span>Currency</span><select name="lootPreviewCurrencyAdjustDenom" class="po-select"><option value="pp">PP</option><option value="gp" selected>GP</option><option value="sp">SP</option><option value="cp">CP</option></select></label>
-              <label class="po-resource-row"><span>Qty</span><input name="lootPreviewCurrencyAdjustQty" type="number" min="1" step="1" class="po-input" value="1" /></label>
-              <div class="po-loot-currency-adjust-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add">Add</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract">Subtract</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="add" data-qty="10">+10</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-loot-preview-currency" data-direction="subtract" data-qty="10">-10</button>
-              </div>
-            </div>
-          </section>
-
-          <section class="po-gm-section po-loot-sidebar-card">
-            <div class="po-loot-section-head">
-              <div>
-                <div class="po-section-title">Claim Board Readiness</div>
-                <div class="po-hint">Keep one eye on the currently selected run while you build the next one.</div>
-              </div>
-            </div>
-            {{#if lootClaims.hasSelectedRun}}
-            <div class="po-op-summary">Selected run: {{lootClaims.selectedRunCard.statusLabel}}</div>
-            <div class="po-op-summary">Published: {{lootClaims.selectedRunCard.publishedAtLabel}} by {{lootClaims.selectedRunCard.publishedBy}}</div>
-            {{#if lootClaims.selectedRunCard.isArchived}}
-            <div class="po-op-summary">Archived: {{lootClaims.selectedRunCard.archivedAtLabel}}</div>
-            {{/if}}
-            {{else}}
-            <div class="po-op-summary">No active claim run selected.</div>
-            {{/if}}
-            <div class="po-loot-sidebar-metrics">
-              <div class="po-loot-sidebar-metric"><span>Open Runs</span><strong>{{lootClaims.openRunCount}}</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Claimable Items</span><strong>{{lootClaims.itemCount}}</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Claims Logged</span><strong>{{lootClaims.claimsLogCount}}</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Currency Claims</span><strong>{{lootClaims.currencyClaimedCount}}</strong></div>
-            </div>
-            <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
-          </section>
-        </aside>
       </div>
       {{/if}}
 

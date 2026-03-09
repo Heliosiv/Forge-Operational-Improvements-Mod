@@ -68,9 +68,9 @@
       {{#if lootClaims.hasItems}}
       <div class="po-loot-claim-items-grid">
       {{#each lootClaims.items}}
-      <article class="po-op-role-row po-loot-claim-card {{#if requiresRollOff}}is-contested{{/if}}">
+      <article class="po-op-role-row po-loot-claim-card {{#if requiresRollOff}}is-contested{{/if}}" data-po-item-card="loot-claim-item" data-item-id="{{id}}" data-uuid="{{uuid}}">
         <div class="po-loot-claim-card-head">
-          <img class="po-loot-claim-thumb" src="{{img}}" alt="{{name}}" loading="lazy" />
+          <img class="po-loot-claim-thumb" src="{{img}}" alt="{{name}}" loading="lazy" {{#if canOpen}}data-po-item-open-target="true" title="Double-click to open {{name}}"{{/if}} />
           <div class="po-loot-claim-copy">
             <div class="po-loot-claim-name-row">
               <div class="po-op-role-name">{{name}}</div>
@@ -119,9 +119,6 @@
           <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canClaimDirect}}disabled{{/unless}}>Claim</button>
           {{#if @root.canManageClaims}}
           <button type="button" class="po-btn po-btn-sm" data-action="run-loot-rolloff" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canRunRollOff}}disabled{{/unless}}>Run Roll-Off</button>
-          {{/if}}
-          {{#if canOpen}}
-          <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
           {{/if}}
         </div>
       </article>

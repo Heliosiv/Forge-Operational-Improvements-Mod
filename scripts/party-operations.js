@@ -31,6 +31,24 @@ import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
 import {
+  PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
+  clearPartyOpsAppInstance,
+  getPartyOpsAppInstance,
+  getPartyOpsAppInstances,
+  setPartyOpsAppInstance
+} from "./core/app-instance-registry.js";
+import {
+  LAUNCHER_PLACEMENTS,
+  LAUNCHER_RECOVERY_DELAYS_MS,
+  PARTY_OPS_REFRESHABLE_WINDOW_IDS,
+  PLAYER_HUB_ACTION_TYPES,
+  PLAYER_HUB_CLAIM_VARIANTS,
+  PLAYER_HUB_MODES,
+  PO_TEMPLATE_MAP,
+  REFRESH_SCOPE_KEYS,
+  REFRESH_SCOPE_TO_WINDOW_IDS
+} from "./core/window-config.js";
+import {
   MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
   MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
   MERCHANT_SCARCITY_PROFILES as DOMAIN_MERCHANT_SCARCITY_PROFILES,
@@ -100,6 +118,22 @@ function registerFeatureModules() {
     if (typeof feature?.register === "function") feature.register();
   }
 }
+
+const REFRESH_KNOWN_INSTANCE_KEYS = Object.freeze([
+  APP_INSTANCE_KEYS.REST_WATCH,
+  APP_INSTANCE_KEYS.MARCHING_ORDER,
+  APP_INSTANCE_KEYS.REST_WATCH_PLAYER,
+  APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY,
+  APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE,
+  APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE,
+  APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE,
+  APP_INSTANCE_KEYS.GM_LOOT_PAGE,
+  APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD
+]);
+
+const getAppInstance = (key) => getPartyOpsAppInstance(key);
+const setAppInstance = (key, instance) => setPartyOpsAppInstance(key, instance);
+const clearAppInstance = (key, instance) => clearPartyOpsAppInstance(key, instance);
 
 const PO_ESCAPE_HTML_FALLBACK = (value) => String(value ?? "")
   .replace(/&/g, "&amp;")
@@ -207,16 +241,6 @@ export const SETTINGS = {
   AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift"
 };
 
-let restWatchAppInstance = null;
-let marchingOrderAppInstance = null;
-let restWatchPlayerAppInstance = null;
-let globalModifierSummaryAppInstance = null;
-let gmEnvironmentPageAppInstance = null;
-let gmLootPageAppInstance = null;
-let gmDowntimePageAppInstance = null;
-let gmMerchantsPageAppInstance = null;
-let gmAudioPageAppInstance = null;
-let gmLootClaimsBoardAppInstance = null;
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
@@ -269,77 +293,6 @@ const audioLibraryMetadataWarmupState = {
 let managedAudioMixResyncTimerId = null;
 let refreshOpenAppsQueueAll = false;
 const refreshOpenAppsScopeQueue = new Set();
-const LAUNCHER_RECOVERY_DELAYS_MS = [120, 500, 1400, 3200];
-const LAUNCHER_PLACEMENTS = {
-  FLOATING: "floating",
-  SIDEBAR: "sidebar",
-  BOTH: "both"
-};
-const PLAYER_HUB_MODES = Object.freeze({
-  SIMPLE: "simple",
-  ADVANCED: "advanced"
-});
-const PLAYER_HUB_ACTION_TYPES = Object.freeze({
-  ASSIGN_WATCH: "assignWatch",
-  SET_MARCH_RANK: "setMarchRank",
-  CLAIM_LOOT: "claimLoot",
-  SUBMIT_DOWNTIME: "submitDowntime"
-});
-const PLAYER_HUB_CLAIM_VARIANTS = Object.freeze({
-  ITEM: "item",
-  CURRENCY: "currency"
-});
-const REFRESH_SCOPE_KEYS = Object.freeze({
-  REST: "rest",
-  MARCH: "march",
-  OPERATIONS: "operations",
-  LOOT: "loot",
-  INJURY: "injury",
-  SETTINGS: "settings"
-});
-const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
-  "rest-watch-app",
-  "marching-order-app",
-  "rest-watch-player-app",
-  "party-operations-global-modifier-summary",
-  "party-operations-gm-environment-page",
-  "party-operations-gm-downtime-page",
-  "party-operations-gm-merchants-page",
-  "party-operations-gm-audio-page",
-  "party-operations-gm-loot-page",
-  "party-operations-gm-loot-claims-board"
-]);
-const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
-  [REFRESH_SCOPE_KEYS.REST]: Object.freeze([
-    "rest-watch-app",
-    "rest-watch-player-app"
-  ]),
-  [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze([
-    "marching-order-app",
-    "rest-watch-player-app"
-  ]),
-  [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
-    "rest-watch-app",
-    "rest-watch-player-app",
-    "party-operations-global-modifier-summary",
-    "party-operations-gm-environment-page",
-    "party-operations-gm-downtime-page",
-    "party-operations-gm-merchants-page",
-    "party-operations-gm-audio-page",
-    "party-operations-gm-loot-page",
-    "party-operations-gm-loot-claims-board"
-  ]),
-  [REFRESH_SCOPE_KEYS.LOOT]: Object.freeze([
-    "rest-watch-app",
-    "party-operations-gm-audio-page",
-    "party-operations-gm-loot-page",
-    "party-operations-gm-loot-claims-board"
-  ]),
-  [REFRESH_SCOPE_KEYS.INJURY]: Object.freeze([
-    "rest-watch-app"
-  ]),
-  [REFRESH_SCOPE_KEYS.SETTINGS]: PARTY_OPS_REFRESHABLE_WINDOW_IDS
-});
 const GATHER_TRAVEL_CHOICES = Object.freeze({
   PACE: "pace",
   FELL_BEHIND: "fell-behind"
@@ -470,18 +423,6 @@ const GATHER_QUICK_PRESETS = Object.freeze([
   }
 ]);
 
-const PO_TEMPLATE_MAP = Object.freeze({
-  "rest-watch": "modules/party-operations/templates/rest-watch.hbs",
-  "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",
-  "marching-order": "modules/party-operations/templates/marching-order.hbs",
-  "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",
-  "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
-  "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",
-  "gm-merchants": "modules/party-operations/templates/gm-merchants.hbs",
-  "gm-audio": "modules/party-operations/templates/gm-audio.hbs",
-  "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
-  "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs"
-});
 const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
   "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs",
@@ -8754,7 +8695,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _onRender(context, options) {
     await super._onRender(context, options);
     if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
-    restWatchAppInstance = this;
+    setAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
     syncApplicationWindowTitle(this, getRestMainWindowTitle(getActiveRestMainTab()));
@@ -10081,8 +10022,9 @@ function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view global modifiers.");
     return null;
   }
-  const app = globalModifierSummaryAppInstance?.element?.isConnected
-    ? globalModifierSummaryAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GlobalModifierSummaryApp(getResponsiveWindowOptions("global-modifiers"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "global-modifiers" });
@@ -10104,7 +10046,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
 
   constructor(options = {}) {
     super(options);
-    globalModifierSummaryAppInstance = this;
+    setAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY, this);
   }
 
   async _prepareContext() {
@@ -10126,7 +10068,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
   }
 
   async close(options = {}) {
-    if (globalModifierSummaryAppInstance === this) globalModifierSummaryAppInstance = null;
+    clearAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY, this);
     return super.close(options);
   }
 
@@ -10411,8 +10353,9 @@ function openGmEnvironmentPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view environment controls.");
     return null;
   }
-  const app = gmEnvironmentPageAppInstance?.element?.isConnected
-    ? gmEnvironmentPageAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-environment" });
@@ -10425,8 +10368,9 @@ function openGmDowntimePage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view downtime controls.");
     return null;
   }
-  const app = gmDowntimePageAppInstance?.element?.isConnected
-    ? gmDowntimePageAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-downtime" });
@@ -10439,8 +10383,9 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view merchant controls.");
     return null;
   }
-  const app = gmMerchantsPageAppInstance?.element?.isConnected
-    ? gmMerchantsPageAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-merchants" });
@@ -10453,8 +10398,9 @@ function openGmAudioPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view audio controls.");
     return null;
   }
-  const app = gmAudioPageAppInstance?.element?.isConnected
-    ? gmAudioPageAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmAudioPageApp(getResponsiveWindowOptions("gm-audio"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-audio" });
@@ -10467,8 +10413,9 @@ function openGmLootPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
-  const app = gmLootPageAppInstance?.element?.isConnected
-    ? gmLootPageAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
@@ -10508,8 +10455,9 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
   const runId = normalizeLootClaimRunId(renderOptions?.runId);
   if (runId) setLootClaimRunSelection(runId);
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  const app = gmLootClaimsBoardAppInstance?.element?.isConnected
-    ? gmLootClaimsBoardAppInstance
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
     : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
   app.render(renderOptions);
   if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot-claims-board" });
@@ -10636,7 +10584,7 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    gmEnvironmentPageAppInstance = instance;
+    setAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE, instance);
   },
   buildContext: buildGmEnvironmentPageContext,
   openMainTab,
@@ -10681,7 +10629,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    gmDowntimePageAppInstance = instance;
+    setAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE, instance);
   },
   buildContext: buildGmDowntimePageContext,
   openMainTab,
@@ -10711,7 +10659,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    gmMerchantsPageAppInstance = instance;
+    setAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE, instance);
   },
   buildContext: buildGmMerchantsPageContext,
   openMainTab,
@@ -10762,7 +10710,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    gmAudioPageAppInstance = instance;
+    setAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE, instance);
   },
   buildContext: buildGmAudioPageContext,
   openMainTab,
@@ -10890,7 +10838,7 @@ export const GmLootPageApp = createGmLootPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    gmLootPageAppInstance = instance;
+    setAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE, instance);
   },
   buildContext: buildGmLootPageContext,
   openMainTab,
@@ -10941,7 +10889,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
 
   constructor(options = {}) {
     super(options);
-    gmLootClaimsBoardAppInstance = this;
+    setAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
   }
 
   async _prepareContext() {
@@ -10949,7 +10897,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   }
 
   async close(options = {}) {
-    if (gmLootClaimsBoardAppInstance === this) gmLootClaimsBoardAppInstance = null;
+    clearAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
     return super.close(options);
   }
 
@@ -11066,6 +11014,9 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
         this.#onAction(event);
       });
     }
+    bindItemCardIconOpeners(this.element, {
+      datasetKey: "poBoundLootClaimItemCardOpeners"
+    });
     restorePendingWindowState(this);
     restorePendingUiState(this);
     restorePendingScrollState(this);
@@ -11208,7 +11159,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   async _onRender(context, options) {
     await super._onRender(context, options);
 
-    restWatchPlayerAppInstance = this;
+    setAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
 
@@ -11568,7 +11519,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   async _onRender(context, options) {
     await super._onRender(context, options);
-    marchingOrderAppInstance = this;
+    setAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
     if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
@@ -35015,6 +34966,32 @@ async function openMerchantSupplyItemFromElement(element) {
   return openItemSheetFromReference(reference);
 }
 
+function bindItemCardIconOpeners(root, options = {}) {
+  if (!(root instanceof HTMLElement)) return;
+  const datasetKey = String(options?.datasetKey ?? "poBoundItemCardIconOpeners").trim() || "poBoundItemCardIconOpeners";
+  if (root.dataset?.[datasetKey] === "1") return;
+  root.dataset[datasetKey] = "1";
+  root.addEventListener("dblclick", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const openTarget = target.closest("[data-po-item-open-target]");
+    if (!openTarget || !root.contains(openTarget)) return;
+    const referenceNode = openTarget.closest("[data-po-item-card]") ?? openTarget;
+    const reference = findItemReferenceFromElement(referenceNode);
+    if (!reference?.uuid && !reference?.itemId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+    void openItemSheetFromReference(reference).catch((error) => {
+      if (isModuleDebugEnabled()) {
+        console.warn(`${MODULE_ID}: failed opening item card from icon double-click`, error);
+      }
+    });
+  });
+}
+
 function buildLootPreviewResultSkeleton() {
   const draft = getLootPreviewDraft();
   const sourceConfig = getLootSourceConfig();
@@ -39956,7 +39933,8 @@ function refreshSingleAppPreservingView(app) {
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
-  const root = getAppRootElement(marchingOrderAppInstance);
+  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  const root = getAppRootElement(marchingOrderApp);
   if (!root) return false;
   const targetEntries = root.querySelector(`.po-rank-col[data-rank-id="${rankId}"] .po-rank-entries`);
   if (!targetEntries) return false;
@@ -40013,7 +39991,7 @@ async function assignActorToRank(element) {
 
           const moved = moveActorEntryToRankDom(rankId, actorId);
           if (!moved) {
-            refreshSingleAppPreservingView(marchingOrderAppInstance);
+            refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
           }
         }
       },
@@ -40099,8 +40077,9 @@ async function toggleLight(element) {
       };
     }
   }, { skipLocalRefresh: true });
-  if (marchingOrderAppInstance?.element?.isConnected) {
-    refreshSingleAppPreservingView(marchingOrderAppInstance);
+  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  if (marchingOrderApp?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderApp);
   }
 }
 
@@ -40125,8 +40104,9 @@ async function setLightRange(element) {
       state.lightRanges[actorId].dim = next.bright;
     }
   }, { skipLocalRefresh: true });
-  if (marchingOrderAppInstance?.element?.isConnected) {
-    refreshSingleAppPreservingView(marchingOrderAppInstance);
+  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  if (marchingOrderApp?.element?.isConnected) {
+    refreshSingleAppPreservingView(marchingOrderApp);
   }
 }
 
@@ -41449,7 +41429,7 @@ function setupMarchingDragAndDrop(html) {
         target.splice(safeIndex, 0, actorId);
       }, { skipLocalRefresh: true });
 
-      refreshSingleAppPreservingView(marchingOrderAppInstance);
+      refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
     });
   });
 }
@@ -41657,14 +41637,17 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   });
 
   if (normalized === "marching-order") {
-    if (restWatchAppInstance?.element?.isConnected) {
-      void restWatchAppInstance.close();
+    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
+    if (restWatchApp?.element?.isConnected) {
+      void restWatchApp.close();
     }
-    if (restWatchPlayerAppInstance?.element?.isConnected) {
-      void restWatchPlayerAppInstance.close();
+    const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
+    if (restWatchPlayerApp?.element?.isConnected) {
+      void restWatchPlayerApp.close();
     }
-    const app = marchingOrderAppInstance?.element?.isConnected
-      ? marchingOrderAppInstance
+    const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+    const app = marchingOrderApp?.element?.isConnected
+      ? marchingOrderApp
       : new MarchingOrderApp(getResponsiveWindowOptions("marching-order"));
     app.render(renderOptions);
     queueManagedAudioMixPlaybackResync();
@@ -41672,11 +41655,13 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     return app;
   }
 
-  if (marchingOrderAppInstance?.element?.isConnected) {
-    void marchingOrderAppInstance.close();
+  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  if (marchingOrderApp?.element?.isConnected) {
+    void marchingOrderApp.close();
   }
-  if (restWatchPlayerAppInstance?.element?.isConnected) {
-    void restWatchPlayerAppInstance.close();
+  const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
+  if (restWatchPlayerApp?.element?.isConnected) {
+    void restWatchPlayerApp.close();
   }
 
   if (normalized === "gm") {
@@ -41688,8 +41673,9 @@ function openMainTab(tabId, renderOptions = { force: true }) {
       return null;
     }
     setActiveRestMainTab("gm");
-    const app = restWatchAppInstance?.element?.isConnected
-      ? restWatchAppInstance
+    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
+    const app = restWatchApp?.element?.isConnected
+      ? restWatchApp
       : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "gm";
     app.render(renderOptions);
@@ -41700,8 +41686,9 @@ function openMainTab(tabId, renderOptions = { force: true }) {
 
   if (normalized === "operations") {
     setActiveRestMainTab("operations");
-    const app = restWatchAppInstance?.element?.isConnected
-      ? restWatchAppInstance
+    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
+    const app = restWatchApp?.element?.isConnected
+      ? restWatchApp
       : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
     app._activePanel = "operations";
     app.render(renderOptions);
@@ -41711,8 +41698,9 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   }
 
   setActiveRestMainTab("rest-watch");
-  const app = restWatchAppInstance?.element?.isConnected
-    ? restWatchAppInstance
+  const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
+  const app = restWatchApp?.element?.isConnected
+    ? restWatchApp
     : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
   app._activePanel = "rest-watch";
   app.render(renderOptions);
@@ -43123,17 +43111,7 @@ function refreshOpenApps(options = {}) {
     refreshOpenAppsScopeQueue.clear();
 
     const canvasSnapshot = captureCanvasViewState();
-    const knownInstances = [
-      restWatchAppInstance,
-      marchingOrderAppInstance,
-      restWatchPlayerAppInstance,
-      globalModifierSummaryAppInstance,
-      gmEnvironmentPageAppInstance,
-      gmDowntimePageAppInstance,
-      gmMerchantsPageAppInstance,
-      gmLootPageAppInstance,
-      gmLootClaimsBoardAppInstance
-    ]
+    const knownInstances = getPartyOpsAppInstances(REFRESH_KNOWN_INSTANCE_KEYS)
       .filter((app) => app?.element?.isConnected)
       .filter((app) => targetIds.has(getAppWindowId(app)));
     const apps = Object.values(ui.windows)
@@ -43229,7 +43207,7 @@ function setupRestWatchDragAndDrop(html) {
         addActorToRestSlot(target, actorId);
       }, { skipLocalRefresh: true });
 
-      refreshSingleAppPreservingView(restWatchAppInstance);
+      refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
     });
   });
 }
