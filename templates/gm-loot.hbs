@@ -55,53 +55,53 @@
             <div class="po-loot-section-head">
               <div>
                 <div class="po-section-title">Builder Controls</div>
-                <div class="po-hint">Define the encounter feel first, then tighten the output with scale and budget controls.</div>
+                <div class="po-hint">Baseline first, modifiers second. The DMG table remains the canonical source.</div>
               </div>
               <div class="po-loot-builder-status">
-                <span class="po-pill">Target {{preview.budget.desiredItemCount}} items</span>
-                <span class="po-pill">Budget {{preview.budget.totalBudgetGp}} gp</span>
-                <span class="po-pill">Cap {{preview.budget.effectiveMaxItemValueGp}} gp</span>
+                <span class="po-pill">Mode {{preview.draft.mode}}</span>
+                <span class="po-pill">Bracket {{preview.crBracket}}</span>
+                <span class="po-pill">Baseline {{preview.baseline.gpEquivalent}} gp</span>
+                <span class="po-pill">Final {{preview.finalSummary.gpEquivalent}} gp</span>
               </div>
             </div>
 
             <div class="po-loot-builder-control-grid">
               <div class="po-loot-control-card">
                 <div class="po-loot-control-card-head">
-                  <div class="po-section-title">Encounter Shape</div>
-                  <div class="po-op-summary">Set the baseline identity for this loot drop.</div>
+                <div class="po-section-title">Encounter Shape</div>
+                  <div class="po-op-summary">Choose the DMG baseline first. Tweakers apply after the baseline roll.</div>
                 </div>
                 <label class="po-resource-row"><span>Mode</span><select name="lootPreviewMode" class="po-select" data-action="set-loot-preview-field" data-field="mode">{{#each preview.modeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-                <label class="po-resource-row"><span>Equipment Profile</span><select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">{{#each preview.profileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Roll Mode</span><select name="lootPreviewRollMode" class="po-select" data-action="set-loot-preview-field" data-field="rollMode">{{#each preview.rollModeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
                 <label class="po-resource-row"><span>Challenge Tier</span><select name="lootPreviewChallenge" class="po-select" data-action="set-loot-preview-field" data-field="challenge">{{#each preview.challengeOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-                <label class="po-resource-row"><span>Scale</span><select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">{{#each preview.scaleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
-                <label class="po-resource-row"><span>Creatures</span><input name="lootPreviewCreatures" type="number" min="1" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="creatures" value="{{preview.draft.creatures}}" /></label>
+                <label class="po-resource-row"><span>Hoard Label</span><input name="lootPreviewHoardLabel" type="text" class="po-input" data-action="set-loot-preview-field" data-field="hoardLabel" value="{{preview.draft.hoardLabel}}" placeholder="Boss chest, lair stash, vault" /></label>
+                <label class="po-resource-row"><span>Creatures</span><input name="lootPreviewCreatures" type="number" min="0" max="100" step="1" class="po-input" data-action="set-loot-preview-field" data-field="creatures" value="{{preview.draft.creatures}}" /></label>
               </div>
 
               <div class="po-loot-control-card">
                 <div class="po-loot-control-card-head">
-                  <div class="po-section-title">Yield + Scaling</div>
-                  <div class="po-op-summary">Push more coins, more items, or more table influence without rewriting source data.</div>
+                  <div class="po-section-title">Tweaker Layer</div>
+                  <div class="po-op-summary">These are post-baseline modifiers. They do not replace the DMG table choice.</div>
                 </div>
+                <label class="po-resource-row"><span>Wealth Profile</span><select name="lootPreviewProfile" class="po-select" data-action="set-loot-preview-field" data-field="profile">{{#each preview.profileOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
+                <label class="po-resource-row"><span>Wealth Scale</span><select name="lootPreviewScale" class="po-select" data-action="set-loot-preview-field" data-field="scale">{{#each preview.scaleOptions}}<option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}</select></label>
                 <label class="po-resource-row"><span>Currency Scale ({{preview.draft.currencyScalar}}%)</span><input name="lootPreviewCurrencyScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="currencyScalar" value="{{preview.draft.currencyScalar}}" /></label>
-                <label class="po-resource-row"><span>Item Count Scale ({{preview.draft.itemScalar}}%)</span><input name="lootPreviewItemScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="itemScalar" value="{{preview.draft.itemScalar}}" /></label>
-                <label class="po-resource-row"><span>Table Roll Scale ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
+                <label class="po-resource-row"><span>Gem / Art Scale ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
                 <div class="po-loot-mini-metrics">
-                  <div class="po-loot-mini-metric"><span>Desired</span><strong>{{preview.budget.desiredItemCount}}</strong></div>
-                  <div class="po-loot-mini-metric"><span>Max Items</span><strong>{{preview.budget.maxItems}}</strong></div>
-                  <div class="po-loot-mini-metric"><span>Tolerance</span><strong>{{preview.budget.tolerancePercent}}%</strong></div>
+                  <div class="po-loot-mini-metric"><span>Bracket</span><strong>{{preview.crBracket}}</strong></div>
+                  <div class="po-loot-mini-metric"><span>Baseline</span><strong>{{preview.baseline.gpEquivalent}} gp</strong></div>
+                  <div class="po-loot-mini-metric"><span>Final</span><strong>{{preview.finalSummary.gpEquivalent}} gp</strong></div>
                 </div>
               </div>
 
               <div class="po-loot-control-card">
                 <div class="po-loot-control-card-head">
-                  <div class="po-section-title">Budget Guardrails</div>
-                  <div class="po-op-summary">Use manual caps only when you want to force the generator away from its normal budget curve.</div>
+                  <div class="po-section-title">DMG Audit</div>
+                  <div class="po-op-summary">Baseline table first, modifiers second, final loot last.</div>
                 </div>
-                <label class="po-resource-row"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
-                <label class="po-resource-row"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
-                <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{preview.draft.maxItemValueGp}}" /></label>
-                <label class="po-resource-row"><span>Target Items Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
-                <div class="po-op-summary">Strictness band: {{preview.budget.strictnessBandLabel}}</div>
+                <div class="po-op-summary">Source: DMG | Mode: {{preview.draft.mode}} | Bracket: {{preview.crBracket}}</div>
+                <div class="po-op-summary">Baseline GP Equivalent: {{preview.baseline.gpEquivalent}}</div>
+                <div class="po-op-summary">Final GP Equivalent: {{preview.finalSummary.gpEquivalent}}</div>
               </div>
             </div>
 
@@ -116,6 +116,8 @@
                 <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
               </div>
             </div>
+            <div class="po-op-summary">Baseline Roll: {{preview.crBracket}} | {{preview.draft.rollMode}} | {{preview.draft.creatures}} creature(s)</div>
+            <div class="po-op-summary">Tweakers Applied: {{preview.modifiers.length}} | Final GP Equivalent: {{preview.finalSummary.gpEquivalent}}</div>
           </section>
 
           <section class="po-gm-section po-loot-builder-items-section">
@@ -127,7 +129,8 @@
               <div class="po-loot-builder-status">
                 <span class="po-pill">{{preview.stats.itemCountGenerated}} generated</span>
                 <span class="po-pill">{{preview.stats.itemCountTarget}} target</span>
-                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp value</span>
+                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp items</span>
+                <span class="po-pill">{{preview.stats.magicItemCount}} magic</span>
               </div>
             </div>
             <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>
@@ -238,13 +241,49 @@
               </div>
             </div>
             <div class="po-loot-sidebar-metrics">
-              <div class="po-loot-sidebar-metric"><span>Budget</span><strong>{{preview.budget.totalBudgetGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Per Item</span><strong>{{preview.budget.targetPerItemGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Cap</span><strong>{{preview.budget.effectiveMaxItemValueGp}} gp</strong></div>
-              <div class="po-loot-sidebar-metric"><span>Range</span><strong>{{preview.budget.targetValueRangeMinGp}}-{{preview.budget.targetValueRangeMaxGp}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Mode</span><strong>{{preview.draft.mode}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Bracket</span><strong>{{preview.crBracket}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Baseline</span><strong>{{preview.baseline.gpEquivalent}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Final</span><strong>{{preview.finalSummary.gpEquivalent}} gp</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Magic Rolls</span><strong>{{preview.stats.magicItemCount}}</strong></div>
+              <div class="po-loot-sidebar-metric"><span>Audit Steps</span><strong>{{preview.tableRolls.length}}</strong></div>
             </div>
-            <div class="po-op-summary">Strictness: {{preview.stats.strictnessBandLabel}}</div>
-            <div class="po-op-summary">Value delta: {{preview.stats.deltaGp}} gp</div>
+            <div class="po-op-summary">Source: DMG</div>
+            <div class="po-op-summary">Roll Mode: {{preview.draft.rollMode}}</div>
+            <div class="po-op-summary">Generated total wealth: {{preview.stats.generatedTotalWealthGp}} gp</div>
+          </section>
+
+          <section class="po-gm-section po-loot-sidebar-card">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Baseline Roll</div>
+                <div class="po-hint">Visible audit trail for the canonical DMG steps.</div>
+              </div>
+            </div>
+            {{#if preview.baseline.rollSteps.length}}
+            {{#each preview.baseline.rollSteps}}
+            <div class="po-op-summary"><strong>{{step}}</strong>: {{dice}} | {{resultLabel}}</div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No baseline roll captured yet.</div>
+            {{/if}}
+            <div class="po-op-summary">Baseline coins: {{preview.baseline.currencyLabel}}</div>
+          </section>
+
+          <section class="po-gm-section po-loot-sidebar-card">
+            <div class="po-loot-section-head">
+              <div>
+                <div class="po-section-title">Tweaker Adjustments</div>
+                <div class="po-hint">Post-baseline modifiers only.</div>
+              </div>
+            </div>
+            {{#if preview.modifiers.length}}
+            {{#each preview.modifiers}}
+            <div class="po-op-summary"><strong>{{label}}</strong>: {{beforeGpEquivalent}} gp -> {{afterGpEquivalent}} gp</div>
+            {{/each}}
+            {{else}}
+            <div class="po-op-summary">No post-baseline modifiers applied.</div>
+            {{/if}}
           </section>
 
           <section class="po-gm-section po-loot-sidebar-card">
@@ -260,7 +299,8 @@
               <div class="po-loot-currency-pill"><span>SP</span><strong>{{preview.currency.sp}}</strong></div>
               <div class="po-loot-currency-pill"><span>CP</span><strong>{{preview.currency.cp}}</strong></div>
             </div>
-            <div class="po-op-summary">Equivalent value: {{preview.currency.gpEquivalent}} gp</div>
+            <div class="po-op-summary">Claimable coin value: {{preview.currency.gpEquivalent}} gp</div>
+            <div class="po-op-summary">Raw final coins: {{preview.finalSummary.currencyLabel}}</div>
             <div class="po-op-summary">Formula: {{preview.currency.formula}}</div>
 
             <div class="po-loot-currency-adjust-shell">
