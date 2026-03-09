@@ -1,113 +1,79 @@
-# Party Operations - Bug Fixes & Improvements
+# Party Operations - Bug Fixes And Current Build Notes
+
+## Build Status
+
+- Released build line: `2.2.4-test.6`
+- Release date: March 9, 2026
+- Compatibility: Foundry VTT `12` through `13`
+- Breaking changes in this build line: none expected
+
+## Included In The Current Build Line
+
+These fixes are already part of the current `2.2.x` build line:
+
+- Reputation refresh and trade rollback fixes.
+- GM merchant showcase visibility fixes.
+- Gather flow and GM merchant visibility fixes.
+- SOP note sync fixes.
+- Built item import fixes.
+
+## 2.2.4-test.6 Highlights
+
+The current released build expanded the module around the unified Operations and GM workflows:
+
+- GM Audio workspace support for scanning, previewing, hiding, restoring, and mixing shared audio tracks.
+- Environment page updates and GM quick-action coverage.
+- Rest Watch and Loot template refinements for the current layout pass.
+- Player handler updates tied to the current operations flow.
+
+These changes are included in `2.2.4-test.6`.
+
+### 1. Audio filter options now use the active catalog
+
+The filter option builder now receives the current scanned catalog instead of relying on a default lookup. This keeps tag counts and filter choices aligned with the catalog the GM is actively viewing.
+
+### 2. Tag chip filters were added to the GM Audio library and mix browser
+
+The Audio workspace now supports multi-select tag filters in both places where GMs browse tracks:
+
+- Library view
+- Mix track browser
+
+This makes it much faster to isolate tracks for a specific scene style or content type.
+
+### 3. Search is now more forgiving
+
+Audio search now checks:
+
+- Track name
+- Tags
+- Category
+- Subcategory
+
+The matching logic is more tolerant than a plain exact substring search, so short partial terms and fuzzy tag-oriented searches behave better.
+
+### 4. Mix suggestions now respect the same filters as the library
+
+The mix track browser now applies the current audio filters to:
+
+- Suggested tracks
+- All tracks
+
+That means the queue-building view stays consistent with the library curation view instead of showing an unrelated result set.
+
+### 5. Clearing or changing filters resets mix browser paging
+
+Filter changes now reset the browser page state. This avoids empty-looking result pages after changing the search or toggling tags while viewing paginated mix candidates.
+
+## Testing Focus For This Build
+
+- Scan a fresh audio library and confirm tag chips reflect the scanned catalog.
+- Filter by search, kind, usage, and one or more tag chips.
+- Clear filters and confirm the full result set returns.
+- Open the Mix Table and verify the same filters affect both `Suggested` and `All Tracks`.
+- Bulk-add visible tracks from the filtered browser.
+- Hide and restore tracks without corrupting the visible counts.
 
 ## Roadmap
 
-- See [ROADMAP.md](ROADMAP.md) for the active development roadmap and immediate priorities.
-
-## Issues Fixed
-
-### 1. **Event Delegation Bug (Line 504)**
-**Problem**: `MarchingOrderApp#onGMNotesChange` used `event.currentTarget` instead of `event.target`
-- This is inconsistent with the event delegation pattern used throughout the app
-- Could cause handler to fail when delegated events don't have `currentTarget`
-
-**Solution**: Changed to `event.target.value` for consistency  
-**File**: `scripts/party-operations.js:504`
-
-```javascript
-// BEFORE
-const text = event.currentTarget.value ?? "";
-
-// AFTER
-const text = event.target.value ?? "";
-```
-
----
-
-### 2. **Stale Lag on Player Actions (MAJOR FIX)**
-**Problem**: When players performed actions (assign to watch, clear slot, edit marching order, etc.), their local UI wouldn't refresh until:
-1. Socket message sent to GM
-2. GM processes mutation
-3. GM sends socket refresh back to players
-
-This created noticeable lag where players saw stale/old data.
-
-**Solution**: Added immediate `refreshOpenApps()` call after socket emission for players
-- Players now see their changes **immediately** in their local UI
-- Socket message still propagates to GM for server-side validation & persistence
-- Eliminates the round-trip delay
-
-**Files Changed**: `scripts/party-operations.js` (2 locations)
-
-#### Fix #1: `updateRestWatchState()` - Lines 576-598
-```javascript
-async function updateRestWatchState(mutatorOrRequest) {
-  if (!game.user.isGM) {
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "rest:mutate",
-      userId: game.user.id,
-      request: mutatorOrRequest
-    });
-    // ✅ NEW: Refresh immediately for player to avoid stale lag
-    refreshOpenApps();
-    return;
-  }
-  // ... rest of function
-}
-```
-
-#### Fix #2: `updateMarchingOrderState()` - Lines 600-622
-```javascript
-async function updateMarchingOrderState(mutatorOrRequest) {
-  if (!game.user.isGM) {
-    game.socket.emit(SOCKET_CHANNEL, {
-      type: "march:mutate",
-      userId: game.user.id,
-      request: mutatorOrRequest
-    });
-    // ✅ NEW: Refresh immediately for player to avoid stale lag
-    refreshOpenApps();
-    return;
-  }
-  // ... rest of function
-}
-```
-
----
-
-## Impact
-
-✅ **Player Experience**: 
-- No more stale lag when performing actions
-- Instant visual feedback on all mutations
-- Smooth, responsive UI updates
-
-✅ **GM Experience**:
-- No changes to GM workflow
-- GM actions still immediately refresh (as before)
-- Socket validation still happens server-side
-
-✅ **Technical**:
-- Event delegation now consistent across all handlers
-- No race conditions
-- Server-side persistence still validated
-
----
-
-## Testing Checklist
-
-- [ ] **Player assigns to watch slot** → Should see refresh instantly
-- [ ] **Player clears their slot** → Visible immediately
-- [ ] **Player edits watch notes** → Appears right away
-- [ ] **Player joins marching rank** → Instant update
-- [ ] **Player edits marching notes** → No lag
-- [ ] **GM locks/unlocks** → Reflects on all clients
-- [ ] **Multiple players acting** → No conflicts
-- [ ] **Network delay simulation** → UI still responsive locally
-
----
-
-## Version
-- **Date Fixed**: February 8, 2026
-- **Severity**: Medium (UX improvement + 1 bug fix)
-- **Breaking Changes**: None
+See [ROADMAP.md](./ROADMAP.md) for planned work beyond the current build line.

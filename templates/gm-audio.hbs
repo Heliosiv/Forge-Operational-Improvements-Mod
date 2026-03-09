@@ -87,8 +87,8 @@
           </div>
           <div class="po-audio-filter-shell">
             <label class="po-resource-row">
-              <span>Search</span>
-              <input type="text" class="po-input" data-action="set-audio-library-filter" data-field="search" value="{{audio.filters.search}}" placeholder="dragon, tavern, rain..." />
+              <span>Name / Tag Search</span>
+              <input type="text" class="po-input" data-action="set-audio-library-filter" data-field="search" value="{{audio.filters.search}}" placeholder="rain, tavern, battle..." />
             </label>
             <label class="po-resource-row">
               <span>Kind</span>
@@ -107,6 +107,26 @@
               </select>
             </label>
           </div>
+          <div class="po-audio-filter-group">
+            <div class="po-op-summary">Tag Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any tag){{/if}}</div>
+            {{#if audio.filterOptions.hasTagOptions}}
+            <div class="po-audio-tag-chip-grid" role="list" aria-label="Audio tag filters">
+              {{#each audio.filterOptions.tagOptions}}
+              <button
+                type="button"
+                class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                data-action="set-audio-library-filter"
+                data-field="selectedTags"
+                data-tag="{{value}}"
+                aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+              </button>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-op-summary">No track tags are available yet. Scan a library first.</div>
+            {{/if}}
+          </div>
 
           <div class="po-audio-chip-list" role="list" aria-label="Audio usage summaries">
             {{#each audio.summary.cards}}
@@ -118,6 +138,7 @@
           </div>
           <div class="po-op-summary">Showing {{audio.results.visibleCount}} of {{audio.results.totalMatches}} matching tracks.</div>
           <div class="po-op-action-row po-audio-card-actions po-audio-results-toolbar">
+            <button type="button" class="po-btn po-btn-sm" data-action="set-audio-library-filter" data-field="clearAll" {{#unless audio.filterOptions.hasActiveFilters}}disabled{{/unless}}>Clear Filters</button>
             <button type="button" class="po-btn po-btn-sm" data-action="select-visible-audio-tracks" {{#unless audio.results.hasTracks}}disabled{{/unless}}>Check Visible</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-selected-audio-tracks" {{#unless audio.results.selection.hasSelection}}disabled{{/unless}}>Clear Checked</button>
             <button type="button" class="po-btn po-btn-sm" data-action="hide-selected-audio-tracks" {{#unless audio.results.selection.hasSelection}}disabled{{/unless}}>Hide Checked</button>
@@ -387,6 +408,46 @@
               </button>
             </div>
           </div>
+          <div class="po-audio-filter-shell po-audio-track-browser-filters">
+            <label class="po-resource-row">
+              <span>Name / Tag Search</span>
+              <input type="text" class="po-input" data-action="set-audio-library-filter" data-field="search" value="{{audio.filters.search}}" placeholder="rain, tavern, battle..." />
+            </label>
+            <label class="po-resource-row">
+              <span>Kind</span>
+              <select class="po-select" data-action="set-audio-library-filter" data-field="kind">
+                {{#each audio.filterOptions.kindOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+            <label class="po-resource-row">
+              <span>Usage</span>
+              <select class="po-select" data-action="set-audio-library-filter" data-field="usage">
+                {{#each audio.filterOptions.usageOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </label>
+          </div>
+          {{#if audio.filterOptions.hasTagOptions}}
+          <div class="po-audio-filter-group">
+            <div class="po-op-summary">Tag Filter {{#if audio.filterOptions.selectedTagCount}}({{audio.filterOptions.selectedTagCount}} selected){{else}}(Any tag){{/if}}</div>
+            <div class="po-audio-tag-chip-grid" role="list" aria-label="Mix track browser tag filters">
+              {{#each audio.filterOptions.tagOptions}}
+              <button
+                type="button"
+                class="po-pill po-audio-filter-chip {{#if selected}}is-selected{{/if}}"
+                data-action="set-audio-library-filter"
+                data-field="selectedTags"
+                data-tag="{{value}}"
+                aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+                {{label}} <span class="po-audio-filter-chip-count">{{count}}</span>
+              </button>
+              {{/each}}
+            </div>
+          </div>
+          {{/if}}
           <div class="po-audio-track-browser-meta">
             <div class="po-op-summary">{{audio.mix.trackBrowser.summaryLabel}}</div>
             {{#if audio.mix.trackBrowser.pagination.hasMultiplePages}}
@@ -412,6 +473,7 @@
             {{/if}}
           </div>
           <div class="po-op-action-row po-audio-card-actions po-audio-results-toolbar">
+            <button type="button" class="po-btn po-btn-sm" data-action="set-audio-library-filter" data-field="clearAll" {{#unless audio.filterOptions.hasActiveFilters}}disabled{{/unless}}>Clear Filters</button>
             <button type="button" class="po-btn po-btn-sm" data-action="select-visible-audio-mix-tracks" {{#unless audio.mix.trackBrowser.hasTracks}}disabled{{/unless}}>Select Visible</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-selected-audio-mix-tracks" {{#unless audio.mix.trackBrowser.selection.hasSelection}}disabled{{/unless}}>Clear Selected</button>
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="add-selected-audio-mix-tracks" {{#unless audio.mix.trackBrowser.selection.hasSelection}}disabled{{/unless}}>Add Selected</button>

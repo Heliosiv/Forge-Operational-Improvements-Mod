@@ -10192,7 +10192,7 @@ function buildGmAudioPageContext() {
       viewLibrary: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.LIBRARY,
       viewMix: normalizeAudioLibraryView(audioLibraryUiState.view) === AUDIO_LIBRARY_VIEW_IDS.MIX,
       filters: normalizeAudioLibraryFilters(audioLibraryUiState.filters),
-      filterOptions: buildAudioLibraryFilterOptions(),
+      filterOptions: buildAudioLibraryFilterOptions(catalog),
       summary: buildAudioLibrarySummary(catalog, { hiddenCount: hiddenMatches.length }),
       results,
       mix: buildAudioMixContext(catalog),
@@ -12204,7 +12204,8 @@ const audioLibraryUiState = {
   filters: {
     search: "",
     kind: "all",
-    usage: "all"
+    usage: "all",
+    selectedTags: []
   },
   selectedTrackId: "",
   selectedTrackIds: [],
@@ -12554,12 +12555,36 @@ function normalizeAudioLibraryUsage(value) {
   return Object.prototype.hasOwnProperty.call(AUDIO_LIBRARY_USAGE_LABELS, normalized) ? normalized : "all";
 }
 
+function normalizeAudioLibraryTag(value) {
+  return String(value ?? "").trim().toLowerCase().slice(0, 80);
+}
+
+function normalizeAudioLibraryTagList(values = []) {
+  const source = Array.isArray(values)
+    ? values
+    : String(values ?? "").split(/[,\n;]+/g);
+  return Array.from(new Set(source
+    .map((entry) => normalizeAudioLibraryTag(entry))
+    .filter(Boolean)));
+}
+
 function normalizeAudioLibraryFilters(filters = {}) {
   return {
     search: normalizeAudioLibrarySearch(filters.search),
     kind: normalizeAudioLibraryKind(filters.kind),
-    usage: normalizeAudioLibraryUsage(filters.usage)
+    usage: normalizeAudioLibraryUsage(filters.usage),
+    selectedTags: normalizeAudioLibraryTagList(filters.selectedTags ?? [])
   };
+}
+
+function hasActiveAudioLibraryFilters(filters = {}) {
+  const normalized = normalizeAudioLibraryFilters(filters);
+  return Boolean(
+    normalized.search
+    || normalized.kind !== "all"
+    || normalized.usage !== "all"
+    || normalized.selectedTags.length > 0
+  );
 }
 
 function normalizeAudioLibraryTrackSelectionIds(values = []) {
@@ -12626,6 +12651,11 @@ function setAudioMixTrackBrowserPageForView(view, page) {
 function resetAudioMixTrackBrowserPages() {
   setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.SUGGESTED, 0);
   setAudioMixTrackBrowserPageForView(AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL, 0);
+}
+
+function clearAudioLibraryFilters() {
+  audioLibraryUiState.filters = normalizeAudioLibraryFilters({});
+  resetAudioMixTrackBrowserPages();
 }
 
 function buildAudioMixTrackBrowserPagination(totalCount, view = audioLibraryUiState.mixTrackBrowserView) {
@@ -13241,9 +13271,27 @@ async function uploadLocalAudioFolderToLibrary() {
 function setAudioLibraryFilterField(actionElement) {
   const field = String(actionElement?.dataset?.field ?? "").trim();
   if (!field) return;
+  if (field === "clearAll") {
+    clearAudioLibraryFilters();
+    return;
+  }
+  if (!audioLibraryUiState.filters || typeof audioLibraryUiState.filters !== "object") {
+    audioLibraryUiState.filters = normalizeAudioLibraryFilters({});
+  }
   if (field === "search") audioLibraryUiState.filters.search = normalizeAudioLibrarySearch(actionElement?.value);
   if (field === "kind") audioLibraryUiState.filters.kind = normalizeAudioLibraryKind(actionElement?.value);
   if (field === "usage") audioLibraryUiState.filters.usage = normalizeAudioLibraryUsage(actionElement?.value);
+  if (field === "selectedTags") {
+    const tag = normalizeAudioLibraryTag(actionElement?.dataset?.tag ?? actionElement?.value);
+    const selectedTags = new Set(normalizeAudioLibraryTagList(audioLibraryUiState.filters.selectedTags ?? []));
+    if (tag) {
+      if (selectedTags.has(tag)) selectedTags.delete(tag);
+      else selectedTags.add(tag);
+    }
+    audioLibraryUiState.filters.selectedTags = [...selectedTags];
+  }
+  audioLibraryUiState.filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  resetAudioMixTrackBrowserPages();
 }
 
 function setAudioLibraryView(actionElement) {
@@ -13301,10 +13349,11 @@ function toggleAudioMixTrackSelection(actionElement) {
 
 function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedAudioMixPreset()) {
   const assignedTrackIds = buildAudioMixAssignedCandidates(catalog, preset).map(({ item }) => item.id);
-  const suggestedCandidates = buildAudioMixCandidates(catalog, preset, {
+  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
+  const suggestedCandidates = filterAudioMixTrackCandidates(buildAudioMixCandidates(catalog, preset, {
     excludeTrackIds: assignedTrackIds
-  });
-  const allCandidates = catalog.items
+  }), filters);
+  const allCandidates = filterAudioMixTrackCandidates(catalog.items
     .map((item) => ({
       item,
       score: scoreAudioTrackForMixPreset(item, preset)
@@ -13315,7 +13364,7 @@ function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedA
       const subcategoryCompare = String(left.item.subcategory ?? "").localeCompare(String(right.item.subcategory ?? ""));
       if (subcategoryCompare !== 0) return subcategoryCompare;
       return String(left.item.name ?? "").localeCompare(String(right.item.name ?? ""));
-    });
+    }), filters);
   const view = normalizeAudioMixTrackBrowserView(audioLibraryUiState.mixTrackBrowserView);
   return {
     view,
@@ -14708,28 +14757,112 @@ async function queueSelectedTrackNext(actionElement) {
 
 function getFilteredAudioLibraryItems(catalog) {
   const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
-  const searchTokens = filters.search.split(/\s+/g).filter(Boolean);
-  return catalog.items.filter((item) => {
-    if (filters.kind !== "all" && item.kind !== filters.kind) return false;
-    if (filters.usage !== "all" && item.usage !== filters.usage) return false;
-    if (searchTokens.length <= 0) return true;
-    const haystack = `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
-    return searchTokens.every((token) => haystack.includes(token));
+  return catalog.items.filter((item) => matchesAudioLibraryItemFilters(item, filters));
+}
+
+function normalizeAudioLibrarySearchMatchText(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function isAudioLibrarySubsequenceMatch(needle = "", haystack = "") {
+  if (!needle || !haystack || needle.length < 3) return false;
+  let index = 0;
+  for (const char of haystack) {
+    if (char === needle[index]) index += 1;
+    if (index >= needle.length) return true;
+  }
+  return false;
+}
+
+function isAudioLibraryFuzzyTokenMatch(token, candidateValues = []) {
+  const normalizedToken = normalizeAudioLibrarySearchMatchText(token).replace(/\s+/g, "");
+  if (!normalizedToken) return true;
+  return candidateValues.some((value) => {
+    const normalizedValue = normalizeAudioLibrarySearchMatchText(value);
+    if (!normalizedValue) return false;
+    const compactValue = normalizedValue.replace(/\s+/g, "");
+    return normalizedValue.includes(normalizedToken)
+      || compactValue.includes(normalizedToken)
+      || isAudioLibrarySubsequenceMatch(normalizedToken, compactValue);
   });
 }
 
-function buildAudioLibraryFilterOptions() {
+function getAudioLibraryItemSearchValues(item = {}) {
+  return [
+    String(item?.name ?? ""),
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+    String(item?.category ?? ""),
+    String(item?.subcategory ?? "")
+  ].filter(Boolean);
+}
+
+function matchesAudioLibraryItemFilters(item = {}, filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)) {
+  const normalizedFilters = normalizeAudioLibraryFilters(filters);
+  if (normalizedFilters.kind !== "all" && item.kind !== normalizedFilters.kind) return false;
+  if (normalizedFilters.usage !== "all" && item.usage !== normalizedFilters.usage) return false;
+  if (normalizedFilters.selectedTags.length > 0) {
+    const itemTags = new Set(normalizeAudioLibraryTagList(item?.tags ?? []));
+    if (!normalizedFilters.selectedTags.some((tag) => itemTags.has(tag))) return false;
+  }
+  const searchTokens = normalizedFilters.search.split(/\s+/g).filter(Boolean);
+  if (searchTokens.length <= 0) return true;
+  const searchValues = getAudioLibraryItemSearchValues(item);
+  return searchTokens.every((token) => isAudioLibraryFuzzyTokenMatch(token, searchValues));
+}
+
+function filterAudioMixTrackCandidates(candidates = [], filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters)) {
+  const normalizedFilters = normalizeAudioLibraryFilters(filters);
+  return (Array.isArray(candidates) ? candidates : []).filter(({ item }) => matchesAudioLibraryItemFilters(item, normalizedFilters));
+}
+
+function buildAudioLibraryFilterOptions(catalog = getAudioLibraryCatalog()) {
+  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
   const kindOptions = Object.entries(AUDIO_LIBRARY_KIND_LABELS).map(([value, label]) => ({
     value,
     label,
-    selected: normalizeAudioLibraryKind(audioLibraryUiState.filters.kind) === value
+    selected: filters.kind === value
   }));
   const usageOptions = Object.entries(AUDIO_LIBRARY_USAGE_LABELS).map(([value, label]) => ({
     value,
     label,
-    selected: normalizeAudioLibraryUsage(audioLibraryUiState.filters.usage) === value
+    selected: filters.usage === value
   }));
-  return { kindOptions, usageOptions };
+  const tagCounts = new Map();
+  for (const item of Array.isArray(catalog?.items) ? catalog.items : []) {
+    const seenItemTags = new Set();
+    for (const tag of Array.isArray(item?.tags) ? item.tags : []) {
+      const value = normalizeAudioLibraryTag(tag);
+      const label = String(tag ?? "").trim();
+      if (!value || !label || seenItemTags.has(value)) continue;
+      seenItemTags.add(value);
+      const existing = tagCounts.get(value) ?? { value, label, count: 0 };
+      existing.count += 1;
+      tagCounts.set(value, existing);
+    }
+  }
+  const tagOptions = Array.from(tagCounts.values())
+    .sort((left, right) => {
+      const selectedCompare = Number(filters.selectedTags.includes(right.value)) - Number(filters.selectedTags.includes(left.value));
+      if (selectedCompare !== 0) return selectedCompare;
+      const countCompare = Number(right.count ?? 0) - Number(left.count ?? 0);
+      if (countCompare !== 0) return countCompare;
+      return String(left.label ?? "").localeCompare(String(right.label ?? ""));
+    })
+    .map((entry) => ({
+      ...entry,
+      selected: filters.selectedTags.includes(entry.value)
+    }));
+  return {
+    kindOptions,
+    usageOptions,
+    tagOptions,
+    hasTagOptions: tagOptions.length > 0,
+    selectedTagCount: filters.selectedTags.length,
+    hasActiveFilters: hasActiveAudioLibraryFilters(filters)
+  };
 }
 
 function buildAudioLibrarySummary(catalog, options = {}) {
@@ -15039,6 +15172,7 @@ function buildAudioMixContext(catalog) {
       hasTracks: visibleTrackRows.length > 0,
       totalCount: visibleCandidates.length,
       visibleCount: visibleTrackRows.length,
+      hasActiveFilters: hasActiveAudioLibraryFilters(audioLibraryUiState.filters),
       pagination: {
         ...pagination
       },
