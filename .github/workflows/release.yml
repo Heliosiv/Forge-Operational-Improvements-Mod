@@ -2,6 +2,8 @@ name: release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*.*.*"
   workflow_dispatch:
@@ -16,33 +18,47 @@ jobs:
     steps:
       - name: 1) Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 2) Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: 3) Validate module metadata
+      - name: 3) Read module version
+        id: module_meta
+        shell: bash
+        run: |
+          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).version")
+          if [ -z "$VERSION" ]; then
+            echo "module.json version is empty" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 4) Validate module metadata
         run: node scripts/validate-module.mjs
 
-      - name: 4) Validate module.json version matches tag
+      - name: 5) Validate module.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          MODULE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('module.json','utf8')).version")
+          MODULE_VERSION="${{ steps.module_meta.outputs.version }}"
           echo "Tag version:    ${TAG_VERSION}"
           echo "Module version: ${MODULE_VERSION}"
           test "${TAG_VERSION}" = "${MODULE_VERSION}"
 
-      - name: 5) Prepare Forge package contents
+      - name: 6) Prepare Forge package contents
         run: node scripts/prepare-package.mjs --output release
 
-      - name: 6) Build module.zip artifact
+      - name: 7) Build module.zip artifact
         run: |
           cd release/staging
           zip -r ../module.zip .
 
-      - name: 7) Upload workflow artifact
+      - name: 8) Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: party-operations-package
@@ -50,11 +66,18 @@ jobs:
             release/module.zip
             release/module.json
 
-      - name: 8) Create GitHub release with module artifacts
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            release/module.zip
-            release/module.json
-          generate_release_notes: true
+      - name: 9) Publish GitHub release assets
+        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.module_meta.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release/module.zip release/module.json --clobber
+          else
+            gh release create "$RELEASE_TAG" release/module.zip release/module.json \
+              --title "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" \
+              --generate-notes
+          fi

@@ -15,6 +15,10 @@ git commit -m "Describe your changes"
 git push origin main
 ```
 
+Pushing to `main` now publishes `module.json` and `module.zip` to the GitHub Release that Forge reads from the manifest URLs.
+Pushing to feature branches does not update Forge, because the manifest points to GitHub release assets rather than branch files.
+If you want Forge to detect a new update, `module.json` version must change before the `main` push.
+
 ### Release workflow (Forge/GitHub latest assets)
 
 Use the release script to bump version, commit, tag, and push in one step:
