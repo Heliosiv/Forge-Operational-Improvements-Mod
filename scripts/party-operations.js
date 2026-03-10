@@ -1038,9 +1038,9 @@ const LOOT_RARITY_OPTIONS = [
   { value: "legendary", label: "Legendary" }
 ];
 const LOOT_PREVIEW_MODE_OPTIONS = [
-  { value: "individual", label: "Individual Loot" },
-  { value: "hoard", label: "Hoard Loot" },
-  { value: "mixed", label: "Encounter + Stash" }
+  { value: "horde", label: "Horde Loot" },
+  { value: "defeated", label: "Defeated Enemy Loot" },
+  { value: "encounter", label: "Encounter Assignment Loot" }
 ];
 const LOOT_PREVIEW_ROLL_MODE_OPTIONS = [
   { value: "per-creature", label: "Per Creature" },
@@ -7030,14 +7030,12 @@ function parseLootPreviewNumericInput(value, fallback = 0) {
 }
 
 function normalizeLootPreviewDraft(input = {}) {
-  const mode = normalizeLootPreviewMode(input?.mode ?? "hoard");
-  const rollMode = normalizeLootPreviewRollMode(input?.rollMode ?? "per-creature");
+  const mode = String(input?.mode ?? "horde").trim().toLowerCase();
   const profile = String(input?.profile ?? "standard").trim().toLowerCase();
   const challenge = String(input?.challenge ?? "mid").trim().toLowerCase();
   const scale = String(input?.scale ?? "medium").trim().toLowerCase();
   const creaturesRaw = parseLootPreviewNumericInput(input?.creatures ?? input?.actorCount, 1);
-  const creatures = Number.isFinite(creaturesRaw) ? Math.max(0, Math.min(100, Math.floor(creaturesRaw))) : 1;
-  const hoardLabel = String(input?.hoardLabel ?? input?.label ?? "").trim();
+  const creatures = Number.isFinite(creaturesRaw) ? Math.max(1, Math.min(100, Math.floor(creaturesRaw))) : 1;
   const distributionMixRaw = parseLootPreviewNumericInput(input?.distributionMix, NaN);
   const currencyScalarRaw = parseLootPreviewNumericInput(input?.currencyScalar, NaN);
   const itemScalarRaw = parseLootPreviewNumericInput(input?.itemScalar, NaN);
@@ -7080,17 +7078,15 @@ function normalizeLootPreviewDraft(input = {}) {
   const profileAllowed = new Set(LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => entry.value));
   const challengeAllowed = new Set(LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => entry.value));
   const scaleAllowed = new Set(LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => entry.value));
-  const normalizedMode = modeAllowed.has(mode) ? mode : "hoard";
-  const normalizedCreatures = (normalizedMode === "individual" || normalizedMode === "mixed") ? creatures : 1;
+  const normalizedMode = modeAllowed.has(mode) ? mode : "horde";
+  const normalizedCreatures = normalizedMode === "encounter" ? creatures : 1;
   return {
     mode: normalizedMode,
-    rollMode,
     profile: profileAllowed.has(profile) ? profile : "standard",
     challenge: challengeAllowed.has(challenge) ? challenge : "mid",
     scale: scaleAllowed.has(scale) ? scale : "medium",
     creatures: normalizedCreatures,
     actorCount: normalizedCreatures,
-    hoardLabel,
     distributionMix,
     currencyScalar,
     itemScalar,
@@ -7948,17 +7944,12 @@ function buildOperationsContextFallback() {
         updatedBy: "-"
       },
       preview: {
-        showEncounterCreatures: fallbackMode === "individual" || fallbackMode === "mixed",
-        showCreatureCount: fallbackMode === "individual" || fallbackMode === "mixed",
-        showHoardLabel: fallbackMode === "hoard" || fallbackMode === "mixed",
-        showRollMode: fallbackMode === "individual" || fallbackMode === "mixed",
+        showEncounterCreatures: fallbackMode === "encounter",
         modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackMode })),
-        rollModeOptions: LOOT_PREVIEW_ROLL_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackRollMode })),
         profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackProfile })),
         challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackChallenge })),
         scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackScale })),
         draft: fallbackPreviewDraft,
-        crBracket: getCrBracketFromChallenge(fallbackChallenge),
         hasResult: false,
         generatedAtLabel: "-",
         generatedBy: "-",
@@ -18107,11 +18098,11 @@ function getCrBracketFromChallenge(challenge = "low") {
 
 function normalizeLootPreviewMode(value = "hoard") {
   const normalized = String(value ?? "hoard").trim().toLowerCase();
-  if (normalized === "individual" || normalized === "hoard" || normalized === "mixed") return normalized;
-  if (normalized === "horde") return "hoard";
-  if (normalized === "defeated") return "individual";
-  if (normalized === "encounter") return "mixed";
-  return "hoard";
+  if (normalized === "horde" || normalized === "defeated" || normalized === "encounter") return normalized;
+  if (normalized === "hoard") return "horde";
+  if (normalized === "individual") return "defeated";
+  if (normalized === "mixed") return "encounter";
+  return "horde";
 }
 
 function normalizeLootPreviewRollMode(value = "per-creature") {
@@ -18672,7 +18663,9 @@ function resolveTargetGP(draft = {}) {
     const baseTargetTable = {
       defeated: { low: 24, mid: 90, high: 320, epic: 980 },
       encounter: { low: 45, mid: 180, high: 700, epic: 2200 },
-      horde: { low: 90, mid: 340, high: 1250, epic: 3800 }
+      // Hoards keep the established builder flow, but the low tier baseline is raised
+      // to better match the DMG-style total wealth the user asked for.
+      horde: { low: 780, mid: 340, high: 1250, epic: 3800 }
     };
     const modeKey = (mode === "defeated" || mode === "encounter" || mode === "horde") ? mode : "horde";
     const byMode = baseTargetTable[modeKey] ?? baseTargetTable.horde;
@@ -20511,33 +20504,95 @@ async function buildLootTableRolls(sourceConfig, draft, warnings = [], randomCon
 async function generateLootPreviewPayload(draftInput = {}) {
   try {
     const draft = normalizeLootPreviewDraft(draftInput);
-    const crBracket = getCrBracketFromChallenge(draft.challenge);
-    const randomContext = buildLootRandomContext(draft, { effectiveTotalTargetGp: 0 });
-    const random = randomContext?.random ?? Math.random;
+    logLootBuilderDebug("generateLootPreviewPayload start", {
+      mode: draft.mode,
+      challenge: draft.challenge,
+      profile: draft.profile,
+      scale: draft.scale,
+      creatures: draft.creatures,
+      deterministic: draft.deterministic,
+      seed: draft.seed
+    });
+    const sourceConfig = getLootSourceConfig();
     const warnings = [];
-    let baselineResult;
-    if (draft.mode === "individual") {
-      baselineResult = rollIndividualTreasure(0, draft.creatures, { crBracket, rollMode: draft.rollMode, random });
-      if (draft.creatures <= 0) warnings.push("Creature count is 0, so individual treasure is empty.");
-    } else if (draft.mode === "mixed") {
-      const carried = rollIndividualTreasure(0, draft.creatures, { crBracket, rollMode: draft.rollMode, random });
-      const stored = rollHoardTreasure(0, { crBracket, random });
-      baselineResult = combineTreasureResults(carried, stored, { mode: "mixed", crBracket, creatureCount: draft.creatures });
-      if (draft.creatures <= 0) warnings.push("Encounter + Stash generated only stored loot because creature count is 0.");
-    } else {
-      baselineResult = rollHoardTreasure(0, { crBracket, random });
-    }
-    const finalResult = applyLootTweakers(baselineResult, deriveLootTweakersFromDraft(draft));
-    const items = buildTreasurePseudoItems(finalResult.final);
-    const displayCurrency = normalizeTreasureCurrencyForDisplay(finalResult.final.currency);
-    const currency = {
-      ...displayCurrency,
-      formula: `DMG ${finalResult.mode} ${finalResult.crBracket}`
-    };
-    const tableRolls = buildTreasureAuditTableRolls(finalResult);
+    const previewBudgetContext = buildLootValueBudgetContext(draft, 0);
+    const runtimeBudgetContext = resolveLootRuntimeBudgetContext(draft, previewBudgetContext);
+    const randomContext = buildLootRandomContext(draft, previewBudgetContext);
+    const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
+    const desiredItemCount = runtimeBudgetContext?.targetCount ?? previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
+    const itemCountTarget = Math.max(1, Number(desiredItemCount));
+    const selectedItems = pickLootItemsFromCandidates(candidates, itemCountTarget, draft, {
+      budgetContext: runtimeBudgetContext,
+      randomContext
+    });
+    const selectionMeta = (Array.isArray(selectedItems) && selectedItems.__meta && typeof selectedItems.__meta === "object")
+      ? selectedItems.__meta
+      : null;
+    const items = aggregateLootEntriesForStacks(selectedItems).map((entry) => ({
+      id: foundry.utils.randomID(),
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+      ...entry
+    }));
+    const itemTotals = calculateLootPreviewValueTotals({ items, currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 } }, runtimeBudgetContext);
+    const currency = await rollLootCurrency(draft, randomContext, runtimeBudgetContext, itemTotals.finalItemsValueGp);
     const generatedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
-    const magicItemCount = Array.isArray(finalResult?.final?.magic) ? finalResult.final.magic.length : 0;
-    const finalItemsValueGp = Number((items.reduce((sum, entry) => sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0), 0)).toFixed(2));
+    const valueTotals = calculateLootPreviewValueTotals({ items, currency }, previewBudgetContext);
+    const resolvedSelectionMeta = selectionMeta ?? {
+      deterministic: Boolean(randomContext?.deterministic),
+      seed: String(randomContext?.seed ?? ""),
+      desiredItemCount: itemCountTarget,
+      maxItems: Math.max(0, Number(previewBudgetContext?.maxItems ?? 0) || 0),
+      encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+      itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
+      currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+      resolvedEncounterTargetGp: Number(runtimeBudgetContext?.resolvedTotalTargetGp ?? runtimeBudgetContext?.effectiveTotalTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+      resolvedItemTargetGp: Number(runtimeBudgetContext?.targetItemBudgetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+      resolvedCurrencyTargetGp: Number(runtimeBudgetContext?.targetCurrencyBudgetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+      finalItemsValueGp: valueTotals.finalItemsValueGp,
+      finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
+      finalCombinedValueGp: valueTotals.finalCombinedValueGp,
+      itemDeltaGp: valueTotals.itemDeltaGp,
+      deltaGp: 0,
+      toleranceGp: Number(previewBudgetContext?.toleranceGp ?? 0),
+      tolerancePercent: Number(previewBudgetContext?.tolerancePercent ?? 0),
+      strictnessBandLabel: String(previewBudgetContext?.strictnessBandLabel ?? "Normal"),
+      strictnessBandKey: String(previewBudgetContext?.strictnessBandKey ?? "normal"),
+      candidateCount: candidates.length,
+      diagnostics: []
+    };
+    resolvedSelectionMeta.finalItemsValueGp = valueTotals.finalItemsValueGp;
+    resolvedSelectionMeta.finalCurrencyValueGp = valueTotals.finalCurrencyValueGp;
+    resolvedSelectionMeta.finalCombinedValueGp = valueTotals.finalCombinedValueGp;
+    resolvedSelectionMeta.itemDeltaGp = valueTotals.itemDeltaGp;
+    resolvedSelectionMeta.deltaGp = valueTotals.deltaGp;
+    const tableRolls = await buildLootTableRolls(sourceConfig, draft, warnings, randomContext);
+    if (candidates.length === 0) warnings.push("No eligible item candidates were found for current source/filter settings.");
+    const seenDiagnostics = new Set();
+    for (const note of (resolvedSelectionMeta.diagnostics ?? [])) {
+      const text = String(note ?? "").trim();
+      if (!text) continue;
+      const key = text.toLowerCase();
+      if (seenDiagnostics.has(key)) continue;
+      seenDiagnostics.add(key);
+      warnings.push(`Budget note: ${text}`);
+    }
+    logLootBuilderDebug("builder generation summary", {
+      encounterTargetGp: resolvedSelectionMeta.encounterTargetGp,
+      creatureCount: draft.creatures,
+      desiredItemCount: resolvedSelectionMeta.desiredItemCount,
+      maxItems: resolvedSelectionMeta.maxItems,
+      strictnessBand: resolvedSelectionMeta.strictnessBandLabel,
+      strictnessToleranceGp: resolvedSelectionMeta.toleranceGp,
+      resolvedEncounterTargetGp: resolvedSelectionMeta.resolvedEncounterTargetGp,
+      candidateCount: candidates.length,
+      finalItemsValueGp: resolvedSelectionMeta.finalItemsValueGp,
+      finalCurrencyValueGp: resolvedSelectionMeta.finalCurrencyValueGp,
+      finalCombinedValueGp: resolvedSelectionMeta.finalCombinedValueGp,
+      itemDeltaGp: resolvedSelectionMeta.itemDeltaGp,
+      deltaGp: resolvedSelectionMeta.deltaGp,
+      deterministic: resolvedSelectionMeta.deterministic,
+      seed: resolvedSelectionMeta.seed
+    });
     return {
       generatedAt: Date.now(),
       generatedBy: String(game.user?.name ?? "GM"),
@@ -20545,37 +20600,32 @@ async function generateLootPreviewPayload(draftInput = {}) {
       currency,
       items,
       tableRolls,
-      mode: finalResult.mode,
-      crBracket: finalResult.crBracket,
-      source: finalResult.source,
-      baseline: finalResult.baseline,
-      modifiers: finalResult.modifiers,
-      final: finalResult.final,
-      summary: summarizeLoot(finalResult),
       stats: {
-        candidateCount: 0,
-        itemCountTarget: generatedItemCount,
+        candidateCount: candidates.length,
+        itemCountTarget,
         itemCountGenerated: generatedItemCount,
         tableRollCount: tableRolls.length,
-        creatureCount: Math.max(0, Number(draft?.creatures ?? draft?.actorCount ?? 0) || 0),
-        enabledItemSources: 0,
-        enabledTableSources: 0,
-        desiredItemCount: generatedItemCount,
-        maxItems: generatedItemCount,
-        encounterTargetGp: 0,
-        finalItemsValueGp,
-        generatedTotalWealthGp: Math.max(0, Number(finalResult?.final?.gpEquivalent ?? 0) || 0),
-        totalWealthTargetGp: Math.max(0, Number(finalResult?.final?.gpEquivalent ?? 0) || 0),
-        currencyTargetGp: convertCurrencyToGpEquivalent(finalResult?.final?.currency ?? {}),
-        combatantWealthMultiplier: 1,
-        magicItemCount,
-        deltaGp: 0,
-        strictnessToleranceGp: 0,
-        strictnessTolerancePercent: 0,
-        strictnessBandLabel: "DMG Baseline",
-        deterministic: Boolean(randomContext?.deterministic),
-        seed: String(randomContext?.seed ?? ""),
-        crBracket
+        creatureCount: Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1),
+        enabledItemSources: (sourceConfig.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+        enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
+        desiredItemCount: Math.max(0, Number(resolvedSelectionMeta.desiredItemCount ?? itemCountTarget) || itemCountTarget),
+        maxItems: Math.max(0, Number(resolvedSelectionMeta.maxItems ?? 0) || 0),
+        encounterTargetGp: Number(resolvedSelectionMeta.encounterTargetGp ?? 0),
+        itemTargetGp: Number(resolvedSelectionMeta.itemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+        currencyTargetGp: Number(resolvedSelectionMeta.currencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+        resolvedEncounterTargetGp: Number(resolvedSelectionMeta.resolvedEncounterTargetGp ?? previewBudgetContext?.effectiveTotalTargetGp ?? 0),
+        resolvedItemTargetGp: Number(resolvedSelectionMeta.resolvedItemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
+        resolvedCurrencyTargetGp: Number(resolvedSelectionMeta.resolvedCurrencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
+        finalItemsValueGp: Number(resolvedSelectionMeta.finalItemsValueGp ?? 0),
+        finalCurrencyValueGp: Number(resolvedSelectionMeta.finalCurrencyValueGp ?? 0),
+        finalCombinedValueGp: Number(resolvedSelectionMeta.finalCombinedValueGp ?? 0),
+        itemDeltaGp: Number(resolvedSelectionMeta.itemDeltaGp ?? 0),
+        deltaGp: Number(resolvedSelectionMeta.deltaGp ?? 0),
+        strictnessToleranceGp: Number(resolvedSelectionMeta.toleranceGp ?? 0),
+        strictnessTolerancePercent: Number(resolvedSelectionMeta.tolerancePercent ?? 0),
+        strictnessBandLabel: String(resolvedSelectionMeta.strictnessBandLabel ?? "Normal"),
+        deterministic: Boolean(resolvedSelectionMeta.deterministic),
+        seed: String(resolvedSelectionMeta.seed ?? "")
       },
       warnings
     };
@@ -20601,18 +20651,18 @@ async function generateLootPreviewPayload(draftInput = {}) {
         itemCountTarget: 0,
         itemCountGenerated: 0,
         tableRollCount: 0,
-        creatureCount: Math.max(0, Number(draftInput?.creatures ?? draftInput?.actorCount ?? 0) || 0),
+        creatureCount: Math.max(1, Number(draftInput?.creatures ?? draftInput?.actorCount ?? 1) || 1),
         enabledItemSources: 0,
         enabledTableSources: 0,
         desiredItemCount: 0,
         maxItems: 0,
         encounterTargetGp: 0,
+        itemTargetGp: 0,
         currencyTargetGp: 0,
         finalItemsValueGp: 0,
-        generatedTotalWealthGp: 0,
-        totalWealthTargetGp: 0,
-        combatantWealthMultiplier: 1,
-        magicItemCount: 0,
+        finalCurrencyValueGp: 0,
+        finalCombinedValueGp: 0,
+        itemDeltaGp: 0,
         deltaGp: 0,
         strictnessToleranceGp: 0,
         strictnessTolerancePercent: 0,
@@ -20797,77 +20847,48 @@ function buildLootPreviewContext() {
   const draft = getLootPreviewDraft();
   const result = getLootPreviewResult();
   const hasResult = Boolean(result && typeof result === "object");
-  const mode = normalizeLootPreviewMode(draft.mode ?? "hoard");
-  const rollMode = normalizeLootPreviewRollMode(draft.rollMode ?? "per-creature");
+  const mode = String(draft.mode ?? "horde");
   const profile = String(draft.profile ?? "standard");
   const challenge = String(draft.challenge ?? "mid");
   const scale = String(draft.scale ?? "medium");
+  const itemCountTarget = getLootItemCount(draft);
+  const valueBudgetContext = buildLootValueBudgetContext(draft, itemCountTarget);
+  const displayTotals = calculateLootPreviewValueTotals(result, valueBudgetContext);
   const generatedAt = Number(result?.generatedAt ?? 0);
   const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
-  const baselineCurrency = cloneTreasureCurrency(result?.baseline?.currency ?? {});
-  const baselineGems = cloneTreasureValueEntries(result?.baseline?.gems ?? []);
-  const baselineArt = cloneTreasureValueEntries(result?.baseline?.art ?? []);
-  const baselineMagic = cloneTreasureMagicEntries(result?.baseline?.magic ?? []);
-  const baselineGpEquivalent = Number((convertCurrencyToGpEquivalent(baselineCurrency) + getTreasureEntryGpTotal(baselineGems) + getTreasureEntryGpTotal(baselineArt)).toFixed(2));
-  const finalSummary = result?.final && typeof result.final === "object"
-    ? {
-      currency: cloneTreasureCurrency(result.final.currency ?? {}),
-      gems: cloneTreasureValueEntries(result.final.gems ?? []),
-      art: cloneTreasureValueEntries(result.final.art ?? []),
-      magic: cloneTreasureMagicEntries(result.final.magic ?? []),
-      gpEquivalent: Math.max(0, Number(result.final.gpEquivalent ?? 0) || 0)
-    }
-    : {
-      currency: createEmptyTreasureCurrency(),
-      gems: [],
-      art: [],
-      magic: [],
-      gpEquivalent: 0
-    };
-  const baselineCurrencyLabel = formatTreasureCurrencyLabel(baselineCurrency, { includeZero: true });
-  const finalCurrencyLabel = formatTreasureCurrencyLabel(finalSummary.currency, { includeZero: true });
-  const maxEntryGp = Math.max(0, ...[
-    ...finalSummary.gems.map((entry) => Math.max(0, Number(entry?.totalGp ?? 0) || 0)),
-    ...finalSummary.art.map((entry) => Math.max(0, Number(entry?.totalGp ?? 0) || 0))
-  ]);
   return {
     draft,
-    showEncounterCreatures: mode === "individual" || mode === "mixed",
-    showCreatureCount: mode === "individual" || mode === "mixed",
-    showHoardLabel: mode === "hoard" || mode === "mixed",
-    showRollMode: mode === "individual" || mode === "mixed",
+    showEncounterCreatures: mode === "encounter",
     modeOptions: LOOT_PREVIEW_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === mode })),
-    rollModeOptions: LOOT_PREVIEW_ROLL_MODE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === rollMode })),
     profileOptions: LOOT_PREVIEW_PROFILE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === profile })),
     challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === challenge })),
     scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === scale })),
     budget: {
-      targetPerItemGp: 0,
-      totalBudgetGp: baselineGpEquivalent,
-      targetItemBudgetGp: Number((getTreasureEntryGpTotal(finalSummary.gems) + getTreasureEntryGpTotal(finalSummary.art)).toFixed(2)),
-      targetCurrencyBudgetGp: convertCurrencyToGpEquivalent(finalSummary.currency),
-      itemSharePercent: 0,
-      currencySharePercent: 0,
-      autoTotalTargetGp: baselineGpEquivalent,
-      manualTotalTargetGp: 0,
-      effectiveTotalTargetGp: baselineGpEquivalent,
-      autoTotalWealthGp: baselineGpEquivalent,
-      effectiveTotalWealthGp: finalSummary.gpEquivalent,
-      effectiveCurrencyTargetGp: convertCurrencyToGpEquivalent(finalSummary.currency),
-      combatantWealthMultiplier: 1,
-      targetValueRangeMinGp: 0,
-      targetValueRangeMaxGp: 0,
-      toleranceGp: 0,
-      tolerancePercent: 0,
-      strictnessBandLabel: "DMG Baseline",
-      desiredItemCount: Math.max(0, baselineMagic.length + baselineGems.length + baselineArt.length),
-      maxItems: Math.max(0, baselineMagic.length + baselineGems.length + baselineArt.length),
-      usingManualTotalTarget: false,
-      usingManualMaxItems: false,
-      autoMaxItemValueGp: maxEntryGp,
-      manualMaxItemValueGp: 0,
-      effectiveMaxItemValueGp: maxEntryGp,
-      usingManualCap: false
+      targetPerItemGp: Number(valueBudgetContext.targetPerItemGp ?? 0),
+      totalBudgetGp: Number(valueBudgetContext.totalBudgetGp ?? 0),
+      targetItemBudgetGp: Number(valueBudgetContext.targetItemBudgetGp ?? 0),
+      targetCurrencyBudgetGp: Number(valueBudgetContext.targetCurrencyBudgetGp ?? 0),
+      itemSharePercent: Number(valueBudgetContext.itemSharePercent ?? 0),
+      currencySharePercent: Number(valueBudgetContext.currencySharePercent ?? 0),
+      autoTotalTargetGp: Number(valueBudgetContext.autoTotalTargetGp ?? 0),
+      manualTotalTargetGp: Number(valueBudgetContext.manualTotalTargetGp ?? 0),
+      effectiveTotalTargetGp: Number(valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      targetValueRangeMinGp: Number(valueBudgetContext.targetValueRangeMinGp ?? 0),
+      targetValueRangeMaxGp: Number(valueBudgetContext.targetValueRangeMaxGp ?? 0),
+      toleranceGp: Number(valueBudgetContext.toleranceGp ?? 0),
+      tolerancePercent: Number(valueBudgetContext.tolerancePercent ?? 0),
+      strictnessBandLabel: String(valueBudgetContext.strictnessBandLabel ?? "Normal"),
+      desiredItemCount: Math.max(0, Number(valueBudgetContext.targetCount ?? 0) || 0),
+      baselineDesiredItemCount: Math.max(0, Number(valueBudgetContext.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
+      autoMaxItems: Math.max(0, Number(valueBudgetContext.autoMaxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      manualMaxItems: Math.max(0, Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) || 0),
+      maxItems: Math.max(0, Number(valueBudgetContext.maxItems ?? 0) || 0),
+      usingManualTotalTarget: Number(valueBudgetContext.manualTotalTargetGp ?? 0) > 0,
+      usingManualMaxItems: Number(valueBudgetContext.manualMaxItems ?? draft.maxItems ?? 0) > 0,
+      autoMaxItemValueGp: Number(valueBudgetContext.autoMaxItemValueGp ?? 0),
+      manualMaxItemValueGp: Number(valueBudgetContext.manualMaxItemValueGp ?? 0),
+      effectiveMaxItemValueGp: Number(valueBudgetContext.effectiveMaxItemValueGp ?? 0),
+      usingManualCap: Number(valueBudgetContext.manualMaxItemValueGp ?? 0) > 0
     },
     hasResult,
     generatedAtLabel,
@@ -20887,23 +20908,19 @@ function buildLootPreviewContext() {
       tableRollCount: Math.max(0, Number(result?.stats?.tableRollCount ?? 0) || 0),
       enabledItemSources: Math.max(0, Number(result?.stats?.enabledItemSources ?? 0) || 0),
       enabledTableSources: Math.max(0, Number(result?.stats?.enabledTableSources ?? 0) || 0),
-      desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? 0) || 0),
-      maxItems: Math.max(0, Number(result?.stats?.maxItems ?? 0) || 0),
-      encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? 0),
-      itemTargetGp: Number(result?.stats?.itemTargetGp ?? 0),
-      currencyTargetGp: Number(result?.stats?.currencyTargetGp ?? convertCurrencyToGpEquivalent(finalSummary.currency) ?? 0),
-      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? 0),
-      finalCurrencyValueGp: Number(result?.stats?.finalCurrencyValueGp ?? result?.currency?.gpEquivalent ?? 0),
-      finalCombinedValueGp: Number(result?.stats?.finalCombinedValueGp ?? 0),
-      generatedTotalWealthGp: Number(result?.stats?.generatedTotalWealthGp ?? 0),
-      totalWealthTargetGp: Number(result?.stats?.totalWealthTargetGp ?? baselineGpEquivalent ?? 0),
-      combatantWealthMultiplier: Number(result?.stats?.combatantWealthMultiplier ?? 1),
-      magicItemCount: Math.max(0, Number(result?.stats?.magicItemCount ?? 0) || 0),
-      itemDeltaGp: Number(result?.stats?.itemDeltaGp ?? 0),
-      deltaGp: Number(result?.stats?.deltaGp ?? 0),
-      strictnessToleranceGp: Number(result?.stats?.strictnessToleranceGp ?? 0),
-      strictnessTolerancePercent: Number(result?.stats?.strictnessTolerancePercent ?? 0),
-      strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? "DMG Baseline"),
+      desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
+      maxItems: Math.max(0, Number(result?.stats?.maxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
+      encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? displayTotals.encounterTargetGp ?? valueBudgetContext.effectiveTotalTargetGp ?? 0),
+      itemTargetGp: Number(result?.stats?.itemTargetGp ?? displayTotals.itemTargetGp ?? valueBudgetContext.targetItemBudgetGp ?? 0),
+      currencyTargetGp: Number(result?.stats?.currencyTargetGp ?? displayTotals.currencyTargetGp ?? valueBudgetContext.targetCurrencyBudgetGp ?? 0),
+      finalItemsValueGp: Number(result?.stats?.finalItemsValueGp ?? displayTotals.finalItemsValueGp ?? 0),
+      finalCurrencyValueGp: Number(result?.stats?.finalCurrencyValueGp ?? displayTotals.finalCurrencyValueGp ?? result?.currency?.gpEquivalent ?? 0),
+      finalCombinedValueGp: Number(result?.stats?.finalCombinedValueGp ?? displayTotals.finalCombinedValueGp ?? 0),
+      itemDeltaGp: Number(result?.stats?.itemDeltaGp ?? displayTotals.itemDeltaGp ?? 0),
+      deltaGp: Number(result?.stats?.deltaGp ?? displayTotals.deltaGp ?? 0),
+      strictnessToleranceGp: Number(result?.stats?.strictnessToleranceGp ?? valueBudgetContext.toleranceGp ?? 0),
+      strictnessTolerancePercent: Number(result?.stats?.strictnessTolerancePercent ?? valueBudgetContext.tolerancePercent ?? 0),
+      strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? valueBudgetContext.strictnessBandLabel ?? "Normal"),
       deterministic: Boolean(result?.stats?.deterministic ?? draft?.deterministic !== false),
       seed: String(result?.stats?.seed ?? "")
     },
@@ -35261,15 +35278,9 @@ function setLootPreviewField(element) {
       ? parseLootPreviewNumericInput(element?.value, currentNumericValue)
       : String(element?.value ?? current[normalizedField] ?? "")
   };
-  if (normalizedField === "mode") {
-    next.mode = normalizeLootPreviewMode(next.mode);
-    if (next.mode !== "individual" && next.mode !== "mixed") {
-      next.creatures = 1;
-      next.actorCount = 1;
-    }
-  }
-  if (normalizedField === "rollMode") {
-    next.rollMode = normalizeLootPreviewRollMode(next.rollMode);
+  if (normalizedField === "mode" && String(next.mode ?? "").trim().toLowerCase() !== "encounter") {
+    next.creatures = 1;
+    next.actorCount = 1;
   }
   setLootPreviewDraft(next);
 }
@@ -35316,18 +35327,16 @@ function readLootPreviewDraftFromUi(element) {
     return byName?.value ?? byField?.value ?? fallback;
   };
   return normalizeLootPreviewDraft({
-    mode: readFieldValue("lootPreviewMode", "mode", current?.mode ?? "hoard"),
-    rollMode: readFieldValue("lootPreviewRollMode", "rollMode", current?.rollMode ?? "per-creature"),
+    mode: readFieldValue("lootPreviewMode", "mode", current?.mode ?? "horde"),
     profile: readFieldValue("lootPreviewProfile", "profile", current?.profile ?? "standard"),
     challenge: readFieldValue("lootPreviewChallenge", "challenge", current?.challenge ?? "mid"),
     scale: readFieldValue("lootPreviewScale", "scale", current?.scale ?? "medium"),
     creatures: readFieldValue("lootPreviewCreatures", "creatures", current?.creatures ?? 1),
-    hoardLabel: readFieldValue("lootPreviewHoardLabel", "hoardLabel", current?.hoardLabel ?? ""),
-    currencyScalar: readFieldValue("lootPreviewCurrencyScalar", "currencyScalar", current?.currencyScalar ?? 100),
-    itemScalar: readFieldValue("lootPreviewItemScalar", "itemScalar", current?.itemScalar ?? 100),
+    distributionMix: readFieldValue("lootPreviewDistributionMix", "distributionMix", current?.distributionMix ?? 50),
     tableScalar: readFieldValue("lootPreviewTableScalar", "tableScalar", current?.tableScalar ?? 100),
     valueBudgetScalar: readFieldValue("lootPreviewValueBudgetScalar", "valueBudgetScalar", current?.valueBudgetScalar ?? LOOT_PREVIEW_DEFAULT_VALUE_BUDGET_SCALAR),
     valueStrictness: readFieldValue("lootPreviewValueStrictness", "valueStrictness", current?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
+    maxItems: readFieldValue("lootPreviewMaxItems", "maxItems", current?.maxItems ?? 0),
     maxItemValueGp: readFieldValue("lootPreviewMaxItemValueGp", "maxItemValueGp", current?.maxItemValueGp ?? 0),
     targetItemsValueGp: readFieldValue("lootPreviewTargetItemsValueGp", "targetItemsValueGp", current?.targetItemsValueGp ?? 0)
   });
