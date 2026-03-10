@@ -1067,6 +1067,10 @@ const LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS = 180;
 const LOOT_PREVIEW_MAX_ITEM_COUNT_LIMIT = 80;
 const LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT = 100000;
 const LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT = 1000000;
+const LOOT_VARIABLE_TREASURE_ICONS = Object.freeze({
+  gem: "icons/commodities/gems/gem-faceted-green.webp",
+  art: "icons/commodities/treasure/token-runed-sun-gold.webp"
+});
 const LOOT_PREVIEW_STRICTNESS_BANDS = Object.freeze([
   Object.freeze({ key: "very-strict", label: "Very Strict", min: 240, ratio: 0.05 }),
   Object.freeze({ key: "strict", label: "Strict", min: 180, ratio: 0.1 }),
@@ -17774,6 +17778,82 @@ function getLootItemTagSchemaFromData(data = {}) {
   return String(poFlags?.tagSchema ?? "").trim().toLowerCase();
 }
 
+function normalizeLootVariableTreasureKind(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "gem" || normalized === "gems" || normalized === "gemstone" || normalized === "gemstones") return "gem";
+  if (normalized === "art" || normalized === "art-item" || normalized === "art-items" || normalized === "art-object" || normalized === "art-objects") return "art";
+  return "";
+}
+
+function getLootVariableTreasureKindFromData(data = {}) {
+  const explicit = normalizeLootVariableTreasureKind(
+    data?.variableTreasureKind
+    ?? data?.flags?.[MODULE_ID]?.variableTreasureKind
+    ?? data?.flags?.["party-operations"]?.variableTreasureKind
+  );
+  if (explicit) return explicit;
+
+  const keywords = getLootKeywordsFromData(data);
+  if (keywords.some((entry) => {
+    const text = String(entry ?? "").trim().toLowerCase();
+    return text === "merchant.gem"
+      || text === "merchant.gemstone"
+      || text === "folder.leaf.gemstones"
+      || text.endsWith(".gemstones");
+  })) {
+    return "gem";
+  }
+  if (keywords.some((entry) => {
+    const text = String(entry ?? "").trim().toLowerCase();
+    return text === "merchant.art"
+      || text === "merchant.art-object"
+      || text === "merchant.art-objects"
+      || text === "folder.leaf.art-objects"
+      || text.endsWith(".art-objects");
+  })) {
+    return "art";
+  }
+  const itemName = String(data?.name ?? "").trim().toLowerCase();
+  if (itemName) {
+    if (/\b(amber|agate|alexandrite|amethyst|aquamarine|beryl|bloodstone|carnelian|chalcedony|chrysoberyl|chrysoprase|citrine|coral|diamond|emerald|garnet|gem|gemstone|heliotrope|jade|jasper|jet|moonstone|obsidian|onyx|opal|pearl|peridot|quartz|ruby|sapphire|sardonyx|spinel|sunstone|topaz|tourmaline|turquoise|zircon)\b/.test(itemName)) {
+      return "gem";
+    }
+    if (/\b(art|artwork|painting|portrait|tapestry|statue|statuette|idol|vase|chalice|goblet|candelabra|figurine|bust|sculpture|carving)\b/.test(itemName)) {
+      return "art";
+    }
+  }
+  return "";
+}
+
+function roundLootWeightLb(value = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Number(numeric.toFixed(4));
+}
+
+function formatLootWeightLabel(weightLb = 0) {
+  const numeric = roundLootWeightLb(weightLb);
+  if (numeric <= 0) return "";
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: 4 })} lb`;
+}
+
+function hasLootPreviewEntryWeightAutoScale(entry = {}) {
+  const kind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  const baseValueGp = Math.max(0, Number(entry?.baseItemValueGp ?? 0) || 0);
+  const baseWeightLb = Math.max(0, Number(entry?.baseItemWeightLb ?? 0) || 0);
+  return Boolean(kind && baseValueGp > 0 && baseWeightLb > 0);
+}
+
+function calculateLootPreviewScaledWeight(entry = {}, totalValueGp = 0, fallbackWeightLb = 0) {
+  if (!hasLootPreviewEntryWeightAutoScale(entry)) {
+    return roundLootWeightLb(Math.max(0, Number(fallbackWeightLb ?? entry?.itemWeightLb ?? 0) || 0));
+  }
+  const baseValueGp = Math.max(0.0001, Number(entry?.baseItemValueGp ?? 0) || 0.0001);
+  const baseWeightLb = Math.max(0, Number(entry?.baseItemWeightLb ?? 0) || 0);
+  const scaledValueGp = Math.max(0, Number(totalValueGp ?? entry?.itemValueGp ?? 0) || 0);
+  return roundLootWeightLb(baseWeightLb * (scaledValueGp / baseValueGp));
+}
+
 function buildPartyOperationsMetaPillsFromData(data = {}, options = {}) {
   const maxPillsRaw = Number(options?.maxPills ?? 4);
   const maxPills = Number.isFinite(maxPillsRaw) ? Math.max(1, Math.floor(maxPillsRaw)) : 4;
@@ -19334,6 +19414,8 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
   const rarity = getLootRarityFromData(data);
   const rarityBucket = getLootRarityBucket(rarity);
   const itemValueGp = getLootItemGpValueFromData(data);
+  const itemWeightLb = roundLootWeightLb(Math.max(0, Number(getItemWeightValue(data) || 0) || 0));
+  const variableTreasureKind = getLootVariableTreasureKindFromData(data);
   if (!isLootRarityAllowed(rarity, floor, ceiling)) return null;
 
   const sourceId = String(context.sourceId ?? "").trim();
@@ -19356,6 +19438,10 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     sourceLabel,
     sourceWeight,
     itemValueGp,
+    itemWeightLb,
+    baseItemValueGp: itemValueGp,
+    baseItemWeightLb: itemWeightLb,
+    variableTreasureKind,
     tier: String(poFlags?.tier ?? getLootItemTierFromData(data) ?? "").trim().toLowerCase(),
     valueBand: String(poFlags?.valueBand ?? getLootItemValueBandFromData(data) ?? "").trim().toLowerCase(),
     priceDenomination: String(poFlags?.priceDenomination ?? getLootItemPriceDenominationFromData(data) ?? "").trim().toLowerCase(),
@@ -19442,6 +19528,11 @@ function aggregateLootEntriesForStacks(values = []) {
     const existing = aggregated[existingIndex];
     existing.quantity += entry.quantity;
     existing.itemValueGp = Math.max(0, Number(existing.itemValueGp ?? 0) || 0) + Math.max(0, Number(entry.itemValueGp ?? 0) || 0);
+    if (existing.itemWeightLb !== undefined || entry.itemWeightLb !== undefined) {
+      existing.itemWeightLb = roundLootWeightLb(
+        Math.max(0, Number(existing.itemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.itemWeightLb ?? 0) || 0)
+      );
+    }
     aggregated[existingIndex] = existing;
   }
   return aggregated;
@@ -19926,7 +20017,11 @@ function commitLootBudgetPick(state = {}, picked = null) {
     rarity: picked.rarity || "",
     sourceLabel: picked.sourceLabel,
     uuid: picked.uuid,
-    itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0)
+    itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0),
+    itemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.itemWeightLb ?? 0) || 0)),
+    baseItemValueGp: Math.max(0, Number(picked?.baseItemValueGp ?? picked?.itemValueGp ?? 0) || 0),
+    baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.baseItemWeightLb ?? picked?.itemWeightLb ?? 0) || 0)),
+    variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
   });
   state.selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
   const mode = String(state?.draft?.mode ?? "horde").trim().toLowerCase();
@@ -20184,7 +20279,11 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       rarity: picked.rarity || "",
       sourceLabel: picked.sourceLabel,
       uuid: picked.uuid,
-      itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0)
+      itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0),
+      itemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.itemWeightLb ?? 0) || 0)),
+      baseItemValueGp: Math.max(0, Number(picked?.baseItemValueGp ?? picked?.itemValueGp ?? 0) || 0),
+      baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.baseItemWeightLb ?? picked?.itemWeightLb ?? 0) || 0)),
+      variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
     });
     selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
     const allowEncounterDuplicate = mode === "encounter"
@@ -20939,9 +21038,12 @@ function buildLootPreviewContext() {
         itemType: String(entry?.itemType ?? ""),
         rarity: String(entry?.rarity ?? ""),
         itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
         itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
           ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
           : "",
+        itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
         tierLabel: formatPartyOperationsTierLabel(entry?.tier ?? ""),
         valueBandLabel: formatPartyOperationsValueBandLabel(entry?.valueBand ?? ""),
         tagSchemaLabel: formatPartyOperationsTagSchemaLabel(entry?.tagSchema ?? ""),
@@ -20949,6 +21051,7 @@ function buildLootPreviewContext() {
         sourceLabel: String(entry?.sourceLabel ?? ""),
         hasRarity: String(entry?.rarity ?? "").trim().length > 0,
         hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+        hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
         hasMetaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }).length > 0,
         hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
         canOpen: String(entry?.uuid ?? "").trim().length > 0
@@ -21190,11 +21293,15 @@ function buildLootClaimsContext(user = game.user) {
       claimRunId: displayRunId,
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+      itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+      variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
       itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
         ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
         : "",
+      itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
       hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
       hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+      hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
       hasRarity: entry.rarity.length > 0,
       canOpen: entry.uuid.length > 0,
       isMajorItem: Boolean(entry.majorItem),
@@ -28527,6 +28634,10 @@ function normalizeLootClaimItemsList(values = []) {
       img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
       itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+      itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+      baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
+      baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)),
+      variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
       itemType: String(entry?.itemType ?? "").trim(),
       rarity: String(entry?.rarity ?? "").trim(),
       sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -35656,6 +35767,12 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
   const uuid = String(documentRef?.uuid ?? data?.uuid ?? "").trim();
   const rarity = getLootRarityFromData(data);
   const poFlags = getPartyOperationsItemFlags(data);
+  const itemValueGp = Math.max(0, Number(getLootItemGpValueFromData(data) || 0));
+  const itemWeightLb = roundLootWeightLb(Math.max(0, Number(getItemWeightValue(data) || 0) || 0));
+  const variableTreasureKind = normalizeLootVariableTreasureKind(
+    options?.variableTreasureKind
+    ?? getLootVariableTreasureKindFromData(data)
+  );
   return {
     id: foundry.utils.randomID(),
     uuid,
@@ -35663,7 +35780,11 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
     itemType: String(data?.type ?? "").trim(),
     rarity,
-    itemValueGp: Math.max(0, Number(getLootItemGpValueFromData(data) || 0)),
+    itemValueGp,
+    itemWeightLb,
+    baseItemValueGp: itemValueGp,
+    baseItemWeightLb: itemWeightLb,
+    variableTreasureKind,
     tier: String(poFlags?.tier ?? getLootItemTierFromData(data) ?? "").trim().toLowerCase(),
     valueBand: String(poFlags?.valueBand ?? getLootItemValueBandFromData(data) ?? "").trim().toLowerCase(),
     priceDenomination: String(poFlags?.priceDenomination ?? getLootItemPriceDenominationFromData(data) ?? "").trim().toLowerCase(),
@@ -35757,8 +35878,17 @@ async function editLootPreviewItem(element) {
   const entry = items[itemIndex] ?? {};
   const currentQuantity = normalizeLootPreviewItemQuantity(entry?.quantity ?? 1, 1);
   const currentValueGp = normalizeLootPreviewItemValueGp(entry?.itemValueGp ?? 0, 0);
+  const currentWeightLb = roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0));
   const itemName = String(entry?.name ?? "Item").trim() || "Item";
   const sourceLabel = String(entry?.sourceLabel ?? "").trim();
+  const variableTreasureKind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  const autoScaleWeight = hasLootPreviewEntryWeightAutoScale(entry);
+  const baseItemValueGp = Math.max(0, Number(entry?.baseItemValueGp ?? currentValueGp) || currentValueGp);
+  const baseItemWeightLb = roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? currentWeightLb) || currentWeightLb));
+  const initialScalePercent = (autoScaleWeight && baseItemValueGp > 0)
+    ? Math.max(1, Math.min(400, Math.round((currentValueGp / Math.max(0.0001, baseItemValueGp)) * 100)))
+    : 100;
+  const scaleLabel = variableTreasureKind === "gem" ? "Gemstone" : variableTreasureKind === "art" ? "Art Item" : "Treasure";
 
   const submission = await new Promise((resolve) => {
     const dialog = new Dialog({
@@ -35772,19 +35902,60 @@ async function editLootPreviewItem(element) {
             <label>Quantity</label>
             <input type="number" name="lootPreviewItemQuantity" min="1" max="9999" step="1" value="${poEscapeHtml(String(currentQuantity))}" />
           </div>
+          ${autoScaleWeight ? `
+          <div class="form-group">
+            <label>${poEscapeHtml(scaleLabel)} Value Scale (<span data-po-loot-scale-percent>${poEscapeHtml(String(initialScalePercent))}%</span>)</label>
+            <input type="range" name="lootPreviewItemScalePercent" min="1" max="400" step="1" value="${poEscapeHtml(String(initialScalePercent))}" />
+          </div>
+          <p class="notes">${poEscapeHtml(scaleLabel)} weight stays locked to the source ratio (${formatLootWeightLabel(baseItemWeightLb)} at ${baseItemValueGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp).</p>
+          ` : ""}
           <div class="form-group">
             <label>Assigned Value (gp)</label>
             <input type="number" name="lootPreviewItemValueGp" min="0" max="${LOOT_PREVIEW_MAX_ITEM_VALUE_GP_LIMIT}" step="0.01" value="${poEscapeHtml(String(currentValueGp))}" />
           </div>
+          ${autoScaleWeight ? `
+          <div class="form-group">
+            <label>Computed Weight (lb)</label>
+            <input type="number" name="lootPreviewItemWeightLb" min="0" step="0.0001" value="${poEscapeHtml(String(currentWeightLb))}" readonly />
+          </div>
+          ` : ""}
         </div>
       `,
+      render: (html) => {
+        if (!autoScaleWeight) return;
+        const scaleInput = html.find("input[name='lootPreviewItemScalePercent']");
+        const valueInput = html.find("input[name='lootPreviewItemValueGp']");
+        const weightInput = html.find("input[name='lootPreviewItemWeightLb']");
+        const scaleLabelNode = html.find("[data-po-loot-scale-percent]");
+        const updateFromPercent = () => {
+          const percent = Math.max(1, Math.min(400, Number(scaleInput.val() ?? initialScalePercent) || initialScalePercent));
+          const nextValueGp = normalizeLootPreviewItemValueGp((baseItemValueGp * percent) / 100, currentValueGp);
+          const nextWeightLb = calculateLootPreviewScaledWeight(entry, nextValueGp, currentWeightLb);
+          valueInput.val(String(nextValueGp));
+          weightInput.val(String(nextWeightLb));
+          scaleLabelNode.text(`${Math.round(percent)}%`);
+        };
+        const updateFromValue = () => {
+          const nextValueGp = normalizeLootPreviewItemValueGp(valueInput.val(), currentValueGp);
+          const nextPercent = baseItemValueGp > 0
+            ? Math.max(1, Math.min(400, Math.round((nextValueGp / baseItemValueGp) * 100)))
+            : initialScalePercent;
+          const nextWeightLb = calculateLootPreviewScaledWeight(entry, nextValueGp, currentWeightLb);
+          scaleInput.val(String(nextPercent));
+          weightInput.val(String(nextWeightLb));
+          scaleLabelNode.text(`${Math.round(nextPercent)}%`);
+        };
+        scaleInput.on("input change", updateFromPercent);
+        valueInput.on("input change", updateFromValue);
+      },
       buttons: {
         save: {
           label: "Save",
           callback: (html) => {
             resolve({
               quantity: html.find("input[name='lootPreviewItemQuantity']").val(),
-              itemValueGp: html.find("input[name='lootPreviewItemValueGp']").val()
+              itemValueGp: html.find("input[name='lootPreviewItemValueGp']").val(),
+              itemWeightLb: html.find("input[name='lootPreviewItemWeightLb']").val()
             });
           }
         },
@@ -35801,12 +35972,19 @@ async function editLootPreviewItem(element) {
   if (!submission) return false;
   const nextQuantity = normalizeLootPreviewItemQuantity(submission.quantity, currentQuantity);
   const nextValueGp = normalizeLootPreviewItemValueGp(submission.itemValueGp, currentValueGp);
-  if (nextQuantity === currentQuantity && nextValueGp === currentValueGp) return false;
+  const nextWeightLb = autoScaleWeight
+    ? calculateLootPreviewScaledWeight(entry, nextValueGp, currentWeightLb)
+    : roundLootWeightLb(Math.max(0, Number(submission.itemWeightLb ?? currentWeightLb) || currentWeightLb));
+  if (nextQuantity === currentQuantity && nextValueGp === currentValueGp && nextWeightLb === currentWeightLb) return false;
 
   items[itemIndex] = {
     ...entry,
     quantity: nextQuantity,
-    itemValueGp: nextValueGp
+    itemValueGp: nextValueGp,
+    itemWeightLb: nextWeightLb,
+    baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? currentValueGp) || currentValueGp),
+    baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? currentWeightLb) || currentWeightLb)),
+    variableTreasureKind
   };
   result.items = items;
   result.generatedAt = Date.now();
@@ -36141,6 +36319,10 @@ async function publishLootPreviewToClaims() {
         img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
         itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+        baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
+        baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)),
+        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
         itemType: String(entry?.itemType ?? "").trim(),
         rarity: String(entry?.rarity ?? "").trim(),
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
@@ -36645,13 +36827,66 @@ async function openJournalEntryFromElement(element) {
 
 async function buildLootClaimItemDocumentData(itemEntry = {}) {
   const uuid = String(itemEntry?.uuid ?? "").trim();
-  if (!uuid) return null;
-  const source = await resolveUuidDocument(uuid);
-  if (!source || source.documentName !== "Item") return null;
-  let data = source.toObject();
+  let data = null;
+  if (uuid) {
+    const source = await resolveUuidDocument(uuid);
+    if (source?.documentName === "Item" && typeof source.toObject === "function") {
+      data = source.toObject();
+    }
+  }
+  if (!data || typeof data !== "object") {
+    const variableTreasureKind = normalizeLootVariableTreasureKind(itemEntry?.variableTreasureKind);
+    data = {
+      name: String(itemEntry?.name ?? "Item").trim() || "Item",
+      type: String(itemEntry?.itemType ?? "loot").trim() || "loot",
+      img: String(
+        itemEntry?.img
+        ?? LOOT_VARIABLE_TREASURE_ICONS[variableTreasureKind]
+        ?? "icons/svg/item-bag.svg"
+      ).trim() || "icons/svg/item-bag.svg",
+      system: {
+        description: {
+          value: `<p>Generated by Party Operations from a published loot claim${variableTreasureKind ? ` (${poEscapeHtml(variableTreasureKind)})` : ""}.</p>`
+        },
+        quantity: 1,
+        weight: { value: 0, units: "lb" },
+        price: { value: 0, denomination: "gp" },
+        rarity: String(itemEntry?.rarity ?? "").trim(),
+        identified: true,
+        type: {
+          value: "treasure",
+          subtype: variableTreasureKind
+        }
+      }
+    };
+  }
   if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
   const quantity = Math.max(1, Math.floor(Number(itemEntry?.quantity ?? 1) || 1));
   data = applyItemRewardDropQuantity(data, quantity);
+  if (!data.system || typeof data.system !== "object") data.system = {};
+
+  const totalValueGp = Math.max(0, Number(itemEntry?.itemValueGp ?? 0) || 0);
+  const perItemValueGp = quantity > 0 ? Number((totalValueGp / quantity).toFixed(2)) : totalValueGp;
+  if (!data.system.price || typeof data.system.price !== "object") data.system.price = {};
+  data.system.price.value = perItemValueGp;
+  data.system.price.denomination = "gp";
+
+  const totalWeightLb = roundLootWeightLb(Math.max(0, Number(itemEntry?.itemWeightLb ?? 0) || 0));
+  const perItemWeightLb = quantity > 0 ? roundLootWeightLb(totalWeightLb / quantity) : totalWeightLb;
+  if (!data.system.weight || typeof data.system.weight !== "object") data.system.weight = {};
+  data.system.weight.value = perItemWeightLb;
+  data.system.weight.units = String(data.system.weight.units ?? "lb").trim() || "lb";
+
+  if (!data.flags || typeof data.flags !== "object") data.flags = {};
+  if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
+  data.flags[MODULE_ID].claimedLoot = {
+    sourceLabel: String(itemEntry?.sourceLabel ?? "").trim(),
+    variableTreasureKind: normalizeLootVariableTreasureKind(itemEntry?.variableTreasureKind),
+    adjustedValueGp: totalValueGp,
+    adjustedWeightLb: totalWeightLb,
+    baseItemValueGp: Math.max(0, Number(itemEntry?.baseItemValueGp ?? itemEntry?.itemValueGp ?? 0) || 0),
+    baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(itemEntry?.baseItemWeightLb ?? itemEntry?.itemWeightLb ?? 0) || 0))
+  };
   return data;
 }
 
