@@ -7828,8 +7828,7 @@ function buildOperationsContextFallback() {
     fallbackModifierModeOptions = [];
   }
   const fallbackPreviewDraft = normalizeLootPreviewDraft(getLootPreviewDraft());
-  const fallbackMode = String(fallbackPreviewDraft.mode ?? "hoard");
-  const fallbackRollMode = String(fallbackPreviewDraft.rollMode ?? "per-creature");
+  const fallbackMode = String(fallbackPreviewDraft.mode ?? "horde");
   const fallbackProfile = String(fallbackPreviewDraft.profile ?? "standard");
   const fallbackChallenge = String(fallbackPreviewDraft.challenge ?? "mid");
   const fallbackScale = String(fallbackPreviewDraft.scale ?? "medium");
@@ -7961,33 +7960,6 @@ function buildOperationsContextFallback() {
           gpEquivalent: 0,
           formula: "-"
         },
-        baseline: {
-          currency: createEmptyTreasureCurrency(),
-          currencyLabel: "0 pp, 0 gp, 0 ep, 0 sp, 0 cp",
-          gems: [],
-          art: [],
-          magic: [],
-          rollSteps: [],
-          gpEquivalent: 0
-        },
-        modifiers: [],
-        finalSummary: {
-          currency: createEmptyTreasureCurrency(),
-          currencyLabel: "0 pp, 0 gp, 0 ep, 0 sp, 0 cp",
-          gems: [],
-          art: [],
-          magic: [],
-          gpEquivalent: 0
-        },
-        budget: {
-          totalBudgetGp: 0,
-          targetItemBudgetGp: 0,
-          targetCurrencyBudgetGp: 0,
-          effectiveTotalWealthGp: 0,
-          effectiveCurrencyTargetGp: 0,
-          effectiveMaxItemValueGp: 0,
-          combatantWealthMultiplier: 1
-        },
         stats: {
           candidateCount: 0,
           itemCountGenerated: 0,
@@ -7996,11 +7968,6 @@ function buildOperationsContextFallback() {
           finalItemsValueGp: 0,
           finalCurrencyValueGp: 0,
           finalCombinedValueGp: 0,
-          generatedTotalWealthGp: 0,
-          totalWealthTargetGp: 0,
-          currencyTargetGp: 0,
-          combatantWealthMultiplier: 1,
-          magicItemCount: 0,
           itemDeltaGp: 0,
           deltaGp: 0
         },
@@ -20923,27 +20890,6 @@ function buildLootPreviewContext() {
       strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? valueBudgetContext.strictnessBandLabel ?? "Normal"),
       deterministic: Boolean(result?.stats?.deterministic ?? draft?.deterministic !== false),
       seed: String(result?.stats?.seed ?? "")
-    },
-    crBracket: String(result?.crBracket ?? getCrBracketFromChallenge(challenge)),
-    summary: String(result?.summary ?? ""),
-    baseline: {
-      currency: baselineCurrency,
-      currencyLabel: baselineCurrencyLabel,
-      gems: baselineGems,
-      art: baselineArt,
-      magic: baselineMagic,
-      rollSteps: Array.isArray(result?.baseline?.rollSteps)
-        ? result.baseline.rollSteps.map((step) => ({
-          ...step,
-          resultLabel: summarizeTreasureRollStep(step)
-        }))
-        : [],
-      gpEquivalent: baselineGpEquivalent
-    },
-    modifiers: Array.isArray(result?.modifiers) ? result.modifiers : [],
-    finalSummary: {
-      ...finalSummary,
-      currencyLabel: finalCurrencyLabel
     },
     items: Array.isArray(result?.items)
       ? result.items.map((entry, index) => ({
@@ -35585,13 +35531,6 @@ function buildLootPreviewResultSkeleton() {
     },
     items: [],
     tableRolls: [],
-    mode: normalizeLootPreviewMode(draft?.mode ?? "hoard"),
-    crBracket: getCrBracketFromChallenge(draft?.challenge ?? "mid"),
-    source: "DMG",
-    baseline: { rollSteps: [], currency: createEmptyTreasureCurrency(), gems: [], art: [], magic: [] },
-    modifiers: [],
-    final: { currency: createEmptyTreasureCurrency(), gems: [], art: [], magic: [], gpEquivalent: 0 },
-    summary: "",
     stats: {
       candidateCount: 0,
       itemCountTarget: 0,
@@ -35621,7 +35560,7 @@ function getMutableLootPreviewResult() {
 function refreshLootPreviewResultStats(result) {
   const sourceConfig = getLootSourceConfig();
   const items = Array.isArray(result?.items) ? result.items : [];
-  const itemCountGenerated = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
+  const itemCountGenerated = items.length;
   const tableRollCount = Array.isArray(result?.tableRolls) ? result.tableRolls.length : 0;
   const currentTarget = Math.max(0, Number(result?.stats?.itemCountTarget ?? 0) || 0);
   const strictnessToleranceGp = Number(
@@ -35634,12 +35573,7 @@ function refreshLootPreviewResultStats(result) {
       ?? result?.stats?.tolerancePercent
       ?? 0
   );
-  const manualItemsValueGp = Number((items.reduce((sum, entry) => sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0), 0)).toFixed(2));
-  const displayCurrency = result?.currency && typeof result.currency === "object"
-    ? result.currency
-    : normalizeTreasureCurrencyForDisplay(result?.final?.currency ?? {});
-  const finalCurrencyValueGp = getLootPreviewCurrencyGpEquivalent(displayCurrency);
-  const finalStructuredWealthGp = Math.max(0, Number(result?.final?.gpEquivalent ?? 0) || 0);
+  const totals = calculateLootPreviewValueTotals(result);
   result.stats = {
     candidateCount: Math.max(0, Number(result?.stats?.candidateCount ?? 0) || 0),
     itemCountTarget: Math.max(currentTarget, itemCountGenerated),
@@ -35649,24 +35583,20 @@ function refreshLootPreviewResultStats(result) {
     enabledTableSources: (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length,
     desiredItemCount: Math.max(0, Number(result?.stats?.desiredItemCount ?? currentTarget) || 0),
     maxItems: Math.max(0, Number(result?.stats?.maxItems ?? currentTarget) || 0),
-    encounterTargetGp: Number(result?.stats?.encounterTargetGp ?? 0),
-    itemTargetGp: Number(result?.stats?.itemTargetGp ?? manualItemsValueGp),
-    currencyTargetGp: Number(result?.stats?.currencyTargetGp ?? finalCurrencyValueGp),
-    finalItemsValueGp: manualItemsValueGp,
-    finalCurrencyValueGp,
-    finalCombinedValueGp: Number((manualItemsValueGp + finalCurrencyValueGp).toFixed(2)),
-    generatedTotalWealthGp: finalStructuredWealthGp,
-    totalWealthTargetGp: Math.max(0, Number(result?.stats?.totalWealthTargetGp ?? finalStructuredWealthGp) || 0),
-    combatantWealthMultiplier: Number(result?.stats?.combatantWealthMultiplier ?? 1),
-    magicItemCount: Math.max(0, Number(result?.stats?.magicItemCount ?? (Array.isArray(result?.final?.magic) ? result.final.magic.length : 0)) || 0),
-    itemDeltaGp: 0,
-    deltaGp: Number(result?.stats?.deltaGp ?? 0),
+    encounterTargetGp: totals.encounterTargetGp,
+    itemTargetGp: totals.itemTargetGp,
+    currencyTargetGp: totals.currencyTargetGp,
+    finalItemsValueGp: totals.finalItemsValueGp,
+    finalCurrencyValueGp: totals.finalCurrencyValueGp,
+    finalCombinedValueGp: totals.finalCombinedValueGp,
+    itemDeltaGp: totals.itemDeltaGp,
+    deltaGp: totals.deltaGp,
     strictnessToleranceGp,
     strictnessTolerancePercent,
     toleranceGp: strictnessToleranceGp,
     tolerancePercent: strictnessTolerancePercent,
-    strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? "DMG Baseline"),
-    strictnessBandKey: String(result?.stats?.strictnessBandKey ?? "dmg-baseline"),
+    strictnessBandLabel: String(result?.stats?.strictnessBandLabel ?? "Normal"),
+    strictnessBandKey: String(result?.stats?.strictnessBandKey ?? "normal"),
     deterministic: Boolean(result?.stats?.deterministic),
     seed: String(result?.stats?.seed ?? "")
   };
@@ -36003,14 +35933,6 @@ function adjustLootPreviewCurrency(element) {
     ? Math.max(0, current - qty)
     : current + qty;
   next.currency.gpEquivalent = getLootPreviewCurrencyGpEquivalent(next.currency);
-  if (!next.final || typeof next.final !== "object") {
-    next.final = { currency: createEmptyTreasureCurrency(), gems: [], art: [], magic: [], gpEquivalent: 0 };
-  }
-  next.final.currency = cloneTreasureCurrency({
-    ...(next.final.currency ?? {}),
-    ...next.currency
-  });
-  next.final.gpEquivalent = Number((convertCurrencyToGpEquivalent(next.final.currency) + getTreasureEntryGpTotal(next.final.gems) + getTreasureEntryGpTotal(next.final.art)).toFixed(2));
   next.generatedAt = Date.now();
   next.generatedBy = String(game.user?.name ?? "GM");
   refreshLootPreviewResultStats(next);
@@ -36132,24 +36054,21 @@ async function publishLootPreviewToClaims() {
     return;
   }
   const items = aggregateLootEntriesForStacks(Array.isArray(result.items) ? result.items : []);
-  let publishedAt = 0;
-  let publishedRunId = "";
-  const claimableCurrency = result?.currency && typeof result.currency === "object"
-    ? result.currency
-    : normalizeTreasureCurrencyForDisplay(result?.final?.currency ?? {});
-  const publishedCurrency = {
-    pp: Math.max(0, Math.floor(Number(claimableCurrency?.pp ?? 0) || 0)),
-    gp: Math.max(0, Math.floor(Number(claimableCurrency?.gp ?? 0) || 0)),
-    sp: Math.max(0, Math.floor(Number(claimableCurrency?.sp ?? 0) || 0)),
-    cp: Math.max(0, Math.floor(Number(claimableCurrency?.cp ?? 0) || 0)),
-    gpEquivalent: getLootPreviewCurrencyGpEquivalent(claimableCurrency)
-  };
-  const hasCurrency = publishedCurrency.gpEquivalent > 0;
-  if (items.length === 0 && !hasCurrency) {
-    ui.notifications?.warn("The builder has no loot to publish.");
+  if (items.length === 0) {
+    ui.notifications?.warn("The builder has no items to publish.");
     return;
   }
   const publishedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
+
+  let publishedAt = 0;
+  let publishedRunId = "";
+  const publishedCurrency = {
+    pp: Math.max(0, Math.floor(Number(result?.currency?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(result?.currency?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(result?.currency?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(result?.currency?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(result?.currency?.gpEquivalent ?? 0) || 0)
+  };
   const publishedTableRolls = Array.isArray(result?.tableRolls)
     ? result.tableRolls.map((entry) => ({
       sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
@@ -36178,6 +36097,7 @@ async function publishLootPreviewToClaims() {
         name: String(entry?.name ?? "Item").trim() || "Item",
         img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
         quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
         itemType: String(entry?.itemType ?? "").trim(),
         rarity: String(entry?.rarity ?? "").trim(),
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
