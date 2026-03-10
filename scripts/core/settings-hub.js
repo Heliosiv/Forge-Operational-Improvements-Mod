@@ -1,3 +1,5 @@
+import { bindCanvasKeyboardSuppression } from "./ui-keyboard-guard.js";
+
 export function createPartyOperationsSettingsHub({
   moduleId,
   settings,
@@ -73,6 +75,7 @@ export function createPartyOperationsSettingsHub({
 
     activateListeners(html) {
       super.activateListeners(html);
+      bindCanvasKeyboardSuppression(html[0]);
       html.find("[data-action='open-foundry-settings']").on("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

@@ -108,4 +108,11 @@ export function registerPartyOpsDataSettings({
     type: Object,
     default: buildDefaultAudioMixPresetStore()
   });
+
+  game.settings.register(moduleId, settings.AUDIO_PREVIEW_VOLUME, {
+    scope: "client",
+    config: false,
+    type: Number,
+    default: 1
+  });
 }

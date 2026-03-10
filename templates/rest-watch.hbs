@@ -338,30 +338,30 @@
         {{#if operationsPlanningSops}}
         <div id="po-ops-sops" class="po-gm-section">
           <div class="po-section-title">SOP Status</div>
-          <div class="po-hint">Toggle procedures currently briefed and active.</div>
+          <div class="po-hint">Toggle procedures currently briefed and active. Each SOP uses one shared note that anyone with Operations access can update.</div>
           {{#each operations.sops}}
           <div class="po-op-role-row po-sop-row" data-sop-row="{{key}}">
             <label class="po-switch" title="Enable or disable SOP: {{label}}">
               <input id="po-sop-toggle-{{key}}" name="poSopToggle_{{key}}" type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
               <span>{{label}}</span>
             </label>
-            <div class="po-sop-note-grid">
+            <div class="po-sop-note-grid po-sop-note-block" data-sop-note-block="{{key}}">
               <div class="po-sop-note-editor">
                 <label class="po-resource-row po-notes-row-lg">
-                  <span>Notes</span>
-                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Player notes for {{label}}">{{note}}</textarea>
+                  <span>Shared Note</span>
+                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Shared note for {{label}}">{{draftNote}}</textarea>
                 </label>
                 <div class="po-notes-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Note</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Shared Note</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-sop-note" data-sop="{{key}}">Clear Note</button>
                 </div>
+                {{#if pendingLocalSync}}
+                <div class="po-note-label">Pending GM sync...</div>
+                {{/if}}
+                {{#if @root.notesDebugHint}}
+                <div class="po-note-label">{{@root.notesDebugHint}}</div>
+                {{/if}}
               </div>
-              <div class="po-sop-note-view">
-                <div class="po-note-label">View Notes</div>
-                <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}" data-sop-note-view="{{key}}">{{#if note}}{{note}}{{else}}No notes recorded yet.{{/if}}</div>
-              </div>
-              {{#if @root.notesDebugHint}}
-              <div class="po-note-label">{{@root.notesDebugHint}}</div>
-              {{/if}}
             </div>
           </div>
           {{/each}}
@@ -398,9 +398,10 @@
             <div class="po-info-chip" title="Calendar days elapsed since last upkeep application"><span>Pending Days</span><strong>{{operations.resources.summary.upkeepDaysPending}}</strong></div>
             <div class="po-info-chip" title="Food expected to be deducted when daily upkeep is applied"><span>Pending Food</span><strong>{{operations.resources.summary.foodDrainPending}}</strong></div>
             <div class="po-info-chip" title="Water expected to be deducted when daily upkeep is applied"><span>Pending Water</span><strong>{{operations.resources.summary.waterDrainPending}}</strong></div>
+            <div class="po-info-chip" title="Current automatic upkeep gate state"><span>Auto Upkeep</span><strong>{{operations.resources.summary.autoUpkeepPromptLabel}}</strong></div>
           </div>
-          <div class="po-op-summary {{#if operations.resources.gatherFoodCoveredNextUpkeep}}is-good{{else}}is-warn{{/if}}" title="Successful gather checks can reduce next upkeep consumption by target type.">
-            Next Upkeep Coverage - Food: {{#if operations.resources.gatherFoodCoveredNextUpkeep}}Active{{else}}Inactive{{/if}} - Water: {{#if operations.resources.gatherWaterCoveredNextUpkeep}}Active{{else}}Inactive{{/if}}
+          <div class="po-op-summary {{#if operations.resources.gatherFoodCoveredNextUpkeep}}is-good{{else}}{{#if operations.resources.gatherWaterCoveredNextUpkeep}}is-good{{else}}is-warn{{/if}}{{/if}}" title="Gathered food and water are held in a pending pool, consumed by upkeep first, then any remainder is pushed into the configured targets.">
+            Pending Gather Pool - Food: {{operations.resources.summary.pendingGatherFood}} - Water: {{operations.resources.summary.pendingGatherWater}}
           </div>
           <div class="po-op-divider"></div>
           <div class="po-section-head-row">
@@ -561,110 +562,149 @@
             </div>
           </div>
           <div class="po-op-divider"></div>
-          <div class="po-section-head-row po-gather-history-head">
-            <div class="po-section-title">Gather History</div>
-            <div class="po-gather-history-head-tools">
-              <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
-              {{#if @root.isGM}}
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
-              {{/if}}
+          <div class="po-gather-history-panel">
+            <div class="po-section-head-row po-gather-history-head">
+              <div class="po-section-title">Gather Requests</div>
+              <div class="po-gather-history-head-tools">
+                <div class="po-op-summary">{{operations.resources.gatherRequests.count}} pending</div>
+              </div>
             </div>
+            {{#if operations.resources.gatherRequests.hasRows}}
+            <div class="po-gather-preset-grid">
+              {{#each operations.resources.gatherRequests.rows}}
+              <div class="po-op-role-row">
+                <div class="po-op-role-head">
+                  <div class="po-op-role-name">{{actorName}}</div>
+                  <div class="po-op-role-status">{{resourceTypeLabel}}</div>
+                </div>
+                <div class="po-op-summary">Requested by {{requesterName}} at {{requestedAtLabel}}</div>
+                <div class="po-op-summary">{{summary}}</div>
+                <div class="po-op-summary">{{modifierSummary}}</div>
+                {{#if hasTags}}
+                <div class="po-op-summary">{{tagText}}</div>
+                {{/if}}
+                {{#if @root.operations.resources.gatherRequests.isManager}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="approve-gather-request" data-request-id="{{id}}">Finalize & Prompt</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="decline-gather-request" data-request-id="{{id}}">Remove</button>
+                </div>
+                {{/if}}
+              </div>
+              {{/each}}
+            </div>
+            {{else}}
+            <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
+            {{/if}}
           </div>
-          <div class="po-gather-history-controls">
-            <label class="po-resource-row is-search">
-              <span>Search</span>
-              <input
-                type="text"
-                class="po-input"
-                data-action="set-gather-history-filter"
-                data-filter-key="search"
-                value="{{operations.resources.gatherHistory.filters.search}}"
-                placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Result</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
-                {{#each operations.resources.gatherHistory.resultOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Type</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
-                {{#each operations.resources.gatherHistory.resourceOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Environment</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
-                {{#each operations.resources.gatherHistory.environmentOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Actor</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
-                {{#each operations.resources.gatherHistory.actorOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row is-sort">
-              <span>Sort</span>
-              <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
-                {{#each operations.resources.gatherHistory.sortOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-          </div>
-          {{#if operations.resources.gatherHistory.hasRows}}
-          <div class="po-gather-history-wrap">
-            <table class="po-gather-history-table">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>Actor</th>
-                  <th>Environment</th>
-                  <th>Result</th>
-                  <th>Roll</th>
-                  <th>Type</th>
-                  <th>Rations</th>
-                  <th>Notes</th>
+          <div class="po-op-divider"></div>
+          <div class="po-gather-history-panel">
+            <div class="po-section-head-row po-gather-history-head">
+              <div class="po-section-title">Gather History</div>
+              <div class="po-gather-history-head-tools">
+                <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
+                <div class="po-gather-history-head-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
                   {{#if @root.isGM}}
-                  <th>Actions</th>
+                  <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
                   {{/if}}
-                </tr>
-              </thead>
-              <tbody>
-                {{#each operations.resources.gatherHistory.rows}}
-                <tr>
-                  <td>{{timestampLabel}}</td>
-                  <td>{{actorName}}</td>
-                  <td>{{environmentLabel}}</td>
-                  <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
-                  <td>{{rollVsDc}}</td>
-                  <td>{{resourceTypeLabel}}</td>
-                  <td>{{rations}}</td>
-                  <td class="po-gather-history-notes">{{detailsText}}</td>
-                  {{#if @root.isGM}}
-                  <td class="po-gather-history-actions">
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
-                  </td>
-                  {{/if}}
-                </tr>
-                {{/each}}
-              </tbody>
-            </table>
+                </div>
+              </div>
+            </div>
+            <div class="po-gather-history-controls">
+              <label class="po-resource-row is-search">
+                <span>Search</span>
+                <input
+                  type="text"
+                  class="po-input"
+                  data-action="set-gather-history-filter"
+                  data-filter-key="search"
+                  value="{{operations.resources.gatherHistory.filters.search}}"
+                  placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
+              </label>
+              <label class="po-resource-row">
+                <span>Result</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
+                  {{#each operations.resources.gatherHistory.resultOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Type</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
+                  {{#each operations.resources.gatherHistory.resourceOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Environment</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
+                  {{#each operations.resources.gatherHistory.environmentOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Actor</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
+                  {{#each operations.resources.gatherHistory.actorOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row is-sort">
+                <span>Sort</span>
+                <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
+                  {{#each operations.resources.gatherHistory.sortOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+            </div>
+            {{#if operations.resources.gatherHistory.hasRows}}
+            <div class="po-gather-history-wrap">
+              <table class="po-gather-history-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Actor</th>
+                    <th>Environment</th>
+                    <th>Result</th>
+                    <th>Roll</th>
+                    <th>Type</th>
+                    <th>Rations</th>
+                    <th>Notes</th>
+                    {{#if @root.isGM}}
+                    <th>Actions</th>
+                    {{/if}}
+                  </tr>
+                </thead>
+                <tbody>
+                  {{#each operations.resources.gatherHistory.rows}}
+                  <tr>
+                    <td>{{timestampLabel}}</td>
+                    <td>{{actorName}}</td>
+                    <td>{{environmentLabel}}</td>
+                    <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
+                    <td>{{rollVsDc}}</td>
+                    <td>{{resourceTypeLabel}}</td>
+                    <td>{{rations}}</td>
+                    <td class="po-gather-history-notes">{{detailsText}}</td>
+                    {{#if @root.isGM}}
+                    <td class="po-gather-history-actions">
+                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
+                    </td>
+                    {{/if}}
+                  </tr>
+                  {{/each}}
+                </tbody>
+              </table>
+            </div>
+            {{else}}
+            <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherHistory.emptyMessage}}</div>
+            {{/if}}
           </div>
-          {{else}}
-          <div class="po-op-summary">{{operations.resources.gatherHistory.emptyMessage}}</div>
-          {{/if}}
         </div>
         {{/if}}
 
@@ -782,10 +822,36 @@
 
         {{#if operationsPageReputation}}
 
-        <div id="po-ops-reputation" class="po-gm-section">
-          <div class="po-section-title">Reputation & Factions</div>
-          <div class="po-hint">Three-column faction tracker. Players see read-only values; GM can manage and add custom factions.</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
+        <div id="po-ops-reputation" class="po-gm-section po-reputation-panel">
+          <div class="po-reputation-toolbar">
+            <div>
+              <div class="po-section-title">Reputation & Factions</div>
+              <div class="po-hint">Track faction standing, keep upcoming notes as drafts, and archive the dated history for later review.</div>
+            </div>
+            <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
+          </div>
+          <div class="po-reputation-overview">
+            <div class="po-reputation-stat">
+              <span class="po-reputation-stat-label">Visible</span>
+              <strong>{{operations.reputation.visibleCount}}</strong>
+              <span class="po-reputation-stat-meta">of {{operations.reputation.totalCount}} tracked factions</span>
+            </div>
+            <div class="po-reputation-stat">
+              <span class="po-reputation-stat-label">Allied</span>
+              <strong>{{operations.reputation.highStandingCount}}</strong>
+              <span class="po-reputation-stat-meta">favorable or trusted groups</span>
+            </div>
+            <div class="po-reputation-stat">
+              <span class="po-reputation-stat-label">Hostile</span>
+              <strong>{{operations.reputation.hostileCount}}</strong>
+              <span class="po-reputation-stat-meta">dangerous relationships</span>
+            </div>
+            <div class="po-reputation-stat">
+              <span class="po-reputation-stat-label">Custom</span>
+              <strong>{{operations.reputation.customCount}}</strong>
+              <span class="po-reputation-stat-meta">GM-added factions</span>
+            </div>
+          </div>
           <div class="po-op-role-row po-reputation-filters">
             <label class="po-resource-row">
               <span>Filter</span>
@@ -800,86 +866,288 @@
               </select>
             </label>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-filters">Clear Filters</button>
-            <div class="po-op-summary">Showing {{operations.reputation.visibleCount}} of {{operations.reputation.totalCount}} factions</div>
           </div>
-          <div class="po-reputation-grid">
-            {{#each operations.reputation.filteredFactions}}
-            <div class="po-op-role-row po-reputation-faction-card {{standingClass}}" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status po-reputation-standing-pill">Standing {{score}} - {{access}}</div>
+          {{#if @root.isGM}}
+          <section class="po-op-role-row po-reputation-gm-tools po-reputation-builder">
+            <div class="po-reputation-card-head">
+              <div class="po-reputation-card-title">
+                <div class="po-op-role-name">Faction Builder</div>
+                <div class="po-reputation-card-subtitle">Create a faction with identity, saved notes, linked players, and current player-driven standing shifts.</div>
               </div>
-              {{#if @root.isGM}}
-              {{#unless isCore}}
+              <div class="po-op-role-status po-reputation-standing-pill">Standing {{operations.reputation.builder.score}} | {{operations.reputation.builder.access}}</div>
+            </div>
+            <div class="po-reputation-builder-grid">
               <label class="po-resource-row">
                 <span>Faction Name</span>
-                <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
+                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="label" value="{{operations.reputation.builder.label}}" placeholder="e.g., Black Salt Consortium" />
               </label>
-              {{/unless}}
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">-1</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">+1</button>
-              </div>
               <label class="po-resource-row">
-                <span>Standing (-5 to +5)</span>
-                <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
+                <span>Type / Category</span>
+                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="category" value="{{operations.reputation.builder.category}}" placeholder="Guild, court, cult, militia..." />
+              </label>
+              <label class="po-resource-row">
+                <span>Represents / Sphere</span>
+                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="represents" value="{{operations.reputation.builder.represents}}" placeholder="What influence or domain this faction covers" />
+              </label>
+              <label class="po-resource-row">
+                <span>Linked Player</span>
+                <select class="po-select" data-action="set-reputation-builder-field" data-field="linkedActorId">
+                  {{#each operations.reputation.builder.actorOptions}}
+                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                  {{/each}}
+                </select>
+              </label>
+              <label class="po-resource-row">
+                <span>Starting Standing (-5 to +5)</span>
+                <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-builder-field" data-field="score" value="{{operations.reputation.builder.score}}" />
+              </label>
+            </div>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>What This Faction Is / What It Represents</span>
+              <textarea class="po-input" rows="4" data-action="set-reputation-builder-field" data-field="summary" placeholder="What the faction is, what it wants, and why the party cares about it.">{{operations.reputation.builder.summary}}</textarea>
+            </label>
+            <label class="po-resource-row po-notes-row-lg">
+              <span>Current Saved Note</span>
+              <textarea class="po-input" rows="4" data-action="set-reputation-builder-field" data-field="note" placeholder="Current situation, leverage, tensions, or next expected outcome.">{{operations.reputation.builder.note}}</textarea>
+            </label>
+            <div class="po-reputation-player-impact-section">
+              <div class="po-reputation-inline-head">
+                <div>
+                  <div class="po-section-title">Player Influence</div>
+                  <div class="po-op-summary">Track the current faction increases or decreases attached to specific player characters.</div>
+                </div>
+                <div class="po-reputation-log-meta">
+                  <span class="po-reputation-log-chip po-reputation-impact-total {{operations.reputation.builder.playerImpactToneClass}}">Current Total {{operations.reputation.builder.playerImpactTotalLabel}}</span>
+                  <span class="po-reputation-log-chip">{{operations.reputation.builder.playerImpactCount}} linked entries</span>
+                </div>
+              </div>
+              <div class="po-reputation-player-impact-list">
+                {{#each operations.reputation.builder.playerImpacts}}
+                <div class="po-reputation-player-impact-row">
+                  <label class="po-resource-row">
+                    <span>Player</span>
+                    <select class="po-select" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="actorId">
+                      {{#each actorOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <label class="po-resource-row">
+                    <span>Delta</span>
+                    <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="delta" value="{{delta}}" />
+                  </label>
+                  <label class="po-resource-row po-notes-row-lg">
+                    <span>Reason / Note</span>
+                    <textarea class="po-input" rows="2" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="note" placeholder="Why this player is moving the faction up or down.">{{note}}</textarea>
+                  </label>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-builder-impact" data-impact-id="{{id}}">Remove</button>
+                </div>
+                {{/each}}
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-builder-impact">Add Player Influence</button>
+              </div>
+            </div>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm is-primary" data-action="add-reputation-faction">Create Faction</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-builder">Clear Builder</button>
+            </div>
+          </section>
+          {{/if}}
+          <div class="po-reputation-grid">
+            {{#each operations.reputation.filteredFactions}}
+            <section class="po-op-role-row po-reputation-faction-card {{standingClass}}" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
+              <div class="po-reputation-card-head">
+                <div class="po-reputation-card-title">
+                  <div class="po-op-role-name">{{label}}</div>
+                  <div class="po-reputation-card-subtitle">{{#if isCore}}Core faction{{else}}Custom faction{{/if}}</div>
+                </div>
+                <div class="po-op-role-status po-reputation-standing-pill">Standing {{score}} | {{access}}</div>
+              </div>
+              <div class="po-reputation-detail-chips">
+                <span class="po-reputation-log-chip">Type: {{categoryLabel}}</span>
+                {{#if hasRepresents}}<span class="po-reputation-log-chip">Represents: {{represents}}</span>{{/if}}
+                {{#if hasLinkedActor}}<span class="po-reputation-log-chip">Linked Player: {{linkedActorName}}</span>{{/if}}
+                <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Player Delta {{playerImpactTotalLabel}}</span>
+              </div>
+              {{#if @root.isGM}}
+              <div class="po-reputation-detail-grid">
+                {{#unless isCore}}
+                <label class="po-resource-row">
+                  <span>Faction Name</span>
+                  <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
+                </label>
+                {{/unless}}
+                <label class="po-resource-row">
+                  <span>Type / Category</span>
+                  <input type="text" class="po-input" data-action="set-reputation-detail" data-faction="{{id}}" data-field="category" value="{{category}}" placeholder="Guild, house, cult, militia..." />
+                </label>
+                <label class="po-resource-row">
+                  <span>Represents / Sphere</span>
+                  <input type="text" class="po-input" data-action="set-reputation-detail" data-faction="{{id}}" data-field="represents" value="{{represents}}" placeholder="What influence or domain this faction covers" />
+                </label>
+                <label class="po-resource-row">
+                  <span>Linked Player</span>
+                  <select class="po-select" data-action="set-reputation-detail" data-faction="{{id}}" data-field="linkedActorId">
+                    {{#each linkedActorOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <label class="po-resource-row">
+                  <span>Standing (-5 to +5)</span>
+                  <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
+                </label>
+              </div>
+              <div class="po-op-action-row po-reputation-score-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">Lower</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">Raise</button>
+              </div>
+              <label class="po-resource-row po-notes-row-lg">
+                <span>What This Faction Is / What It Represents</span>
+                <textarea class="po-input" rows="3" data-action="set-reputation-detail" data-faction="{{id}}" data-field="summary" placeholder="What this faction is, what it wants, and how it fits into the campaign.">{{summary}}</textarea>
               </label>
               <label class="po-resource-row po-notes-row-lg">
-                <span>Notes / Outcome Impact</span>
-                <textarea class="po-input po-reputation-note" rows="4" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Explain what changed and what access or penalties now apply">{{note}}</textarea>
+                <span>Upcoming Note / Outcome Impact</span>
+                <textarea class="po-input po-reputation-note" rows="5" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Describe what happened, what changed, and what the party can expect next.">{{note}}</textarea>
               </label>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ Date</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Delete Current Note</button>
+              <div class="po-reputation-player-impact-section">
+                <div class="po-reputation-inline-head">
+                  <div>
+                    <div class="po-section-title">Player Influence</div>
+                    <div class="po-op-summary">Current faction increases or decreases based on the players.</div>
+                  </div>
+                  <div class="po-reputation-log-meta">
+                    <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Current Total {{playerImpactTotalLabel}}</span>
+                    <span class="po-reputation-log-chip">{{playerImpactCount}} linked entries</span>
+                  </div>
+                </div>
+                {{#if playerImpacts.length}}
+                <div class="po-reputation-player-impact-list">
+                  {{#each playerImpacts}}
+                  <div class="po-reputation-player-impact-row">
+                    <label class="po-resource-row">
+                      <span>Player</span>
+                      <select class="po-select" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="actorId">
+                        {{#each actorOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Delta</span>
+                      <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="delta" value="{{delta}}" />
+                    </label>
+                    <label class="po-resource-row po-notes-row-lg">
+                      <span>Reason / Note</span>
+                      <textarea class="po-input" rows="2" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="note" placeholder="Why this player is moving the faction up or down.">{{note}}</textarea>
+                    </label>
+                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}">Remove</button>
+                  </div>
+                  {{/each}}
+                </div>
+                {{else}}
+                <div class="po-op-summary">No player-linked faction shifts tracked yet.</div>
+                {{/if}}
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-player-impact" data-faction="{{id}}">Add Player Influence</button>
+                </div>
+              </div>
+              <div class="po-op-action-row po-reputation-primary-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ World Date</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Clear Draft</button>
               </div>
               <div class="po-reputation-log-row">
                 <label class="po-resource-row">
-                  <span>Load Logged Note{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
+                  <span>Review Logged Notes{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
                   <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
-                    <option value="">Select date/reputation note...</option>
+                    <option value="">Select a logged note...</option>
                     {{#each noteLogOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                     {{/each}}
                   </select>
                 </label>
-                <div class="po-op-summary">
-                  {{#if hasSelectedNoteLog}}
-                  Selected: {{selectedNoteLogDayLabel}} | Rep {{selectedNoteLogScoreLabel}} | {{selectedNoteLogPreview}}
-                  {{else}}
-                  No logged note selected.
-                  {{/if}}
+                <div class="po-sop-note-view po-reputation-log-view">
+                  <div class="po-reputation-log-meta">
+                    {{#if hasSelectedNoteLog}}
+                    <span class="po-reputation-log-chip">Logged {{selectedNoteLogDayLabel}}</span>
+                    <span class="po-reputation-log-chip">Rep {{selectedNoteLogScoreLabel}}</span>
+                    {{#if selectedNoteLogClockLabel}}<span class="po-reputation-log-chip">{{selectedNoteLogClockLabel}}</span>{{/if}}
+                    <span class="po-reputation-log-chip">By {{selectedNoteLogLoggedBy}}</span>
+                    {{#if hasSelectedNoteLogCalendar}}<span class="po-reputation-log-chip">Calendar Synced</span>{{/if}}
+                    {{else}}
+                    <span class="po-reputation-log-chip is-muted">Archived notes stay here for review</span>
+                    {{/if}}
+                  </div>
+                  <div class="po-sop-note-view-body {{#unless hasSelectedNoteLog}}is-empty{{/unless}}">
+                    {{#if hasSelectedNoteLog}}
+                    {{selectedNoteLogText}}
+                    {{else}}
+                    {{#if hasNoteLogs}}
+                    Select a logged note to read it here without overwriting the current draft.
+                    {{else}}
+                    No archived notes yet.
+                    {{/if}}
+                    {{/if}}
+                  </div>
                 </div>
-                <div class="po-op-action-row">
+                <div class="po-op-action-row po-reputation-log-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="use-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Load Into Editor</button>
                   <button type="button" class="po-btn po-btn-sm" data-action="post-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Post Selected Note</button>
-                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}">Delete Logged Note</button>
+                  {{#if hasSelectedNoteLogJournal}}
+                  <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{selectedNoteLogJournalEntryId}}">Open Archive</button>
+                  {{/if}}
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Delete Logged Note</button>
                 </div>
               </div>
               {{#unless isCore}}
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
+              <button type="button" class="po-btn po-btn-sm is-danger po-reputation-remove-btn" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
               {{/unless}}
               {{else}}
-              <div class="po-op-summary">Standing: {{score}}</div>
-              <div class="po-op-summary">Notes: {{#if note}}{{note}}{{else}}-{{/if}}</div>
+              <div class="po-reputation-readonly">
+                <div class="po-op-summary">Type: {{categoryLabel}}</div>
+                {{#if hasRepresents}}<div class="po-op-summary">Represents: {{represents}}</div>{{/if}}
+                {{#if hasLinkedActor}}<div class="po-op-summary">Linked Player: {{linkedActorName}}</div>{{/if}}
+                <div class="po-op-summary">Standing: {{score}} ({{access}})</div>
+                {{#if hasSummary}}
+                <div class="po-sop-note-view po-reputation-log-view">
+                  <div class="po-sop-note-view-body">{{summary}}</div>
+                </div>
+                {{/if}}
+                {{#if hasPlayerImpacts}}
+                <div class="po-reputation-player-impact-section">
+                  <div class="po-reputation-inline-head">
+                    <div>
+                      <div class="po-section-title">Player Influence</div>
+                    </div>
+                    <div class="po-reputation-log-meta">
+                      <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Current Total {{playerImpactTotalLabel}}</span>
+                    </div>
+                  </div>
+                  <div class="po-reputation-player-impact-list">
+                    {{#each configuredPlayerImpacts}}
+                    <div class="po-reputation-player-impact-row is-readonly">
+                      <div class="po-op-summary"><strong>{{actorLabel}}</strong> {{deltaLabel}}</div>
+                      {{#if note}}<div class="po-op-summary">{{note}}</div>{{/if}}
+                    </div>
+                    {{/each}}
+                  </div>
+                </div>
+                {{/if}}
+                <div class="po-sop-note-view po-reputation-log-view">
+                  <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}">
+                    {{#if note}}
+                    {{note}}
+                    {{else}}
+                    No current faction note.
+                    {{/if}}
+                  </div>
+                </div>
+              </div>
               {{/if}}
-            </div>
+            </section>
             {{/each}}
           </div>
-          {{#if @root.isGM}}
-          <div class="po-op-divider"></div>
-          <div class="po-op-role-row po-reputation-gm-tools">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Add Custom Faction</div>
-            </div>
-            <label class="po-resource-row">
-              <span>Faction Name</span>
-              <input type="text" name="repFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
-            </label>
-            <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-faction">Add Faction</button>
-          </div>
-          {{/if}}
-          <div class="po-op-summary">High standing factions: {{operations.reputation.highStandingCount}}</div>
-          <div class="po-op-summary">Hostile factions: {{operations.reputation.hostileCount}}</div>
-          <div class="po-op-summary">Custom factions: {{operations.reputation.customCount}}</div>
         </div>
 
         {{/if}}
@@ -983,18 +1251,12 @@
 
         <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
-          <div class="po-hint">Set your city, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
+          <div class="po-hint">Review your GM-assigned location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
 
           <div class="po-merchant-showcase">
             <div class="po-merchant-showcase-head">
-              <label class="po-resource-row">
-                <span>City</span>
-                <select class="po-select" data-action="merchant-select-city">
-                  {{#each operations.merchants.settlementOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
+              <div class="po-op-summary">Assigned Location: {{operations.merchants.selectedSettlementLabel}}</div>
+              {{#if operations.merchants.canChooseActor}}
               <label class="po-resource-row">
                 <span>Trading As</span>
                 <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
@@ -1003,6 +1265,9 @@
                   {{/each}}
                 </select>
               </label>
+              {{else}}
+              <div class="po-op-summary">Trading As: {{operations.merchants.activeActorName}}</div>
+              {{/if}}
               <div class="po-op-summary">Viewer: {{operations.merchants.viewerName}}</div>
               <div class="po-op-summary">Last Access Logged: {{operations.merchants.viewerLastAccessLabel}}</div>
               <div class="po-op-summary">Shop Status: {{operations.merchants.shopStatusLabel}}</div>
@@ -1146,6 +1411,7 @@
                   <div class="po-op-role-name">Submit Downtime Action</div>
                   <div class="po-op-role-status">Per actor</div>
                 </div>
+                {{#if operations.downtime.submit.canChooseActor}}
                 <label class="po-resource-row">
                   <span>Actor</span>
                   <select name="downtimeActorId" class="po-select">
@@ -1154,6 +1420,9 @@
                     {{/each}}
                   </select>
                 </label>
+                {{else}}
+                <div class="po-op-summary">Actor: {{operations.downtime.submit.actorName}}</div>
+                {{/if}}
                 <label class="po-resource-row">
                   <span>Action</span>
                   <select name="downtimeActionKey" class="po-select">
@@ -1461,8 +1730,8 @@
               <span class="po-op-summary">How to activate and what each action does</span>
             </summary>
             <div class="po-panel-disclosure-body">
-              <div class="po-hint">Use any button below to open its quick tool, fill fields, then click the matching submit button. All actions are GM-only.</div>
-              <div class="po-op-summary"><strong>+ Faction:</strong> Opens a short form and adds a new faction into Reputation tracking.</div>
+              <div class="po-hint">Use any button below to open its matching page or quick tool. All actions are GM-only.</div>
+              <div class="po-op-summary"><strong>+ Faction:</strong> Opens the Reputation &amp; Factions builder page.</div>
               <div class="po-op-summary"><strong>Global Modifiers:</strong> Opens a read-only page showing currently applied global and party modifiers.</div>
               <div class="po-op-summary"><strong>Environment:</strong> Opens a dedicated GM Environment page.</div>
               <div class="po-op-summary"><strong>Downtime:</strong> Opens a dedicated GM Downtime page for tuning, result editing, and sorting.</div>
@@ -1474,7 +1743,7 @@
             </div>
           </details>
           <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-            <button type="button" class="po-tab {{#if operations.gmQuickTools.showFactionPanel}}is-active{{/if}}" data-action="gm-quick-add-faction">+ Faction</button>
+            <button type="button" class="po-tab" data-action="gm-quick-add-faction">+ Faction</button>
             <button type="button" class="po-tab {{#if operations.gmQuickTools.showModifierPanel}}is-active{{/if}}" data-action="gm-quick-add-modifier">Global Modifiers</button>
             <button type="button" class="po-tab" data-action="gm-quick-open-environment">Environment</button>
             <button type="button" class="po-tab" data-action="gm-quick-open-downtime">Downtime</button>
@@ -1632,23 +1901,6 @@
             </div>
           </details>
           </div>
-          {{#if operations.gmQuickTools.showFactionPanel}}
-          <div class="po-col">
-          <div class="po-op-role-row">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Quick Add Faction</div>
-            </div>
-            <label class="po-resource-row">
-              <span>Faction Name</span>
-              <input type="text" name="quickFactionName" class="po-input" placeholder="e.g., Black Salt Consortium" />
-            </label>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-faction">Add Faction</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
-            </div>
-          </div>
-          </div>
-          {{/if}}
           <div class="po-col">
           <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showWeatherPanel}}open{{/if}}>
             <summary class="po-panel-disclosure-summary">

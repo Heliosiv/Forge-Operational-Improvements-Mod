@@ -48,6 +48,7 @@
       {{#if lootClaims.selectedActorClaimedCurrency}}
       <div class="po-op-summary">Selected actor already claimed a currency share.</div>
       {{/if}}
+      {{#if lootClaims.canChooseActor}}
       <label class="po-resource-row po-loot-claims-actor-row">
         <span>Claim As</span>
         <select name="lootClaimActorId" class="po-select" data-action="set-loot-claim-actor">
@@ -56,50 +57,62 @@
           {{/each}}
         </select>
       </label>
+      {{else}}
+      <div class="po-op-summary"><strong>Claim As:</strong> {{lootClaims.selectedActorName}}</div>
+      {{/if}}
       <div class="po-op-action-row">
         <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Claim Currency Share</button>
       </div>
       {{/if}}
 
       {{#if lootClaims.hasItems}}
+      <div class="po-loot-claim-items-grid">
       {{#each lootClaims.items}}
-      <div class="po-op-role-row po-loot-claim-card">
-        <div class="po-op-role-head">
-          <div class="po-op-role-name">{{name}}</div>
-          <div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div>
-        </div>
+      <article class="po-op-role-row po-loot-claim-card {{#if requiresRollOff}}is-contested{{/if}}" data-po-item-card="loot-claim-item" data-item-id="{{id}}" data-uuid="{{uuid}}">
+        <div class="po-loot-claim-card-head">
+          <img class="po-loot-claim-thumb" src="{{img}}" alt="{{name}}" loading="lazy" {{#if canOpen}}data-po-item-open-target="true" title="Double-click to open {{name}}"{{/if}} />
+          <div class="po-loot-claim-copy">
+            <div class="po-loot-claim-name-row">
+              <div class="po-op-role-name">{{name}}</div>
+              {{#if hasQuantity}}<span class="po-pill">x{{quantity}}</span>{{/if}}
+              {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
+              {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">Selected actor vouched</span>{{/if}}
+            </div>
 
-        <div class="po-loot-claim-tags">
-          {{#if hasRarity}}<span class="po-pill">Rarity: {{rarity}}</span>{{/if}}
-          {{#if hasQuantity}}<span class="po-pill">Qty: {{quantity}}</span>{{/if}}
-          <span class="po-pill">Source: {{sourceLabel}}</span>
-          {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
-          {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">Selected actor vouched</span>{{/if}}
-        </div>
+            <div class="po-loot-claim-tags">
+              <span class="po-pill">{{itemType}}</span>
+              {{#if hasRarity}}<span class="po-pill">Rarity: {{rarity}}</span>{{/if}}
+              {{#if hasItemValue}}<span class="po-pill">Value: {{itemValueLabel}}</span>{{/if}}
+              <span class="po-pill">Source: {{sourceLabel}}</span>
+            </div>
 
-        <div class="po-loot-claim-vouched-row">
-          <span class="po-loot-claim-vouched-label">Vouched By</span>
-          {{#if hasVouchers}}
-          <div class="po-loot-claim-vouch-list">
-            {{#each vouchedByNames}}
-            <span class="po-pill po-loot-vouch-chip">{{this}}</span>
-            {{/each}}
+            <div class="po-loot-claim-vouched-row">
+              <span class="po-loot-claim-vouched-label">Vouched By</span>
+              {{#if hasVouchers}}
+              <div class="po-loot-claim-vouch-list">
+                {{#each vouchedByNames}}
+                <span class="po-pill po-loot-vouch-chip">{{this}}</span>
+                {{/each}}
+              </div>
+              {{else}}
+              <span class="po-op-summary">No vouchers yet</span>
+              {{/if}}
+            </div>
           </div>
-          {{else}}
-          <span class="po-op-summary">No vouchers yet</span>
-          {{/if}}
+
+          <div class="po-loot-claim-side">
+            <div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div>
+            {{#if requiresRollOff}}
+            <div class="po-pill is-warn">Roll-Off</div>
+            {{/if}}
+            {{#if @root.canManageClaims}}
+            <label class="po-switch po-loot-claim-major-toggle">
+              <input id="po-loot-major-item-{{id}}" name="poLootMajorItem_{{id}}" type="checkbox" data-action="set-loot-major-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#if isMajorItem}}checked{{/if}} {{#if ../lootClaims.selectedRunIsArchived}}disabled{{/if}} />
+              <span>Major Item</span>
+            </label>
+            {{/if}}
+          </div>
         </div>
-
-        {{#if @root.canManageClaims}}
-        <label class="po-switch po-loot-claim-major-toggle">
-          <input id="po-loot-major-item-{{id}}" name="poLootMajorItem_{{id}}" type="checkbox" data-action="set-loot-major-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#if isMajorItem}}checked{{/if}} {{#if ../lootClaims.selectedRunIsArchived}}disabled{{/if}} />
-          <span>Major Item</span>
-        </label>
-        {{/if}}
-
-        {{#if requiresRollOff}}
-        <div class="po-op-summary is-warn">Contested: roll-off needed.</div>
-        {{/if}}
 
         <div class="po-op-action-row po-loot-claim-actions">
           <button type="button" class="po-btn po-btn-sm" data-action="toggle-loot-vouch" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" data-should-vouch="{{#if selectedActorVouched}}false{{else}}true{{/if}}" {{#unless canVouch}}disabled{{/unless}}>{{#if selectedActorVouched}}Unvouch{{else}}Vouch{{/if}}</button>
@@ -107,12 +120,10 @@
           {{#if @root.canManageClaims}}
           <button type="button" class="po-btn po-btn-sm" data-action="run-loot-rolloff" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canRunRollOff}}disabled{{/unless}}>Run Roll-Off</button>
           {{/if}}
-          {{#if canOpen}}
-          <button type="button" class="po-btn po-btn-sm" data-action="open-loot-item" data-uuid="{{uuid}}">Open</button>
-          {{/if}}
         </div>
-      </div>
+      </article>
       {{/each}}
+      </div>
       {{else}}
       <div class="po-op-summary">No active claim items in this run.</div>
       {{/if}}

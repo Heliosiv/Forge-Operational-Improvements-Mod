@@ -54,7 +54,7 @@
         <ul class="po-help-list">
           <li>Use <strong>Add Actor</strong> in each rank to assign party members.</li>
           <li>Drag actor cards by the grip handle to reorder within a rank.</li>
-          <li>Edit each actor's <strong>Notes</strong> directly inside their card.</li>
+          <li>Open an actor's <strong>Note</strong> from their card when you need to read or update it.</li>
           <li>Use planning sections to organize rank assignment before movement.</li>
         </ul>
       </div>
@@ -69,14 +69,18 @@
             <div class="po-rank-info">
               <div class="po-rank-title-group">
                 <i class="po-rank-icon fa-solid {{icon}}"></i>
-                <div>
-                  <div class="po-rank-title">{{label}}</div>
+                <div class="po-rank-heading-copy">
+                  <div class="po-rank-title-row">
+                    <div class="po-rank-title">{{label}}</div>
+                    {{#if capacity}}
+                    <div class="po-rank-cap-text">{{entries.length}} / {{capacity}}</div>
+                    {{/if}}
+                  </div>
                   <div class="po-rank-desc">{{desc}}</div>
                 </div>
               </div>
               {{#if capacity}}
               <div class="po-rank-capacity">
-                <div class="po-rank-cap-text">{{entries.length}} / {{capacity}}</div>
                 <div class="po-rank-cap-bar">
                   <div class="po-rank-cap-fill" style="width: {{capacityPercent}}%"></div>
                 </div>
@@ -100,7 +104,7 @@
               <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
               <div class="po-entry-main">
                 <div class="po-entry-title">
-                  {{actor.name}}
+                  <span class="po-entry-name">{{actor.name}}</span>
                   <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
                     <i class="fa-solid fa-location-dot"></i>
                   </button>
@@ -134,14 +138,19 @@
                   </span>
                   {{/if}}
                 </div>
-                <div class="po-entry-notes" data-actor-id="{{actorId}}">
-                  <div class="po-note-label">Notes</div>
-                  <label class="po-sr-only" for="po-march-note-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-                  <textarea id="po-march-note-{{../id}}-{{actorId}}" class="po-notes-input po-entry-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" {{#unless canEditNote}}disabled{{/unless}}>{{notes}}</textarea>
+                <div class="po-entry-footer">
+                  {{#if notes}}
+                  <span class="po-entry-note-status" title="{{notes}}">
+                    <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+                    Note saved
+                  </span>
+                  {{/if}}
                   {{#if canEditNote}}
-                  <div class="po-notes-actions">
-                    <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes">Save Note</button>
-                  </div>
+                  <button type="button" class="po-btn po-btn-sm po-entry-note-btn" data-action="open-entry-notes">Open Note</button>
+                  {{else}}
+                  {{#if notes}}
+                  <button type="button" class="po-btn po-btn-sm po-entry-note-btn" data-action="open-entry-notes">Open Note</button>
+                  {{/if}}
                   {{/if}}
                 </div>
               </div>

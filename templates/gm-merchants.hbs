@@ -28,11 +28,11 @@
         <div class="po-merchants-hero">
           <div class="po-merchants-hero-copy">
             <div class="po-section-title">Merchant Workspace - {{merchants.gm.editorSelectionLabel}}</div>
-            <div class="po-hint">Edit merchant identity and settings in one workspace. Saving clears this editor so you can load another configured merchant explicitly.</div>
+            <div class="po-hint">Edit merchant identity, Party Operations stock tags, and pricing balance in one workspace. Saving clears this editor so you can load another configured merchant explicitly.</div>
           </div>
           <div class="po-merchants-hero-chip">
-            <span>Pricing Preview</span>
-            <strong>Buy x{{merchants.gm.editor.buyMarkupMultiplierLabel}} | Sell {{merchants.gm.editor.sellRatePercent}}% | Barter {{#if merchants.gm.editor.barterEnabled}}ON{{else}}OFF{{/if}}</strong>
+            <span>Balance Snapshot</span>
+            <strong>{{merchants.gm.sourceTaxonomy.schemaLabel}} | {{merchants.gm.sourceTaxonomy.itemCount}} source items | Buy x{{merchants.gm.editor.buyMarkupMultiplierLabel}}</strong>
           </div>
         </div>
         {{/if}}
@@ -40,7 +40,7 @@
         <input type="hidden" name="merchantId" value="{{merchants.gm.editor.id}}" />
         <div class="po-merchant-workspace">
           <div class="po-tabs po-tabs-sub po-merchant-view-tabs" aria-label="Merchant workspace tabs">
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabCityEditor}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="city-editor">City Editor</button>
+            <button type="button" class="po-tab {{#if merchants.gm.viewTabCityEditor}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="city-editor">Location Editor</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Merchant Workspace</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Configured Merchants</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabShopSession}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="shop-session">Shop Session</button>
@@ -50,27 +50,72 @@
         {{#if merchants.gm.viewTabCityEditor}}
         <div class="po-two-col po-merchant-city-editor-grid">
           <div class="po-col po-merchant-city-editor-column">
-            <div class="po-section-title">City Editor</div>
-            <div class="po-hint">Manage the settlement catalog used for merchant setup and assignment.</div>
+            <div class="po-section-title">Location Editor</div>
+            <div class="po-hint">Manage the location catalog used for merchant setup and assignment.</div>
             <div class="po-merchant-city-catalog">
               <label class="po-resource-row po-merchant-city-row">
-                <span>City Catalog</span>
-                <input type="text" name="merchantCityCatalog" class="po-input" value="{{merchants.gm.cityCatalogInput}}" placeholder="Waterdeep, Baldur's Gate, Neverwinter" />
+                <span>Location Catalog</span>
+                <input type="text" name="merchantCityCatalog" class="po-input" value="{{merchants.gm.cityCatalogInput}}" placeholder="Waterdeep, Baldur's Gate, Neverwinter, Roadside Camp" />
               </label>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-save-city-catalog">Save Cities</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-save-city-catalog">Save Locations</button>
             </div>
           </div>
           <div class="po-col po-merchant-city-editor-column po-merchant-city-catalog-panel">
-            <div class="po-section-title">Saved Catalog</div>
-            <div class="po-op-summary">{{merchants.gm.savedCityCatalogCount}} saved</div>
-            {{#if merchants.gm.hasSavedCityCatalogRows}}
+            <div class="po-section-title">Saved Locations</div>
+            <div class="po-op-summary">{{merchants.gm.savedLocationCatalogCount}} location(s)</div>
+            {{#if merchants.gm.hasSavedLocationCatalogRows}}
             <div class="po-merchant-city-catalog-list">
-              {{#each merchants.gm.savedCityCatalogRows}}
-              <div class="po-merchant-city-catalog-item">{{this}}</div>
+              {{#each merchants.gm.savedLocationCatalogRows}}
+              <div class="po-merchant-city-catalog-item" data-merchant-location-row data-location="{{value}}">
+                <div class="po-merchant-location-card-head">
+                  <label class="po-resource-row po-merchant-location-name-row">
+                    <span>Location</span>
+                    <input type="text" name="merchantCatalogLocationName" class="po-input" value="{{value}}" />
+                  </label>
+                  <div class="po-op-summary">Status: {{statusLabel}} | {{merchantCount}} merchant(s)</div>
+                </div>
+                <div class="po-op-action-row po-merchant-location-row-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-update-location-catalog-entry">Save</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-remove-location-catalog-entry">Remove</button>
+                </div>
+                <div class="po-merchant-location-row-assignment">
+                  <label class="po-resource-row po-merchant-location-add-row">
+                    <span>Add Merchant</span>
+                    <select class="po-select" name="merchantCatalogLocationMerchant">
+                      {{#each availableMerchantOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}} {{#if disabled}}disabled{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    class="po-btn po-btn-sm"
+                    data-action="merchant-location-add-merchant"
+                    {{#unless hasAvailableMerchantOptions}}disabled{{/unless}}
+                  >Add</button>
+                </div>
+                {{#if hasAssignedMerchantRows}}
+                <div class="po-merchant-location-assigned-list">
+                  {{#each assignedMerchantRows}}
+                  <div class="po-merchant-location-assigned-item">
+                    <span>{{name}}{{#if title}} - {{title}}{{/if}}</span>
+                    <button
+                      type="button"
+                      class="po-btn po-btn-sm"
+                      data-action="merchant-location-remove-merchant"
+                      data-merchant-id="{{id}}"
+                    >Remove</button>
+                  </div>
+                  {{/each}}
+                </div>
+                {{else}}
+                <div class="po-op-summary">No merchants assigned yet.</div>
+                {{/if}}
+              </div>
               {{/each}}
             </div>
             {{else}}
-            <div class="po-op-summary">No cities saved yet.</div>
+            <div class="po-op-summary">No locations saved yet.</div>
             {{/if}}
           </div>
         </div>
@@ -116,7 +161,7 @@
               <input type="text" name="merchantImg" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.img}}" placeholder="icons/svg/item-bag.svg" />
             </label>
             <label class="po-resource-row">
-              <span>City / Settlement</span>
+              <span>Location</span>
               <select class="po-select" name="merchantSettlement" data-action="merchant-editor-draft-change">
                 {{#each merchants.gm.cityOptions}}
                 <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -188,6 +233,11 @@
               <span>Target Stock Value (gp)</span>
               <input type="number" min="0" max="1000000" step="1" name="merchantTargetValueGp" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.targetValueGp}}" />
             </label>
+            <label class="po-resource-row">
+              <span>Target Value Strictness ({{merchants.gm.editor.valueStrictness}}%)</span>
+              <input type="range" min="50" max="300" step="5" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
+            </label>
+            <div class="po-op-summary">Strictness band: {{merchants.gm.editor.valueStrictnessBandLabel}} | When a target is set, stock can drift by about +/-{{merchants.gm.editor.valueTolerancePercent}}%.</div>
             <div class="po-op-summary">Stock amount is scarcity-driven. Max stack size is fixed at 20.</div>
           </div>
         </div>
@@ -196,6 +246,45 @@
         {{#if merchants.gm.editorViewTabSettings}}
         <div class="po-two-col po-merchant-editor-grid">
           <div class="po-col po-merchant-editor-column">
+            <article class="po-merchant-taxonomy-card">
+              <div class="po-loot-section-head">
+                <div>
+                  <div class="po-section-title">Party Ops Source Snapshot</div>
+                  <div class="po-hint">These are the current hardcoded Party Operations item tags available to this merchant from the selected source pool.</div>
+                </div>
+              </div>
+              <div class="po-loot-sidebar-metrics">
+                <div class="po-loot-sidebar-metric"><span>Schema</span><strong>{{merchants.gm.sourceTaxonomy.schemaLabel}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Tagged Items</span><strong>{{merchants.gm.sourceTaxonomy.itemCount}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Tag Lanes</span><strong>{{merchants.gm.tagCatalogCount}}</strong></div>
+                <div class="po-loot-sidebar-metric"><span>Keyword Picks</span><strong>{{merchants.gm.keywordCatalogCount}}</strong></div>
+              </div>
+              {{#if merchants.gm.sourceTaxonomy.categoryRows.length}}
+              <div class="po-op-summary">Merchant Categories</div>
+              <div class="po-merchant-taxonomy-chip-grid">
+                {{#each merchants.gm.sourceTaxonomy.categoryRows}}
+                <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                {{/each}}
+              </div>
+              {{/if}}
+              {{#if merchants.gm.sourceTaxonomy.valueRows.length}}
+              <div class="po-op-summary">Value Bands</div>
+              <div class="po-merchant-taxonomy-chip-grid">
+                {{#each merchants.gm.sourceTaxonomy.valueRows}}
+                <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                {{/each}}
+              </div>
+              {{/if}}
+              {{#if merchants.gm.sourceTaxonomy.rarityRows.length}}
+              <div class="po-op-summary">Rarity Mix</div>
+              <div class="po-merchant-taxonomy-chip-grid">
+                {{#each merchants.gm.sourceTaxonomy.rarityRows}}
+                <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                {{/each}}
+              </div>
+              {{/if}}
+            </article>
+
             <div class="po-resource-row po-merchant-source-row">
               <span>Tag Include</span>
               <div class="po-merchant-source-picker po-merchant-filter-picker">
@@ -363,6 +452,26 @@
                 </label>
               </div>
             </div>
+            {{#if merchants.gm.sourceTaxonomy.tierRows.length}}
+            <div class="po-merchant-taxonomy-card">
+              <div class="po-section-title">Tier Distribution</div>
+              <div class="po-merchant-taxonomy-chip-grid">
+                {{#each merchants.gm.sourceTaxonomy.tierRows}}
+                <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                {{/each}}
+              </div>
+            </div>
+            {{/if}}
+            {{#if merchants.gm.sourceTaxonomy.priceRows.length}}
+            <div class="po-merchant-taxonomy-card">
+              <div class="po-section-title">Price Denominations</div>
+              <div class="po-merchant-taxonomy-chip-grid">
+                {{#each merchants.gm.sourceTaxonomy.priceRows}}
+                <span class="po-pill">{{label}} <strong>{{count}}</strong></span>
+                {{/each}}
+              </div>
+            </div>
+            {{/if}}
             <label class="po-resource-row">
               <span>Barter Enabled</span>
               <input type="checkbox" name="merchantBarterEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.barterEnabled}}checked{{/if}} />
@@ -434,10 +543,20 @@
             </div>
             <div class="po-merchant-shop-player-grid">
               {{#each merchants.gm.shopSession.playerRows}}
-              <label class="po-merchant-shop-player-row">
-                <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
-                <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
-              </label>
+              <div class="po-merchant-shop-player-row">
+                <label class="po-merchant-shop-player-toggle">
+                  <input type="checkbox" data-action="merchant-shop-player-toggle" data-user-id="{{userId}}" {{#if selected}}checked{{/if}} />
+                  <span>{{userName}}{{#unless isActive}} (Offline){{/unless}}</span>
+                </label>
+                <label class="po-resource-row po-merchant-shop-player-location">
+                  <span>Location</span>
+                  <select class="po-select" data-action="merchant-shop-player-location" data-user-id="{{userId}}">
+                    {{#each locationOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+              </div>
               {{/each}}
             </div>
             {{else}}
@@ -470,11 +589,11 @@
                   data-action="merchant-gm-filter-change"
                   data-filter-key="search"
                   value="{{merchants.gm.collectionFilterSearch}}"
-                  placeholder="Filter by name, title, city, tags..."
+                  placeholder="Filter by name, title, location, tags..."
                 />
               </label>
               <label class="po-resource-row">
-                <span>City</span>
+                <span>Location</span>
                 <select class="po-select" data-action="merchant-gm-filter-change" data-filter-key="city">
                   {{#each merchants.gm.collectionFilterCityOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -524,16 +643,20 @@
                   </div>
                 </div>
                 <div class="po-merchant-definition-metadata">
-                  <div class="po-op-summary">Profile: {{raceLabel}} | {{settlementLabel}}</div>
+                  <div class="po-op-summary">Profile: {{raceLabel}} | Location: {{settlementLabel}}</div>
                   <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
                   <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
                   <div class="po-op-summary">Scarcity: {{scarcityLabel}} ({{scarcityMultiplierPercent}}%) | Max Stack: {{maxStackSize}}</div>
+                  {{#if targetStockValueGp}}<div class="po-op-summary">Target Value: {{targetStockValueGpLabel}} | Strictness: {{valueStrictnessBandLabel}} (+/-{{valueTolerancePercent}}%)</div>{{/if}}
                   <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
                   <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
+                  {{#if hasIncludeTags}}<div class="po-op-summary">Require Tags: {{includeTagsText}}</div>{{/if}}
+                  {{#if hasExcludeTags}}<div class="po-op-summary">Block Tags: {{excludeTagsText}}</div>{{/if}}
+                  {{#if hasKeywordInclude}}<div class="po-op-summary">Keyword Focus: {{keywordIncludeText}}</div>{{/if}}
                   <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
                 </div>
                 <label class="po-resource-row">
-                  <span>Assign City</span>
+                  <span>Assign Location</span>
                   <select class="po-select" data-action="merchant-assign-city" data-merchant-id="{{id}}">
                     {{#each cityOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>

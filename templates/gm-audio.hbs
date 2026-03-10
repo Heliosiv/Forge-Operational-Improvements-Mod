@@ -235,7 +235,7 @@
 
           <section class="po-audio-console-strip po-audio-console-strip-live">
             <div class="po-section-title">Now Playing</div>
-            <div class="po-op-summary">{{audio.mix.playback.presetLabel}} · Updated {{audio.mix.playback.updatedAtLabel}}</div>
+            <div class="po-op-summary">{{audio.mix.playback.presetLabel}} Â· Updated {{audio.mix.playback.updatedAtLabel}}</div>
             {{#if audio.mix.playback.hasActiveTrack}}
             <div class="po-audio-live-preview" data-po-audio-live-monitor data-playback-id="{{audio.mix.playback.playbackId}}">
               <div class="po-audio-preview-meta">
@@ -398,7 +398,7 @@
               {{/if}}
               <div class="po-audio-track-main">
                 <div class="po-audio-track-name">{{order}}. {{name}}</div>
-                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}</div>
+                <div class="po-audio-track-meta">{{category}}{{#if subcategory}} / {{subcategory}}{{/if}} Â· {{durationLabel}}</div>
               </div>
               <div class="po-audio-track-badges">
                 {{#if isActive}}<span class="po-pill">Live</span>{{/if}}
@@ -564,7 +564,7 @@
                   {{#if isAssigned}}<span class="po-pill">Queued</span>{{/if}}
                 </div>
                 <div class="po-audio-track-meta">
-                  {{category}}{{#if subcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}{{#if ../audio.mix.trackBrowser.viewSuggested}} · score {{score}}{{/if}}
+                  {{category}}{{#if subcategory}} / {{subcategory}}{{/if}} Â· {{durationLabel}}{{#if ../audio.mix.trackBrowser.viewSuggested}} Â· score {{score}}{{/if}}
                 </div>
               </div>
               <div class="po-audio-track-badges">
@@ -606,7 +606,7 @@
               <button type="button" class="po-audio-track-select-button" data-action="select-audio-track" data-track-id="{{id}}">
                 <span class="po-audio-track-main">
                   <span class="po-audio-track-name">{{name}}</span>
-                  <span class="po-audio-track-meta">{{category}}{{#if hasSubcategory}} / {{subcategory}}{{/if}} · {{durationLabel}}</span>
+                  <span class="po-audio-track-meta">{{category}}{{#if hasSubcategory}} / {{subcategory}}{{/if}} Â· {{durationLabel}}</span>
                 </span>
                 <span class="po-audio-track-badges">
                   <span class="po-pill">{{kindLabel}}</span>

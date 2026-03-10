@@ -18,7 +18,7 @@
           <div class="po-merchant-trade-subtitle">{{merchantTitle}}</div>
           {{/if}}
           <p class="po-merchant-trade-description">
-            <strong>{{actorName}}</strong> is shopping in <strong>{{settlementLabel}}</strong>.
+            <strong>{{actorName}}</strong> is shopping at <strong>{{settlementLabel}}</strong>.
           </p>
         </div>
       </div>
@@ -87,11 +87,21 @@
             <tbody>
               {{#if hasBuyRows}}
               {{#each buyRows}}
-              <tr>
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" />
-                    <span>{{itemName}}</span>
+                    <div class="po-merchant-trade-item-copy">
+                      <span class="po-merchant-trade-item-name">{{itemName}}</span>
+                      {{#if hasMetaPills}}
+                      <div class="po-merchant-trade-item-meta">
+                        {{#each metaPills}}
+                        <span class="po-pill">{{label}}</span>
+                        {{/each}}
+                      </div>
+                      {{/if}}
+                      {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
+                    </div>
                   </div>
                 </td>
                 <td>{{qty}}</td>
@@ -142,11 +152,21 @@
             <tbody>
               {{#if hasSellRows}}
               {{#each sellRows}}
-              <tr>
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" />
-                    <span>{{itemName}}</span>
+                    <div class="po-merchant-trade-item-copy">
+                      <span class="po-merchant-trade-item-name">{{itemName}}</span>
+                      {{#if hasMetaPills}}
+                      <div class="po-merchant-trade-item-meta">
+                        {{#each metaPills}}
+                        <span class="po-pill">{{label}}</span>
+                        {{/each}}
+                      </div>
+                      {{/if}}
+                      {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
+                    </div>
                   </div>
                 </td>
                 <td>{{itemTypeLabel}}</td>

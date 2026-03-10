@@ -45,10 +45,19 @@ function ensureRestSlotEntries(slot) {
   if (!slot.entries) slot.entries = [];
 }
 
+function restSlotHasActor(slot, actorIdInput) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) return false;
+  ensureRestSlotEntries(slot);
+  return slot.entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId);
+}
+
 export async function applyRestRequest(request, requesterRef, deps = {}) {
   const {
     getRestWatchState,
+    game,
     resolveRequester,
+    canUserControlActor,
     stampUpdate,
     setModuleSettingWithLocalRefreshSuppressed,
     settings,
@@ -66,12 +75,17 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
   if (state.locked) return;
   if (request.op === "clearAll") return;
 
-  const requesterActor = requester.character;
+  const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
+  const requesterCanControlActor = Boolean(
+    requestedActor
+    && (requester?.isGM || canUserControlActor?.(requestedActor, requester))
+  );
   if (request.op === "assignMe") {
-    if (!requesterActor || requesterActor.id !== request.actorId) return;
+    if (!requesterCanControlActor) return;
     const slot = state.slots.find((entry) => entry.id === request.slotId);
     if (!slot) return;
     ensureRestSlotEntries(slot);
+    if (restSlotHasActor(slot, request.actorId)) return;
     slot.entries.push({ actorId: request.actorId, notes: "" });
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
@@ -82,12 +96,12 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
   }
 
   if (request.op === "clearEntry") {
+    if (!requesterCanControlActor) return;
     const slot = state.slots.find((entry) => entry.id === request.slotId);
     if (!slot) return;
     ensureRestSlotEntries(slot);
-    const entryIndex = slot.entries.findIndex((entry) => entry.actorId === requesterActor?.id);
+    const entryIndex = slot.entries.findIndex((entry) => entry.actorId === request.actorId);
     if (entryIndex === -1) return;
-    if (slot.entries[entryIndex].actorId !== request.actorId) return;
     slot.entries.splice(entryIndex, 1);
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
@@ -98,6 +112,7 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
   }
 
   if (request.op === "setEntryNotes") {
+    if (!requesterCanControlActor) return;
     const slot = state.slots.find((entry) => entry.id === request.slotId);
     if (!slot) return;
     ensureRestSlotEntries(slot);

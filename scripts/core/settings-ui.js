@@ -115,6 +115,29 @@ export function registerPartyOpsUiSettings({
     onChange: (value) => notifySettingChanged(settings.PLAYER_HUB_MODE, normalizePlayerHubMode(value))
   });
 
+  game.settings.register(moduleId, settings.UI_BUTTON_SOUNDS_ENABLED, {
+    name: "UI Button Sounds",
+    hint: "Play a short local sound when pressing Party Operations buttons and tabs.",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: (value) => notifySettingChanged(settings.UI_BUTTON_SOUNDS_ENABLED, Boolean(value))
+  });
+
+  game.settings.register(moduleId, settings.UI_BUTTON_SOUND_PATH, {
+    name: "UI Button Sound Path",
+    hint: "Audio path used for Party Operations button sounds. Leave blank to fall back to Foundry's core UI sound.",
+    scope: "client",
+    config: true,
+    type: String,
+    default: "sounds/lock.wav",
+    onChange: (value) => {
+      const normalized = String(value ?? "").trim() || "sounds/lock.wav";
+      notifySettingChanged(settings.UI_BUTTON_SOUND_PATH, normalized);
+    }
+  });
+
   game.settings.register(moduleId, settings.PARTY_OPS_CONFIG, {
     name: "Party Operations Config",
     hint: "Validated module config payload for loot/scarcity tuning and debug wiring.",

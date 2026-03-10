@@ -1,84 +1,63 @@
-# Forge-Operational-Improvements-Mod
+# Party Operations
 
-## Update GitHub Repository
+Party Operations is a Foundry VTT module for running the table-facing logistics around travel, rest, party planning, loot, downtime, merchants, environment pressure, and shared GM audio from one workspace.
 
-### Standard update workflow
+## Current Build
 
-From the module root:
+The current released build in this repository is `2.2.4-test.6`.
+
+## What This Module Covers
+
+- Rest Watch planning with slot assignments, notes, visibility controls, snapshots, and player-facing sync.
+- Marching Order planning for party travel and formation management.
+- Operations pages for planning, reputation, base pressure, merchants, downtime, recovery, loot, and party health modifiers.
+- GM quick tools for environment, downtime, merchants, audio, loot, factions, global modifiers, and session automation.
+- Shared launcher support for scene controls, floating canvas access, and sidebar access.
+- A built item compendium pack used by the loot and operations flows.
+
+## Install Or Update
+
+- Manifest: `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json`
+- Download: `https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip`
+
+Install the manifest in Foundry or Forge, enable the module in your world, then open Party Operations from the scene controls or launcher.
+
+## Quick Start
+
+1. Open `Rest Watch` as GM.
+2. Use `Fill from Active Party`, adjust visibility, and save a snapshot.
+3. Open `Operations` and assign roles, SOPs, and resource baselines.
+4. Use the GM quick actions to open Environment, Downtime, Merchants, Audio, or Loot when needed.
+5. If you want player-facing access, configure the launcher and Player Hub options in the Settings Hub.
+
+## GM Audio Workspace
+
+The GM Audio page is part of the current build line.
+
+- Scan a host-served audio folder into a track catalog.
+- Filter by name, tags, kind, and usage.
+- Preview, hide, and restore tracks from a curated library view.
+- Build mix presets, queue tracks, and run shared playback for connected users.
+- Use the same filters inside the mix track browser to narrow suggested or all-track results.
+
+## Documentation
+
+- Usage guide: [HOW_TO_USE.md](./HOW_TO_USE.md)
+- Build notes and fixes: [BUG_FIXES.md](./BUG_FIXES.md)
+- Roadmap: [ROADMAP.md](./ROADMAP.md)
+
+## Repository Release Flow
+
+Validate the module before publishing:
 
 ```powershell
-git status
-git pull origin main
 npm run check
-git add module.json README.md HOW_TO_USE.md .github/workflows/release.yml scripts/ styles/ templates/ packs/
-git commit -m "Describe your changes"
-git push origin main
 ```
 
-Pushing to `main` now publishes `module.json` and `module.zip` to the GitHub Release that Forge reads from the manifest URLs.
-Pushing to feature branches does not update Forge, because the manifest points to GitHub release assets rather than branch files.
-If you want Forge to detect a new update, `module.json` version must change before the `main` push.
-
-### Release workflow (Forge/GitHub latest assets)
-
-Use the release script to bump version, commit, tag, and push in one step:
+Create a release with the helper script:
 
 ```powershell
-./scripts/release.ps1 -Version 2.1.0 -Message "Release"
+./scripts/release.ps1 -Version 2.2.4-test.7 -Message "Release"
 ```
 
-What it does:
-- Updates `module.json` version
-- Creates a commit
-- Creates tag `vX.Y.Z`
-- Pushes `main` and tag to GitHub
-
-### Export procedure (local DIST only)
-
-Use this when you want a local test/export package without publishing to GitHub:
-
-1. Stage runtime-only package contents locally:
-
-```powershell
-npm run prepare:package
-```
-
-2. Zip `dist/staging-public/staging/` into your local test artifact if needed.
-3. Do **not** run `git add -A` for export-only steps.
-4. Stage only intended source/manifest/docs files with explicit paths.
-
-Recommended safe staging command:
-
-```powershell
-git add module.json README.md scripts/ styles/ templates/ packs/
-```
-
-Before committing, verify no build artifacts are staged:
-
-```powershell
-git status --short
-```
-
-Expected: no `dist/`, `release/`, `.zip`, `.sha256.txt`, or `.staging-local-test/` entries in staged changes.
-
-### Founder-first private manifest release
-
-Build founders release assets (for a private GitHub repo release):
-
-```powershell
-./scripts/build-founders-release.ps1 -Version 2.1.0 -PrivateRepo <owner>/party-operations-founders
-```
-
-Then upload `dist/founders/module.json` and `dist/founders/module.zip` to the private repo release.
-
-### Current Release Highlights (2.1.0)
-
-- Integration sync now recovers from stale/missing ActiveEffect references instead of failing.
-- Operations view uses consistent pill-style navigation and expanded single-column layout.
-- Marching torchlight now supports per-actor Bright/Dim ranges with persistence and chat/export visibility.
-
-### After pushing
-
-1. Check GitHub Actions and confirm the release workflow succeeds.
-2. Confirm the latest Release has `module.json` and `module.zip` assets.
-3. Forge will detect updates from the existing `releases/latest` manifest URL.
+GitHub Actions runs on pushes to `main`, version tags matching `v*.*.*`, and manual dispatch. The workflow validates `module.json`, rebuilds `release/module.zip`, and updates the GitHub Release assets used by the manifest URLs above.

@@ -148,7 +148,11 @@ export function createGmMerchantsPageApp(deps) {
     resetMerchantEditorSelection,
     createStarterMerchants,
     saveMerchantCityCatalogFromElement,
+    updateMerchantCatalogLocationFromElement,
+    removeMerchantCatalogLocationFromElement,
     assignMerchantCityFromElement,
+    assignMerchantCatalogLocationMerchantFromElement,
+    removeMerchantCatalogLocationMerchantFromElement,
     randomizeMerchantNameFromElement,
     randomizeMerchantRaceFromElement,
     setMerchantEditorSelectionFromElement,
@@ -165,6 +169,7 @@ export function createGmMerchantsPageApp(deps) {
     selectAllMerchantTagsFromElement,
     deselectAllMerchantTagsFromElement,
     setMerchantShopRestrictionFromElement,
+    setMerchantShopPlayerLocationFromElement,
     setMerchantShopPlayerAllowedFromElement,
     setMerchantShopPlayersAllFromElement,
     setMerchantShopPlayersNoneFromElement,
@@ -174,6 +179,7 @@ export function createGmMerchantsPageApp(deps) {
     ringMerchantShopBellFromElement,
     closeMerchantShopsFromElement,
     openMerchantActorFromElement,
+    setMerchantCityCatalogDraftValue,
     openGmPanelByKey
   } = deps;
 
@@ -295,7 +301,11 @@ export function createGmMerchantsPageApp(deps) {
         },
         "merchant-create-starters": rerenderAlways(() => createStarterMerchants()),
         "merchant-save-city-catalog": rerenderIfTruthy(saveMerchantCityCatalogFromElement),
+        "merchant-update-location-catalog-entry": rerenderIfTruthy(updateMerchantCatalogLocationFromElement),
+        "merchant-remove-location-catalog-entry": rerenderIfTruthy(removeMerchantCatalogLocationFromElement),
         "merchant-assign-city": rerenderIfTruthy(assignMerchantCityFromElement),
+        "merchant-location-add-merchant": rerenderIfTruthy(assignMerchantCatalogLocationMerchantFromElement),
+        "merchant-location-remove-merchant": rerenderIfTruthy(removeMerchantCatalogLocationMerchantFromElement),
         "merchant-set-access-mode": rerenderIfTruthy(setMerchantAccessModeFromElement),
         "merchant-assign-toggle": rerenderIfTruthy(setMerchantAssignmentFromElement),
         "merchant-assign-all": rerenderIfTruthy(setMerchantAssignmentAllEnabledFromElement),
@@ -316,6 +326,7 @@ export function createGmMerchantsPageApp(deps) {
         "merchant-gm-filter-change": rerenderIfTruthy(setMerchantGmCollectionFilterFromElement),
         "merchant-gm-filter-reset": rerenderIfTruthy(resetMerchantGmCollectionFilterFromElement),
         "merchant-shop-restrict-toggle": rerenderIfTruthy(setMerchantShopRestrictionFromElement),
+        "merchant-shop-player-location": rerenderIfTruthy(setMerchantShopPlayerLocationFromElement),
         "merchant-shop-player-toggle": rerenderIfTruthy(setMerchantShopPlayerAllowedFromElement),
         "merchant-shop-player-all": rerenderIfTruthy(setMerchantShopPlayersAllFromElement),
         "merchant-shop-player-none": rerenderIfTruthy(setMerchantShopPlayersNoneFromElement),
@@ -333,6 +344,20 @@ export function createGmMerchantsPageApp(deps) {
     async _onPostRender() {
       syncAllMerchantTagSelectionUi(this.element);
       syncMerchantSourceRefSelectionUi(this.element);
+    }
+
+    _bindAdditionalListeners(root) {
+      const syncCityCatalogDraft = (target) => {
+        if (!target?.matches?.("input[name='merchantCityCatalog']")) return;
+        setMerchantCityCatalogDraftValue(target?.value ?? "");
+      };
+
+      root.addEventListener("input", (event) => {
+        syncCityCatalogDraft(event.target);
+      });
+      root.addEventListener("change", (event) => {
+        syncCityCatalogDraft(event.target);
+      });
     }
   };
 }

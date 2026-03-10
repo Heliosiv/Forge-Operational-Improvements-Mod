@@ -25,6 +25,7 @@ export function createGmDowntimePageApp(deps) {
     addDowntimeResolverCraftingItemDropFromDropEvent,
     addDowntimeResolverItemRewardFromDropEvent,
     renderDowntimeResolverItemDropList,
+    syncDowntimeUiDraftFromElement,
     openGmPanelByKey
   } = deps;
 
@@ -105,6 +106,17 @@ export function createGmDowntimePageApp(deps) {
     }
 
     _bindAdditionalListeners(root) {
+      const syncDraft = (target) => {
+        if (!target?.matches?.("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) return;
+        syncDowntimeUiDraftFromElement(target);
+      };
+
+      root.addEventListener("input", (event) => {
+        syncDraft(event.target);
+      });
+      root.addEventListener("change", (event) => {
+        syncDraft(event.target);
+      });
       root.addEventListener("dragover", (event) => {
         const dropZone = event.target?.closest?.("[data-downtime-item-dropzone], [data-downtime-crafting-item-dropzone]");
         if (!dropZone) return;

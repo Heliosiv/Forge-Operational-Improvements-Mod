@@ -12,9 +12,24 @@ export function createGmEnvironmentPageApp(deps) {
     setOperationalEnvironmentDc,
     setOperationalEnvironmentSuccessive,
     setOperationalEnvironmentNote,
+    selectOperationalEnvironmentConfigurePreset,
+    createOperationalEnvironmentPreset,
+    duplicateOperationalEnvironmentPreset,
+    restoreOperationalEnvironmentPresetDefaults,
+    deleteOperationalEnvironmentPreset,
+    setOperationalEnvironmentPresetField,
+    addOperationalEnvironmentPresetEffectChange,
+    removeOperationalEnvironmentPresetEffectChange,
+    setOperationalEnvironmentPresetEffectChange,
+    selectOperationalEnvironmentConfigureAction,
+    createOperationalEnvironmentAction,
+    deleteOperationalEnvironmentAction,
+    setOperationalEnvironmentActionField,
     toggleOperationalEnvironmentActor,
     resetOperationalEnvironmentSuccessiveDefaults,
     addOperationalEnvironmentLog,
+    editOperationalEnvironmentLog,
+    removeOperationalEnvironmentLog,
     clearOperationalEnvironmentEffects,
     showOperationalEnvironmentBrief,
     gmQuickLogCurrentWeather,
@@ -63,7 +78,14 @@ export function createGmEnvironmentPageApp(deps) {
     }
 
     _shouldHandleInputAction(action) {
-      return action === "gm-quick-weather-set" || action === "set-environment-note" || action === "set-environment-successive";
+      return [
+        "gm-quick-weather-set",
+        "set-environment-note",
+        "set-environment-successive",
+        "set-environment-preset-field",
+        "set-environment-preset-effect-change",
+        "set-environment-action-field"
+      ].includes(action);
     }
 
     _getActionHandlers() {
@@ -86,9 +108,24 @@ export function createGmEnvironmentPageApp(deps) {
         "set-environment-dc": rerenderAlways(setOperationalEnvironmentDc),
         "set-environment-successive": rerenderUnlessInput(setOperationalEnvironmentSuccessive),
         "set-environment-note": rerenderUnlessInput(setOperationalEnvironmentNote),
+        "select-environment-config-preset": rerenderAlways(selectOperationalEnvironmentConfigurePreset),
+        "create-environment-preset": rerenderAlways(() => createOperationalEnvironmentPreset()),
+        "duplicate-environment-preset": rerenderAlways(() => duplicateOperationalEnvironmentPreset()),
+        "restore-environment-preset-defaults": rerenderAlways(() => restoreOperationalEnvironmentPresetDefaults()),
+        "delete-environment-preset": rerenderAlways(() => deleteOperationalEnvironmentPreset()),
+        "set-environment-preset-field": rerenderUnlessInput(setOperationalEnvironmentPresetField),
+        "add-environment-preset-effect-change": rerenderAlways(() => addOperationalEnvironmentPresetEffectChange()),
+        "remove-environment-preset-effect-change": rerenderAlways(removeOperationalEnvironmentPresetEffectChange),
+        "set-environment-preset-effect-change": rerenderUnlessInput(setOperationalEnvironmentPresetEffectChange),
+        "select-environment-config-action": rerenderAlways(selectOperationalEnvironmentConfigureAction),
+        "create-environment-action": rerenderAlways(() => createOperationalEnvironmentAction()),
+        "delete-environment-action": rerenderAlways(() => deleteOperationalEnvironmentAction()),
+        "set-environment-action-field": rerenderUnlessInput(setOperationalEnvironmentActionField),
         "toggle-environment-actor": rerenderAlways(toggleOperationalEnvironmentActor),
         "reset-environment-successive-defaults": rerenderAlways(() => resetOperationalEnvironmentSuccessiveDefaults()),
         "add-environment-log": rerenderAlways(() => addOperationalEnvironmentLog()),
+        "edit-environment-log": rerenderAlways(editOperationalEnvironmentLog),
+        "remove-environment-log": rerenderAlways(removeOperationalEnvironmentLog),
         "clear-environment-effects": rerenderAlways(() => clearOperationalEnvironmentEffects()),
         "show-environment-brief": async () => {
           await showOperationalEnvironmentBrief();
