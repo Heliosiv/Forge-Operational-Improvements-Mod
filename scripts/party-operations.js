@@ -20823,6 +20823,30 @@ function buildLootPreviewContext() {
   const displayTotals = calculateLootPreviewValueTotals(result, valueBudgetContext);
   const generatedAt = Number(result?.generatedAt ?? 0);
   const generatedAtLabel = generatedAt > 0 ? new Date(generatedAt).toLocaleString() : "-";
+  const sourceConfig = getLootSourceConfig();
+  const enabledTableSources = Math.max(0, (sourceConfig.tables ?? []).filter((entry) => entry?.enabled !== false).length);
+  const tableRollBudget = Math.max(0, getLootTableRollBudget(draft));
+  const tableScalarPercent = Math.max(25, Math.min(300, Math.floor(Number(draft?.tableScalar ?? 100) || 100)));
+  const tableFrequencyBandLabel = tableScalarPercent <= 50
+    ? "Sparse"
+    : tableScalarPercent <= 85
+      ? "Light"
+      : tableScalarPercent <= 115
+        ? "Normal"
+        : tableScalarPercent <= 175
+          ? "Busy"
+          : "Flooded";
+  const tableFrequencySummary = enabledTableSources <= 0
+    ? "No bonus table sources are enabled, so this slider currently has nothing to pull from."
+    : `${tableFrequencyBandLabel}: up to ${tableRollBudget} bonus table roll(s) from ${enabledTableSources} enabled source(s).`;
+  const tableFrequencyEffect = tableRollBudget <= 0
+    ? "Bonus table pulls are effectively off at this setting."
+    : tableRollBudget === 1
+      ? "Expect only an occasional bonus table contribution."
+      : `Higher settings widen bonus table pulls until the builder hits the ${tableRollBudget}-roll cap for this draft.`;
+  const valueBudgetSummary = `Current target: ${valueBudgetContext.effectiveTotalTargetGp} gp total, split to ${valueBudgetContext.targetItemBudgetGp} gp in items and ${valueBudgetContext.targetCurrencyBudgetGp} gp in coin.`;
+  const valueStrictnessSummary = `${valueBudgetContext.strictnessBandLabel} keeps the total between ${valueBudgetContext.targetValueRangeMinGp}-${valueBudgetContext.targetValueRangeMaxGp} gp (plus or minus ${valueBudgetContext.tolerancePercent}%).`;
+  const itemStrictnessSummary = `Item budget window: ${valueBudgetContext.itemTargetValueRangeMinGp}-${valueBudgetContext.itemTargetValueRangeMaxGp} gp.`;
   return {
     draft,
     showEncounterCreatures: mode === "encounter",
@@ -20842,9 +20866,15 @@ function buildLootPreviewContext() {
       effectiveTotalTargetGp: Number(valueBudgetContext.effectiveTotalTargetGp ?? 0),
       targetValueRangeMinGp: Number(valueBudgetContext.targetValueRangeMinGp ?? 0),
       targetValueRangeMaxGp: Number(valueBudgetContext.targetValueRangeMaxGp ?? 0),
+      itemTargetValueRangeMinGp: Number(valueBudgetContext.itemTargetValueRangeMinGp ?? 0),
+      itemTargetValueRangeMaxGp: Number(valueBudgetContext.itemTargetValueRangeMaxGp ?? 0),
+      itemToleranceGp: Number(valueBudgetContext.itemToleranceGp ?? 0),
       toleranceGp: Number(valueBudgetContext.toleranceGp ?? 0),
       tolerancePercent: Number(valueBudgetContext.tolerancePercent ?? 0),
       strictnessBandLabel: String(valueBudgetContext.strictnessBandLabel ?? "Normal"),
+      valueBudgetSummary,
+      valueStrictnessSummary,
+      itemStrictnessSummary,
       desiredItemCount: Math.max(0, Number(valueBudgetContext.targetCount ?? 0) || 0),
       baselineDesiredItemCount: Math.max(0, Number(valueBudgetContext.desiredItemCount ?? valueBudgetContext.targetCount ?? 0) || 0),
       autoMaxItems: Math.max(0, Number(valueBudgetContext.autoMaxItems ?? valueBudgetContext.maxItems ?? 0) || 0),
@@ -20856,6 +20886,14 @@ function buildLootPreviewContext() {
       manualMaxItemValueGp: Number(valueBudgetContext.manualMaxItemValueGp ?? 0),
       effectiveMaxItemValueGp: Number(valueBudgetContext.effectiveMaxItemValueGp ?? 0),
       usingManualCap: Number(valueBudgetContext.manualMaxItemValueGp ?? 0) > 0
+    },
+    tableFrequency: {
+      bandLabel: tableFrequencyBandLabel,
+      scalarPercent: tableScalarPercent,
+      enabledSourceCount: enabledTableSources,
+      rollBudget: tableRollBudget,
+      summary: tableFrequencySummary,
+      effect: tableFrequencyEffect
     },
     hasResult,
     generatedAtLabel,
@@ -35264,7 +35302,7 @@ async function awardCurrencyBundleToActor(actor, bundle = {}) {
 }
 
 function readLootPreviewDraftFromUi(element) {
-  const root = element?.closest(".po-loot-preview-panel");
+  const root = getLootPreviewPanelRoot(element);
   if (!root) return null;
   const current = getLootPreviewDraft();
   const readFieldValue = (name, field, fallback = "") => {
@@ -35902,6 +35940,11 @@ function getLootPreviewCurrencyGpEquivalent(currency = {}) {
   return Math.max(0, Number(((pp * 10) + gp + (sp * 0.1) + (cp * 0.01)).toFixed(2)));
 }
 
+function getLootPreviewPanelRoot(element) {
+  if (!(element instanceof Element)) return null;
+  return element.closest(".po-loot-preview-panel") ?? element.closest(".po-loot-workspace");
+}
+
 function adjustLootPreviewCurrency(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can curate loot builder currency.");
@@ -35913,7 +35956,7 @@ function adjustLootPreviewCurrency(element) {
     return false;
   }
 
-  const root = element?.closest(".po-loot-preview-panel");
+  const root = getLootPreviewPanelRoot(element);
   if (!root) return false;
   const denom = String(root.querySelector("select[name='lootPreviewCurrencyAdjustDenom']")?.value ?? "gp").trim().toLowerCase();
   const qtyOverrideRaw = Number(element?.dataset?.qty ?? NaN);

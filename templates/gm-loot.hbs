@@ -49,7 +49,7 @@
       </div>
 
       {{#if operations.lootSources.registryTabPreview}}
-      <div class="po-loot-workspace">
+      <div class="po-loot-workspace po-loot-preview-panel">
         <div class="po-loot-workspace-main">
           <section class="po-gm-section po-loot-builder-deck">
             <div class="po-loot-section-head">
@@ -89,7 +89,8 @@
                 <label class="po-resource-row po-resource-row-stack"><span>Distribution Mix ({{preview.budget.itemSharePercent}}% items / {{preview.budget.currencySharePercent}}% coin)</span><input name="lootPreviewDistributionMix" type="range" min="0" max="100" step="5" class="po-input" data-action="set-loot-preview-field" data-field="distributionMix" value="{{preview.draft.distributionMix}}" /></label>
                 <div class="po-op-summary">Slide left for more coin. Slide right for more items.</div>
                 <label class="po-resource-row po-resource-row-stack"><span>Bonus Table Frequency ({{preview.draft.tableScalar}}%)</span><input name="lootPreviewTableScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="tableScalar" value="{{preview.draft.tableScalar}}" /></label>
-                <div class="po-op-summary">Higher values pull more extra roll-table results into the loot build.</div>
+                <div class="po-op-summary">{{preview.tableFrequency.summary}}</div>
+                <div class="po-op-summary">{{preview.tableFrequency.effect}}</div>
                 <div class="po-loot-mini-metrics">
                   <div class="po-loot-mini-metric"><span>Desired</span><strong>{{preview.budget.desiredItemCount}}</strong></div>
                   <div class="po-loot-mini-metric"><span>Max Items</span><strong>{{#if preview.budget.usingManualMaxItems}}{{preview.budget.maxItems}}{{else}}None{{/if}}</strong></div>
@@ -103,7 +104,10 @@
                   <div class="po-op-summary">Use manual caps only when you want to force the generator away from its normal budget curve.</div>
                 </div>
                 <label class="po-resource-row po-resource-row-stack"><span>Value Budget Scale ({{preview.draft.valueBudgetScalar}}%)</span><input name="lootPreviewValueBudgetScalar" type="range" min="25" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueBudgetScalar" value="{{preview.draft.valueBudgetScalar}}" /></label>
+                <div class="po-op-summary">{{preview.budget.valueBudgetSummary}}</div>
                 <label class="po-resource-row po-resource-row-stack"><span>Value Strictness ({{preview.draft.valueStrictness}}%)</span><input name="lootPreviewValueStrictness" type="range" min="50" max="300" step="5" class="po-input" data-action="set-loot-preview-field" data-field="valueStrictness" value="{{preview.draft.valueStrictness}}" /></label>
+                <div class="po-op-summary">{{preview.budget.valueStrictnessSummary}}</div>
+                <div class="po-op-summary">{{preview.budget.itemStrictnessSummary}}</div>
                 <label class="po-resource-row po-resource-row-stack"><span>Max Items {{#if preview.budget.usingManualMaxItems}}({{preview.budget.manualMaxItems}}){{else}}(None){{/if}}</span><input name="lootPreviewMaxItems" type="range" min="0" max="80" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItems" value="{{preview.draft.maxItems}}" /></label>
                 <label class="po-resource-row"><span>Max Item GP</span><input name="lootPreviewMaxItemValueGp" type="number" min="0" max="100000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="maxItemValueGp" value="{{preview.draft.maxItemValueGp}}" /></label>
                 <label class="po-resource-row"><span>Target Total Value GP</span><input name="lootPreviewTargetItemsValueGp" type="number" min="0" max="1000000" step="1" class="po-input" data-action="set-loot-preview-field" data-field="targetItemsValueGp" value="{{preview.draft.targetItemsValueGp}}" /></label>
