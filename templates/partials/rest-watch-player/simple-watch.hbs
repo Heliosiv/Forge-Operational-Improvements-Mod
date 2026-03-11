@@ -41,11 +41,11 @@
             </div>
           </div>
           <div class="po-entry-actions">
-            <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-controls="po-player-notes-{{../id}}-{{actorId}}" aria-expanded="{{#if notes}}true{{else}}false{{/if}}" aria-label="Toggle notes for {{actor.name}}">
+            <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-player-notes-{{../id}}-{{actorId}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
               <i class="fa-solid fa-note-sticky"></i>
             </button>
           </div>
-          <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes {{#if notes}}is-active{{/if}}" aria-hidden="{{#if notes}}false{{else}}true{{/if}}">
+          <div id="po-player-notes-{{../id}}-{{actorId}}" class="po-notes" aria-hidden="true">
             <label class="po-sr-only" for="po-player-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
             <textarea id="po-player-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
             {{#if canEditNotes}}

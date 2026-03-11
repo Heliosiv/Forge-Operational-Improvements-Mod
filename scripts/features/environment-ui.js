@@ -31,6 +31,7 @@ export function createGmEnvironmentPageApp(deps) {
     editOperationalEnvironmentLog,
     removeOperationalEnvironmentLog,
     clearOperationalEnvironmentEffects,
+    requestOperationalEnvironmentChecks,
     showOperationalEnvironmentBrief,
     gmQuickLogCurrentWeather,
     gmQuickAddWeatherDaeChange,
@@ -127,6 +128,7 @@ export function createGmEnvironmentPageApp(deps) {
         "edit-environment-log": rerenderAlways(editOperationalEnvironmentLog),
         "remove-environment-log": rerenderAlways(removeOperationalEnvironmentLog),
         "clear-environment-effects": rerenderAlways(() => clearOperationalEnvironmentEffects()),
+        "request-environment-checks": rerenderAlways(() => requestOperationalEnvironmentChecks()),
         "show-environment-brief": async () => {
           await showOperationalEnvironmentBrief();
         },

@@ -4,6 +4,7 @@ import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
+import { createNavigationUiState } from "./features/navigation-ui-state.js";
 import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
 import {
   applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
@@ -1357,6 +1358,33 @@ const LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS = [
   { value: "items-asc", label: "Fewest Items" }
 ];
 const {
+  getActiveGmPanelTab,
+  setActiveGmPanelTab,
+  getActiveRestMainTab,
+  setActiveRestMainTab,
+  getActiveOperationsPage,
+  setActiveOperationsPage,
+  normalizePlayerHubTab,
+  getPlayerHubTab,
+  setPlayerHubTab,
+  getActiveGmQuickPanel,
+  setActiveGmQuickPanel,
+  getActiveGmOperationsTab,
+  setActiveGmOperationsTab,
+  normalizeGmOperationsTab,
+  getActiveOperationsPlanningTab,
+  setActiveOperationsPlanningTab,
+  isMiniVizCollapsed,
+  setMiniVizCollapsed,
+  getMarchSectionState,
+  setMarchSectionState,
+  isMarchSectionCollapsed,
+  setMarchSectionCollapsed
+} = createNavigationUiState({
+  normalizeMainTabId,
+  canAccessAllPlayerOps
+});
+const {
   LOOT_SETTINGS_TABS,
   normalizeLootPackSourcesFilter,
   getLootPackSourcesUiState,
@@ -1608,6 +1636,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "edit-environment-log",
   "remove-environment-log",
   "clear-environment-effects",
+  "request-environment-checks",
   "gm-quick-add-faction",
   "gm-quick-add-modifier",
   "gm-quick-open-downtime",
@@ -1678,6 +1707,11 @@ const ENVIRONMENT_ACTIONS = [
   }
 ];
 
+const ENVIRONMENT_CHECK_TRIGGERS = [
+  { value: "move", label: "On Movement" },
+  { value: "manual", label: "Manual Push" }
+];
+
 const ENVIRONMENT_PRESETS = [
   {
     key: "none",
@@ -1698,6 +1732,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/falling.svg",
     actionKey: "move",
     movementCheck: true,
+    checkTrigger: "move",
     checkType: "skill",
     checkKey: "acr",
     checkLabel: "Acrobatics",
@@ -1713,6 +1748,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/hazard.svg",
     actionKey: "move",
     movementCheck: true,
+    checkTrigger: "move",
     checkType: "save",
     checkKey: "dex",
     checkLabel: "Dexterity Save",
@@ -1728,6 +1764,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/snowflake.svg",
     actionKey: "endure",
     movementCheck: true,
+    checkTrigger: "manual",
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
@@ -1742,6 +1779,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/fire.svg",
     actionKey: "endure",
     movementCheck: true,
+    checkTrigger: "manual",
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
@@ -1771,6 +1809,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/skull.svg",
     actionKey: "endure",
     movementCheck: true,
+    checkTrigger: "manual",
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
@@ -1787,6 +1826,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/windmill.svg",
     actionKey: "move",
     movementCheck: true,
+    checkTrigger: "move",
     checkType: "save",
     checkKey: "str",
     checkLabel: "Strength Save",
@@ -1804,6 +1844,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/swirl.svg",
     actionKey: "move",
     movementCheck: true,
+    checkTrigger: "move",
     checkType: "skill",
     checkKey: "ath",
     checkLabel: "Athletics",
@@ -1818,6 +1859,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/terror.svg",
     actionKey: "endure",
     movementCheck: true,
+    checkTrigger: "manual",
     checkType: "save",
     checkKey: "wis",
     checkLabel: "Wisdom Save",
@@ -1833,6 +1875,7 @@ const ENVIRONMENT_PRESETS = [
     icon: "icons/svg/acid.svg",
     actionKey: "endure",
     movementCheck: true,
+    checkTrigger: "manual",
     checkType: "save",
     checkKey: "con",
     checkLabel: "Constitution Save",
@@ -1955,8 +1998,6 @@ function syncNotesDisclosureState(root) {
     const toggleButton = entry.querySelector("[data-action='toggle-notes']");
     if (!notes || !toggleButton) return;
     if (!notes.id) notes.id = `po-notes-auto-${index}-${foundry.utils.randomID()}`;
-    const noteValue = String(notes.querySelector("textarea")?.value ?? "").trim();
-    if (noteValue) notes.classList.add("is-active");
     const expanded = notes.classList.contains("is-active");
     toggleButton.setAttribute("aria-controls", notes.id);
     toggleButton.setAttribute("aria-expanded", expanded ? "true" : "false");
@@ -3425,6 +3466,7 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
   const environmentPreset = environment.preset ?? getEnvironmentPresetByKey(environment.presetKey);
   const environmentApplies = forceEnvironmentApply || (Array.isArray(environment.appliedActorIds) && environment.appliedActorIds.includes(actorId));
   const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
+  const environmentCheckTrigger = getEnvironmentCheckTriggerMeta(environmentPreset);
   const environmentAction = getEnvironmentActionMeta(environmentPreset);
   const summaryEffects = globalContext.operations.summary?.effects ?? {};
   const globalModifiers = isNonParty && includeWorldGlobal
@@ -3492,6 +3534,8 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       checkKey: environmentCheck.checkKey,
       checkSkill: environmentCheck.checkType === "skill" ? environmentCheck.checkKey : "",
       checkLabel: environmentCheck.checkLabel,
+      checkTrigger: environmentCheckTrigger.trigger,
+      checkTriggerLabel: environmentCheckTrigger.label,
       movementDc: Math.max(1, Math.floor(Number(environment.movementDc ?? 12) || 12)),
       appliesToActor: Boolean(environmentApplies)
     },
@@ -3623,6 +3667,7 @@ function normalizeEnvironmentPresetDefinition(raw = {}, fallback = {}, options =
     icon: String(raw?.icon ?? fallback?.icon ?? "icons/svg/hazard.svg").trim() || "icons/svg/hazard.svg",
     actionKey,
     movementCheck: Boolean(raw?.movementCheck ?? fallback?.movementCheck ?? false),
+    checkTrigger: normalizeEnvironmentCheckTrigger(raw?.checkTrigger ?? fallback?.checkTrigger ?? "move"),
     checkType: String(raw?.checkType ?? fallback?.checkType ?? "skill").trim().toLowerCase() === "save" ? "save" : "skill",
     checkKey: String(raw?.checkKey ?? raw?.checkSkill ?? fallback?.checkKey ?? fallback?.checkSkill ?? "").trim().toLowerCase(),
     checkLabel: String(raw?.checkLabel ?? fallback?.checkLabel ?? "").trim(),
@@ -3721,6 +3766,17 @@ function getEnvironmentCheckMeta(source = {}) {
     checkType,
     checkKey,
     checkLabel
+  };
+}
+
+function getEnvironmentCheckTriggerMeta(source = {}) {
+  const trigger = normalizeEnvironmentCheckTrigger(source?.checkTrigger ?? "move");
+  const match = ENVIRONMENT_CHECK_TRIGGERS.find((entry) => entry.value === trigger);
+  return {
+    trigger,
+    label: String(match?.label ?? "On Movement"),
+    isMove: trigger === "move",
+    isManual: trigger === "manual"
   };
 }
 
@@ -3973,6 +4029,15 @@ function buildEnvironmentCheckTypeOptions(selected = "skill") {
     { value: "skill", label: "Skill Check", selected: selectedValue === "skill" },
     { value: "save", label: "Saving Throw", selected: selectedValue === "save" }
   ];
+}
+
+function buildEnvironmentCheckTriggerOptions(selected = "move") {
+  const selectedValue = normalizeEnvironmentCheckTrigger(selected);
+  return ENVIRONMENT_CHECK_TRIGGERS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === selectedValue
+  }));
 }
 
 function buildEnvironmentCheckKeyOptions(checkType = "skill", selected = "") {
@@ -4999,39 +5064,6 @@ async function flushIntegrationSyncQueue(reason = "") {
   }
 }
 
-function getGmPanelTabStorageKey() {
-  return `po-gm-panel-tab-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveGmPanelTab() {
-  const stored = sessionStorage.getItem(getGmPanelTabStorageKey());
-  return stored === "operations" ? "operations" : "core";
-}
-
-function setActiveGmPanelTab(tab) {
-  const value = tab === "operations" ? "operations" : "core";
-  sessionStorage.setItem(getGmPanelTabStorageKey(), value);
-}
-
-function getRestMainTabStorageKey() {
-  return `po-rest-main-tab-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveRestMainTab() {
-  const stored = normalizeMainTabId(sessionStorage.getItem(getRestMainTabStorageKey()), "rest-watch");
-  if (stored === "gm" && canAccessAllPlayerOps()) return "gm";
-  if (stored === "operations") return "operations";
-  return "rest-watch";
-}
-
-function setActiveRestMainTab(tab) {
-  const normalized = normalizeMainTabId(tab, "rest-watch");
-  const value = normalized === "gm" && canAccessAllPlayerOps()
-    ? "gm"
-    : (normalized === "operations" ? "operations" : "rest-watch");
-  sessionStorage.setItem(getRestMainTabStorageKey(), value);
-}
-
 function getRestMainTabLabel(tab = getActiveRestMainTab()) {
   const value = String(tab ?? "").trim().toLowerCase();
   if (value === "gm") return "GM";
@@ -5051,34 +5083,6 @@ function syncApplicationWindowTitle(app, title) {
   const frame = root?.closest?.(".application, .app") ?? null;
   const titleNode = frame?.querySelector?.(".window-title, .window-header .title") ?? null;
   if (titleNode) titleNode.textContent = label;
-}
-
-function getOperationsPageStorageKey() {
-  return `po-operations-page-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveOperationsPage() {
-  const allowed = new Set(["planning", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
-  const stored = sessionStorage.getItem(getOperationsPageStorageKey()) ?? "planning";
-  if (stored === "supply") return "base";
-  if (stored === "readiness") return "planning";
-  if (stored === "comms") return "planning";
-  if (stored === "gm" && !canAccessAllPlayerOps()) return "planning";
-  return allowed.has(stored) ? stored : "planning";
-}
-
-function setActiveOperationsPage(page) {
-  if (page === "supply") page = "base";
-  if (page === "readiness") page = "planning";
-  if (page === "comms") page = "planning";
-  const allowed = new Set(["planning", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
-  if (page === "gm" && !canAccessAllPlayerOps()) page = "planning";
-  const value = allowed.has(page) ? page : "planning";
-  sessionStorage.setItem(getOperationsPageStorageKey(), value);
-}
-
-function getOperationsPlanningTabStorageKey() {
-  return `po-operations-planning-tab-${game.user?.id ?? "anon"}`;
 }
 
 function getReputationFilterStorageKey() {
@@ -5405,6 +5409,10 @@ function normalizeMerchantSettlementSelection(value) {
   return settlement.toLowerCase() === "global" ? "" : settlement;
 }
 
+function normalizeEnvironmentCheckTrigger(trigger = "move") {
+  return String(trigger ?? "").trim().toLowerCase() === "manual" ? "manual" : "move";
+}
+
 function getGmDowntimeViewStorageKey() {
   return `po-gm-downtime-view-${game.user?.id ?? "anon"}`;
 }
@@ -5469,10 +5477,6 @@ function getActiveSyncEffectsTabStorageKey() {
 function getActiveSyncEffectsTab() {
   const stored = String(sessionStorage.getItem(getActiveSyncEffectsTabStorageKey()) ?? "active").trim().toLowerCase();
   return stored === "archived" ? "archived" : "active";
-}
-
-function getGmQuickPanelStorageKey() {
-  return `po-gm-quick-panel-${game.user?.id ?? "anon"}`;
 }
 
 function getGmQuickWeatherDraftStorageKey() {
@@ -5576,29 +5580,6 @@ async function submitPlayerHubAction(type, payload = {}) {
     default:
       return { handled: false, rerender: false };
   }
-}
-
-function getPlayerHubTabStorageKey() {
-  return `po-player-hub-tab-${game.user?.id ?? "anon"}`;
-}
-
-function normalizePlayerHubTab(value, fallback = "watch") {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "march") return "march";
-  if (normalized === "loot") return "loot";
-  if (normalized === "downtime") return "downtime";
-  if (normalized === "watch") return "watch";
-  return fallback;
-}
-
-function getPlayerHubTab() {
-  return normalizePlayerHubTab(sessionStorage.getItem(getPlayerHubTabStorageKey()), "watch");
-}
-
-function setPlayerHubTab(value) {
-  const normalized = normalizePlayerHubTab(value, "watch");
-  sessionStorage.setItem(getPlayerHubTabStorageKey(), normalized);
-  return normalized;
 }
 
 function getPlayerHubActionRequestFromUiAction(action) {
@@ -6778,97 +6759,6 @@ function setGmQuickWeatherDraft(draft = null) {
     presetName: String(draft.presetName ?? ""),
     daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : []
   }));
-}
-
-function getActiveGmQuickPanel() {
-  const stored = String(sessionStorage.getItem(getGmQuickPanelStorageKey()) ?? "none").trim().toLowerCase();
-  const allowed = new Set(["none", "faction", "modifier", "weather"]);
-  return allowed.has(stored) ? stored : "none";
-}
-
-function setActiveGmQuickPanel(panel) {
-  const value = String(panel ?? "none").trim().toLowerCase();
-  const allowed = new Set(["none", "faction", "modifier", "weather"]);
-  sessionStorage.setItem(getGmQuickPanelStorageKey(), allowed.has(value) ? value : "none");
-}
-
-function getGmOperationsTabStorageKey() {
-  return `po-gm-ops-tab-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveGmOperationsTab() {
-  const stored = String(sessionStorage.getItem(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "loot-sources"]);
-  return allowed.has(stored) ? stored : "environment";
-}
-
-function setActiveGmOperationsTab(tab) {
-  const value = String(tab ?? "environment").trim().toLowerCase();
-  const allowed = new Set(["environment", "loot-sources"]);
-  sessionStorage.setItem(getGmOperationsTabStorageKey(), allowed.has(value) ? value : "environment");
-}
-
-function normalizeGmOperationsTab(tab, fallback = "environment") {
-  const value = String(tab ?? fallback).trim().toLowerCase();
-  const allowed = new Set(["environment", "loot-sources"]);
-  return allowed.has(value) ? value : fallback;
-}
-
-function getActiveOperationsPlanningTab() {
-  const allowed = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
-  const stored = String(sessionStorage.getItem(getOperationsPlanningTabStorageKey()) ?? "roles").trim().toLowerCase();
-  return allowed.has(stored) ? stored : "roles";
-}
-
-function setActiveOperationsPlanningTab(tab) {
-  const allowed = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
-  const normalized = String(tab ?? "").trim().toLowerCase();
-  const value = allowed.has(normalized) ? normalized : "roles";
-  sessionStorage.setItem(getOperationsPlanningTabStorageKey(), value);
-}
-
-function getMiniVizStorageKey() {
-  return `po-mini-viz-collapsed-${game.user?.id ?? "anon"}`;
-}
-
-function isMiniVizCollapsed() {
-  return sessionStorage.getItem(getMiniVizStorageKey()) === "1";
-}
-
-function setMiniVizCollapsed(collapsed) {
-  sessionStorage.setItem(getMiniVizStorageKey(), collapsed ? "1" : "0");
-}
-
-function getMarchSectionsStorageKey() {
-  return `po-march-sections-${game.user?.id ?? "anon"}`;
-}
-
-function getMarchSectionState() {
-  const raw = sessionStorage.getItem(getMarchSectionsStorageKey());
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch (_err) {
-    return {};
-  }
-}
-
-function setMarchSectionState(state) {
-  sessionStorage.setItem(getMarchSectionsStorageKey(), JSON.stringify(state ?? {}));
-}
-
-function isMarchSectionCollapsed(sectionId) {
-  if (!sectionId) return false;
-  const state = getMarchSectionState();
-  return Boolean(state[sectionId]);
-}
-
-function setMarchSectionCollapsed(sectionId, collapsed) {
-  if (!sectionId) return;
-  const state = getMarchSectionState();
-  state[sectionId] = Boolean(collapsed);
-  setMarchSectionState(state);
 }
 
 function buildMarchSectionUi(sectionId) {
@@ -8935,6 +8825,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "clear-environment-effects": async () => {
           await clearOperationalEnvironmentEffects();
         },
+        "request-environment-checks": async () => {
+          await requestOperationalEnvironmentChecks();
+        },
         "show-environment-brief": async () => {
           await showOperationalEnvironmentBrief();
         },
@@ -10118,6 +10011,7 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   editOperationalEnvironmentLog,
   removeOperationalEnvironmentLog,
   clearOperationalEnvironmentEffects,
+  requestOperationalEnvironmentChecks,
   showOperationalEnvironmentBrief,
   gmQuickLogCurrentWeather,
   gmQuickAddWeatherDaeChange,
@@ -21495,11 +21389,14 @@ function buildOperationsContext() {
   const environmentPresetCatalog = buildEnvironmentPresetCatalog(environmentState);
   const environmentPresetBase = getEnvironmentPresetByKey(environmentState.presetKey, environmentState);
   const environmentPreset = applyEnvironmentSuccessiveConfigToPreset(environmentPresetBase, environmentState);
+  const environmentCheck = getEnvironmentCheckMeta(environmentPreset);
+  const environmentCheckTrigger = getEnvironmentCheckTriggerMeta(environmentPreset);
   const environmentAction = getEnvironmentActionMeta(environmentPreset, environmentState);
   const environmentOutcomes = buildEnvironmentOutcomeSummary(environmentPreset);
   const environmentSuccessiveConfig = getEnvironmentSuccessiveConfig(environmentState, environmentPresetBase);
   const configurePresetBase = getEnvironmentPresetByKey(environmentState.configurePresetKey, environmentState);
   const configurePreset = applyEnvironmentSuccessiveConfigToPreset(configurePresetBase, environmentState);
+  const configurePresetCheckTrigger = getEnvironmentCheckTriggerMeta(configurePreset);
   const configurePresetAction = getEnvironmentActionMeta(configurePreset, environmentState);
   const configureAction = getEnvironmentActionByKey(
     environmentState.configureActionKey || configurePreset.actionKey,
@@ -22018,11 +21915,14 @@ function buildOperationsContext() {
       actionKey: environmentAction.actionKey,
       actionLabel: environmentAction.actionLabel,
       actionDescription: environmentAction.actionDescription,
-      checkLabel: getEnvironmentCheckMeta(environmentPreset).checkLabel,
+      checkLabel: environmentCheck.checkLabel,
+      checkTrigger: environmentCheckTrigger.trigger,
+      checkTriggerLabel: environmentCheckTrigger.label,
       movementDc: environmentState.movementDc,
       note: environmentState.note,
       syncToSceneNonParty: Boolean(environmentState.syncToSceneNonParty),
       movementCheckActive: Boolean(environmentPreset.movementCheck),
+      canRequestChecks: Boolean(environmentPreset.movementCheck && environmentTargets.some((target) => target.selected)),
       outcomes: environmentOutcomes,
       successiveConfig: {
         ...environmentSuccessiveConfig,
@@ -22063,6 +21963,8 @@ function buildOperationsContext() {
           isCustom: !builtInPresetKeys.has(configurePreset.key),
           actionLabel: configurePresetAction.actionLabel,
           actionDescription: configurePresetAction.actionDescription,
+          checkTriggerLabel: configurePresetCheckTrigger.label,
+          checkTriggerOptions: buildEnvironmentCheckTriggerOptions(configurePreset.checkTrigger),
           checkTypeOptions: buildEnvironmentCheckTypeOptions(configurePreset.checkType),
           checkKeyOptions: buildEnvironmentCheckKeyOptions(configurePreset.checkType, configurePreset.checkKey),
           alwaysStatusOptions: buildStatusEffectOptions(configurePreset.alwaysStatusId),
@@ -31362,6 +31264,7 @@ function buildBlankEnvironmentPreset(environment, label = "New Preset") {
     icon: "icons/svg/hazard.svg",
     actionKey: actionCatalog[0]?.key ?? "move",
     movementCheck: true,
+    checkTrigger: "move",
     checkType: "skill",
     checkKey: "ath",
     checkLabel: "Athletics",
@@ -31423,6 +31326,9 @@ function applyEnvironmentPresetFieldUpdate(preset, field, element) {
       return true;
     case "movementCheck":
       preset.movementCheck = Boolean(element?.checked);
+      return true;
+    case "checkTrigger":
+      preset.checkTrigger = normalizeEnvironmentCheckTrigger(element?.value ?? preset.checkTrigger ?? "move");
       return true;
     case "checkType":
       preset.checkType = String(element?.value ?? "").trim().toLowerCase() === "save" ? "save" : "skill";
@@ -31959,6 +31865,7 @@ async function addOperationalEnvironmentLog() {
       <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
       <p><strong>Actor Action:</strong> ${poEscapeHtml(String(current.actionLabel ?? "Action"))}</p>
       <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>Trigger:</strong> ${poEscapeHtml(String(current.checkTriggerLabel ?? "On Movement"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
       <p><strong>Targets:</strong> ${poEscapeHtml(actorNames.length > 0 ? actorNames.join(", ") : "No assigned actors")}</p>
       <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
@@ -31968,6 +31875,7 @@ async function addOperationalEnvironmentLog() {
       <p><strong>Preset:</strong> ${poEscapeHtml(String(current.preset?.label ?? "Unknown"))}</p>
       <p><strong>Actor Action:</strong> ${poEscapeHtml(String(current.actionLabel ?? "Action"))}</p>
       <p><strong>Check:</strong> ${poEscapeHtml(String(current.checkLabel ?? "Check"))}</p>
+      <p><strong>Trigger:</strong> ${poEscapeHtml(String(current.checkTriggerLabel ?? "On Movement"))}</p>
       <p><strong>DC:</strong> ${Math.max(1, Math.floor(Number(current.movementDc ?? 12) || 12))}</p>
       <p><strong>Sync Non-Party:</strong> ${current.syncToSceneNonParty ? "Yes" : "No"}</p>
       <p><em>Some GM details are redacted.</em></p>
@@ -32054,6 +31962,86 @@ async function clearOperationalEnvironmentEffects() {
   ui.notifications?.info("Active environment effects cleared.");
 }
 
+async function requestOperationalEnvironmentChecks() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can request environment checks.");
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const environment = ensureEnvironmentState(ledger);
+  const preset = applyEnvironmentSuccessiveConfigToPreset(
+    getEnvironmentPresetByKey(environment.presetKey, environment),
+    environment
+  );
+  if (preset.key === "none") {
+    ui.notifications?.warn("Select an environment preset before requesting checks.");
+    return;
+  }
+  if (!preset.movementCheck) {
+    ui.notifications?.warn("The current environment preset does not require a check.");
+    return;
+  }
+
+  const assignments = environment.appliedActorIds
+    .map((actorId) => game.actors.get(actorId))
+    .filter(Boolean)
+    .map((actor) => ({
+      actor,
+      assignment: getActorEnvironmentAssignment(actor.id)
+    }))
+    .filter((entry) => entry.assignment);
+  if (assignments.length <= 0) {
+    ui.notifications?.warn("Assign at least one actor before requesting environment checks.");
+    return;
+  }
+
+  const check = getEnvironmentCheckMeta(preset);
+  const dc = Math.max(1, Math.floor(Number(environment.movementDc ?? preset.defaultDc ?? 12) || 12));
+  const useMonks = isMonksTokenBarActive();
+  let batchResultMap = new Map();
+  if (useMonks) {
+    const batchResults = await requestMonksActorsCheck(
+      assignments.map((entry) => entry.actor),
+      `${check.checkType}:${check.checkKey}`,
+      dc,
+      buildEnvironmentCheckFlavor(assignments[0].assignment),
+      { showDc: false }
+    );
+    batchResultMap = new Map(
+      (Array.isArray(batchResults) ? batchResults : [])
+        .filter((entry) => Number.isFinite(entry?.total) || typeof entry?.passed === "boolean")
+        .map((entry) => [String(entry.actorId ?? ""), entry])
+    );
+  }
+
+  let resolvedCount = 0;
+  const unresolvedNames = [];
+  for (const { actor, assignment } of assignments) {
+    const batchResult = batchResultMap.get(String(actor.id ?? "")) ?? null;
+    const rollContext = await collectEnvironmentCheckRoll(actor, assignment, {
+      dc,
+      total: batchResult?.total,
+      passed: batchResult?.passed,
+      skipMonks: useMonks
+    });
+    if (rollContext.unavailable) {
+      unresolvedNames.push(String(actor.name ?? actor.id));
+      continue;
+    }
+    const tokenDoc = actor.getActiveTokens?.(true, true)?.[0]?.document ?? null;
+    await finalizeEnvironmentCheckResult(actor, tokenDoc, assignment, rollContext);
+    resolvedCount += 1;
+  }
+
+  if (resolvedCount > 0) {
+    ui.notifications?.info(`Resolved ${preset.label} checks for ${resolvedCount} actor(s).`);
+  }
+  if (unresolvedNames.length > 0) {
+    ui.notifications?.warn(`No environment check result returned for: ${unresolvedNames.join(", ")}.`);
+  }
+}
+
 async function showOperationalEnvironmentBrief() {
   const environment = buildOperationsContext().environment;
   const selected = environment.targets.filter((target) => target.selected).map((target) => target.actorName);
@@ -32067,6 +32055,7 @@ async function showOperationalEnvironmentBrief() {
       <p><strong>Actor Action:</strong> ${environment.actionLabel || "Action"}</p>
       <p><strong>Check Required:</strong> ${environment.preset.movementCheck ? "Enabled" : "Off"}</p>
       <p><strong>Check:</strong> ${environment.preset.movementCheck ? (environment.checkLabel || "-") : "-"}</p>
+      <p><strong>Trigger:</strong> ${environment.preset.movementCheck ? (environment.checkTriggerLabel || "On Movement") : "-"}</p>
       <p><strong>On Success:</strong> ${String(outcomes.onSuccess ?? "-")}</p>
       <p><strong>On Fail:</strong> ${String(outcomes.onFail ?? "-")}</p>
       <p><strong>On Fail by 5+:</strong> ${String(outcomes.onFailBy5 ?? "-")}</p>
@@ -32164,10 +32153,30 @@ function extractRollTotalFromMonksResult(result, actorId) {
   return null;
 }
 
-async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) {
-  if (!actor || !isMonksTokenBarActive()) return null;
+function extractMonksCheckResultEntries(result) {
+  if (!result) return [];
+  const tokenResults = Array.isArray(result?.tokenresults) ? result.tokenresults : [];
+  return tokenResults
+    .map((entry) => {
+      const actorId = String(entry?.actor?.id ?? entry?.actorId ?? entry?.actorid ?? entry?.id ?? "").trim();
+      const total = Number(entry?.roll?.total ?? entry?.total ?? entry?.result ?? entry?.rollTotal);
+      let passed = entry?.passed;
+      if (passed === "success") passed = true;
+      if (passed === "failed") passed = false;
+      return {
+        actorId,
+        total: Number.isFinite(total) ? total : null,
+        passed: typeof passed === "boolean" ? passed : null
+      };
+    })
+    .filter((entry) => entry.actorId);
+}
+
+async function requestMonksActorsCheck(actors, request, dc, flavor, options = {}) {
+  const actorTargets = Array.isArray(actors) ? actors.filter(Boolean) : [];
+  if (actorTargets.length <= 0 || !isMonksTokenBarActive()) return [];
   const api = getMonksTokenBarApi();
-  if (!api || typeof api.requestRoll !== "function") return null;
+  if (!api || typeof api.requestRoll !== "function") return [];
 
   const requestType = String(request ?? "skill:sur").trim() || "skill:sur";
   const showDc = Boolean(options.showDc);
@@ -32183,30 +32192,31 @@ async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) 
     rollMode: "roll"
   };
 
-  const actorTargets = [actor];
-  const tokenTargets = actor.getActiveTokens?.(true, true) ?? [];
-  const firstToken = tokenTargets[0] ?? null;
+  const actorIds = actorTargets.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean);
+  const tokenTargets = actorTargets.flatMap((actor) => actor.getActiveTokens?.(true, true) ?? []);
+  const requestTargets = tokenTargets.length > 0 ? tokenTargets : actorTargets;
 
-  const extractCallbackResult = (result) => {
-    const tokenResults = Array.isArray(result?.tokenresults) ? result.tokenresults : [];
-    const fallbackEntry = tokenResults[0] ?? null;
-    const entry = tokenResults.find((tokenResult) => {
-      const resultActorId = tokenResult?.actor?.id ?? tokenResult?.actorId ?? tokenResult?.actorid;
-      return String(resultActorId ?? "") === actor.id;
-    }) ?? fallbackEntry;
-    if (!entry) return null;
-
-    const total = Number(entry?.roll?.total ?? entry?.total);
-    let passed = entry?.passed;
-    if (passed === "success") passed = true;
-    if (passed === "failed") passed = false;
-    if (typeof passed !== "boolean" && Number.isFinite(total)) passed = total >= dc;
-
-    return {
-      total: Number.isFinite(total) ? total : null,
-      passed: typeof passed === "boolean" ? passed : null,
-      result
-    };
+  const buildResults = (result) => {
+    const entryMap = new Map(extractMonksCheckResultEntries(result).map((entry) => [entry.actorId, entry]));
+    return actorIds.map((actorId) => {
+      const parsed = entryMap.get(actorId);
+      if (parsed) {
+        const passed = typeof parsed.passed === "boolean"
+          ? parsed.passed
+          : (Number.isFinite(parsed.total) ? parsed.total >= dc : null);
+        return {
+          actorId,
+          total: parsed.total,
+          passed
+        };
+      }
+      const total = extractRollTotalFromMonksResult(result, actorId);
+      return {
+        actorId,
+        total: Number.isFinite(total) ? total : null,
+        passed: Number.isFinite(total) ? total >= dc : null
+      };
+    });
   };
 
   return await new Promise(async (resolve) => {
@@ -32218,31 +32228,26 @@ async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) 
     };
 
     requestOptions.callback = (result) => {
-      const parsed = extractCallbackResult(result);
-      if (parsed) {
-        settle({ total: parsed.total, passed: parsed.passed, source: "monks", response: parsed.result });
-        return;
-      }
-      settle({ total: null, passed: null, source: "monks", response: result });
+      settle(buildResults(result));
     };
 
     const attempts = [
       () => api.requestRoll(actorTargets, requestOptions),
-      () => api.requestRoll(firstToken ? [firstToken] : actorTargets, requestOptions),
+      () => api.requestRoll(requestTargets, requestOptions),
       () => api.requestRoll(actorTargets, requestType, requestOptions)
     ];
 
     for (const attempt of attempts) {
       try {
         const response = await attempt();
-        const total = extractRollTotalFromMonksResult(response, actor.id);
-        if (Number.isFinite(total)) {
-          settle({ total, passed: total >= dc, source: "monks", response });
+        const parsed = buildResults(response);
+        if (parsed.some((entry) => Number.isFinite(entry.total) || typeof entry.passed === "boolean")) {
+          settle(parsed);
           return;
         }
         if (response !== undefined) {
           setTimeout(() => {
-            if (!settled) settle({ total: null, passed: null, source: "monks", response });
+            if (!settled) settle(buildResults(response));
           }, MONKS_REQUEST_RESULT_TIMEOUT_MS);
           return;
         }
@@ -32251,8 +32256,21 @@ async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) 
       }
     }
 
-    settle(null);
+    settle([]);
   });
+}
+
+async function requestMonksActorCheck(actor, request, dc, flavor, options = {}) {
+  if (!actor) return null;
+  const results = await requestMonksActorsCheck([actor], request, dc, flavor, options);
+  const match = Array.isArray(results) ? results[0] : null;
+  if (!match) return null;
+  return {
+    total: Number.isFinite(match.total) ? match.total : null,
+    passed: typeof match.passed === "boolean" ? match.passed : null,
+    source: "monks",
+    response: results
+  };
 }
 
 async function requestMonksSurvivalRoll(actor, dc, flavor) {
@@ -33220,8 +33238,10 @@ async function recordEnvironmentCheckResult(actor, assignment, movementContext =
   return { previous, next };
 }
 
-async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movementContext = null) {
-  if (!canAccessAllPlayerOps() || !tokenDoc || !assignment) return { summary: "" };
+async function applyEnvironmentFailureConsequences(actor, tokenDoc, assignment, movementContext = null) {
+  const resolvedTokenDoc = tokenDoc ?? actor?.getActiveTokens?.(true, true)?.[0]?.document ?? null;
+  const subjectActor = resolvedTokenDoc?.actor ?? actor ?? null;
+  if (!canAccessAllPlayerOps() || !subjectActor || !assignment) return { summary: "" };
 
   const rollTotal = Number(movementContext?.rollTotal ?? NaN);
   const dc = Number(movementContext?.dc ?? NaN);
@@ -33237,10 +33257,10 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     const id = String(statusId ?? "").trim();
     if (!id) return;
     try {
-      if (typeof tokenDoc.actor?.toggleStatusEffect === "function") {
-        await tokenDoc.actor.toggleStatusEffect(id, { active: true, overlay: false });
-      } else if (tokenDoc.object && typeof tokenDoc.object.toggleEffect === "function") {
-        await tokenDoc.object.toggleEffect(getStatusEffectById(id), { active: true });
+      if (typeof subjectActor.toggleStatusEffect === "function") {
+        await subjectActor.toggleStatusEffect(id, { active: true, overlay: false });
+      } else if (resolvedTokenDoc?.object && typeof resolvedTokenDoc.object.toggleEffect === "function") {
+        await resolvedTokenDoc.object.toggleEffect(getStatusEffectById(id), { active: true });
       }
       const statusLabel = getStatusLabelById(id);
       summaryParts.push(`Status: ${statusLabel || id}`);
@@ -33273,7 +33293,8 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     const uy = dy / magnitude;
     const nextX = Math.round(Number(destination.x ?? 0) + (ux * distancePixels));
     const nextY = Math.round(Number(destination.y ?? 0) + (uy * distancePixels));
-    await tokenDoc.update({ x: nextX, y: nextY }, { poEnvironmentClamp: true });
+    if (!resolvedTokenDoc) return;
+    await resolvedTokenDoc.update({ x: nextX, y: nextY }, { poEnvironmentClamp: true });
   };
 
   const applyDamageFormula = async (formula, damageType = "") => {
@@ -33284,9 +33305,9 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
       const amount = Math.max(0, Math.floor(Number(roll.total ?? 0)));
       if (amount <= 0) return { amount: 0 };
       const hpPath = "system.attributes.hp.value";
-      const hpValue = Number(foundry.utils.getProperty(tokenDoc.actor, hpPath) ?? 0);
+      const hpValue = Number(foundry.utils.getProperty(subjectActor, hpPath) ?? 0);
       if (Number.isFinite(hpValue)) {
-        await tokenDoc.actor.update({ [hpPath]: Math.max(0, hpValue - amount) });
+        await subjectActor.update({ [hpPath]: Math.max(0, hpValue - amount) });
       }
       return { amount, damageType: String(damageType ?? "").trim() };
     } catch (error) {
@@ -33299,12 +33320,13 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     const amount = Math.max(0, Math.floor(Number(levels ?? 0)));
     if (amount <= 0) return;
     const path = "system.attributes.exhaustion";
-    const current = Number(foundry.utils.getProperty(tokenDoc.actor, path) ?? 0);
+    const current = Number(foundry.utils.getProperty(subjectActor, path) ?? 0);
     if (!Number.isFinite(current)) return;
-    await tokenDoc.actor.update({ [path]: Math.max(0, Math.min(6, current + amount)) });
+    await subjectActor.update({ [path]: Math.max(0, Math.min(6, current + amount)) });
   };
 
   const applyTemporarySpeedZero = async (turns = 1) => {
+    if (!subjectActor) return;
     const durationRounds = Math.max(1, Math.floor(Number(turns ?? 1) || 1));
     const combat = game.combat;
     const duration = combat
@@ -33332,10 +33354,11 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
         }
       }
     };
-    await tokenDoc.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+    await subjectActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   };
 
   const applyMaxHpReductionFormula = async (formula) => {
+    if (!subjectActor) return null;
     const text = String(formula ?? "").trim();
     if (!text) return null;
     try {
@@ -33367,7 +33390,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
           }
         }
       };
-      await tokenDoc.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+      await subjectActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
       return { reduction };
     } catch (error) {
       console.warn(`${MODULE_ID}: failed to apply max HP reduction formula '${text}'`, error);
@@ -33376,6 +33399,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
   };
 
   const applyCustomDaeChange = async (changeKey, changeMode, changeValue) => {
+    if (!subjectActor) return;
     const key = String(changeKey ?? "").trim();
     const value = String(changeValue ?? "").trim();
     if (!key || !value) return;
@@ -33408,7 +33432,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
         }
       }
     };
-    await tokenDoc.actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+    await subjectActor.createEmbeddedDocuments("ActiveEffect", [effectData]);
   };
 
   const statusId = String(assignment.failStatusId ?? "").trim();
@@ -33469,7 +33493,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
       await ChatMessage.create({
         speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
         whisper: gmIds,
-        content: `<p><strong>${tokenDoc.actor?.name ?? "Actor"}</strong> suffers ${successiveDamageResult.amount}${typed} damage from successive ${assignment?.preset?.label ?? "environment"} failure (streak ${failStreak}).</p>`
+        content: `<p><strong>${subjectActor?.name ?? "Actor"}</strong> suffers ${successiveDamageResult.amount}${typed} damage from successive ${assignment?.preset?.label ?? "environment"} failure (streak ${failStreak}).</p>`
       });
     }
 
@@ -33493,7 +33517,7 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
       whisper: gmIds,
-      content: `<p><strong>${tokenDoc.actor?.name ?? "Actor"}</strong> suffers ${damageResult.amount}${typed} damage from ${assignment?.preset?.label ?? "environment"}.</p>`
+      content: `<p><strong>${subjectActor?.name ?? "Actor"}</strong> suffers ${damageResult.amount}${typed} damage from ${assignment?.preset?.label ?? "environment"}.</p>`
     });
     summaryParts.push(`Damage ${damageResult.amount}${damageResult.damageType ? ` ${damageResult.damageType}` : ""}`);
   }
@@ -33501,56 +33525,85 @@ async function applyEnvironmentFailureConsequences(tokenDoc, assignment, movemen
   return { summary: summaryParts.join(" - ") };
 }
 
-async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
-  if (!canAccessAllPlayerOps() || !actor || !assignment?.preset?.movementCheck) return;
-  const preset = assignment.preset;
-  const dc = Math.max(1, Math.floor(Number(assignment.movementDc ?? 12) || 12));
-  const check = getEnvironmentCheckMeta(preset);
+function buildEnvironmentCheckFlavor(assignment) {
+  const presetLabel = String(assignment?.preset?.label ?? "Environment").trim() || "Environment";
+  const check = getEnvironmentCheckMeta(assignment?.preset ?? {});
+  const rollLabel = check.checkType === "save" ? "save" : "check";
+  return `${presetLabel} ${rollLabel} (${check.checkLabel || rollLabel})`;
+}
+
+async function collectEnvironmentCheckRoll(actor, assignment, options = {}) {
+  if (!actor || !assignment?.preset?.movementCheck) {
+    return { actor, assignment, unavailable: true };
+  }
+
+  const dc = Math.max(1, Math.floor(Number(options?.dc ?? assignment.movementDc ?? 12) || 12));
+  const check = getEnvironmentCheckMeta(assignment.preset);
   const request = `${check.checkType}:${check.checkKey}`;
-  const flavor = `${preset.label} movement ${check.checkType === "save" ? "save" : "check"} (${check.checkLabel})`;
+  const flavor = buildEnvironmentCheckFlavor(assignment);
+  let total = Number(options?.total);
+  let passed = typeof options?.passed === "boolean" ? options.passed : null;
 
-  let total = null;
-  let passed = null;
+  if (!Number.isFinite(total)) total = null;
+  if (typeof passed !== "boolean" && Number.isFinite(total)) passed = total >= dc;
 
-  if (isMonksTokenBarActive()) {
+  if (!options?.skipMonks && !Number.isFinite(total) && typeof passed !== "boolean" && isMonksTokenBarActive()) {
     try {
       const monksResult = await requestMonksActorCheck(actor, request, dc, flavor, { showDc: false });
       total = Number(monksResult?.total);
       if (Number.isFinite(total)) passed = total >= dc;
       else if (typeof monksResult?.passed === "boolean") passed = monksResult.passed;
     } catch (error) {
-      console.warn(`${MODULE_ID}: monks movement check request failed`, error);
+      console.warn(`${MODULE_ID}: monks environment check request failed`, error);
     }
   }
 
-  if (!Number.isFinite(total) && check.checkType === "save" && typeof actor.rollAbilitySave === "function") {
+  if (!Number.isFinite(total) && typeof passed !== "boolean" && check.checkType === "save" && typeof actor.rollAbilitySave === "function") {
     try {
       const roll = await actor.rollAbilitySave(check.checkKey, { fastForward: true, chatMessage: false });
       total = Number(roll?.total ?? roll?.roll?.total);
       if (Number.isFinite(total)) passed = total >= dc;
     } catch (error) {
-      console.warn(`${MODULE_ID}: native movement save failed`, error);
+      console.warn(`${MODULE_ID}: native environment save failed`, error);
     }
-  } else if (!Number.isFinite(total) && typeof actor.rollSkill === "function") {
+  } else if (!Number.isFinite(total) && typeof passed !== "boolean" && typeof actor.rollSkill === "function") {
     try {
       const roll = await actor.rollSkill(check.checkKey, { fastForward: true, chatMessage: false });
       total = Number(roll?.total ?? roll?.roll?.total);
       if (Number.isFinite(total)) passed = total >= dc;
     } catch (error) {
-      console.warn(`${MODULE_ID}: native movement check failed`, error);
+      console.warn(`${MODULE_ID}: native environment check failed`, error);
     }
   }
 
-  if (!Number.isFinite(total) && typeof passed !== "boolean") return;
-  const failed = typeof passed === "boolean" ? !passed : (Number.isFinite(total) ? total < dc : false);
+  return {
+    actor,
+    assignment,
+    dc,
+    total: Number.isFinite(total) ? total : null,
+    passed: typeof passed === "boolean" ? passed : (Number.isFinite(total) ? total >= dc : null),
+    flavor,
+    unavailable: !Number.isFinite(total) && typeof passed !== "boolean"
+  };
+}
 
+async function finalizeEnvironmentCheckResult(actor, tokenDoc, assignment, rollContext = {}, movementContext = null) {
+  if (!actor || !assignment) return null;
+  const dc = Math.max(1, Math.floor(Number(rollContext?.dc ?? assignment.movementDc ?? 12) || 12));
+  const total = Number(rollContext?.total);
+  const passed = typeof rollContext?.passed === "boolean"
+    ? rollContext.passed
+    : (Number.isFinite(total) ? total >= dc : null);
+  if (typeof passed !== "boolean") return null;
+
+  const failed = !passed;
   let failureSummary = "";
   let predictedStreak = 0;
   if (failed) {
     const ledger = getOperationsLedger();
     const environment = ensureEnvironmentState(ledger);
     predictedStreak = Math.max(1, Math.max(0, Number(environment.failureStreaks?.[actor.id] ?? 0) || 0) + 1);
-    const consequence = await applyEnvironmentFailureConsequences(tokenDoc, assignment, {
+    const consequence = await applyEnvironmentFailureConsequences(actor, tokenDoc, assignment, {
       ...(movementContext ?? {}),
       rollTotal: Number.isFinite(total) ? total : null,
       dc,
@@ -33572,11 +33625,28 @@ async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movem
   const streakText = failed
     ? ` - Fail Streak ${streakState.next}`
     : (streakState.previous > 0 ? " - Fail Streak Reset" : "");
+  const flavor = String(rollContext?.flavor ?? buildEnvironmentCheckFlavor(assignment));
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     whisper: gmIds,
     content: `<p><strong>${actor.name}</strong> ${flavor}: ${resultText}${totalText}${streakText}</p>`
   });
+
+  return {
+    failed,
+    dc,
+    total: Number.isFinite(total) ? total : null,
+    streakState,
+    failureSummary
+  };
+}
+
+async function promptEnvironmentMovementCheck(tokenDoc, actor, assignment, movementContext = null) {
+  if (!canAccessAllPlayerOps() || !actor || !assignment?.preset?.movementCheck) return;
+  if (getEnvironmentCheckTriggerMeta(assignment.preset).isManual) return;
+  const rollContext = await collectEnvironmentCheckRoll(actor, assignment);
+  if (rollContext.unavailable) return;
+  await finalizeEnvironmentCheckResult(actor, tokenDoc, assignment, rollContext, movementContext);
 }
 
 async function maybePromptEnvironmentMovementCheck(tokenDoc, changed, options = {}) {
@@ -40104,12 +40174,13 @@ async function assignSlotByPicker(element, config = {}) {
             const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
             added = addActorToRestSlot(slot, actorId);
-          });
+          }, { skipLocalRefresh: true });
           if (!added) {
             const actorName = game.actors.get(actorId)?.name ?? "That actor";
             ui.notifications?.info(`${actorName} is already assigned to that watch.`);
+            return;
           }
-          if (canAccessAllPlayerOps()) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+          if (canAccessAllPlayerOps()) refreshRestWatchAppsImmediately();
         }
       },
       cancel: { label: "Cancel" }
@@ -40442,6 +40513,11 @@ function refreshSingleAppPreservingView(app) {
     action: "refresh-single-app",
     eventType: "refresh"
   });
+}
+
+function refreshRestWatchAppsImmediately() {
+  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
+  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
@@ -40914,7 +40990,19 @@ function buildWatchSlotsView(state, isGM, visibility) {
   const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0
     ? state.slots
     : buildStoredWatchSlots();
-  
+
+  const buildNoteButtonContext = (actorNameInput, noteTextInput) => {
+    const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
+    const noteText = String(noteTextInput ?? "");
+    const savedNote = noteText.trim();
+    const hasSavedNote = savedNote.length > 0;
+    return {
+      hasSavedNote,
+      noteButtonTitle: hasSavedNote ? `Saved note for ${actorName}:\n${savedNote}` : `Open notes for ${actorName}`,
+      noteButtonAriaLabel: hasSavedNote ? `Open notes for ${actorName}. Saved note available.` : `Open notes for ${actorName}`
+    };
+  };
+
   return sourceSlots.map((slot, index) => {
     const slotId = String(slot?.id ?? `watch-${index + 1}`);
     const entries = sanitizeRestWatchEntries(slot);
@@ -40924,14 +41012,16 @@ function buildWatchSlotsView(state, isGM, visibility) {
       if (!actor) return null;
       const canEditNotes = !lockedForUser && (isGM || userOwnsActor(actor));
       const activityData = activities.activities[entry.actorId] ?? {};
+      const notes = String(entry.notes ?? "");
       return {
         actorId: entry.actorId,
         actor: buildActorView(actor, isGM, visibility),
-        notes: entry.notes ?? "",
+        notes,
         canClear: (isGM || userOwnsActor(actor)) && !lockedForUser,
         canEditNotes,
         isActiveCharacter: !isGM && activeActorId === entry.actorId,
-        activity: buildActivityView(actor, activityData)
+        activity: buildActivityView(actor, activityData),
+        ...buildNoteButtonContext(actor.name, notes)
       };
     }).filter(Boolean);
 
@@ -43865,7 +43955,7 @@ function setupRestWatchDragAndDrop(html) {
         addActorToRestSlot(target, actorId);
       }, { skipLocalRefresh: true });
 
-      refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
+      refreshRestWatchAppsImmediately();
     });
   });
 }

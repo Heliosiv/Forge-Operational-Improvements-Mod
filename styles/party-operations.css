@@ -3817,9 +3817,26 @@
   display: block;
 }
 
+.party-operations .po-note-toggle.has-saved-note {
+  border-color: color-mix(in srgb, var(--po-accent) 76%, var(--po-border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 24%, var(--po-bg-alt)), color-mix(in srgb, var(--po-accent) 10%, var(--po-surface)));
+  color: var(--po-accent-contrast);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 18%, transparent);
+}
+
+.party-operations .po-note-toggle.has-saved-note:hover {
+  border-color: color-mix(in srgb, var(--po-accent) 88%, white 8%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 32%, var(--po-bg-alt)), color-mix(in srgb, var(--po-accent) 14%, var(--po-surface)));
+}
+
+.party-operations .po-note-toggle.has-saved-note i {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--po-accent) 26%, transparent));
+}
+
 .party-operations [data-action="toggle-notes"][aria-expanded="true"] {
   border-color: color-mix(in srgb, var(--po-accent) 80%, var(--po-border));
   background: color-mix(in srgb, var(--po-accent) 22%, var(--po-bg-alt));
+  color: var(--po-accent-contrast);
 }
 
 .party-operations .po-hint {

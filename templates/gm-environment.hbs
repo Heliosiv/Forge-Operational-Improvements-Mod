@@ -86,6 +86,10 @@
             <textarea class="po-input" rows="3" data-action="set-environment-note" placeholder="Context, scene framing, or exceptions">{{environment.note}}</textarea>
           </label>
 
+          {{#if environment.movementCheckActive}}
+          <div class="po-op-summary">Trigger: {{environment.checkTriggerLabel}}</div>
+          {{/if}}
+
           <div class="po-section-title">Assigned Actors</div>
           {{#if environment.targets.length}}
           <div class="po-env-actor-list">
@@ -107,6 +111,7 @@
           {{/if}}
 
           <div class="po-op-action-row">
+            <button type="button" class="po-btn po-btn-sm" data-action="request-environment-checks" {{#unless environment.canRequestChecks}}disabled{{/unless}}>Push Check To Players</button>
             <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Log Current Setup</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Brief</button>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Clear Active Effects</button>
@@ -194,6 +199,15 @@
                 <label class="po-switch">
                   <input type="checkbox" data-action="set-environment-preset-field" data-field="movementCheck" {{#if environment.configure.preset.movementCheck}}checked{{/if}} />
                   <span>Require a check for this preset</span>
+                </label>
+
+                <label class="po-resource-row">
+                  <span>Check Trigger</span>
+                  <select class="po-select" data-action="set-environment-preset-field" data-field="checkTrigger">
+                    {{#each environment.configure.preset.checkTriggerOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
                 </label>
 
                 <label class="po-resource-row">
