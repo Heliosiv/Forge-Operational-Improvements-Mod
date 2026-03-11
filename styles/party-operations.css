@@ -2725,10 +2725,36 @@
 .party-operations .po-btn.is-primary,
 .party-operations .po-btn.is-active,
 .party-operations .po-char-btn.is-active,
-.party-operations .po-exh-btn.is-active {
+.party-operations .po-exh-btn.is-active,
+.party-operations .po-campfire-toggle.is-active,
+.party-operations .po-campfire-status.is-active {
   border-color: color-mix(in srgb, var(--po-accent) 75%, var(--po-border));
   background: color-mix(in srgb, var(--po-accent) 28%, var(--po-bg-alt));
   color: var(--po-accent-contrast);
+}
+
+.party-operations .po-campfire-toggle.is-active,
+.party-operations .po-campfire-status.is-active {
+  border-color: color-mix(in srgb, #ff9f57 72%, var(--po-border));
+  background: color-mix(in srgb, #ff8a3d 22%, var(--po-bg-alt));
+  color: color-mix(in srgb, white 88%, #ffd0a6);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #ff9f57 24%, transparent), 0 0 18px color-mix(in srgb, #ff8a3d 18%, transparent);
+}
+
+.party-operations .po-campfire-toggle.is-active i,
+.party-operations .po-campfire-status.is-active i {
+  color: color-mix(in srgb, #ffb15d 90%, white 10%);
+  text-shadow: 0 0 12px color-mix(in srgb, #ff8a3d 34%, transparent);
+}
+
+.party-operations .po-campfire-toggle.is-inactive,
+.party-operations .po-campfire-status.is-inactive {
+  color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
+}
+
+.party-operations .po-campfire-toggle.is-inactive i,
+.party-operations .po-campfire-status.is-inactive i {
+  color: color-mix(in srgb, var(--po-muted) 88%, var(--po-text));
 }
 
 .party-operations .po-btn.is-danger {
@@ -7111,6 +7137,36 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.party-operations [data-tool="gm-merchants"] .po-merchant-filter-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-filter-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-filter-section-head {
+  display: grid;
+  gap: 4px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-filter-section .po-section-title {
+  font-size: 0.82rem;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-filter-section .po-resource-row {
+  margin: 0;
+}
+
 .party-operations [data-tool="gm-merchants"] .po-merchant-editor-column .po-merchant-taxonomy-card .po-section-title,
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-taxonomy-card .po-section-title,
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-tag-picker-card .po-section-title {
@@ -7161,6 +7217,10 @@
 
 @media (max-width: 860px) {
   .party-operations .po-window[data-tool="gm-loot"] .po-loot-governor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations [data-tool="gm-merchants"] .po-merchant-filter-card-grid {
     grid-template-columns: 1fr;
   }
 }

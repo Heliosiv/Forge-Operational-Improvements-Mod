@@ -3,6 +3,7 @@ import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
+import { createLootUiState } from "./features/loot-ui-state.js";
 import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
 import {
   applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
@@ -62,6 +63,7 @@ import {
   MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
   MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
   clampMerchantValueStrictness as clampMerchantValueStrictnessDomain,
+  normalizeMerchantAutoRefreshConfig as normalizeMerchantAutoRefreshConfigDomain,
   normalizeMerchantTagList as normalizeMerchantTagListDomain,
   normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
   normalizeMerchantSourcePackIds as normalizeMerchantSourcePackIdsDomain,
@@ -201,6 +203,7 @@ export const SETTINGS = {
   GATHER_TRAVEL_CON_SAVE_DC: "gatherTravelConSaveDc",
   INJURY_RECOVERY: "injuryRecoveryState",
   INJURY_REMINDER_DAY: "injuryReminderDay",
+  MERCHANT_AUTO_REFRESH_DAY: "merchantAutoRefreshDay",
   LOOT_SOURCE_CONFIG: "lootSourceConfig",
   AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
   AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
@@ -255,6 +258,7 @@ const pendingGatherYieldRequests = new Map();
 const MONKS_REQUEST_RESULT_TIMEOUT_MS = 8000;
 const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
 let automaticUpkeepTickInFlight = false;
+let merchantAutoRefreshTickInFlight = false;
 let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
 let integrationSyncInFlight = false;
@@ -1352,6 +1356,29 @@ const LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS = [
   { value: "items-desc", label: "Most Items" },
   { value: "items-asc", label: "Fewest Items" }
 ];
+const {
+  LOOT_SETTINGS_TABS,
+  normalizeLootPackSourcesFilter,
+  getLootPackSourcesUiState,
+  setLootPackSourcesUiState,
+  normalizeLootClaimActorId,
+  normalizeLootClaimRunId,
+  getLootClaimActorSelection,
+  getLootClaimRunSelection,
+  getLootClaimsArchiveSort,
+  setLootClaimActorSelection,
+  setLootClaimRunSelection,
+  setLootClaimsArchiveSort,
+  setLootClaimActorSelectionFromElement,
+  setLootClaimRunSelectionFromElement,
+  normalizeLootRegistryTab,
+  getActiveLootRegistryTab,
+  setActiveLootRegistryTab,
+  getActiveLootSettingsTab,
+  setActiveLootSettingsTab
+} = createLootUiState({
+  lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS
+});
 const GATHER_HISTORY_SORT_OPTIONS = [
   { value: "newest", label: "Newest First" },
   { value: "oldest", label: "Oldest First" },
@@ -5372,167 +5399,10 @@ function setReputationFilterState(patch = {}) {
   sessionStorage.setItem(getReputationFilterStorageKey(), JSON.stringify(next));
 }
 
-function getLootPackSourcesUiStorageKey() {
-  return `po-loot-pack-sources-ui-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeLootPackSourcesFilter(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function getLootPackSourcesUiState() {
-  const defaults = { collapsed: false, filter: "" };
-  const raw = sessionStorage.getItem(getLootPackSourcesUiStorageKey());
-  if (!raw) return defaults;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      collapsed: Boolean(parsed?.collapsed),
-      filter: normalizeLootPackSourcesFilter(parsed?.filter)
-    };
-  } catch (_error) {
-    return defaults;
-  }
-}
-
-function setLootPackSourcesUiState(patch = {}) {
-  const previous = getLootPackSourcesUiState();
-  const next = {
-    collapsed: (patch?.collapsed === undefined) ? previous.collapsed : Boolean(patch.collapsed),
-    filter: (patch?.filter === undefined) ? previous.filter : normalizeLootPackSourcesFilter(patch.filter)
-  };
-  sessionStorage.setItem(getLootPackSourcesUiStorageKey(), JSON.stringify(next));
-}
-
-function getLootClaimActorStorageKey() {
-  return `po-loot-claim-actor-${game.user?.id ?? "anon"}`;
-}
-
-function getLootClaimRunStorageKey() {
-  return `po-loot-claim-run-${game.user?.id ?? "anon"}`;
-}
-
-function getLootClaimsArchiveSortStorageKey() {
-  return `po-loot-claim-archive-sort-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeLootClaimActorId(value) {
-  return String(value ?? "").trim();
-}
-
-function normalizeLootClaimRunId(value) {
-  return String(value ?? "").trim();
-}
-
-function normalizeLootClaimsArchiveSort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "archived-desc";
-}
-
-function getLootClaimActorSelection() {
-  return normalizeLootClaimActorId(sessionStorage.getItem(getLootClaimActorStorageKey()));
-}
-
-function getLootClaimRunSelection() {
-  return normalizeLootClaimRunId(sessionStorage.getItem(getLootClaimRunStorageKey()));
-}
-
-function getLootClaimsArchiveSort() {
-  return normalizeLootClaimsArchiveSort(sessionStorage.getItem(getLootClaimsArchiveSortStorageKey()));
-}
-
-function setLootClaimActorSelection(actorIdInput) {
-  const actorId = normalizeLootClaimActorId(actorIdInput);
-  if (!actorId) {
-    sessionStorage.removeItem(getLootClaimActorStorageKey());
-    return "";
-  }
-  sessionStorage.setItem(getLootClaimActorStorageKey(), actorId);
-  return actorId;
-}
-
-function setLootClaimRunSelection(runIdInput) {
-  const runId = normalizeLootClaimRunId(runIdInput);
-  if (!runId) {
-    sessionStorage.removeItem(getLootClaimRunStorageKey());
-    return "";
-  }
-  sessionStorage.setItem(getLootClaimRunStorageKey(), runId);
-  return runId;
-}
-
-function setLootClaimsArchiveSort(sortInput) {
-  const sort = normalizeLootClaimsArchiveSort(sortInput);
-  sessionStorage.setItem(getLootClaimsArchiveSortStorageKey(), sort);
-  return sort;
-}
-
-function setLootClaimActorSelectionFromElement(element) {
-  const nextActorId = normalizeLootClaimActorId(element?.value);
-  const currentActorId = getLootClaimActorSelection();
-  if (nextActorId === currentActorId) return false;
-  setLootClaimActorSelection(nextActorId);
-  return true;
-}
-
 function normalizeMerchantSettlementSelection(value) {
   const settlement = String(value ?? "").trim().slice(0, 120);
   if (!settlement) return "";
   return settlement.toLowerCase() === "global" ? "" : settlement;
-}
-
-function setLootClaimRunSelectionFromElement(element) {
-  const nextRunId = normalizeLootClaimRunId(element?.value);
-  const currentRunId = getLootClaimRunSelection();
-  if (nextRunId === currentRunId) return false;
-  setLootClaimRunSelection(nextRunId);
-  return true;
-}
-
-function getLootRegistryTabStorageKey() {
-  return `po-loot-registry-tab-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveLootRegistryTab() {
-  const stored = String(sessionStorage.getItem(getLootRegistryTabStorageKey()) ?? "preview").trim().toLowerCase();
-  return stored === "settings" ? "settings" : "preview";
-}
-
-function setActiveLootRegistryTab(tab) {
-  const value = String(tab ?? "preview").trim().toLowerCase();
-  sessionStorage.setItem(getLootRegistryTabStorageKey(), value === "settings" ? "settings" : "preview");
-}
-
-const LOOT_SETTINGS_TABS = Object.freeze({
-  SOURCES: "sources",
-  TABLES: "tables",
-  FILTERS: "filters"
-});
-
-function getLootSettingsTabStorageKey() {
-  return `po-loot-settings-tab-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeLootSettingsTab(tab, fallback = LOOT_SETTINGS_TABS.SOURCES) {
-  const normalized = String(tab ?? "").trim().toLowerCase();
-  if (normalized === LOOT_SETTINGS_TABS.SOURCES) return LOOT_SETTINGS_TABS.SOURCES;
-  if (normalized === LOOT_SETTINGS_TABS.TABLES) return LOOT_SETTINGS_TABS.TABLES;
-  if (normalized === LOOT_SETTINGS_TABS.FILTERS) return LOOT_SETTINGS_TABS.FILTERS;
-  return normalizeLootSettingsTab(fallback, LOOT_SETTINGS_TABS.SOURCES);
-}
-
-function getActiveLootSettingsTab() {
-  return normalizeLootSettingsTab(
-    sessionStorage.getItem(getLootSettingsTabStorageKey()),
-    LOOT_SETTINGS_TABS.SOURCES
-  );
-}
-
-function setActiveLootSettingsTab(tab) {
-  const value = normalizeLootSettingsTab(tab, LOOT_SETTINGS_TABS.SOURCES);
-  sessionStorage.setItem(getLootSettingsTabStorageKey(), value);
-  return value;
 }
 
 function getGmDowntimeViewStorageKey() {
@@ -6944,11 +6814,6 @@ function normalizeGmOperationsTab(tab, fallback = "environment") {
   return allowed.has(value) ? value : fallback;
 }
 
-function normalizeLootRegistryTab(tab, fallback = "preview") {
-  const value = String(tab ?? fallback).trim().toLowerCase();
-  return value === "settings" ? "settings" : "preview";
-}
-
 function getActiveOperationsPlanningTab() {
   const allowed = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
   const stored = String(sessionStorage.getItem(getOperationsPlanningTabStorageKey()) ?? "roles").trim().toLowerCase();
@@ -7919,6 +7784,9 @@ function buildOperationsContextFallback() {
           valueTolerancePercent: 10,
           scarcity: MERCHANT_DEFAULTS.stock.scarcity,
           scarcityLabel: String(getMerchantScarcityProfile(MERCHANT_DEFAULTS.stock.scarcity)?.label ?? "6 - Normal"),
+          autoRefreshEnabled: Boolean(MERCHANT_DEFAULTS.stock.autoRefresh?.enabled),
+          autoRefreshIntervalDays: Number(MERCHANT_DEFAULTS.stock.autoRefresh?.intervalDays ?? 7),
+          autoRefreshSummaryLabel: "Stock refresh remains manual until auto-refresh is enabled.",
           duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
           maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
           rarityWeightCommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100),
@@ -8780,6 +8648,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "toggle-campfire": async () => {
           await toggleCampfire(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "toggle-mini-viz": async () => {
           setMiniVizCollapsed(!isMiniVizCollapsed());
@@ -16915,12 +16784,16 @@ async function resolveTokenActorForAutoInventory(tokenDoc) {
   return null;
 }
 
-function isPrimaryActiveGmForAutoInventory() {
+function isPrimaryActiveGmClient() {
   const activeGms = (game.users ?? [])
     .filter((user) => Boolean(user?.active) && Boolean(user?.isGM))
     .sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
   if (activeGms.length === 0) return Boolean(canAccessAllPlayerOps());
   return String(activeGms[0]?.id ?? "") === String(game.user?.id ?? "");
+}
+
+function isPrimaryActiveGmForAutoInventory() {
+  return isPrimaryActiveGmClient();
 }
 
 function actorHasUsableInventory(actor) {
@@ -21261,10 +21134,11 @@ async function updateOperationsLedger(mutator, options = {}) {
     await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
     scheduleIntegrationSync("operations-ledger");
     if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
-    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    if (!options.skipSocketRefresh) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
   } catch (error) {
     logUiFailure("operations-ledger", "update failed", error, {
       skipLocalRefresh: Boolean(options?.skipLocalRefresh),
+      skipSocketRefresh: Boolean(options?.skipSocketRefresh),
       isGM: Boolean(game.user?.isGM)
     });
     throw error;
@@ -23045,6 +22919,10 @@ function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_S
   return clampMerchantValueStrictnessDomain(value, fallback);
 }
 
+function normalizeMerchantAutoRefreshConfig(raw = {}, fallback = MERCHANT_DEFAULTS.stock.autoRefresh) {
+  return normalizeMerchantAutoRefreshConfigDomain(raw, fallback);
+}
+
 function resolveMerchantValueTolerance(targetValueGp = 0, strictnessInput = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
   return resolveMerchantValueToleranceDomain(targetValueGp, strictnessInput);
 }
@@ -23236,6 +23114,16 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     stock.rarityWeights ?? source.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
     MERCHANT_DEFAULTS.stock.rarityWeights
   );
+  const autoRefresh = normalizeMerchantAutoRefreshConfig(
+    stock.autoRefresh ?? source.autoRefresh ?? {
+      enabled: stock.autoRefreshEnabled ?? source.autoRefreshEnabled,
+      intervalDays: stock.autoRefreshIntervalDays
+        ?? stock.refreshIntervalDays
+        ?? source.autoRefreshIntervalDays
+        ?? source.refreshIntervalDays
+    },
+    MERCHANT_DEFAULTS.stock.autoRefresh
+  );
   const actorId = String(source.actorId ?? "").trim();
   return {
     id,
@@ -23279,7 +23167,8 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
       scarcity,
       duplicateChance,
       maxStackSize,
-      rarityWeights
+      rarityWeights,
+      autoRefresh
     },
     actorId
   };
@@ -23289,10 +23178,22 @@ function normalizeMerchantStockStateEntry(raw = {}, fallbackActorId = "") {
   const source = raw && typeof raw === "object" ? raw : {};
   const refreshedAtRaw = Number(source.lastRefreshedAt ?? source.refreshedAt ?? 0);
   const lastRefreshedAt = Number.isFinite(refreshedAtRaw) ? Math.max(0, Math.floor(refreshedAtRaw)) : 0;
+  const refreshedWorldTsRaw = Number(
+    source.lastRefreshedWorldTs
+    ?? source.refreshedWorldTs
+    ?? source.lastRefreshedWorldTime
+    ?? source.refreshedWorldTime
+    ?? 0
+  );
+  const lastRefreshedWorldTs = Number.isFinite(refreshedWorldTsRaw) ? Math.max(0, Math.floor(refreshedWorldTsRaw)) : 0;
+  const lastRefreshedDayKey = String(source.lastRefreshedDayKey ?? source.refreshedDayKey ?? "").trim()
+    || (lastRefreshedWorldTs > 0 ? getGatherDayKey(lastRefreshedWorldTs) : "");
   return {
     lastRefreshedAt,
     lastRefreshedBy: String(source.lastRefreshedBy ?? source.refreshedBy ?? "").trim() || "GM",
-    actorId: String(source.actorId ?? fallbackActorId ?? "").trim()
+    actorId: String(source.actorId ?? fallbackActorId ?? "").trim(),
+    lastRefreshedWorldTs,
+    lastRefreshedDayKey
   };
 }
 
@@ -23526,10 +23427,15 @@ async function upsertMerchant(definitionPatch = {}) {
     const normalized = normalizeMerchantDefinition(merged, existingIndex >= 0 ? existingIndex : merchants.definitions.length);
     if (existingIndex >= 0) merchants.definitions[existingIndex] = normalized;
     else merchants.definitions.push(normalized);
-    merchants.stockStateById[normalized.id] = normalizeMerchantStockStateEntry(
+    const stockState = normalizeMerchantStockStateEntry(
       merchants.stockStateById?.[normalized.id],
       normalized.actorId
     );
+    if (normalized?.stock?.autoRefresh?.enabled && Number(stockState?.lastRefreshedWorldTs ?? 0) <= 0) {
+      stockState.lastRefreshedWorldTs = getCurrentWorldTimestamp();
+      stockState.lastRefreshedDayKey = getGatherDayKey(stockState.lastRefreshedWorldTs);
+    }
+    merchants.stockStateById[normalized.id] = stockState;
     persisted = foundry.utils.deepClone(normalized);
   });
   return persisted;
@@ -24863,10 +24769,30 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   // Player-facing merchants should only render while a GM-opened shop session is active.
   const viewerCanUseShop = Boolean(shopSession.isOpen && viewerShopAccess.canTrade);
   const gmCollectionFilterState = getMerchantGmCollectionFilterState();
+  const currentWorldTimestamp = getCurrentWorldTimestamp();
 
   const definitionsForDisplay = definitions.map((merchant) => {
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
     const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
+    const autoRefresh = normalizeMerchantAutoRefreshConfig(
+      merchant?.stock?.autoRefresh ?? {},
+      MERCHANT_DEFAULTS.stock.autoRefresh
+    );
+    const autoRefreshEnabled = Boolean(autoRefresh.enabled && Number(autoRefresh.intervalDays ?? 0) > 0);
+    const autoRefreshIntervalDays = Math.max(1, Number(autoRefresh.intervalDays ?? MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays);
+    const lastRefreshedWorldTs = Math.max(0, Number(stockMeta?.lastRefreshedWorldTs ?? 0) || 0);
+    const nextAutoRefreshTs = autoRefreshEnabled && lastRefreshedWorldTs > 0
+      ? lastRefreshedWorldTs + (autoRefreshIntervalDays * 86400)
+      : 0;
+    const autoRefreshSummaryLabel = autoRefreshEnabled
+      ? `Every ${autoRefreshIntervalDays} day${autoRefreshIntervalDays === 1 ? "" : "s"}`
+      : "Manual only";
+    const nextAutoRefreshLabel = !autoRefreshEnabled
+      ? "Manual only"
+      : (nextAutoRefreshTs > 0
+        ? formatRecoveryDueLabel(nextAutoRefreshTs)
+        : "Starts after save");
+    const autoRefreshOverdue = Boolean(autoRefreshEnabled && nextAutoRefreshTs > 0 && nextAutoRefreshTs <= currentWorldTimestamp);
     const scarcityProfile = getMerchantScarcityProfile(merchant?.stock?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
     const targetStockValueGp = Math.max(0, Number(merchant?.stock?.targetValueGp ?? 0) || 0);
     const valueStrictness = clampMerchantValueStrictness(
@@ -25002,11 +24928,18 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       valueTolerancePercent: Math.max(1, Number(valueTolerance?.percent ?? 10) || 10),
       stockItemCount,
       hasStock: stockItemCount > 0,
+      autoRefreshEnabled,
+      autoRefreshIntervalDays,
+      autoRefreshSummaryLabel,
+      nextAutoRefreshTs,
+      nextAutoRefreshLabel,
+      autoRefreshOverdue,
       actorName: String(merchantActor?.name ?? "").trim(),
       hasActor: Boolean(merchantActor),
       lastRefreshedAt: Number(stockMeta?.lastRefreshedAt ?? 0) || 0,
       lastRefreshedAtLabel: formatMerchantTimestampLabel(stockMeta?.lastRefreshedAt),
       lastRefreshedBy: String(stockMeta?.lastRefreshedBy ?? "").trim() || "-",
+      lastRefreshedWorldTs,
       activeActorHasContract: Boolean(activeActorContracts[merchant.id] || (merchant.contractKey && activeActorContracts[merchant.contractKey])),
       activeActorMeetsSocialGate: !merchant.socialGateEnabled || activeActorSocialScore >= Number(merchant.minSocialScore ?? 0),
       assignmentRows,
@@ -25264,6 +25197,18 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     editorDraft?.stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
     MERCHANT_DEFAULTS.stock.rarityWeights
   );
+  const editorAutoRefresh = normalizeMerchantAutoRefreshConfig(
+    editorDraft?.stock?.autoRefresh ?? {},
+    MERCHANT_DEFAULTS.stock.autoRefresh
+  );
+  const editorAutoRefreshEnabled = Boolean(editorAutoRefresh.enabled);
+  const editorAutoRefreshIntervalDays = Math.max(
+    1,
+    Number(editorAutoRefresh.intervalDays ?? MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays
+  );
+  const editorAutoRefreshSummaryLabel = editorAutoRefreshEnabled
+    ? `Stock refreshes automatically every ${editorAutoRefreshIntervalDays} day${editorAutoRefreshIntervalDays === 1 ? "" : "s"} as the calendar advances.`
+    : "Stock refresh remains manual until auto-refresh is enabled.";
   const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
   const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
   const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
@@ -25428,6 +25373,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         valueTolerancePercent: Math.max(1, Number(editorValueTolerance?.percent ?? 10) || 10),
         scarcity: editorScarcity,
         scarcityLabel: String(getMerchantScarcityProfile(editorScarcity)?.label ?? "6 - Normal"),
+        autoRefreshEnabled: editorAutoRefreshEnabled,
+        autoRefreshIntervalDays: editorAutoRefreshIntervalDays,
+        autoRefreshSummaryLabel: editorAutoRefreshSummaryLabel,
         duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
         maxStackSize: 20,
         rarityWeightCommon: Number(editorRarityWeights?.common ?? 100),
@@ -25635,6 +25583,10 @@ function readMerchantDefinitionPatchFromElement(element) {
     "very-rare": getNumber("input[name='merchantRarityWeightVeryRare']", Number(existingStock?.rarityWeights?.["very-rare"] ?? MERCHANT_DEFAULTS.stock.rarityWeights?.["very-rare"] ?? 5)),
     legendary: getNumber("input[name='merchantRarityWeightLegendary']", Number(existingStock?.rarityWeights?.legendary ?? MERCHANT_DEFAULTS.stock.rarityWeights?.legendary ?? 1))
   }, existingStock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
+  const existingAutoRefresh = normalizeMerchantAutoRefreshConfig(
+    existingStock?.autoRefresh ?? {},
+    MERCHANT_DEFAULTS.stock.autoRefresh
+  );
   return buildMerchantDefinitionPatchFromEditorFormDomain({
     id: merchantId,
     name: getText("input[name='merchantName']", { missing: editorBaseline?.name ?? "" }),
@@ -25666,6 +25618,14 @@ function readMerchantDefinitionPatchFromElement(element) {
     valueStrictness: getNumber(
       "input[name='merchantValueStrictness']",
       Number(existingStock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness ?? MERCHANT_DEFAULT_VALUE_STRICTNESS)
+    ),
+    autoRefreshEnabled: getCheckbox(
+      "input[name='merchantAutoRefreshEnabled']",
+      existingAutoRefresh.enabled
+    ),
+    autoRefreshIntervalDays: getNumber(
+      "input[name='merchantAutoRefreshIntervalDays']",
+      Number(existingAutoRefresh.intervalDays ?? MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays)
     ),
     duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
     maxStackSize: 20,
@@ -25904,6 +25864,9 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
   if (!canAccessAllPlayerOps()) return { ok: false, message: "Only the GM can refresh merchant stock." };
   const merchantId = String(merchantIdInput ?? "").trim();
   if (!merchantId) return { ok: false, message: "Merchant id is required." };
+  const currentWorldTimestamp = Number(options?.currentWorldTimestamp ?? getCurrentWorldTimestamp());
+  const refreshedWorldTs = Number.isFinite(currentWorldTimestamp) ? Math.max(0, Math.floor(currentWorldTimestamp)) : getCurrentWorldTimestamp();
+  const refreshedDayKey = getGatherDayKey(refreshedWorldTs);
   const ledger = getOperationsLedger();
   const merchant = getMerchantById(merchantId, ledger);
   if (!merchant) return { ok: false, message: "Merchant not found." };
@@ -25952,8 +25915,13 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     merchants.stockStateById[merchantId] = {
       lastRefreshedAt: refreshedAt,
       lastRefreshedBy: refreshedBy,
-      actorId: String(merchantActor.id ?? "")
+      actorId: String(merchantActor.id ?? ""),
+      lastRefreshedWorldTs: refreshedWorldTs,
+      lastRefreshedDayKey: refreshedDayKey
     };
+  }, {
+    skipLocalRefresh: Boolean(options?.skipLocalRefresh),
+    skipSocketRefresh: Boolean(options?.skipSocketRefresh)
   });
 
   const createdCount = createData.length;
@@ -25975,7 +25943,9 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     targetStockValueGp: Math.max(0, Number(budgetedSelection?.targetValueGp ?? 0) || 0),
     stockConstrainedToBudget: Boolean(budgetedSelection?.constrained),
     refreshedAt,
-    refreshedBy
+    refreshedBy,
+    refreshedWorldTs,
+    refreshedDayKey
   };
 }
 
@@ -25993,6 +25963,111 @@ async function refreshAllMerchantStocks(options = {}) {
     ui.notifications?.info(`Merchant stock refresh complete: ${refreshed} succeeded, ${failed} failed.`);
   }
   return { ok: failed === 0, refreshed, failed, results };
+}
+
+function getMerchantAutoRefreshElapsedDays(lastRefreshedWorldTs, currentTimestamp = getCurrentWorldTimestamp()) {
+  const current = Number(currentTimestamp);
+  const last = Number(lastRefreshedWorldTs);
+  if (!Number.isFinite(current) || !Number.isFinite(last) || current <= last) return 0;
+  return Math.max(0, Math.floor((current - last) / 86400));
+}
+
+async function handleAutomaticMerchantAutoRefreshTick() {
+  if (!canAccessAllPlayerOps()) return null;
+  if (!isPrimaryActiveGmClient()) return null;
+  if (merchantAutoRefreshTickInFlight) return null;
+  merchantAutoRefreshTickInFlight = true;
+
+  try {
+    const currentTimestamp = getCurrentWorldTimestamp();
+    const dayKey = getGatherDayKey(currentTimestamp);
+    const lastProcessedDayKey = String(game.settings.get(MODULE_ID, SETTINGS.MERCHANT_AUTO_REFRESH_DAY) ?? "").trim();
+    if (dayKey === lastProcessedDayKey) return null;
+
+    const ledger = getOperationsLedger();
+    const merchantsState = ensureMerchantsState(ledger);
+    const initializeMerchantIds = [];
+    const dueMerchantIds = [];
+
+    for (const merchant of merchantsState.definitions ?? []) {
+      const merchantId = String(merchant?.id ?? "").trim();
+      if (!merchantId) continue;
+      const autoRefresh = normalizeMerchantAutoRefreshConfig(
+        merchant?.stock?.autoRefresh ?? {},
+        MERCHANT_DEFAULTS.stock.autoRefresh
+      );
+      if (!autoRefresh.enabled || Number(autoRefresh.intervalDays ?? 0) <= 0) continue;
+      const stockState = normalizeMerchantStockStateEntry(merchantsState.stockStateById?.[merchantId], merchant.actorId);
+      const lastRefreshedWorldTs = Number(stockState?.lastRefreshedWorldTs ?? 0);
+      if (!Number.isFinite(lastRefreshedWorldTs) || lastRefreshedWorldTs <= 0) {
+        initializeMerchantIds.push(merchantId);
+        continue;
+      }
+      if (getMerchantAutoRefreshElapsedDays(lastRefreshedWorldTs, currentTimestamp) < Number(autoRefresh.intervalDays)) continue;
+      dueMerchantIds.push(merchantId);
+    }
+
+    if (initializeMerchantIds.length > 0) {
+      await updateOperationsLedger((nextLedger) => {
+        const merchants = ensureMerchantsState(nextLedger);
+        for (const merchantId of initializeMerchantIds) {
+          const definition = merchants.definitions.find((entry) => String(entry?.id ?? "") === merchantId);
+          const stockState = normalizeMerchantStockStateEntry(merchants.stockStateById?.[merchantId], definition?.actorId ?? "");
+          stockState.lastRefreshedWorldTs = currentTimestamp;
+          stockState.lastRefreshedDayKey = dayKey;
+          merchants.stockStateById[merchantId] = stockState;
+        }
+      }, {
+        skipLocalRefresh: true,
+        skipSocketRefresh: true
+      });
+    }
+
+    const results = [];
+    for (const merchantId of dueMerchantIds) {
+      // Run the refresh loop off the same day timestamp so a multi-merchant sweep stays aligned.
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const result = await refreshMerchantStock(merchantId, {
+          silent: true,
+          skipLocalRefresh: true,
+          skipSocketRefresh: true,
+          currentWorldTimestamp: currentTimestamp
+        });
+        results.push(result);
+      } catch (error) {
+        console.warn(`${MODULE_ID}: merchant auto-restock failed for ${merchantId}`, error);
+        results.push({
+          ok: false,
+          merchantId,
+          message: String(error?.message ?? "Merchant auto-restock failed.")
+        });
+      }
+    }
+
+    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MERCHANT_AUTO_REFRESH_DAY, dayKey);
+
+    const refreshed = results.filter((entry) => entry?.ok).length;
+    const failed = results.length - refreshed;
+    if (initializeMerchantIds.length > 0 || results.length > 0) {
+      refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+      emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    }
+    if (refreshed > 0 || failed > 0) {
+      ui.notifications?.info(
+        `Merchant auto-restock: ${refreshed} refreshed${failed > 0 ? `, ${failed} failed` : ""}.`
+      );
+    }
+    return {
+      dayKey,
+      initialized: initializeMerchantIds.length,
+      refreshed,
+      failed,
+      results
+    };
+  } finally {
+    merchantAutoRefreshTickInFlight = false;
+  }
 }
 
 function findTradeTargetItem(actor, sourceItem) {
@@ -43047,6 +43122,7 @@ function buildTimeHookModule() {
         await notifyDailyInjuryReminders();
         if (!game.user?.isGM) return;
         await handleAutomaticOperationalUpkeepTick();
+        await handleAutomaticMerchantAutoRefreshTick();
       }]
     ]
   };
@@ -43316,6 +43392,7 @@ export function onPartyOperationsReady() {
     schedulePendingSopNoteSync("ready");
   } else {
     scheduleIntegrationSync("ready");
+    void handleAutomaticMerchantAutoRefreshTick();
     window.setTimeout(() => {
       queueAudioLibraryMetadataWarmup({ delayMs: 0 });
     }, 900);

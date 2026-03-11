@@ -71,6 +71,7 @@ const MERCHANT_MAX_KEYWORD_LENGTH = 80;
 const MERCHANT_MAX_DUPLICATE_CHANCE = 100;
 const MERCHANT_MAX_STACK_SIZE = 25;
 const MERCHANT_MAX_RARITY_WEIGHT = 100;
+const MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS = 365;
 const MERCHANT_MAX_GENERATED_ITEM_COUNT = 250;
 const MERCHANT_RARITY_BUCKETS = Object.freeze(["common", "uncommon", "rare", "very-rare", "legendary"]);
 const MERCHANT_ESTIMATED_GP_BY_RARITY = Object.freeze({
@@ -302,7 +303,11 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
     duplicateChance: 25,
     maxStackSize: 20,
-    rarityWeights: Object.freeze({ ...MERCHANT_DEFAULT_RARITY_WEIGHTS })
+    rarityWeights: Object.freeze({ ...MERCHANT_DEFAULT_RARITY_WEIGHTS }),
+    autoRefresh: Object.freeze({
+      enabled: false,
+      intervalDays: 7
+    })
   })
 });
 
@@ -392,6 +397,37 @@ export function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_
   const raw = Number(value);
   if (!Number.isFinite(raw)) return Math.max(50, Math.min(300, Math.round(Number(fallback) || MERCHANT_DEFAULT_VALUE_STRICTNESS)));
   return Math.max(50, Math.min(300, Math.round(raw)));
+}
+
+function clampMerchantAutoRefreshIntervalDays(value, fallback = MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) {
+    return Math.max(
+      1,
+      Math.min(MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS, Math.floor(Number(fallback) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays))
+    );
+  }
+  return Math.max(1, Math.min(MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS, Math.floor(raw)));
+}
+
+export function normalizeMerchantAutoRefreshConfig(raw = {}, fallback = MERCHANT_DEFAULTS.stock.autoRefresh) {
+  const fallbackSource = fallback && typeof fallback === "object" && !Array.isArray(fallback)
+    ? fallback
+    : MERCHANT_DEFAULTS.stock.autoRefresh;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw
+    : { enabled: raw };
+  const enabled = source.enabled === undefined
+    ? Boolean(fallbackSource.enabled ?? MERCHANT_DEFAULTS.stock.autoRefresh.enabled)
+    : Boolean(source.enabled);
+  const intervalDays = clampMerchantAutoRefreshIntervalDays(
+    source.intervalDays ?? source.days ?? source.refreshIntervalDays ?? fallbackSource.intervalDays,
+    fallbackSource.intervalDays
+  );
+  return {
+    enabled,
+    intervalDays
+  };
 }
 
 export function normalizeMerchantTagList(values = []) {
@@ -731,7 +767,8 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
       duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
       maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
-      rarityWeights: normalizeMerchantRarityWeights(MERCHANT_DEFAULTS.stock.rarityWeights)
+      rarityWeights: normalizeMerchantRarityWeights(MERCHANT_DEFAULTS.stock.rarityWeights),
+      autoRefresh: normalizeMerchantAutoRefreshConfig(MERCHANT_DEFAULTS.stock.autoRefresh)
     },
     actorId: ""
   };
@@ -831,6 +868,13 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     source?.rarityWeights ?? existingStock?.rarityWeights,
     MERCHANT_DEFAULTS.stock.rarityWeights
   );
+  const autoRefresh = normalizeMerchantAutoRefreshConfig(
+    source?.autoRefresh ?? {
+      enabled: source?.autoRefreshEnabled ?? existingStock?.autoRefresh?.enabled,
+      intervalDays: source?.autoRefreshIntervalDays ?? source?.refreshIntervalDays ?? existingStock?.autoRefresh?.intervalDays
+    },
+    existingStock?.autoRefresh ?? MERCHANT_DEFAULTS.stock.autoRefresh
+  );
   return {
     id: String(source?.id ?? "").trim(),
     name: String(source?.name ?? "").trim(),
@@ -870,7 +914,8 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       scarcity,
       duplicateChance,
       maxStackSize,
-      rarityWeights
+      rarityWeights,
+      autoRefresh
     },
     actorId: String(source?.actorId ?? "").trim()
   };

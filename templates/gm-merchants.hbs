@@ -238,6 +238,25 @@
               <input type="range" min="50" max="300" step="5" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
             </label>
             <div class="po-op-summary">Strictness band: {{merchants.gm.editor.valueStrictnessBandLabel}} | When a target is set, stock can drift by about +/-{{merchants.gm.editor.valueTolerancePercent}}%.</div>
+            <label class="po-resource-row">
+              <span>Auto Refresh Stock</span>
+              <input type="checkbox" name="merchantAutoRefreshEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.autoRefreshEnabled}}checked{{/if}} />
+            </label>
+            <label class="po-resource-row">
+              <span>Refresh Every (days)</span>
+              <input
+                type="number"
+                min="1"
+                max="365"
+                step="1"
+                name="merchantAutoRefreshIntervalDays"
+                class="po-input"
+                data-action="merchant-editor-draft-change"
+                value="{{merchants.gm.editor.autoRefreshIntervalDays}}"
+                {{#unless merchants.gm.editor.autoRefreshEnabled}}disabled{{/unless}}
+              />
+            </label>
+            <div class="po-op-summary">{{merchants.gm.editor.autoRefreshSummaryLabel}}</div>
             <div class="po-op-summary">Stock amount is scarcity-driven. Max stack size is fixed at 20.</div>
           </div>
         </div>
@@ -285,148 +304,182 @@
               {{/if}}
             </article>
 
-            <div class="po-resource-row po-merchant-source-row">
-              <span>Tag Include</span>
-              <div class="po-merchant-source-picker po-merchant-filter-picker">
-                <div class="po-op-summary">
-                  Require all selected tags.
-                  <span data-merchant-tag-selected-count="include">{{merchants.gm.includeTagSelectedCount}}</span>
-                  selected from
-                  <span data-merchant-tag-total-count="include">{{merchants.gm.tagCatalogCount}}</span>.
+            <article class="po-merchant-taxonomy-card">
+              <div class="po-loot-section-head">
+                <div>
+                  <div class="po-section-title">Tag Rules</div>
+                  <div class="po-hint">Keep include and exclude tag logic together so stock filtering is easier to review.</div>
                 </div>
-                <div class="po-op-action-row po-merchant-tag-bulk-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="include">Select All</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="include">Deselect All</button>
-                </div>
-                {{#if merchants.gm.hasIncludeTagGroups}}
-                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-include-tag-groups">
-                  {{#each merchants.gm.includeTagGroups}}
-                  <details class="po-merchant-tag-group" data-tag-mode="include" data-tag-group="{{key}}" {{#if open}}open{{/if}}>
-                    <summary class="po-merchant-tag-group-summary">
-                      <span class="po-merchant-tag-group-title">{{label}}</span>
-                      <span class="po-merchant-tag-group-meta-wrap">
-                        <span class="po-merchant-tag-group-meta">
-                          <span data-merchant-tag-group-selected>{{selectedCount}}</span>
-                          /
-                          <span data-merchant-tag-group-total>{{optionCount}}</span>
-                        </span>
-                        <span class="po-merchant-tag-group-actions">
-                          <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-select-tag-group">All</button>
-                          <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-deselect-tag-group">None</button>
-                        </span>
-                      </span>
-                    </summary>
-                    <div class="po-merchant-tag-group-options">
-                      {{#each options}}
-                      <label class="po-merchant-source-option">
-                        <input type="checkbox" name="merchantIncludeTags" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} />
-                        <span>{{label}}</span>
-                      </label>
-                      {{/each}}
+              </div>
+              <div class="po-merchant-filter-card-grid">
+                <section class="po-merchant-filter-section">
+                  <div class="po-merchant-filter-section-head">
+                    <div class="po-section-title">Include Tags</div>
+                    <div class="po-op-summary">
+                      Require all selected tags.
+                      <span data-merchant-tag-selected-count="include">{{merchants.gm.includeTagSelectedCount}}</span>
+                      selected from
+                      <span data-merchant-tag-total-count="include">{{merchants.gm.tagCatalogCount}}</span>.
                     </div>
-                  </details>
-                  {{/each}}
-                </div>
-                {{else}}
-                <div class="po-op-summary">No tags found in current stock sources.</div>
-                {{/if}}
-              </div>
-            </div>
-            <div class="po-resource-row po-merchant-source-row">
-              <span>Tag Exclude</span>
-              <div class="po-merchant-source-picker po-merchant-filter-picker">
-                <div class="po-op-summary">
-                  Block any selected tags.
-                  <span data-merchant-tag-selected-count="exclude">{{merchants.gm.excludeTagSelectedCount}}</span>
-                  selected from
-                  <span data-merchant-tag-total-count="exclude">{{merchants.gm.tagCatalogCount}}</span>.
-                </div>
-                <div class="po-op-action-row po-merchant-tag-bulk-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="exclude">Select All</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="exclude">Deselect All</button>
-                </div>
-                {{#if merchants.gm.hasExcludeTagGroups}}
-                <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-exclude-tag-groups">
-                  {{#each merchants.gm.excludeTagGroups}}
-                  <details class="po-merchant-tag-group" data-tag-mode="exclude" data-tag-group="{{key}}" {{#if open}}open{{/if}}>
-                    <summary class="po-merchant-tag-group-summary">
-                      <span class="po-merchant-tag-group-title">{{label}}</span>
-                      <span class="po-merchant-tag-group-meta-wrap">
-                        <span class="po-merchant-tag-group-meta">
-                          <span data-merchant-tag-group-selected>{{selectedCount}}</span>
-                          /
-                          <span data-merchant-tag-group-total>{{optionCount}}</span>
+                  </div>
+                  <div class="po-op-action-row po-merchant-tag-bulk-actions">
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="include">Select All</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="include">Deselect All</button>
+                  </div>
+                  {{#if merchants.gm.hasIncludeTagGroups}}
+                  <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-include-tag-groups">
+                    {{#each merchants.gm.includeTagGroups}}
+                    <details class="po-merchant-tag-group" data-tag-mode="include" data-tag-group="{{key}}" {{#if open}}open{{/if}}>
+                      <summary class="po-merchant-tag-group-summary">
+                        <span class="po-merchant-tag-group-title">{{label}}</span>
+                        <span class="po-merchant-tag-group-meta-wrap">
+                          <span class="po-merchant-tag-group-meta">
+                            <span data-merchant-tag-group-selected>{{selectedCount}}</span>
+                            /
+                            <span data-merchant-tag-group-total>{{optionCount}}</span>
+                          </span>
+                          <span class="po-merchant-tag-group-actions">
+                            <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-select-tag-group">All</button>
+                            <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-deselect-tag-group">None</button>
+                          </span>
                         </span>
-                        <span class="po-merchant-tag-group-actions">
-                          <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-select-tag-group">All</button>
-                          <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-deselect-tag-group">None</button>
-                        </span>
-                      </span>
-                    </summary>
-                    <div class="po-merchant-tag-group-options">
-                      {{#each options}}
-                      <label class="po-merchant-source-option">
-                        <input type="checkbox" name="merchantExcludeTags" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} />
-                        <span>{{label}}</span>
-                      </label>
-                      {{/each}}
+                      </summary>
+                      <div class="po-merchant-tag-group-options">
+                        {{#each options}}
+                        <label class="po-merchant-source-option">
+                          <input type="checkbox" name="merchantIncludeTags" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} />
+                          <span>{{label}}</span>
+                        </label>
+                        {{/each}}
+                      </div>
+                    </details>
+                    {{/each}}
+                  </div>
+                  {{else}}
+                  <div class="po-op-summary">No tags found in current stock sources.</div>
+                  {{/if}}
+                </section>
+
+                <section class="po-merchant-filter-section">
+                  <div class="po-merchant-filter-section-head">
+                    <div class="po-section-title">Exclude Tags</div>
+                    <div class="po-op-summary">
+                      Block any selected tags.
+                      <span data-merchant-tag-selected-count="exclude">{{merchants.gm.excludeTagSelectedCount}}</span>
+                      selected from
+                      <span data-merchant-tag-total-count="exclude">{{merchants.gm.tagCatalogCount}}</span>.
                     </div>
-                  </details>
-                  {{/each}}
-                </div>
-                {{else}}
-                <div class="po-op-summary">No tags found in current stock sources.</div>
-                {{/if}}
+                  </div>
+                  <div class="po-op-action-row po-merchant-tag-bulk-actions">
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-select-all-tags" data-tag-mode="exclude">Select All</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-deselect-all-tags" data-tag-mode="exclude">Deselect All</button>
+                  </div>
+                  {{#if merchants.gm.hasExcludeTagGroups}}
+                  <div class="po-merchant-source-list po-merchant-filter-list po-merchant-tag-groups" data-po-scroll-preserve="merchant-exclude-tag-groups">
+                    {{#each merchants.gm.excludeTagGroups}}
+                    <details class="po-merchant-tag-group" data-tag-mode="exclude" data-tag-group="{{key}}" {{#if open}}open{{/if}}>
+                      <summary class="po-merchant-tag-group-summary">
+                        <span class="po-merchant-tag-group-title">{{label}}</span>
+                        <span class="po-merchant-tag-group-meta-wrap">
+                          <span class="po-merchant-tag-group-meta">
+                            <span data-merchant-tag-group-selected>{{selectedCount}}</span>
+                            /
+                            <span data-merchant-tag-group-total>{{optionCount}}</span>
+                          </span>
+                          <span class="po-merchant-tag-group-actions">
+                            <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-select-tag-group">All</button>
+                            <button type="button" class="po-btn po-merchant-tag-group-action" data-action="merchant-deselect-tag-group">None</button>
+                          </span>
+                        </span>
+                      </summary>
+                      <div class="po-merchant-tag-group-options">
+                        {{#each options}}
+                        <label class="po-merchant-source-option">
+                          <input type="checkbox" name="merchantExcludeTags" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} />
+                          <span>{{label}}</span>
+                        </label>
+                        {{/each}}
+                      </div>
+                    </details>
+                    {{/each}}
+                  </div>
+                  {{else}}
+                  <div class="po-op-summary">No tags found in current stock sources.</div>
+                  {{/if}}
+                </section>
               </div>
-            </div>
-            <label class="po-resource-row">
-              <span>Keyword Include (CSV)</span>
-              <input type="text" list="po-merchant-keyword-options" name="merchantKeywordInclude" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.keywordIncludeInput}}" placeholder="healing, antidote, rope" />
-            </label>
-            {{#if merchants.gm.hasKeywordCatalog}}
-            <div class="po-resource-row po-merchant-keyword-picker-row">
-              <span>Quick Include</span>
-              <div class="po-merchant-keyword-picker">
-                {{#each merchants.gm.keywordIncludeOptions}}
-                <button
-                  type="button"
-                  class="po-btn po-merchant-keyword-chip {{#if selected}}is-active{{/if}}"
-                  data-action="merchant-keyword-toggle"
-                  data-keyword-mode="include"
-                  data-keyword-value="{{value}}"
-                >{{label}}</button>
-                {{/each}}
-              </div>
-            </div>
-            {{/if}}
-            <label class="po-resource-row">
-              <span>Keyword Exclude (CSV)</span>
-              <input type="text" list="po-merchant-keyword-options" name="merchantKeywordExclude" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.keywordExcludeInput}}" placeholder="poison, cursed" />
-            </label>
-            {{#if merchants.gm.hasKeywordCatalog}}
-            <div class="po-resource-row po-merchant-keyword-picker-row">
-              <span>Quick Exclude</span>
-              <div class="po-merchant-keyword-picker">
-                {{#each merchants.gm.keywordExcludeOptions}}
-                <button
-                  type="button"
-                  class="po-btn po-merchant-keyword-chip {{#if selected}}is-active{{/if}}"
-                  data-action="merchant-keyword-toggle"
-                  data-keyword-mode="exclude"
-                  data-keyword-value="{{value}}"
-                >{{label}}</button>
-                {{/each}}
-              </div>
-            </div>
-            {{/if}}
-            <datalist id="po-merchant-keyword-options">
-              {{#each merchants.gm.keywordIncludeOptions}}
-              <option value="{{value}}">{{label}}</option>
-              {{/each}}
-            </datalist>
+            </article>
           </div>
 
           <div class="po-col po-merchant-editor-column">
+            <article class="po-merchant-taxonomy-card">
+              <div class="po-loot-section-head">
+                <div>
+                  <div class="po-section-title">Keyword Rules</div>
+                  <div class="po-hint">Keep keyword include and exclude tuning separate from tag filters and economy controls.</div>
+                </div>
+              </div>
+              <div class="po-merchant-filter-card-grid">
+                <section class="po-merchant-filter-section">
+                  <div class="po-merchant-filter-section-head">
+                    <div class="po-section-title">Include Keywords</div>
+                    <div class="po-op-summary">Bias stock toward matching terms.</div>
+                  </div>
+                  <label class="po-resource-row">
+                    <span>Keyword Include (CSV)</span>
+                    <input type="text" list="po-merchant-keyword-options" name="merchantKeywordInclude" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.keywordIncludeInput}}" placeholder="healing, antidote, rope" />
+                  </label>
+                  {{#if merchants.gm.hasKeywordCatalog}}
+                  <div class="po-resource-row po-merchant-keyword-picker-row">
+                    <span>Quick Include</span>
+                    <div class="po-merchant-keyword-picker">
+                      {{#each merchants.gm.keywordIncludeOptions}}
+                      <button
+                        type="button"
+                        class="po-btn po-merchant-keyword-chip {{#if selected}}is-active{{/if}}"
+                        data-action="merchant-keyword-toggle"
+                        data-keyword-mode="include"
+                        data-keyword-value="{{value}}"
+                      >{{label}}</button>
+                      {{/each}}
+                    </div>
+                  </div>
+                  {{/if}}
+                </section>
+
+                <section class="po-merchant-filter-section">
+                  <div class="po-merchant-filter-section-head">
+                    <div class="po-section-title">Exclude Keywords</div>
+                    <div class="po-op-summary">Keep unwanted themes out of the generated stock.</div>
+                  </div>
+                  <label class="po-resource-row">
+                    <span>Keyword Exclude (CSV)</span>
+                    <input type="text" list="po-merchant-keyword-options" name="merchantKeywordExclude" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.keywordExcludeInput}}" placeholder="poison, cursed" />
+                  </label>
+                  {{#if merchants.gm.hasKeywordCatalog}}
+                  <div class="po-resource-row po-merchant-keyword-picker-row">
+                    <span>Quick Exclude</span>
+                    <div class="po-merchant-keyword-picker">
+                      {{#each merchants.gm.keywordExcludeOptions}}
+                      <button
+                        type="button"
+                        class="po-btn po-merchant-keyword-chip {{#if selected}}is-active{{/if}}"
+                        data-action="merchant-keyword-toggle"
+                        data-keyword-mode="exclude"
+                        data-keyword-value="{{value}}"
+                      >{{label}}</button>
+                      {{/each}}
+                    </div>
+                  </div>
+                  {{/if}}
+                </section>
+              </div>
+              <datalist id="po-merchant-keyword-options">
+                {{#each merchants.gm.keywordIncludeOptions}}
+                <option value="{{value}}">{{label}}</option>
+                {{/each}}
+              </datalist>
+            </article>
             <div class="po-resource-row po-merchant-rarity-row">
               <span>Rarity Weights</span>
               <div class="po-op-action-row po-merchant-rarity-grid">
@@ -672,6 +725,7 @@
                     {{#if hasExcludeTags}}<div class="po-op-summary">Block Tags: {{excludeTagsText}}</div>{{/if}}
                     {{#if hasKeywordInclude}}<div class="po-op-summary">Keyword Focus: {{keywordIncludeText}}</div>{{/if}}
                     <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
+                    <div class="po-op-summary">Auto Restock: {{autoRefreshSummaryLabel}} | Next Due: {{nextAutoRefreshLabel}}</div>
                   </div>
                   <label class="po-resource-row">
                     <span>Assign Location</span>

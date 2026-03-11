@@ -204,15 +204,16 @@
             {{#if @root.isGM}}
             <button
               type="button"
-              class="po-campfire-toggle {{#if @root.campfire}}is-active{{/if}}"
+              class="po-campfire-toggle {{#if @root.campfire}}is-active{{else}}is-inactive{{/if}}"
               data-action="toggle-campfire"
+              aria-pressed="{{#if @root.campfire}}true{{else}}false{{/if}}"
               title="Toggle campfire on or off for rest watch visibility."
             >
               <i class="fa-solid fa-fire"></i>
               <span>{{@root.overview.campfireState}}</span>
             </button>
             {{else}}
-            <div class="po-campfire-status" title="Campfire status for this rest watch plan.">
+            <div class="po-campfire-status {{#if @root.campfire}}is-active{{else}}is-inactive{{/if}}" title="Campfire status for this rest watch plan.">
               <i class="fa-solid fa-fire"></i>
               <span>{{@root.overview.campfireState}}</span>
             </div>

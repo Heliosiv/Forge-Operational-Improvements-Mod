@@ -67,6 +67,13 @@ export function registerPartyOpsDataSettings({
     default: ""
   });
 
+  game.settings.register(moduleId, settings.MERCHANT_AUTO_REFRESH_DAY, {
+    scope: "world",
+    config: false,
+    type: String,
+    default: ""
+  });
+
   game.settings.register(moduleId, settings.LOOT_SOURCE_CONFIG, {
     scope: "world",
     config: false,
