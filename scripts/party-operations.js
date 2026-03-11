@@ -42652,7 +42652,7 @@ function buildSidebarLauncherAudioMarkup() {
         <i class="fas fa-play"></i><span>Play</span>
       </button>
       <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-next" title="${poEscapeHtml(context.nextTitle)}" aria-label="${poEscapeHtml(context.nextTitle)}" ${context.canNext ? "" : "disabled"}>
-        <i class="fas fa-forward-step"></i><span>Next</span>
+        <i class="fas fa-step-forward"></i><span>Next</span>
       </button>
       <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-stop" title="${poEscapeHtml(context.stopTitle)}" aria-label="${poEscapeHtml(context.stopTitle)}" ${context.canStop ? "" : "disabled"}>
         <i class="fas fa-stop"></i><span>Stop</span>

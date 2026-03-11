@@ -6,6 +6,7 @@ module.premium.json
 .staging-local-test/
 release/
 node_modules/
+.playwright-cli/
 .staging-local-test-build*/
 .staging-local-test-clean/
 .staging-local-test-leveldb/

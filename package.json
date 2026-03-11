@@ -4,7 +4,8 @@
   "private": true,
   "description": "Tooling for packaging and validating the Party Operations Foundry module.",
   "scripts": {
-    "check": "node scripts/validate-module.mjs",
+    "check": "node scripts/validate-module.mjs && node scripts/test-audio-launcher-controls.mjs",
+    "check:audio-launcher": "node scripts/test-audio-launcher-controls.mjs",
     "prepare:package": "node scripts/prepare-package.mjs --output dist/staging-public",
     "prepare:release": "node scripts/prepare-package.mjs --output release"
   },

@@ -38,8 +38,8 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 4) Validate module metadata
-        run: node scripts/validate-module.mjs
+      - name: 4) Run repository checks
+        run: npm run check
 
       - name: 5) Validate module.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
