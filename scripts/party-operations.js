@@ -103,6 +103,7 @@ import {
   selectMerchantStockRows as selectMerchantStockRowsDomain,
   buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain
 } from "./features/merchant-domain.js";
+import { createMerchantUiState } from "./features/merchant-ui-state.js";
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
@@ -1401,6 +1402,57 @@ const MERCHANT_GM_FILTER_STOCK_VALUES = Object.freeze({
   ALL: "all",
   STOCKED: "stocked",
   EMPTY: "empty"
+});
+const {
+  MERCHANT_GM_VIEW_TABS,
+  hasSelectedMerchantSettlementPreference,
+  getSelectedMerchantActorId,
+  setSelectedMerchantActorId,
+  setSelectedMerchantActorFromElement,
+  getSelectedMerchantSettlement,
+  setSelectedMerchantSettlement,
+  setSelectedMerchantSettlementFromElement,
+  getSelectedMerchantTabId,
+  setSelectedMerchantTabId,
+  setSelectedMerchantTabIdFromElement,
+  getMerchantEditorSelection,
+  setMerchantEditorSelection,
+  normalizeMerchantEditorSelectionKey,
+  getMerchantEditorDraftState,
+  setMerchantEditorDraftState,
+  clearMerchantEditorDraftState,
+  getMerchantCityCatalogDraftValue,
+  setMerchantCityCatalogDraftValue,
+  clearMerchantCityCatalogDraftValue,
+  getMerchantEditorViewTab,
+  setMerchantEditorViewTab,
+  setMerchantEditorViewTabFromElement,
+  getMerchantGmViewTab,
+  setMerchantGmViewTab,
+  setMerchantGmViewTabFromElement,
+  normalizeMerchantEditorFilter,
+  getMerchantEditorPackFilter,
+  setMerchantEditorPackFilter,
+  getMerchantEditorItemFilter,
+  setMerchantEditorItemFilter,
+  normalizeMerchantGmCollectionSearch,
+  normalizeMerchantGmCollectionCity,
+  normalizeMerchantGmCollectionAccess,
+  normalizeMerchantGmCollectionStock,
+  getMerchantGmCollectionFilterState,
+  setMerchantGmCollectionFilterState,
+  resetMerchantGmCollectionFilterState,
+  hasActiveMerchantGmCollectionFilter,
+  setMerchantGmCollectionFilterStateFromElement,
+  syncStoredMerchantSettlementPreference,
+  syncMerchantGmCollectionFilterLocation
+} = createMerchantUiState({
+  moduleId: MODULE_ID,
+  merchantGmFilterAccessValues: MERCHANT_GM_FILTER_ACCESS_VALUES,
+  merchantGmFilterStockValues: MERCHANT_GM_FILTER_STOCK_VALUES,
+  normalizeMerchantSettlementSelection,
+  getMerchantDefinitionDraftSource,
+  getCurrentSettlement: () => getOperationsLedger()?.merchants?.currentSettlement ?? ""
 });
 const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
   str: "Strength",
@@ -5424,434 +5476,10 @@ function setLootClaimActorSelectionFromElement(element) {
   return true;
 }
 
-function getMerchantActorStorageKey() {
-  return `po-merchant-actor-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantActorId(value) {
-  return String(value ?? "").trim();
-}
-
-function getSelectedMerchantActorId() {
-  return normalizeMerchantActorId(sessionStorage.getItem(getMerchantActorStorageKey()));
-}
-
-function setSelectedMerchantActorId(actorIdInput) {
-  const actorId = normalizeMerchantActorId(actorIdInput);
-  if (!actorId) {
-    sessionStorage.removeItem(getMerchantActorStorageKey());
-    return "";
-  }
-  sessionStorage.setItem(getMerchantActorStorageKey(), actorId);
-  return actorId;
-}
-
-function setSelectedMerchantActorFromElement(element) {
-  const nextActorId = normalizeMerchantActorId(element?.value);
-  const currentActorId = getSelectedMerchantActorId();
-  if (nextActorId === currentActorId) return false;
-  setSelectedMerchantActorId(nextActorId);
-  return true;
-}
-
-function getMerchantSettlementStorageKey() {
-  return `po-merchant-settlement-${game.user?.id ?? "anon"}`;
-}
-
-function getMerchantSettlementAllValue() {
-  return "__all__";
-}
-
 function normalizeMerchantSettlementSelection(value) {
   const settlement = String(value ?? "").trim().slice(0, 120);
   if (!settlement) return "";
   return settlement.toLowerCase() === "global" ? "" : settlement;
-}
-
-function hasSelectedMerchantSettlementPreference() {
-  return sessionStorage.getItem(getMerchantSettlementStorageKey()) !== null;
-}
-
-function getSelectedMerchantSettlement() {
-  const stored = sessionStorage.getItem(getMerchantSettlementStorageKey());
-  if (stored === getMerchantSettlementAllValue()) return "";
-  return normalizeMerchantSettlementSelection(stored);
-}
-
-function setSelectedMerchantSettlement(settlementInput) {
-  const settlement = normalizeMerchantSettlementSelection(settlementInput);
-  if (!settlement) {
-    sessionStorage.setItem(getMerchantSettlementStorageKey(), getMerchantSettlementAllValue());
-    return "";
-  }
-  sessionStorage.setItem(getMerchantSettlementStorageKey(), settlement);
-  return settlement;
-}
-
-function setSelectedMerchantSettlementFromElement(element) {
-  const nextSettlement = normalizeMerchantSettlementSelection(element?.value);
-  const currentSettlement = hasSelectedMerchantSettlementPreference()
-    ? getSelectedMerchantSettlement()
-    : normalizeMerchantSettlementSelection(getOperationsLedger()?.merchants?.currentSettlement ?? "");
-  if (nextSettlement === currentSettlement) return false;
-  setSelectedMerchantSettlement(nextSettlement);
-  return true;
-}
-
-function getMerchantTabStorageKey() {
-  return `po-merchant-tab-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantTabId(value) {
-  return String(value ?? "").trim();
-}
-
-function getSelectedMerchantTabId() {
-  return normalizeMerchantTabId(sessionStorage.getItem(getMerchantTabStorageKey()));
-}
-
-function setSelectedMerchantTabId(merchantIdInput) {
-  const merchantId = normalizeMerchantTabId(merchantIdInput);
-  if (!merchantId) {
-    sessionStorage.removeItem(getMerchantTabStorageKey());
-    return "";
-  }
-  sessionStorage.setItem(getMerchantTabStorageKey(), merchantId);
-  return merchantId;
-}
-
-function setSelectedMerchantTabIdFromElement(element) {
-  const nextMerchantId = normalizeMerchantTabId(element?.dataset?.merchantId ?? element?.value);
-  const currentMerchantId = getSelectedMerchantTabId();
-  if (nextMerchantId === currentMerchantId) return false;
-  setSelectedMerchantTabId(nextMerchantId);
-  return true;
-}
-
-function getMerchantEditorStorageKey() {
-  return `po-merchant-editor-${game.user?.id ?? "anon"}`;
-}
-
-function getMerchantEditorSelection() {
-  return String(sessionStorage.getItem(getMerchantEditorStorageKey()) ?? "").trim();
-}
-
-function setMerchantEditorSelection(merchantIdInput) {
-  const merchantId = String(merchantIdInput ?? "").trim();
-  const previous = getMerchantEditorSelection();
-  if (!merchantId) {
-    sessionStorage.removeItem(getMerchantEditorStorageKey());
-    clearMerchantEditorDraftState();
-    return "";
-  }
-  sessionStorage.setItem(getMerchantEditorStorageKey(), merchantId);
-  if (merchantId !== previous) clearMerchantEditorDraftState();
-  return merchantId;
-}
-
-function getMerchantEditorDraftStorageKey() {
-  return `po-merchant-editor-draft-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantEditorSelectionKey(value) {
-  const normalized = String(value ?? "").trim();
-  return normalized || "__new__";
-}
-
-function getMerchantEditorDraftState() {
-  const raw = sessionStorage.getItem(getMerchantEditorDraftStorageKey());
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    const selectionKey = normalizeMerchantEditorSelectionKey(parsed.selectionKey);
-    const draft = getMerchantDefinitionDraftSource(parsed.draft ?? {});
-    if (selectionKey === "__new__") draft.id = "";
-    return { selectionKey, draft };
-  } catch (_error) {
-    return null;
-  }
-}
-
-function setMerchantEditorDraftState(selectionKeyInput, draftInput = {}) {
-  const selectionKey = normalizeMerchantEditorSelectionKey(selectionKeyInput);
-  const draft = getMerchantDefinitionDraftSource(draftInput ?? {});
-  if (selectionKey === "__new__") draft.id = "";
-  sessionStorage.setItem(getMerchantEditorDraftStorageKey(), JSON.stringify({
-    selectionKey,
-    draft
-  }));
-  return { selectionKey, draft };
-}
-
-function clearMerchantEditorDraftState() {
-  sessionStorage.removeItem(getMerchantEditorDraftStorageKey());
-}
-
-function getMerchantCityCatalogDraftStorageKey() {
-  const worldId = String(game.world?.id ?? "world").trim() || "world";
-  const userId = String(game.user?.id ?? "anon").trim() || "anon";
-  return `${MODULE_ID}.merchantCityCatalogDraft.${worldId}.${userId}`;
-}
-
-function getMerchantCityCatalogDraftValue() {
-  try {
-    const raw = sessionStorage.getItem(getMerchantCityCatalogDraftStorageKey());
-    if (raw === null || raw === undefined) return null;
-    return String(raw);
-  } catch (_error) {
-    return null;
-  }
-}
-
-function setMerchantCityCatalogDraftValue(value) {
-  try {
-    const text = String(value ?? "");
-    sessionStorage.setItem(getMerchantCityCatalogDraftStorageKey(), text);
-    return text;
-  } catch (_error) {
-    return String(value ?? "");
-  }
-}
-
-function clearMerchantCityCatalogDraftValue() {
-  try {
-    sessionStorage.removeItem(getMerchantCityCatalogDraftStorageKey());
-  } catch (_error) {
-    // Ignore storage failures outside browser execution contexts.
-  }
-}
-
-function getMerchantEditorViewTabStorageKey() {
-  return `po-merchant-editor-view-tab-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantEditorViewTab(value, fallback = "editor") {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "settings") return "settings";
-  if (normalized === "editor") return "editor";
-  return normalizeMerchantEditorViewTab(fallback, "editor");
-}
-
-function getMerchantEditorViewTab() {
-  return normalizeMerchantEditorViewTab(sessionStorage.getItem(getMerchantEditorViewTabStorageKey()), "editor");
-}
-
-function setMerchantEditorViewTab(value) {
-  const next = normalizeMerchantEditorViewTab(value, "editor");
-  sessionStorage.setItem(getMerchantEditorViewTabStorageKey(), next);
-  return next;
-}
-
-function setMerchantEditorViewTabFromElement(element) {
-  const next = normalizeMerchantEditorViewTab(element?.dataset?.tab ?? element?.value, "editor");
-  const current = getMerchantEditorViewTab();
-  if (next === current) return false;
-  setMerchantEditorViewTab(next);
-  return true;
-}
-
-const MERCHANT_GM_VIEW_TABS = Object.freeze({
-  CITY: "city-editor",
-  EDITOR: "editor",
-  SETTINGS: "settings",
-  CONFIGURED: "configured-merchants",
-  SHOP: "shop-session"
-});
-
-function getMerchantGmViewTabStorageKey() {
-  return `po-merchant-gm-view-tab-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantGmViewTab(value, fallback = MERCHANT_GM_VIEW_TABS.CONFIGURED) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === MERCHANT_GM_VIEW_TABS.CITY || normalized === "city") return MERCHANT_GM_VIEW_TABS.CITY;
-  if (normalized === MERCHANT_GM_VIEW_TABS.EDITOR) return MERCHANT_GM_VIEW_TABS.EDITOR;
-  if (normalized === MERCHANT_GM_VIEW_TABS.SETTINGS) return MERCHANT_GM_VIEW_TABS.SETTINGS;
-  if (normalized === MERCHANT_GM_VIEW_TABS.CONFIGURED || normalized === "configured") return MERCHANT_GM_VIEW_TABS.CONFIGURED;
-  if (normalized === MERCHANT_GM_VIEW_TABS.SHOP || normalized === "shop") return MERCHANT_GM_VIEW_TABS.SHOP;
-  return normalizeMerchantGmViewTab(fallback, MERCHANT_GM_VIEW_TABS.CONFIGURED);
-}
-
-function getMerchantGmViewTab() {
-  return normalizeMerchantGmViewTab(sessionStorage.getItem(getMerchantGmViewTabStorageKey()), MERCHANT_GM_VIEW_TABS.CONFIGURED);
-}
-
-function setMerchantGmViewTab(value) {
-  const next = normalizeMerchantGmViewTab(value, MERCHANT_GM_VIEW_TABS.CONFIGURED);
-  sessionStorage.setItem(getMerchantGmViewTabStorageKey(), next);
-  return next;
-}
-
-function setMerchantGmViewTabFromElement(element) {
-  const next = normalizeMerchantGmViewTab(element?.dataset?.tab ?? element?.value, MERCHANT_GM_VIEW_TABS.CONFIGURED);
-  const current = getMerchantGmViewTab();
-  if (next === current) return false;
-  setMerchantGmViewTab(next);
-  return true;
-}
-
-function getMerchantEditorPackFilterStorageKey() {
-  return `po-merchant-pack-filter-${game.user?.id ?? "anon"}`;
-}
-
-function getMerchantEditorItemFilterStorageKey() {
-  return `po-merchant-item-filter-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantEditorFilter(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function getMerchantEditorPackFilter() {
-  return normalizeMerchantEditorFilter(sessionStorage.getItem(getMerchantEditorPackFilterStorageKey()));
-}
-
-function setMerchantEditorPackFilter(value) {
-  const normalized = normalizeMerchantEditorFilter(value);
-  sessionStorage.setItem(getMerchantEditorPackFilterStorageKey(), normalized);
-  return normalized;
-}
-
-function getMerchantEditorItemFilter() {
-  return normalizeMerchantEditorFilter(sessionStorage.getItem(getMerchantEditorItemFilterStorageKey()));
-}
-
-function setMerchantEditorItemFilter(value) {
-  const normalized = normalizeMerchantEditorFilter(value);
-  sessionStorage.setItem(getMerchantEditorItemFilterStorageKey(), normalized);
-  return normalized;
-}
-
-function getMerchantGmCollectionFilterStorageKey() {
-  return `po-merchant-gm-collection-filter-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeMerchantGmCollectionSearch(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function normalizeMerchantGmCollectionCity(value) {
-  return normalizeMerchantSettlementSelection(value);
-}
-
-function normalizeMerchantGmCollectionAccess(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC) return MERCHANT_GM_FILTER_ACCESS_VALUES.PUBLIC;
-  if (normalized === MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED) return MERCHANT_GM_FILTER_ACCESS_VALUES.ASSIGNED;
-  return MERCHANT_GM_FILTER_ACCESS_VALUES.ALL;
-}
-
-function normalizeMerchantGmCollectionStock(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED) return MERCHANT_GM_FILTER_STOCK_VALUES.STOCKED;
-  if (normalized === MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY) return MERCHANT_GM_FILTER_STOCK_VALUES.EMPTY;
-  return MERCHANT_GM_FILTER_STOCK_VALUES.ALL;
-}
-
-function normalizeMerchantGmCollectionFilterState(raw = {}) {
-  const source = raw && typeof raw === "object" ? raw : {};
-  return {
-    search: normalizeMerchantGmCollectionSearch(source.search),
-    city: normalizeMerchantGmCollectionCity(source.city),
-    access: normalizeMerchantGmCollectionAccess(source.access),
-    stock: normalizeMerchantGmCollectionStock(source.stock)
-  };
-}
-
-function getMerchantGmCollectionFilterState() {
-  const raw = sessionStorage.getItem(getMerchantGmCollectionFilterStorageKey());
-  if (!raw) {
-    return normalizeMerchantGmCollectionFilterState({
-      search: "",
-      city: "",
-      access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
-      stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
-    });
-  }
-  try {
-    return normalizeMerchantGmCollectionFilterState(JSON.parse(raw));
-  } catch (_error) {
-    return normalizeMerchantGmCollectionFilterState({
-      search: "",
-      city: "",
-      access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
-      stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
-    });
-  }
-}
-
-function setMerchantGmCollectionFilterState(stateInput = {}) {
-  const current = getMerchantGmCollectionFilterState();
-  const normalized = normalizeMerchantGmCollectionFilterState({
-    ...current,
-    ...(stateInput && typeof stateInput === "object" ? stateInput : {})
-  });
-  sessionStorage.setItem(getMerchantGmCollectionFilterStorageKey(), JSON.stringify(normalized));
-  return normalized;
-}
-
-function resetMerchantGmCollectionFilterState() {
-  const normalized = normalizeMerchantGmCollectionFilterState({
-    search: "",
-    city: "",
-    access: MERCHANT_GM_FILTER_ACCESS_VALUES.ALL,
-    stock: MERCHANT_GM_FILTER_STOCK_VALUES.ALL
-  });
-  sessionStorage.setItem(getMerchantGmCollectionFilterStorageKey(), JSON.stringify(normalized));
-  return normalized;
-}
-
-function hasActiveMerchantGmCollectionFilter(state = {}) {
-  const normalized = normalizeMerchantGmCollectionFilterState(state);
-  return Boolean(
-    normalized.search
-    || normalized.city
-    || normalized.access !== MERCHANT_GM_FILTER_ACCESS_VALUES.ALL
-    || normalized.stock !== MERCHANT_GM_FILTER_STOCK_VALUES.ALL
-  );
-}
-
-function setMerchantGmCollectionFilterStateFromElement(element) {
-  const filterKey = String(element?.dataset?.filterKey ?? "").trim().toLowerCase();
-  if (!filterKey) return false;
-  const current = getMerchantGmCollectionFilterState();
-  const isCheckbox = typeof HTMLInputElement !== "undefined"
-    && element instanceof HTMLInputElement
-    && String(element.type ?? "").toLowerCase() === "checkbox";
-  const rawValue = isCheckbox ? element.checked : element?.value;
-  let next = current;
-  if (filterKey === "search") {
-    next = {
-      ...current,
-      search: normalizeMerchantGmCollectionSearch(rawValue)
-    };
-  } else if (filterKey === "city") {
-    next = {
-      ...current,
-      city: normalizeMerchantGmCollectionCity(rawValue)
-    };
-  } else if (filterKey === "access") {
-    next = {
-      ...current,
-      access: normalizeMerchantGmCollectionAccess(rawValue)
-    };
-  } else if (filterKey === "stock") {
-    next = {
-      ...current,
-      stock: normalizeMerchantGmCollectionStock(rawValue)
-    };
-  }
-  if (
-    next.search === current.search
-    && next.city === current.city
-    && next.access === current.access
-    && next.stock === current.stock
-  ) {
-    return false;
-  }
-  setMerchantGmCollectionFilterState(next);
-  return true;
 }
 
 function setLootClaimRunSelectionFromElement(element) {
@@ -23999,25 +23627,6 @@ async function setMerchantCurrentSettlement(value) {
   await updateOperationsLedger((ledger) => {
     const merchants = ensureMerchantsState(ledger);
     merchants.currentSettlement = settlement;
-  });
-}
-
-function syncStoredMerchantSettlementPreference(previousSettlementInput = "", nextSettlementInput = "") {
-  const previousSettlement = normalizeMerchantSettlementSelection(previousSettlementInput);
-  if (!previousSettlement || !hasSelectedMerchantSettlementPreference()) return;
-  const selectedSettlement = getSelectedMerchantSettlement();
-  if (selectedSettlement.toLowerCase() !== previousSettlement.toLowerCase()) return;
-  setSelectedMerchantSettlement(nextSettlementInput);
-}
-
-function syncMerchantGmCollectionFilterLocation(previousSettlementInput = "", nextSettlementInput = "") {
-  const previousSettlement = normalizeMerchantSettlementSelection(previousSettlementInput);
-  if (!previousSettlement) return;
-  const filterState = getMerchantGmCollectionFilterState();
-  const selectedLocation = normalizeMerchantSettlementSelection(filterState?.city ?? "");
-  if (selectedLocation.toLowerCase() !== previousSettlement.toLowerCase()) return;
-  setMerchantGmCollectionFilterState({
-    city: normalizeMerchantSettlementSelection(nextSettlementInput)
   });
 }
 
