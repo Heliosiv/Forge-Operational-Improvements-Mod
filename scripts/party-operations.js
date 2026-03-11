@@ -13496,6 +13496,7 @@ function selectAudioMixPreset(actionElement) {
   const preset = getAudioMixPresetById(actionElement?.dataset?.presetId ?? actionElement?.value);
   audioLibraryUiState.selectedMixPresetId = preset.id;
   resetAudioMixTrackBrowserPages();
+  refreshLauncherAudioUi();
 }
 
 function changeAudioMixTrackBrowserPage(actionElement) {
@@ -25318,6 +25319,31 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       };
     });
     const assignedCount = assignmentRows.reduce((sum, row) => sum + (row.assigned ? 1 : 0), 0);
+    const compactPills = [
+      {
+        label: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED ? `${assignedCount} Assigned` : "All Players",
+        isWarn: false
+      },
+      {
+        label: stockItemCount > 0 ? `${stockItemCount} Stock` : "No Stock",
+        isWarn: stockItemCount <= 0
+      },
+      ...(offerTagLabels.length > 0
+        ? offerTagLabels.slice(0, 2).map((label) => ({
+          label,
+          isWarn: false
+        }))
+        : [{
+          label: "All Types",
+          isWarn: false
+        }])
+    ];
+    if (offerTagLabels.length > 2) {
+      compactPills.push({
+        label: `+${offerTagLabels.length - 2} More`,
+        isWarn: false
+      });
+    }
     return {
       ...merchant,
       shopTradable: merchant?.shopTradable !== false,
@@ -25378,7 +25404,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       hasAssignmentRows: assignmentRows.length > 0,
       assignedCount,
       unassignedCount: Math.max(0, assignmentRows.length - assignedCount),
-      accessModeOptions: getMerchantAccessModeOptions(accessMode)
+      accessModeOptions: getMerchantAccessModeOptions(accessMode),
+      compactPills,
+      hasCompactPills: compactPills.length > 0
     };
   });
   let gmCollectionCityOptions = buildMerchantGmCollectionCityOptions(definitionsForDisplay, gmCollectionFilterState.city);
@@ -42564,6 +42592,132 @@ async function setLauncherPlacement(placement) {
   return normalized;
 }
 
+function buildSidebarLauncherAudioContext() {
+  if (!canAccessAllPlayerOps()) return { visible: false };
+  const catalog = getAudioLibraryCatalog();
+  const selectedPreset = getSelectedAudioMixPreset();
+  const playback = getAudioMixPlaybackState(catalog);
+  const playableCandidates = getPlayableAudioMixCandidates(catalog, selectedPreset);
+  const hasCatalog = catalog.items.length > 0;
+  const isSelectedPresetActive = String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
+  const canResumeSelectedPreset = Boolean(playback.isPaused && playback.hasQueue && isSelectedPresetActive);
+  const statusLabel = !hasCatalog
+    ? "Scan audio in GM > Audio to enable launcher controls."
+    : playback.hasActiveTrack
+      ? `${playback.presetLabel}: ${playback.activeTrackName}`
+      : playback.isPaused && playback.hasQueue
+        ? `${playback.presetLabel} paused.`
+        : (String(selectedPreset?.description ?? "").trim() || "Pick a preset deck and use the transport controls here.");
+  return {
+    visible: true,
+    presets: getAllAudioMixPresets().map((preset) => ({
+      id: String(preset?.id ?? "").trim(),
+      label: String(preset?.label ?? "Mix").trim() || "Mix",
+      selected: String(preset?.id ?? "").trim() === String(selectedPreset?.id ?? "").trim()
+    })),
+    statusLabel,
+    isPlaying: Boolean(playback.isPlaying),
+    isPaused: Boolean(playback.isPaused),
+    canPlay: canResumeSelectedPreset || playableCandidates.length > 0,
+    canNext: Boolean(playback.canSkipNext),
+    canStop: Boolean(playback.hasActiveTrack || playback.hasQueue || playback.playbackId),
+    playTitle: canResumeSelectedPreset ? "Resume selected preset deck" : "Play selected preset deck",
+    nextTitle: "Advance the current mix to the next track",
+    stopTitle: "Stop the current mix"
+  };
+}
+
+function buildSidebarLauncherAudioMarkup() {
+  const context = buildSidebarLauncherAudioContext();
+  if (!context.visible) return "";
+  const optionsMarkup = context.presets
+    .map((preset) => `<option value="${poEscapeHtml(preset.id)}" ${preset.selected ? "selected" : ""}>${poEscapeHtml(preset.label)}</option>`)
+    .join("");
+  const statusClass = context.isPlaying
+    ? " is-playing"
+    : (context.isPaused ? " is-paused" : "");
+  return `
+    <div class="po-sidebar-launcher-audio-head">
+      <div class="po-sidebar-launcher-audio-title">Audio Deck</div>
+      <div class="po-sidebar-launcher-audio-status${statusClass}">${poEscapeHtml(context.statusLabel)}</div>
+    </div>
+    <label class="po-sidebar-launcher-audio-field">
+      <span>Preset Deck</span>
+      <select class="po-sidebar-launcher-select po-sidebar-launcher-audio-select" data-action="launcher-audio-select">
+        ${optionsMarkup}
+      </select>
+    </label>
+    <div class="po-sidebar-launcher-audio-controls">
+      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn is-primary" data-action="launcher-audio-play" title="${poEscapeHtml(context.playTitle)}" aria-label="${poEscapeHtml(context.playTitle)}" ${context.canPlay ? "" : "disabled"}>
+        <i class="fas fa-play"></i><span>Play</span>
+      </button>
+      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-next" title="${poEscapeHtml(context.nextTitle)}" aria-label="${poEscapeHtml(context.nextTitle)}" ${context.canNext ? "" : "disabled"}>
+        <i class="fas fa-forward-step"></i><span>Next</span>
+      </button>
+      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-stop" title="${poEscapeHtml(context.stopTitle)}" aria-label="${poEscapeHtml(context.stopTitle)}" ${context.canStop ? "" : "disabled"}>
+        <i class="fas fa-stop"></i><span>Stop</span>
+      </button>
+    </div>
+  `;
+}
+
+function syncSidebarLauncherAudioUi(launcher) {
+  if (!launcher) return;
+  let audioSection = launcher.querySelector("[data-po-sidebar-launcher-audio]");
+  if (!canAccessAllPlayerOps()) {
+    audioSection?.remove();
+    return;
+  }
+  if (!audioSection) {
+    audioSection = document.createElement("section");
+    audioSection.classList.add("po-sidebar-launcher-audio");
+    audioSection.dataset.poSidebarLauncherAudio = "1";
+    launcher.appendChild(audioSection);
+  }
+  audioSection.innerHTML = buildSidebarLauncherAudioMarkup();
+}
+
+function refreshLauncherAudioUi() {
+  const launcher = document.getElementById("po-sidebar-launcher");
+  if (!launcher) return;
+  syncSidebarLauncherAudioUi(launcher);
+}
+
+function handleSidebarLauncherAudioPresetSelection(element) {
+  selectAudioMixPreset(element);
+  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+}
+
+async function handleLauncherAudioTransportAction(action) {
+  const command = String(action ?? "").trim();
+  if (!command) return;
+  try {
+    clearAudioLibraryError();
+    if (command === "launcher-audio-play") {
+      const catalog = getAudioLibraryCatalog();
+      const selectedPreset = getSelectedAudioMixPreset();
+      const playback = getAudioMixPlaybackState(catalog);
+      const isSelectedPresetActive = String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
+      if (playback.isPaused && playback.hasQueue && isSelectedPresetActive) {
+        await toggleAudioMixPlayback();
+      } else {
+        await playAudioMixPresetById(selectedPreset.id);
+      }
+    } else if (command === "launcher-audio-next") {
+      await playNextAudioMixTrack();
+    } else if (command === "launcher-audio-stop") {
+      await stopAudioMixPlayback();
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+    setAudioLibraryError(message);
+    const prefix = command === "launcher-audio-stop" ? "Audio stop failed" : "Audio mix failed";
+    ui.notifications?.warn(`${prefix}: ${message}`);
+  } finally {
+    refreshLauncherAudioUi();
+  }
+}
+
 function handleLauncherAction(action, context = {}) {
   const tabId = getMainTabIdFromAction(action);
   if (tabId) {
@@ -42603,6 +42757,10 @@ function handleLauncherAction(action, context = {}) {
   }
   if (action === "dock-floating") {
     void setLauncherPlacement(LAUNCHER_PLACEMENTS.FLOATING);
+    return;
+  }
+  if (action === "launcher-audio-play" || action === "launcher-audio-next" || action === "launcher-audio-stop") {
+    void handleLauncherAudioTransportAction(action);
     return;
   }
 }
@@ -42866,6 +43024,7 @@ function ensureSidebarLauncher() {
       <div class="po-sidebar-launcher-grid">
         ${buttonsMarkup}
       </div>
+      <section class="po-sidebar-launcher-audio" data-po-sidebar-launcher-audio></section>
     `;
     logUiDebug("sidebar-launcher", "rebuilt sidebar launcher", {
       items: PO_SIDEBAR_VIEW_ITEMS
@@ -42898,10 +43057,16 @@ function ensureSidebarLauncher() {
       });
       handleLauncherAction(action);
     });
+    launcher.addEventListener("change", (event) => {
+      const select = event.target?.closest(".po-sidebar-launcher-audio-select");
+      if (!select) return;
+      handleSidebarLauncherAudioPresetSelection(select);
+    });
   }
 
   const gmButton = launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]');
   if (gmButton) gmButton.style.display = canAccessAllPlayerOps() ? "" : "none";
+  syncSidebarLauncherAudioUi(launcher);
   return launcher;
 }
 
@@ -43941,6 +44106,7 @@ function refreshOpenApps(options = {}) {
         preserveCanvas: false
       });
     }
+    refreshLauncherAudioUi();
     queueCanvasViewRestore(canvasSnapshot, {
       action: "refresh-open-apps",
       eventType: "refresh"

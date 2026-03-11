@@ -133,6 +133,64 @@ function syncAllMerchantTagSelectionUi(root) {
   syncMerchantTagSelectionUi(root, "exclude");
 }
 
+function getConfiguredMerchantExpandedStorageKey() {
+  return `po-merchant-configured-expanded-${game.user?.id ?? "anon"}`;
+}
+
+function getConfiguredMerchantExpandedIds() {
+  try {
+    const raw = globalThis.sessionStorage?.getItem?.(getConfiguredMerchantExpandedStorageKey());
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function saveConfiguredMerchantExpandedIds(expandedIds) {
+  try {
+    const values = Array.from(expandedIds ?? [])
+      .map((entry) => String(entry ?? "").trim())
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right));
+    if (values.length <= 0) {
+      globalThis.sessionStorage?.removeItem?.(getConfiguredMerchantExpandedStorageKey());
+      return;
+    }
+    globalThis.sessionStorage?.setItem?.(getConfiguredMerchantExpandedStorageKey(), JSON.stringify(values));
+  } catch {
+    // Ignore transient browser storage failures for UI-only state.
+  }
+}
+
+function setConfiguredMerchantExpandedState(merchantId, expanded) {
+  const id = String(merchantId ?? "").trim();
+  if (!id) return;
+  const expandedIds = getConfiguredMerchantExpandedIds();
+  if (expanded) expandedIds.add(id);
+  else expandedIds.delete(id);
+  saveConfiguredMerchantExpandedIds(expandedIds);
+}
+
+function applyConfiguredMerchantExpandedState(root) {
+  if (!root?.querySelectorAll) return;
+  const expandedIds = getConfiguredMerchantExpandedIds();
+  const cards = Array.from(root.querySelectorAll("details.po-merchant-definition-card[data-merchant-id]"));
+  for (const card of cards) {
+    if (!(card instanceof HTMLDetailsElement)) continue;
+    const merchantId = String(card.dataset?.merchantId ?? "").trim();
+    if (!merchantId) continue;
+    const shouldOpen = expandedIds.has(merchantId);
+    if (card.open !== shouldOpen) card.open = shouldOpen;
+  }
+}
+
 export function createGmMerchantsPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -344,6 +402,18 @@ export function createGmMerchantsPageApp(deps) {
     async _onPostRender() {
       syncAllMerchantTagSelectionUi(this.element);
       syncMerchantSourceRefSelectionUi(this.element);
+      for (const card of this.element?.querySelectorAll?.("details.po-merchant-definition-card[data-merchant-id]") ?? []) {
+        if (!(card instanceof HTMLDetailsElement)) continue;
+        if (card.dataset.poMerchantDisclosureBound === "1") continue;
+        card.dataset.poMerchantDisclosureBound = "1";
+        card.addEventListener("toggle", () => {
+          setConfiguredMerchantExpandedState(card.dataset?.merchantId, card.open === true);
+        });
+      }
+      queueMicrotask(() => {
+        if (!this.element?.isConnected) return;
+        applyConfiguredMerchantExpandedState(this.element);
+      });
     }
 
     _bindAdditionalListeners(root) {

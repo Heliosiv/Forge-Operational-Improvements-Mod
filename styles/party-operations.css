@@ -3527,6 +3527,107 @@
   font-weight: 600;
 }
 
+#po-sidebar-launcher .po-sidebar-launcher-audio {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border, #3a4758) 72%, transparent);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-head {
+  display: grid;
+  gap: 2px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--po-muted, #bcc8d7);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-status {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--po-text, #f2f6fb) 82%, transparent);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-status.is-playing {
+  color: var(--po-accent, #7ec8ff);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-status.is-paused {
+  color: var(--po-warn, #efc872);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-field {
+  display: grid;
+  gap: 4px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-field span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--po-muted, #bcc8d7);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-select {
+  width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--po-border, #3a4758);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-surface, #2a3543) 86%, transparent);
+  color: var(--po-text, #f2f6fb);
+  padding: 0 10px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-select:hover {
+  border-color: var(--po-accent, #7ec8ff);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-select:focus,
+#po-sidebar-launcher .po-sidebar-launcher-select:focus-visible {
+  outline: none;
+  border-color: var(--po-accent, #7ec8ff);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent, #7ec8ff) 35%, transparent);
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-btn {
+  min-height: 28px;
+  padding: 0 6px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-btn span {
+  font-size: 0.68rem;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-btn.is-primary {
+  border-color: color-mix(in srgb, var(--po-accent, #7ec8ff) 36%, var(--po-border, #3a4758));
+  background: color-mix(in srgb, var(--po-accent, #7ec8ff) 14%, var(--po-surface, #2a3543));
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled:hover {
+  border-color: var(--po-border, #3a4758);
+}
+
 /* =========================================================
    UX Refresh: Readability + Accessibility
    ========================================================= */
@@ -5103,18 +5204,131 @@
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-definition-grid {
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: 10px;
+  align-items: start;
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-definition-card {
-  padding: 10px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+  align-self: start;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-card.is-editing {
+  border-color: color-mix(in srgb, var(--po-accent) 40%, var(--po-border-strong));
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-card[open] {
+  grid-column: span 2;
+  border-color: color-mix(in srgb, var(--po-accent) 44%, var(--po-border-strong));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 18%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary {
+  position: relative;
+  display: grid;
   gap: 8px;
+  padding: 12px 40px 12px 12px;
+  cursor: pointer;
+  list-style: none;
+  min-height: 108px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary::-webkit-details-marker {
+  display: none;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary::marker {
+  content: "";
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary::after {
+  content: "+";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: var(--po-muted);
+  line-height: 1;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-card[open] .po-merchant-definition-summary::after {
+  content: "-";
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary:hover {
+  background: color-mix(in srgb, var(--po-bg-alt) 36%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--po-accent) 48%, transparent);
+  outline-offset: -1px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-copy {
+  min-width: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-name {
+  line-height: 1.25;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-title {
+  margin-top: 2px;
+  color: var(--po-muted);
+  font-size: 0.78rem;
+  line-height: 1.3;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-editing {
+  color: color-mix(in srgb, var(--po-accent) 78%, var(--po-text));
+  border-color: color-mix(in srgb, var(--po-accent) 42%, var(--po-border-strong));
+  background: color-mix(in srgb, var(--po-accent) 16%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-meta,
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-status.is-tradable {
+  color: color-mix(in srgb, var(--po-success) 82%, var(--po-text));
+  border-color: color-mix(in srgb, var(--po-success) 36%, var(--po-border-strong));
+  background: color-mix(in srgb, var(--po-success) 16%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary-status.is-disabled {
+  color: color-mix(in srgb, var(--po-danger) 80%, var(--po-text));
+  border-color: color-mix(in srgb, var(--po-danger) 32%, var(--po-border-strong));
+  background: color-mix(in srgb, var(--po-danger) 14%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-definition-body {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border-strong) 18%, var(--po-border));
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-definition-metadata {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 6px;
 }
 
@@ -5201,6 +5415,18 @@
 }
 
 @media (max-width: 640px) {
+  .party-operations [data-tool="gm-merchants"] .po-merchant-definition-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations [data-tool="gm-merchants"] .po-merchant-definition-card[open] {
+    grid-column: span 1;
+  }
+
+  .party-operations [data-tool="gm-merchants"] .po-merchant-definition-summary {
+    min-height: 0;
+  }
+
   .party-operations [data-tool="gm-merchants"] .po-merchant-location-assigned-item {
     align-items: flex-start;
     flex-direction: column;

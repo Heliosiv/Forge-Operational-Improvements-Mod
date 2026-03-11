@@ -625,9 +625,28 @@
             {{#if merchants.gm.hasFilteredDefinitions}}
             <div class="po-roles-grid po-merchant-definition-grid">
               {{#each merchants.gm.definitions}}
-              <div class="po-op-role-row po-merchant-definition-card" data-merchant-id="{{id}}">
-                <div class="po-op-role-head">
-                  <div class="po-op-role-name">{{name}}{{#if title}} - {{title}}{{/if}}</div>
+              <details class="po-op-role-row po-merchant-definition-card {{#if selectedForEdit}}is-editing{{/if}}" data-merchant-id="{{id}}">
+                <summary class="po-merchant-definition-summary">
+                  <div class="po-merchant-definition-summary-head">
+                    <div class="po-merchant-definition-summary-copy">
+                      <div class="po-op-role-name po-merchant-definition-summary-name">{{name}}</div>
+                      {{#if title}}<div class="po-merchant-definition-summary-title">{{title}}</div>{{/if}}
+                    </div>
+                    {{#if selectedForEdit}}<span class="po-pill po-merchant-definition-summary-editing">Editing</span>{{/if}}
+                  </div>
+                  <div class="po-merchant-definition-summary-meta">
+                    <span class="po-pill po-merchant-definition-summary-status {{#if shopTradable}}is-tradable{{else}}is-disabled{{/if}}">Shop {{shopTradableLabel}}</span>
+                    <span class="po-pill">{{settlementLabel}}</span>
+                  </div>
+                  {{#if hasCompactPills}}
+                  <div class="po-merchant-definition-summary-pills">
+                    {{#each compactPills}}
+                    <span class="po-pill po-merchant-definition-summary-pill {{#if isWarn}}is-warn{{/if}}">{{label}}</span>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                </summary>
+                <div class="po-merchant-definition-body">
                   <div class="po-merchant-definition-head-actions">
                     <button
                       type="button"
@@ -641,60 +660,60 @@
                     </button>
                     <div class="po-op-role-status {{#if selectedForEdit}}is-ready{{else}}is-missing{{/if}}">{{#if selectedForEdit}}Editing{{else}}Stored{{/if}}</div>
                   </div>
-                </div>
-                <div class="po-merchant-definition-metadata">
-                  <div class="po-op-summary">Profile: {{raceLabel}} | Location: {{settlementLabel}}</div>
-                  <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
-                  <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
-                  <div class="po-op-summary">Scarcity: {{scarcityLabel}} ({{scarcityMultiplierPercent}}%) | Max Stack: {{maxStackSize}}</div>
-                  {{#if targetStockValueGp}}<div class="po-op-summary">Target Value: {{targetStockValueGpLabel}} | Strictness: {{valueStrictnessBandLabel}} (+/-{{valueTolerancePercent}}%)</div>{{/if}}
-                  <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
-                  <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
-                  {{#if hasIncludeTags}}<div class="po-op-summary">Require Tags: {{includeTagsText}}</div>{{/if}}
-                  {{#if hasExcludeTags}}<div class="po-op-summary">Block Tags: {{excludeTagsText}}</div>{{/if}}
-                  {{#if hasKeywordInclude}}<div class="po-op-summary">Keyword Focus: {{keywordIncludeText}}</div>{{/if}}
-                  <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
-                </div>
-                <label class="po-resource-row">
-                  <span>Assign Location</span>
-                  <select class="po-select" data-action="merchant-assign-city" data-merchant-id="{{id}}">
-                    {{#each cityOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <label class="po-resource-row">
-                  <span>Access</span>
-                  <select class="po-select" data-action="merchant-set-access-mode" data-merchant-id="{{id}}">
-                    {{#each accessModeOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                {{#if accessModeIsAssigned}}
-                <div class="po-op-summary">Assigned: {{assignedCount}} | Unassigned: {{unassignedCount}}</div>
-                <div class="po-op-action-row po-merchant-assign-toolbar">
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-all" data-merchant-id="{{id}}">Assign All</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-none" data-merchant-id="{{id}}">Clear All</button>
-                </div>
-                {{#if hasAssignmentRows}}
-                <div class="po-op-action-row po-merchant-assign-grid">
-                  {{#each assignmentRows}}
-                  <label class="po-merchant-check-option">
-                    <input type="checkbox" data-action="merchant-assign-toggle" data-merchant-id="{{../id}}" data-actor-id="{{actorId}}" {{#if assigned}}checked{{/if}} />
-                    <span>{{actorName}}</span>
+                  <div class="po-merchant-definition-metadata">
+                    <div class="po-op-summary">Profile: {{raceLabel}} | Location: {{settlementLabel}}</div>
+                    <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
+                    <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
+                    <div class="po-op-summary">Scarcity: {{scarcityLabel}} ({{scarcityMultiplierPercent}}%) | Max Stack: {{maxStackSize}}</div>
+                    {{#if targetStockValueGp}}<div class="po-op-summary">Target Value: {{targetStockValueGpLabel}} | Strictness: {{valueStrictnessBandLabel}} (+/-{{valueTolerancePercent}}%)</div>{{/if}}
+                    <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>
+                    <div class="po-op-summary">Sellback: {{#if sellEnabled}}Enabled {{sellRatePercentLabel}}{{else}}Disabled{{/if}} | Cash: {{cashOnHandLabel}}</div>
+                    {{#if hasIncludeTags}}<div class="po-op-summary">Require Tags: {{includeTagsText}}</div>{{/if}}
+                    {{#if hasExcludeTags}}<div class="po-op-summary">Block Tags: {{excludeTagsText}}</div>{{/if}}
+                    {{#if hasKeywordInclude}}<div class="po-op-summary">Keyword Focus: {{keywordIncludeText}}</div>{{/if}}
+                    <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
+                  </div>
+                  <label class="po-resource-row">
+                    <span>Assign Location</span>
+                    <select class="po-select" data-action="merchant-assign-city" data-merchant-id="{{id}}">
+                      {{#each cityOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
                   </label>
-                  {{/each}}
+                  <label class="po-resource-row">
+                    <span>Access</span>
+                    <select class="po-select" data-action="merchant-set-access-mode" data-merchant-id="{{id}}">
+                      {{#each accessModeOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                  </label>
+                  {{#if accessModeIsAssigned}}
+                  <div class="po-op-summary">Assigned: {{assignedCount}} | Unassigned: {{unassignedCount}}</div>
+                  <div class="po-op-action-row po-merchant-assign-toolbar">
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-all" data-merchant-id="{{id}}">Assign All</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-none" data-merchant-id="{{id}}">Clear All</button>
+                  </div>
+                  {{#if hasAssignmentRows}}
+                  <div class="po-op-action-row po-merchant-assign-grid">
+                    {{#each assignmentRows}}
+                    <label class="po-merchant-check-option">
+                      <input type="checkbox" data-action="merchant-assign-toggle" data-merchant-id="{{../id}}" data-actor-id="{{actorId}}" {{#if assigned}}checked{{/if}} />
+                      <span>{{actorName}}</span>
+                    </label>
+                    {{/each}}
+                  </div>
+                  {{/if}}
+                  {{/if}}
+                  <div class="po-controls po-merchant-definition-toolbar">
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Open Actor</button>
+                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
+                  </div>
                 </div>
-                {{/if}}
-                {{/if}}
-                <div class="po-controls po-merchant-definition-toolbar">
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-open-actor" data-merchant-id="{{id}}">Open Actor</button>
-                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="merchant-delete" data-merchant-id="{{id}}">Delete</button>
-                </div>
-              </div>
+              </details>
               {{/each}}
             </div>
             {{else}}
