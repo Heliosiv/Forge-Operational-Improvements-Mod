@@ -18,7 +18,7 @@
 
       <section class="po-gm-section po-env-hero po-gm-page-intro">
         <div class="po-env-hero-copy po-gm-page-copy">
-          <div class="po-gm-page-eyebrow">GM Environment</div>
+          <div class="po-gm-page-eyebrow">GM Workspace</div>
           <div class="po-pill">Active Environment</div>
           <h2 class="po-section-title">{{environment.preset.label}}</h2>
           <div class="po-op-summary">{{environment.preset.description}}</div>
@@ -138,6 +138,128 @@
           </div>
         </section>
       </div>
+
+      <section class="po-gm-section po-env-card">
+        <div class="po-collapsible-head">
+          <div>
+            <div class="po-section-title">Weather Control</div>
+            <div class="po-hint">Keep weather logging with the environment workspace instead of a separate GM quick panel.</div>
+          </div>
+          <div class="po-pill">{{weather.currentLabel}}</div>
+        </div>
+
+        <div class="po-env-field-grid is-compact">
+          <label class="po-resource-row">
+            <span>Weather Preset</span>
+            <select name="quickWeatherProfile" class="po-select" data-action="gm-quick-weather-select" {{#unless hasWeatherOptions}}disabled{{/unless}}>
+              {{#each gmQuickTools.weatherOptions}}
+              <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} - {{visibilityLabel}} ({{effectSummary}})</option>
+              {{/each}}
+            </select>
+          </label>
+
+          <label class="po-resource-row">
+            <span>Darkness (0-1)</span>
+            <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" data-action="gm-quick-weather-set" data-field="darkness" value="{{gmQuickTools.weatherDraft.darkness}}" />
+          </label>
+
+          <label class="po-resource-row">
+            <span>Perception Modifier</span>
+            <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" data-action="gm-quick-weather-set" data-field="visibilityModifier" value="{{gmQuickTools.weatherDraft.visibilityModifier}}" />
+          </label>
+
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">Scene Snapshot</span>
+            <span class="po-env-summary-copy">{{gmQuickTools.weatherSceneSnapshot.label}} - Darkness {{gmQuickTools.weatherSceneSnapshot.darkness}} - Visibility {{gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</span>
+          </div>
+        </div>
+
+        <div class="po-op-summary">Preset Effects: {{#each gmQuickTools.weatherOptions}}{{#if selected}}{{daeSummary}}{{/if}}{{/each}}</div>
+
+        <label class="po-resource-row">
+          <span>Log Note</span>
+          <textarea name="quickWeatherNote" rows="3" class="po-input" data-action="gm-quick-weather-set" data-field="note" placeholder="Optional global weather note">{{gmQuickTools.weatherDraft.note}}</textarea>
+        </label>
+
+        <div class="po-section-title">Global DAE Effects</div>
+        {{#if gmQuickTools.weatherDraft.daeChanges.length}}
+        <div class="po-env-change-list">
+          {{#each gmQuickTools.weatherDraft.daeChanges}}
+          <div class="po-env-log-row">
+            <div class="po-env-log-head">
+              <div>
+                <div class="po-env-log-title">{{label}}</div>
+                <div class="po-env-log-meta">{{value}} ({{mode}})</div>
+              </div>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-remove-dae" data-change-id="{{id}}">Remove</button>
+            </div>
+            {{#if note}}
+            <div class="po-op-summary">{{note}}</div>
+            {{/if}}
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="po-op-summary">No global DAE effects on this weather draft yet.</div>
+        {{/if}}
+
+        <div class="po-env-field-grid is-compact">
+          <label class="po-resource-row">
+            <span>DAE Key</span>
+            <input type="text" name="quickWeatherDaeKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.movement.walk" />
+          </label>
+
+          <label class="po-resource-row">
+            <span>Key Presets</span>
+            <select name="quickWeatherDaeKey" class="po-select" data-action="gm-quick-weather-dae-key-preset">
+              <option value="">Select key preset</option>
+              {{#each gmQuickTools.modifierKeyOptions}}
+              <option value="{{value}}">{{label}} - {{value}}</option>
+              {{/each}}
+            </select>
+          </label>
+
+          <label class="po-resource-row">
+            <span>Mode</span>
+            <select name="quickWeatherDaeMode" class="po-select">
+              {{#each gmQuickTools.weatherDaeModeOptions}}
+              <option value="{{value}}">{{label}}</option>
+              {{/each}}
+            </select>
+          </label>
+
+          <label class="po-resource-row">
+            <span>Value</span>
+            <input type="text" name="quickWeatherDaeValue" class="po-input" value="-1" />
+          </label>
+
+          <label class="po-resource-row">
+            <span>Effect Note</span>
+            <input type="text" name="quickWeatherDaeNote" class="po-input" placeholder="Optional effect note" />
+          </label>
+        </div>
+
+        <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-add-dae">Add DAE Effect</button>
+
+        <div class="po-op-divider"></div>
+        <div class="po-env-field-grid is-compact">
+          <label class="po-resource-row">
+            <span>Preset Name</span>
+            <input type="text" name="quickWeatherPresetName" class="po-input" data-action="gm-quick-weather-set" data-field="presetName" value="{{gmQuickTools.weatherDraft.presetName}}" placeholder="e.g., Dust Storm" />
+          </label>
+
+          <div class="po-env-summary-item">
+            <span class="po-env-summary-label">Current Weather</span>
+            <span class="po-env-summary-copy">Visibility {{weather.currentVisibilityModifier}} - Darkness {{weather.currentDarkness}}</span>
+          </div>
+        </div>
+
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
+          <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Custom</button>
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-submit-weather">Log Weather</button>
+        </div>
+      </section>
 
       <details class="po-panel-disclosure po-panel-disclosure-lg" open>
         <summary class="po-panel-disclosure-summary">
@@ -456,6 +578,39 @@
         <section class="po-gm-section po-env-card">
           <div class="po-collapsible-head">
             <div>
+              <div class="po-section-title">Weather Logs</div>
+              <div class="po-hint">Load a previous weather profile back into the active controls or remove it from the session log.</div>
+            </div>
+          </div>
+          {{#if weather.hasLogs}}
+          <div class="po-env-log-list">
+            {{#each weather.logs}}
+            <article class="po-env-log-row">
+              <div class="po-env-log-head">
+                <div>
+                  <div class="po-env-log-title">{{label}}</div>
+                  <div class="po-env-log-meta">Visibility {{visibilityModifier}} â€¢ Darkness {{darkness}}</div>
+                </div>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm" data-action="load-weather-log" data-log-id="{{id}}">Load</button>
+                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-weather-log" data-log-id="{{id}}">Remove</button>
+                </div>
+              </div>
+              <div class="po-op-summary">{{loggedAtLabel}} by {{loggedBy}}</div>
+              {{#if note}}
+              <div class="po-op-summary">Note: {{note}}</div>
+              {{/if}}
+            </article>
+            {{/each}}
+          </div>
+          {{else}}
+          <div class="po-op-summary">No weather logs yet.</div>
+          {{/if}}
+        </section>
+
+        <section class="po-gm-section po-env-card">
+          <div class="po-collapsible-head">
+            <div>
               <div class="po-section-title">Environment Logs</div>
               <div class="po-hint">Load a previous setup back into the active controls.</div>
             </div>
@@ -522,6 +677,11 @@
 
   <datalist id="po-env-dae-key-options">
     {{#each environment.configure.daeKeyOptions}}
+    <option value="{{value}}" label="{{label}}"></option>
+    {{/each}}
+  </datalist>
+  <datalist id="po-party-mod-key-options">
+    {{#each gmQuickTools.modifierKeyOptions}}
     <option value="{{value}}" label="{{label}}"></option>
     {{/each}}
   </datalist>

@@ -8737,6 +8737,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "gm-panel-tab": async () => {
+          const panelKey = String(element?.dataset?.panel ?? "").trim().toLowerCase();
+          if (panelKey) {
+            openGmPanelByKey(panelKey, { force: true });
+            return;
+          }
           setActiveGmPanelTab(element?.dataset?.tab);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
@@ -9507,6 +9512,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 }
 
 function buildGlobalModifierSummaryContext() {
+  const operations = getStandaloneOpsContext();
   const ledger = getOperationsLedger();
   const roleKeys = ["quartermaster", "cartographer", "chronicler", "steward"];
   const sopKeys = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
@@ -9567,6 +9573,14 @@ function buildGlobalModifierSummaryContext() {
       excluded
     };
   });
+  const gmQuickTools = operations?.gmQuickTools ?? {
+    modifierModeOptions: [],
+    modifierKeyOptions: [],
+    stagedModifierQueue: [],
+    hasStagedModifierQueue: false,
+    modifierAddLog: [],
+    hasModifierAddLog: false
+  };
 
   return {
     moduleVersion: getCurrentModuleVersion(),
@@ -9575,6 +9589,7 @@ function buildGlobalModifierSummaryContext() {
     globalRows,
     partyRows,
     exclusionRows,
+    gmQuickTools,
     hasGlobalRows: globalRows.length > 0,
     hasPartyRows: partyRows.length > 0,
     hasExclusionRows: exclusionRows.length > 0,
@@ -9651,8 +9666,18 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         generatedBy: String(game.user?.name ?? "GM"),
         globalRows: [],
         partyRows: [],
+        exclusionRows: [],
+        gmQuickTools: {
+          modifierModeOptions: [],
+          modifierKeyOptions: [],
+          stagedModifierQueue: [],
+          hasStagedModifierQueue: false,
+          modifierAddLog: [],
+          hasModifierAddLog: false
+        },
         hasGlobalRows: false,
         hasPartyRows: false,
+        hasExclusionRows: false,
         hasAnyRows: false
       };
     }
@@ -9694,6 +9719,17 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         }
       };
 
+      const bindInputOnce = (selector, handler) => {
+        const elements = Array.from(this.element.querySelectorAll(selector));
+        for (const element of elements) {
+          if (element.dataset.poBoundInput === "1") continue;
+          element.dataset.poBoundInput = "1";
+          element.addEventListener("input", (event) => {
+            void handler(event, element);
+          });
+        }
+      };
+
       bindClickOnce("[data-action='global-modifiers-back']", async (event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -9721,6 +9757,53 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         const modifierId = String(element?.dataset?.modifierId ?? "").trim();
         const excluded = Boolean(element?.checked);
         await setGlobalModifierExcluded(modifierId, excluded, { skipLocalRefresh: true });
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindInputOnce("[data-action='gm-quick-modifier-key-filter']", (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        filterModifierPresetSelect(element, "quickGlobalModifierKey");
+      });
+
+      bindChangeOnce("[data-action='gm-quick-modifier-key-preset']", (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        gmQuickApplyModifierKeyPreset(element);
+      });
+
+      bindClickOnce("[data-action='gm-quick-submit-modifier']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await gmQuickSubmitModifier(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindClickOnce("[data-action='gm-quick-save-modifier']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await gmQuickSaveModifier(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindChangeOnce("[data-action='gm-quick-set-staged-field']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await gmQuickSetStagedModifierField(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindClickOnce("[data-action='gm-quick-delete-staged-modifier']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await gmQuickDeleteStagedModifier(element);
+        this.#renderWithPreservedState({ force: true, parts: ["main"] });
+      });
+
+      bindClickOnce("[data-action='gm-quick-delete-saved-modifier']", async (event, element) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await gmQuickDeleteSavedModifier(element);
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
     }
@@ -10023,8 +10106,10 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
 
   let app = null;
   if (key === "faction") {
-    setActiveGmQuickPanel("faction");
-    app = openMainTab("gm", { ...renderOptions, suppressHistory });
+    setActiveGmQuickPanel("none");
+    setActiveRestMainTab("operations");
+    setActiveOperationsPage("reputation");
+    app = openMainTab("operations", { ...renderOptions, suppressHistory });
   } else if (key === "global-modifiers") {
     app = openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
   } else if (key === "environment") {
@@ -10214,6 +10299,8 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   gmQuickSelectWeatherPreset,
   gmQuickUpdateWeatherDraftField,
   gmQuickApplyWeatherDaeKeyPreset,
+  loadWeatherLogToQuickPanel,
+  removeWeatherLogById,
   openGmPanelByKey
 });
 

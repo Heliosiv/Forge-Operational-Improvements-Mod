@@ -42,6 +42,8 @@ export function createGmEnvironmentPageApp(deps) {
     gmQuickSelectWeatherPreset,
     gmQuickUpdateWeatherDraftField,
     gmQuickApplyWeatherDaeKeyPreset,
+    loadWeatherLogToQuickPanel,
+    removeWeatherLogById,
     openGmPanelByKey
   } = deps;
 
@@ -90,7 +92,7 @@ export function createGmEnvironmentPageApp(deps) {
     }
 
     _getActionHandlers() {
-      const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
+      const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
       const rerenderUnlessInput = (operation) => async (actionElement, event) => {
         await operation(actionElement, event);
         if (event?.type !== "input") rerender();
@@ -144,7 +146,9 @@ export function createGmEnvironmentPageApp(deps) {
         },
         "gm-quick-weather-dae-key-preset": async (actionElement) => {
           gmQuickApplyWeatherDaeKeyPreset(actionElement);
-        }
+        },
+        "load-weather-log": rerenderIfTruthy((actionElement) => loadWeatherLogToQuickPanel(actionElement?.dataset?.logId)),
+        "remove-weather-log": rerenderIfTruthy((actionElement) => removeWeatherLogById(actionElement?.dataset?.logId))
       };
     }
   };

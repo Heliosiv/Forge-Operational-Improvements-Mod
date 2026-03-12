@@ -1723,282 +1723,151 @@
 
         {{#if @root.isGM}}
         {{#if operationsPageGm}}
-        <div id="po-gm-quick-actions" class="po-gm-section po-gm-quick-actions">
-          <div class="po-section-title">GM Quick Actions</div>
-          <details class="po-panel-disclosure">
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Quick Actions Guide</span>
-              <span class="po-op-summary">How to activate and what each action does</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <div class="po-hint">Use any button below to open its matching page or quick tool. All actions are GM-only.</div>
-              <div class="po-op-summary"><strong>+ Faction:</strong> Opens the Reputation &amp; Factions builder page.</div>
-              <div class="po-op-summary"><strong>Global Modifiers:</strong> Opens a read-only page showing currently applied global and party modifiers.</div>
-              <div class="po-op-summary"><strong>Environment:</strong> Opens a dedicated GM Environment page.</div>
-              <div class="po-op-summary"><strong>Downtime:</strong> Opens a dedicated GM Downtime page for tuning, result editing, and sorting.</div>
-              <div class="po-op-summary"><strong>Merchants:</strong> Opens the standalone GM Merchant Editor page.</div>
-              <div class="po-op-summary"><strong>Loot:</strong> Opens a dedicated GM Loot page.</div>
-              <div class="po-op-summary"><strong>Quick Weather Presets:</strong> Expand the weather disclosure below to record scene weather, visibility, darkness, and optional DAE effects.</div>
-              <div class="po-op-summary"><strong>Automation & Sync Settings:</strong> Contains Sync Effects, Run Autopilot, and Undo Autopilot.</div>
-              <div class="po-op-summary"><strong>Tip:</strong> Use <em>Cancel</em> inside any quick panel to close it without saving.</div>
+        <div id="po-gm-workspace" class="po-gm-shell po-gm-workspace-shell">
+          {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs"}}
+
+          <section class="po-gm-section po-gm-page-intro po-gm-workspace-intro">
+            <div class="po-gm-page-copy">
+              <div class="po-gm-page-eyebrow">GM Workspace</div>
+              <div class="po-section-title">Use one expanded shell for every GM system instead of a separate quick-action launcher.</div>
+              <div class="po-hint">Open environment, modifiers, downtime, merchants, audio, and loot from the tabs above. Each workspace now keeps the same header rhythm, spacing, and card treatment.</div>
             </div>
-          </details>
-          <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-            <button type="button" class="po-tab" data-action="gm-quick-add-faction">+ Faction</button>
-            <button type="button" class="po-tab {{#if operations.gmQuickTools.showModifierPanel}}is-active{{/if}}" data-action="gm-quick-add-modifier">Global Modifiers</button>
-            <button type="button" class="po-tab" data-action="gm-quick-open-environment">Environment</button>
-            <button type="button" class="po-tab" data-action="gm-quick-open-downtime">Downtime</button>
-            <button type="button" class="po-tab" data-action="gm-quick-open-merchants">Merchants</button>
-            <button type="button" class="po-tab" data-action="gm-quick-open-audio">Audio</button>
-            <button type="button" class="po-tab" data-action="gm-quick-open-loot">Loot</button>
-          </div>
-          <div class="po-two-col po-gm-quick-panels">
-          <div class="po-col">
-          <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showModifierPanel}}open{{/if}}>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Quick Add Global Modifier</span>
-              <span class="po-op-summary">Create party-wide modifier entries</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-            <label class="po-resource-row">
-              <span>Label</span>
-              <input type="text" name="quickGlobalModifierLabel" class="po-input" value="Custom Modifier" />
-            </label>
-            <label class="po-resource-row">
-              <span>Key Preset Filter</span>
-              <input type="text" name="quickGlobalModifierKeyFilter" class="po-input" data-action="gm-quick-modifier-key-filter" placeholder="Filter key presets" />
-            </label>
-            <label class="po-resource-row">
-              <span>Key Presets</span>
-              <select name="quickGlobalModifierKey" class="po-select" data-action="gm-quick-modifier-key-preset">
-                <option value="">Select key preset</option>
-                {{#each operations.gmQuickTools.modifierKeyOptions}}
-                <option value="{{value}}">{{label}} - {{value}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Mode</span>
-              <select name="quickGlobalModifierMode" class="po-select">
-                {{#each operations.gmQuickTools.modifierModeOptions}}
-                <option value="{{value}}">{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Value</span>
-              <input type="text" name="quickGlobalModifierValue" class="po-input" value="1" />
-            </label>
-            <label class="po-resource-row po-notes-row-lg">
-              <span>Notes</span>
-              <textarea name="quickGlobalModifierNote" rows="3" class="po-input" placeholder="What this modifier does for the party"></textarea>
-            </label>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-modifier">Add Modifier</button>
-              <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-save-modifier">Save modifier</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
+            <div class="po-gm-page-stat-grid" role="list" aria-label="GM workspace summary">
+              <div class="po-gm-page-stat" role="listitem">
+                <span>Environment</span>
+                <strong>{{operations.environment.preset.label}}</strong>
+              </div>
+              <div class="po-gm-page-stat" role="listitem">
+                <span>Weather</span>
+                <strong>{{operations.weather.currentLabel}}</strong>
+              </div>
+              <div class="po-gm-page-stat" role="listitem">
+                <span>Downtime</span>
+                <strong>{{operations.downtime.pendingCount}} pending</strong>
+              </div>
+              <div class="po-gm-page-stat" role="listitem">
+                <span>Sync</span>
+                <strong>{{operations.nonPartySync.integrationModeLabel}}</strong>
+              </div>
             </div>
-            <details class="po-panel-disclosure">
-              <summary class="po-panel-disclosure-summary">
-                <span class="po-section-title">Drafted Stack & Saved History</span>
-                <span class="po-op-summary">Draft entries can be edited before publishing</span>
-              </summary>
-              <div class="po-panel-disclosure-body">
-                <div class="po-op-summary"><strong>Total drafted modifiers:</strong> {{operations.gmQuickTools.stagedModifierQueue.length}}</div>
-                {{#if operations.gmQuickTools.hasStagedModifierQueue}}
-                {{#each operations.gmQuickTools.stagedModifierQueue}}
-                <div class="po-op-role-row">
-                  <div class="po-op-summary">Drafted: {{label}} | {{key}} | {{modeLabel}} {{value}} | {{createdAtLabel}} by {{createdBy}}</div>
-                  <label class="po-resource-row">
-                    <span>Label</span>
-                    <input type="text" class="po-input" value="{{label}}" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="label" />
-                  </label>
-                  <label class="po-resource-row">
-                    <span>Key Preset</span>
-                    <select class="po-select" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="key">
-                      {{#each keyOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
-                      {{/each}}
-                    </select>
-                  </label>
-                  <label class="po-resource-row">
-                    <span>Mode</span>
-                    <select class="po-select" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="mode">
-                      {{#each modeOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                      {{/each}}
-                    </select>
-                  </label>
-                  <label class="po-resource-row">
-                    <span>Value</span>
-                    <input type="text" class="po-input" value="{{value}}" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="value" />
-                  </label>
-                  <label class="po-resource-row po-notes-row-lg">
-                    <span>Notes</span>
-                    <textarea rows="2" class="po-input" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="note">{{note}}</textarea>
-                  </label>
-                  <div class="po-op-action-row">
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-delete-staged-modifier" data-staged-id="{{id}}">Delete</button>
-                  </div>
+          </section>
+
+          <div class="po-gm-workspace-grid">
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Environment</div>
+                  <div class="po-hint">Hazards, weather, checks, and runtime scene pressure.</div>
                 </div>
-                {{/each}}
-                {{else}}
-                <div class="po-op-summary">No drafted modifiers yet.</div>
-                {{/if}}
-                <div class="po-op-divider"></div>
-                <div class="po-section-title">Recent Saved Modifiers</div>
-                {{#if operations.gmQuickTools.hasModifierAddLog}}
-                {{#each operations.gmQuickTools.modifierAddLog}}
-                <div class="po-op-role-row">
-                  <div class="po-op-summary">{{originLabel}}: {{label}} | {{key}} | {{modeLabel}} {{value}} | {{createdAtLabel}} by {{createdBy}}</div>
-                  <div class="po-op-action-row">
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-delete-saved-modifier" data-custom-id="{{customModifierId}}" data-log-id="{{id}}">Delete</button>
-                  </div>
+                <div class="po-pill">{{operations.environment.preset.label}}</div>
+              </div>
+              <div class="po-op-summary">{{operations.environment.preset.description}}</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Action {{operations.environment.actionLabel}}</span>
+                <span class="po-pill">Check {{operations.environment.checkLabel}}</span>
+                <span class="po-pill">Weather {{operations.weather.currentLabel}}</span>
+              </div>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Global Modifiers</div>
+                  <div class="po-hint">Review derived effects, stage party overrides, and track exclusions.</div>
                 </div>
-                {{/each}}
-                {{else}}
-                <div class="po-op-summary">No saved modifiers yet.</div>
-                {{/if}}
+                <div class="po-pill">{{operations.summary.effects.globalModifierRows.length}} total</div>
               </div>
-            </details>
-            </div>
-          </details>
-          </div>
-          <div class="po-col">
-          <details class="po-panel-disclosure">
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Downtime Tuning</span>
-              <span class="po-op-summary">Moved to standalone GM page</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-              <div class="po-hint">Open the GM Downtime page to tune settings, resolve pending actions, edit completed results, and sort entries/logs.</div>
-              <div class="po-info-strip">
-                <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
-                <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
-                <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
-                <div class="po-info-chip"><span>Recent Logs</span><strong>{{operations.downtime.logCount}}</strong></div>
+              <div class="po-op-summary">Party-wide modifier authoring now lives under the Global Modifiers tab instead of a separate quick panel.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Derived {{operations.summary.effects.derivedModifierRows.length}}</span>
+                <span class="po-pill">Custom {{operations.summary.effects.customModifierRows.length}}</span>
+                <span class="po-pill">Tracked {{operations.summary.effects.globalModifierRows.length}}</span>
               </div>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-downtime">Open GM Downtime Page</button>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Downtime</div>
+                  <div class="po-hint">Tune hours, resolve submissions, and keep recent logs in one queue.</div>
+                </div>
+                <div class="po-pill">{{operations.downtime.hoursGranted}} hours</div>
               </div>
-            </div>
-          </details>
-          </div>
-          <div class="po-col">
-          <details class="po-panel-disclosure">
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Automation & Sync Settings</span>
-              <span class="po-op-summary">Session automation and integration controls</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
+              <div class="po-op-summary">{{operations.downtime.pendingCount}} pending, {{operations.downtime.resolvedCount}} resolved, {{operations.downtime.logCount}} recent log entries.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Pending {{operations.downtime.pendingCount}}</span>
+                <span class="po-pill">Resolved {{operations.downtime.resolvedCount}}</span>
+                <span class="po-pill">Logs {{operations.downtime.logCount}}</span>
+              </div>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Merchants</div>
+                  <div class="po-hint">Locations, stock generation, access rules, and live shop sessions.</div>
+                </div>
+                <div class="po-pill">{{operations.merchants.gm.totalDefinitionCount}} configured</div>
+              </div>
+              <div class="po-op-summary">{{operations.merchants.gm.savedLocationCatalogCount}} locations in the catalog and {{operations.merchants.gm.sourceTaxonomy.itemCount}} tagged items in the current schema.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Locations {{operations.merchants.gm.savedLocationCatalogCount}}</span>
+                <span class="po-pill">Schema {{operations.merchants.gm.sourceTaxonomy.schemaLabel}}</span>
+              </div>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Audio</div>
+                  <div class="po-hint">Library scans, folder taxonomy, and the live mix table.</div>
+                </div>
+                <div class="po-pill">{{operations.audio.summary.trackCount}} tracks</div>
+              </div>
+              <div class="po-op-summary">Catalog updated {{operations.audio.summary.scannedAtLabel}} by {{operations.audio.summary.scannedBy}}.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Kinds {{operations.audio.summary.kindCount}}</span>
+                <span class="po-pill">Usages {{operations.audio.summary.usageCount}}</span>
+                <span class="po-pill">Hidden {{operations.audio.summary.hiddenCount}}</span>
+              </div>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Loot</div>
+                  <div class="po-hint">Builder controls, source tuning, and claim board publishing.</div>
+                </div>
+                <div class="po-pill">{{operations.lootClaims.openRunCount}} open run(s)</div>
+              </div>
+              <div class="po-op-summary">{{operations.lootSources.summary.enabledItemPacks}} item packs and {{operations.lootSources.summary.enabledTables}} roll tables are active in the registry.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Packs {{operations.lootSources.summary.enabledItemPacks}} / {{operations.lootSources.summary.totalItemPacks}}</span>
+                <span class="po-pill">Tables {{operations.lootSources.summary.enabledTables}} / {{operations.lootSources.summary.totalTables}}</span>
+                <span class="po-pill">Claims {{operations.lootClaims.archivedRunCount}} archived</span>
+              </div>
+            </section>
+
+            <section class="po-gm-section po-gm-workspace-card po-gm-session-card">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Session Control</div>
+                  <div class="po-hint">Keep settings, sync, and autopilot in one clean card instead of the old GM launcher.</div>
+                </div>
+                <div class="po-pill">{{operations.nonPartySync.enabledLabel}}</div>
+              </div>
               <div class="po-op-summary"><strong>Integration Mode:</strong> {{operations.nonPartySync.integrationModeLabel}}</div>
               <div class="po-op-summary"><strong>Non-Party Sync Scope:</strong> {{operations.nonPartySync.scopeLabel}}</div>
-              <div class="po-op-action-row">
+              <div class="po-op-summary"><strong>Managed Effects:</strong> {{operations.nonPartySync.syncedCount}}</div>
+              <div class="po-op-action-row po-gm-session-actions">
+                <button type="button" class="po-btn po-btn-sm" data-action="open-settings-hub">Open Settings Hub</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>
               </div>
-              <div class="po-hint">Use these from settings when you want a manual sync or full session-cycle automation with undo support.</div>
-            </div>
-          </details>
+            </section>
           </div>
-          <div class="po-col">
-          <details class="po-panel-disclosure" {{#if operations.gmQuickTools.showWeatherPanel}}open{{/if}}>
-            <summary class="po-panel-disclosure-summary">
-              <span class="po-section-title">Quick Weather Presets</span>
-              <span class="po-op-summary">Current: {{operations.weather.currentLabel}}</span>
-            </summary>
-            <div class="po-panel-disclosure-body">
-            <div class="po-op-summary">Scene Darkness {{operations.gmQuickTools.weatherSceneSnapshot.darkness}} - Scene Visibility {{operations.gmQuickTools.weatherSceneSnapshot.visibilityModifier}}</div>
-            <label class="po-resource-row">
-              <span>Weather Preset</span>
-              <select name="quickWeatherProfile" class="po-select" data-action="gm-quick-weather-select">
-                {{#each operations.gmQuickTools.weatherOptions}}
-                <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}} - {{visibilityLabel}} ({{effectSummary}})</option>
-                {{/each}}
-              </select>
-            </label>
-            <div class="po-op-summary">Preset Effects: {{#each operations.gmQuickTools.weatherOptions}}{{#if selected}}{{daeSummary}}{{/if}}{{/each}}</div>
-            <label class="po-resource-row">
-              <span>Darkness (0-1)</span>
-              <input type="number" min="0" max="1" step="0.05" name="quickWeatherDarkness" class="po-input" data-action="gm-quick-weather-set" data-field="darkness" value="{{operations.gmQuickTools.weatherDraft.darkness}}" />
-            </label>
-            <label class="po-resource-row">
-              <span>Perception Modifier</span>
-              <input type="number" min="-5" max="5" step="1" name="quickWeatherVisibility" class="po-input" data-action="gm-quick-weather-set" data-field="visibilityModifier" value="{{operations.gmQuickTools.weatherDraft.visibilityModifier}}" />
-            </label>
-            <label class="po-resource-row po-notes-row-lg">
-              <span>Log Note</span>
-              <textarea name="quickWeatherNote" rows="3" class="po-input" data-action="gm-quick-weather-set" data-field="note" placeholder="Optional global weather note">{{operations.gmQuickTools.weatherDraft.note}}</textarea>
-            </label>
-            <div class="po-op-divider"></div>
-            <div class="po-section-title">Global DAE Effects</div>
-            {{#if operations.gmQuickTools.weatherDraft.daeChanges.length}}
-            {{#each operations.gmQuickTools.weatherDraft.daeChanges}}
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status">{{value}} ({{mode}})</div>
-              </div>
-              {{#if note}}<div class="po-op-summary">{{note}}</div>{{/if}}
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-remove-dae" data-change-id="{{id}}">Remove Effect</button>
-            </div>
-            {{/each}}
-            {{else}}
-            <div class="po-op-summary">No global DAE effects on this weather draft yet.</div>
-            {{/if}}
-            <label class="po-resource-row">
-              <span>DAE Key</span>
-              <input type="text" name="quickWeatherDaeKeyInput" list="po-party-mod-key-options" class="po-input" placeholder="system.attributes.movement.walk" />
-            </label>
-            <label class="po-resource-row">
-              <span>Key Presets</span>
-              <select name="quickWeatherDaeKey" class="po-select" data-action="gm-quick-weather-dae-key-preset">
-                <option value="">Select key preset</option>
-                {{#each operations.gmQuickTools.modifierKeyOptions}}
-                <option value="{{value}}">{{label}} - {{value}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Mode</span>
-              <select name="quickWeatherDaeMode" class="po-select">
-                {{#each operations.gmQuickTools.weatherDaeModeOptions}}
-                <option value="{{value}}">{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Value</span>
-              <input type="text" name="quickWeatherDaeValue" class="po-input" value="-1" />
-            </label>
-            <label class="po-resource-row">
-              <span>Effect Note</span>
-              <input type="text" name="quickWeatherDaeNote" class="po-input" placeholder="Optional effect note" />
-            </label>
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-add-dae">Add DAE Effect</button>
-            <div class="po-op-divider"></div>
-            <div class="po-section-title">Custom Preset</div>
-            <label class="po-resource-row">
-              <span>Preset Name</span>
-              <input type="text" name="quickWeatherPresetName" class="po-input" data-action="gm-quick-weather-set" data-field="presetName" value="{{operations.gmQuickTools.weatherDraft.presetName}}" placeholder="e.g., Dust Storm" />
-            </label>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-weather-save-preset">Save Custom Preset</button>
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-weather-delete-preset">Delete Custom</button>
-            </div>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-weather">Log Weather</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-cancel-panel">Cancel</button>
-            </div>
-            </div>
-          </details>
-          </div>
-          </div>
-        <div class="po-op-summary">Weather: {{operations.weather.currentLabel}} - Visibility Modifier {{operations.weather.currentVisibilityModifier}} - Darkness {{operations.weather.currentDarkness}}</div>
         </div>
-
-        <div class="po-op-summary">Environment, Merchants, and Loot controls were moved to standalone pages. Use the GM Quick Actions buttons above.</div>
 
         
         {{/if}}

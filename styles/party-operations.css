@@ -6052,11 +6052,6 @@
   align-items: start;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] .po-gm-loot-summary-grid {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px;
-}
-
 .party-operations .po-window[data-tool="gm-loot"] .po-gm-loot-settings-pane {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -6363,32 +6358,6 @@
   gap: 12px;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero {
-  position: relative;
-  overflow: hidden;
-  gap: 14px;
-  padding: 18px;
-  border-color: color-mix(in srgb, var(--po-accent) 35%, var(--po-border));
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--po-accent) 22%, transparent), transparent 42%),
-    radial-gradient(circle at 82% 20%, color-mix(in srgb, #f2c26b 14%, transparent), transparent 28%),
-    linear-gradient(145deg, color-mix(in srgb, var(--po-bg-alt) 88%, transparent), color-mix(in srgb, var(--po-surface) 78%, transparent));
-  box-shadow: 0 12px 30px color-mix(in srgb, black 24%, transparent);
-}
-
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero::after {
-  content: "";
-  position: absolute;
-  inset: -20% auto auto 52%;
-  width: 260px;
-  height: 260px;
-  border-radius: 50%;
-  background: radial-gradient(circle, color-mix(in srgb, var(--po-accent) 18%, white 8%), transparent 68%);
-  opacity: 0.7;
-  pointer-events: none;
-  animation: po-loot-hero-glow 7.5s ease-in-out infinite;
-}
-
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-eyebrow {
   font-size: 0.72rem;
   text-transform: uppercase;
@@ -6396,14 +6365,6 @@
   color: color-mix(in srgb, var(--po-accent-contrast) 78%, var(--po-muted));
 }
 
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero-copy {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 6px;
-}
-
-.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero-actions,
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-status,
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-filter-overview {
   display: flex;
@@ -6783,11 +6744,6 @@
 .party-operations .po-window[data-tool="gm-loot"] .po-gm-loot-type-grid {
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
-}
-
-@keyframes po-loot-hero-glow {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.58; }
-  50% { transform: translate3d(-12px, 10px, 0) scale(1.08); opacity: 0.86; }
 }
 
 @media (max-width: 900px) {

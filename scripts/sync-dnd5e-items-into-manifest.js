@@ -475,6 +475,11 @@ function inferMerchantCategories(item = {}) {
     categories.add("treasure");
     categories.add("luxury");
   }
+  if (/\b(painting|portrait|tapestry|triptych|mosaic|statuette|idol|bust|sculpture|urn|chalice|reliquary)\b/i.test(name)) {
+    categories.add("art");
+    categories.add("treasure");
+    categories.add("luxury");
+  }
   if (/\b(ring|necklace|pendant|broach|brooch|jewelry|jewel|coin|token|charm)\b/i.test(name)) {
     categories.add("jewelry");
     categories.add("treasure");
@@ -735,6 +740,20 @@ function inferSundriesSectionPlacement(item = {}, categories = [], magical = fal
       label: "Storage Gear",
       sort: 6110
     });
+  }
+
+  if (categorySet.has("art")) {
+    let leaf = { key: "decorative-finery", label: "Decorative Finery", sort: 6280 };
+    if (/\b(painting|portrait|tapestry|triptych|mosaic)\b/i.test(name)) {
+      leaf = { key: "wall-art", label: "Wall Art", sort: 6260 };
+    } else if (/\b(statuette|idol|bust|sculpture)\b/i.test(name)) {
+      leaf = { key: "sculptures-idols", label: "Sculptures & Idols", sort: 6270 };
+    }
+    return buildFolderPlacementFromSegments("sundries", {
+      key: "art-objects",
+      label: "Art Objects",
+      sort: 6250
+    }, leaf);
   }
 
   if (categorySet.has("gem") || categorySet.has("jewelry") || categorySet.has("treasure") || categorySet.has("luxury")) {

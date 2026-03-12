@@ -18,21 +18,16 @@
 
       <section class="po-gm-section po-loot-hero po-gm-page-intro">
         <div class="po-loot-hero-copy po-gm-page-copy">
-          <div class="po-loot-eyebrow po-gm-page-eyebrow">GM Loot</div>
-          <div class="po-section-title">Build treasure, tune sources, and publish claims with confidence.</div>
-          <div class="po-hint">Shape the encounter profile, keep the output on-budget, then send a polished claim board straight to the party.</div>
+          <div class="po-loot-eyebrow po-gm-page-eyebrow">GM Workspace</div>
+          <div class="po-section-title">Loot Workspace</div>
+          <div class="po-hint">Build treasure, tune registry sources, and keep player claim boards aligned with the same shell used across the rest of the GM workspace.</div>
         </div>
-        <div class="po-loot-hero-actions">
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
-          <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
+        <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Loot workspace summary">
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Packs Live</span><strong>{{operations.lootSources.summary.enabledItemPacks}} / {{operations.lootSources.summary.totalItemPacks}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tables Ready</span><strong>{{operations.lootSources.summary.enabledTables}} / {{operations.lootSources.summary.totalTables}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tag Schema</span><strong>{{operations.lootSources.summary.tagSchemaLabel}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Claims Open</span><strong>{{operations.lootClaims.openRunCount}} open / {{operations.lootClaims.archivedRunCount}} archived</strong></div>
         </div>
-        <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Loot source summary">
-          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Packs Live</span><strong>{{sourceSummary.enabledItemPacks}} / {{sourceSummary.totalItemPacks}}</strong></div>
-          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tables Ready</span><strong>{{sourceSummary.enabledTables}} / {{sourceSummary.totalTables}}</strong></div>
-          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tag Schema</span><strong>{{sourceSummary.tagSchemaLabel}}</strong></div>
-          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Claims Open</span><strong>{{lootClaims.openRunCount}} open / {{lootClaims.archivedRunCount}} archived</strong></div>
-        </div>
-        <div class="po-op-summary po-gm-loot-updated">Registry updated {{sourceSummary.updatedAtLabel}} by {{sourceSummary.updatedBy}}</div>
       </section>
 
       <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-gm-subtabs" aria-label="Loot workspace tabs">
