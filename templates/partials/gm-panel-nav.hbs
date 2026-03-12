@@ -1,0 +1,30 @@
+<div class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" aria-label="GM panel navigation">
+  <button type="button" class="po-tab po-gm-nav-tab is-utility" data-action="gm-panel-tab" data-panel="faction">
+    <span class="po-gm-tab-title">Add Faction</span>
+    <span class="po-gm-tab-sub">Create a new faction entry</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isGlobalModifiers}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="global-modifiers">
+    <span class="po-gm-tab-title">Global Modifiers</span>
+    <span class="po-gm-tab-sub">Review derived party-wide effects</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isEnvironment}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="environment">
+    <span class="po-gm-tab-title">Environment</span>
+    <span class="po-gm-tab-sub">Hazards, checks, and presets</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime">
+    <span class="po-gm-tab-title">Downtime</span>
+    <span class="po-gm-tab-sub">Entries, tuning, and resolution</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants">
+    <span class="po-gm-tab-title">Merchants</span>
+    <span class="po-gm-tab-sub">Locations, stock, and shop flow</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio">
+    <span class="po-gm-tab-title">Audio</span>
+    <span class="po-gm-tab-sub">Library scans and live mixes</span>
+  </button>
+  <button type="button" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot">
+    <span class="po-gm-tab-title">Loot</span>
+    <span class="po-gm-tab-sub">Builder, sources, and claims</span>
+  </button>
+</div>

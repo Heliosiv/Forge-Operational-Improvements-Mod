@@ -13,20 +13,12 @@
   </header>
 
   <div class="po-body">
-    <section class="po-content" id="po-panel-gm-loot-page">
-      <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="faction">+ Faction</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="global-modifiers">Global Modifiers</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="environment">Environment</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="downtime">Downtime</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="merchants">Merchants</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
-        <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="loot">Loot</button>
-      </div>
+    <section class="po-content po-gm-shell" id="po-panel-gm-loot-page">
+      {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isLoot=true}}
 
-      <section class="po-gm-section po-loot-hero">
-        <div class="po-loot-hero-copy">
-          <div class="po-loot-eyebrow">GM Loot Workspace</div>
+      <section class="po-gm-section po-loot-hero po-gm-page-intro">
+        <div class="po-loot-hero-copy po-gm-page-copy">
+          <div class="po-loot-eyebrow po-gm-page-eyebrow">GM Loot</div>
           <div class="po-section-title">Build treasure, tune sources, and publish claims with confidence.</div>
           <div class="po-hint">Shape the encounter profile, keep the output on-budget, then send a polished claim board straight to the party.</div>
         </div>
@@ -34,16 +26,16 @@
           <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
           <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board">Open Live Claim Board</button>
         </div>
-        <div class="po-gm-loot-summary-grid" role="list" aria-label="Loot source summary">
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Packs Live</span><strong>{{sourceSummary.enabledItemPacks}} / {{sourceSummary.totalItemPacks}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Tables Ready</span><strong>{{sourceSummary.enabledTables}} / {{sourceSummary.totalTables}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Tag Schema</span><strong>{{sourceSummary.tagSchemaLabel}}</strong></div>
-          <div class="po-gm-loot-summary-chip" role="listitem"><span>Claims Open</span><strong>{{lootClaims.openRunCount}} open / {{lootClaims.archivedRunCount}} archived</strong></div>
+        <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Loot source summary">
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Packs Live</span><strong>{{sourceSummary.enabledItemPacks}} / {{sourceSummary.totalItemPacks}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tables Ready</span><strong>{{sourceSummary.enabledTables}} / {{sourceSummary.totalTables}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tag Schema</span><strong>{{sourceSummary.tagSchemaLabel}}</strong></div>
+          <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Claims Open</span><strong>{{lootClaims.openRunCount}} open / {{lootClaims.archivedRunCount}} archived</strong></div>
         </div>
         <div class="po-op-summary po-gm-loot-updated">Registry updated {{sourceSummary.updatedAtLabel}} by {{sourceSummary.updatedBy}}</div>
       </section>
 
-      <div class="po-tabs po-tabs-sub po-loot-mode-tabs" aria-label="Loot workspace tabs">
+      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-gm-subtabs" aria-label="Loot workspace tabs">
         <button type="button" class="po-tab {{#if operations.lootSources.registryTabPreview}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="preview">Builder</button>
         <button type="button" class="po-tab {{#if operations.lootSources.registryTabSettings}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="settings">Settings</button>
       </div>
@@ -307,7 +299,7 @@
           </div>
         </section>
 
-        <div class="po-tabs po-tabs-sub po-loot-settings-tabs" aria-label="Loot settings tabs">
+        <div class="po-tabs po-tabs-sub po-loot-settings-tabs po-gm-subtabs" aria-label="Loot settings tabs">
           <button type="button" class="po-tab {{#if operations.lootSources.settingsTabSources}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="sources">Sources <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemPacks}}/{{sourceSummary.totalItemPacks}}</span></button>
           <button type="button" class="po-tab {{#if operations.lootSources.settingsTabTables}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="tables">Tables <span class="po-loot-settings-tab-count">{{sourceSummary.enabledTables}}/{{sourceSummary.totalTables}}</span></button>
           <button type="button" class="po-tab {{#if operations.lootSources.settingsTabFilters}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="filters">Filters <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemTypes}}/{{sourceSummary.totalItemTypes}}</span></button>

@@ -13,33 +13,62 @@
   </header>
 
   <div class="po-body">
-    <section class="po-content" id="po-panel-gm-merchants-page">
-      <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="faction">+ Faction</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="global-modifiers">Global Modifiers</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="environment">Environment</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="downtime">Downtime</button>
-        <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="merchants">Merchants</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="loot">Loot</button>
-      </div>
-      <div id="po-gm-merchants" class="po-gm-section po-merchants-page">
-        {{#if merchants.gm.viewTabHasEditorToolbar}}
-        <div class="po-merchants-hero">
-          <div class="po-merchants-hero-copy">
-            <div class="po-section-title">Merchant Workspace - {{merchants.gm.editorSelectionLabel}}</div>
-            <div class="po-hint">Edit merchant identity, Party Operations stock tags, and pricing balance in one workspace. Saving clears this editor so you can load another configured merchant explicitly.</div>
+    <section class="po-content po-gm-shell" id="po-panel-gm-merchants-page">
+      {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isMerchants=true}}
+
+      <section class="po-gm-section po-merchants-hero po-gm-page-intro">
+        <div class="po-merchants-hero-copy po-gm-page-copy">
+          <div class="po-gm-page-eyebrow">GM Merchants</div>
+          {{#if merchants.gm.viewTabCityEditor}}
+          <div class="po-section-title">Location Editor</div>
+          <div class="po-hint">Manage the location catalog used for merchant setup and assignment.</div>
+          {{/if}}
+          {{#if merchants.gm.viewTabWorkspace}}
+          <div class="po-section-title">Merchant Workspace</div>
+          <div class="po-hint">Edit merchant identity, pricing balance, stock tags, and refresh rules in one workspace.</div>
+          {{/if}}
+          {{#if merchants.gm.viewTabConfiguredMerchants}}
+          <div class="po-section-title">Configured Merchants</div>
+          <div class="po-hint">Filter the configured roster by location, access, and stock before opening a shop session.</div>
+          {{/if}}
+          {{#if merchants.gm.viewTabShopSession}}
+          <div class="po-section-title">Shop Session</div>
+          <div class="po-hint">Control who can open each merchant, what they can trade, and whether the current roster is live.</div>
+          {{/if}}
+        </div>
+        <div class="po-gm-page-stat-grid" role="list" aria-label="Merchant workspace summary">
+          <div class="po-gm-page-stat" role="listitem">
+            <span>View</span>
+            <strong>
+              {{#if merchants.gm.viewTabCityEditor}}Location Editor{{/if}}
+              {{#if merchants.gm.viewTabWorkspace}}Merchant Workspace{{/if}}
+              {{#if merchants.gm.viewTabConfiguredMerchants}}Configured Merchants{{/if}}
+              {{#if merchants.gm.viewTabShopSession}}Shop Session{{/if}}
+            </strong>
           </div>
-          <div class="po-merchants-hero-chip">
-            <span>Balance Snapshot</span>
-            <strong>{{merchants.gm.sourceTaxonomy.schemaLabel}} | {{merchants.gm.sourceTaxonomy.itemCount}} source items | Buy x{{merchants.gm.editor.buyMarkupMultiplierLabel}}</strong>
+          <div class="po-gm-page-stat" role="listitem">
+            <span>Locations</span>
+            <strong>{{merchants.gm.savedLocationCatalogCount}}</strong>
+          </div>
+          <div class="po-gm-page-stat" role="listitem">
+            <span>Configured</span>
+            <strong>{{merchants.gm.totalDefinitionCount}}</strong>
+          </div>
+          <div class="po-gm-page-stat" role="listitem">
+            <span>Schema</span>
+            <strong>{{merchants.gm.sourceTaxonomy.schemaLabel}}</strong>
+          </div>
+          <div class="po-gm-page-stat" role="listitem">
+            <span>Tagged Items</span>
+            <strong>{{merchants.gm.sourceTaxonomy.itemCount}}</strong>
           </div>
         </div>
-        {{/if}}
+      </section>
 
+      <div id="po-gm-merchants" class="po-gm-section po-merchants-page">
         <input type="hidden" name="merchantId" value="{{merchants.gm.editor.id}}" />
         <div class="po-merchant-workspace">
-          <div class="po-tabs po-tabs-sub po-merchant-view-tabs" aria-label="Merchant workspace tabs">
+          <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant workspace tabs">
             <button type="button" class="po-tab {{#if merchants.gm.viewTabCityEditor}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="city-editor">Location Editor</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Merchant Workspace</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Configured Merchants</button>
@@ -128,7 +157,7 @@
             <span class="po-op-summary">{{#if merchants.gm.editorSelectionIsNew}}Draft mode{{else}}Configured merchant loaded{{/if}}</span>
           </div>
           <div class="po-panel-disclosure-body">
-            <div class="po-tabs po-tabs-sub po-merchant-view-tabs" aria-label="Merchant edit section tabs">
+            <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant edit section tabs">
               <button type="button" class="po-tab {{#if merchants.gm.editorViewTabEditor}}is-active{{/if}}" data-action="merchant-editor-view-tab" data-tab="editor">Merchant Editor</button>
               <button type="button" class="po-tab {{#if merchants.gm.editorViewTabSettings}}is-active{{/if}}" data-action="merchant-editor-view-tab" data-tab="settings">Settings</button>
             </div>

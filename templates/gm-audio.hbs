@@ -13,39 +13,35 @@
   </header>
 
   <div class="po-body">
-    <section class="po-content" id="po-panel-gm-audio-page">
-      <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="faction">+ Faction</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="global-modifiers">Global Modifiers</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="environment">Environment</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="downtime">Downtime</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="merchants">Merchants</button>
-        <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="audio">Audio</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="loot">Loot</button>
-      </div>
+    <section class="po-content po-gm-shell" id="po-panel-gm-audio-page">
+      {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isAudio=true}}
 
-      {{#if audio.viewLibrary}}
-      <section class="po-gm-section po-audio-hero">
-        <div class="po-audio-hero-copy">
-          <div class="po-loot-eyebrow">GM Audio Workspace</div>
-          <div class="po-section-title">Scan a private asset folder once, then work from curated buckets instead of raw files.</div>
-          <div class="po-hint">Upload the audio pack to a Foundry or Forge-served folder, point Party Operations at that root, and sync the catalog. The module classifies music, ambience, one-shots, and voice content from the folder structure and file names.</div>
+      <section class="po-gm-section po-audio-hero po-gm-page-intro">
+        <div class="po-audio-hero-copy po-gm-page-copy">
+          <div class="po-loot-eyebrow po-gm-page-eyebrow">GM Audio</div>
+          {{#if audio.viewLibrary}}
+          <div class="po-section-title">Library Control Deck</div>
+          <div class="po-hint">Scan a private asset folder once, then work from curated buckets instead of raw files. Use the library tab to classify tracks and the mix table to move from browsing to playback without losing context.</div>
+          {{/if}}
+          {{#if audio.viewMix}}
+          <div class="po-section-title">Live Mix Table</div>
+          <div class="po-hint">Queue tracks, swap presets quickly, and keep transport controls close. Edit-heavy controls stay in the drawers below so the main mix view stays clean.</div>
+          {{/if}}
         </div>
         <div class="po-audio-hero-meta">
-          <div class="po-gm-loot-summary-grid" role="list" aria-label="Audio library summary">
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Tracks</span><strong>{{audio.summary.trackCount}}</strong></div>
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Durations Cached</span><strong>{{audio.summary.resolvedDurationCount}}</strong></div>
-            <div class="po-gm-loot-summary-chip" role="listitem"><span>Hidden</span><strong>{{audio.summary.hiddenCount}}</strong></div>
+          <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Audio library summary">
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Tracks</span><strong>{{audio.summary.trackCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Categories</span><strong>{{audio.summary.categoryCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Kinds</span><strong>{{audio.summary.kindCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Usages</span><strong>{{audio.summary.usageCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Durations Cached</span><strong>{{audio.summary.resolvedDurationCount}}</strong></div>
+            <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Hidden</span><strong>{{audio.summary.hiddenCount}}</strong></div>
           </div>
           <div class="po-op-summary po-gm-loot-updated">Catalog updated {{audio.summary.scannedAtLabel}} by {{audio.summary.scannedBy}}</div>
         </div>
       </section>
-      {{/if}}
 
-      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-audio-view-tabs" aria-label="Audio workspace tabs">
+      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-audio-view-tabs po-gm-subtabs" aria-label="Audio workspace tabs">
         <button type="button" class="po-tab {{#if audio.viewLibrary}}is-active{{/if}}" data-action="set-audio-library-view" data-view="library">Library</button>
         <button type="button" class="po-tab {{#if audio.viewMix}}is-active{{/if}}" data-action="set-audio-library-view" data-view="mix">Mix Table</button>
       </div>

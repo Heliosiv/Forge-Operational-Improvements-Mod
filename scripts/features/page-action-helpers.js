@@ -19,6 +19,7 @@ export function createPageActionHelpers(app) {
     const panelKey = normalizePanelKey(actionElement?.dataset?.panel);
     if (!panelKey) return;
     if (panelKey === normalizePanelKey(currentPanelKey)) return;
+    app.persistWindowPosition?.({ immediate: true });
     if (typeof openPanelByKey === "function") openPanelByKey(panelKey, { force: true });
   };
 

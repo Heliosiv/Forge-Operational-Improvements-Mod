@@ -219,6 +219,7 @@ export const SETTINGS = {
   FLOATING_LAUNCHER_POS: "floatingLauncherPos",
   FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
   FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
+  APP_WINDOW_POSITIONS: "appWindowPositions",
   PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
   ADVANCED_SETTINGS_ENABLED: "advancedSettingsEnabled",
   PLAYER_HUB_MODE: "playerHubMode",
@@ -250,6 +251,7 @@ export const SETTINGS = {
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
+const pendingWindowPositionPersistTimers = new Map();
 let latestCanvasRestoreRequestId = 0;
 const journalFilterDebounceTimers = new WeakMap();
 const sopNoteDebounceTimers = new WeakMap();
@@ -278,6 +280,8 @@ let lootManifestFolderSyncDisabledNotified = false;
 let lootManifestMonksCompatNotified = false;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
+let cachedAppWindowPositions = {};
+let cachedAppWindowPositionsLoaded = false;
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
 const managedAudioMixLocalState = {
@@ -431,6 +435,7 @@ const GATHER_QUICK_PRESETS = Object.freeze([
 ]);
 
 const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
+  "modules/party-operations/templates/partials/gm-panel-nav.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs",
   "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs",
@@ -474,6 +479,19 @@ const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
   "party-operations-gm-loot-claims-board": "gm-loot-claims-board"
 });
 
+const APP_WINDOW_POSITION_STORAGE_KEYS = Object.freeze({
+  "rest-watch": "main-ops",
+  "marching-order": "main-ops",
+  "global-modifiers": "main-ops",
+  "gm-environment": "main-ops",
+  "gm-downtime": "main-ops",
+  "gm-merchants": "main-ops",
+  "gm-audio": "main-ops",
+  "gm-loot": "main-ops",
+  "rest-watch-player": "rest-watch-player",
+  "gm-loot-claims-board": "gm-loot-claims-board"
+});
+
 function normalizeWindowProfileId(profileOrApp) {
   if (typeof profileOrApp === "string") {
     const normalized = String(profileOrApp ?? "").trim().toLowerCase();
@@ -503,7 +521,103 @@ function clampWindowMetric(value, min, max, fallback) {
   return Math.max(min, Math.min(max, Math.floor(raw)));
 }
 
-function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
+function normalizeWindowPositionStorageKey(profileOrApp) {
+  const profileId = normalizeWindowProfileId(profileOrApp);
+  return APP_WINDOW_POSITION_STORAGE_KEYS[profileId] ?? profileId;
+}
+
+function normalizeStoredAppWindowPositions(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const normalized = {};
+  for (const [key, value] of Object.entries(input)) {
+    const normalizedKey = String(key ?? "").trim();
+    if (!normalizedKey) continue;
+    const normalizedState = normalizeWindowStateLike(value);
+    if (!normalizedState) continue;
+    normalized[normalizedKey] = normalizedState;
+  }
+  return normalized;
+}
+
+function getStoredAppWindowPositions() {
+  if (cachedAppWindowPositionsLoaded) return cachedAppWindowPositions;
+  try {
+    cachedAppWindowPositions = normalizeStoredAppWindowPositions(
+      game.settings.get(MODULE_ID, SETTINGS.APP_WINDOW_POSITIONS)
+    );
+    cachedAppWindowPositionsLoaded = true;
+  } catch {
+    return {};
+  }
+  return cachedAppWindowPositions;
+}
+
+function setStoredAppWindowPositions(input) {
+  cachedAppWindowPositions = normalizeStoredAppWindowPositions(input);
+  cachedAppWindowPositionsLoaded = true;
+  return cachedAppWindowPositions;
+}
+
+function getRememberedWindowState(profileOrApp) {
+  const storageKey = normalizeWindowPositionStorageKey(profileOrApp);
+  return normalizeWindowStateLike(getStoredAppWindowPositions()[storageKey]);
+}
+
+function queuePersistRememberedWindowState(profileOrApp, state, options = {}) {
+  const normalizedState = normalizeWindowStateLike(state);
+  if (!normalizedState) return;
+
+  const storageKey = normalizeWindowPositionStorageKey(profileOrApp);
+  const currentStates = getStoredAppWindowPositions();
+  const previousState = normalizeWindowStateLike(currentStates[storageKey]);
+  if (areWindowStatesEquivalent(previousState, normalizedState)) return;
+
+  const nextStates = setStoredAppWindowPositions({
+    ...currentStates,
+    [storageKey]: normalizedState
+  });
+
+  const existingTimer = pendingWindowPositionPersistTimers.get(storageKey);
+  if (existingTimer) {
+    try {
+      globalThis.clearTimeout(existingTimer);
+    } catch {
+      // Ignore timer cleanup failures.
+    }
+  }
+
+  const persist = async () => {
+    pendingWindowPositionPersistTimers.delete(storageKey);
+    try {
+      await game.settings.set(MODULE_ID, SETTINGS.APP_WINDOW_POSITIONS, { ...nextStates });
+    } catch {
+      // Ignore transient client-setting failures. The in-memory cache still preserves navigation.
+    }
+  };
+
+  if (options?.immediate === true) {
+    void persist();
+    return;
+  }
+
+  const timerDelayMs = Math.max(60, Math.floor(Number(options?.delayMs ?? 180) || 180));
+  try {
+    const timerId = globalThis.setTimeout(() => {
+      void persist();
+    }, timerDelayMs);
+    pendingWindowPositionPersistTimers.set(storageKey, timerId);
+  } catch {
+    void persist();
+  }
+}
+
+function persistWindowStateFromApp(app, options = {}) {
+  const windowState = captureWindowState(app);
+  if (!windowState) return;
+  queuePersistRememberedWindowState(app, windowState, options);
+}
+
+function getResponsiveWindowSize(profileOrApp, overrides = {}) {
   const profileId = normalizeWindowProfileId(profileOrApp);
   const profile = APP_WINDOW_SIZE_PROFILES[profileId] ?? APP_WINDOW_SIZE_PROFILES.default;
   const patch = overrides && typeof overrides === "object" ? overrides : {};
@@ -530,6 +644,30 @@ function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
   };
 }
 
+function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
+  const patch = overrides && typeof overrides === "object" ? overrides : {};
+  const remembered = getRememberedWindowState(profileOrApp);
+  const size = getResponsiveWindowSize(profileOrApp, remembered ? {
+    width: remembered.width,
+    height: remembered.height,
+    ...patch
+  } : patch);
+  const placement = clampWindowPositionToViewport({
+    left: Number.isFinite(Number(patch.left)) ? Number(patch.left) : remembered?.left,
+    top: Number.isFinite(Number(patch.top)) ? Number(patch.top) : remembered?.top,
+    width: size.width,
+    height: size.height
+  });
+  if (Number.isFinite(placement.left) && Number.isFinite(placement.top)) {
+    return {
+      ...size,
+      left: placement.left,
+      top: placement.top
+    };
+  }
+  return size;
+}
+
 function clampWindowPositionToViewport(position, options = {}) {
   const viewport = getUiViewportSize();
   const padding = Math.max(0, Math.floor(Number(options.padding ?? 8) || 8));
@@ -551,6 +689,54 @@ function getResponsiveWindowOptions(profileId, options = {}) {
   return foundry.utils.mergeObject(patch, {
     position: getResponsiveWindowPosition(profileId, overridePosition)
   }, { inplace: false, overwrite: true });
+}
+
+function installRememberedWindowPositionBehavior(appClass) {
+  if (!appClass?.prototype || appClass.prototype.__poWindowPositionPersistenceInstalled === true) return;
+
+  const originalSetPosition = appClass.prototype.setPosition;
+  if (typeof originalSetPosition === "function") {
+    appClass.prototype.setPosition = function(position = {}) {
+      const result = originalSetPosition.call(this, position);
+      try {
+        const nextState = normalizeWindowStateLike(result)
+          ?? normalizeWindowStateLike(this?.position)
+          ?? normalizeWindowStateLike(position)
+          ?? captureWindowState(this);
+        if (nextState) queuePersistRememberedWindowState(this, nextState);
+      } catch {
+        // Ignore position persistence failures so the UI still moves normally.
+      }
+      return result;
+    };
+  }
+
+  const originalClose = appClass.prototype.close;
+  if (typeof originalClose === "function") {
+    appClass.prototype.close = function(options = {}) {
+      try {
+        persistWindowStateFromApp(this, { immediate: true });
+      } catch {
+        // Ignore close-time persistence failures.
+      }
+      return originalClose.call(this, options);
+    };
+  }
+
+  appClass.prototype.persistWindowPosition = function(options = {}) {
+    try {
+      persistWindowStateFromApp(this, options);
+    } catch {
+      // Ignore manual persistence failures requested by navigation helpers.
+    }
+  };
+
+  Object.defineProperty(appClass.prototype, "__poWindowPositionPersistenceInstalled", {
+    value: true,
+    configurable: false,
+    enumerable: false,
+    writable: false
+  });
 }
 
 function normalizePreservedRenderOptions(renderOptions = null) {
@@ -43407,6 +43593,13 @@ function registerPartyOpsHooks() {
 }
 
 export function onPartyOperationsInit() {
+  installRememberedWindowPositionBehavior(BaseStatefulPageApp);
+  installRememberedWindowPositionBehavior(RestWatchApp);
+  installRememberedWindowPositionBehavior(MarchingOrderApp);
+  installRememberedWindowPositionBehavior(GlobalModifierSummaryApp);
+  installRememberedWindowPositionBehavior(GmLootClaimsBoardApp);
+  installRememberedWindowPositionBehavior(RestWatchPlayerApp);
+
   runPartyOperationsInit({
     registerPartyOperationsApi,
     registerFeatureModules,

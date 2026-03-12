@@ -67,6 +67,13 @@ export function registerPartyOpsDataSettings({
     default: ""
   });
 
+  game.settings.register(moduleId, settings.APP_WINDOW_POSITIONS, {
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {}
+  });
+
   game.settings.register(moduleId, settings.MERCHANT_AUTO_REFRESH_DAY, {
     scope: "world",
     config: false,

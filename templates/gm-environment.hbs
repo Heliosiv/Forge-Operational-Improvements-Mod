@@ -13,37 +13,30 @@
   </header>
 
   <div class="po-body">
-    <section class="po-content" id="po-panel-gm-environment-page">
-      <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="faction">+ Faction</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="global-modifiers">Global Modifiers</button>
-        <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="environment">Environment</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="downtime">Downtime</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="merchants">Merchants</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="loot">Loot</button>
-      </div>
+    <section class="po-content po-gm-shell" id="po-panel-gm-environment-page">
+      {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isEnvironment=true}}
 
-      <section class="po-gm-section po-env-hero">
-        <div class="po-env-hero-copy">
+      <section class="po-gm-section po-env-hero po-gm-page-intro">
+        <div class="po-env-hero-copy po-gm-page-copy">
+          <div class="po-gm-page-eyebrow">GM Environment</div>
           <div class="po-pill">Active Environment</div>
           <h2 class="po-section-title">{{environment.preset.label}}</h2>
           <div class="po-op-summary">{{environment.preset.description}}</div>
         </div>
-        <div class="po-env-metric-grid">
-          <div class="po-env-metric">
+        <div class="po-env-metric-grid po-gm-page-stat-grid" role="list" aria-label="Environment summary">
+          <div class="po-env-metric po-gm-page-stat" role="listitem">
             <div class="po-env-metric-label">Actor Action</div>
             <div class="po-env-metric-value">{{environment.actionLabel}}</div>
           </div>
-          <div class="po-env-metric">
+          <div class="po-env-metric po-gm-page-stat" role="listitem">
             <div class="po-env-metric-label">Check</div>
             <div class="po-env-metric-value">{{#if environment.movementCheckActive}}{{environment.checkLabel}}{{else}}Passive{{/if}}</div>
           </div>
-          <div class="po-env-metric">
+          <div class="po-env-metric po-gm-page-stat" role="listitem">
             <div class="po-env-metric-label">DC</div>
             <div class="po-env-metric-value">{{environment.movementDc}}</div>
           </div>
-          <div class="po-env-metric">
+          <div class="po-env-metric po-gm-page-stat" role="listitem">
             <div class="po-env-metric-label">Assigned</div>
             <div class="po-env-metric-value">{{environment.targetCount}}</div>
           </div>

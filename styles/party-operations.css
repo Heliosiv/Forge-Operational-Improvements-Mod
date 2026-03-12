@@ -8231,3 +8231,401 @@
     right: auto;
   }
 }
+
+/* =========================================================
+   GM Workspace Standardization
+   ========================================================= */
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) {
+  --po-gm-shell-border: color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
+  --po-gm-shell-shadow: 0 10px 24px color-mix(in srgb, #5d3b16 12%, transparent);
+  --po-gm-shell-surface: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%),
+    color-mix(in srgb, var(--po-bg-alt) 84%, transparent)
+  );
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-content.po-gm-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 7;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--po-gm-shell-border);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, transparent), color-mix(in srgb, var(--po-bg-alt) 90%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 420px 420px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent), 0 8px 20px color-mix(in srgb, #5d3b16 10%, transparent);
+  backdrop-filter: blur(5px);
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab {
+  width: 100%;
+  min-width: 0;
+  min-height: 56px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  text-align: left;
+  white-space: normal;
+  border-radius: 12px;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-title {
+  font-size: 0.78rem;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: var(--po-text-strong);
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-gm-tab-sub {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
+  font-size: 0.66rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs .po-tab.is-utility {
+  border-style: dashed;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 86%, white 14%);
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%), color-mix(in srgb, var(--po-bg-alt) 88%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 34%, transparent);
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-tabs.po-gm-subtabs .po-tab {
+  width: auto;
+  flex: 0 0 auto;
+  min-width: 120px;
+  padding-inline: 12px;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-intro {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 14px;
+  align-items: start;
+  padding: 16px;
+  border: 1px solid var(--po-gm-shell-border);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 92% 12%, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt) 86%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 100% 100%, 560px 560px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), var(--po-gm-shell-shadow);
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-copy {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-intro .po-section-title {
+  font-size: 1.14rem;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+  color: var(--po-text-strong);
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-intro :is(.po-hint, .po-op-summary) {
+  max-width: 70ch;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(138px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-stat {
+  min-height: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 88%, white 12%);
+  border-radius: 14px;
+  background: var(--po-gm-shell-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 40%, transparent);
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-stat :is(span, .po-env-metric-label) {
+  font-size: 0.68rem;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--po-muted) 92%, var(--po-text));
+  font-weight: 700;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) .po-gm-page-stat :is(strong, .po-env-metric-value) {
+  font-size: 0.98rem;
+  line-height: 1.25;
+  color: var(--po-text-strong);
+  white-space: normal;
+}
+
+.party-operations :is(
+  .po-window[data-tool="global-modifiers"],
+  .po-window[data-tool="gm-environment"],
+  .po-window[data-tool="gm-downtime"],
+  .po-window[data-tool="gm-merchants"],
+  .po-window[data-tool="gm-audio"],
+  .po-window[data-tool="gm-loot"]
+) :is(
+  .po-loot-control-card,
+  .po-loot-sidebar-card,
+  .po-loot-warning-card,
+  .po-loot-roll-card,
+  .po-env-summary-item,
+  .po-merchant-city-catalog-item,
+  .po-merchant-location-assigned-item,
+  .po-gm-loot-summary-chip,
+  .po-audio-summary-chip
+) {
+  border-color: color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
+  background: var(--po-gm-shell-surface);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 8px 18px color-mix(in srgb, #5d3b16 10%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero {
+  grid-template-columns: minmax(0, 1.1fr) auto;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero .po-loot-hero-actions {
+  align-self: start;
+  justify-content: flex-end;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-hero :is(.po-gm-page-stat-grid, .po-gm-loot-updated) {
+  grid-column: 1 / -1;
+}
+
+.party-operations .po-window[data-tool="gm-audio"] .po-audio-hero-meta {
+  gap: 10px;
+}
+
+.party-operations .po-window[data-tool="gm-environment"] .po-env-hero .po-pill {
+  width: fit-content;
+}
+
+.party-operations .po-window[data-tool="gm-merchants"] .po-merchants-hero {
+  align-items: start;
+}
+
+@media (max-width: 1180px) {
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) .po-gm-page-intro,
+  .party-operations .po-window[data-tool="gm-loot"] .po-loot-hero,
+  .party-operations .po-window[data-tool="gm-audio"] .po-audio-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-loot"] .po-loot-hero .po-loot-hero-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 900px) {
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) .po-tabs.po-gm-subtabs .po-tab {
+    width: 100%;
+  }
+}

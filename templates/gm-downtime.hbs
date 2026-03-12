@@ -13,27 +13,24 @@
   </header>
 
   <div class="po-body">
-    <section class="po-content" id="po-panel-gm-downtime-page">
-      <div class="po-tabs po-tabs-sub po-gm-panel-tabs" aria-label="GM panel navigation">
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="faction">+ Faction</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="global-modifiers">Global Modifiers</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="environment">Environment</button>
-        <button type="button" class="po-tab is-active" data-action="gm-panel-tab" data-panel="downtime">Downtime</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="merchants">Merchants</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="audio">Audio</button>
-        <button type="button" class="po-tab" data-action="gm-panel-tab" data-panel="loot">Loot</button>
-      </div>
-      <div id="po-gm-downtime" class="po-gm-section po-downtime-panel">
-        <div class="po-section-title">GM Downtime Controls</div>
-        <div class="po-hint">Tune downtime, add manual entries, resolve pending submissions, and edit completed outcomes.</div>
+    <section class="po-content po-gm-shell" id="po-panel-gm-downtime-page">
+      {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs" isDowntime=true}}
 
-        <div class="po-info-strip">
-          <div class="po-info-chip"><span>Hours Granted</span><strong>{{downtime.hoursGranted}}</strong></div>
-          <div class="po-info-chip"><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
-          <div class="po-info-chip"><span>Resolved</span><strong>{{downtime.resolvedCount}}</strong></div>
-          <div class="po-info-chip"><span>Recent Logs</span><strong>{{downtime.logCount}}</strong></div>
+      <section class="po-gm-section po-gm-page-intro">
+        <div class="po-gm-page-copy">
+          <div class="po-gm-page-eyebrow">GM Workspace</div>
+          <div class="po-section-title">Downtime Control Board</div>
+          <div class="po-hint">Tune downtime pacing, submit manual actions, and resolve pending entries from a single queue.</div>
         </div>
+        <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Hours Granted</span><strong>{{downtime.hoursGranted}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Resolved</span><strong>{{downtime.resolvedCount}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Recent Logs</span><strong>{{downtime.logCount}}</strong></div>
+        </div>
+      </section>
 
+      <div id="po-gm-downtime" class="po-gm-section po-downtime-panel">
         <div class="po-two-col">
           <div class="po-col">
             <div class="po-op-role-row">
