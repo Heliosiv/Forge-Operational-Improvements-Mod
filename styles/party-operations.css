@@ -26,9 +26,11 @@
   --po-bg: var(--color-bg, #1f2630);
   --po-bg-alt: var(--color-bg-option, #252f3b);
   --po-surface: var(--color-bg-btn-minor, #2a3543);
+  --po-surface-elevated: #fff6df;
   --po-border: var(--color-border-light-primary, #3a4758);
   --po-border-strong: var(--color-border-highlight, #4b5e74);
   --po-text: var(--color-text-primary, #d7dee8);
+  --po-text-strong: #1a1008;
   --po-muted: var(--color-text-light-7, #9ba7b7);
   --po-accent: var(--color-text-hyperlink, #6fb0ff);
   --po-accent-contrast: var(--color-text-light-highlight, #eef5ff);
@@ -73,7 +75,7 @@
   color: var(--po-text);
   border: 1px solid var(--po-border);
   border-radius: var(--po-radius);
-  font-family: "Montserrat", var(--font-primary, "Segoe UI", Roboto, Arial, sans-serif);
+  font-family: var(--po-fantasy-font);
   font-size: 13px;
   line-height: 1.3;
 }
@@ -3447,6 +3449,17 @@
 
 /* floating launcher kept isolated and non-invasive */
 #po-floating-launcher {
+  --po-bg: #dcc9a4;
+  --po-bg-alt: #f2e3c0;
+  --po-surface: #f8edd4;
+  --po-surface-elevated: #fff7e3;
+  --po-border: #9b7b4a;
+  --po-border-strong: #674c26;
+  --po-text: #2b1c0f;
+  --po-text-strong: #1a1008;
+  --po-muted: #6f5940;
+  --po-accent: #805423;
+  --po-fantasy-font: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   position: fixed;
   left: 16px;
   top: 180px;
@@ -3458,8 +3471,13 @@
   padding: 6px;
   border: 1px solid var(--po-border, #3a4758);
   border-radius: 10px;
-  background: var(--po-bg-alt, #252f3b);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 280px 280px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 10px 24px color-mix(in srgb, #5d3c18 16%, transparent);
+  color: var(--po-text, #2b1c0f);
+  font-family: var(--po-fantasy-font);
   pointer-events: auto;
 }
 
@@ -3473,6 +3491,28 @@
   text-align: center;
   border: 1px solid var(--po-border, #3a4758);
   border-radius: 8px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
+}
+
+#po-click-opener,
+#po-sidebar-launcher {
+  --po-bg: #dcc9a4;
+  --po-bg-alt: #f2e3c0;
+  --po-surface: #f8edd4;
+  --po-surface-elevated: #fff7e3;
+  --po-border: #9b7b4a;
+  --po-border-strong: #674c26;
+  --po-text: #2b1c0f;
+  --po-text-strong: #1a1008;
+  --po-muted: #6f5940;
+  --po-accent: #805423;
+  --po-accent-contrast: #1a1008;
+  --po-success: #4f6a3d;
+  --po-warn: #9f6b1f;
+  --po-danger: #984633;
+  --po-fantasy-font: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-family: var(--po-fantasy-font);
 }
 
 #po-click-opener {
@@ -3486,25 +3526,29 @@
   align-items: center;
   justify-content: center;
   border-radius: 10px;
-  border: 1px solid var(--po-border, #3a4758);
-  background: var(--po-bg-alt, #252f3b);
-  color: var(--po-text, #f2f6fb);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--po-border, #9b7b4a);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 84%, transparent));
+  color: var(--po-text-strong, #1a1008);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 44%, transparent), 0 8px 20px color-mix(in srgb, #5b3b17 18%, transparent);
   cursor: pointer;
 }
 
 #po-click-opener:hover {
-  border-color: var(--po-accent, #7ec8ff);
+  border-color: var(--po-accent, #805423);
 }
 
 #po-sidebar-launcher {
   flex: 0 0 auto;
   margin: 8px 6px 6px;
   padding: 8px;
-  border: 1px solid var(--po-border, #3a4758);
+  border: 1px solid var(--po-border, #9b7b4a);
   border-radius: 10px;
-  background: var(--po-bg-alt, #252f3b);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 280px 280px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 10px 24px color-mix(in srgb, #5d3c18 16%, transparent);
+  color: var(--po-text, #2b1c0f);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-header {
@@ -3521,7 +3565,8 @@
   font-weight: 700;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: var(--po-text, #f2f6fb);
+  color: var(--po-text-strong, #1a1008);
+  text-shadow: 0 1px 0 color-mix(in srgb, white 34%, transparent);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-grid {
@@ -3532,19 +3577,21 @@
 
 #po-sidebar-launcher .po-sidebar-btn {
   min-height: 30px;
-  border: 1px solid var(--po-border, #3a4758);
+  border: 1px solid var(--po-border, #9b7b4a);
   border-radius: 8px;
-  background: color-mix(in srgb, var(--po-surface, #2a3543) 80%, transparent);
-  color: var(--po-text, #f2f6fb);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent));
+  color: var(--po-text, #2b1c0f);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  font-family: inherit;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
   cursor: pointer;
 }
 
 #po-sidebar-launcher .po-sidebar-btn:hover {
-  border-color: var(--po-accent, #7ec8ff);
+  border-color: var(--po-accent, #805423);
 }
 
 #po-sidebar-launcher .po-sidebar-dock {
@@ -3563,7 +3610,7 @@
   gap: 6px;
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--po-border, #3a4758) 72%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--po-border, #9b7b4a) 72%, transparent);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-head {
@@ -3576,17 +3623,17 @@
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--po-muted, #bcc8d7);
+  color: var(--po-muted, #6f5940);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-status {
   font-size: 0.68rem;
   line-height: 1.35;
-  color: color-mix(in srgb, var(--po-text, #f2f6fb) 82%, transparent);
+  color: color-mix(in srgb, var(--po-text, #2b1c0f) 82%, transparent);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-status.is-playing {
-  color: var(--po-accent, #7ec8ff);
+  color: var(--po-accent, #805423);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-status.is-paused {
@@ -3601,7 +3648,7 @@
 #po-sidebar-launcher .po-sidebar-launcher-audio-field span {
   font-size: 0.68rem;
   font-weight: 600;
-  color: var(--po-muted, #bcc8d7);
+  color: var(--po-muted, #6f5940);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-select {
@@ -3629,14 +3676,14 @@
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-select:hover {
-  border-color: var(--po-accent, #7ec8ff);
+  border-color: var(--po-accent, #805423);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-select:focus,
 #po-sidebar-launcher .po-sidebar-launcher-select:focus-visible {
   outline: none;
-  border-color: var(--po-accent, #7ec8ff);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent, #7ec8ff) 35%, transparent);
+  border-color: var(--po-accent, #805423);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent, #805423) 35%, transparent);
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-select:disabled {
@@ -3660,8 +3707,8 @@
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-btn.is-primary {
-  border-color: color-mix(in srgb, var(--po-accent, #7ec8ff) 36%, var(--po-border, #3a4758));
-  background: color-mix(in srgb, var(--po-accent, #7ec8ff) 14%, var(--po-surface, #2a3543));
+  border-color: color-mix(in srgb, var(--po-accent, #805423) 40%, var(--po-border, #9b7b4a));
+  background: linear-gradient(180deg, color-mix(in srgb, #f2e8c9 90%, var(--po-bg-alt, #f2e3c0)), color-mix(in srgb, var(--po-accent, #805423) 18%, var(--po-bg-alt, #f2e3c0)));
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled {
@@ -3670,31 +3717,45 @@
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled:hover {
-  border-color: var(--po-border, #3a4758);
+  border-color: var(--po-border, #9b7b4a);
 }
 
 /* =========================================================
    UX Refresh: Readability + Accessibility
    ========================================================= */
 .party-operations .po-window {
-  --po-bg: #141b24;
-  --po-bg-alt: #1f2a37;
-  --po-surface: #253344;
-  --po-border: #42566d;
-  --po-border-strong: #6884a3;
-  --po-text: #f2f6fb;
-  --po-muted: #bcc8d7;
-  --po-accent: #7ec8ff;
-  --po-accent-contrast: #ffffff;
-  --po-success: #78d8b1;
-  --po-warn: #efc872;
-  --po-danger: #ef9c9c;
+  --po-bg: #dcc9a4;
+  --po-bg-alt: #f2e3c0;
+  --po-surface: #f8edd4;
+  --po-surface-elevated: #fff7e3;
+  --po-border: #9b7b4a;
+  --po-border-strong: #674c26;
+  --po-text: #2b1c0f;
+  --po-text-strong: #1a1008;
+  --po-muted: #6f5940;
+  --po-accent: #805423;
+  --po-accent-contrast: #1a1008;
+  --po-success: #4f6a3d;
+  --po-warn: #9f6b1f;
+  --po-danger: #984633;
+  --po-neon-green: #b88633;
   --po-radius: 12px;
+  font-family: var(--po-fantasy-font);
   font-size: 14px;
-  line-height: 1.45;
+  line-height: 1.5;
   background:
-    radial-gradient(1100px 420px at 92% -16%, color-mix(in srgb, var(--po-accent) 13%, transparent), transparent 55%),
-    linear-gradient(165deg, color-mix(in srgb, var(--po-bg-alt) 92%, transparent), var(--po-bg));
+    radial-gradient(1100px 420px at 92% -16%, color-mix(in srgb, var(--po-accent) 10%, transparent), transparent 55%),
+    radial-gradient(760px 340px at 8% 0%, color-mix(in srgb, var(--po-warn) 10%, transparent), transparent 52%),
+    linear-gradient(165deg, color-mix(in srgb, var(--po-bg-alt) 96%, transparent), var(--po-bg)),
+    url("./assets/po-cartography-texture.svg");
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    560px 560px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 40%, transparent),
+    0 18px 36px color-mix(in srgb, #5d3b16 18%, transparent);
 }
 
 .party-operations .po-header {
@@ -3704,6 +3765,8 @@
   gap: var(--po-space-3);
   padding: 12px 14px;
   border-bottom-color: color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 95%, transparent), color-mix(in srgb, var(--po-bg-alt) 86%, transparent));
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, white 24%, transparent);
   backdrop-filter: blur(4px);
 }
 
@@ -3716,7 +3779,9 @@
 
 .party-operations .po-title {
   font-size: 1.2rem;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
+  color: var(--po-text-strong);
+  text-shadow: 0 1px 0 color-mix(in srgb, white 34%, transparent);
 }
 
 .party-operations .po-subtitle {
@@ -3743,18 +3808,20 @@
   padding: var(--po-space-2);
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
   border-radius: var(--po-radius);
-  background: color-mix(in srgb, var(--po-bg-alt) 84%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 86%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent);
 }
 
 .party-operations .po-overview-card {
   border: 1px solid var(--po-border);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--po-surface) 80%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-surface) 84%, transparent));
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 32%, transparent);
 }
 
 .party-operations .po-overview-card span {
@@ -3797,8 +3864,11 @@
 .party-operations .po-empty,
 .party-operations .po-rank-empty {
   border-color: color-mix(in srgb, var(--po-border-strong) 32%, var(--po-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 80%, transparent), color-mix(in srgb, var(--po-bg-alt) 78%, transparent));
-  box-shadow: 0 6px 18px color-mix(in srgb, black 20%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 82%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 520px 520px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent), 0 8px 22px color-mix(in srgb, #5d3b16 14%, transparent);
 }
 
 .party-operations .po-card {
