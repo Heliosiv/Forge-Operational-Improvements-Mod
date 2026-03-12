@@ -108,6 +108,11 @@ import {
   buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain
 } from "./features/merchant-domain.js";
 import { createMerchantUiState } from "./features/merchant-ui-state.js";
+import {
+  buildVariableTreasureRollPools,
+  estimateVariableTreasureOutcome,
+  rollVariableTreasureOutcome
+} from "./features/loot-variable-treasure.js";
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
@@ -17437,6 +17442,67 @@ function calculateLootPreviewScaledWeight(entry = {}, totalValueGp = 0, fallback
   return roundLootWeightLb(baseWeightLb * (scaledValueGp / baseValueGp));
 }
 
+function buildLootVariableTreasurePools(entries = []) {
+  return buildVariableTreasureRollPools((Array.isArray(entries) ? entries : []).map((entry) => ({
+    ...entry,
+    variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+    intrinsicItemValueGp: Math.max(0, Number(
+      entry?.intrinsicItemValueGp
+      ?? entry?.baseItemValueGp
+      ?? entry?.itemValueGp
+      ?? 0
+    ) || 0),
+    intrinsicItemWeightLb: roundLootWeightLb(Math.max(0, Number(
+      entry?.intrinsicItemWeightLb
+      ?? entry?.baseItemWeightLb
+      ?? entry?.itemWeightLb
+      ?? 0
+    ) || 0))
+  })));
+}
+
+function estimateLootVariableTreasureBudgetOutcome(entry = {}, pools = {}) {
+  const kind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  if (kind !== "gem" && kind !== "art") return null;
+  return estimateVariableTreasureOutcome({
+    ...entry,
+    variableTreasureKind: kind,
+    intrinsicItemValueGp: Math.max(0, Number(
+      entry?.intrinsicItemValueGp
+      ?? entry?.baseItemValueGp
+      ?? entry?.itemValueGp
+      ?? 0
+    ) || 0),
+    intrinsicItemWeightLb: roundLootWeightLb(Math.max(0, Number(
+      entry?.intrinsicItemWeightLb
+      ?? entry?.baseItemWeightLb
+      ?? entry?.itemWeightLb
+      ?? 0
+    ) || 0))
+  }, pools);
+}
+
+function rollLootVariableTreasureSelection(entry = {}, pools = {}, randomFn = Math.random) {
+  const kind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  if (kind !== "gem" && kind !== "art") return null;
+  return rollVariableTreasureOutcome({
+    ...entry,
+    variableTreasureKind: kind,
+    intrinsicItemValueGp: Math.max(0, Number(
+      entry?.intrinsicItemValueGp
+      ?? entry?.baseItemValueGp
+      ?? entry?.itemValueGp
+      ?? 0
+    ) || 0),
+    intrinsicItemWeightLb: roundLootWeightLb(Math.max(0, Number(
+      entry?.intrinsicItemWeightLb
+      ?? entry?.baseItemWeightLb
+      ?? entry?.itemWeightLb
+      ?? 0
+    ) || 0))
+  }, pools, randomFn);
+}
+
 function buildPartyOperationsMetaPillsFromData(data = {}, options = {}) {
   const maxPillsRaw = Number(options?.maxPills ?? 4);
   const maxPills = Number.isFinite(maxPillsRaw) ? Math.max(1, Math.floor(maxPillsRaw)) : 4;
@@ -19022,6 +19088,8 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     sourceWeight,
     itemValueGp,
     itemWeightLb,
+    intrinsicItemValueGp: itemValueGp,
+    intrinsicItemWeightLb: itemWeightLb,
     baseItemValueGp: itemValueGp,
     baseItemWeightLb: itemWeightLb,
     variableTreasureKind,
@@ -19114,6 +19182,14 @@ function aggregateLootEntriesForStacks(values = []) {
     if (existing.itemWeightLb !== undefined || entry.itemWeightLb !== undefined) {
       existing.itemWeightLb = roundLootWeightLb(
         Math.max(0, Number(existing.itemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.itemWeightLb ?? 0) || 0)
+      );
+    }
+    if (existing.baseItemValueGp !== undefined || entry.baseItemValueGp !== undefined) {
+      existing.baseItemValueGp = Math.max(0, Number(existing.baseItemValueGp ?? 0) || 0) + Math.max(0, Number(entry.baseItemValueGp ?? 0) || 0);
+    }
+    if (existing.baseItemWeightLb !== undefined || entry.baseItemWeightLb !== undefined) {
+      existing.baseItemWeightLb = roundLootWeightLb(
+        Math.max(0, Number(existing.baseItemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.baseItemWeightLb ?? 0) || 0)
       );
     }
     aggregated[existingIndex] = existing;
@@ -19518,6 +19594,25 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
       warnings.push(`Failed item source: ${String(source?.label ?? source?.id ?? "Unknown source")}`);
     }
   }
+  const variableTreasurePools = buildLootVariableTreasurePools(candidates);
+  for (const candidate of candidates) {
+    const budgetOutcome = estimateLootVariableTreasureBudgetOutcome(candidate, variableTreasurePools);
+    if (!budgetOutcome) continue;
+    candidate.itemValueGp = Math.max(0, Number(budgetOutcome?.itemValueGp ?? candidate?.itemValueGp ?? 0) || 0);
+    candidate.itemWeightLb = roundLootWeightLb(Math.max(0, Number(budgetOutcome?.itemWeightLb ?? candidate?.itemWeightLb ?? 0) || 0));
+    candidate.baseItemValueGp = Math.max(0, Number(
+      budgetOutcome?.baseItemValueGp
+      ?? candidate?.baseItemValueGp
+      ?? candidate?.itemValueGp
+      ?? 0
+    ) || 0);
+    candidate.baseItemWeightLb = roundLootWeightLb(Math.max(0, Number(
+      budgetOutcome?.baseItemWeightLb
+      ?? candidate?.baseItemWeightLb
+      ?? candidate?.itemWeightLb
+      ?? 0
+    ) || 0));
+  }
   return candidates;
 }
 
@@ -19592,6 +19687,25 @@ function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spen
 function commitLootBudgetPick(state = {}, picked = null) {
   if (!picked || !state) return false;
   const rarityBucket = getLootRarityBucket(picked.rarity);
+  const rolledVariableTreasure = rollLootVariableTreasureSelection(
+    picked,
+    state?.variableTreasurePools ?? {},
+    state?.random ?? Math.random
+  );
+  const resolvedItemValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
+  const resolvedItemWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
+  const resolvedBaseItemValueGp = Math.max(0, Number(
+    rolledVariableTreasure?.baseItemValueGp
+    ?? picked?.baseItemValueGp
+    ?? picked?.itemValueGp
+    ?? 0
+  ) || 0);
+  const resolvedBaseItemWeightLb = roundLootWeightLb(Math.max(0, Number(
+    rolledVariableTreasure?.baseItemWeightLb
+    ?? picked?.baseItemWeightLb
+    ?? picked?.itemWeightLb
+    ?? 0
+  ) || 0));
   state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
   state.selected.push({
     name: picked.name,
@@ -19600,13 +19714,13 @@ function commitLootBudgetPick(state = {}, picked = null) {
     rarity: picked.rarity || "",
     sourceLabel: picked.sourceLabel,
     uuid: picked.uuid,
-    itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0),
-    itemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.itemWeightLb ?? 0) || 0)),
-    baseItemValueGp: Math.max(0, Number(picked?.baseItemValueGp ?? picked?.itemValueGp ?? 0) || 0),
-    baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.baseItemWeightLb ?? picked?.itemWeightLb ?? 0) || 0)),
+    itemValueGp: resolvedItemValueGp,
+    itemWeightLb: resolvedItemWeightLb,
+    baseItemValueGp: resolvedBaseItemValueGp,
+    baseItemWeightLb: resolvedBaseItemWeightLb,
     variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
   });
-  state.selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
+  state.selectedTotalValueGp += resolvedItemValueGp;
   const mode = String(state?.draft?.mode ?? "horde").trim().toLowerCase();
   const encounterCreatures = Math.max(1, Number(state?.budgetContext?.combatants ?? 1) || 1);
   const duplicateChance = Math.min(0.75, 0.2 + (Math.max(0, encounterCreatures - 1) * 0.1));
@@ -19812,6 +19926,7 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
   if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) return [];
   const pool = [...candidates];
   const selected = [];
+  const variableTreasurePools = buildLootVariableTreasurePools(candidates);
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const encounterCreatures = getLootCombatantCount(draft, mode);
   const valueStats = summarizeLootCandidateValueStats(pool);
@@ -19854,6 +19969,21 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
     const picked = pickedRow?.item ?? null;
     if (!picked) break;
     const rarityBucket = getLootRarityBucket(picked.rarity);
+    const rolledVariableTreasure = rollLootVariableTreasureSelection(picked, variableTreasurePools, Math.random);
+    const resolvedItemValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
+    const resolvedItemWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
+    const resolvedBaseItemValueGp = Math.max(0, Number(
+      rolledVariableTreasure?.baseItemValueGp
+      ?? picked?.baseItemValueGp
+      ?? picked?.itemValueGp
+      ?? 0
+    ) || 0);
+    const resolvedBaseItemWeightLb = roundLootWeightLb(Math.max(0, Number(
+      rolledVariableTreasure?.baseItemWeightLb
+      ?? picked?.baseItemWeightLb
+      ?? picked?.itemWeightLb
+      ?? 0
+    ) || 0));
     selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
     selected.push({
       name: picked.name,
@@ -19862,13 +19992,13 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       rarity: picked.rarity || "",
       sourceLabel: picked.sourceLabel,
       uuid: picked.uuid,
-      itemValueGp: Math.max(0, Number(picked?.itemValueGp ?? 0) || 0),
-      itemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.itemWeightLb ?? 0) || 0)),
-      baseItemValueGp: Math.max(0, Number(picked?.baseItemValueGp ?? picked?.itemValueGp ?? 0) || 0),
-      baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(picked?.baseItemWeightLb ?? picked?.itemWeightLb ?? 0) || 0)),
+      itemValueGp: resolvedItemValueGp,
+      itemWeightLb: resolvedItemWeightLb,
+      baseItemValueGp: resolvedBaseItemValueGp,
+      baseItemWeightLb: resolvedBaseItemWeightLb,
       variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
     });
-    selectedTotalValueGp += Math.max(0, Number(picked?.itemValueGp ?? 0) || 0);
+    selectedTotalValueGp += resolvedItemValueGp;
     const allowEncounterDuplicate = mode === "encounter"
       && encounterCreatures > 1
       && (rarityBucket === "common" || rarityBucket === "uncommon")
@@ -19896,6 +20026,7 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
       pool: initialPool,
       selected: [],
       selectedTotalValueGp: 0,
+      variableTreasurePools: buildLootVariableTreasurePools(candidates),
       selectedByRarity: {
         common: 0,
         uncommon: 0,

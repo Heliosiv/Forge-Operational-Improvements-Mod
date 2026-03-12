@@ -4,7 +4,7 @@ Party Operations is a Foundry VTT module for running the table-facing logistics 
 
 ## Current Build
 
-The current released build in this repository is `2.2.4-test.25`.
+The current released build in this repository is `2.2.4-test.27`.
 
 ## What This Module Covers
 
@@ -57,7 +57,7 @@ npm run check
 Create a release with the helper script:
 
 ```powershell
-./scripts/release.ps1 -Version 2.2.4-test.25 -Message "Release"
+./scripts/release.ps1 -Version 2.2.4-test.27 -Message "Release"
 ```
 
 GitHub Actions runs on pushes to `main`, version tags matching `v*.*.*`, and manual dispatch. The workflow validates `module.json`, rebuilds `release/module.zip`, and updates the GitHub Release assets used by the manifest URLs above.
