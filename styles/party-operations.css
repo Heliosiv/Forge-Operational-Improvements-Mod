@@ -2227,30 +2227,14 @@
 
 .party-operations [data-tool="marching-order"] .po-march-light-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: var(--po-space-2);
+  align-items: start;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-light-grid .po-checkbox-target {
   margin-bottom: 0;
-}
-
-@media (max-width: 1500px) {
-  .party-operations [data-tool="marching-order"] .po-march-light-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 1150px) {
-  .party-operations [data-tool="marching-order"] .po-march-light-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
-  .party-operations [data-tool="marching-order"] .po-march-light-grid {
-    grid-template-columns: 1fr;
-  }
+  min-width: 0;
 }
 
 .party-operations .po-reputation-filters {
