@@ -24,11 +24,12 @@ import {
   PARTY_OPS_PREMIUM_MODULE_ID as PREMIUM_MODULE_ID,
   SOCKET_CHANNEL
 } from "./core/constants.js";
+import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
-import { routePartyOperationsSocketMessage } from "./core/socket-routes.js";
+import { createPartyOperationsSocketMessageHandler } from "./core/socket-message-handler.js";
 import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
@@ -43406,117 +43407,96 @@ function registerPartyOpsHooks() {
 }
 
 export function onPartyOperationsInit() {
-  registerPartyOperationsApi();
-  registerFeatureModules();
-  void preloadPartyOperationsPartialTemplates().catch((error) => {
-    console.warn(`${MODULE_ID}: failed to preload partial templates`, error);
-  });
-  registerPartyOpsSettings((key) => {
-    if (key === SETTINGS.DEBUG_ENABLED) return;
-    refreshOpenApps({ scopes: getRefreshScopesForSettingKey(key) });
-  });
-  registerPartyOpsDataSettings({
-    moduleId: MODULE_ID,
+  runPartyOperationsInit({
+    registerPartyOperationsApi,
+    registerFeatureModules,
+    preloadPartyOperationsPartialTemplates,
+    registerPartyOpsSettings,
     settings: SETTINGS,
-    buildDefaultRestWatchState,
-    buildDefaultMarchingOrderState,
-    buildDefaultActivityState,
-    buildDefaultOperationsLedger,
-    buildDefaultInjuryRecoveryState,
-    buildDefaultLootSourceConfig,
-    buildDefaultAudioLibraryCatalog,
-    buildDefaultAudioLibraryHiddenTrackStore,
-    buildDefaultAudioMixPresetStore
-  });
-  syncAudioLibraryDraftFromSettings();
-  registerPartyOpsFeatureSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    areAdvancedSettingsEnabled,
-    autoInventoryPackIndexCache,
-    autoInventoryDefaults: {
-      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
-      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
-      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
-      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
-    },
-    gatherDefaults: GATHER_DEFAULTS,
-    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
-    launcherPlacements: LAUNCHER_PLACEMENTS,
-    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
-    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
-    inventoryHookModes: INVENTORY_HOOK_MODES,
-    ensureLauncherUi,
-    resetFloatingLauncherPosition,
+    getRefreshScopesForSettingKey,
     refreshOpenApps,
-    refreshScopeKeys: REFRESH_SCOPE_KEYS,
-    openRestWatchUiForCurrentUser,
-    openMainTab
+    registerPartyOpsDataSettings,
+    dataSettingsConfig: {
+      moduleId: MODULE_ID,
+      settings: SETTINGS,
+      buildDefaultRestWatchState,
+      buildDefaultMarchingOrderState,
+      buildDefaultActivityState,
+      buildDefaultOperationsLedger,
+      buildDefaultInjuryRecoveryState,
+      buildDefaultLootSourceConfig,
+      buildDefaultAudioLibraryCatalog,
+      buildDefaultAudioLibraryHiddenTrackStore,
+      buildDefaultAudioMixPresetStore
+    },
+    syncAudioLibraryDraftFromSettings,
+    registerPartyOpsFeatureSettings,
+    featureSettingsConfig: {
+      moduleId: MODULE_ID,
+      settings: SETTINGS,
+      areAdvancedSettingsEnabled,
+      autoInventoryPackIndexCache,
+      autoInventoryDefaults: {
+        itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+        consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+        currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+        qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+      },
+      gatherDefaults: GATHER_DEFAULTS,
+      gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+      launcherPlacements: LAUNCHER_PLACEMENTS,
+      journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+      sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+      inventoryHookModes: INVENTORY_HOOK_MODES,
+      ensureLauncherUi,
+      resetFloatingLauncherPosition,
+      refreshOpenApps,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      openRestWatchUiForCurrentUser,
+      openMainTab
+    },
+    logger: bootstrapLogger,
+    moduleId: MODULE_ID
   });
 }
 
 export function onPartyOperationsReady() {
-  registerPartyOperationsApi();
-  void validatePartyOperationsTemplates();
-  bindPoBrowserBackNavigation();
-  
-  // Setup UI controls for sidebar
-  setupPartyOperationsUI();
-  ensureLauncherUi();
-  window.setTimeout(() => ensureLauncherUi(), 250);
-  window.setTimeout(() => ensureLauncherUi(), 1000);
-  window.setTimeout(() => ensureLauncherUi(), 3000);
-  window.setTimeout(() => {
-    forceLauncherRecovery("ready-self-heal").catch((error) => {
-      console.warn(`${MODULE_ID}: launcher self-heal failed`, error);
-    });
-  }, 4200);
-  notifyDailyInjuryReminders();
-  window.setTimeout(() => {
-    void syncManagedAudioMixPlaybackForCurrentUser();
-  }, 450);
-
-  // Auto-open player UI for non-GM players
-  if (!game.user?.isGM) {
-    // Intentionally do not auto-open UI on ready.
-    schedulePendingSopNoteSync("ready");
-  } else {
-    scheduleIntegrationSync("ready");
-    void handleAutomaticMerchantAutoRefreshTick();
-    window.setTimeout(() => {
-      queueAudioLibraryMetadataWarmup({ delayMs: 0 });
-    }, 900);
-    ensureOperationsJournalFolderTree().catch((error) => {
-      console.warn(`${MODULE_ID}: failed to initialize operations journal folder tree`, error);
-    });
-    scheduleLootManifestCompendiumTypeFolderSync("ready").catch((error) => {
-      console.warn(`${MODULE_ID}: failed to sync loot manifest compendium folders`, error);
-    });
-  }
-
-  registerModuleSocketHandler({ channel: SOCKET_CHANNEL, handler: handlePartyOperationsSocketMessage });
-
-  registerPartyOpsHooks();
+  runPartyOperationsReady({
+    registerPartyOperationsApi,
+    validatePartyOperationsTemplates,
+    bindPoBrowserBackNavigation,
+    setupPartyOperationsUI,
+    ensureLauncherUi,
+    launcherWarmupDelaysMs: [250, 1000, 3000],
+    launcherSelfHealDelayMs: 4200,
+    forceLauncherRecovery,
+    notifyDailyInjuryReminders,
+    managedAudioSyncDelayMs: 450,
+    syncManagedAudioMixPlaybackForCurrentUser,
+    game,
+    schedulePendingSopNoteSync,
+    scheduleIntegrationSync,
+    handleAutomaticMerchantAutoRefreshTick,
+    audioLibraryWarmupDelayMs: 900,
+    queueAudioLibraryMetadataWarmup,
+    ensureOperationsJournalFolderTree,
+    scheduleLootManifestCompendiumTypeFolderSync,
+    registerModuleSocketHandler,
+    socketChannel: SOCKET_CHANNEL,
+    socketHandler: handlePartyOperationsSocketMessage,
+    registerPartyOpsHooks,
+    setTimeoutFn: window.setTimeout.bind(window),
+    logger: bootstrapLogger,
+    moduleId: MODULE_ID
+  });
 }
 
-async function handlePartyOperationsSocketMessage(message) {
-  if (message?.type === "ops:gather-request") {
-    if (game.user?.isGM) await applyPlayerGatherRequest(message);
-    return;
-  }
-  if (message?.type === "ops:gather-yield-request") {
-    await promptLocalGatherYieldRoll(message);
-    return;
-  }
-  if (message?.type === "ops:gather-yield-response") {
-    if (game.user?.isGM) {
-      resolvePendingGatherYieldRequest(message?.requestId, message);
-    }
-    return;
-  }
-
-  await routePartyOperationsSocketMessage(message, {
-    game,
+const handlePartyOperationsSocketMessage = createPartyOperationsSocketMessageHandler({
+  game,
+  applyPlayerGatherRequest,
+  promptLocalGatherYieldRoll,
+  resolvePendingGatherYieldRequest,
+  routeSocketDeps: {
     settings: SETTINGS,
     refreshScopeKeys: REFRESH_SCOPE_KEYS,
     normalizeRefreshScopeList,
@@ -43667,8 +43647,8 @@ async function handlePartyOperationsSocketMessage(message) {
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
     applyPlayerLootVouchRequest
-  });
-}
+  }
+});
 
 async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
