@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Montserrat:wght@400;500;600;700;800&display=swap");
 
 /* =========================================================
    Root + Variables
@@ -36,6 +36,11 @@
   --po-warn: var(--color-level-warning, #d3a245);
   --po-danger: var(--color-level-error, #c95e5e);
   --po-neon-green: color-mix(in srgb, var(--po-success) 82%, white 18%);
+  --po-fantasy-font: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --po-select-ink: #1d140b;
+  --po-select-bg-light: #eadfbe;
+  --po-select-bg-dark: #d3bb86;
+  --po-select-border: #8f6f3f;
 
   --po-radius: 10px;
   --po-space-1: 3px;
@@ -3602,11 +3607,25 @@
 #po-sidebar-launcher .po-sidebar-launcher-select {
   width: 100%;
   min-height: 32px;
-  border: 1px solid var(--po-border, #3a4758);
+  border: 1px solid #8f6f3f;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--po-surface, #2a3543) 86%, transparent);
-  color: var(--po-text, #f2f6fb);
+  background: linear-gradient(180deg, #f2e8c9 0%, #d6bc84 100%);
+  color: #1d140b;
+  color-scheme: light;
+  font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 color-mix(in srgb, white 42%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 46%, transparent);
   padding: 0 10px;
+}
+
+#po-sidebar-launcher .po-sidebar-launcher-select option,
+#po-sidebar-launcher .po-sidebar-launcher-select optgroup {
+  background: #f2e8c9;
+  color: #1d140b;
+  font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  font-weight: 600;
 }
 
 #po-sidebar-launcher .po-sidebar-launcher-select:hover {
@@ -4581,7 +4600,20 @@
 .party-operations .po-window .po-select,
 .party-operations .po-window .po-activity-select {
   min-height: clamp(30px, 2.1vw, 36px);
-  color-scheme: dark;
+  color: var(--po-select-ink);
+  color-scheme: light;
+  font-family: var(--po-fantasy-font);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-shadow: 0 1px 0 color-mix(in srgb, white 40%, transparent);
+  border-color: color-mix(in srgb, var(--po-select-border) 80%, var(--po-border));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-select-bg-light) 92%, white 8%),
+      var(--po-select-bg-dark)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
 }
 
 .party-operations .po-window select option,
@@ -4590,9 +4622,11 @@
 .party-operations .po-window .po-select optgroup,
 .party-operations .po-window .po-activity-select option,
 .party-operations .po-window .po-activity-select optgroup {
-  background: #1f2a37;
-  color: #f2f6fb;
+  background: #f2e8c9;
+  color: #1d140b;
+  font-family: var(--po-fantasy-font);
   font-size: 0.92rem;
+  font-weight: 600;
 }
 
 .party-operations [data-tool="rest-watch-player"] .po-hint,
