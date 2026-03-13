@@ -169,6 +169,336 @@ const ART_ITEMS = Object.freeze([
     leaf: "wall-art",
     description:
       "<p>A heavy stone tablet faced with tiny glass tiles and gilt accents that form a radiant celestial scene. The slab is roughly 3 feet tall and requires two hands to move safely.</p><p>Size: Large mounted mosaic. Weight: 28 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt11Pilg9Lm5Cn2",
+    name: "Silver Pilgrim Icon",
+    identifier: "silver-pilgrim-icon",
+    img: "icons/commodities/treasure/token-runed-os-grey.webp",
+    weight: 1,
+    price: 75,
+    leaf: "decorative-finery",
+    description:
+      "<p>A palm-sized silver devotional icon showing a road-worn saint with a walking staff. The relief work is crisp enough to catch candlelight on every fold and border.</p><p>Size: Small altar piece. Weight: 1 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt12Bann0No6Dp3",
+    name: "Embroidered Processional Banner",
+    identifier: "embroidered-processional-banner",
+    img: "icons/sundries/flags/banner-symbol-sun-gold-red.webp",
+    weight: 5,
+    price: 150,
+    leaf: "wall-art",
+    description:
+      "<p>A ceremonial banner of deep blue cloth embroidered with gold thread and tassels. Hung from a rod, it measures roughly 4 feet long and sways dramatically when carried.</p><p>Size: Medium hanging textile artwork. Weight: 5 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt13Ivry1Op7Eq4",
+    name: "Ivory Dice Reliquary",
+    identifier: "ivory-dice-reliquary",
+    img: "icons/commodities/treasure/box-gem-encrusted.webp",
+    weight: 2,
+    price: 200,
+    leaf: "decorative-finery",
+    description:
+      "<p>A tiny ivory casket carved with gaming scenes and fitted with polished brass corners. It is the size of a thick book and prized as much for display as for storage.</p><p>Size: Small luxury container. Weight: 2 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt14Mask2Pq8Fr5",
+    name: "Basalt Temple Mask",
+    identifier: "basalt-temple-mask",
+    img: "icons/equipment/head/mask-carved-bone-white.webp",
+    weight: 9,
+    price: 300,
+    leaf: "wall-art",
+    description:
+      "<p>A dark basalt mask with stylized eyes and a severe ceremonial expression. The carving is broad and angular, meant to hang on a shrine wall rather than be worn in comfort.</p><p>Size: Medium mounted mask. Weight: 9 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt15Rivr3Qr9Gs6",
+    name: "Soapstone River Spirit",
+    identifier: "soapstone-river-spirit",
+    img: "icons/commodities/treasure/statue-carved-face.webp",
+    weight: 16,
+    price: 350,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A smooth soapstone figure of a river spirit with flowing hair and folded hands. The statuette stands about a foot tall and has a cool, river-polished finish.</p><p>Size: Medium figurine. Weight: 16 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt16Scn4Rs0Ht7",
+    name: "Lacquered Genealogy Screen",
+    identifier: "lacquered-genealogy-screen",
+    img: "icons/sundries/documents/document-sealed-red-tan.webp",
+    weight: 11,
+    price: 500,
+    leaf: "wall-art",
+    description:
+      "<p>A folding lacquer screen painted with branching family trees and heraldic medallions. Opened fully, it spans nearly 4 feet across and works as either hanging art or a tabletop display.</p><p>Size: Large painted screen. Weight: 11 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt17Gong5St1Ju8",
+    name: "Gilded Festival Gong Miniature",
+    identifier: "gilded-festival-gong-miniature",
+    img: "icons/commodities/treasure/bell-gold-blue.webp",
+    weight: 7,
+    price: 650,
+    leaf: "decorative-finery",
+    description:
+      "<p>A miniature bronze festival gong suspended in a gilded display frame. Though playable, its bright finish and decorative chasing make it more suited to a collector's shelf.</p><p>Size: Medium tabletop display. Weight: 7 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt18Lion6Tu2Kv9",
+    name: "Sandstone Lion Statuette",
+    identifier: "sandstone-lion-statuette",
+    img: "icons/commodities/treasure/statue-carved-lion.webp",
+    weight: 24,
+    price: 750,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A crouching lion carved from warm sandstone with a weathered mane and careful paw details. The statue is about 18 inches long and heavier than it first appears.</p><p>Size: Medium stone sculpture. Weight: 24 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt19Glas7Uv3Lw0",
+    name: "Stained Glass Shrine Panel",
+    identifier: "stained-glass-shrine-panel",
+    img: "icons/magic/light/window-stained-glass-blue.webp",
+    weight: 14,
+    price: 1000,
+    leaf: "wall-art",
+    description:
+      "<p>A leaded glass panel showing a haloed figure beneath a spray of colored stars. Sunlight through the pane throws jewel-bright patches across any room where it is hung.</p><p>Size: Medium shrine window panel. Weight: 14 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt20Brzr8Vw4Mx1",
+    name: "Gold-Leaf Incense Brazier",
+    identifier: "gold-leaf-incense-brazier",
+    img: "icons/commodities/treasure/incense-burner-gold.webp",
+    weight: 10,
+    price: 1250,
+    leaf: "decorative-finery",
+    description:
+      "<p>A domed brass brazier washed in gold leaf and pierced with floral vents. Delicate chains let it hang above an altar or a hall while scented smoke curls from its lid.</p><p>Size: Medium ceremonial burner. Weight: 10 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt21Bust9Wx5Ny2",
+    name: "Serpentine Oracle Bust",
+    identifier: "serpentine-oracle-bust",
+    img: "icons/commodities/treasure/statue-carved-figurehead.webp",
+    weight: 38,
+    price: 1500,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A bust of a blindfolded oracle carved from green serpentine stone streaked with white veins. It rests on a polished plinth and weighs enough to require deliberate handling.</p><p>Size: Large bust. Weight: 38 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt22Pano0Xy6Oz3",
+    name: "Illuminated Battle Panorama",
+    identifier: "illuminated-battle-panorama",
+    img: "icons/sundries/documents/document-symbol-skull-tan.webp",
+    weight: 9,
+    price: 1800,
+    leaf: "wall-art",
+    description:
+      "<p>A long painted panorama of a famous battlefield edged with gilt notation and tiny heraldic markers. Rolled on twin rods, it stretches nearly 5 feet when displayed.</p><p>Size: Large hanging scroll painting. Weight: 9 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt23Coff1Yz7Pa4",
+    name: "Mother-of-Pearl Jewelry Coffer",
+    identifier: "mother-of-pearl-jewelry-coffer",
+    img: "icons/commodities/treasure/chest-worn-oak-gold.webp",
+    weight: 6,
+    price: 2200,
+    leaf: "decorative-finery",
+    description:
+      "<p>A lacquered coffer inlaid with mother-of-pearl vines that shimmer from white to green in the light. The interior is lined with velvet and fitted with tiny trays.</p><p>Size: Medium luxury coffer. Weight: 6 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt24Ebny2Za8Qb5",
+    name: "Ebony Harvest Idol",
+    identifier: "ebony-harvest-idol",
+    img: "icons/commodities/treasure/statue-idol.webp",
+    weight: 14,
+    price: 2500,
+    leaf: "sculptures-idols",
+    description:
+      "<p>An ebony idol of a harvest patron holding grain and a crescent sickle. The carving is dark, glossy, and dense, with tiny silver seeds set into the hem of its robes.</p><p>Size: Medium devotional idol. Weight: 14 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt25Map3Ab9Rc6",
+    name: "Silk Cartographer Hanging",
+    identifier: "silk-cartographer-hanging",
+    img: "icons/sundries/documents/document-map-plain-blue.webp",
+    weight: 4,
+    price: 3000,
+    leaf: "wall-art",
+    description:
+      "<p>A broad silk wall hanging painted with sea routes, winds, and compass roses in mineral dyes. Fine tassels and weighted corners keep the map cloth taut when displayed.</p><p>Size: Large textile map artwork. Weight: 4 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt26Lant4Bc0Sd7",
+    name: "Crystal Ossuary Lantern",
+    identifier: "crystal-ossuary-lantern",
+    img: "icons/sundries/lights/lantern-iron-yellow.webp",
+    weight: 9,
+    price: 3500,
+    leaf: "decorative-finery",
+    description:
+      "<p>A faceted crystal lantern framed in silver and etched with tiny memorial names. Even unlit, it throws fractured light around a room like a deliberate memorial piece.</p><p>Size: Medium display lantern. Weight: 9 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt27Aqla5Cd1Te8",
+    name: "Bronze Griffin Aquila",
+    identifier: "bronze-griffin-aquila",
+    img: "icons/commodities/treasure/statue-winged.webp",
+    weight: 32,
+    price: 4000,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A proud bronze griffin mounted on a staff-and-globe base, fashioned as a military standard top. The wings flare wide enough that it dominates a shelf or command tent display.</p><p>Size: Large bronze sculpture. Weight: 32 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt28Plaq6De2Uf9",
+    name: "Enamel Victory Plaque",
+    identifier: "enamel-victory-plaque",
+    img: "icons/commodities/treasure/plaque-pendant-gold.webp",
+    weight: 13,
+    price: 4500,
+    leaf: "wall-art",
+    description:
+      "<p>A copper victory plaque coated in rich enamel blues and reds that depict a triumphal procession. It is designed for wall mounting and bears a narrow border of silver studs.</p><p>Size: Medium commemorative plaque. Weight: 13 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt29Cens7Ef3Vg0",
+    name: "Silver Filigree Censer",
+    identifier: "silver-filigree-censer",
+    img: "icons/commodities/treasure/incense-burner-silver.webp",
+    weight: 8,
+    price: 5000,
+    leaf: "decorative-finery",
+    description:
+      "<p>A hanging silver censer woven through with lace-fine filigree and tiny moon motifs. The workmanship is delicate enough that collectors often keep it on a stand rather than suspend it.</p><p>Size: Medium devotional finery. Weight: 8 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt30Judg8Fg4Wh1",
+    name: "Porphyry Judge Effigy",
+    identifier: "porphyry-judge-effigy",
+    img: "icons/commodities/treasure/statue-carved-faceless.webp",
+    weight: 41,
+    price: 5500,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A seated magistrate carved from red porphyry with folded tablets on the lap. White flecks in the stone make the solemn expression seem to shift when viewed from different angles.</p><p>Size: Large seated figure. Weight: 41 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt31Frsc9Gh5Xi2",
+    name: "Royal Hunt Fresco Panel",
+    identifier: "royal-hunt-fresco-panel",
+    img: "icons/sundries/documents/document-symbol-holy-blue.webp",
+    weight: 26,
+    price: 6000,
+    leaf: "wall-art",
+    description:
+      "<p>A cut panel of painted plaster salvaged from a palace wall, preserving a mounted royal hunt in vivid ochres and greens. The fragment is fragile but visually striking.</p><p>Size: Large fresco section. Weight: 26 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt32Dipt0Hi6Yj3",
+    name: "Amber Reliquary Diptych",
+    identifier: "amber-reliquary-diptych",
+    img: "icons/commodities/treasure/token-amber.webp",
+    weight: 7,
+    price: 6500,
+    leaf: "decorative-finery",
+    description:
+      "<p>A hinged diptych of carved amber panels backed by gold leaf and tiny silver hinges. Held to the light, the resin glows warm as fire and reveals minute trapped imperfections.</p><p>Size: Medium folding devotional piece. Weight: 7 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt33Idol1Ij7Zk4",
+    name: "Verdigris Atlas Idol",
+    identifier: "verdigris-atlas-idol",
+    img: "icons/commodities/treasure/statue-carved-runic.webp",
+    weight: 29,
+    price: 7000,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A bronze idol of a stooped giant carrying a globe across its shoulders, now patinated with deep green verdigris. The piece feels ancient and monument-like despite its manageable size.</p><p>Size: Large bronze idol. Weight: 29 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt34Velv2Jk8Al5",
+    name: "Velvet Throne Backdrop",
+    identifier: "velvet-throne-backdrop",
+    img: "icons/sundries/flags/banner-fabric-gold-red.webp",
+    weight: 16,
+    price: 8000,
+    leaf: "wall-art",
+    description:
+      "<p>A massive crimson velvet backdrop embroidered with lions, suns, and knotwork medallions. It is intended to hang behind a dais or throne and immediately claims the eye in any hall.</p><p>Size: Large ceremonial backdrop. Weight: 16 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt35Bowl3Kl9Bm6",
+    name: "Pearl-Inlaid Libation Bowl",
+    identifier: "pearl-inlaid-libation-bowl",
+    img: "icons/commodities/treasure/bowl-gold.webp",
+    weight: 5,
+    price: 9000,
+    leaf: "decorative-finery",
+    description:
+      "<p>A broad libation bowl of gold-toned bronze inlaid with seed pearls around the rim and base. The basin is polished to a mirror shine and meant for ritual display as much as use.</p><p>Size: Medium ceremonial bowl. Weight: 5 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt36Phnx4Lm0Cn7",
+    name: "Alabaster Phoenix Figure",
+    identifier: "alabaster-phoenix-figure",
+    img: "icons/commodities/treasure/statue-bird.webp",
+    weight: 22,
+    price: 10000,
+    leaf: "sculptures-idols",
+    description:
+      "<p>An alabaster phoenix rising from stylized flames, carved thin enough at the feathers to glow at the edges under bright light. It rests on a black stone base for contrast.</p><p>Size: Medium monument figure. Weight: 22 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt37Ceil5Mn1Do8",
+    name: "Gilded Chapel Ceiling Panel",
+    identifier: "gilded-chapel-ceiling-panel",
+    img: "icons/sundries/documents/document-symbol-sun-yellow.webp",
+    weight: 24,
+    price: 12000,
+    leaf: "wall-art",
+    description:
+      "<p>A square wooden ceiling panel painted with cherubs and clouds, then edged in leaf-gilded rays. Once mounted overhead, it would have formed the centerpiece of a small chapel canopy.</p><p>Size: Large painted architectural panel. Weight: 24 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt38Scep6No2Ep9",
+    name: "Jeweled Coronation Scepter Display",
+    identifier: "jeweled-coronation-scepter-display",
+    img: "icons/commodities/treasure/scepter-gold-blue.webp",
+    weight: 6,
+    price: 15000,
+    leaf: "decorative-finery",
+    description:
+      "<p>A jeweled ceremonial scepter laid into a fitted presentation case lined with blue velvet. The display is clearly intended to be admired as regalia rather than carried in day-to-day rule.</p><p>Size: Medium regalia display. Weight: 6 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt39Sraf7Op3Fq0",
+    name: "Obsidian Seraph Torso",
+    identifier: "obsidian-seraph-torso",
+    img: "icons/commodities/treasure/statue-winged-purple.webp",
+    weight: 36,
+    price: 18000,
+    leaf: "sculptures-idols",
+    description:
+      "<p>A torso-length seraph carved from glossy obsidian with folded wings and a faceless helm. The polished stone reflects candles in sharp points across its dark surface.</p><p>Size: Large black-glass sculpture. Weight: 36 lb.</p>"
+  }),
+  Object.freeze({
+    _id: "aRt40Tapt8Pq4Gr1",
+    name: "Sun-King Tapestry",
+    identifier: "sun-king-tapestry",
+    img: "icons/sundries/flags/banner-symbol-sun-gold.webp",
+    weight: 20,
+    price: 25000,
+    leaf: "wall-art",
+    description:
+      "<p>A grand tapestry woven with metallic thread to depict a radiant monarch seated beneath a blazing disk. When hung full-length, it dominates a chamber at nearly 8 feet tall.</p><p>Size: Grand hanging tapestry. Weight: 20 lb.</p>"
   })
 ]);
 
@@ -218,6 +548,45 @@ function getValueBand(price) {
   return "value.v5";
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function stripHtml(value) {
+  return String(value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateWords(value, maxWords = 30) {
+  const words = String(value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length <= maxWords) return words.join(" ");
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+function getArtSummaryText(spec) {
+  const text = stripHtml(spec.description);
+  const firstSentenceMatch = text.match(/.+?[.!?](?:\s|$)/);
+  return truncateWords(String(firstSentenceMatch?.[0] ?? text).trim(), 30);
+}
+
+function buildArtChatDescription(spec) {
+  return `<p><strong>${escapeHtml(spec.name)}</strong></p><p>${escapeHtml(getArtSummaryText(spec))}</p>`;
+}
+
+function buildArtUnidentifiedDescription(spec) {
+  return `<p>${escapeHtml(getArtSummaryText(spec))}</p><p>Its provenance and exact market value require closer inspection.</p>`;
+}
+
 function buildItem(spec) {
   const leaf = LEAF_DEFINITIONS[String(spec.leaf ?? "").trim()];
   if (!leaf) throw new Error(`Unknown art leaf: ${String(spec.leaf ?? "")}`);
@@ -238,7 +607,7 @@ function buildItem(spec) {
     system: {
       description: {
         value: spec.description,
-        chat: ""
+        chat: buildArtChatDescription(spec)
       },
       source: {
         rules: "2014",
@@ -261,7 +630,7 @@ function buildItem(spec) {
       },
       identifier: spec.identifier,
       unidentified: {
-        description: ""
+        description: buildArtUnidentifiedDescription(spec)
       },
       container: null,
       properties: [],

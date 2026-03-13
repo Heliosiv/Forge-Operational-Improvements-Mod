@@ -181,9 +181,21 @@
                 <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp items</span>
               </div>
             </div>
-            <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>
-              <span class="po-loot-dropzone-icon"><i class="fa-solid fa-sack-dollar"></i></span>
-              <span>Drop an item here to add it to this builder output.</span>
+            <div class="po-loot-preview-dropzone-shell">
+              <div class="po-loot-preview-dropzone" data-loot-preview-dropzone>
+                <span class="po-loot-dropzone-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+                <span>Drop an item here to add it to this builder output.</span>
+              </div>
+              <div class="po-loot-builder-inline-actions">
+                <button
+                  type="button"
+                  class="po-btn po-btn-sm"
+                  data-action="generate-loot-preview-item"
+                  title="Generate one more item from the current builder snapshot and loot filters"
+                >
+                  Generate Item
+                </button>
+              </div>
             </div>
 
             {{#if preview.items.length}}
@@ -224,7 +236,7 @@
             {{else}}
             <div class="po-loot-empty-state">
               <div class="po-section-title">No builder items yet</div>
-              <div class="po-op-summary">Generate a loot pass, add a manual item, or drag a document into the tray to start shaping the final drop.</div>
+              <div class="po-op-summary">Generate a loot pass, generate one item here, add a manual item, or drag a document into the tray to start shaping the final drop.</div>
             </div>
             {{/if}}
           </section>

@@ -444,10 +444,28 @@ function sourceIdToKeyword(sourceId = "") {
 
 function inferMerchantCategories(item = {}) {
   const categories = new Set();
+  const poFlags = item?.flags?.[MODULE_ID];
+  const itemId = String(item?._id ?? "").trim();
   const type = String(item?.type ?? "").trim().toLowerCase();
   const subtype = String(item?.system?.type?.value ?? "").trim().toLowerCase();
   const name = getNormalizedItemName(item);
   const description = getDescriptionTextRaw(item).toLowerCase();
+
+  for (const category of Array.isArray(poFlags?.merchantCategories) ? poFlags.merchantCategories : []) {
+    const normalized = String(category ?? "").trim().toLowerCase();
+    if (normalized) categories.add(normalized);
+  }
+
+  for (const keyword of Array.isArray(poFlags?.keywords) ? poFlags.keywords : []) {
+    const match = String(keyword ?? "").trim().toLowerCase().match(/^merchant\.([a-z0-9-]+)$/);
+    if (match?.[1]) categories.add(match[1]);
+  }
+
+  if (String(poFlags?.folder?.sectionKey ?? "").trim().toLowerCase() === "art-objects") {
+    categories.add("art");
+    categories.add("treasure");
+    categories.add("luxury");
+  }
 
   if (type) categories.add(type);
   if (type === "spell") {
@@ -475,7 +493,10 @@ function inferMerchantCategories(item = {}) {
     categories.add("treasure");
     categories.add("luxury");
   }
-  if (/\b(painting|portrait|tapestry|triptych|mosaic|statuette|idol|bust|sculpture|urn|chalice|reliquary)\b/i.test(name)) {
+  if (
+    /^aRt\d+/i.test(itemId)
+    || /\b(painting|portrait|tapestry|triptych|mosaic|banner|mask|screen|panel|panorama|fresco|backdrop|plaque|hanging|icon|chalice|urn|reliquary|gong|brazier|coffer|lantern|censer|bowl|scepter|display|statuette|idol|bust|sculpture|spirit|aquila|effigy|figure|torso)\b/i.test(name)
+  ) {
     categories.add("art");
     categories.add("treasure");
     categories.add("luxury");
@@ -744,9 +765,9 @@ function inferSundriesSectionPlacement(item = {}, categories = [], magical = fal
 
   if (categorySet.has("art")) {
     let leaf = { key: "decorative-finery", label: "Decorative Finery", sort: 6280 };
-    if (/\b(painting|portrait|tapestry|triptych|mosaic)\b/i.test(name)) {
+    if (/\b(painting|portrait|tapestry|triptych|mosaic|banner|mask|screen|panel|panorama|fresco|backdrop|plaque|hanging)\b/i.test(name)) {
       leaf = { key: "wall-art", label: "Wall Art", sort: 6260 };
-    } else if (/\b(statuette|idol|bust|sculpture)\b/i.test(name)) {
+    } else if (/\b(statuette|idol|bust|sculpture|spirit|aquila|effigy|figure|torso|lion|griffin|phoenix|seraph|oracle)\b/i.test(name)) {
       leaf = { key: "sculptures-idols", label: "Sculptures & Idols", sort: 6270 };
     }
     return buildFolderPlacementFromSegments("sundries", {
@@ -1312,6 +1333,136 @@ function stripHtml(value) {
     .trim();
 }
 
+function capitalizeFirst(value = "") {
+  const text = String(value ?? "");
+  if (!text) return "";
+  return `${text.slice(0, 1).toUpperCase()}${text.slice(1)}`;
+}
+
+function truncateWords(value = "", maxWords = 32) {
+  const words = String(value ?? "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length <= maxWords) return words.join(" ");
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+function humanizeToken(value = "") {
+  return String(value ?? "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function withIndefiniteArticle(value = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return "an item";
+  const article = /^[aeiou]/i.test(text) ? "an" : "a";
+  return `${article} ${text}`;
+}
+
+function getItemReferenceLabel(item = {}) {
+  const itemType = String(item?.type ?? "").trim().toLowerCase();
+  const baseItem = humanizeToken(item?.system?.type?.baseItem ?? "");
+  const subtype = humanizeToken(item?.system?.type?.value ?? "");
+  const folderSection = String(item?.flags?.[MODULE_ID]?.folder?.sectionKey ?? "").trim().toLowerCase();
+
+  if (itemType === "spell") return "spell formula";
+  if (folderSection === "art-objects") return "art object";
+  if (baseItem) return baseItem;
+
+  const normalizedSubtype = ({
+    martialm: "weapon",
+    martialr: "weapon",
+    simplem: "weapon",
+    simpler: "weapon",
+    treasure: "art object",
+    clothing: "garment"
+  })[subtype.replace(/\s+/g, "")] ?? subtype;
+
+  if (normalizedSubtype) {
+    if (itemType === "equipment" && ["light", "medium", "heavy", "shield"].includes(normalizedSubtype)) {
+      return `${normalizedSubtype} armor`;
+    }
+    return normalizedSubtype;
+  }
+
+  switch (itemType) {
+    case "weapon":
+      return "weapon";
+    case "equipment":
+      return "piece of gear";
+    case "consumable":
+      return "consumable";
+    case "tool":
+      return "tool";
+    case "loot":
+      return "curio";
+    case "container":
+      return "container";
+    default:
+      return itemType || "item";
+  }
+}
+
+function buildItemSummaryText(item = {}) {
+  const descriptionText = stripHtml(item?.system?.description?.value ?? "");
+  const firstSentenceMatch = descriptionText.match(/.+?[.!?](?:\s|$)/);
+  const summary = String(firstSentenceMatch?.[0] ?? descriptionText).trim();
+  if (summary) return truncateWords(summary, 32);
+
+  const itemName = String(item?.name ?? "Item").trim() || "Item";
+  return `${itemName} is ready for use.`;
+}
+
+function buildItemChatDescription(item = {}) {
+  const itemName = escapeHtml(String(item?.name ?? "Item").trim() || "Item");
+  const summaryText = escapeHtml(buildItemSummaryText(item));
+  return `<p><strong>${itemName}</strong></p><p>${summaryText}</p>`;
+}
+
+function buildUnidentifiedDescription(item = {}) {
+  const itemType = String(item?.type ?? "").trim().toLowerCase();
+  if (itemType === "spell") {
+    return "<p>A carefully inscribed spell formula awaits study before its exact effect becomes clear.</p>";
+  }
+
+  const subject = capitalizeFirst(withIndefiniteArticle(getItemReferenceLabel(item)));
+  const rarity = getRarityFromItem(item);
+  const hint = isMagicItem(item, rarity)
+    ? "Subtle details suggest hidden properties that require identification."
+    : "Its workmanship and full value are not immediately obvious.";
+
+  return `<p>${escapeHtml(subject)} shows distinctive craftsmanship and invites closer inspection.</p><p>${escapeHtml(hint)}</p>`;
+}
+
+function buildActivityChatFlavor(item = {}, activity = {}) {
+  const itemName = String(item?.name ?? "Item").trim() || "Item";
+  const activityType = String(activity?.type ?? "").trim().toLowerCase();
+  const isSpell = String(item?.type ?? "").trim().toLowerCase() === "spell";
+
+  switch (activityType) {
+    case "attack":
+      return isSpell ? `Cast ${itemName}; resolve the spell attack.` : `Attack with ${itemName}.`;
+    case "damage":
+      return isSpell ? `Cast ${itemName}; resolve its damage.` : `Resolve ${itemName}'s damage.`;
+    case "heal":
+      return isSpell ? `Cast ${itemName}; restore hit points.` : `Use ${itemName} to restore hit points.`;
+    case "save":
+      return isSpell ? `Cast ${itemName}; resolve the target save.` : `Use ${itemName}; resolve the listed save.`;
+    case "check":
+      return `Use ${itemName} for the associated check.`;
+    case "summon":
+      return `Use ${itemName} to summon the listed creature or effect.`;
+    case "utility":
+    default:
+      return isSpell ? `Cast ${itemName}.` : `Use ${itemName}.`;
+  }
+}
+
 function makeStableId(seed, length = 16) {
   return crypto.createHash("sha1").update(String(seed ?? "")).digest("hex").slice(0, Math.max(8, Number(length) || 16));
 }
@@ -1461,7 +1612,7 @@ function buildGenericSaveActivity(item = {}, activityId = "dnd5eactivity000", so
   return activity;
 }
 
-function tuneActivity(activity = {}, summary = null) {
+function tuneActivity(item = {}, activity = {}, summary = null) {
   if (!isPlainObject(activity)) return;
   if (summary) summary.activitiesReviewed += 1;
 
@@ -1493,6 +1644,11 @@ function tuneActivity(activity = {}, summary = null) {
 
   const description = ensureObject(activity, "description");
   patched += applyDefaults(description, { chatFlavor: "" });
+  if (!String(description?.chatFlavor ?? "").trim()) {
+    description.chatFlavor = buildActivityChatFlavor(item, activity);
+    patched += 1;
+    if (summary) summary.generatedActivityChatFlavors += 1;
+  }
 
   const duration = ensureObject(activity, "duration");
   patched += applyDefaults(duration, {
@@ -2120,6 +2276,21 @@ function ensureDescription(item = {}, summary = null) {
   if (summary) summary.generatedDescriptions += 1;
 }
 
+function ensureTextFields(item = {}, summary = null) {
+  const system = ensureObject(item, "system");
+  const description = ensureObject(system, "description");
+  if (!String(description?.chat ?? "").trim()) {
+    description.chat = buildItemChatDescription(item);
+    if (summary) summary.generatedChatDescriptions += 1;
+  }
+
+  const unidentified = ensureObject(system, "unidentified");
+  if (!String(unidentified?.description ?? "").trim()) {
+    unidentified.description = buildUnidentifiedDescription(item);
+    if (summary) summary.generatedUnidentifiedDescriptions += 1;
+  }
+}
+
 function ensureActivityCoverage(item = {}, summary = null) {
   const system = ensureObject(item, "system");
   if (!isPlainObject(system.activities)) {
@@ -2145,7 +2316,7 @@ function ensureActivityCoverage(item = {}, summary = null) {
       if (summary) summary.activitiesPatched += 1;
     }
     system.activities[key].sort = index;
-    tuneActivity(system.activities[key], summary);
+    tuneActivity(item, system.activities[key], summary);
     ensureBlankActivationType(item, system.activities[key], summary);
   }
 }
@@ -2290,7 +2461,7 @@ function ensureMundaneConsumableRules(item = {}, summary = null) {
       buildGenericUtilityActivity(item, activityId, sort)
     ), summary);
     const utility = utilityEntry.activity;
-    tuneActivity(utility, summary);
+    tuneActivity(item, utility, summary);
     if (assignIfChanged(utility, "name", `Drink ${itemName}`)) changed += 1;
     const utilityDescription = ensureObject(utility, "description");
     if (assignIfChanged(utilityDescription, "chatFlavor", `Drink a serving of ${itemName}.`)) changed += 1;
@@ -2320,7 +2491,7 @@ function ensureMundaneConsumableRules(item = {}, summary = null) {
       })
     ), summary);
     const save = saveEntry.activity;
-    tuneActivity(save, summary);
+    tuneActivity(item, save, summary);
     if (assignIfChanged(save, "type", "save")) changed += 1;
     if (assignIfChanged(save, "name", "Resist Intoxication")) changed += 1;
     const saveDescription = ensureObject(save, "description");
@@ -2365,7 +2536,7 @@ function ensureMundaneConsumableRules(item = {}, summary = null) {
         buildGenericUtilityActivity(item, activityId, sort)
       ), summary);
       const utility = utilityEntry.activity;
-      tuneActivity(utility, summary);
+      tuneActivity(item, utility, summary);
       if (assignIfChanged(utility, "name", "Eat Rations")) changed += 1;
       const utilityDescription = ensureObject(utility, "description");
       if (assignIfChanged(utilityDescription, "chatFlavor", "Consume one day of preserved food.")) changed += 1;
@@ -2387,7 +2558,7 @@ function ensureMundaneConsumableRules(item = {}, summary = null) {
       buildGenericUtilityActivity(item, activityId, sort)
     ), summary);
     const utility = utilityEntry.activity;
-    tuneActivity(utility, summary);
+    tuneActivity(item, utility, summary);
     if (assignIfChanged(utility, "name", "Drink Water")) changed += 1;
     const utilityDescription = ensureObject(utility, "description");
     if (assignIfChanged(utilityDescription, "chatFlavor", "Drink from this waterskin.")) changed += 1;
@@ -2421,7 +2592,7 @@ function ensureCustomConsumableAutomation(item = {}, summary = null) {
       buildGenericUtilityActivity(item, activityId, sort)
     ), summary);
     const utility = utilityEntry.activity;
-    tuneActivity(utility, summary);
+    tuneActivity(item, utility, summary);
     if (assignIfChanged(utility, "name", String(options.activityName ?? `Use ${itemName}`))) changed += 1;
     const utilityDescription = ensureObject(utility, "description");
     if (assignIfChanged(utilityDescription, "chatFlavor", String(options.chatFlavor ?? `Use ${itemName}.`))) changed += 1;
@@ -2567,6 +2738,7 @@ function enrichManifestItem(item = {}, summary = null) {
   ensureSourceMetadata(item, summary);
   tuneEnhancedWeaponItem(item, summary);
   ensureDescription(item, summary);
+  ensureTextFields(item, summary);
   ensureActivityCoverage(item, summary);
   ensurePassiveEffects(item, summary);
   ensureMundaneConsumableRules(item, summary);
@@ -2871,6 +3043,9 @@ async function main() {
     synthesizedCoreSourceIds: 0,
     systemSourceFieldsFilled: 0,
     generatedDescriptions: 0,
+    generatedChatDescriptions: 0,
+    generatedUnidentifiedDescriptions: 0,
+    generatedActivityChatFlavors: 0,
     activityCollectionsInitialized: 0,
     utilityActivitiesAdded: 0,
     activitiesReviewed: 0,

@@ -4,6 +4,7 @@ import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
 import { createAudioStore } from "./features/audio-store.js";
+import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -1802,6 +1803,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "reset-loot-source-config",
   "set-loot-preview-field",
   "roll-loot-preview",
+  "generate-loot-preview-item",
   "add-loot-preview-item",
   "remove-loot-preview-item",
   "adjust-loot-preview-currency",
@@ -9294,6 +9296,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await rollLootPreview(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
+        "generate-loot-preview-item": async () => {
+          const added = await generateLootPreviewItemFromSnapshot();
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
         "add-loot-preview-item": async () => {
           const added = await addLootPreviewItemByPicker();
           if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -10609,6 +10615,7 @@ export const GmLootPageApp = createGmLootPageApp({
   resetLootSourceConfig,
   setLootPreviewField,
   rollLootPreview,
+  generateLootPreviewItemFromSnapshot,
   addLootPreviewItemByPicker,
   editLootPreviewItem,
   removeLootPreviewItem,
@@ -18143,16 +18150,8 @@ function resolveTargetGP(draft = {}) {
       ? Math.max(0, Math.min(LOOT_PREVIEW_MAX_TOTAL_TARGET_VALUE_GP_LIMIT, Math.floor(manualTotalTargetRaw)))
       : 0;
 
-    const baseTargetTable = {
-      defeated: { low: 24, mid: 90, high: 320, epic: 980 },
-      encounter: { low: 45, mid: 180, high: 700, epic: 2200 },
-      // Hoards keep the established builder flow, but the low tier baseline is raised
-      // to better match the DMG-style total wealth the user asked for.
-      horde: { low: 780, mid: 340, high: 1250, epic: 3800 }
-    };
     const modeKey = (mode === "defeated" || mode === "encounter" || mode === "horde") ? mode : "horde";
-    const byMode = baseTargetTable[modeKey] ?? baseTargetTable.horde;
-    const base = Math.max(1, Number(byMode[challenge] ?? byMode.mid) || byMode.mid);
+    const base = getLootPreviewBaseTargetGp(modeKey, challenge);
     const profileMultiplier = profile === "poor" ? 0.68 : profile === "well" ? 1.32 : 1;
     const scaleMultiplier = getLootScaleMultiplier(scale);
     const autoTotalTargetGp = Math.max(
@@ -36023,6 +36022,245 @@ function addItemToLootPreviewResult(itemEntry) {
   setLootPreviewResult(result);
 }
 
+function getLootPreviewItemQuantityTotal(items = []) {
+  return (Array.isArray(items) ? items : []).reduce((sum, entry) => {
+    return sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1));
+  }, 0);
+}
+
+function summarizeLootPreviewSelectedItems(items = []) {
+  const selectedByRarity = {
+    common: 0,
+    uncommon: 0,
+    rare: 0,
+    "very-rare": 0,
+    legendary: 0
+  };
+  const selectedUuids = new Set();
+  let totalQuantity = 0;
+  let totalValueGp = 0;
+  for (const entry of (Array.isArray(items) ? items : [])) {
+    const quantity = Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1));
+    const rarityBucket = getLootRarityBucket(entry?.rarity);
+    totalQuantity += quantity;
+    totalValueGp += Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+    selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + quantity;
+    const uuid = String(entry?.uuid ?? "").trim();
+    if (uuid) selectedUuids.add(uuid);
+  }
+  return {
+    totalQuantity,
+    totalValueGp: Number(totalValueGp.toFixed(2)),
+    selectedByRarity,
+    selectedUuids
+  };
+}
+
+function buildLootPreviewAdditionalItemBudgetContext(draft = {}, result = null, existingItemCount = 0) {
+  const targetCountHint = Math.max(
+    1,
+    Number(result?.stats?.desiredItemCount ?? result?.stats?.itemCountTarget ?? getLootItemCount(draft) ?? 1) || 1
+  );
+  const previewBudgetContext = buildLootValueBudgetContext(draft, targetCountHint);
+  const runtimeBudgetContext = resolveLootRuntimeBudgetContext(draft, previewBudgetContext);
+  const manualMaxItems = Math.max(0, Number(previewBudgetContext?.maxItems ?? 0) || 0);
+  const targetCount = Math.max(targetCountHint, existingItemCount + 1);
+  const hardMaxItems = manualMaxItems > 0
+    ? Math.min(manualMaxItems, existingItemCount + 1)
+    : existingItemCount + 1;
+  const resolvedEncounterTargetGp = Math.max(0, Number(
+    result?.stats?.resolvedEncounterTargetGp
+    ?? runtimeBudgetContext?.resolvedTotalTargetGp
+    ?? runtimeBudgetContext?.effectiveTotalTargetGp
+    ?? previewBudgetContext?.effectiveTotalTargetGp
+    ?? 0
+  ) || 0);
+  const resolvedItemTargetGp = Math.max(0, Number(
+    result?.stats?.resolvedItemTargetGp
+    ?? runtimeBudgetContext?.targetItemBudgetGp
+    ?? previewBudgetContext?.targetItemBudgetGp
+    ?? 0
+  ) || 0);
+  const resolvedCurrencyTargetGp = Math.max(0, Number(
+    result?.stats?.resolvedCurrencyTargetGp
+    ?? runtimeBudgetContext?.targetCurrencyBudgetGp
+    ?? previewBudgetContext?.targetCurrencyBudgetGp
+    ?? 0
+  ) || 0);
+  const itemTolerance = resolveTolerance(
+    resolvedItemTargetGp,
+    draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS
+  );
+  return {
+    manualMaxItems,
+    previewBudgetContext,
+    budgetContext: {
+      ...runtimeBudgetContext,
+      configuredTotalTargetGp: Math.max(0, Number(
+        result?.stats?.encounterTargetGp
+        ?? runtimeBudgetContext?.configuredTotalTargetGp
+        ?? previewBudgetContext?.effectiveTotalTargetGp
+        ?? 0
+      ) || 0),
+      configuredItemBudgetGp: Math.max(0, Number(
+        result?.stats?.itemTargetGp
+        ?? runtimeBudgetContext?.configuredItemBudgetGp
+        ?? previewBudgetContext?.targetItemBudgetGp
+        ?? 0
+      ) || 0),
+      configuredCurrencyBudgetGp: Math.max(0, Number(
+        result?.stats?.currencyTargetGp
+        ?? runtimeBudgetContext?.configuredCurrencyBudgetGp
+        ?? previewBudgetContext?.targetCurrencyBudgetGp
+        ?? 0
+      ) || 0),
+      resolvedTotalTargetGp: resolvedEncounterTargetGp,
+      effectiveTotalTargetGp: resolvedEncounterTargetGp,
+      totalBudgetGp: resolvedEncounterTargetGp,
+      targetItemBudgetGp: resolvedItemTargetGp,
+      targetCurrencyBudgetGp: resolvedCurrencyTargetGp,
+      targetPerItemGp: Math.max(0.5, Number((resolvedItemTargetGp / Math.max(1, targetCount)).toFixed(2))),
+      targetCount,
+      maxItems: hardMaxItems,
+      itemTargetValueRangeMinGp: itemTolerance.minGp,
+      itemTargetValueRangeMaxGp: itemTolerance.maxGp,
+      itemToleranceGp: itemTolerance.toleranceGp
+    }
+  };
+}
+
+function buildLootPreviewAdditionalItemState(candidates = [], selectedSummary = {}, draft = {}, budgetContext = {}, randomContext = {}) {
+  const totalQuantity = Math.max(0, Number(selectedSummary?.totalQuantity ?? 0) || 0);
+  const rarityCapCount = Math.max(
+    totalQuantity + 1,
+    Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1),
+    Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0)
+  );
+  return {
+    pool: [...(Array.isArray(candidates) ? candidates : [])],
+    selected: Array.from({ length: totalQuantity }, () => ({ seeded: true })),
+    selectedTotalValueGp: Math.max(0, Number(selectedSummary?.totalValueGp ?? 0) || 0),
+    variableTreasurePools: buildLootVariableTreasurePools(candidates),
+    selectedByRarity: {
+      common: Math.max(0, Number(selectedSummary?.selectedByRarity?.common ?? 0) || 0),
+      uncommon: Math.max(0, Number(selectedSummary?.selectedByRarity?.uncommon ?? 0) || 0),
+      rare: Math.max(0, Number(selectedSummary?.selectedByRarity?.rare ?? 0) || 0),
+      "very-rare": Math.max(0, Number(selectedSummary?.selectedByRarity?.["very-rare"] ?? 0) || 0),
+      legendary: Math.max(0, Number(selectedSummary?.selectedByRarity?.legendary ?? 0) || 0)
+    },
+    rarityCaps: getLootRaritySelectionCaps(draft, rarityCapCount),
+    budgetContext,
+    targetCount: Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1),
+    maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
+    draft,
+    random: randomContext?.random ?? Math.random,
+    diagnostics: []
+  };
+}
+
+function pickAdditionalLootPreviewItemFromCandidates(candidates = [], currentItems = [], draft = {}, budgetContext = {}, randomContext = {}) {
+  const candidatePool = Array.isArray(candidates) ? candidates : [];
+  if (!candidatePool.length) return null;
+  const selectedSummary = summarizeLootPreviewSelectedItems(currentItems);
+  const primaryPool = candidatePool.filter((entry) => {
+    const uuid = String(entry?.uuid ?? "").trim();
+    return !uuid || !selectedSummary.selectedUuids.has(uuid);
+  });
+  const poolVariants = primaryPool.length > 0 ? [primaryPool, candidatePool] : [candidatePool];
+  for (const pool of poolVariants) {
+    const state = buildLootPreviewAdditionalItemState(pool, selectedSummary, draft, budgetContext, randomContext);
+    for (const phase of ["spend", "fill"]) {
+      const selectionPool = buildLootPhaseSelectionPool(state, phase);
+      if (!selectionPool.length) continue;
+      const picked = chooseLootBudgetCandidate(selectionPool, state, phase);
+      if (!picked) continue;
+      if (commitLootBudgetPick(state, picked)) {
+        return state.selected[state.selected.length - 1] ?? null;
+      }
+    }
+    const fallbackPool = buildWeightedPool(pool, (entry) => {
+      return Math.max(
+        Number(getLootBudgetPhaseCandidateWeight(entry, state, "spend") || 0),
+        Number(getLootBudgetPhaseCandidateWeight(entry, state, "fill") || 0),
+        0
+      );
+    });
+    const pickedRow = chooseWeightedEntry(fallbackPool, (entry) => Number(entry?.weight ?? 0), state.random);
+    const fallbackPick = pickedRow?.item ?? null;
+    if (fallbackPick && commitLootBudgetPick(state, fallbackPick)) {
+      return state.selected[state.selected.length - 1] ?? null;
+    }
+  }
+  return null;
+}
+
+function seedLootPreviewResultStats(result = {}, previewBudgetContext = {}, budgetContext = {}, randomContext = {}, candidateCount = 0) {
+  const currentStats = (result?.stats && typeof result.stats === "object") ? result.stats : {};
+  result.stats = {
+    ...currentStats,
+    candidateCount: Math.max(0, Number(candidateCount ?? currentStats.candidateCount ?? 0) || 0),
+    itemCountTarget: Math.max(0, Number(currentStats.itemCountTarget ?? budgetContext?.targetCount ?? previewBudgetContext?.targetCount ?? 0) || 0),
+    desiredItemCount: Math.max(0, Number(currentStats.desiredItemCount ?? previewBudgetContext?.targetCount ?? budgetContext?.targetCount ?? 0) || 0),
+    maxItems: Math.max(0, Number(currentStats.maxItems ?? previewBudgetContext?.maxItems ?? 0) || 0),
+    encounterTargetGp: Math.max(0, Number(
+      currentStats.encounterTargetGp
+      ?? budgetContext?.configuredTotalTargetGp
+      ?? previewBudgetContext?.effectiveTotalTargetGp
+      ?? 0
+    ) || 0),
+    itemTargetGp: Math.max(0, Number(
+      currentStats.itemTargetGp
+      ?? budgetContext?.configuredItemBudgetGp
+      ?? previewBudgetContext?.targetItemBudgetGp
+      ?? 0
+    ) || 0),
+    currencyTargetGp: Math.max(0, Number(
+      currentStats.currencyTargetGp
+      ?? budgetContext?.configuredCurrencyBudgetGp
+      ?? previewBudgetContext?.targetCurrencyBudgetGp
+      ?? 0
+    ) || 0),
+    resolvedEncounterTargetGp: Math.max(0, Number(
+      currentStats.resolvedEncounterTargetGp
+      ?? budgetContext?.resolvedTotalTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? 0
+    ) || 0),
+    resolvedItemTargetGp: Math.max(0, Number(
+      currentStats.resolvedItemTargetGp
+      ?? budgetContext?.targetItemBudgetGp
+      ?? 0
+    ) || 0),
+    resolvedCurrencyTargetGp: Math.max(0, Number(
+      currentStats.resolvedCurrencyTargetGp
+      ?? budgetContext?.targetCurrencyBudgetGp
+      ?? 0
+    ) || 0),
+    strictnessToleranceGp: Math.max(0, Number(
+      currentStats.strictnessToleranceGp
+      ?? previewBudgetContext?.toleranceGp
+      ?? 0
+    ) || 0),
+    strictnessTolerancePercent: Math.max(0, Number(
+      currentStats.strictnessTolerancePercent
+      ?? previewBudgetContext?.tolerancePercent
+      ?? 0
+    ) || 0),
+    strictnessBandLabel: String(
+      currentStats.strictnessBandLabel
+      ?? previewBudgetContext?.strictnessBandLabel
+      ?? "Normal"
+    ),
+    strictnessBandKey: String(
+      currentStats.strictnessBandKey
+      ?? previewBudgetContext?.strictnessBandKey
+      ?? "normal"
+    ),
+    deterministic: Boolean(currentStats.deterministic ?? randomContext?.deterministic),
+    seed: String(currentStats.seed ?? randomContext?.seed ?? "")
+  };
+}
+
 function getLootPreviewItemIdentityFromElement(element) {
   return {
     itemId: String(element?.dataset?.itemId ?? "").trim(),
@@ -36194,6 +36432,66 @@ async function addLootPreviewItemByUuid(uuidInput = "") {
   const document = await resolveUuidDocument(uuid);
   if (!document || document.documentName !== "Item") return false;
   addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, { sourceLabel: "Manual Add" }));
+  return true;
+}
+
+async function generateLootPreviewItemFromSnapshot() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can generate extra loot builder items.");
+    return false;
+  }
+
+  const currentResult = getLootPreviewResult();
+  const draft = normalizeLootPreviewDraft(currentResult?.draft ?? getLootPreviewDraft());
+  const currentItems = Array.isArray(currentResult?.items) ? currentResult.items : [];
+  const currentItemCount = getLootPreviewItemQuantityTotal(currentItems);
+  const { previewBudgetContext, budgetContext, manualMaxItems } = buildLootPreviewAdditionalItemBudgetContext(
+    draft,
+    currentResult,
+    currentItemCount
+  );
+
+  if (manualMaxItems > 0 && currentItemCount >= manualMaxItems) {
+    ui.notifications?.warn("Manual item cap reached. Remove an item or raise the cap before generating another.");
+    return false;
+  }
+
+  const warnings = [];
+  const sourceConfig = getLootSourceConfig();
+  const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
+  if (!candidates.length) {
+    ui.notifications?.warn(warnings[0] || "No eligible item candidates matched the current loot filters.");
+    return false;
+  }
+
+  const randomContext = buildLootRandomContext(draft, budgetContext);
+  const pickedItem = pickAdditionalLootPreviewItemFromCandidates(
+    candidates,
+    currentItems,
+    draft,
+    budgetContext,
+    randomContext
+  );
+  if (!pickedItem) {
+    ui.notifications?.warn("No additional item fit the current builder snapshot.");
+    return false;
+  }
+
+  const result = getMutableLootPreviewResult();
+  result.draft = draft;
+  seedLootPreviewResultStats(result, previewBudgetContext, budgetContext, randomContext, candidates.length);
+  result.items = aggregateLootEntriesForStacks([
+    ...(Array.isArray(result.items) ? result.items : []),
+    {
+      id: foundry.utils.randomID(),
+      quantity: 1,
+      ...pickedItem
+    }
+  ]);
+  result.generatedAt = Date.now();
+  result.generatedBy = String(game.user?.name ?? "GM");
+  refreshLootPreviewResultStats(result);
+  setLootPreviewResult(result);
   return true;
 }
 

@@ -6595,6 +6595,13 @@
   align-items: center;
 }
 
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-dropzone-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
+}
+
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-action-group-publish {
   justify-content: flex-end;
 }
@@ -6612,6 +6619,16 @@
     linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 84%, transparent), color-mix(in srgb, var(--po-surface) 78%, transparent)),
     url("./assets/po-cartography-texture.svg");
   transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-inline-actions {
+  display: flex;
+  align-items: stretch;
+}
+
+.party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-inline-actions .po-btn {
+  min-width: 148px;
+  height: 100%;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-dropzone.is-drop-active,
@@ -6827,6 +6844,15 @@
   ) {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-dropzone-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-inline-actions .po-btn {
+    width: 100%;
+    min-height: 44px;
   }
 
   .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-card-head {
