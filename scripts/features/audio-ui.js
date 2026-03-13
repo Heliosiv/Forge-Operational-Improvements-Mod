@@ -43,6 +43,7 @@ export function createGmAudioPageApp(deps) {
     selectAudioMixPreset,
     createAudioMixPresetFromSelection,
     promptAndUpdateSelectedAudioMixPresetField,
+    setSelectedAudioMixPresetTextField,
     setSelectedAudioMixPresetOption,
     deleteSelectedAudioMixPreset,
     addTrackToSelectedAudioMixPreset,
@@ -477,6 +478,9 @@ export function createGmAudioPageApp(deps) {
         }),
         "create-audio-mix-preset": rerenderAlways(() => {
           return createAudioMixPresetFromSelection();
+        }),
+        "set-audio-mix-preset-text-field": rerenderAlways((actionElement) => {
+          return setSelectedAudioMixPresetTextField(actionElement);
         }),
         "edit-audio-mix-preset-field": rerenderAlways((actionElement) => {
           return promptAndUpdateSelectedAudioMixPresetField(actionElement?.dataset?.field);

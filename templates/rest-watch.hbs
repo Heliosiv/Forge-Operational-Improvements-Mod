@@ -13,6 +13,11 @@
       {{/if}}
     </nav>
     <div class="po-controls">
+      {{#if isGM}}
+      <button type="button" class="po-icon-btn" data-action="open-settings-hub" aria-label="Open Settings Hub" title="Open Settings Hub">
+        <i class="fa-solid fa-gear"></i>
+      </button>
+      {{/if}}
       <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
         <i class="fa-solid fa-rotate"></i>
       </button>
@@ -45,6 +50,13 @@
       <strong>{{overview.campfireState}}</strong>
     </article>
   </section>
+  {{#if isGM}}
+  <div class="po-overview-actions">
+    <button type="button" class="po-btn po-btn-sm {{#if campfireOverview.allLit}}is-active{{/if}}" data-action="toggle-campfire-all">
+      <i class="fa-solid fa-fire"></i> {{campfireOverview.toggleAllLabel}}
+    </button>
+  </div>
+  {{/if}}
 
   {{/if}}
 
@@ -204,18 +216,20 @@
             {{#if @root.isGM}}
             <button
               type="button"
-              class="po-campfire-toggle {{#if @root.campfire}}is-active{{else}}is-inactive{{/if}}"
+              class="po-campfire-toggle {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}"
               data-action="toggle-campfire"
-              aria-pressed="{{#if @root.campfire}}true{{else}}false{{/if}}"
-              title="Toggle campfire on or off for rest watch visibility."
+              data-slot-id="{{id}}"
+              data-slot-label="{{label}}"
+              aria-pressed="{{#if campfireActive}}true{{else}}false{{/if}}"
+              title="Toggle campfire on or off for {{label}}."
             >
               <i class="fa-solid fa-fire"></i>
-              <span>{{@root.overview.campfireState}}</span>
+              <span>{{campfireState}}</span>
             </button>
             {{else}}
-            <div class="po-campfire-status {{#if @root.campfire}}is-active{{else}}is-inactive{{/if}}" title="Campfire status for this rest watch plan.">
+            <div class="po-campfire-status {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}" title="Campfire status for {{label}}.">
               <i class="fa-solid fa-fire"></i>
-              <span>{{@root.overview.campfireState}}</span>
+              <span>{{campfireState}}</span>
             </div>
             {{/if}}
           </div>
@@ -227,12 +241,6 @@
       {{#if isGM}}
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if gmPanelTabCore}}
-        <div class="po-gm-section">
-          <div class="po-section-title">Quick Setup</div>
-          <div class="po-hint">Configure player experience, launcher behavior, and automation from one guided screen.</div>
-          <button type="button" class="po-btn" data-action="open-settings-hub"><i class="fa-solid fa-sliders"></i> Open Settings Hub</button>
-        </div>
-
         <div class="po-gm-section">
           <div class="po-section-title">Auto-Fill</div>
           <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
@@ -385,7 +393,7 @@
               </span>
             </button>
           </div>
-          <div class="po-hint">Track supplies and configure per-day drain multipliers using calendar day progression.</div>
+          <div class="po-hint">Track supply forecasts, shared pools, and target bindings here. GM-only gather controls now live in the GM workspace.</div>
           <div class="po-info-strip">
             <div class="po-info-chip" title="Projected food consumed per day"><span>Per Day Food</span><strong>{{operations.resources.summary.foodDrainPerDay}}</strong></div>
             <div class="po-info-chip" title="Steward pool state for food (none, finite stock, or surplus source)"><span>Food Rations</span><strong>{{operations.resources.summary.foodStewardPoolDisplay}}</strong></div>
@@ -405,63 +413,10 @@
             Pending Gather Pool - Food: {{operations.resources.summary.pendingGatherFood}} - Water: {{operations.resources.summary.pendingGatherWater}}
           </div>
           <div class="po-op-divider"></div>
-          <div class="po-section-head-row">
-            <div class="po-section-title">Gather Presets</div>
-          </div>
-          <div class="po-hint">One-click preset launchers that prefill the gather dialog. You can still adjust before rolling.</div>
-          {{#if operations.resources.hasGatherPresets}}
-          <div class="po-gather-preset-grid">
-            {{#each operations.resources.gatherPresets}}
-            <button
-              type="button"
-              class="po-btn po-btn-sm po-gather-preset-btn"
-              data-action="run-gather-preset"
-              data-preset-id="{{id}}"
-              title="{{description}}">
-              <span class="po-gather-preset-title">{{label}}</span>
-              <span class="po-gather-preset-summary">{{summary}}</span>
-              {{#if hasTags}}
-              <span class="po-gather-preset-tags">{{tagsText}}</span>
-              {{/if}}
-            </button>
-            {{/each}}
-          </div>
-          {{/if}}
-          <div class="po-hint">Steward flow: keep <strong>Food Rations</strong>, <strong>Water Rations</strong>, and linked food/water inventory updated; food deductions use rations plus the targeted food item only.</div>
+          <div class="po-hint">Track supply pools and linked target items here. GM-only gather presets, upkeep tuning, DCs, and pending requests now live in the GM workspace.</div>
           <div class="po-resource-config-panel po-resource-config-panel-compact">
             <div class="po-resource-config-split po-resource-config-split-compact">
               <div class="po-resource-config-col">
-                <div class="po-section-title">Upkeep Inputs</div>
-                {{#if @root.isGM}}
-                <label class="po-resource-row">
-                  <span>Party Size</span>
-                  <input type="number" min="0" step="1" class="po-input" data-action="set-resource" data-resource="partySize" value="{{operations.resources.upkeep.partySize}}" />
-                </label>
-                <label class="po-resource-row">
-                  <span>Food / Member</span>
-                  <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="foodPerMember" value="{{operations.resources.upkeep.foodPerMember}}" />
-                </label>
-                <label class="po-resource-row">
-                  <span>Water / Member</span>
-                  <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="waterPerMember" value="{{operations.resources.upkeep.waterPerMember}}" />
-                </label>
-                <label class="po-resource-row">
-                  <span>Food Multiplier</span>
-                  <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="foodMultiplier" value="{{operations.resources.upkeep.foodMultiplier}}" />
-                </label>
-                <label class="po-resource-row">
-                  <span>Water Multiplier</span>
-                  <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="waterMultiplier" value="{{operations.resources.upkeep.waterMultiplier}}" />
-                </label>
-                <button type="button" class="po-btn" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>
-                {{else}}
-                <div class="po-op-summary">Party Size: {{operations.resources.upkeep.partySize}}</div>
-                <div class="po-op-summary">Food / Member: {{operations.resources.upkeep.foodPerMember}}</div>
-                <div class="po-op-summary">Water / Member: {{operations.resources.upkeep.waterPerMember}}</div>
-                <div class="po-op-summary">Food Multiplier: {{operations.resources.upkeep.foodMultiplier}}</div>
-                <div class="po-op-summary">Water Multiplier: {{operations.resources.upkeep.waterMultiplier}}</div>
-                {{/if}}
-                <div class="po-op-divider"></div>
                 <div class="po-section-title">Steward Pools</div>
                 <div class="po-hint">Optional surplus in addition to Resource Targets. Use <strong>Surplus Source</strong> for location abundance (river, inn, stocked camp), or <strong>Finite Stock</strong> when a place has a limited extra pool.</div>
                 {{#each operations.resources.stewardPools}}
@@ -490,23 +445,6 @@
                   {{/if}}
                 </div>
                 {{/each}}
-              </div>
-
-              <div class="po-resource-config-col">
-                <div class="po-section-title">Gather & Weather DC</div>
-                <div class="po-hint">Applied to hidden DC before the Wisdom (Survival) gather roll.</div>
-                {{#if @root.isGM}}
-                {{#each operations.resources.gatherWeatherOptions}}
-                <label class="po-resource-row">
-                  <span>{{label}}</span>
-                  <input type="number" min="-10" max="20" step="1" class="po-input" data-action="set-resource" data-resource="weatherMod:{{value}}" value="{{dcMod}}" />
-                </label>
-                {{/each}}
-                {{else}}
-                {{#each operations.resources.gatherWeatherOptions}}
-                <div class="po-op-summary">{{label}}: {{dcMod}}</div>
-                {{/each}}
-                {{/if}}
               </div>
 
               <div class="po-resource-config-col">
@@ -563,46 +501,13 @@
             </div>
           </div>
           <div class="po-op-divider"></div>
-          <div class="po-gather-history-panel">
-            <div class="po-section-head-row po-gather-history-head">
-              <div class="po-section-title">Gather Requests</div>
+          <details class="po-panel-disclosure po-gather-history-disclosure">
+            <summary class="po-panel-disclosure-summary">
+              <span class="po-section-title">Gather History</span>
+              <span class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</span>
+            </summary>
+            <div class="po-panel-disclosure-body">
               <div class="po-gather-history-head-tools">
-                <div class="po-op-summary">{{operations.resources.gatherRequests.count}} pending</div>
-              </div>
-            </div>
-            {{#if operations.resources.gatherRequests.hasRows}}
-            <div class="po-gather-preset-grid">
-              {{#each operations.resources.gatherRequests.rows}}
-              <div class="po-op-role-row">
-                <div class="po-op-role-head">
-                  <div class="po-op-role-name">{{actorName}}</div>
-                  <div class="po-op-role-status">{{resourceTypeLabel}}</div>
-                </div>
-                <div class="po-op-summary">Requested by {{requesterName}} at {{requestedAtLabel}}</div>
-                <div class="po-op-summary">{{summary}}</div>
-                <div class="po-op-summary">{{modifierSummary}}</div>
-                {{#if hasTags}}
-                <div class="po-op-summary">{{tagText}}</div>
-                {{/if}}
-                {{#if @root.operations.resources.gatherRequests.isManager}}
-                <div class="po-op-action-row">
-                  <button type="button" class="po-btn po-btn-sm" data-action="approve-gather-request" data-request-id="{{id}}">Finalize & Prompt</button>
-                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="decline-gather-request" data-request-id="{{id}}">Remove</button>
-                </div>
-                {{/if}}
-              </div>
-              {{/each}}
-            </div>
-            {{else}}
-            <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
-            {{/if}}
-          </div>
-          <div class="po-op-divider"></div>
-          <div class="po-gather-history-panel">
-            <div class="po-section-head-row po-gather-history-head">
-              <div class="po-section-title">Gather History</div>
-              <div class="po-gather-history-head-tools">
-                <div class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</div>
                 <div class="po-gather-history-head-actions">
                   <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
                   {{#if @root.isGM}}
@@ -610,7 +515,6 @@
                   {{/if}}
                 </div>
               </div>
-            </div>
             <div class="po-gather-history-controls">
               <label class="po-resource-row is-search">
                 <span>Search</span>
@@ -705,7 +609,8 @@
             {{else}}
             <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherHistory.emptyMessage}}</div>
             {{/if}}
-          </div>
+            </div>
+          </details>
         </div>
         {{/if}}
 
@@ -1801,6 +1706,233 @@
               </div>
             </section>
 
+            <section class="po-gm-section po-gm-workspace-card po-gm-resource-workspace">
+              <div class="po-collapsible-head">
+                <div>
+                  <div class="po-section-title">Resources</div>
+                  <div class="po-hint">Resolve pending gather requests, tune hidden gather math, and apply upkeep from the GM workspace.</div>
+                </div>
+                <div class="po-pill">{{operations.resources.gatherRequests.count}} pending</div>
+              </div>
+              <div class="po-op-summary">{{operations.resources.summary.pendingGatherFood}} food and {{operations.resources.summary.pendingGatherWater}} water are currently waiting in the upkeep-first gather pool.</div>
+              <div class="po-gm-workspace-meta">
+                <span class="po-pill">Per Day {{operations.resources.summary.foodDrainPerDay}}F / {{operations.resources.summary.waterDrainPerDay}}W / {{operations.resources.summary.torchDrainPerDay}}T</span>
+                <span class="po-pill">Pending Days {{operations.resources.summary.upkeepDaysPending}}</span>
+                <span class="po-pill">Auto Upkeep {{operations.resources.summary.autoUpkeepPromptLabel}}</span>
+              </div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Run the hidden resource gathering Wisdom (Survival) check">
+                  <i class="fa-solid fa-seedling" aria-hidden="true"></i>
+                  <span class="po-gather-launch-btn-copy">
+                    <span class="po-gather-launch-btn-main">Gather Resources</span>
+                    <span class="po-gather-launch-btn-sub">Wisdom (Survival)</span>
+                  </span>
+                </button>
+                <button type="button" class="po-btn po-btn-sm" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>
+              </div>
+              <div class="po-op-divider"></div>
+              <div class="po-section-head-row">
+                <div class="po-section-title">Gather Presets</div>
+              </div>
+              <div class="po-hint">One-click preset launchers that prefill the gather dialog. You can still adjust before rolling.</div>
+              {{#if operations.resources.hasGatherPresets}}
+              <div class="po-gather-preset-grid">
+                {{#each operations.resources.gatherPresets}}
+                <button
+                  type="button"
+                  class="po-btn po-btn-sm po-gather-preset-btn"
+                  data-action="run-gather-preset"
+                  data-preset-id="{{id}}"
+                  title="{{description}}">
+                  <span class="po-gather-preset-title">{{label}}</span>
+                  <span class="po-gather-preset-summary">{{summary}}</span>
+                  {{#if hasTags}}
+                  <span class="po-gather-preset-tags">{{tagsText}}</span>
+                  {{/if}}
+                </button>
+                {{/each}}
+              </div>
+              {{/if}}
+              <div class="po-op-divider"></div>
+              <div class="po-resource-config-panel po-resource-config-panel-compact">
+                <div class="po-resource-config-split po-resource-config-split-compact">
+                  <div class="po-resource-config-col">
+                    <div class="po-section-title">Upkeep Inputs</div>
+                    <label class="po-resource-row">
+                      <span>Party Size</span>
+                      <input type="number" min="0" step="1" class="po-input" data-action="set-resource" data-resource="partySize" value="{{operations.resources.upkeep.partySize}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Food / Member</span>
+                      <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="foodPerMember" value="{{operations.resources.upkeep.foodPerMember}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Water / Member</span>
+                      <input type="number" min="0" step="0.5" class="po-input" data-action="set-resource" data-resource="waterPerMember" value="{{operations.resources.upkeep.waterPerMember}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Food Multiplier</span>
+                      <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="foodMultiplier" value="{{operations.resources.upkeep.foodMultiplier}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Water Multiplier</span>
+                      <input type="number" min="0" step="0.25" class="po-input" data-action="set-resource" data-resource="waterMultiplier" value="{{operations.resources.upkeep.waterMultiplier}}" />
+                    </label>
+                  </div>
+                  <div class="po-resource-config-col">
+                    <div class="po-section-title">Gather & Weather DC</div>
+                    <div class="po-hint">Applied to hidden DC before the Wisdom (Survival) gather roll.</div>
+                    {{#each operations.resources.gatherWeatherOptions}}
+                    <label class="po-resource-row">
+                      <span>{{label}}</span>
+                      <input type="number" min="-10" max="20" step="1" class="po-input" data-action="set-resource" data-resource="weatherMod:{{value}}" value="{{dcMod}}" />
+                    </label>
+                    {{/each}}
+                  </div>
+                </div>
+              </div>
+              <div class="po-op-divider"></div>
+              <div class="po-gather-history-panel">
+                <div class="po-section-head-row po-gather-history-head">
+                  <div class="po-section-title">Gather Requests</div>
+                  <div class="po-gather-history-head-tools">
+                    <div class="po-op-summary">{{operations.resources.gatherRequests.count}} pending</div>
+                  </div>
+                </div>
+                {{#if operations.resources.gatherRequests.hasRows}}
+                <div class="po-gather-preset-grid">
+                  {{#each operations.resources.gatherRequests.rows}}
+                  <div class="po-op-role-row">
+                    <div class="po-op-role-head">
+                      <div class="po-op-role-name">{{actorName}}</div>
+                      <div class="po-op-role-status">{{resourceTypeLabel}}</div>
+                    </div>
+                    <div class="po-op-summary">Requested by {{requesterName}} at {{requestedAtLabel}}</div>
+                    <div class="po-op-summary">{{summary}}</div>
+                    <div class="po-op-summary">{{modifierSummary}}</div>
+                    {{#if hasTags}}
+                    <div class="po-op-summary">{{tagText}}</div>
+                    {{/if}}
+                    {{#if @root.operations.resources.gatherRequests.isManager}}
+                    <div class="po-op-action-row">
+                      <button type="button" class="po-btn po-btn-sm" data-action="approve-gather-request" data-request-id="{{id}}">Finalize & Prompt</button>
+                      <button type="button" class="po-btn po-btn-sm is-danger" data-action="decline-gather-request" data-request-id="{{id}}">Remove</button>
+                    </div>
+                    {{/if}}
+                  </div>
+                  {{/each}}
+                </div>
+                {{else}}
+                <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherRequests.emptyMessage}}</div>
+                {{/if}}
+              </div>
+              <div class="po-op-divider"></div>
+              <details class="po-panel-disclosure po-gather-history-disclosure">
+                <summary class="po-panel-disclosure-summary">
+                  <span class="po-section-title">Gather History</span>
+                  <span class="po-op-summary">Showing {{operations.resources.gatherHistory.visibleCount}} of {{operations.resources.gatherHistory.totalCount}}</span>
+                </summary>
+                <div class="po-panel-disclosure-body">
+                  <div class="po-gather-history-head-tools">
+                    <div class="po-gather-history-head-actions">
+                      <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history-filters">Reset Filters</button>
+                      <button type="button" class="po-btn po-btn-sm" data-action="clear-gather-history">Clear History</button>
+                    </div>
+                  </div>
+                  <div class="po-gather-history-controls">
+                    <label class="po-resource-row is-search">
+                      <span>Search</span>
+                      <input
+                        type="text"
+                        class="po-input"
+                        data-action="set-gather-history-filter"
+                        data-filter-key="search"
+                        value="{{operations.resources.gatherHistory.filters.search}}"
+                        placeholder="{{operations.resources.gatherHistory.filters.searchPlaceholder}}" />
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Result</span>
+                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="result">
+                        {{#each operations.resources.gatherHistory.resultOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Type</span>
+                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="resource">
+                        {{#each operations.resources.gatherHistory.resourceOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Environment</span>
+                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="environment">
+                        {{#each operations.resources.gatherHistory.environmentOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row">
+                      <span>Actor</span>
+                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="actor">
+                        {{#each operations.resources.gatherHistory.actorOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                    <label class="po-resource-row is-sort">
+                      <span>Sort</span>
+                      <select class="po-select" data-action="set-gather-history-filter" data-filter-key="sort">
+                        {{#each operations.resources.gatherHistory.sortOptions}}
+                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                        {{/each}}
+                      </select>
+                    </label>
+                  </div>
+                  {{#if operations.resources.gatherHistory.hasRows}}
+                  <div class="po-gather-history-wrap">
+                    <table class="po-gather-history-table">
+                      <thead>
+                        <tr>
+                          <th>When</th>
+                          <th>Actor</th>
+                          <th>Environment</th>
+                          <th>Result</th>
+                          <th>Roll</th>
+                          <th>Type</th>
+                          <th>Rations</th>
+                          <th>Notes</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {{#each operations.resources.gatherHistory.rows}}
+                        <tr>
+                          <td>{{timestampLabel}}</td>
+                          <td>{{actorName}}</td>
+                          <td>{{environmentLabel}}</td>
+                          <td><span class="po-gather-history-result {{resultClass}}">{{resultLabel}}</span></td>
+                          <td>{{rollVsDc}}</td>
+                          <td>{{resourceTypeLabel}}</td>
+                          <td>{{rations}}</td>
+                          <td class="po-gather-history-notes">{{detailsText}}</td>
+                          <td class="po-gather-history-actions">
+                            <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-gather-history-entry" data-history-id="{{id}}">Delete</button>
+                          </td>
+                        </tr>
+                        {{/each}}
+                      </tbody>
+                    </table>
+                  </div>
+                  {{else}}
+                  <div class="po-op-summary po-gather-history-empty">{{operations.resources.gatherHistory.emptyMessage}}</div>
+                  {{/if}}
+                </div>
+              </details>
+            </section>
+
             <section class="po-gm-section po-gm-workspace-card">
               <div class="po-collapsible-head">
                 <div>
@@ -1860,7 +1992,6 @@
               <div class="po-op-summary"><strong>Non-Party Sync Scope:</strong> {{operations.nonPartySync.scopeLabel}}</div>
               <div class="po-op-summary"><strong>Managed Effects:</strong> {{operations.nonPartySync.syncedCount}}</div>
               <div class="po-op-action-row po-gm-session-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="open-settings-hub">Open Settings Hub</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-sync-integrations">Sync Effects</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-session-autopilot">Run Autopilot</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-undo-autopilot">Undo Autopilot</button>

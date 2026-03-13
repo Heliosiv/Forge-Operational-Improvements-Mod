@@ -2,6 +2,8 @@ import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
+import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
+import { createAudioStore } from "./features/audio-store.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -26,6 +28,7 @@ import {
 } from "./core/constants.js";
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
+import { createFeatureRegistrar } from "./core/feature-registry.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
@@ -33,6 +36,8 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
+import { buildPartyOpsRuntimeHookModules, createPartyOpsHookRegistrar } from "./hooks/runtime-hooks.js";
+import { registerPartyOperationsUiHooks } from "./hooks/ui-hooks.js";
 import {
   PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
   clearPartyOpsAppInstance,
@@ -118,16 +123,12 @@ if (DEBUG_LOG) console.log("party-operations: script loaded");
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const bootstrapLogger = createLogger("bootstrap");
-const FEATURE_MODULES = Object.freeze([
-  createRestFeatureModule(),
-  createMarchFeatureModule()
-]);
-
-function registerFeatureModules() {
-  for (const feature of FEATURE_MODULES) {
-    if (typeof feature?.register === "function") feature.register();
-  }
-}
+const registerFeatureModules = createFeatureRegistrar({
+  features: [
+    createRestFeatureModule(),
+    createMarchFeatureModule()
+  ]
+});
 
 const REFRESH_KNOWN_INSTANCE_KEYS = Object.freeze([
   APP_INSTANCE_KEYS.REST_WATCH,
@@ -263,8 +264,10 @@ const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
 const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
+const pendingGatherCheckRequests = new Map();
 const pendingGatherYieldRequests = new Map();
 const MONKS_REQUEST_RESULT_TIMEOUT_MS = 8000;
+const GATHER_CHECK_RESULT_TIMEOUT_MS = 20000;
 const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
 let automaticUpkeepTickInFlight = false;
 let merchantAutoRefreshTickInFlight = false;
@@ -278,7 +281,6 @@ let sopPendingSyncInFlight = false;
 let sopPendingSyncScheduled = false;
 const activeEffectDeleteLocks = new Set();
 let launcherRecoveryScheduled = false;
-let partyOpsHooksRegistered = false;
 let lootManifestFolderSyncPromise = null;
 let lootManifestFolderSyncDisabledReason = "";
 let lootManifestFolderSyncDisabledNotified = false;
@@ -1678,6 +1680,8 @@ const {
   setMerchantGmViewTab,
   setMerchantGmViewTabFromElement,
   normalizeMerchantEditorFilter,
+  getMerchantEditorSourceFilter,
+  setMerchantEditorSourceFilter,
   getMerchantEditorPackFilter,
   setMerchantEditorPackFilter,
   getMerchantEditorItemFilter,
@@ -3303,8 +3307,8 @@ function buildGatherRequestContext(resourcesState = null, options = {}) {
         resourceTypeLabel: getGatherResourceTypeLabel(source.resourceType),
         environmentLabel: GATHER_ENVIRONMENT_LABELS[source.environment] ?? source.environment,
         requestedAtLabel: Number.isFinite(requestedAtDate.getTime()) ? requestedAtDate.toLocaleString() : "Unknown",
-        summary: `${getGatherResourceTypeLabel(source.resourceType)} - ${GATHER_ENVIRONMENT_LABELS[source.environment] ?? source.environment} - ${Math.max(1, Number(source.hoursSpent ?? 4) || 4)}h`,
-        modifierSummary: `Season ${formatSignedModifier(source.seasonMod) || "0"} | Weather ${formatSignedModifier(source.weatherMod) || "0"} | Corruption ${formatSignedModifier(source.corruptionMod) || "0"}`,
+        summary: `${getGatherResourceTypeLabel(source.resourceType)} - ${source.gatherMode === "plant" ? "Plant Gathering" : "Standard Search"} - ${source.duringTravel ? "During Travel" : "Stopping to Gather"}`,
+        modifierSummary: "GM selects environment, hours, terrain, and final modifiers before the roll request is sent.",
         tagText: tagParts.join(" | "),
         hasTags: tagParts.length > 0
       };
@@ -3317,6 +3321,48 @@ function buildGatherRequestContext(resourcesState = null, options = {}) {
     count: rows.length,
     isManager: canManage,
     emptyMessage: canManage ? "No pending gather requests." : "You have no pending gather requests."
+  };
+}
+
+function getRestWatchSourceSlots(state) {
+  const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0
+    ? state.slots
+    : buildStoredWatchSlots();
+  return normalizeRestWatchSlots(sourceSlots);
+}
+
+function normalizeRestWatchCampfireBySlot(input = {}, slotIds = [], fallback = false) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const normalized = {};
+  for (const slotId of slotIds) {
+    if (typeof source?.[slotId] === "boolean") normalized[slotId] = source[slotId];
+    else normalized[slotId] = Boolean(fallback);
+  }
+  return normalized;
+}
+
+function getRestWatchSlotCampfireState(state, slotIdInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!slotId) return Boolean(state?.campfire);
+  if (typeof state?.campfireBySlot?.[slotId] === "boolean") return state.campfireBySlot[slotId];
+  return Boolean(state?.campfire);
+}
+
+function buildRestWatchCampfireOverview(slots = []) {
+  const totalSlots = Math.max(0, slots.length);
+  const litSlots = slots.filter((slot) => slot?.campfireActive).length;
+  const anyLit = litSlots > 0;
+  const allLit = totalSlots > 0 && litSlots === totalSlots;
+  const mixed = anyLit && !allLit;
+  return {
+    totalSlots,
+    litSlots,
+    anyLit,
+    allLit,
+    mixed,
+    stateLabel: mixed ? `Mixed (${litSlots}/${totalSlots} lit)` : (allLit ? "Lit" : "Out"),
+    toggleAllLabel: allLit ? "Extinguish All Watches" : "Light All Watches",
+    toggleAllStatus: allLit ? "All Lit" : (mixed ? "Mixed" : "All Out")
   };
 }
 
@@ -8071,11 +8117,12 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const state = getRestWatchState();
       const visibility = state.visibility ?? "names-passives";
       const slots = buildWatchSlotsView(state, isGM, visibility);
+      const campfireOverview = buildRestWatchCampfireOverview(slots);
       const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
       const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
       const playerCharacters = isGM ? [] : buildPlayerCharacterSelector(slots);
       const quickNotes = isGM ? buildQuickNotes(state) : [];
-      const light = calculateLightSources(state.slots, state.campfire);
+      const light = calculateLightSources(state.slots, campfireOverview.anyLit);
       let operations;
       try {
         operations = buildOperationsContext();
@@ -8126,7 +8173,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
       const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
       const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
-      const campfireState = state.campfire ? "Lit" : "Out";
 
       const context = {
         isGM,
@@ -8147,7 +8193,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasQuickNotes: quickNotes.length > 0,
         playerCharacters,
         slots,
-        campfire: state.campfire ?? false,
+        campfire: campfireOverview.anyLit,
+        campfireOverview,
         light,
         operations,
         injuryRecovery,
@@ -8183,7 +8230,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           lowDarkvisionSlots,
           hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
           lockState,
-          campfireState
+          campfireState: campfireOverview.stateLabel
         }
       };
 
@@ -8204,11 +8251,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const fallbackState = getRestWatchState();
       const fallbackVisibility = fallbackState.visibility ?? "names-passives";
       const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
+      const fallbackCampfireOverview = buildRestWatchCampfireOverview(fallbackSlots);
       const fallbackTotalSlots = fallbackSlots.length;
       const fallbackOccupiedSlots = fallbackSlots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
       const fallbackAssignedEntries = fallbackSlots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
       const fallbackLowDarkvisionSlots = fallbackSlots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
-      const fallbackCampfire = Boolean(fallbackState.campfire);
       const fallbackGmOpsTab = normalizeGmOperationsTab(this._gmOperationsTab ?? getActiveGmOperationsTab());
       const fallbackOpsPage = mainTab === "gm"
         ? "gm"
@@ -8237,8 +8284,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         hasQuickNotes: false,
         playerCharacters: [],
         slots: fallbackSlots,
-        campfire: fallbackCampfire,
-        light: calculateLightSources(fallbackState.slots, fallbackCampfire),
+        campfire: fallbackCampfireOverview.anyLit,
+        campfireOverview: fallbackCampfireOverview,
+        light: calculateLightSources(fallbackState.slots, fallbackCampfireOverview.anyLit),
         operations: this._lastGoodOperationsContext ?? buildOperationsContextFallback(),
         injuryRecovery: this._lastGoodInjuryRecoveryContext ?? {},
         miniViz: {},
@@ -8273,7 +8321,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           lowDarkvisionSlots: fallbackLowDarkvisionSlots,
           hasLowDarkvisionCoverage: fallbackLowDarkvisionSlots > 0,
           lockState: fallbackState.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open",
-          campfireState: fallbackCampfire ? "Lit" : "Out"
+          campfireState: fallbackCampfireOverview.stateLabel
         }
       };
     }
@@ -8730,6 +8778,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "toggle-campfire": async () => {
           await toggleCampfire(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "toggle-campfire-all": async () => {
+          await toggleCampfireAll();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "toggle-mini-viz": async () => {
@@ -9564,13 +9616,15 @@ function buildGlobalModifierSummaryContext() {
     const excluded = source === "custom"
       ? !(customEntry?.enabled !== false)
       : row?.enabled === false;
+    const enabled = !excluded;
     return {
       modifierId,
       label: String(row?.label ?? "Modifier").trim() || "Modifier",
       source,
       scopeLabel: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
       valueLabel: String(row?.formatted ?? row?.value ?? "-").trim() || "-",
-      excluded
+      excluded,
+      enabled
     };
   });
   const gmQuickTools = operations?.gmQuickTools ?? {
@@ -9755,7 +9809,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         event.preventDefault();
         event.stopPropagation();
         const modifierId = String(element?.dataset?.modifierId ?? "").trim();
-        const excluded = Boolean(element?.checked);
+        const excluded = !Boolean(element?.checked);
         await setGlobalModifierExcluded(modifierId, excluded, { skipLocalRefresh: true });
         this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
@@ -10347,6 +10401,9 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   setMerchantGmViewTabFromElement,
   setMerchantEditorViewTab,
   setMerchantEditorViewTabFromElement,
+  normalizeMerchantEditorFilter,
+  getMerchantEditorSourceFilter,
+  setMerchantEditorSourceFilter,
   resetMerchantEditorSelection,
   createStarterMerchants,
   randomizeMerchantNameFromElement,
@@ -10428,8 +10485,19 @@ export const GmAudioPageApp = createGmAudioPageApp({
   selectVisibleAudioMixTracks,
   clearAudioMixTrackSelections,
   selectAudioMixPreset,
-  createAudioMixPresetFromSelection,
+  createAudioMixPresetFromSelection: async () => {
+    try {
+      clearAudioLibraryError();
+      return await createAudioMixPresetFromSelection();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
+      setAudioLibraryError(message);
+      ui.notifications?.warn(`Audio preset creation failed: ${message}`);
+      return null;
+    }
+  },
   promptAndUpdateSelectedAudioMixPresetField,
+  setSelectedAudioMixPresetTextField,
   setSelectedAudioMixPresetOption,
   deleteSelectedAudioMixPreset,
   addTrackToSelectedAudioMixPreset,
@@ -11598,6 +11666,7 @@ function buildDefaultRestWatchState() {
     lockedBy: "",
     visibility: "names-passives",
     campfire: false,
+    campfireBySlot: {},
     lastUpdatedAt: "-",
     lastUpdatedBy: "-",
     slots: buildStoredWatchSlots()
@@ -12006,30 +12075,83 @@ async function setAudioPreviewVolumeSetting(value) {
   return normalized;
 }
 
+const audioStore = createAudioStore({
+  gameRef: game,
+  foundryRef: foundry,
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  audioLibraryUiState,
+  audioLibraryDefaultSource: AUDIO_LIBRARY_DEFAULT_SOURCE,
+  audioLibraryVersion: AUDIO_LIBRARY_VERSION,
+  audioLibraryHiddenTrackStoreVersion: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
+  audioLibraryExtensions: AUDIO_LIBRARY_EXTENSIONS,
+  audioMixPresetStoreVersion: AUDIO_MIX_PRESET_STORE_VERSION,
+  audioMixBuiltInPresets: AUDIO_MIX_BUILT_IN_PRESETS,
+  audioMixPresetDefaultId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  normalizeAudioMixChannel,
+  normalizeAudioMixPlaybackMode,
+  inferAudioMixChannelForKind,
+  normalizeAudioMixPresetSearchTokens,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioLibraryDurationSeconds,
+  normalizeAudioLibraryDurationResolvedAt,
+  safeDecodeAudioText,
+  setModuleSettingWithLocalRefreshSuppressed,
+  refreshOpenApps,
+  emitSocketRefresh
+});
+
+const audioMixPresetManager = createAudioMixPresetManager({
+  foundryRef: foundry,
+  windowRef: window,
+  uiRef: ui,
+  dialogClass: Dialog,
+  audioLibraryUiState,
+  builtInPresets: AUDIO_MIX_BUILT_IN_PRESETS,
+  defaultPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
+  canAccessAllPlayerOps,
+  getSelectedAudioMixPreset,
+  getAudioMixPresetById,
+  updateStoredAudioMixPresets,
+  serializeAudioMixPresetForStore,
+  normalizeAudioMixPresetDefinition,
+  normalizeAudioMixPresetTrackIds,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioMixPlaybackMode,
+  normalizeAudioMixVolume,
+  normalizeAudioMixPresetSearchTokens,
+  formatAudioMixPresetSearchTokens,
+  inferAudioMixChannelForKind,
+  setAudioMixStatus,
+  syncLiveAudioMixPresetVolume,
+  poEscapeHtml,
+  clearManagedAudioMixQueueForPreset,
+  syncSelectedAudioMixPresetTrackIdsToLiveQueue,
+  getSelectedAudioMixTrackSelectionIds,
+  setSelectedAudioMixTrackSelectionIds,
+  getAudioMixPlaybackState,
+  getAudioLibraryCatalog
+});
+
 function buildDefaultAudioLibraryCatalog() {
-  return {
-    version: AUDIO_LIBRARY_VERSION,
-    source: AUDIO_LIBRARY_DEFAULT_SOURCE,
-    rootPath: "",
-    scannedAt: 0,
-    scannedBy: "",
-    items: []
-  };
+  return audioStore.buildDefaultAudioLibraryCatalog();
 }
 
 function buildDefaultAudioLibraryHiddenTrackStore() {
-  return {
-    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
-    trackIds: []
-  };
+  return audioStore.buildDefaultAudioLibraryHiddenTrackStore();
 }
 
 function buildDefaultAudioMixPresetStore() {
-  return {
-    version: AUDIO_MIX_PRESET_STORE_VERSION,
-    presets: [],
-    overrides: {}
-  };
+  return audioStore.buildDefaultAudioMixPresetStore();
+}
+
+function normalizeStoredAudioLibraryValue(value, { allowArray = false } = {}) {
+  return audioStore.normalizeStoredAudioLibraryValue(value, { allowArray });
 }
 
 function normalizeAudioMixChannel(value) {
@@ -12070,125 +12192,31 @@ function formatAudioMixPresetSearchTokens(value) {
 }
 
 function normalizeAudioMixPresetTrackIds(value) {
-  const source = Array.isArray(value) ? value : [value];
-  return source
-    .map((entry) => normalizeAudioLibraryRootPath(entry))
-    .filter((entry, index, rows) => entry && rows.indexOf(entry) === index);
+  return audioStore.normalizeAudioMixPresetTrackIds(value);
 }
 
 function normalizeAudioLibraryHiddenTrackStore(store = {}) {
-  return {
-    version: AUDIO_LIBRARY_HIDDEN_TRACK_STORE_VERSION,
-    trackIds: normalizeAudioMixPresetTrackIds(store?.trackIds ?? [])
-  };
+  return audioStore.normalizeAudioLibraryHiddenTrackStore(store);
 }
 
 function normalizeAudioMixPresetDefinition(input = {}, { isCustom = false, allowTrackIds = false } = {}) {
-  const preferredKinds = Array.isArray(input.preferredKinds)
-    ? input.preferredKinds.map((entry) => normalizeAudioLibraryKind(entry)).filter((entry) => entry !== "all")
-    : [];
-  const preferredUsage = Array.isArray(input.preferredUsage)
-    ? input.preferredUsage.map((entry) => normalizeAudioLibraryUsage(entry)).filter((entry) => entry !== "all")
-    : [];
-  const kindFocus = isCustom
-    ? normalizeAudioLibraryKind(input.kindFocus ?? preferredKinds[0] ?? "music")
-    : normalizeAudioLibraryKind(preferredKinds[0] ?? "all");
-  const usageFocus = isCustom
-    ? normalizeAudioLibraryUsage(input.usageFocus ?? preferredUsage[0] ?? "general")
-    : normalizeAudioLibraryUsage(preferredUsage[0] ?? "all");
-  const playbackMode = normalizeAudioMixPlaybackMode(input.playbackMode ?? (Boolean(input.repeat) ? "repeat" : "single"));
-  const channel = normalizeAudioMixChannel(input.channel ?? inferAudioMixChannelForKind(kindFocus));
-  const volumeRaw = Number(input.volume ?? 0.5);
-  const fadeRaw = Number(input.fade ?? 1200);
-  return {
-    id: String(input.id ?? "").trim() || foundry.utils.randomID(),
-    label: String(input.label ?? "").trim() || "New Mix",
-    description: String(input.description ?? "").trim() || "Custom ambient playlist.",
-    preferredKinds: preferredKinds.length > 0 ? preferredKinds : (kindFocus !== "all" ? [kindFocus] : []),
-    preferredUsage: preferredUsage.length > 0 ? preferredUsage : (usageFocus !== "all" ? [usageFocus] : []),
-    kindFocus,
-    usageFocus,
-    searchTokens: normalizeAudioMixPresetSearchTokens(input.searchTokens),
-    channel,
-    volume: Math.max(0, Math.min(1, Number.isFinite(volumeRaw) ? volumeRaw : 0.5)),
-    fade: Math.max(0, Math.floor(Number.isFinite(fadeRaw) ? fadeRaw : 1200)),
-    repeat: playbackMode === "repeat",
-    playbackMode,
-    isCustom,
-    trackIds: (isCustom || allowTrackIds) ? normalizeAudioMixPresetTrackIds(input.trackIds) : []
-  };
+  return audioStore.normalizeAudioMixPresetDefinition(input, { isCustom, allowTrackIds });
 }
 
 function serializeAudioMixPresetForStore(preset = {}, { includeIdentity = true } = {}) {
-  const normalized = normalizeAudioMixPresetDefinition(preset, {
-    isCustom: Boolean(preset?.isCustom),
-    allowTrackIds: true
-  });
-  const payload = {
-    description: normalized.description,
-    preferredKinds: normalized.preferredKinds,
-    preferredUsage: normalized.preferredUsage,
-    kindFocus: normalized.kindFocus,
-    usageFocus: normalized.usageFocus,
-    searchTokens: normalized.searchTokens,
-    channel: normalized.channel,
-    volume: normalized.volume,
-    fade: normalized.fade,
-    repeat: normalized.repeat,
-    playbackMode: normalized.playbackMode,
-    trackIds: normalized.trackIds
-  };
-  if (includeIdentity) {
-    payload.id = normalized.id;
-    payload.label = normalized.label;
-  }
-  return payload;
+  return audioStore.serializeAudioMixPresetForStore(preset, { includeIdentity });
 }
 
 function normalizeAudioMixPresetStore(store = {}) {
-  const presets = Array.isArray(store?.presets)
-    ? store.presets
-      .map((entry) => normalizeAudioMixPresetDefinition(entry, { isCustom: true }))
-      .filter(Boolean)
-    : [];
-  const overrideSource = (store?.overrides && typeof store.overrides === "object" && !Array.isArray(store.overrides))
-    ? store.overrides
-    : {};
-  const overrides = {};
-  for (const preset of AUDIO_MIX_BUILT_IN_PRESETS) {
-    const entry = overrideSource?.[preset.id];
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-    const normalized = normalizeAudioMixPresetDefinition({
-      ...preset,
-      ...entry,
-      id: preset.id,
-      label: preset.label
-    }, { isCustom: false, allowTrackIds: true });
-    overrides[preset.id] = serializeAudioMixPresetForStore(normalized, { includeIdentity: false });
-  }
-  return {
-    version: AUDIO_MIX_PRESET_STORE_VERSION,
-    presets,
-    overrides
-  };
+  return audioStore.normalizeAudioMixPresetStore(store);
 }
 
 function getBuiltInAudioMixPresets() {
-  const store = getStoredAudioMixPresetStore();
-  return AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => {
-    const override = store?.overrides?.[preset.id] ?? {};
-    return normalizeAudioMixPresetDefinition({
-      ...preset,
-      ...override,
-      id: preset.id,
-      label: preset.label
-    }, { isCustom: false, allowTrackIds: true });
-  });
+  return audioStore.getBuiltInAudioMixPresets();
 }
 
 function normalizeAudioLibrarySource(value) {
-  const normalized = String(value ?? "").trim();
-  return normalized || AUDIO_LIBRARY_DEFAULT_SOURCE;
+  return audioStore.normalizeAudioLibrarySource(value);
 }
 
 function isAbsoluteUrl(value) {
@@ -12477,143 +12505,71 @@ function pruneSelectedAudioMixTrackSelectionIds(availableTrackIds = []) {
 }
 
 function getStoredAudioMixPresetStore() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_MIX_PRESETS);
-  return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
+  return audioStore.getStoredAudioMixPresetStore();
 }
 
 function getAllAudioMixPresets() {
-  return [
-    ...getBuiltInAudioMixPresets(),
-    ...getStoredAudioMixPresetStore().presets
-  ];
+  return audioStore.getAllAudioMixPresets();
 }
 
 function getAudioMixPresetById(value) {
-  const normalized = String(value ?? "").trim();
-  const presets = getAllAudioMixPresets();
-  return presets.find((preset) => String(preset.id ?? "").trim() === normalized)
-    ?? presets.find((preset) => String(preset.id ?? "").trim().toLowerCase() === normalized.toLowerCase())
-    ?? presets[0];
+  return audioStore.getAudioMixPresetById(value);
 }
 
 function getSelectedAudioMixPreset() {
-  return getAudioMixPresetById(audioLibraryUiState.selectedMixPresetId);
+  return audioStore.getSelectedAudioMixPreset();
 }
 
 function getAudioLibraryDraftState() {
-  return {
-    source: normalizeAudioLibrarySource(audioLibraryUiState.draft.source),
-    rootPath: normalizeAudioLibraryRootPath(audioLibraryUiState.draft.rootPath)
-  };
+  return audioStore.getAudioLibraryDraftState();
 }
 
 function syncAudioLibraryDraftFromSettings() {
-  audioLibraryUiState.draft.source = getAudioLibrarySourceSetting();
-  audioLibraryUiState.draft.rootPath = getAudioLibraryRootSetting();
+  audioStore.syncAudioLibraryDraftFromSettings();
 }
 
 function getAudioLibrarySourceSetting() {
-  return normalizeAudioLibrarySource(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_SOURCE));
+  return audioStore.getAudioLibrarySourceSetting();
 }
 
 function getAudioLibraryRootSetting() {
-  return normalizeAudioLibraryRootPath(game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_ROOT));
+  return audioStore.getAudioLibraryRootSetting();
 }
 
 function normalizeAudioLibraryItem(entry = {}) {
-  const path = normalizeAudioLibraryRootPath(entry.path);
-  if (!path) return null;
-  const id = normalizeAudioLibraryRootPath(entry.id ?? path) || path;
-  const name = safeDecodeAudioText(String(entry.name ?? "").trim() || String(path.split("/").pop() ?? path).trim());
-  const category = safeDecodeAudioText(String(entry.category ?? "Uncategorized").trim() || "Uncategorized");
-  const subcategory = safeDecodeAudioText(String(entry.subcategory ?? "").trim());
-  const kind = normalizeAudioLibraryKind(entry.kind === "all" ? "" : entry.kind);
-  const usage = normalizeAudioLibraryUsage(entry.usage === "all" ? "" : entry.usage);
-  const extensionRaw = String(entry.extension ?? "").trim().replace(/^\./, "").toLowerCase();
-  const extension = AUDIO_LIBRARY_EXTENSIONS.includes(extensionRaw) ? extensionRaw : "mp3";
-  const durationSeconds = normalizeAudioLibraryDurationSeconds(entry.durationSeconds ?? entry.duration ?? 0);
-  const durationResolvedAt = normalizeAudioLibraryDurationResolvedAt(entry.durationResolvedAt ?? 0);
-  const tags = Array.isArray(entry.tags)
-    ? entry.tags
-      .map((tag) => safeDecodeAudioText(String(tag ?? "").trim()))
-      .filter((tag, index, rows) => tag && rows.indexOf(tag) === index)
-      .slice(0, 12)
-    : [];
-  return {
-    id,
-    path,
-    name,
-    category,
-    subcategory,
-    kind: kind === "all" ? "music" : kind,
-    usage: usage === "all" ? "general" : usage,
-    extension,
-    durationSeconds,
-    durationResolvedAt,
-    tags
-  };
+  return audioStore.normalizeAudioLibraryItem(entry);
 }
 
 function normalizeAudioLibraryCatalog(catalog = {}) {
-  const items = Array.isArray(catalog?.items)
-    ? catalog.items
-      .map((entry) => normalizeAudioLibraryItem(entry))
-      .filter(Boolean)
-    : [];
-  const scannedAtRaw = Number(catalog?.scannedAt ?? 0);
-  return {
-    version: AUDIO_LIBRARY_VERSION,
-    source: normalizeAudioLibrarySource(catalog?.source),
-    rootPath: normalizeAudioLibraryRootPath(catalog?.rootPath),
-    scannedAt: Number.isFinite(scannedAtRaw) ? scannedAtRaw : 0,
-    scannedBy: String(catalog?.scannedBy ?? "").trim(),
-    items
-  };
+  return audioStore.normalizeAudioLibraryCatalog(catalog);
 }
 
 function getStoredAudioLibraryCatalog() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_CATALOG);
-  return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+  return audioStore.getStoredAudioLibraryCatalog();
 }
 
 function getStoredAudioLibraryHiddenTrackStore() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS);
-  return normalizeAudioLibraryHiddenTrackStore(stored ?? buildDefaultAudioLibraryHiddenTrackStore());
+  return audioStore.getStoredAudioLibraryHiddenTrackStore();
 }
 
 function getHiddenAudioLibraryTrackIds() {
-  return getStoredAudioLibraryHiddenTrackStore().trackIds;
+  return audioStore.getHiddenAudioLibraryTrackIds();
 }
 
 function getHiddenAudioLibraryTrackIdSet() {
-  return new Set(getHiddenAudioLibraryTrackIds());
+  return audioStore.getHiddenAudioLibraryTrackIdSet();
 }
 
 function applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds = []) {
-  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog);
-  const hiddenIds = new Set(normalizeAudioMixPresetTrackIds(hiddenTrackIds));
-  if (hiddenIds.size <= 0) return normalizedCatalog;
-  return {
-    ...normalizedCatalog,
-    items: normalizedCatalog.items.filter((item) => !hiddenIds.has(String(item?.id ?? "").trim()))
-  };
+  return audioStore.applyHiddenTracksToAudioLibraryCatalog(catalog, hiddenTrackIds);
 }
 
 function getAudioLibraryCatalog(options = {}) {
-  const includeHidden = Boolean(options?.includeHidden);
-  const catalog = getStoredAudioLibraryCatalog();
-  if (includeHidden) return catalog;
-  return applyHiddenTracksToAudioLibraryCatalog(catalog, getHiddenAudioLibraryTrackIds());
+  return audioStore.getAudioLibraryCatalog(options);
 }
 
 function getAudioLibraryCatalogWarmupKey(catalog = null) {
-  const normalizedCatalog = normalizeAudioLibraryCatalog(catalog ?? getStoredAudioLibraryCatalog());
-  return [
-    String(normalizedCatalog.rootPath ?? "").trim(),
-    String(normalizedCatalog.source ?? "").trim(),
-    String(normalizedCatalog.scannedAt ?? 0),
-    String(normalizedCatalog.items.length ?? 0)
-  ].join("|");
+  return audioStore.getAudioLibraryCatalogWarmupKey(catalog);
 }
 
 function buildAudioLibraryTrackDisplay(item = {}) {
@@ -13185,48 +13141,44 @@ function changeAudioMixTrackBrowserPage(actionElement) {
 }
 
 async function saveAudioMixPresetStore(store) {
-  const normalized = normalizeAudioMixPresetStore(store);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_MIX_PRESETS, normalized);
-  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  return normalized;
+  return audioStore.saveAudioMixPresetStore(store);
 }
 
 async function saveAudioLibraryHiddenTrackStore(store) {
-  const normalized = normalizeAudioLibraryHiddenTrackStore(store);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS, normalized);
-  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  return normalized;
+  return audioStore.saveAudioLibraryHiddenTrackStore(store);
 }
 
 async function updateStoredAudioLibraryHiddenTracks(mutator) {
-  const current = getStoredAudioLibraryHiddenTrackStore();
-  const next = normalizeAudioLibraryHiddenTrackStore(typeof mutator === "function"
-    ? (mutator(foundry.utils.deepClone(current)) ?? current)
-    : current);
-  await saveAudioLibraryHiddenTrackStore(next);
-  return next;
+  return audioStore.updateStoredAudioLibraryHiddenTracks(mutator);
 }
 
 async function updateStoredAudioMixPresets(mutator) {
-  const current = getStoredAudioMixPresetStore();
-  const next = normalizeAudioMixPresetStore(typeof mutator === "function" ? (mutator(foundry.utils.deepClone(current)) ?? current) : current);
-  await saveAudioMixPresetStore(next);
-  const selectedId = String(audioLibraryUiState.selectedMixPresetId ?? "").trim();
-  const nextPresetIds = [
-    ...AUDIO_MIX_BUILT_IN_PRESETS.map((preset) => String(preset.id ?? "").trim()),
-    ...next.presets.map((preset) => String(preset.id ?? "").trim())
-  ];
-  if (!nextPresetIds.some((presetId) => presetId === selectedId)) {
-    audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
-  }
-  return next;
+  return audioStore.updateStoredAudioMixPresets(mutator);
 }
 
 function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset()) {
+  return audioMixPresetManager.buildCustomAudioMixPresetSeed(seedPreset);
+}
+
+async function createAudioMixPresetFromSelection() {
+  try {
+    const preset = await audioMixPresetManager.createAudioMixPresetFromSelection();
+    const normalizedPresetId = String(preset?.id ?? "").trim();
+    if (normalizedPresetId && String(getAudioMixPresetById(normalizedPresetId)?.id ?? "").trim() === normalizedPresetId) {
+      return preset;
+    }
+  } catch (error) {
+    console.error(`${MODULE_ID} | audio preset manager create failed`, error);
+  }
+
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can create Party Operations mix presets.");
+    return null;
+  }
+
+  const seedPreset = getSelectedAudioMixPreset();
   const baseLabel = String(seedPreset?.label ?? "Mix").trim() || "Mix";
-  return normalizeAudioMixPresetDefinition({
+  const preset = normalizeAudioMixPresetDefinition({
     id: `custom-${foundry.utils.randomID()}`,
     label: `New ${baseLabel} Mix`,
     description: String(seedPreset?.description ?? "Custom ambient playlist.").trim() || "Custom ambient playlist.",
@@ -13239,271 +13191,73 @@ function buildCustomAudioMixPresetSeed(seedPreset = getSelectedAudioMixPreset())
     playbackMode: seedPreset?.playbackMode ?? (seedPreset?.repeat ? "repeat" : "single"),
     trackIds: normalizeAudioMixPresetTrackIds(seedPreset?.trackIds ?? [])
   }, { isCustom: true });
-}
-
-async function createAudioMixPresetFromSelection() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can create Party Operations mix presets.");
-    return null;
-  }
-  const preset = buildCustomAudioMixPresetSeed(getSelectedAudioMixPreset());
   await updateStoredAudioMixPresets((store) => {
     store.presets.push(preset);
     return store;
   });
   audioLibraryUiState.selectedMixPresetId = preset.id;
-  setAudioMixStatus(`Created custom preset: ${preset.label}`);
+  setAudioMixStatus(`Created and saved custom preset: ${preset.label}`);
   return preset;
 }
 
 function getSelectedCustomAudioMixPreset() {
-  const preset = getSelectedAudioMixPreset();
-  return preset?.isCustom ? preset : null;
+  return audioMixPresetManager.getSelectedCustomAudioMixPreset();
 }
 
 function getSelectedEditableAudioMixPreset() {
-  return getSelectedAudioMixPreset();
+  return audioMixPresetManager.getSelectedEditableAudioMixPreset();
 }
 
 function isBuiltInAudioMixPreset(preset) {
-  const presetId = String(preset?.id ?? "").trim();
-  return AUDIO_MIX_BUILT_IN_PRESETS.some((entry) => String(entry.id ?? "").trim() === presetId);
+  return audioMixPresetManager.isBuiltInAudioMixPreset(preset);
 }
 
 async function updateSelectedAudioMixPreset(mutator) {
-  const preset = getSelectedEditableAudioMixPreset();
-  if (!preset) return false;
-  await updateStoredAudioMixPresets((store) => {
-    if (preset.isCustom) {
-      store.presets = store.presets.map((entry) => {
-        if (String(entry.id ?? "").trim() !== String(preset.id ?? "").trim()) return entry;
-        const nextEntry = typeof mutator === "function" ? (mutator(foundry.utils.deepClone(entry), preset) ?? entry) : entry;
-        return serializeAudioMixPresetForStore({
-          ...preset,
-          ...nextEntry,
-          id: preset.id,
-          label: String(nextEntry?.label ?? preset.label).trim() || preset.label,
-          isCustom: true
-        }, { includeIdentity: true });
-      });
-      return store;
-    }
-
-    const basePreset = AUDIO_MIX_BUILT_IN_PRESETS.find((entry) => String(entry.id ?? "").trim() === String(preset.id ?? "").trim()) ?? preset;
-    const currentOverride = store.overrides?.[preset.id] ?? {};
-    const nextOverride = typeof mutator === "function"
-      ? (mutator(foundry.utils.deepClone({
-        ...basePreset,
-        ...currentOverride,
-        id: preset.id,
-        label: preset.label
-      }), preset) ?? currentOverride)
-      : currentOverride;
-    store.overrides = {
-      ...(store.overrides ?? {}),
-      [preset.id]: serializeAudioMixPresetForStore({
-        ...basePreset,
-        ...nextOverride,
-        id: preset.id,
-        label: preset.label,
-        isCustom: false
-      }, { includeIdentity: false })
-    };
-    return store;
-  });
-  return true;
+  return audioMixPresetManager.updateSelectedAudioMixPreset(mutator);
 }
 
 async function promptAndUpdateSelectedAudioMixPresetField(field) {
-  const preset = getSelectedEditableAudioMixPreset();
-  if (!preset) {
-    ui.notifications?.warn("Select a mix preset to edit it.");
-    return false;
-  }
-  if (field === "label" && !preset.isCustom) {
-    ui.notifications?.warn("Built-in preset names are fixed. Create a custom preset to rename it.");
-    return false;
-  }
+  return audioMixPresetManager.promptAndUpdateSelectedAudioMixPresetField(field);
+}
 
-  const config = {
-    label: {
-      title: "Rename Mix Preset",
-      message: "Preset name",
-      value: preset.label
-    },
-    description: {
-      title: "Edit Mix Description",
-      message: "Preset description",
-      value: preset.description
-    },
-    searchTokens: {
-      title: "Edit Mix Search Tokens",
-      message: "Comma-separated search tokens",
-      value: formatAudioMixPresetSearchTokens(preset.searchTokens)
-    }
-  }[field];
-  if (!config) return false;
-
-  const response = window.prompt(config.message, config.value);
-  if (response === null) return false;
-  const nextValue = field === "searchTokens"
-    ? normalizeAudioMixPresetSearchTokens(response)
-    : String(response ?? "").trim();
-  if ((field === "label" || field === "description") && !nextValue) return false;
-
-  await updateSelectedAudioMixPreset((entry) => {
-    entry[field] = nextValue;
-    return entry;
-  });
-  return true;
+async function setSelectedAudioMixPresetTextField(actionElement) {
+  return audioMixPresetManager.setSelectedAudioMixPresetTextField(actionElement);
 }
 
 async function setSelectedAudioMixPresetOption(actionElement) {
-  const preset = getSelectedEditableAudioMixPreset();
-  if (!preset) return false;
-  const field = String(actionElement?.dataset?.field ?? "").trim();
-  const value = actionElement?.value;
-  if (!field) return false;
-  const normalizedPresetId = String(preset.id ?? "").trim();
-
-  await updateSelectedAudioMixPreset((entry) => {
-    const next = { ...entry };
-    if (field === "kindFocus") {
-      next.kindFocus = normalizeAudioLibraryKind(value);
-      next.preferredKinds = next.kindFocus === "all" ? [] : [next.kindFocus];
-      next.channel = inferAudioMixChannelForKind(next.kindFocus);
-    } else if (field === "usageFocus") {
-      next.usageFocus = normalizeAudioLibraryUsage(value);
-      next.preferredUsage = next.usageFocus === "all" ? [] : [next.usageFocus];
-    } else if (field === "playbackMode") {
-      next.playbackMode = normalizeAudioMixPlaybackMode(value);
-      next.repeat = next.playbackMode === "repeat";
-    } else if (field === "volume") {
-      next.volume = normalizeAudioMixVolume(Number(value) / 100, entry.volume);
-    }
-    return next;
-  });
-  if (field === "volume") {
-    const livePreset = getAudioMixPresetById(normalizedPresetId);
-    await syncLiveAudioMixPresetVolume(livePreset);
-  }
-  return true;
+  return audioMixPresetManager.setSelectedAudioMixPresetOption(actionElement);
 }
 
 async function deleteSelectedAudioMixPreset() {
-  const preset = getSelectedCustomAudioMixPreset();
-  if (!preset) {
-    ui.notifications?.warn("Built-in presets cannot be deleted.");
-    return false;
-  }
-  const confirmed = await Dialog.confirm({
-    title: "Delete Mix Preset",
-    content: `<p>Delete <strong>${poEscapeHtml(preset.label)}</strong>?</p>`
-  });
-  if (!confirmed) return false;
-
-  const clearedQueue = await clearManagedAudioMixQueueForPreset(preset, {
-    nextPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
-    stopPlayback: true
-  });
-  await updateStoredAudioMixPresets((store) => {
-    store.presets = store.presets.filter((entry) => entry.id !== preset.id);
-    return store;
-  });
-  audioLibraryUiState.selectedMixPresetId = AUDIO_MIX_PRESET_DEFAULT_ID;
-  setAudioMixStatus(clearedQueue
-    ? `Deleted custom preset and cleared its queue: ${preset.label}`
-    : `Deleted custom preset: ${preset.label}`);
-  return true;
+  return audioMixPresetManager.deleteSelectedAudioMixPreset();
 }
 
 async function addTrackToSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!preset || !normalizedTrackId) {
-    ui.notifications?.warn("Select a mix preset before adding tracks.");
-    return false;
-  }
-
-  const nextTrackIds = normalizeAudioMixPresetTrackIds([...(preset.trackIds ?? []), normalizedTrackId]);
-  await updateSelectedAudioMixPreset((entry) => ({
-    ...entry,
-    trackIds: nextTrackIds
-  }));
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  if (!preset.isCustom) {
-    setAudioMixStatus(`Saved ${preset.label} curated track list.`);
-  }
-  return true;
+  return audioMixPresetManager.addTrackToSelectedAudioMixPreset(trackId);
 }
 
 async function addTracksToSelectedAudioMixPreset(trackIds = []) {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackIds = normalizeAudioMixPresetTrackIds(trackIds);
-  if (!preset || normalizedTrackIds.length < 1) {
-    ui.notifications?.warn("Select one or more tracks before adding them to the mix.");
-    return false;
-  }
-
-  const currentTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
-  const nextTrackIds = normalizeAudioMixPresetTrackIds([...currentTrackIds, ...normalizedTrackIds]);
-  await updateSelectedAudioMixPreset((entry) => ({
-    ...entry,
-    trackIds: nextTrackIds
-  }));
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  setSelectedAudioMixTrackSelectionIds([]);
-  const addedCount = Math.max(0, nextTrackIds.length - currentTrackIds.length);
-  setAudioMixStatus(
-    addedCount > 0
-      ? `Added ${addedCount} track${addedCount === 1 ? "" : "s"} to ${preset.label}.`
-      : `${preset.label} already included the selected tracks.`
-  );
-  return true;
+  return audioMixPresetManager.addTracksToSelectedAudioMixPreset(trackIds);
 }
 
 async function clearSelectedAudioMixPresetTrackList() {
-  const preset = getSelectedEditableAudioMixPreset();
-  if (!preset) return false;
-  await updateSelectedAudioMixPreset((entry) => ({
-    ...entry,
-    trackIds: []
-  }));
-  const clearedQueue = await clearManagedAudioMixQueueForPreset(preset, { stopPlayback: true });
-  if (!clearedQueue) {
-    await syncSelectedAudioMixPresetTrackIdsToLiveQueue([], preset);
-  }
-  setAudioMixStatus(clearedQueue
-    ? `Cleared saved track list and queue for ${preset.label}.`
-    : `Cleared saved track list for ${preset.label}.`);
-  return true;
+  return audioMixPresetManager.clearSelectedAudioMixPresetTrackList();
 }
 
 async function addSelectedLibraryTrackToAudioMixPreset() {
-  const trackId = String(audioLibraryUiState.selectedTrackId ?? "").trim();
-  return addTrackToSelectedAudioMixPreset(trackId);
+  return audioMixPresetManager.addSelectedLibraryTrackToAudioMixPreset();
 }
 
 async function addSelectedAudioMixTracksToPreset() {
-  return addTracksToSelectedAudioMixPreset(getSelectedAudioMixTrackSelectionIds());
+  return audioMixPresetManager.addSelectedAudioMixTracksToPreset();
 }
 
 function getAudioMixCurrentInsertionIndex(preset = getSelectedCustomAudioMixPreset()) {
-  const playback = getAudioMixPlaybackState(getAudioLibraryCatalog());
-  const currentTrackId = String(playback?.activeTrack?.id ?? playback?.activeTrackId ?? "").trim();
-  if (!preset || !currentTrackId) return -1;
-  if (String(playback?.presetId ?? "").trim() !== String(preset.id ?? "").trim()) return -1;
-  const trackIds = Array.isArray(preset.trackIds) ? preset.trackIds : [];
-  return trackIds.indexOf(currentTrackId);
+  return audioMixPresetManager.getAudioMixCurrentInsertionIndex(preset);
 }
 
 function buildReorderedAudioMixTrackIds(trackIds = [], trackId, targetIndex) {
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!normalizedTrackId) return normalizeAudioMixPresetTrackIds(trackIds);
-  const existing = normalizeAudioMixPresetTrackIds(trackIds).filter((entry) => entry !== normalizedTrackId);
-  const nextIndex = Math.max(0, Math.min(existing.length, Number(targetIndex ?? existing.length)));
-  existing.splice(nextIndex, 0, normalizedTrackId);
-  return existing;
+  return audioMixPresetManager.buildReorderedAudioMixTrackIds(trackIds, trackId, targetIndex);
 }
 
 async function syncSelectedAudioMixPresetTrackIdsToLiveQueue(trackIds, preset = getSelectedEditableAudioMixPreset()) {
@@ -13552,77 +13306,23 @@ async function clearManagedAudioMixQueueForPreset(preset = getSelectedEditableAu
 }
 
 async function queueTrackNextInSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!preset || !normalizedTrackId) return false;
-  const insertionIndex = getAudioMixCurrentInsertionIndex(preset);
-  const targetIndex = insertionIndex >= 0 ? insertionIndex + 1 : 0;
-  const nextTrackIds = buildReorderedAudioMixTrackIds(preset.trackIds ?? [], normalizedTrackId, targetIndex);
-  await updateSelectedAudioMixPreset((entry) => ({
-    ...entry,
-    trackIds: nextTrackIds
-  }));
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  return true;
+  return audioMixPresetManager.queueTrackNextInSelectedAudioMixPreset(trackId);
 }
 
 async function moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex = 0) {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!preset || !normalizedTrackId) return false;
-
-  let nextTrackIds = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
-  let didChange = false;
-  await updateSelectedAudioMixPreset((entry) => {
-    const rows = normalizeAudioMixPresetTrackIds(entry.trackIds ?? []);
-    const currentIndex = rows.indexOf(normalizedTrackId);
-    if (currentIndex < 0) return entry;
-    const boundedTargetIndex = Math.max(0, Math.min(rows.length, Math.floor(Number(targetIndex) || 0)));
-    const reordered = buildReorderedAudioMixTrackIds(rows, normalizedTrackId, boundedTargetIndex);
-    const changed = reordered.length !== rows.length || reordered.some((entryTrackId, index) => entryTrackId !== rows[index]);
-    if (!changed) return entry;
-    nextTrackIds = reordered;
-    didChange = true;
-    return {
-      ...entry,
-      trackIds: reordered
-    };
-  });
-
-  if (!didChange) return false;
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  return true;
+  return audioMixPresetManager.moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex);
 }
 
 async function moveTrackWithinSelectedAudioMixPreset(trackId, direction = "up") {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!preset || !normalizedTrackId) return false;
-  const rows = normalizeAudioMixPresetTrackIds(preset.trackIds ?? []);
-  const currentIndex = rows.indexOf(normalizedTrackId);
-  if (currentIndex < 0) return false;
-  const delta = String(direction ?? "").trim().toLowerCase() === "down" ? 1 : -1;
-  const targetIndex = Math.max(0, Math.min(rows.length - 1, currentIndex + delta));
-  if (targetIndex === currentIndex) return false;
-  return moveTrackToIndexInSelectedAudioMixPreset(normalizedTrackId, targetIndex);
+  return audioMixPresetManager.moveTrackWithinSelectedAudioMixPreset(trackId, direction);
 }
 
 async function moveTrackToTopInSelectedAudioMixPreset(trackId) {
-  return moveTrackToIndexInSelectedAudioMixPreset(trackId, 0);
+  return audioMixPresetManager.moveTrackToTopInSelectedAudioMixPreset(trackId);
 }
 
 async function removeTrackFromSelectedAudioMixPreset(trackId) {
-  const preset = getSelectedEditableAudioMixPreset();
-  const normalizedTrackId = normalizeAudioLibraryRootPath(trackId);
-  if (!preset || !normalizedTrackId) return false;
-
-  const nextTrackIds = normalizeAudioMixPresetTrackIds((preset.trackIds ?? []).filter((entryTrackId) => entryTrackId !== normalizedTrackId));
-  await updateSelectedAudioMixPreset((entry) => ({
-    ...entry,
-    trackIds: nextTrackIds
-  }));
-  await syncSelectedAudioMixPresetTrackIdsToLiveQueue(nextTrackIds, preset);
-  return true;
+  return audioMixPresetManager.removeTrackFromSelectedAudioMixPreset(trackId);
 }
 
 async function removeTrackFromAllAudioMixPresets(trackId) {
@@ -21646,7 +21346,7 @@ function getResourceOwnerActors() {
 function getResourceInventoryItems(actor) {
   if (!actor?.items?.contents) return [];
   return actor.items.contents
-    .filter((item) => item && item.type === "consumable" && (item.system?.quantity !== undefined || item.system?.uses?.value !== undefined))
+    .filter((item) => item && item.type === "consumable" && (item.system?.quantity !== undefined || getItemUsesAvailableValue(item) !== null))
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
@@ -24159,13 +23859,58 @@ function getMerchantItemData(itemLike) {
   return itemLike;
 }
 
+function getItemUsesAvailableValue(itemLike) {
+  const directValue = Number(itemLike?.system?.uses?.value);
+  if (Number.isFinite(directValue)) return Math.max(0, Math.floor(directValue));
+  const max = Number(itemLike?.system?.uses?.max);
+  const spent = Number(itemLike?.system?.uses?.spent);
+  if (!Number.isFinite(max) || !Number.isFinite(spent)) return null;
+  return Math.max(0, Math.floor(Math.max(0, max) - Math.max(0, spent)));
+}
+
+function getItemUsesSpentForAvailable(itemLike, available = 0) {
+  const max = Number(itemLike?.system?.uses?.max);
+  if (!Number.isFinite(max)) return null;
+  const normalizedMax = Math.max(0, Math.floor(max));
+  const normalizedAvailable = Math.max(0, Math.floor(Number(available) || 0));
+  return Math.max(0, Math.min(normalizedMax, normalizedMax - normalizedAvailable));
+}
+
+function setItemUsesAvailableOnData(itemData = {}, available = 0) {
+  const next = Math.max(0, Math.floor(Number(available) || 0));
+  const data = itemData && typeof itemData === "object" ? itemData : {};
+  if (!data.system || typeof data.system !== "object") data.system = {};
+  if (!data.system.uses || typeof data.system.uses !== "object") data.system.uses = {};
+  const spent = getItemUsesSpentForAvailable(data, next);
+  if (spent !== null) {
+    data.system.uses.spent = spent;
+    if (Object.prototype.hasOwnProperty.call(data.system.uses, "value")) delete data.system.uses.value;
+    return data;
+  }
+  data.system.uses.value = next;
+  return data;
+}
+
+async function updateItemUsesAvailable(item, available = 0) {
+  if (!item) return;
+  const next = Math.max(0, Math.floor(Number(available) || 0));
+  const spent = getItemUsesSpentForAvailable(item, next);
+  if (spent !== null) {
+    await item.update({ "system.uses.spent": spent });
+    return;
+  }
+  if (item.system?.uses?.value !== undefined) {
+    await item.update({ "system.uses.value": next });
+  }
+}
+
 function getMerchantItemDataQuantity(itemData = {}) {
   const quantity = Number(itemData?.system?.quantity);
   if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
   const quantityValue = Number(itemData?.system?.quantity?.value);
   if (Number.isFinite(quantityValue)) return Math.max(0, Math.floor(quantityValue));
-  const uses = Number(itemData?.system?.uses?.value);
-  if (Number.isFinite(uses)) return Math.max(0, Math.floor(uses));
+  const uses = getItemUsesAvailableValue(itemData);
+  if (Number.isFinite(uses)) return uses;
   return 1;
 }
 
@@ -24178,8 +23923,8 @@ function setMerchantItemDataQuantity(itemData = {}, quantity = 1) {
     else data.system.quantity = next;
     return data;
   }
-  if (data.system.uses?.value !== undefined) {
-    data.system.uses.value = next;
+  if (data.system.uses && typeof data.system.uses === "object") {
+    setItemUsesAvailableOnData(data, next);
     return data;
   }
   data.system.quantity = next;
@@ -25437,6 +25182,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     : editorSourceTypeRaw;
   const editorScarcity = normalizeMerchantScarcity(editorDraft?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
   const editorSourceRefs = getMerchantSourceRefIdsFromStock(editorDraft?.stock ?? {});
+  const editorSourceFilter = getMerchantEditorSourceFilter();
   const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
   const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
     editorSourceType,
@@ -25705,11 +25451,11 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       sourceRefOptionCount: editorSourceRefSelectableOptions.length,
       sourceRefSelectedCount: editorSourceRefSelectedCount,
       sourceRefHintLabel: editorSourceRefHintLabel,
-      sourcePackFilter: "",
+      sourcePackFilter: editorSourceFilter,
       sourcePackOptions: editorSourcePackOptions,
       sourcePackVisibleOptions: editorSourcePackOptions,
       sourcePackVisibleCount: editorSourcePackOptions.length,
-      sourcePackFilterActive: false,
+      sourcePackFilterActive: Boolean(editorSourceFilter),
       tagCatalogCount: editorTagCatalog.length,
       hasTagCatalog: editorTagCatalog.length > 0,
       includeTagOptions: editorIncludeTagOptions,
@@ -29010,7 +28756,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       updatedAtValue: updatedAtRaw,
       updatedAtLabel,
       updatedBy: String(entry?.updatedBy ?? "Player"),
-      canClear: canUserManageDowntimeActor(user, actor),
+      canClear: isGMUser && canUserManageDowntimeActor(user, actor),
       hasResult: Boolean(result),
       resultSummary: String(result?.summary ?? ""),
       resultDetails: Array.isArray(result?.details) ? result.details : [],
@@ -32506,13 +32252,13 @@ function getWaterskinChargeCapacity(item) {
 
 function getResourceItemQuantity(item, resourceKey = "") {
   const normalizedKey = String(resourceKey ?? "").trim().toLowerCase();
-  if (normalizedKey === "water" && isWaterskinLikeItem(item) && item?.system?.uses?.value !== undefined) {
-    return Math.max(0, Math.floor(Number(item.system.uses.value ?? 0) || 0));
+  const usesAvailable = getItemUsesAvailableValue(item);
+  if (normalizedKey === "water" && isWaterskinLikeItem(item) && usesAvailable !== null) {
+    return usesAvailable;
   }
   const quantity = Number(item?.system?.quantity);
   if (Number.isFinite(quantity)) return quantity;
-  const uses = Number(item?.system?.uses?.value);
-  if (Number.isFinite(uses)) return uses;
+  if (usesAvailable !== null) return usesAvailable;
   return 0;
 }
 
@@ -32526,8 +32272,8 @@ async function setItemTrackedQuantity(item, value) {
     await item.update({ "system.quantity": next });
     return;
   }
-  if (item.system?.uses?.value !== undefined) {
-    await item.update({ "system.uses.value": next });
+  if (item.system?.uses && typeof item.system.uses === "object") {
+    await updateItemUsesAvailable(item, next);
   }
 }
 
@@ -32696,8 +32442,8 @@ async function consumeSelectedInventoryItem(selection, amount) {
   const current = Math.max(0, Math.floor(getResourceItemQuantity(item, selection?.resourceKey)));
   const consumed = Math.min(current, needed);
   if (consumed > 0) {
-    if (String(selection?.resourceKey ?? "").trim().toLowerCase() === "water" && isWaterskinLikeItem(item) && item?.system?.uses?.value !== undefined) {
-      await item.update({ "system.uses.value": Math.max(0, current - consumed) });
+    if (String(selection?.resourceKey ?? "").trim().toLowerCase() === "water" && isWaterskinLikeItem(item) && getItemUsesAvailableValue(item) !== null) {
+      await updateItemUsesAvailable(item, Math.max(0, current - consumed));
     } else {
       await setItemTrackedQuantity(item, current - consumed);
     }
@@ -32726,11 +32472,11 @@ async function addToSelectedInventoryItem(selection, amount) {
   const current = Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
   let added = gained;
   if (resourceKey === "water" && isWaterskinLikeItem(item)) {
-    if (item?.system?.uses?.value !== undefined) {
+    if (getItemUsesAvailableValue(item) !== null) {
       const capacity = getWaterskinChargeCapacity(item);
       const target = capacity > 0 ? Math.min(capacity, current + gained) : current;
       added = Math.max(0, target - current);
-      if (added > 0) await item.update({ "system.uses.value": target });
+      if (added > 0) await updateItemUsesAvailable(item, target);
     } else {
       added = 0;
     }
@@ -33151,6 +32897,17 @@ async function ensureGatherHistoryRecorded(result = {}) {
   return recorded || duplicate;
 }
 
+function resolvePendingGatherCheckRequest(requestId, payload = {}) {
+  const key = String(requestId ?? "").trim();
+  if (!key) return false;
+  const pending = pendingGatherCheckRequests.get(key);
+  if (!pending) return false;
+  pendingGatherCheckRequests.delete(key);
+  window.clearTimeout(pending.timeoutId);
+  pending.resolve(payload);
+  return true;
+}
+
 function resolvePendingGatherYieldRequest(requestId, payload = {}) {
   const key = String(requestId ?? "").trim();
   if (!key) return false;
@@ -33160,6 +32917,66 @@ function resolvePendingGatherYieldRequest(requestId, payload = {}) {
   window.clearTimeout(pending.timeoutId);
   pending.resolve(payload);
   return true;
+}
+
+async function requestGatherCheckRollFromPlayer(options = {}) {
+  const targetUserId = String(options?.targetUserId ?? "").trim();
+  if (!targetUserId || targetUserId === String(game.user?.id ?? "").trim()) return null;
+  const targetUser = game.users?.get?.(targetUserId) ?? null;
+  if (!targetUser?.active) return null;
+
+  const actorId = String(options?.actorId ?? "").trim();
+  const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
+  const dc = Math.max(1, Math.floor(Number(options?.dc ?? 10) || 10));
+  const advantage = Boolean(options?.advantage);
+  const flavor = String(options?.flavor ?? "Gather Resources: Wisdom (Survival)").trim() || "Gather Resources: Wisdom (Survival)";
+
+  if (actor && isMonksTokenBarActive()) {
+    try {
+      const monksResult = await requestMonksSurvivalRoll(actor, dc, flavor);
+      if (monksResult && Number.isFinite(monksResult.total)) {
+        return {
+          ok: true,
+          total: Number(monksResult.total),
+          natural: null,
+          passed: typeof monksResult.passed === "boolean" ? monksResult.passed : (Number(monksResult.total) >= dc),
+          source: "monks",
+          userId: targetUserId,
+          userName: String(targetUser?.name ?? "Player").trim() || "Player"
+        };
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: monks gather check request failed`, error);
+    }
+  }
+
+  const requestId = foundry.utils.randomID();
+  const timeoutId = window.setTimeout(() => {
+    resolvePendingGatherCheckRequest(requestId, { ok: false, timedOut: true });
+  }, GATHER_CHECK_RESULT_TIMEOUT_MS);
+
+  const responsePromise = new Promise((resolve) => {
+    pendingGatherCheckRequests.set(requestId, { resolve, timeoutId });
+  });
+
+  emitModuleSocket({
+    type: "ops:gather-check-request",
+    requestId,
+    targetUserId,
+    actorId,
+    actorName: String(options?.actorName ?? actor?.name ?? "Unknown Actor").trim() || "Unknown Actor",
+    resourceType: normalizeGatherResourceType(options?.resourceType),
+    gatherMode: String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
+    duringTravel: Boolean(options?.duringTravel),
+    travelTradeoff: normalizeGatherTravelTradeoff(options?.travelTradeoff),
+    dc,
+    advantage,
+    flavor,
+    gmUserId: String(game.user?.id ?? "").trim(),
+    gmName: String(game.user?.name ?? "GM").trim() || "GM"
+  }, { channel: SOCKET_CHANNEL });
+
+  return responsePromise;
 }
 
 async function requestGatherYieldRollFromPlayer(options = {}) {
@@ -33189,6 +33006,130 @@ async function requestGatherYieldRollFromPlayer(options = {}) {
   }, { channel: SOCKET_CHANNEL });
 
   return responsePromise;
+}
+
+async function performLocalPlayerGatherCheckRoll(actor, options = {}) {
+  const advantage = Boolean(options?.advantage);
+  const flavor = String(options?.flavor ?? "Gather Resources: Wisdom (Survival)").trim() || "Gather Resources: Wisdom (Survival)";
+  const dc = Math.max(1, Math.floor(Number(options?.dc ?? 10) || 10));
+
+  if (actor && typeof actor.rollSkill === "function") {
+    try {
+      const rollResult = await actor.rollSkill("sur", {
+        fastForward: true,
+        chatMessage: true,
+        advantage,
+        disadvantage: false
+      });
+      const total = Number(rollResult?.total ?? rollResult?.roll?.total);
+      if (Number.isFinite(total)) {
+        return {
+          ok: true,
+          total,
+          natural: extractGatherNaturalResult(rollResult),
+          passed: total >= dc,
+          source: "player-native"
+        };
+      }
+    } catch (error) {
+      console.warn(`${MODULE_ID}: local player gather roll failed, using fallback`, error);
+    }
+  }
+
+  const wisMod = Number(actor?.system?.abilities?.wis?.mod ?? 0);
+  const formula = advantage ? "2d20kh + @mod" : "1d20 + @mod";
+  const roll = await (new Roll(formula, { mod: wisMod })).evaluate();
+  await roll.toMessage({
+    speaker: ChatMessage.getSpeaker({ actor }),
+    flavor
+  });
+  const total = Number(roll.total ?? 0);
+  return {
+    ok: true,
+    total,
+    natural: extractGatherNaturalResult(roll),
+    passed: total >= dc,
+    source: "player-fallback"
+  };
+}
+
+async function promptLocalGatherCheckRoll(message = {}) {
+  const requestId = String(message?.requestId ?? "").trim();
+  const targetUserId = String(message?.targetUserId ?? "").trim();
+  if (!requestId || !targetUserId || targetUserId !== String(game.user?.id ?? "").trim()) return false;
+
+  const actorId = String(message?.actorId ?? "").trim();
+  const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
+  const actorName = String(message?.actorName ?? actor?.name ?? "Unknown Actor").trim() || "Unknown Actor";
+  const resourceType = normalizeGatherResourceType(message?.resourceType);
+  const resourceLabel = getGatherResourceTypeLabel(resourceType);
+  const gatherMode = String(message?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
+  const duringTravel = Boolean(message?.duringTravel);
+  const travelTradeoff = normalizeGatherTravelTradeoff(message?.travelTradeoff);
+  const gmName = String(message?.gmName ?? "GM").trim() || "GM";
+  const dc = Math.max(1, Math.floor(Number(message?.dc ?? 10) || 10));
+  const advantage = Boolean(message?.advantage);
+  const flavor = String(message?.flavor ?? "Gather Resources: Wisdom (Survival)").trim() || "Gather Resources: Wisdom (Survival)";
+
+  let settled = false;
+  const sendResponse = (payload = {}) => {
+    if (settled) return;
+    settled = true;
+    emitModuleSocket({
+      type: "ops:gather-check-response",
+      requestId,
+      gmUserId: String(message?.gmUserId ?? "").trim(),
+      userId: String(game.user?.id ?? "").trim(),
+      userName: String(game.user?.name ?? "Player").trim() || "Player",
+      ...payload
+    }, { channel: SOCKET_CHANNEL });
+  };
+
+  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+    sendResponse({ ok: false, blocked: true, reason: "Actor unavailable for player roll." });
+    return false;
+  }
+
+  const travelSummary = duringTravel
+    ? (travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "During travel: fall behind + Con save" : "During travel: reduce pace by one step")
+    : "Stopping to gather";
+  const content = `
+    <div class="po-help">
+      <p><strong>${poEscapeHtml(gmName)}</strong> finalized the gather setup for <strong>${poEscapeHtml(actorName)}</strong>.</p>
+      <p><strong>Request:</strong> ${poEscapeHtml(resourceLabel)} - ${poEscapeHtml(gatherMode === "plant" ? "Plant Gathering" : "Standard Search")} - ${poEscapeHtml(travelSummary)}</p>
+      <p>Roll <strong>Wisdom (Survival)</strong> against DC <strong>${dc}</strong>${advantage ? " with advantage" : ""}.</p>
+    </div>
+  `;
+
+  const dialog = new Dialog({
+    title: "Gather Survival Roll",
+    content,
+    buttons: {
+      roll: {
+        label: advantage ? "Roll with Advantage" : "Roll Wisdom (Survival)",
+        callback: async () => {
+          const result = await performLocalPlayerGatherCheckRoll(actor, {
+            dc,
+            advantage,
+            flavor
+          });
+          sendResponse(result);
+        }
+      },
+      cancel: {
+        label: "Cancel",
+        callback: () => {
+          sendResponse({ ok: false, cancelled: true });
+        }
+      }
+    },
+    default: "roll",
+    close: () => {
+      sendResponse({ ok: false, cancelled: true });
+    }
+  });
+  dialog.render(true);
+  return true;
 }
 
 async function promptLocalGatherYieldRoll(message = {}) {
@@ -33292,6 +33233,21 @@ async function applyPlayerGatherRequest(message, requesterRef = null) {
 
   if (added) {
     ui.notifications?.info(`Gather request received from ${request.requesterName} for ${request.actorName}.`);
+    const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => user.id).filter(Boolean);
+    if (gmIds.length > 0) {
+      await ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+        whisper: gmIds,
+        content: `
+          <p><strong>Pending Gather Request</strong></p>
+          <p><strong>Actor:</strong> ${poEscapeHtml(String(request.actorName ?? "Unknown Actor"))}</p>
+          <p><strong>Requested By:</strong> ${poEscapeHtml(String(request.requesterName ?? "Player"))}</p>
+          <p><strong>Type:</strong> ${poEscapeHtml(String(request.resourceTypeLabel ?? request.resourceType ?? "Gather"))}</p>
+          <p><strong>Summary:</strong> ${poEscapeHtml(String(request.summary ?? "Awaiting GM resolution."))}</p>
+          <p>Open the GM workspace resources panel to resolve the request with a gather check.</p>
+        `
+      });
+    }
   }
 }
 
@@ -33346,13 +33302,36 @@ async function executeGatherResourcesAction(options = {}) {
   const requesterUserId = String(options?.requesterUserId ?? "").trim();
   const requesterName = String(options?.requesterName ?? "").trim();
   const approvedBy = String(options?.approvedBy ?? game.user?.name ?? "GM").trim() || "GM";
-  const survival = await rollWisdomSurvival(actor, {
-    dc: effectiveDc,
-    flavor: "Gather Resources: Wisdom (Survival)",
-    rollMode,
-    advantage: herbalismAdvantage,
-    preferNative: false
-  });
+  const promptCheckRoll = Boolean(options?.promptCheckRoll === true && requesterUserId);
+  const survival = promptCheckRoll
+    ? await requestGatherCheckRollFromPlayer({
+      targetUserId: requesterUserId,
+      actorId: actor.id,
+      actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
+      resourceType,
+      gatherMode,
+      duringTravel: Boolean(options?.duringTravel),
+      travelTradeoff: normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault),
+      dc: effectiveDc,
+      advantage: herbalismAdvantage,
+      flavor: "Gather Resources: Wisdom (Survival)"
+    })
+    : await rollWisdomSurvival(actor, {
+      dc: effectiveDc,
+      flavor: "Gather Resources: Wisdom (Survival)",
+      rollMode,
+      advantage: herbalismAdvantage,
+      preferNative: false
+    });
+  if (!survival || !Number.isFinite(Number(survival?.total))) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: promptCheckRoll
+        ? "The player did not complete the requested Wisdom (Survival) roll."
+        : "Gather check roll did not return a usable total."
+    };
+  }
   const checkTotal = Math.floor(Number(survival?.total ?? 0) || 0);
   const natural = clampGatherInteger(survival?.natural, 0, 20, 0);
 
@@ -34117,9 +34096,6 @@ async function promptPlayerGatherRequestDialog(options = {}) {
   const actorOptions = actors
     .map((actor) => `<option value="${actor.id}" ${String(options?.actorId ?? game.user?.character?.id ?? "") === String(actor.id) ? "selected" : ""}>${poEscapeHtml(actor.name)}</option>`)
     .join("");
-  const environmentOptions = getGatherEnvironmentChoices(config)
-    .map((entry) => `<option value="${entry.value}" ${normalizeGatherEnvironmentKey(options?.environment ?? GATHER_ENVIRONMENT_KEYS[0]) === entry.value ? "selected" : ""}>${poEscapeHtml(entry.label)}</option>`)
-    .join("");
   const resourceType = normalizeGatherResourceType(options?.resourceType);
   const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
   const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
@@ -34137,10 +34113,6 @@ async function promptPlayerGatherRequestDialog(options = {}) {
       </select>
     </div>
     <div class="form-group">
-      <label>Gather Environment</label>
-      <select name="environment">${environmentOptions}</select>
-    </div>
-    <div class="form-group">
       <label>Gather Mode</label>
       <select name="gatherMode">
         <option value="standard" ${gatherMode === "standard" ? "selected" : ""}>Standard Search</option>
@@ -34148,25 +34120,6 @@ async function promptPlayerGatherRequestDialog(options = {}) {
       </select>
     </div>
     <div class="form-group">
-      <label>Hours Spent</label>
-      <input type="number" name="hoursSpent" value="${Math.max(1, Number(options?.hoursSpent ?? config.minimumHours) || config.minimumHours)}" min="1" max="24" step="1" />
-    </div>
-    <div class="form-group">
-      <label>Season Modifier</label>
-      <input type="number" name="seasonMod" value="${clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod)}" min="-10" max="10" step="1" />
-    </div>
-    <div class="form-group">
-      <label>Weather Modifier</label>
-      <input type="number" name="weatherMod" value="${clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod)}" min="-10" max="10" step="1" />
-    </div>
-    <div class="form-group">
-      <label>Corruption Modifier</label>
-      <input type="number" name="corruptionMod" value="${clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod)}" min="-10" max="10" step="1" />
-    </div>
-    <div class="form-group">
-      <label><input type="checkbox" name="isCorruptedRegion" ${options?.isCorruptedRegion ? "checked" : ""} /> Corrupted Region</label>
-      <label><input type="checkbox" name="hostileTerrain" ${options?.hostileTerrain ? "checked" : ""} /> Hostile Terrain</label>
-      <label><input type="checkbox" name="waterAutoFound" ${(options?.waterAutoFound ?? config.waterAutoFoundEnabled) ? "checked" : ""} ${config.waterAutoFoundEnabled ? "" : "disabled"} /> Obvious Water Source</label>
       <label><input type="checkbox" name="duringTravel" ${options?.duringTravel ? "checked" : ""} /> Gather During Travel</label>
     </div>
     <div class="form-group">
@@ -34176,7 +34129,7 @@ async function promptPlayerGatherRequestDialog(options = {}) {
         <option value="${GATHER_TRAVEL_CHOICES.FELL_BEHIND}" ${travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "selected" : ""}>Fell behind + Con save</option>
       </select>
     </div>
-    <p class="notes">This sends a request to the GM. The GM can review it before the Survival prompt and the success yield d6 are requested.</p>
+    <p class="notes">This sends a request to the GM. The GM chooses the environment, hours, terrain, and modifiers, then sends you the final Wisdom (Survival) roll request.</p>
   `;
 
   const dialog = new Dialog({
@@ -34200,15 +34153,7 @@ async function promptPlayerGatherRequestDialog(options = {}) {
             requesterName: String(game.user?.name ?? "Player").trim() || "Player",
             requestedAt: Date.now(),
             resourceType: String(html.find("select[name=resourceType]").val() ?? "food"),
-            environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
             gatherMode: String(html.find("select[name=gatherMode]").val() ?? "standard"),
-            hoursSpent: Number(html.find("input[name=hoursSpent]").val() ?? config.minimumHours),
-            seasonMod: Number(html.find("input[name=seasonMod]").val() ?? config.seasonMod),
-            weatherMod: Number(html.find("input[name=weatherMod]").val() ?? config.weatherMod),
-            corruptionMod: Number(html.find("input[name=corruptionMod]").val() ?? config.corruptionMod),
-            isCorruptedRegion: Boolean(html.find("input[name=isCorruptedRegion]").is(":checked")),
-            hostileTerrain: Boolean(html.find("input[name=hostileTerrain]").is(":checked")),
-            waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
             duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
             travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
             applyToLedger: true
@@ -34273,7 +34218,12 @@ async function approveGatherRequestAction(element) {
     promptYieldRoll: true,
     approvedBy: String(game.user?.name ?? "GM").trim() || "GM",
     onResolved: async (result) => {
-      if (result?.ok) await removeGatherRequestById(requestId);
+      if (!result?.ok) return;
+      if (!result?.historyRecorded) {
+        const historyRecorded = await ensureGatherHistoryRecorded(result);
+        result.historyRecorded = historyRecorded;
+      }
+      await removeGatherRequestById(requestId);
     }
   });
 }
@@ -34436,10 +34386,54 @@ async function promptGatherResourceDialog(options = {}) {
   const resourceType = normalizeGatherResourceType(options?.resourceType);
   const travelTradeoff = normalizeGatherTravelTradeoff(options?.travelTradeoff ?? config.travelTradeoffDefault);
   const gatherMode = String(options?.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
+  const isRequestResolution = Boolean(String(options?.requestId ?? "").trim() && String(options?.requesterUserId ?? "").trim());
+  const requestedActorName = String(options?.actorName ?? "").trim() || "Unknown Actor";
+  const requestedResourceLabel = getGatherResourceTypeLabel(resourceType);
+  const requestedGatherModeLabel = gatherMode === "plant" ? "Plant Gathering" : "Standard Search";
+  const requestedTravelLabel = Boolean(options?.duringTravel)
+    ? (travelTradeoff === GATHER_TRAVEL_CHOICES.FELL_BEHIND ? "During travel (fall behind + Con save)" : "During travel (reduce pace by one step)")
+    : "Stopping to gather";
   const dialogTitle = String(options?.requesterName ?? "").trim()
     ? `Finalize Gather Request: ${String(options.requesterName).trim()}`
     : "Gather Resources";
-  const content = `
+  const content = isRequestResolution ? `
+    <div class="po-help">
+      <p><strong>Gathering Actor:</strong> ${poEscapeHtml(requestedActorName)}</p>
+      <p><strong>Resource Type:</strong> ${poEscapeHtml(requestedResourceLabel)}</p>
+      <p><strong>Gather Mode:</strong> ${poEscapeHtml(requestedGatherModeLabel)}</p>
+      <p><strong>Travel Mode:</strong> ${poEscapeHtml(requestedTravelLabel)}</p>
+      <p>The player will receive the final Wisdom (Survival) roll request after you confirm the hidden setup below.</p>
+    </div>
+    <div class="form-group">
+      <label>Gather Environment</label>
+      <select name="environment">${environmentOptions}</select>
+    </div>
+    <div class="form-group">
+      <label>Hours Spent</label>
+      <input type="number" name="hoursSpent" value="${Math.max(1, Number(options?.hoursSpent ?? config.minimumHours) || config.minimumHours)}" min="1" max="24" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Season Modifier</label>
+      <input type="number" name="seasonMod" value="${clampGatherModifier(options?.seasonMod ?? config.seasonMod, config.seasonMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Weather Modifier</label>
+      <input type="number" name="weatherMod" value="${clampGatherModifier(options?.weatherMod ?? config.weatherMod, config.weatherMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label>Corruption Modifier</label>
+      <input type="number" name="corruptionMod" value="${clampGatherModifier(options?.corruptionMod ?? config.corruptionMod, config.corruptionMod)}" min="-10" max="10" step="1" />
+    </div>
+    <div class="form-group">
+      <label><input type="checkbox" name="isCorruptedRegion" ${options?.isCorruptedRegion ? "checked" : ""} /> Corrupted Region</label>
+      <label><input type="checkbox" name="hostileTerrain" ${options?.hostileTerrain ? "checked" : ""} /> Hostile Terrain</label>
+      <label><input type="checkbox" name="waterAutoFound" ${(options?.waterAutoFound ?? config.waterAutoFoundEnabled) ? "checked" : ""} ${config.waterAutoFoundEnabled ? "" : "disabled"} /> Obvious Water Source (auto-found)</label>
+    </div>
+    <div class="form-group">
+      <label>Effective DC Preview</label>
+      <div><strong data-gather-dc-preview>-</strong></div>
+    </div>
+  ` : `
     <div class="form-group">
       <label>Gathering Actor</label>
       <select name="actorId">${actorOptions}</select>
@@ -34503,14 +34497,20 @@ async function promptGatherResourceDialog(options = {}) {
     content,
     buttons: {
       roll: {
-        label: "Run Gather Check",
+        label: isRequestResolution ? "Send Survival Roll Request" : "Run Gather Check",
         callback: async (html) => {
-          const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+          const actorId = isRequestResolution
+            ? String(options?.actorId ?? "").trim()
+            : String(html.find("select[name=actorId]").val() ?? "").trim();
           const payload = {
             actorId,
-            resourceType: String(html.find("select[name=resourceType]").val() ?? "food"),
+            resourceType: isRequestResolution
+              ? resourceType
+              : String(html.find("select[name=resourceType]").val() ?? "food"),
             environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
-            gatherMode: String(html.find("select[name=gatherMode]").val() ?? "standard"),
+            gatherMode: isRequestResolution
+              ? gatherMode
+              : String(html.find("select[name=gatherMode]").val() ?? "standard"),
             hoursSpent: Number(html.find("input[name=hoursSpent]").val() ?? config.minimumHours),
             seasonMod: Number(html.find("input[name=seasonMod]").val() ?? config.seasonMod),
             weatherMod: Number(html.find("input[name=weatherMod]").val() ?? config.weatherMod),
@@ -34518,12 +34518,19 @@ async function promptGatherResourceDialog(options = {}) {
             isCorruptedRegion: Boolean(html.find("input[name=isCorruptedRegion]").is(":checked")),
             hostileTerrain: Boolean(html.find("input[name=hostileTerrain]").is(":checked")),
             waterAutoFound: Boolean(html.find("input[name=waterAutoFound]").is(":checked")),
-            duringTravel: Boolean(html.find("input[name=duringTravel]").is(":checked")),
-            travelTradeoff: String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
-            applyToLedger: Boolean(html.find("input[name=applyToLedger]").is(":checked")),
+            duringTravel: isRequestResolution
+              ? Boolean(options?.duringTravel)
+              : Boolean(html.find("input[name=duringTravel]").is(":checked")),
+            travelTradeoff: isRequestResolution
+              ? travelTradeoff
+              : String(html.find("select[name=travelTradeoff]").val() ?? config.travelTradeoffDefault),
+            applyToLedger: isRequestResolution
+              ? true
+              : Boolean(html.find("input[name=applyToLedger]").is(":checked")),
             requestId: String(options?.requestId ?? "").trim(),
             requesterUserId: String(options?.requesterUserId ?? "").trim(),
             requesterName: String(options?.requesterName ?? "").trim(),
+            promptCheckRoll: isRequestResolution,
             promptYieldRoll: options?.promptYieldRoll === true,
             approvedBy: String(options?.approvedBy ?? game.user?.name ?? "GM").trim() || "GM"
           };
@@ -39235,8 +39242,8 @@ function isHealersKitItem(item) {
 }
 
 function getHealersKitTrackedCharges(item) {
-  const uses = Number(item?.system?.uses?.value);
-  if (Number.isFinite(uses)) return Math.max(0, Math.floor(uses));
+  const uses = getItemUsesAvailableValue(item);
+  if (Number.isFinite(uses)) return uses;
   const quantity = Number(item?.system?.quantity);
   if (Number.isFinite(quantity)) return Math.max(0, Math.floor(quantity));
   return 0;
@@ -39244,8 +39251,8 @@ function getHealersKitTrackedCharges(item) {
 
 async function setHealersKitTrackedCharges(item, value) {
   const next = Math.max(0, Math.floor(Number(value) || 0));
-  if (item?.system?.uses?.value !== undefined) {
-    await item.update({ "system.uses.value": next });
+  if (item?.system?.uses && typeof item.system.uses === "object") {
+    await updateItemUsesAvailable(item, next);
     return;
   }
   if (item?.system?.quantity !== undefined) {
@@ -41207,6 +41214,9 @@ function getRestWatchState() {
   });
   merged.slots = normalizeRestWatchSlots(merged?.slots);
   if (merged.slots.length === 0) merged.slots = buildStoredWatchSlots();
+  const slotIds = merged.slots.map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+  merged.campfire = Boolean(merged.campfire);
+  merged.campfireBySlot = normalizeRestWatchCampfireBySlot(merged?.campfireBySlot, slotIds, merged.campfire);
   merged.locked = false;
   merged.lockedBy = "";
   return merged;
@@ -41392,9 +41402,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
   const lockedForUser = isLockedForUser(state, isGM);
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
   const activities = getRestActivities();
-  const sourceSlots = Array.isArray(state?.slots) && state.slots.length > 0
-    ? state.slots
-    : buildStoredWatchSlots();
+  const sourceSlots = getRestWatchSourceSlots(state);
 
   const buildNoteButtonContext = (actorNameInput, noteTextInput) => {
     const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
@@ -41411,6 +41419,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
   return sourceSlots.map((slot, index) => {
     const slotId = String(slot?.id ?? `watch-${index + 1}`);
     const entries = sanitizeRestWatchEntries(slot);
+    const campfireActive = getRestWatchSlotCampfireState(state, slotId);
 
     const entriesView = entries.map((entry) => {
       const actor = game.actors.get(entry.actorId);
@@ -41439,6 +41448,8 @@ function buildWatchSlotsView(state, isGM, visibility) {
       id: slotId,
       label: getRestWatchSlotLabel(slotId, index),
       timeRange: slot.timeRange ?? "",
+      campfireActive,
+      campfireState: campfireActive ? "Lit" : "Out",
       entries: entriesView,
       hasEntries: entriesView.length > 0,
       slotHighestPP,
@@ -42765,6 +42776,20 @@ function removeSidebarLauncher() {
   document.getElementById("po-sidebar-launcher")?.remove();
 }
 
+function getSidebarLauncherHost() {
+  const sidebar = document.getElementById("sidebar");
+  if (!sidebar) return null;
+
+  return sidebar.querySelector(".sidebar-tab.active")
+    ?? sidebar.querySelector(".tab.active.sidebar-tab")
+    ?? sidebar.querySelector(".tab.sidebar-tab.active")
+    ?? sidebar.querySelector("#sidebar-content .sidebar-tab.active")
+    ?? sidebar.querySelector("#sidebar-content")
+    ?? sidebar.querySelector(".sidebar-content")
+    ?? sidebar.querySelector("[data-application-part='content']")
+    ?? sidebar;
+}
+
 async function setLauncherPlacement(placement) {
   const normalized = normalizeLauncherPlacement(placement);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LAUNCHER_PLACEMENT, normalized);
@@ -42982,6 +43007,7 @@ function getLauncherStatusSnapshot() {
   const clickOpener = document.getElementById("po-click-opener");
   const floatingLauncher = document.getElementById("po-floating-launcher");
   const sidebarLauncher = document.getElementById("po-sidebar-launcher");
+  const sidebarLauncherHost = sidebarLauncher?.parentElement ?? getSidebarLauncherHost();
   const placement = getLauncherPlacement();
   return {
     ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher),
@@ -42990,6 +43016,8 @@ function getLauncherStatusSnapshot() {
     floatingLauncher: Boolean(floatingLauncher),
     sidebarLauncher: Boolean(sidebarLauncher),
     sidebarPresent: Boolean(document.getElementById("sidebar")),
+    sidebarLauncherHostId: String(sidebarLauncherHost?.id ?? "").trim() || null,
+    sidebarLauncherHostClass: String(sidebarLauncherHost?.className ?? "").trim() || null,
     moduleId: MODULE_ID
   };
 }
@@ -43169,16 +43197,21 @@ function ensureClickOpener() {
 
 function ensureSidebarLauncher() {
   const sidebar = document.getElementById("sidebar");
-  if (!sidebar) return null;
+  const host = getSidebarLauncherHost();
+  if (!sidebar || !host) return null;
 
   let launcher = document.getElementById("po-sidebar-launcher");
   if (!launcher) {
     launcher = document.createElement("section");
     launcher.id = "po-sidebar-launcher";
     launcher.classList.add("po-sidebar-launcher");
-    sidebar.appendChild(launcher);
-  } else if (launcher.parentElement !== sidebar) {
-    sidebar.appendChild(launcher);
+  }
+
+  if (launcher.parentElement !== host) {
+    if (host === sidebar) host.appendChild(launcher);
+    else host.prepend(launcher);
+  } else if (host !== sidebar && host.firstElementChild !== launcher) {
+    host.prepend(launcher);
   }
 
   const setLauncherMarkup = (target) => {
@@ -43206,6 +43239,8 @@ function ensureSidebarLauncher() {
       <section class="po-sidebar-launcher-audio" data-po-sidebar-launcher-audio></section>
     `;
     logUiDebug("sidebar-launcher", "rebuilt sidebar launcher", {
+      hostId: String(host?.id ?? "").trim() || null,
+      hostClass: String(host?.className ?? "").trim() || null,
       items: PO_SIDEBAR_VIEW_ITEMS
         .filter((item) => !item.gmOnly || canAccessAllPlayerOps())
         .map((item) => ({ id: item.id, action: item.action, target: item.target }))
@@ -43524,301 +43559,54 @@ async function diagnoseWorldData(options = {}) {
 }
 
 function setupPartyOperationsUI() {
-  Hooks.on("getSceneControlButtons", (controls) => {
-    if (!Array.isArray(controls)) return;
-    if (controls.some((control) => control?.name === "party-operations")) return;
-
-    const tools = [
-      {
-        name: "po-rest-watch",
-        title: "Open Rest Watch",
-        icon: "fas fa-moon",
-        button: true,
-        onClick: () => openMainTab("rest-watch", { force: true })
-      },
-      {
-        name: "po-marching-order",
-        title: "Open Marching Order",
-        icon: "fas fa-arrow-up",
-        button: true,
-        onClick: () => openMainTab("marching-order", { force: true })
-      },
-      {
-        name: "po-operations",
-        title: "Open Operations",
-        icon: "fas fa-clipboard-list",
-        button: true,
-        onClick: () => openMainTab("operations", { force: true })
-      }
-    ];
-
-    if (canAccessAllPlayerOps()) {
-      tools.push({
-        name: "po-gm",
-        title: "Open GM",
-        icon: "fas fa-user-shield",
-        button: true,
-        onClick: () => openMainTab("gm", { force: true })
-      });
-    }
-
-    controls.push({
-      name: "party-operations",
-      title: "Party Operations",
-      icon: "fas fa-compass",
-      visible: true,
-      tools,
-      activeTool: "po-rest-watch"
-    });
-  });
-
-  // Keep launcher UI visible across re-renders.
-  Hooks.on("renderSceneControls", (controls, html) => {
-    ensureLauncherUi();
-  });
-
-  Hooks.on("canvasReady", () => {
-    ensureLauncherUi();
-  });
-
-  Hooks.on("renderHotbar", () => {
-    ensureLauncherUi();
-  });
-
-  Hooks.on("renderSidebarTab", (_app, html) => {
-    ensureLauncherUi();
-    hideManagedAudioMixPlaylistUi(html?.[0] ?? html ?? document);
-    window.setTimeout(() => hideManagedAudioMixPlaylistUi(document), 30);
-  });
-
-  Hooks.on("renderNavigation", () => {
-    ensureLauncherUi();
+  registerPartyOperationsUiHooks({
+    openMainTab,
+    canAccessAllPlayerOps,
+    ensureLauncherUi,
+    hideManagedAudioMixPlaylistUi,
+    setTimeoutFn: window.setTimeout.bind(window),
+    documentRef: document
   });
 }
 
-function registerHookModule(module) {
-  const registrations = Array.isArray(module?.registrations) ? module.registrations : [];
-  for (const registration of registrations) {
-    if (!Array.isArray(registration) || registration.length < 2) continue;
-    const eventName = String(registration[0] ?? "").trim();
-    const handler = registration[1];
-    if (!eventName || typeof handler !== "function") continue;
-    Hooks.on(eventName, handler);
-  }
-}
+const registerPartyOpsHooks = createPartyOpsHookRegistrar({
+  getHookModules: () => buildPartyOpsRuntimeHookModules({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    autoUpkeepPromptStates: AUTO_UPKEEP_PROMPT_STATES,
+    notifyDailyInjuryReminders,
+    handleAutomaticOperationalUpkeepTick,
+    handleAutomaticMerchantAutoRefreshTick,
+    handleAutomaticUpkeepChatAction,
+    schedulePendingSopNoteSync,
+    applyAutoInventoryToUnlinkedToken,
+    environmentMoveOriginByToken,
+    maybePromptEnvironmentMovementCheck,
+    hasInventoryDelta,
+    queueInventoryRefresh,
+    consumeSuppressedSettingRefresh,
+    refreshOpenApps,
+    getRefreshScopesForSettingKey,
+    scheduleIntegrationSync,
+    bindFolderOwnershipProxySubmit,
+    isManagedAudioMixPlaylist,
+    queueManagedAudioMixPlaybackResync,
+    gameRef: game,
+    foundryRef: foundry
+  })
+});
 
-function buildTimeHookModule() {
-  return {
-    id: "time",
-    registrations: [
-      ["updateWorldTime", async () => {
-        // World time may tick frequently (for example every few seconds with calendar modules),
-        // so avoid forcing a full app rerender on every tick.
-        await notifyDailyInjuryReminders();
-        if (!game.user?.isGM) return;
-        await handleAutomaticOperationalUpkeepTick();
-        await handleAutomaticMerchantAutoRefreshTick();
-      }]
-    ]
-  };
-}
-
-function buildChatHookModule() {
-  return {
-    id: "chat",
-    registrations: [
-      ["renderChatMessage", (message, html) => {
-        const promptState = String(message?.flags?.[MODULE_ID]?.autoUpkeepPrompt?.state ?? "").trim().toLowerCase();
-        if (!Object.values(AUTO_UPKEEP_PROMPT_STATES).includes(promptState) || promptState === AUTO_UPKEEP_PROMPT_STATES.IDLE) return;
-        const root = html?.[0] ?? html;
-        if (!root?.querySelectorAll) return;
-        for (const button of root.querySelectorAll("[data-po-chat-action]")) {
-          button.addEventListener("click", async (event) => {
-            event.preventDefault();
-            await handleAutomaticUpkeepChatAction(button.dataset.poChatAction, message);
-          });
-        }
-      }]
-    ]
-  };
-}
-
-function buildUserPresenceHookModule() {
-  return {
-    id: "user-presence",
-    registrations: [
-      ["updateUser", (user, changed) => {
-        if (!user || !changed || game.user?.isGM) return;
-        if (!Object.prototype.hasOwnProperty.call(changed, "active")) return;
-        if (!user.isGM || !user.active) return;
-        schedulePendingSopNoteSync("gm-activated");
-      }]
-    ]
-  };
-}
-
-function buildTokenHookModule() {
-  return {
-    id: "tokens",
-    registrations: [
-      ["createToken", async (tokenDoc, options, userId) => {
-        await applyAutoInventoryToUnlinkedToken(tokenDoc, options ?? {}, userId ?? null);
-      }],
-      ["preUpdateToken", (tokenDoc, changed, options) => {
-        if (options?.poEnvironmentClamp) return;
-        if (!changed || (changed.x === undefined && changed.y === undefined)) return;
-        environmentMoveOriginByToken.set(tokenDoc.id, {
-          x: Number(tokenDoc.x ?? 0),
-          y: Number(tokenDoc.y ?? 0)
-        });
-      }],
-      ["updateToken", async (tokenDoc, changed, options) => {
-        await maybePromptEnvironmentMovementCheck(tokenDoc, changed, options ?? {});
-      }]
-    ]
-  };
-}
-
-function buildInventoryHookModule() {
-  return {
-    id: "inventory",
-    registrations: [
-      ["updateActor", (actor, changed) => {
-        if (!hasInventoryDelta(changed)) return;
-        queueInventoryRefresh(actor, "inventory-update-actor");
-      }],
-      ["createItem", (item) => {
-        const actor = item?.parent;
-        if (!actor || actor.documentName !== "Actor") return;
-        queueInventoryRefresh(actor, "inventory-create-item");
-      }],
-      ["updateItem", (item, changed) => {
-        const actor = item?.parent;
-        if (!actor || actor.documentName !== "Actor") return;
-        if (!changed || typeof changed !== "object") return;
-
-        const touchesQuantity = foundry.utils.getProperty(changed, "system.quantity") !== undefined;
-        const touchesContainer = foundry.utils.getProperty(changed, "system.container") !== undefined;
-        const touchesEquipped = foundry.utils.getProperty(changed, "system.equipped") !== undefined;
-        const touchesWeight = foundry.utils.getProperty(changed, "system.weight") !== undefined;
-        const touchesName = Object.prototype.hasOwnProperty.call(changed, "name");
-
-        if (!touchesQuantity && !touchesContainer && !touchesEquipped && !touchesWeight && !touchesName) return;
-        queueInventoryRefresh(actor, "inventory-update-item");
-      }],
-      ["deleteItem", (item) => {
-        const actor = item?.parent;
-        if (!actor || actor.documentName !== "Actor") return;
-        queueInventoryRefresh(actor, "inventory-delete-item");
-      }]
-    ]
-  };
-}
-
-function buildSettingHookModule() {
-  const restKey = `${MODULE_ID}.${SETTINGS.REST_STATE}`;
-  const marchKey = `${MODULE_ID}.${SETTINGS.MARCH_STATE}`;
-  const actKey = `${MODULE_ID}.${SETTINGS.REST_ACTIVITIES}`;
-  const opsKey = `${MODULE_ID}.${SETTINGS.OPS_LEDGER}`;
-  const injuryKey = `${MODULE_ID}.${SETTINGS.INJURY_RECOVERY}`;
-  const lootSourceKey = `${MODULE_ID}.${SETTINGS.LOOT_SOURCE_CONFIG}`;
-  const integrationModeKey = `${MODULE_ID}.${SETTINGS.INTEGRATION_MODE}`;
-  const journalVisibilityKey = `${MODULE_ID}.${SETTINGS.JOURNAL_ENTRY_VISIBILITY}`;
-  const sessionSummaryRangeKey = `${MODULE_ID}.${SETTINGS.SESSION_SUMMARY_RANGE}`;
-  const refreshKeys = new Set([restKey, marchKey, actKey, opsKey, injuryKey, lootSourceKey, journalVisibilityKey, sessionSummaryRangeKey]);
-  const integrationSyncKeys = new Set([restKey, marchKey, opsKey, injuryKey, integrationModeKey]);
-
-  return {
-    id: "settings",
-    registrations: [
-      ["updateSetting", (setting) => {
-        const settingKey = String(setting?.key ?? "").trim();
-        if (!settingKey) return;
-        if (consumeSuppressedSettingRefresh(settingKey)) return;
-        if (refreshKeys.has(settingKey)) refreshOpenApps({ scopes: getRefreshScopesForSettingKey(settingKey) });
-        if (game.user?.isGM && integrationSyncKeys.has(settingKey)) {
-          scheduleIntegrationSync("update-setting");
-        }
-      }]
-    ]
-  };
-}
-
-function buildIntegrationHookModule() {
-  return {
-    id: "integration",
-    registrations: [
-      ["canvasReady", () => {
-        if (!game.user?.isGM) return;
-        scheduleIntegrationSync("canvas-ready");
-      }],
-      ["renderDocumentOwnershipConfig", (app, html) => {
-        bindFolderOwnershipProxySubmit(app, html);
-      }]
-    ]
-  };
-}
-
-function buildAudioPlaybackHookModule() {
-  return {
-    id: "audio-playback",
-    registrations: [
-      ["updatePlaylistSound", (sound, changed) => {
-        const playlist = sound?.parent ?? null;
-        if (!game.user?.isGM || !isManagedAudioMixPlaylist(playlist)) return;
-        if (!changed || typeof changed !== "object") return;
-        const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")
-          || Object.prototype.hasOwnProperty.call(changed, "volume")
-          || Object.prototype.hasOwnProperty.call(changed, "fade")
-          || Object.prototype.hasOwnProperty.call(changed, "channel")
-          || Object.prototype.hasOwnProperty.call(changed, "path");
-        if (!touchesPlayback) return;
-        queueManagedAudioMixPlaybackResync(80, { playlist, refresh: true });
-      }],
-      ["updatePlaylist", (playlist, changed) => {
-        if (!game.user?.isGM || !isManagedAudioMixPlaylist(playlist)) return;
-        if (!changed || typeof changed !== "object") return;
-        const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")
-          || Object.prototype.hasOwnProperty.call(changed, "mode")
-          || Object.prototype.hasOwnProperty.call(changed, "channel")
-          || Object.prototype.hasOwnProperty.call(changed, "fade");
-        if (!touchesPlayback) return;
-        queueManagedAudioMixPlaybackResync(80, { playlist, refresh: true });
-      }]
-    ]
-  };
-}
-
-function getPartyOpsHookModules() {
-  return [
-    buildTimeHookModule(),
-    buildChatHookModule(),
-    buildUserPresenceHookModule(),
-    buildTokenHookModule(),
-    buildInventoryHookModule(),
-    buildSettingHookModule(),
-    buildIntegrationHookModule(),
-    buildAudioPlaybackHookModule()
-  ];
-}
-
-function registerPartyOpsHooks() {
-  if (partyOpsHooksRegistered) return;
-  partyOpsHooksRegistered = true;
-  for (const hookModule of getPartyOpsHookModules()) {
-    registerHookModule(hookModule);
-  }
-}
-
-export function onPartyOperationsInit() {
+export function installLegacyAppBehaviors() {
   installRememberedWindowPositionBehavior(BaseStatefulPageApp);
   installRememberedWindowPositionBehavior(RestWatchApp);
   installRememberedWindowPositionBehavior(MarchingOrderApp);
   installRememberedWindowPositionBehavior(GlobalModifierSummaryApp);
   installRememberedWindowPositionBehavior(GmLootClaimsBoardApp);
   installRememberedWindowPositionBehavior(RestWatchPlayerApp);
+}
 
-  runPartyOperationsInit({
+export function buildLegacyPartyOperationsInitConfig() {
+  return {
     registerPartyOperationsApi,
     registerFeatureModules,
     preloadPartyOperationsPartialTemplates,
@@ -43868,11 +43656,16 @@ export function onPartyOperationsInit() {
     },
     logger: bootstrapLogger,
     moduleId: MODULE_ID
-  });
+  };
 }
 
-export function onPartyOperationsReady() {
-  runPartyOperationsReady({
+export function onPartyOperationsInit() {
+  installLegacyAppBehaviors();
+  runPartyOperationsInit(buildLegacyPartyOperationsInitConfig());
+}
+
+export function buildLegacyPartyOperationsReadyConfig() {
+  return {
     registerPartyOperationsApi,
     validatePartyOperationsTemplates,
     bindPoBrowserBackNavigation,
@@ -43899,13 +43692,19 @@ export function onPartyOperationsReady() {
     setTimeoutFn: window.setTimeout.bind(window),
     logger: bootstrapLogger,
     moduleId: MODULE_ID
-  });
+  };
+}
+
+export function onPartyOperationsReady() {
+  runPartyOperationsReady(buildLegacyPartyOperationsReadyConfig());
 }
 
 const handlePartyOperationsSocketMessage = createPartyOperationsSocketMessageHandler({
   game,
   applyPlayerGatherRequest,
+  promptLocalGatherCheckRoll,
   promptLocalGatherYieldRoll,
+  resolvePendingGatherCheckRequest,
   resolvePendingGatherYieldRequest,
   routeSocketDeps: {
     settings: SETTINGS,
@@ -44222,12 +44021,39 @@ async function toggleCampfire(element) {
     return;
   }
   const state = getRestWatchState();
-  const newValue = !state.campfire;
+  const slotId = String(element?.dataset?.slotId ?? "").trim();
+  if (!slotId) {
+    ui.notifications?.warn("Rest watch slot not found for campfire toggle.");
+    return;
+  }
+  const newValue = !getRestWatchSlotCampfireState(state, slotId);
   await updateRestWatchState((state) => {
-    state.campfire = newValue;
+    const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+    state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
+    state.campfireBySlot[slotId] = newValue;
   });
-  const status = newValue ? "Campfire lit" : "Campfire extinguished";
+  const slotLabel = String(element?.dataset?.slotLabel ?? "").trim() || "watch";
+  const status = newValue ? `Campfire lit for ${slotLabel}` : `Campfire extinguished for ${slotLabel}`;
   ui.notifications?.info(status);
+}
+
+async function toggleCampfireAll() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can toggle campfire.");
+    return;
+  }
+  const state = getRestWatchState();
+  const overview = buildRestWatchCampfireOverview(buildWatchSlotsView(state, true, state.visibility ?? "names-passives"));
+  const newValue = !overview.allLit;
+  await updateRestWatchState((state) => {
+    const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+    state.campfire = newValue;
+    state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
+    for (const slotId of slotIds) {
+      state.campfireBySlot[slotId] = newValue;
+    }
+  });
+  ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
 }
 
 function refreshOpenApps(options = {}) {

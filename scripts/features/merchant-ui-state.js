@@ -306,7 +306,7 @@ export function createMerchantUiState({
     return true;
   }
 
-  function getMerchantEditorPackFilterStorageKey() {
+  function getMerchantEditorSourceFilterStorageKey() {
     return `po-merchant-pack-filter-${getCurrentUserId()}`;
   }
 
@@ -318,14 +318,22 @@ export function createMerchantUiState({
     return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
   }
 
+  function getMerchantEditorSourceFilter() {
+    return normalizeMerchantEditorFilter(readSessionValue(getMerchantEditorSourceFilterStorageKey()));
+  }
+
+  function setMerchantEditorSourceFilter(value) {
+    const normalized = normalizeMerchantEditorFilter(value);
+    writeSessionValue(getMerchantEditorSourceFilterStorageKey(), normalized);
+    return normalized;
+  }
+
   function getMerchantEditorPackFilter() {
-    return normalizeMerchantEditorFilter(readSessionValue(getMerchantEditorPackFilterStorageKey()));
+    return getMerchantEditorSourceFilter();
   }
 
   function setMerchantEditorPackFilter(value) {
-    const normalized = normalizeMerchantEditorFilter(value);
-    writeSessionValue(getMerchantEditorPackFilterStorageKey(), normalized);
-    return normalized;
+    return setMerchantEditorSourceFilter(value);
   }
 
   function getMerchantEditorItemFilter() {
@@ -505,6 +513,8 @@ export function createMerchantUiState({
     setMerchantGmViewTab,
     setMerchantGmViewTabFromElement,
     normalizeMerchantEditorFilter,
+    getMerchantEditorSourceFilter,
+    setMerchantEditorSourceFilter,
     getMerchantEditorPackFilter,
     setMerchantEditorPackFilter,
     getMerchantEditorItemFilter,

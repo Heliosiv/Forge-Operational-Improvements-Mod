@@ -22,6 +22,12 @@ function getMerchantSourceRefCheckboxes(root) {
     .filter((entry) => entry instanceof HTMLInputElement && String(entry.type ?? "").toLowerCase() === "checkbox");
 }
 
+function getMerchantSourceRefOptionElements(root) {
+  if (!root?.querySelectorAll) return [];
+  return Array.from(root.querySelectorAll("[data-merchant-source-option]"))
+    .filter((entry) => entry instanceof HTMLElement);
+}
+
 function syncMerchantSourceRefSelectionUi(root) {
   if (!root?.querySelectorAll) return;
   const inputs = getMerchantSourceRefCheckboxes(root);
@@ -33,6 +39,50 @@ function syncMerchantSourceRefSelectionUi(root) {
   for (const node of root.querySelectorAll("[data-merchant-source-ref-total-count]")) {
     node.textContent = String(totalCount);
   }
+}
+
+function normalizeMerchantSourceFilterValue(value, normalizeFilter) {
+  const normalizer = typeof normalizeFilter === "function"
+    ? normalizeFilter
+    : (input) => String(input ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  return String(normalizer(value) ?? "").trim();
+}
+
+function applyMerchantSourceRefFilter(root, options = {}) {
+  if (!root?.querySelectorAll) return { filterValue: "", visibleCount: 0, totalCount: 0 };
+  const filterInput = root.querySelector("[data-merchant-source-filter]");
+  const filterValue = normalizeMerchantSourceFilterValue(
+    options?.filterValue ?? (filterInput instanceof HTMLInputElement ? filterInput.value : ""),
+    options?.normalizeFilter
+  );
+  if (filterInput instanceof HTMLInputElement && filterInput.value !== filterValue) {
+    filterInput.value = filterValue;
+  }
+  const needle = filterValue.toLowerCase();
+  const optionsList = getMerchantSourceRefOptionElements(root);
+  let visibleCount = 0;
+  for (const optionRow of optionsList) {
+    const searchBlob = String(optionRow.dataset?.search ?? optionRow.textContent ?? "").toLowerCase();
+    const visible = !needle || searchBlob.includes(needle);
+    optionRow.hidden = !visible;
+    optionRow.classList.toggle("is-hidden", !visible);
+    if (visible) visibleCount += 1;
+  }
+  for (const node of root.querySelectorAll("[data-merchant-source-ref-visible-count]")) {
+    node.textContent = String(visibleCount);
+  }
+  for (const node of root.querySelectorAll("[data-merchant-source-filter-clear]")) {
+    if (node instanceof HTMLButtonElement) node.disabled = !filterValue;
+  }
+  const emptyNode = root.querySelector("[data-merchant-source-ref-empty]");
+  if (emptyNode instanceof HTMLElement) {
+    emptyNode.hidden = visibleCount > 0 || optionsList.length <= 0;
+  }
+  return {
+    filterValue,
+    visibleCount,
+    totalCount: optionsList.length
+  };
 }
 
 function normalizeMerchantKeywordCsvInput(value) {
@@ -199,6 +249,9 @@ export function createGmMerchantsPageApp(deps) {
     buildContext,
     openMainTab,
     cacheMerchantEditorDraftFromElement,
+    normalizeMerchantEditorFilter,
+    getMerchantEditorSourceFilter,
+    setMerchantEditorSourceFilter,
     setMerchantGmViewTab,
     setMerchantGmViewTabFromElement,
     setMerchantEditorViewTab,
@@ -346,6 +399,15 @@ export function createGmMerchantsPageApp(deps) {
           if (!changed) return;
           rerender();
         },
+        "merchant-clear-source-filter": async () => {
+          setMerchantEditorSourceFilter?.("");
+          applyMerchantSourceRefFilter(this.element, {
+            normalizeFilter: normalizeMerchantEditorFilter,
+            filterValue: ""
+          });
+          const input = this.element?.querySelector?.("[data-merchant-source-filter]");
+          if (input instanceof HTMLInputElement) input.focus();
+        },
         "merchant-editor-view-tab": rerenderIfTruthy(setMerchantEditorViewTabFromElement),
         "merchant-gm-view-tab": async (actionElement) => {
           cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
@@ -402,6 +464,10 @@ export function createGmMerchantsPageApp(deps) {
     async _onPostRender() {
       syncAllMerchantTagSelectionUi(this.element);
       syncMerchantSourceRefSelectionUi(this.element);
+      applyMerchantSourceRefFilter(this.element, {
+        normalizeFilter: normalizeMerchantEditorFilter,
+        filterValue: getMerchantEditorSourceFilter?.() ?? ""
+      });
       for (const card of this.element?.querySelectorAll?.("details.po-merchant-definition-card[data-merchant-id]") ?? []) {
         if (!(card instanceof HTMLDetailsElement)) continue;
         if (card.dataset.poMerchantDisclosureBound === "1") continue;
@@ -422,11 +488,22 @@ export function createGmMerchantsPageApp(deps) {
         setMerchantCityCatalogDraftValue(target?.value ?? "");
       };
 
+      const syncSourceFilterDraft = (target) => {
+        if (!target?.matches?.("[data-merchant-source-filter]")) return;
+        const filterValue = setMerchantEditorSourceFilter?.(target?.value ?? "") ?? String(target?.value ?? "");
+        applyMerchantSourceRefFilter(root, {
+          normalizeFilter: normalizeMerchantEditorFilter,
+          filterValue
+        });
+      };
+
       root.addEventListener("input", (event) => {
         syncCityCatalogDraft(event.target);
+        syncSourceFilterDraft(event.target);
       });
       root.addEventListener("change", (event) => {
         syncCityCatalogDraft(event.target);
+        syncSourceFilterDraft(event.target);
       });
     }
   };

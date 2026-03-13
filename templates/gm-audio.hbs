@@ -238,10 +238,10 @@
                 <div class="po-audio-preview-name">{{audio.mix.playback.activeTrackName}}</div>
                 <div class="po-op-summary">{{audio.mix.playback.activeTrack.category}}{{#if audio.mix.playback.activeTrackHasSubcategory}} / {{audio.mix.playback.activeTrack.subcategory}}{{/if}}</div>
                 <div class="po-audio-chip-list">
-                  <span class="po-pill">{{audio.mix.playback.activeTrackKindLabel}}</span>
-                  <span class="po-pill">{{audio.mix.playback.activeTrackUsageLabel}}</span>
-                  <span class="po-pill">{{audio.mix.playback.channelLabel}}</span>
-                  <span class="po-pill">{{audio.mix.playback.transportLabel}}</span>
+                  {{#if audio.mix.playback.activeTrackKindLabel}}<span class="po-pill">{{audio.mix.playback.activeTrackKindLabel}}</span>{{/if}}
+                  {{#if audio.mix.playback.activeTrackUsageLabel}}<span class="po-pill">{{audio.mix.playback.activeTrackUsageLabel}}</span>{{/if}}
+                  {{#if audio.mix.playback.channelLabel}}<span class="po-pill">{{audio.mix.playback.channelLabel}}</span>{{/if}}
+                  {{#if audio.mix.playback.transportLabel}}<span class="po-pill">{{audio.mix.playback.transportLabel}}</span>{{/if}}
                   {{#if audio.mix.playback.activeTrackQueueLabel}}<span class="po-pill">{{audio.mix.playback.activeTrackQueueLabel}}</span>{{/if}}
                 </div>
               </div>
@@ -293,9 +293,32 @@
           <div class="po-panel-disclosure-body">
             {{#if audio.mix.editor.canEdit}}
             <div class="po-audio-custom-editor">
+              <div class="po-op-summary">Preset names and descriptions save automatically.</div>
               <div class="po-op-summary">Search tokens: {{#if audio.mix.selectedPreset.searchTokensLabel}}{{audio.mix.selectedPreset.searchTokensLabel}}{{else}}None yet{{/if}}</div>
               <div class="po-audio-editor-grid">
-                <label class="po-resource-row">
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-name">
+                  <span>Preset Name</span>
+                  <input
+                    type="text"
+                    class="po-input"
+                    value="{{audio.mix.selectedPreset.label}}"
+                    data-action="set-audio-mix-preset-text-field"
+                    data-field="label"
+                    aria-label="Preset name"
+                    {{#unless audio.mix.editor.canRename}}readonly{{/unless}}
+                  />
+                </label>
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-description">
+                  <span>Description</span>
+                  <textarea
+                    class="po-input"
+                    rows="3"
+                    data-action="set-audio-mix-preset-text-field"
+                    data-field="description"
+                    aria-label="Preset description"
+                  >{{audio.mix.selectedPreset.description}}</textarea>
+                </label>
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-kind">
                   <span>Kind Focus</span>
                   <select class="po-select" data-action="set-audio-mix-preset-option" data-field="kindFocus">
                     {{#each audio.mix.editor.kindOptions}}
@@ -303,7 +326,7 @@
                     {{/each}}
                   </select>
                 </label>
-                <label class="po-resource-row">
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-usage">
                   <span>Usage Focus</span>
                   <select class="po-select" data-action="set-audio-mix-preset-option" data-field="usageFocus">
                     {{#each audio.mix.editor.usageOptions}}
@@ -311,7 +334,7 @@
                     {{/each}}
                   </select>
                 </label>
-                <label class="po-resource-row">
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-playback">
                   <span>Playback</span>
                   <select class="po-select" data-action="set-audio-mix-preset-option" data-field="playbackMode">
                     {{#each audio.mix.editor.playbackOptions}}
@@ -319,7 +342,7 @@
                     {{/each}}
                   </select>
                 </label>
-                <label class="po-resource-row">
+                <label class="po-resource-row po-audio-editor-field po-audio-editor-field-volume">
                   <span>Mix Volume</span>
                   <div class="po-audio-live-slider-row">
                     <input type="range" class="po-audio-live-volume-slider" min="0" max="100" step="1" value="{{audio.mix.editor.volumePercent}}" data-action="set-audio-mix-preset-option" data-field="volume" aria-label="Preset mix volume" />
@@ -329,10 +352,6 @@
               </div>
               <div class="po-op-action-row po-audio-card-actions">
                 <button type="button" class="po-btn po-btn-sm" data-action="create-audio-mix-preset">New Preset From Current</button>
-                {{#if audio.mix.editor.canRename}}
-                <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="label">Rename</button>
-                {{/if}}
-                <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="description">Edit Description</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="edit-audio-mix-preset-field" data-field="searchTokens">Edit Tokens</button>
                 {{#if audio.mix.selectedPreset.canDelete}}
                 <button type="button" class="po-btn po-btn-sm" data-action="delete-audio-mix-preset">Delete Preset</button>

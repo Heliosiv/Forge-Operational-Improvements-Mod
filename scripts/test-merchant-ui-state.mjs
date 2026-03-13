@@ -74,6 +74,10 @@ assert.deepEqual(uiState.getMerchantEditorDraftState(), {
 assert.equal(uiState.setMerchantEditorViewTab("settings"), "settings");
 assert.equal(uiState.getMerchantEditorViewTab(), "settings");
 
+assert.equal(uiState.setMerchantEditorSourceFilter("  adventuring   gear  "), "adventuring gear");
+assert.equal(uiState.getMerchantEditorSourceFilter(), "adventuring gear");
+assert.equal(uiState.getMerchantEditorPackFilter(), "adventuring gear");
+
 assert.equal(
   uiState.setMerchantGmViewTabFromElement(new MockInputElement({ dataset: { tab: "shop" } })),
   true

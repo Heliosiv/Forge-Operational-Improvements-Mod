@@ -206,13 +206,13 @@
         </div>
 
         <div class="po-gm-section">
-          <div class="po-section-title">Modifier Exclusions (GM)</div>
-          <div class="po-hint">Exclude individual modifiers from applying. Uncheck to re-enable.</div>
+          <div class="po-section-title">Modifier Toggles (GM)</div>
+          <div class="po-hint">Checked modifiers apply. Uncheck any row to temporarily disable it.</div>
           {{#if hasExclusionRows}}
           {{#each exclusionRows}}
           <div class="po-op-role-row">
-            <label class="po-switch" title="Exclude or include this modifier">
-              <input id="{{modifierInputId}}" name="{{modifierInputName}}" type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if excluded}}checked{{/if}} />
+            <label class="po-switch" title="Enable or disable this modifier">
+              <input id="{{modifierInputId}}" name="{{modifierInputName}}" type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
               <span>{{label}} ({{valueLabel}}) - {{scopeLabel}} - {{source}}</span>
             </label>
             {{#if canDelete}}

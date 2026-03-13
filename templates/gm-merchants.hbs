@@ -236,15 +236,45 @@
               <span>Stock Sources (Folders or Packs)</span>
               <div class="po-merchant-source-picker">
                 {{#if merchants.gm.hasSourceRefSelectableOptions}}
-                <div class="po-op-summary"><span data-merchant-source-ref-selected-count>{{merchants.gm.sourceRefSelectedCount}}</span> selected from <span data-merchant-source-ref-total-count>{{merchants.gm.sourceRefOptionCount}}</span> available.</div>
+                <div class="po-merchant-source-filter-bar">
+                  <label class="po-merchant-source-filter-field">
+                    <span>Filter Sources</span>
+                    <input
+                      type="search"
+                      name="merchantSourceFilter"
+                      class="po-input"
+                      value="{{merchants.gm.sourcePackFilter}}"
+                      placeholder="Type to filter folders or packs"
+                      autocomplete="off"
+                      spellcheck="false"
+                      data-merchant-source-filter
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="po-btn po-btn-sm"
+                    data-action="merchant-clear-source-filter"
+                    data-merchant-source-filter-clear
+                    {{#unless merchants.gm.sourcePackFilterActive}}disabled{{/unless}}
+                  >Clear</button>
+                </div>
+                <div class="po-op-summary">
+                  <span data-merchant-source-ref-selected-count>{{merchants.gm.sourceRefSelectedCount}}</span>
+                  selected.
+                  <span data-merchant-source-ref-visible-count>{{merchants.gm.sourceRefOptionCount}}</span>
+                  matching from
+                  <span data-merchant-source-ref-total-count>{{merchants.gm.sourceRefOptionCount}}</span>
+                  total.
+                </div>
                 <div class="po-merchant-source-list" data-po-scroll-preserve="merchant-source-ref-list">
                   {{#each merchants.gm.sourceRefSelectableOptions}}
-                  <label class="po-merchant-source-option {{#if disabled}}is-disabled{{/if}}">
+                  <label class="po-merchant-source-option {{#if disabled}}is-disabled{{/if}}" data-merchant-source-option data-search="{{label}} {{value}}">
                     <input type="checkbox" name="merchantSourceRef" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
                     <span>{{label}}</span>
                   </label>
                   {{/each}}
                 </div>
+                <div class="po-op-summary" data-merchant-source-ref-empty hidden>No stock sources match this filter.</div>
                 {{else}}
                 <div class="po-op-summary">{{merchants.gm.sourceRefHintLabel}}</div>
                 {{/if}}
