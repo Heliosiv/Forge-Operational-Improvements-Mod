@@ -19,7 +19,6 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     refreshOpenApps,
     schedulePendingSopNoteSync,
     syncMerchantBarterStatusForOpenDialogs,
-    applyAudioMixSocketMessage,
     getSocketRequester,
     sanitizeSocketIdentifier,
     normalizeSocketActivityType,
@@ -109,11 +108,6 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     return true;
   }
 
-  if (message.type === "ops:audio-mix") {
-    await applyAudioMixSocketMessage(message);
-    return true;
-  }
-
   if (!currentUser?.isGM) return false;
 
   const getActivePlayerRequester = () => getSocketRequester(message, { allowGM: false, requireActive: true });
@@ -161,6 +155,9 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
   }
 
   if (message.type === "ops:ledger-write") {
+    const requester = getActivePlayerRequester();
+    if (!requester) return true;
+    await applyPlayerOperationsLedgerWriteRequest(message, requester);
     return true;
   }
 

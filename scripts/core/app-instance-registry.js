@@ -1,5 +1,6 @@
 export const PARTY_OPS_APP_INSTANCE_KEYS = Object.freeze({
   REST_WATCH: "restWatch",
+  OPERATIONS_SHELL: "operationsShell",
   MARCHING_ORDER: "marchingOrder",
   REST_WATCH_PLAYER: "restWatchPlayer",
   GLOBAL_MODIFIER_SUMMARY: "globalModifierSummary",

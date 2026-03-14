@@ -325,19 +325,6 @@ let cachedAppWindowPositions = {};
 let cachedAppWindowPositionsLoaded = false;
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
-const managedAudioMixLocalState = {
-  playbackId: "",
-  playlistId: "",
-  playlistSoundId: "",
-  trackId: "",
-  presetId: "",
-  sound: null,
-  volume: 0.5,
-  fade: 0,
-  startedAt: 0
-};
-const managedAudioMixLocalSounds = new Set();
-let managedAudioMixLocalStartToken = 0;
 const audioLibraryMetadataWarmupState = {
   queued: false,
   inFlight: false,
@@ -12177,12 +12164,6 @@ const AUDIO_MIX_TRACK_BROWSER_VIEW_IDS = Object.freeze({
 const AUDIO_MIX_TRACK_BROWSER_PAGE_SIZE = 40;
 const AUDIO_PREVIEW_VOLUME_DEFAULT = 1;
 const AUDIO_MIX_PLAYLIST_NAME = "Party Operations Mixboard";
-const AUDIO_MIX_SOCKET_TYPE = "ops:audio-mix";
-const AUDIO_MIX_SOCKET_COMMANDS = Object.freeze({
-  PLAY: "play",
-  STOP: "stop",
-  VOLUME: "volume"
-});
 const AUDIO_MIX_TRANSPORT_LABEL = "Party Operations Shared Mix";
 const AUDIO_MIX_PRESET_DEFAULT_ID = "travel";
 const AUDIO_MIX_PRESET_STORE_VERSION = 1;
@@ -14061,54 +14042,6 @@ async function setAudioMixStateFlag(playlist, input = {}) {
   return next;
 }
 
-function getAudioMixPlaybackContext(channel) {
-  const normalizedChannel = normalizeAudioMixChannel(channel);
-  const audioManager = game?.audio ?? AudioHelper ?? null;
-  return audioManager?.[normalizedChannel]
-    ?? audioManager?.context
-    ?? null;
-}
-
-async function createManagedAudioMixSound(message = {}) {
-  const src = String(message?.trackPath ?? "").trim();
-  if (!src) return null;
-  const context = getAudioMixPlaybackContext(message?.channel);
-  if (typeof game?.audio?.create === "function") {
-    const sound = game.audio.create({
-      src,
-      context,
-      singleton: false,
-      preload: true,
-      autoplay: false
-    });
-    if (sound && typeof sound.load === "function") {
-      const loadResult = sound.load();
-      if (loadResult && typeof loadResult.then === "function") await loadResult;
-    }
-    return sound ?? null;
-  }
-  return null;
-}
-
-function clearManagedAudioMixLocalState() {
-  managedAudioMixLocalState.playbackId = "";
-  managedAudioMixLocalState.playlistId = "";
-  managedAudioMixLocalState.playlistSoundId = "";
-  managedAudioMixLocalState.trackId = "";
-  managedAudioMixLocalState.presetId = "";
-  managedAudioMixLocalState.sound = null;
-  managedAudioMixLocalState.volume = 0.5;
-  managedAudioMixLocalState.fade = 0;
-  managedAudioMixLocalState.startedAt = 0;
-}
-
-function getTrackedManagedAudioMixLocalSounds() {
-  return Array.from(new Set([
-    managedAudioMixLocalState.sound ?? null,
-    ...managedAudioMixLocalSounds
-  ].filter(Boolean)));
-}
-
 function logManagedAudioMixDebug(message, details = null) {
   if (!isModuleDebugEnabled()) return;
   try {
@@ -14119,88 +14052,6 @@ function logManagedAudioMixDebug(message, details = null) {
     console.debug(`[${MODULE_ID}][audio-mix] ${message}`, details);
   } catch {
     // Never fail user actions because of logging.
-  }
-}
-
-function buildManagedAudioMixLocalDebugState(extra = {}) {
-  return {
-    playbackId: String(managedAudioMixLocalState.playbackId ?? "").trim(),
-    playlistId: String(managedAudioMixLocalState.playlistId ?? "").trim(),
-    playlistSoundId: String(managedAudioMixLocalState.playlistSoundId ?? "").trim(),
-    trackId: String(managedAudioMixLocalState.trackId ?? "").trim(),
-    presetId: String(managedAudioMixLocalState.presetId ?? "").trim(),
-    startedAt: Math.max(0, Number(managedAudioMixLocalState.startedAt ?? 0) || 0),
-    trackedSoundCount: getTrackedManagedAudioMixLocalSounds().length,
-    startToken: managedAudioMixLocalStartToken,
-    ...extra
-  };
-}
-
-async function stopManagedAudioMixSoundInstance(sound, options = {}) {
-  if (!sound) return false;
-  const fade = Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0));
-  try {
-    if (fade > 0 && sound.playing && typeof sound.fade === "function") {
-      const fadeResult = sound.fade(0, { duration: fade });
-      if (fadeResult && typeof fadeResult.then === "function") await fadeResult;
-    }
-    if (typeof sound.stop === "function") {
-      const stopResult = sound.stop();
-      if (stopResult && typeof stopResult.then === "function") await stopResult;
-    } else if (typeof sound.pause === "function") {
-      const pauseResult = sound.pause();
-      if (pauseResult && typeof pauseResult.then === "function") await pauseResult;
-    }
-    return true;
-  } catch (error) {
-    if (isModuleDebugEnabled()) {
-      console.warn(`${MODULE_ID}: failed to stop managed audio mix playback`, error);
-    }
-    return false;
-  } finally {
-    managedAudioMixLocalSounds.delete(sound);
-  }
-}
-
-async function stopLocalManagedAudioMixPlayback(options = {}) {
-  managedAudioMixLocalStartToken += 1;
-  const sounds = getTrackedManagedAudioMixLocalSounds();
-  logManagedAudioMixDebug("stopping local mirror playback", buildManagedAudioMixLocalDebugState({
-    fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0)),
-    soundCount: sounds.length
-  }));
-  clearManagedAudioMixLocalState();
-  if (sounds.length <= 0) return false;
-  let stopped = false;
-  for (const sound of sounds) {
-    stopped = (await stopManagedAudioMixSoundInstance(sound, options)) || stopped;
-  }
-  logManagedAudioMixDebug("finished stopping local mirror playback", buildManagedAudioMixLocalDebugState({
-    stopped,
-    stoppedSoundCount: sounds.length
-  }));
-  return stopped;
-}
-
-async function setLocalManagedAudioMixPlaybackVolume(message = {}) {
-  const playbackId = String(message?.playbackId ?? "").trim();
-  if (!managedAudioMixLocalState.sound || !playbackId || managedAudioMixLocalState.playbackId !== playbackId) return false;
-  const volume = normalizeAudioMixVolume(message?.volume ?? managedAudioMixLocalState.volume);
-  const fade = Math.max(0, Math.floor(Number(message?.fade ?? 120) || 0));
-  managedAudioMixLocalState.volume = volume;
-  try {
-    if (managedAudioMixLocalState.sound.playing && fade > 0 && typeof managedAudioMixLocalState.sound.fade === "function") {
-      const fadeResult = managedAudioMixLocalState.sound.fade(volume, { duration: fade });
-      if (fadeResult && typeof fadeResult.then === "function") await fadeResult;
-    } else {
-      managedAudioMixLocalState.sound.volume = volume;
-    }
-    return true;
-  } catch (error) {
-    if (isModuleDebugEnabled()) {
-      console.warn(`${MODULE_ID}: failed to update managed audio mix volume`, error);
-    }
-    return false;
   }
 }
 
@@ -14219,101 +14070,6 @@ async function handleManagedAudioMixTrackEnd(playbackId) {
     return true;
   }
   return playNextAudioMixTrack();
-}
-
-async function startLocalManagedAudioMixPlayback(message = {}) {
-  await stopLocalManagedAudioMixPlayback({ fade: 0 });
-  const startToken = ++managedAudioMixLocalStartToken;
-  const fade = Math.max(0, Math.floor(Number(message?.fade ?? 0) || 0));
-  const loop = Boolean(message?.loop);
-  const volume = normalizeAudioMixVolume(message?.volume ?? 0.5);
-  const playbackId = String(message?.playbackId ?? "").trim();
-  const trackId = normalizeAudioLibraryRootPath(message?.trackId ?? "");
-  let sound = null;
-  logManagedAudioMixDebug("starting local mirror playback", buildManagedAudioMixLocalDebugState({
-    requestedPlaybackId: playbackId,
-    requestedTrackId: trackId,
-    requestedTrackPath: String(message?.trackPath ?? "").trim(),
-    fade,
-    loop,
-    volume,
-    startToken
-  }));
-  try {
-    sound = await createManagedAudioMixSound(message);
-    if (!sound) return false;
-    managedAudioMixLocalSounds.add(sound);
-    let offset = 0;
-    const startedAt = Math.max(0, Number(message?.startedAt ?? 0) || 0);
-    const duration = Number(sound?.duration ?? 0) || 0;
-    if (startedAt > 0 && duration > 0) {
-      const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
-      offset = loop ? (elapsedSeconds % duration) : Math.min(duration, elapsedSeconds);
-    }
-    const playResult = typeof sound.play === "function"
-      ? sound.play({
-        loop,
-        volume,
-        fade,
-        offset,
-        onended: !loop && game.user?.isGM && playbackId
-          ? () => { void handleManagedAudioMixTrackEnd(playbackId); }
-          : undefined
-      })
-      : null;
-    if (playResult && typeof playResult.then === "function") await playResult;
-    if (startToken !== managedAudioMixLocalStartToken) {
-      logManagedAudioMixDebug("discarding stale local mirror playback start", buildManagedAudioMixLocalDebugState({
-        staleStartToken: startToken,
-        currentStartToken: managedAudioMixLocalStartToken,
-        requestedPlaybackId: playbackId,
-        requestedTrackId: trackId
-      }));
-      await stopManagedAudioMixSoundInstance(sound, { fade: 0 });
-      return false;
-    }
-    managedAudioMixLocalState.playbackId = playbackId;
-    managedAudioMixLocalState.playlistId = String(message?.playlistId ?? "").trim();
-    managedAudioMixLocalState.playlistSoundId = String(message?.playlistSoundId ?? "").trim();
-    managedAudioMixLocalState.trackId = trackId;
-    managedAudioMixLocalState.presetId = String(message?.presetId ?? "").trim();
-    managedAudioMixLocalState.sound = sound;
-    managedAudioMixLocalState.volume = volume;
-    managedAudioMixLocalState.fade = fade;
-    managedAudioMixLocalState.startedAt = startedAt;
-    logManagedAudioMixDebug("started local mirror playback", buildManagedAudioMixLocalDebugState({
-      duration: Number(sound?.duration ?? 0) || 0,
-      offset
-    }));
-    return true;
-  } catch (error) {
-    if (sound) managedAudioMixLocalSounds.delete(sound);
-    if (isModuleDebugEnabled()) console.warn(`${MODULE_ID}: failed to start managed audio mix playback`, error);
-    clearManagedAudioMixLocalState();
-    return false;
-  }
-}
-
-async function applyAudioMixSocketMessage(message, options = {}) {
-  if (!message || message.type !== AUDIO_MIX_SOCKET_TYPE) return false;
-  const allowOrigin = options?.allowOrigin === true;
-  const originUserId = String(message?.originUserId ?? "").trim();
-  if (!allowOrigin && originUserId && originUserId === String(game.user?.id ?? "").trim()) return true;
-  await stopLocalManagedAudioMixPlayback({ fade: Math.max(0, Math.floor(Number(message?.fade ?? 0) || 0)) });
-  return true;
-}
-
-async function dispatchAudioMixSocketMessage(command, payload = {}) {
-  const message = {
-    ...payload,
-    type: AUDIO_MIX_SOCKET_TYPE,
-    command,
-    originUserId: String(game.user?.id ?? "").trim(),
-    sentAt: Date.now()
-  };
-  await applyAudioMixSocketMessage(message, { allowOrigin: true });
-  emitModuleSocket(message, { channel: SOCKET_CHANNEL });
-  return true;
 }
 
 async function autoStartManagedAudioMixFromSavedState() {
@@ -14353,12 +14109,10 @@ async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
     playlistId: String(playlist?.id ?? "").trim(),
     mixPlaybackId: String(mixState?.playbackId ?? "").trim(),
     mixPlaylistSoundId: String(mixState?.playlistSoundId ?? "").trim(),
-    activeSoundId: String(activeSound?.id ?? "").trim(),
-    local: buildManagedAudioMixLocalDebugState()
+    activeSoundId: String(activeSound?.id ?? "").trim()
   });
 
   if (!playlist) {
-    await stopLocalManagedAudioMixPlayback({ fade: 0 });
     if (allowAutostart && game.user?.isGM) {
       return autoStartManagedAudioMixFromSavedState();
     }
@@ -14366,7 +14120,6 @@ async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
   }
 
   if (!activeSound) {
-    await stopLocalManagedAudioMixPlayback({ fade: 0 });
     if (game.user?.isGM) {
       await syncManagedAudioMixStateFromPlaylist(playlist, {
         refresh: options?.refresh === true
@@ -14393,45 +14146,7 @@ async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
     }) ?? mixState;
   }
 
-  const playbackId = String(effectiveMixState.playbackId ?? "").trim()
-    || `${String(playlist?.id ?? "").trim()}:${activeSoundId}`;
-  const trackId = getManagedAudioMixTrackIdFromPlaylistSound(activeSound)
-    || normalizeAudioLibraryRootPath(effectiveMixState.activeTrackId ?? "")
-    || normalizeAudioLibraryRootPath(activeSound?.path ?? "");
-  const trackPath = String(activeSound?.path ?? effectiveMixState.activeTrackPath ?? "").trim();
-  if (!trackPath) {
-    await stopLocalManagedAudioMixPlayback({ fade: 0 });
-    return false;
-  }
-
-  const isSamePlayback = Boolean(
-    managedAudioMixLocalState.sound
-    && managedAudioMixLocalState.playbackId === playbackId
-    && managedAudioMixLocalState.trackId === trackId
-  );
-  if (isSamePlayback) {
-    managedAudioMixLocalState.startedAt = Math.max(0, Number(effectiveMixState.startedAt ?? managedAudioMixLocalState.startedAt ?? 0) || 0);
-    await setLocalManagedAudioMixPlaybackVolume({
-      playbackId,
-      volume: effectiveMixState.volume,
-      fade: Math.min(180, Math.max(0, Math.floor(Number(effectiveMixState.fade ?? 0) || 0)))
-    });
-    return true;
-  }
-
-  return startLocalManagedAudioMixPlayback({
-    playlistId: String(playlist?.id ?? "").trim(),
-    playlistSoundId: String(activeSound?.id ?? effectiveMixState.playlistSoundId ?? "").trim(),
-    presetId: String(effectiveMixState.presetId ?? "").trim(),
-    playbackId,
-    trackId,
-    trackPath,
-    volume: effectiveMixState.volume,
-    fade: effectiveMixState.fade,
-    channel: effectiveMixState.channel,
-    loop: Boolean(activeSound?.repeat),
-    startedAt: Math.max(0, Number(effectiveMixState.startedAt ?? 0) || 0)
-  });
+  return Boolean(String(activeSound?.path ?? effectiveMixState.activeTrackPath ?? "").trim());
 }
 
 function queueManagedAudioMixPlaybackResync(delayMs = 60, options = {}) {
@@ -14553,8 +14268,7 @@ async function stopAudioMixPlayback(options = {}) {
     preservePlaybackId: options?.preservePlaybackId === true,
     preserveQueue: options?.preserveQueue === true,
     priorPlaybackId: String(priorState?.playbackId ?? "").trim(),
-    priorPlaylistSoundId: String(priorState?.playlistSoundId ?? "").trim(),
-    local: buildManagedAudioMixLocalDebugState()
+    priorPlaylistSoundId: String(priorState?.playlistSoundId ?? "").trim()
   });
   if (playlist) await stopManagedAudioMixPlaylist(playlist);
   if (playlist) {
@@ -14575,7 +14289,6 @@ async function stopAudioMixPlayback(options = {}) {
       updatedAt: Date.now()
     });
   }
-  await stopLocalManagedAudioMixPlayback({ fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0)) });
   setAudioMixStatus(String(options?.statusMessage ?? "Mix playback stopped."));
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
@@ -14635,7 +14348,6 @@ async function syncLiveAudioMixPresetVolume(preset = getSelectedAudioMixPreset()
   if (soundUpdates.length > 0) {
     await playlist.updateEmbeddedDocuments("PlaylistSound", soundUpdates);
   }
-  await stopLocalManagedAudioMixPlayback({ fade: 0 });
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
   return true;
@@ -15054,17 +14766,20 @@ function formatAudioLibraryDurationLabel(value) {
 function getManagedAudioMixPlaybackMonitorSnapshot() {
   const playlist = getManagedAudioMixPlaylist();
   const mixFlag = getAudioMixStateFlag(playlist);
-  const sound = managedAudioMixLocalState.sound ?? null;
+  const catalog = getAudioLibraryCatalog();
+  const activeSound = playlist ? getManagedAudioMixPlayingSound(playlist, mixFlag.playlistSoundId) : null;
+  const activeTrackId = String(mixFlag?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixFlag?.activeTrackPath ?? activeSound?.path ?? "");
+  const activeTrack = catalog.items.find((item) => item.id === activeTrackId)
+    ?? catalog.items.find((item) => normalizeAudioLibraryRootPath(item?.path ?? "") === activeTrackPath)
+    ?? null;
   const playbackId = String(mixFlag?.playbackId ?? "").trim();
-  const startedAt = Math.max(0, Number(mixFlag?.startedAt ?? managedAudioMixLocalState.startedAt ?? 0) || 0);
-  const durationSeconds = Math.max(0, Number(sound?.duration ?? 0) || 0);
-  const soundCurrentTime = Number(sound?.currentTime ?? sound?._currentTime ?? NaN);
+  const startedAt = Math.max(0, Number(mixFlag?.startedAt ?? 0) || 0);
+  const durationSeconds = Math.max(0, Number(activeTrack?.durationSeconds ?? 0) || 0);
   let currentSeconds = 0;
-  if (Number.isFinite(soundCurrentTime) && soundCurrentTime >= 0) {
-    currentSeconds = soundCurrentTime;
-  } else if (startedAt > 0) {
+  if (startedAt > 0) {
     const elapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
-    const shouldLoop = Boolean(sound?.loop);
+    const shouldLoop = Boolean(activeSound?.repeat);
     currentSeconds = durationSeconds > 0
       ? (shouldLoop ? (elapsedSeconds % durationSeconds) : Math.min(durationSeconds, elapsedSeconds))
       : elapsedSeconds;
@@ -15080,7 +14795,7 @@ function getManagedAudioMixPlaybackMonitorSnapshot() {
     progressPermille: durationSeconds > 0
       ? Math.max(0, Math.min(1000, Math.round((normalizedCurrentSeconds / durationSeconds) * 1000)))
       : 0,
-    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? managedAudioMixLocalState.volume ?? 0.5)
+    volumePercent: getAudioMixVolumePercent(mixFlag?.volume ?? 0.5)
   };
 }
 
@@ -44874,13 +44589,12 @@ const handlePartyOperationsSocketMessage = createLegacyPartyOperationsSocketMess
   promptLootClaimsDialogForPlayer,
   openOperationsLootClaimsTabForPlayer,
   openRestWatchUiForCurrentUser,
-  refreshOpenApps,
-  schedulePendingSopNoteSync,
-  syncMerchantBarterStatusForOpenDialogs,
-  applyAudioMixSocketMessage,
-  getSocketRequester,
-  sanitizeSocketIdentifier,
-  normalizeSocketActivityType,
+    refreshOpenApps,
+    schedulePendingSopNoteSync,
+    syncMerchantBarterStatusForOpenDialogs,
+    getSocketRequester,
+    sanitizeSocketIdentifier,
+    normalizeSocketActivityType,
   getRestActivities,
   setModuleSettingWithLocalRefreshSuppressed,
   emitSocketRefresh,

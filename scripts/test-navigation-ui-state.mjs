@@ -25,7 +25,7 @@ globalThis.game = {
   user: { id: "user-1" }
 };
 
-const accessState = { gm: false };
+const accessState = { shared: false, gm: false };
 
 function normalizeMainTabId(value, fallback = "rest-watch") {
   const normalized = String(value ?? "").trim().toLowerCase();
@@ -40,7 +40,8 @@ function normalizeMainTabId(value, fallback = "rest-watch") {
 
 const uiState = createNavigationUiState({
   normalizeMainTabId,
-  canAccessAllPlayerOps: () => accessState.gm
+  canAccessAllPlayerOps: () => accessState.shared,
+  canAccessGmPage: () => accessState.gm
 });
 
 assert.equal(uiState.getActiveGmPanelTab(), "core");
@@ -52,6 +53,9 @@ uiState.setActiveRestMainTab("operations");
 assert.equal(uiState.getActiveRestMainTab(), "operations");
 uiState.setActiveRestMainTab("gm");
 assert.equal(uiState.getActiveRestMainTab(), "rest-watch");
+accessState.shared = true;
+uiState.setActiveRestMainTab("gm");
+assert.equal(uiState.getActiveRestMainTab(), "rest-watch");
 accessState.gm = true;
 uiState.setActiveRestMainTab("gm");
 assert.equal(uiState.getActiveRestMainTab(), "gm");
@@ -61,6 +65,9 @@ assert.equal(uiState.getActiveOperationsPage(), "base");
 uiState.setActiveOperationsPage("comms");
 assert.equal(uiState.getActiveOperationsPage(), "planning");
 accessState.gm = false;
+uiState.setActiveOperationsPage("gm");
+assert.equal(uiState.getActiveOperationsPage(), "planning");
+accessState.shared = true;
 uiState.setActiveOperationsPage("gm");
 assert.equal(uiState.getActiveOperationsPage(), "planning");
 accessState.gm = true;

@@ -26,7 +26,6 @@ import {
     refreshOpenApps: "refresh-open-apps",
     schedulePendingSopNoteSync: "schedule-sop",
     syncMerchantBarterStatusForOpenDialogs: "sync-barter",
-    applyAudioMixSocketMessage: "apply-audio",
     getSocketRequester: "get-requester",
     sanitizeSocketIdentifier: "sanitize",
     normalizeSocketActivityType: "normalize-activity",

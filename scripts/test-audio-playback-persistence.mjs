@@ -12,8 +12,8 @@ function expect(pattern, message) {
 }
 
 expect(
-  /async function syncManagedAudioMixPlaybackForCurrentUser\(options = \{\}\)\s*\{[\s\S]*?const allowAutostart = Boolean\(options\?\.allowAutostart\);[\s\S]*?return startLocalManagedAudioMixPlayback\(\{/,
-  "Managed audio playback sync should restore local playback state and honor ready-time autostart."
+  /async function syncManagedAudioMixPlaybackForCurrentUser\(options = \{\}\)\s*\{[\s\S]*?const allowAutostart = Boolean\(options\?\.allowAutostart\);[\s\S]*?const activeSound = playlist \? getManagedAudioMixPlayingSound\(playlist, mixState\.playlistSoundId\) : null;[\s\S]*?return Boolean\(String\(activeSound\?\.path \?\? effectiveMixState\.activeTrackPath \?\? \"\"\)\.trim\(\)\);/,
+  "Managed audio playback sync should treat the Foundry playlist deck as authoritative instead of starting a duplicate local mirror."
 );
 
 expect(
@@ -22,8 +22,8 @@ expect(
 );
 
 expect(
-  /async function syncManagedAudioMixPlaybackForCurrentUser\(options = \{\}\)\s*\{[\s\S]*?const activeSound = playlist \? getManagedAudioMixPlayingSound\(playlist, mixState\.playlistSoundId\) : null;[\s\S]*?if \(!activeSound\) \{[\s\S]*?await stopLocalManagedAudioMixPlayback\(\{ fade: 0 \}\);[\s\S]*?await syncManagedAudioMixStateFromPlaylist\(playlist, \{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?return false;\s*\}/,
-  "Playback sync should stop local audio and clear stale GM state when the playlist deck has no active sound."
+  /async function syncManagedAudioMixPlaybackForCurrentUser\(options = \{\}\)\s*\{[\s\S]*?const activeSound = playlist \? getManagedAudioMixPlayingSound\(playlist, mixState\.playlistSoundId\) : null;[\s\S]*?if \(!activeSound\) \{[\s\S]*?await syncManagedAudioMixStateFromPlaylist\(playlist, \{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?return false;\s*\}/,
+  "Playback sync should clear stale GM state from the playlist deck without starting or stopping a duplicate local mirror."
 );
 
 expect(
@@ -33,7 +33,29 @@ expect(
 
 expect(
   /function queueManagedAudioMixPlaybackResync\(delayMs = 60, options = \{\}\)\s*\{[\s\S]*?window\.setTimeout\(async \(\) => \{[\s\S]*?if \(game\.user\?\.isGM && options\?\.syncState !== false\) \{[\s\S]*?await syncManagedAudioMixStateFromPlaylist\([\s\S]*?\);[\s\S]*?\}[\s\S]*?await syncManagedAudioMixPlaybackForCurrentUser\(\{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?\}/,
-  "Playback resync should refresh GM playlist state before mirroring audio locally."
+  "Playback resync should refresh GM playlist state before reconciling client playback state."
+);
+
+expect(
+  /function logManagedAudioMixDebug\(message, details = null\)\s*\{[\s\S]*?\[audio-mix\]/,
+  "Managed audio playback should emit debug traces through a dedicated audio-mix logger."
+);
+
+expect(
+  /function getManagedAudioMixPlaybackMonitorSnapshot\(\)\s*\{[\s\S]*?const catalog = getAudioLibraryCatalog\(\);[\s\S]*?const activeSound = playlist \? getManagedAudioMixPlayingSound\(playlist, mixFlag\.playlistSoundId\) : null;[\s\S]*?const durationSeconds = Math\.max\(0, Number\(activeTrack\?\.durationSeconds \?\? 0\) \|\| 0\);[\s\S]*?const shouldLoop = Boolean\(activeSound\?\.repeat\);/,
+  "The live monitor should derive timing from playlist state and track metadata so it no longer depends on duplicate local playback."
+);
+
+assert.doesNotMatch(
+  source,
+  /managedAudioMixLocalState|managedAudioMixLocalSounds|managedAudioMixLocalStartToken|createManagedAudioMixSound|startLocalManagedAudioMixPlayback|stopLocalManagedAudioMixPlayback|setLocalManagedAudioMixPlaybackVolume/,
+  "The obsolete local mirror playback subsystem should be removed."
+);
+
+assert.doesNotMatch(
+  source,
+  /AUDIO_MIX_SOCKET_TYPE|AUDIO_MIX_SOCKET_COMMANDS|applyAudioMixSocketMessage|dispatchAudioMixSocketMessage/,
+  "The obsolete audio mirror socket plumbing should be removed."
 );
 
 expect(

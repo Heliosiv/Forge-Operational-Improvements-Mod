@@ -35,13 +35,14 @@ const OPERATIONS_PLANNING_TAB_VALUES = new Set(["roles", "sops", "resources", "l
 // Group the app-wide navigation/session preferences behind a single browser-state boundary.
 export function createNavigationUiState({
   normalizeMainTabId,
-  canAccessAllPlayerOps = () => false
+  canAccessAllPlayerOps = () => false,
+  canAccessGmPage = canAccessAllPlayerOps
 } = {}) {
   if (typeof normalizeMainTabId !== "function") {
     throw new Error("createNavigationUiState requires normalizeMainTabId");
   }
 
-  const hasGmAccess = () => Boolean(canAccessAllPlayerOps());
+  const hasGmAccess = () => Boolean(canAccessGmPage());
 
   function getGmPanelTabStorageKey() {
     return `po-gm-panel-tab-${getCurrentUserId()}`;

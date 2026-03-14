@@ -1,4 +1,4 @@
-<div class="po-window po-window-rest" data-tool="rest-watch" data-main-tab="{{mainTab}}" role="region" aria-label="Party Operations Rest Watch">
+<div class="po-window po-window-rest" data-tool="{{windowToolId}}" data-main-tab="{{mainTab}}" role="region" aria-label="{{windowAriaLabel}}">
   <header class="po-header">
     <div class="po-header-main">
       <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
@@ -8,7 +8,7 @@
       <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
       <button type="button" class="po-tab" data-action="switch-tab" data-tab="march" aria-selected="false" aria-current="false">Marching Order</button>
       <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="switch-tab" data-tab="operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
-      {{#if isGM}}
+      {{#if showGmPageTab}}
       <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="switch-tab" data-tab="gm" aria-selected="{{#if mainTabGm}}true{{else}}false{{/if}}" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
       {{/if}}
     </nav>

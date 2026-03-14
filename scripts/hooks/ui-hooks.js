@@ -2,6 +2,7 @@ export function registerPartyOperationsUiHooks({
   HooksRef = globalThis.Hooks,
   openMainTab,
   canAccessAllPlayerOps,
+  canAccessGmPage = canAccessAllPlayerOps,
   ensureLauncherUi,
   hideManagedAudioMixPlaylistUi,
   setTimeoutFn = globalThis.window?.setTimeout?.bind(globalThis.window) ?? globalThis.setTimeout,
@@ -37,7 +38,7 @@ export function registerPartyOperationsUiHooks({
       }
     ];
 
-    if (canAccessAllPlayerOps?.()) {
+    if (canAccessGmPage?.()) {
       tools.push({
         name: "po-gm",
         title: "Open GM",

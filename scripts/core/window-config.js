@@ -32,6 +32,7 @@ export const REFRESH_SCOPE_KEYS = Object.freeze({
 
 export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
   "rest-watch-app",
+  "operations-shell-app",
   "marching-order-app",
   "rest-watch-player-app",
   "party-operations-global-modifier-summary",
@@ -54,7 +55,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "rest-watch-player-app"
   ]),
   [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
-    "rest-watch-app",
+    "operations-shell-app",
     "rest-watch-player-app",
     "party-operations-global-modifier-summary",
     "party-operations-gm-factions-page",
@@ -66,7 +67,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
     "party-operations-gm-loot-claims-board"
   ]),
   [REFRESH_SCOPE_KEYS.LOOT]: Object.freeze([
-    "rest-watch-app",
+    "operations-shell-app",
     "party-operations-gm-audio-page",
     "party-operations-gm-loot-page",
     "party-operations-gm-loot-claims-board"
