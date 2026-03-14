@@ -1,6 +1,6 @@
-import { createPartyOperationsSocketMessageHandler } from "../core/socket-message-handler.js";
+import { createPartyOperationsSocketMessageHandler } from "./socket-message-handler.js";
 
-export function buildLegacyPartyOperationsSocketRouteDeps({
+export function buildPartyOperationsSocketRouteDeps({
   settings,
   refreshScopeKeys,
   normalizeRefreshScopeList,
@@ -228,7 +228,7 @@ export function buildLegacyPartyOperationsSocketRouteDeps({
   };
 }
 
-export function createLegacyPartyOperationsSocketMessageHandler({
+export function createPartyOperationsSocketHandler({
   createSocketMessageHandler = createPartyOperationsSocketMessageHandler,
   game = globalThis.game,
   applyPlayerGatherRequest,
@@ -245,7 +245,7 @@ export function createLegacyPartyOperationsSocketMessageHandler({
     promptLocalGatherYieldRoll,
     resolvePendingGatherCheckRequest,
     resolvePendingGatherYieldRequest,
-    routeSocketDeps: buildLegacyPartyOperationsSocketRouteDeps({
+    routeSocketDeps: buildPartyOperationsSocketRouteDeps({
       game,
       ...routeDeps
     })

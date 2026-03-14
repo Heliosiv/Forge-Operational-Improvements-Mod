@@ -50,7 +50,7 @@ const originalConsoleWarn = console.warn;
 
   assert.equal(handler(), "init-result");
   assert.deepEqual(callOrder, ["install", "build", "init"]);
-  assert.ok(warnings.some((entry) => entry.includes("failed to install legacy app behaviors")));
+  assert.ok(warnings.some((entry) => entry.includes("failed to install app behaviors")));
   console.warn = originalConsoleWarn;
 }
 

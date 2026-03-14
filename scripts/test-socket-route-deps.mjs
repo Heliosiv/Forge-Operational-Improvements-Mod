@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 
 import {
-  buildLegacyPartyOperationsSocketRouteDeps,
-  createLegacyPartyOperationsSocketMessageHandler
-} from "./legacy/socket-surface.js";
+  buildPartyOperationsSocketRouteDeps,
+  createPartyOperationsSocketHandler
+} from "./core/socket-route-deps.js";
 
 {
   const settings = { REST_STATE: "restWatchState" };
   const refreshScopeKeys = { REST: "rest" };
   const restOps = { START: "start" };
-  const routeDeps = buildLegacyPartyOperationsSocketRouteDeps({
+  const routeDeps = buildPartyOperationsSocketRouteDeps({
     settings,
     refreshScopeKeys,
     normalizeRefreshScopeList: "normalize-refresh",
@@ -61,7 +61,7 @@ import {
   const game = { user: { isGM: true } };
   const foundry = { utils: {} };
   const ui = { notifications: {} };
-  const routeDeps = buildLegacyPartyOperationsSocketRouteDeps({
+  const routeDeps = buildPartyOperationsSocketRouteDeps({
     settings,
     refreshScopeKeys,
     sanitizeSocketIdentifier: "sanitize",
@@ -170,7 +170,7 @@ import {
 
 {
   let payload = null;
-  const handler = createLegacyPartyOperationsSocketMessageHandler({
+  const handler = createPartyOperationsSocketHandler({
     game: { user: { id: "gm-1", isGM: true } },
     applyPlayerGatherRequest: "apply-gather",
     promptLocalGatherCheckRoll: "prompt-check",

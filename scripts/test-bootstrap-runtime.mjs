@@ -1,22 +1,22 @@
 import assert from "node:assert/strict";
 
 import {
-  createLegacyBootstrapLoader,
   createLazyPartyOperationsInitHandler,
-  createLazyPartyOperationsReadyHandler
+  createLazyPartyOperationsReadyHandler,
+  createPartyOperationsBootstrapLoader
 } from "./bootstrap/runtime.js";
 
 {
   let importerCalls = 0;
-  const expectedModule = { marker: "legacy-bootstrap" };
-  const loadLegacyBootstrapModule = createLegacyBootstrapLoader(async () => {
+  const expectedModule = { marker: "bootstrap-module" };
+  const loadBootstrapModule = createPartyOperationsBootstrapLoader(async () => {
     importerCalls += 1;
     return expectedModule;
   });
 
   const [firstLoad, secondLoad] = await Promise.all([
-    loadLegacyBootstrapModule(),
-    loadLegacyBootstrapModule()
+    loadBootstrapModule(),
+    loadBootstrapModule()
   ]);
 
   assert.equal(importerCalls, 1);
@@ -25,11 +25,11 @@ import {
 }
 
 {
-  const legacyBootstrap = {
-    installLegacyAppBehaviors() {
+  const bootstrapModule = {
+    installPartyOperationsAppBehaviors() {
       return "install";
     },
-    buildLegacyPartyOperationsInitConfig() {
+    buildPartyOperationsInitConfig() {
       return { stage: "init" };
     }
   };
@@ -37,14 +37,14 @@ import {
   let createInitHandlerCalls = 0;
 
   const onPartyOperationsInit = createLazyPartyOperationsInitHandler({
-    loadLegacyBootstrapModule: async () => {
+    loadBootstrapModule: async () => {
       importerCalls += 1;
-      return legacyBootstrap;
+      return bootstrapModule;
     },
     createInitHandler(options) {
       createInitHandlerCalls += 1;
-      assert.equal(options.installAppBehaviors, legacyBootstrap.installLegacyAppBehaviors);
-      assert.equal(options.buildInitConfig, legacyBootstrap.buildLegacyPartyOperationsInitConfig);
+      assert.equal(options.installAppBehaviors, bootstrapModule.installPartyOperationsAppBehaviors);
+      assert.equal(options.buildInitConfig, bootstrapModule.buildPartyOperationsInitConfig);
       return () => "init-result";
     }
   });
@@ -56,8 +56,8 @@ import {
 }
 
 {
-  const legacyBootstrap = {
-    buildLegacyPartyOperationsReadyConfig() {
+  const bootstrapModule = {
+    buildPartyOperationsReadyConfig() {
       return { stage: "ready" };
     }
   };
@@ -65,13 +65,13 @@ import {
   let createReadyHandlerCalls = 0;
 
   const onPartyOperationsReady = createLazyPartyOperationsReadyHandler({
-    loadLegacyBootstrapModule: async () => {
+    loadBootstrapModule: async () => {
       importerCalls += 1;
-      return legacyBootstrap;
+      return bootstrapModule;
     },
     createReadyHandler(options) {
       createReadyHandlerCalls += 1;
-      assert.equal(options.buildReadyConfig, legacyBootstrap.buildLegacyPartyOperationsReadyConfig);
+      assert.equal(options.buildReadyConfig, bootstrapModule.buildPartyOperationsReadyConfig);
       return () => "ready-result";
     }
   });

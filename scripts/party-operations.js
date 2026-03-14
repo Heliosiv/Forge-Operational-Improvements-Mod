@@ -22,6 +22,12 @@ import {
 } from "./features/operations-player-handlers.js";
 import { applyRestRequest, createRestFeatureModule, normalizeSocketRestRequest } from "./features/rest-feature.js";
 import { attachModuleApi } from "./core/api-registry.js";
+import { createOpenAppRefresher } from "./core/app-refresh.js";
+import {
+  buildPartyOperationsApi as buildPartyOperationsApiSurface,
+  registerPartyOperationsApi as registerPartyOperationsApiSurface
+} from "./core/module-api.js";
+import { createPlayerRequestHandlers } from "./core/player-request-handlers.js";
 import {
   MODULE_ID,
   PARTY_OPS_MODULE_ID as PRIMARY_MODULE_ID,
@@ -46,21 +52,21 @@ import {
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
+import {
+  buildPartyOperationsInitConfig as buildPartyOperationsInitConfigSurface,
+  buildPartyOperationsReadyConfig as buildPartyOperationsReadyConfigSurface,
+  createPartyOperationsHookRegistrar,
+  installPartyOperationsAppBehaviors as installPartyOperationsAppBehaviorsSurface,
+  setupPartyOperationsUi
+} from "./bootstrap/config.js";
 import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
-import {
-  buildLegacyPartyOperationsInitConfig as buildLegacyPartyOperationsInitConfigSurface,
-  buildLegacyPartyOperationsReadyConfig as buildLegacyPartyOperationsReadyConfigSurface,
-  createLegacyPartyOpsHookRegistrar,
-  installLegacyAppBehaviors as installLegacyAppBehaviorsSurface,
-  setupLegacyPartyOperationsUi
-} from "./legacy/bootstrap-surface.js";
-import { createLegacyPartyOperationsSocketMessageHandler } from "./legacy/socket-surface.js";
+import { createPartyOperationsSocketHandler } from "./core/socket-route-deps.js";
 import {
   preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
   validatePartyOperationsTemplates as validatePartyOperationsTemplatesSurface
-} from "./legacy/template-surface.js";
+} from "./core/template-loader.js";
 import {
   PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
   clearPartyOpsAppInstance,
@@ -150,6 +156,9 @@ import {
   normalizeLootPreviewSort,
   sortLootPreviewItems
 } from "./features/loot-preview-display.js";
+import { createLauncherUiController } from "./features/launcher-ui.js";
+import { createMainTabRegistry } from "./features/main-tab-registry.js";
+import { createMainTabNavigator } from "./features/main-tab-navigation.js";
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
@@ -305,7 +314,6 @@ const GATHER_CHECK_RESULT_TIMEOUT_MS = 20000;
 const GATHER_YIELD_RESULT_TIMEOUT_MS = 15000;
 let automaticUpkeepTickInFlight = false;
 let merchantAutoRefreshTickInFlight = false;
-let refreshOpenAppsQueued = false;
 let integrationSyncTimeoutId = null;
 let integrationSyncInFlight = false;
 let integrationSyncQueued = false;
@@ -314,7 +322,6 @@ const integrationSyncWaiters = [];
 let sopPendingSyncInFlight = false;
 let sopPendingSyncScheduled = false;
 const activeEffectDeleteLocks = new Set();
-let launcherRecoveryScheduled = false;
 let lootManifestFolderSyncPromise = null;
 let lootManifestFolderSyncDisabledReason = "";
 let lootManifestFolderSyncDisabledNotified = false;
@@ -332,8 +339,6 @@ const audioLibraryMetadataWarmupState = {
   catalogKey: ""
 };
 let managedAudioMixResyncTimerId = null;
-let refreshOpenAppsQueueAll = false;
-const refreshOpenAppsScopeQueue = new Set();
 const GATHER_TRAVEL_CHOICES = Object.freeze({
   PACE: "pace",
   FELL_BEHIND: "fell-behind"
@@ -957,36 +962,15 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
   }
 }
 
-const PO_MAIN_TAB_IDS = new Set(["rest-watch", "marching-order", "operations", "gm"]);
-
-const PO_SIDEBAR_VIEW_ITEMS = Object.freeze([
-  { id: "rest-watch", action: "rest", label: "Rest", icon: "fas fa-moon", title: "Open Rest Watch", target: "po-panel-rest-watch" },
-  { id: "operations", action: "operations", label: "Ops", icon: "fas fa-clipboard-list", title: "Open Operations", target: "po-panel-operations" },
-  { id: "marching-order", action: "march", label: "March", icon: "fas fa-arrow-up", title: "Open Marching Order", target: "po-march-overview" },
-  { id: "gm", action: "gm", label: "GM", icon: "fas fa-user-shield", title: "Open GM Section", target: "po-panel-operations", gmOnly: true }
-]);
-
-const PO_MAIN_TAB_ACTIONS = Object.freeze({
-  "rest-watch": "rest",
-  operations: "operations",
-  "marching-order": "march",
-  gm: "gm"
-});
-
-const PO_SWITCH_TAB_IDS = new Set(["rest", "march", "operations", "gm"]);
-
-const PO_SWITCH_TO_MAIN_TAB = Object.freeze({
-  rest: "rest-watch",
-  march: "marching-order",
-  operations: "operations",
-  gm: "gm"
-});
-
-const PO_MAIN_TO_SWITCH_TAB = Object.freeze({
-  "rest-watch": "rest",
-  "marching-order": "march",
-  operations: "operations",
-  gm: "gm"
+const {
+  mainTabIds: PO_MAIN_TAB_IDS,
+  getTemplateForMainTab,
+  normalizeMainTabId,
+  normalizeSwitchTabId,
+  getSwitchTabIdFromMainTabId,
+  getMainTabIdFromAction
+} = createMainTabRegistry({
+  templateMap: PO_TEMPLATE_MAP
 });
 
 function writePoBrowserHistoryEntry(_destination, _options = {}) {
@@ -995,35 +979,6 @@ function writePoBrowserHistoryEntry(_destination, _options = {}) {
 
 function bindPoBrowserBackNavigation() {
   // Browser back/forward handling intentionally disabled.
-}
-
-function getTemplateForMainTab(tabId) {
-  const normalized = String(tabId ?? "").trim().toLowerCase();
-  if (normalized === "marching-order") return PO_TEMPLATE_MAP["marching-order"];
-  if (normalized === "rest-watch") return PO_TEMPLATE_MAP["rest-watch"];
-  if (normalized === "operations" || normalized === "gm") return PO_TEMPLATE_MAP["rest-watch"];
-  return PO_TEMPLATE_MAP["rest-watch"];
-}
-
-function normalizeMainTabId(value, fallback = "rest-watch") {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (PO_SWITCH_TAB_IDS.has(normalized)) return PO_SWITCH_TO_MAIN_TAB[normalized] ?? fallback;
-  if (normalized === "rest") return "rest-watch";
-  if (normalized === "march") return "marching-order";
-  if (!PO_MAIN_TAB_IDS.has(normalized)) return fallback;
-  return normalized;
-}
-
-function normalizeSwitchTabId(value, fallback = "rest") {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (PO_SWITCH_TAB_IDS.has(normalized)) return normalized;
-  const mainTab = normalizeMainTabId(normalized, PO_SWITCH_TO_MAIN_TAB[fallback] ?? "rest-watch");
-  return PO_MAIN_TO_SWITCH_TAB[mainTab] ?? fallback;
-}
-
-function getSwitchTabIdFromMainTabId(mainTabId) {
-  const normalized = normalizeMainTabId(mainTabId, "rest-watch");
-  return PO_MAIN_TO_SWITCH_TAB[normalized] ?? "rest";
 }
 
 function logUiDebug(scope, message, details = null) {
@@ -1063,19 +1018,6 @@ function getRequestedPanelIdFromElement(element) {
   const tab = String(element?.dataset?.tab ?? "").trim();
   if (tab) return tab;
   return "rest-watch";
-}
-
-function getMainTabIdFromAction(action) {
-  const normalizedAction = String(action ?? "").trim().toLowerCase();
-  for (const [tabId, tabAction] of Object.entries(PO_MAIN_TAB_ACTIONS)) {
-    if (tabAction === normalizedAction) return tabId;
-  }
-  return null;
-}
-
-function getActionFromMainTabId(tabId) {
-  const normalized = normalizeMainTabId(tabId, "rest-watch");
-  return PO_MAIN_TAB_ACTIONS[normalized] ?? "rest";
 }
 
 function diagnoseRenderedMainTabs(root, scope = "ui") {
@@ -2878,6 +2820,46 @@ function shouldAutoOpenRestForPlayers() {
   } catch {
     return false;
   }
+}
+
+function normalizeLauncherPlacement(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === LAUNCHER_PLACEMENTS.SIDEBAR) return LAUNCHER_PLACEMENTS.SIDEBAR;
+  if (normalized === LAUNCHER_PLACEMENTS.BOTH) return LAUNCHER_PLACEMENTS.BOTH;
+  return LAUNCHER_PLACEMENTS.FLOATING;
+}
+
+let mainTabNavigator = null;
+let launcherUiController = null;
+
+function openMainTab(...args) {
+  return mainTabNavigator?.openMainTab?.(...args) ?? null;
+}
+
+function openOperationsUi(...args) {
+  return mainTabNavigator?.openOperationsUi?.(...args) ?? null;
+}
+
+function openRestWatchUiForCurrentUser(...args) {
+  return mainTabNavigator?.openRestWatchUiForCurrentUser?.(...args) ?? null;
+}
+
+function openGmUi(...args) {
+  return mainTabNavigator?.openGmUi?.(...args) ?? null;
+}
+
+function ensureLauncherUi(...args) {
+  if (!launcherUiController?.ensureLauncherUi) {
+    return {
+      ok: false,
+      placement: LAUNCHER_PLACEMENTS.FLOATING,
+      clickOpener: false,
+      floatingLauncher: false,
+      sidebarLauncher: false,
+      error: "launcher ui not initialized"
+    };
+  }
+  return launcherUiController.ensureLauncherUi(...args);
 }
 
 const {
@@ -43328,170 +43310,6 @@ function setupMarchingDragAndDrop(html) {
   });
 }
 
-function getFloatingLauncherPosition() {
-  const fallback = getFloatingLauncherCenteredPosition();
-  const stored = game.settings.get(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS);
-  if (!stored || typeof stored !== "object") return fallback;
-  const left = Number(stored.left);
-  const top = Number(stored.top);
-  return {
-    left: Number.isFinite(left) ? left : fallback.left,
-    top: Number.isFinite(top) ? top : fallback.top
-  };
-}
-
-function getFloatingLauncherCenteredPosition() {
-  const launcher = document.getElementById("po-floating-launcher");
-  const launcherWidth = Math.max(56, Number(launcher?.offsetWidth ?? 56));
-  const launcherHeight = Math.max(172, Number(launcher?.offsetHeight ?? 172));
-  const viewportWidth = Math.max(240, Number(window.innerWidth ?? 1200));
-  const viewportHeight = Math.max(240, Number(window.innerHeight ?? 800));
-
-  return {
-    left: Math.max(8, Math.floor((viewportWidth - launcherWidth) / 2)),
-    top: Math.max(8, Math.floor((viewportHeight - launcherHeight) / 2))
-  };
-}
-
-function getFloatingLauncherLeftInset() {
-  const controls = document.getElementById("controls");
-  if (!controls) return 8;
-  const rect = controls.getBoundingClientRect();
-  if (!rect || !Number.isFinite(rect.right)) return 8;
-  return Math.max(8, Math.floor(rect.right + 12));
-}
-
-function isFloatingLauncherLocked() {
-  return Boolean(game.settings.get(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED));
-}
-
-function applyFloatingLauncherLockUi(launcher, locked) {
-  if (!launcher) return;
-  launcher.classList.toggle("is-locked", Boolean(locked));
-  launcher.classList.toggle("is-unlocked", !Boolean(locked));
-  const lockBtn = launcher.querySelector(".po-floating-lock");
-  const unlockBtn = launcher.querySelector(".po-floating-unlock");
-  const handle = launcher.querySelector(".po-floating-handle");
-  if (lockBtn) lockBtn.style.display = locked ? "none" : "";
-  if (unlockBtn) unlockBtn.style.display = locked ? "" : "none";
-  if (handle) {
-    handle.setAttribute("title", locked ? "Launcher locked (click unlock to move)" : "Drag to move");
-  }
-}
-
-async function resetFloatingLauncherPosition() {
-  const resetPos = getFloatingLauncherCenteredPosition();
-  await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, resetPos);
-  let launcher = document.getElementById("po-floating-launcher");
-  if (!launcher) {
-    ensureFloatingLauncher();
-    launcher = document.getElementById("po-floating-launcher");
-  }
-  if (launcher) {
-    const pos = clampFloatingLauncherPosition(resetPos);
-    applyFloatingLauncherInlineStyles(launcher, pos);
-  }
-}
-
-function clampFloatingLauncherPosition(pos, options = {}) {
-  const width = Math.max(240, window.innerWidth || 1200);
-  const height = Math.max(240, window.innerHeight || 800);
-  const launcher = document.getElementById("po-floating-launcher");
-  const launcherWidth = Math.max(48, Number(launcher?.offsetWidth ?? 48));
-  const launcherHeight = Math.max(140, Number(launcher?.offsetHeight ?? 140));
-  const lockAware = options?.lockAware !== false;
-  const locked = lockAware ? isFloatingLauncherLocked() : false;
-  const maxLeft = Math.max(8, width - launcherWidth - 8);
-  const requestedMinLeft = locked ? 8 : getFloatingLauncherLeftInset();
-  const minLeft = Math.min(Math.max(8, requestedMinLeft), maxLeft);
-  return {
-    left: Math.max(minLeft, Math.min(maxLeft, Number(pos.left ?? minLeft))),
-    top: Math.max(8, Math.min(height - launcherHeight - 8, Number(pos.top ?? 180)))
-  };
-}
-
-async function saveFloatingLauncherPosition(pos) {
-  const clamped = clampFloatingLauncherPosition(pos);
-  await game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_POS, clamped);
-}
-
-function applyClickOpenerInlineStyles(opener) {
-  if (!opener) return;
-  opener.style.position = "fixed";
-  opener.style.left = "58px";
-  opener.style.bottom = "84px";
-  opener.style.zIndex = "10050";
-  opener.style.display = "flex";
-  opener.style.visibility = "visible";
-  opener.style.opacity = "1";
-  opener.style.alignItems = "center";
-  opener.style.justifyContent = "center";
-  opener.style.width = "40px";
-  opener.style.height = "40px";
-  opener.style.pointerEvents = "auto";
-}
-
-function applyFloatingLauncherInlineStyles(launcher, position = null) {
-  if (!launcher) return;
-  launcher.style.position = "fixed";
-  launcher.style.zIndex = "10050";
-  launcher.style.display = "flex";
-  launcher.style.visibility = "visible";
-  launcher.style.opacity = "1";
-  launcher.style.pointerEvents = "auto";
-  launcher.style.flexDirection = "column";
-  launcher.style.gap = "6px";
-  const pos = position ?? clampFloatingLauncherPosition(getFloatingLauncherPosition());
-  launcher.style.left = `${pos.left}px`;
-  launcher.style.top = `${pos.top}px`;
-}
-
-function ensureLauncherInViewport() {
-  const launcher = document.getElementById("po-floating-launcher");
-  if (!launcher) return;
-  const rect = launcher.getBoundingClientRect?.();
-  if (!rect) return;
-  const outsideViewport =
-    rect.right < 0 ||
-    rect.left > window.innerWidth ||
-    rect.bottom < 0 ||
-    rect.top > window.innerHeight;
-  if (!outsideViewport) return;
-  const centered = getFloatingLauncherCenteredPosition();
-  const clamped = clampFloatingLauncherPosition(centered, { lockAware: false });
-  applyFloatingLauncherInlineStyles(launcher, clamped);
-  saveFloatingLauncherPosition(clamped);
-}
-
-function scheduleLauncherRecoveryPass() {
-  if (launcherRecoveryScheduled) return;
-  launcherRecoveryScheduled = true;
-  const finalDelay = LAUNCHER_RECOVERY_DELAYS_MS[LAUNCHER_RECOVERY_DELAYS_MS.length - 1];
-
-  for (const delay of LAUNCHER_RECOVERY_DELAYS_MS) {
-    window.setTimeout(() => {
-      try {
-        if (shouldShowFloatingLauncher()) {
-          ensureClickOpener();
-          ensureFloatingLauncher();
-          ensureLauncherInViewport();
-        } else {
-          removeClickOpener();
-          removeFloatingLauncher();
-        }
-        if (shouldShowSidebarLauncher()) ensureSidebarLauncher();
-        else removeSidebarLauncher();
-      } catch (error) {
-        console.warn(`${MODULE_ID}: launcher recovery pass failed`, error);
-      } finally {
-        if (delay === finalDelay) {
-          launcherRecoveryScheduled = false;
-        }
-      }
-    }, delay);
-  }
-}
-
 function queueInventoryRefresh(actor, reason = "inventory-update") {
   if (!actor || actor.documentName !== "Actor") return;
   const hookMode = getInventoryHookModeSetting();
@@ -43520,771 +43338,142 @@ function hasInventoryDelta(changed) {
   return Boolean(itemDelta && typeof itemDelta === "object");
 }
 
-function openMainTab(tabId, renderOptions = { force: true }) {
-  const normalized = normalizeMainTabId(tabId, "rest-watch");
-  const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  logUiDebug("launcher", "openMainTab request", {
-    tabId,
-    normalized,
-    template: getTemplateForMainTab(normalized),
-    isGM: Boolean(canAccessAllPlayerOps()),
-    canAccessGmPage: Boolean(canAccessGmPage())
-  });
+mainTabNavigator = createMainTabNavigator({
+  normalizeMainTabId,
+  logUiDebug,
+  getTemplateForMainTab,
+  canAccessAllPlayerOps,
+  canAccessGmPage,
+  notifyUiWarnThrottled,
+  getAppInstance,
+  appInstanceKeys: APP_INSTANCE_KEYS,
+  RestWatchApp,
+  OperationsShellApp,
+  MarchingOrderApp,
+  getResponsiveWindowOptions,
+  setActiveRestMainTab,
+  queueManagedAudioMixPlaybackResync,
+  writePoBrowserHistoryEntry
+});
 
-  if (normalized === "marching-order") {
-    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
-    if (restWatchApp?.element?.isConnected) {
-      void restWatchApp.close();
-    }
-    const operationsShellApp = getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL);
-    if (operationsShellApp?.element?.isConnected) {
-      void operationsShellApp.close();
-    }
-    const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
-    if (restWatchPlayerApp?.element?.isConnected) {
-      void restWatchPlayerApp.close();
-    }
-    const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
-    const app = marchingOrderApp?.element?.isConnected
-      ? marchingOrderApp
-      : new MarchingOrderApp(getResponsiveWindowOptions("marching-order"));
-    app.render(renderOptions);
-    queueManagedAudioMixPlaybackResync();
-    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "marching-order" });
-    return app;
-  }
+launcherUiController = createLauncherUiController({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  launcherRecoveryDelaysMs: LAUNCHER_RECOVERY_DELAYS_MS,
+  poEscapeHtml,
+  setModuleSettingWithLocalRefreshSuppressed,
+  getMainTabIdFromAction,
+  getTemplateForMainTab,
+  openMainTab,
+  canAccessAllPlayerOps,
+  canAccessGmPage,
+  logUiDebug,
+  refreshOpenApps,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  getAudioLibraryCatalog,
+  getSelectedAudioMixPreset,
+  getAudioMixPlaybackState,
+  getPlayableAudioMixCandidates,
+  getAllAudioMixPresets,
+  selectAudioMixPreset,
+  playAudioMixPresetById,
+  toggleAudioMixPlayback,
+  playNextAudioMixTrack,
+  stopAudioMixPlayback,
+  clearAudioLibraryError,
+  setAudioLibraryError,
+  getGame: () => game,
+  getDocument: () => document,
+  getWindow: () => window,
+  getUi: () => ui
+});
 
-  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
-  if (marchingOrderApp?.element?.isConnected) {
-    void marchingOrderApp.close();
-  }
-  const operationsShellApp = getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL);
-  const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
-  if (restWatchPlayerApp?.element?.isConnected) {
-    void restWatchPlayerApp.close();
-  }
-
-  if (normalized === "gm" || normalized === "operations") {
-    const targetMainTab = normalized === "gm" ? "gm" : "operations";
-    if (targetMainTab === "gm" && !canAccessGmPage()) {
-      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
-        key: "gm-section-permission",
-        ttlMs: 1500
-      });
-      return null;
-    }
-    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
-    if (restWatchApp?.element?.isConnected) {
-      void restWatchApp.close();
-    }
-    setActiveRestMainTab(targetMainTab);
-    const app = operationsShellApp?.element?.isConnected
-      ? operationsShellApp
-      : new OperationsShellApp(getResponsiveWindowOptions("operations-shell"));
-    app._activePanel = targetMainTab;
-    app.render(renderOptions);
-    queueManagedAudioMixPlaybackResync();
-    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: targetMainTab });
-    return app;
-  }
-
-  if (operationsShellApp?.element?.isConnected) {
-    void operationsShellApp.close();
-  }
-
-  setActiveRestMainTab("rest-watch");
-  const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
-  const app = restWatchApp?.element?.isConnected
-    ? restWatchApp
-    : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
-  app._activePanel = "rest-watch";
-  app.render(renderOptions);
-  queueManagedAudioMixPlaybackResync();
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "rest-watch" });
-  return app;
-}
-
-function openOperationsUi() {
-  return openMainTab("operations", { force: true });
-}
-
-function openRestWatchUiForCurrentUser(renderOptions = { force: true }) {
-  return openMainTab("rest-watch", renderOptions);
-}
-
-function openGmUi() {
-  return openMainTab("gm", { force: true });
-}
-
-function normalizeLauncherPlacement(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === LAUNCHER_PLACEMENTS.SIDEBAR) return LAUNCHER_PLACEMENTS.SIDEBAR;
-  if (normalized === LAUNCHER_PLACEMENTS.BOTH) return LAUNCHER_PLACEMENTS.BOTH;
-  return LAUNCHER_PLACEMENTS.FLOATING;
-}
-
-function getLauncherPlacement() {
-  try {
-    return normalizeLauncherPlacement(game.settings.get(MODULE_ID, SETTINGS.LAUNCHER_PLACEMENT));
-  } catch {
-    return LAUNCHER_PLACEMENTS.FLOATING;
-  }
-}
-
-function shouldShowFloatingLauncher() {
-  const placement = getLauncherPlacement();
-  return placement === LAUNCHER_PLACEMENTS.FLOATING || placement === LAUNCHER_PLACEMENTS.BOTH;
-}
-
-function shouldShowSidebarLauncher() {
-  const placement = getLauncherPlacement();
-  return placement === LAUNCHER_PLACEMENTS.SIDEBAR || placement === LAUNCHER_PLACEMENTS.BOTH;
-}
-
-function removeClickOpener() {
-  document.getElementById("po-click-opener")?.remove();
-}
-
-function removeFloatingLauncher() {
-  document.getElementById("po-floating-launcher")?.remove();
-}
-
-function removeSidebarLauncher() {
-  document.getElementById("po-sidebar-launcher")?.remove();
-}
-
-function getSidebarLauncherHost() {
-  const sidebar = document.getElementById("sidebar");
-  if (!sidebar) return null;
-
-  return sidebar.querySelector(".sidebar-tab.active")
-    ?? sidebar.querySelector(".tab.active.sidebar-tab")
-    ?? sidebar.querySelector(".tab.sidebar-tab.active")
-    ?? sidebar.querySelector("#sidebar-content .sidebar-tab.active")
-    ?? sidebar.querySelector("#sidebar-content")
-    ?? sidebar.querySelector(".sidebar-content")
-    ?? sidebar.querySelector("[data-application-part='content']")
-    ?? sidebar;
-}
-
-async function setLauncherPlacement(placement) {
-  const normalized = normalizeLauncherPlacement(placement);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.LAUNCHER_PLACEMENT, normalized);
-  return normalized;
-}
-
-function buildSidebarLauncherAudioContext() {
-  if (!canAccessAllPlayerOps()) return { visible: false };
-  const catalog = getAudioLibraryCatalog();
-  const selectedPreset = getSelectedAudioMixPreset();
-  const playback = getAudioMixPlaybackState(catalog);
-  const playableCandidates = getPlayableAudioMixCandidates(catalog, selectedPreset);
-  const hasCatalog = catalog.items.length > 0;
-  const isSelectedPresetActive = String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
-  const canResumeSelectedPreset = Boolean(playback.isPaused && playback.hasQueue && isSelectedPresetActive);
-  const statusLabel = !hasCatalog
-    ? "Scan audio in GM > Audio to enable launcher controls."
-    : playback.hasActiveTrack
-      ? `${playback.presetLabel}: ${playback.activeTrackName}`
-      : playback.isPaused && playback.hasQueue
-        ? `${playback.presetLabel} paused.`
-        : (String(selectedPreset?.description ?? "").trim() || "Pick a preset deck and use the transport controls here.");
-  return {
-    visible: true,
-    presets: getAllAudioMixPresets().map((preset) => ({
-      id: String(preset?.id ?? "").trim(),
-      label: String(preset?.label ?? "Mix").trim() || "Mix",
-      selected: String(preset?.id ?? "").trim() === String(selectedPreset?.id ?? "").trim()
-    })),
-    statusLabel,
-    isPlaying: Boolean(playback.isPlaying),
-    isPaused: Boolean(playback.isPaused),
-    canPlay: canResumeSelectedPreset || playableCandidates.length > 0,
-    canNext: Boolean(playback.canSkipNext),
-    canStop: Boolean(playback.hasActiveTrack || playback.hasQueue || playback.playbackId),
-    playTitle: canResumeSelectedPreset ? "Resume selected preset deck" : "Play selected preset deck",
-    nextTitle: "Advance the current mix to the next track",
-    stopTitle: "Stop the current mix"
-  };
-}
-
-function buildSidebarLauncherAudioMarkup() {
-  const context = buildSidebarLauncherAudioContext();
-  if (!context.visible) return "";
-  const optionsMarkup = context.presets
-    .map((preset) => `<option value="${poEscapeHtml(preset.id)}" ${preset.selected ? "selected" : ""}>${poEscapeHtml(preset.label)}</option>`)
-    .join("");
-  const statusClass = context.isPlaying
-    ? " is-playing"
-    : (context.isPaused ? " is-paused" : "");
-  return `
-    <div class="po-sidebar-launcher-audio-head">
-      <div class="po-sidebar-launcher-audio-title">Audio Deck</div>
-      <div class="po-sidebar-launcher-audio-status${statusClass}">${poEscapeHtml(context.statusLabel)}</div>
-    </div>
-    <label class="po-sidebar-launcher-audio-field">
-      <span>Preset Deck</span>
-      <select class="po-sidebar-launcher-select po-sidebar-launcher-audio-select" data-action="launcher-audio-select">
-        ${optionsMarkup}
-      </select>
-    </label>
-    <div class="po-sidebar-launcher-audio-controls">
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn is-primary" data-action="launcher-audio-play" title="${poEscapeHtml(context.playTitle)}" aria-label="${poEscapeHtml(context.playTitle)}" ${context.canPlay ? "" : "disabled"}>
-        <i class="fas fa-play"></i><span>Play</span>
-      </button>
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-next" title="${poEscapeHtml(context.nextTitle)}" aria-label="${poEscapeHtml(context.nextTitle)}" ${context.canNext ? "" : "disabled"}>
-        <i class="fas fa-step-forward"></i><span>Next</span>
-      </button>
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-stop" title="${poEscapeHtml(context.stopTitle)}" aria-label="${poEscapeHtml(context.stopTitle)}" ${context.canStop ? "" : "disabled"}>
-        <i class="fas fa-stop"></i><span>Stop</span>
-      </button>
-    </div>
-  `;
-}
-
-function syncSidebarLauncherAudioUi(launcher) {
-  if (!launcher) return;
-  let audioSection = launcher.querySelector("[data-po-sidebar-launcher-audio]");
-  if (!canAccessAllPlayerOps()) {
-    audioSection?.remove();
-    return;
-  }
-  if (!audioSection) {
-    audioSection = document.createElement("section");
-    audioSection.classList.add("po-sidebar-launcher-audio");
-    audioSection.dataset.poSidebarLauncherAudio = "1";
-    launcher.appendChild(audioSection);
-  }
-  audioSection.innerHTML = buildSidebarLauncherAudioMarkup();
-}
-
-function refreshLauncherAudioUi() {
-  const launcher = document.getElementById("po-sidebar-launcher");
-  if (!launcher) return;
-  syncSidebarLauncherAudioUi(launcher);
-}
-
-function handleSidebarLauncherAudioPresetSelection(element) {
-  selectAudioMixPreset(element);
-  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
-}
-
-async function handleLauncherAudioTransportAction(action) {
-  const command = String(action ?? "").trim();
-  if (!command) return;
-  try {
-    clearAudioLibraryError();
-    if (command === "launcher-audio-play") {
-      const catalog = getAudioLibraryCatalog();
-      const selectedPreset = getSelectedAudioMixPreset();
-      const playback = getAudioMixPlaybackState(catalog);
-      const isSelectedPresetActive = String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
-      if (playback.isPaused && playback.hasQueue && isSelectedPresetActive) {
-        await toggleAudioMixPlayback();
-      } else {
-        await playAudioMixPresetById(selectedPreset.id);
-      }
-    } else if (command === "launcher-audio-next") {
-      await playNextAudioMixTrack();
-    } else if (command === "launcher-audio-stop") {
-      await stopAudioMixPlayback();
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error ?? "Unknown error");
-    setAudioLibraryError(message);
-    const prefix = command === "launcher-audio-stop" ? "Audio stop failed" : "Audio mix failed";
-    ui.notifications?.warn(`${prefix}: ${message}`);
-  } finally {
-    refreshLauncherAudioUi();
-  }
-}
-
-function handleLauncherAction(action, context = {}) {
-  const tabId = getMainTabIdFromAction(action);
-  if (tabId) {
-    logUiDebug("launcher", "opening launcher action", {
-      action,
-      tabId,
-      template: getTemplateForMainTab(tabId)
-    });
-    try {
-      openMainTab(tabId, { force: true });
-    } catch (error) {
-      console.error(`${MODULE_ID}: launcher action failed`, { action, error });
-      ui.notifications?.error(`Party Operations failed to open ${tabId}. Check console for details.`);
-    }
-    return;
-  }
-  if (action === "lock") {
-    const launcher = context.launcherElement ?? document.getElementById("po-floating-launcher");
-    if (!launcher) return;
-    const current = clampFloatingLauncherPosition({
-      left: parseFloat(launcher.style.left || "16"),
-      top: parseFloat(launcher.style.top || "180")
-    }, { lockAware: false });
-    launcher.style.left = `${current.left}px`;
-    launcher.style.top = `${current.top}px`;
-    void saveFloatingLauncherPosition(current);
-    void game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, true);
-    return;
-  }
-  if (action === "unlock") {
-    void game.settings.set(MODULE_ID, SETTINGS.FLOATING_LAUNCHER_LOCKED, false);
-    return;
-  }
-  if (action === "dock-sidebar") {
-    void setLauncherPlacement(LAUNCHER_PLACEMENTS.SIDEBAR);
-    return;
-  }
-  if (action === "dock-floating") {
-    void setLauncherPlacement(LAUNCHER_PLACEMENTS.FLOATING);
-    return;
-  }
-  if (action === "launcher-audio-play" || action === "launcher-audio-next" || action === "launcher-audio-stop") {
-    void handleLauncherAudioTransportAction(action);
-    return;
-  }
-}
-
-function ensureLauncherUi() {
-  let error = null;
-  const placement = getLauncherPlacement();
-  try {
-    if (shouldShowFloatingLauncher()) {
-      ensureClickOpener();
-      ensureFloatingLauncher();
-      ensureLauncherInViewport();
-      scheduleLauncherRecoveryPass();
-    } else {
-      removeClickOpener();
-      removeFloatingLauncher();
-    }
-
-    if (shouldShowSidebarLauncher()) ensureSidebarLauncher();
-    else removeSidebarLauncher();
-  } catch (caught) {
-    error = caught;
-    console.error(`${MODULE_ID}: ensureLauncherUi failed`, caught);
-  }
-
-  const clickOpener = document.getElementById("po-click-opener");
-  const floatingLauncher = document.getElementById("po-floating-launcher");
-  const sidebarLauncher = document.getElementById("po-sidebar-launcher");
-  return {
-    ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher) && !error,
-    placement,
-    clickOpener: Boolean(clickOpener),
-    floatingLauncher: Boolean(floatingLauncher),
-    sidebarLauncher: Boolean(sidebarLauncher),
-    error: error ? String(error?.message ?? error) : null
-  };
-}
-
-function getLauncherStatusSnapshot() {
-  const clickOpener = document.getElementById("po-click-opener");
-  const floatingLauncher = document.getElementById("po-floating-launcher");
-  const sidebarLauncher = document.getElementById("po-sidebar-launcher");
-  const sidebarLauncherHost = sidebarLauncher?.parentElement ?? getSidebarLauncherHost();
-  const placement = getLauncherPlacement();
-  return {
-    ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher),
-    placement,
-    clickOpener: Boolean(clickOpener),
-    floatingLauncher: Boolean(floatingLauncher),
-    sidebarLauncher: Boolean(sidebarLauncher),
-    sidebarPresent: Boolean(document.getElementById("sidebar")),
-    sidebarLauncherHostId: String(sidebarLauncherHost?.id ?? "").trim() || null,
-    sidebarLauncherHostClass: String(sidebarLauncherHost?.className ?? "").trim() || null,
-    moduleId: MODULE_ID
-  };
-}
-
-async function forceLauncherRecovery(reason = "unknown") {
-  let status = ensureLauncherUi();
-  if (status?.ok) return { ...status, recovered: false, reason };
-
-  try {
-    await setLauncherPlacement(LAUNCHER_PLACEMENTS.BOTH);
-  } catch {
-    // Keep trying even if setting write fails.
-  }
-
-  try {
-    await resetFloatingLauncherPosition();
-  } catch {
-    // Keep trying even if reset fails.
-  }
-
-  removeClickOpener();
-  removeFloatingLauncher();
-  removeSidebarLauncher();
-
-  ensureClickOpener();
-  ensureFloatingLauncher();
-  ensureSidebarLauncher();
-  ensureLauncherInViewport();
-
-  status = ensureLauncherUi();
-  const snapshot = getLauncherStatusSnapshot();
-  if (!status?.ok && !snapshot.ok) {
-    console.warn(`${MODULE_ID}: launcher recovery failed`, { reason, status, snapshot });
-  }
-
-  return {
-    ...status,
-    recovered: Boolean(status?.ok),
-    reason,
-    snapshot
-  };
-}
+const {
+  getLauncherPlacement,
+  setLauncherPlacement,
+  isFloatingLauncherLocked,
+  resetFloatingLauncherPosition,
+  refreshLauncherAudioUi,
+  getLauncherStatusSnapshot,
+  forceLauncherRecovery
+} = launcherUiController;
 
 function buildPartyOperationsApi() {
-  const api = {
-    restWatch: () => openMainTab("rest-watch", { force: true }),
-    marchingOrder: () => openMainTab("marching-order", { force: true }),
-    operations: () => openMainTab("operations", { force: true }),
-    gm: () => openMainTab("gm", { force: true }),
-    gmMerchants: () => openGmMerchantsPage({ force: true }),
-    gmAudio: () => openGmAudioPage({ force: true }),
-    refreshAll: () => refreshOpenApps(),
-    getOperations: () => foundry.utils.deepClone(getOperationsLedger()),
-    gatherResources: (options = {}) => runGatherResourcesAction(options),
-    applyUpkeep: () => applyOperationalUpkeep(),
-    getInjuryRecovery: () => foundry.utils.deepClone(getInjuryRecoveryState()),
-    applyRecoveryCycle: () => applyRecoveryCycle(),
-    runSessionAutopilot: () => runSessionAutopilot(),
-    undoSessionAutopilot: () => undoLastSessionAutopilot(),
-    syncInjuryCalendar: () => syncAllInjuriesToSimpleCalendar(),
-    syncIntegrations: () => scheduleIntegrationSync("api"),
-    settingsHub: () => openPartyOperationsSettingsHub({ force: true }),
-    getConfig: () => foundry.utils.deepClone(getModuleConfigSnapshot()),
-    getTypedConfig: () => foundry.utils.deepClone(getPartyOpsConfigSetting()),
-    saveTypedConfig: (input) => savePartyOpsConfigSetting(input),
-    getInventoryHookMode: () => getInventoryHookModeSetting(),
-    setInventoryHookMode: (mode) => setInventoryHookMode(mode),
-    getLauncherPlacement: () => getLauncherPlacement(),
-    setLauncherPlacement: (placement) => setLauncherPlacement(placement),
-    getLootSourceConfig: () => foundry.utils.deepClone(getLootSourceConfig()),
-    getCrBracket: (cr) => getCrBracket(cr),
-    convertCurrencyToGpEquivalent: (currency) => convertCurrencyToGpEquivalent(currency),
-    rollIndividualTreasure: (cr, creatureCount, options = {}) => foundry.utils.deepClone(rollIndividualTreasure(cr, creatureCount, options)),
-    rollHoardTreasure: (cr, options = {}) => foundry.utils.deepClone(rollHoardTreasure(cr, options)),
-    applyLootTweakers: (result, tweakers = []) => foundry.utils.deepClone(applyLootTweakers(result, tweakers)),
-    summarizeLoot: (result) => summarizeLoot(result),
-    previewLoot: (draft) => generateLootPreviewPayload(draft),
-    generateLootFromPackIds: (packIds, input, options) => generateLootFromPackIds(packIds, input, options),
-    getLootPreviewResult: () => foundry.utils.deepClone(getLootPreviewResult()),
-    diagnoseWorldData: (options) => diagnoseWorldData(options),
-    repairWorldData: () => diagnoseWorldData({ repair: true }),
-    resetLauncherPosition: () => resetFloatingLauncherPosition(),
-    ensureLauncher: () => ensureLauncherUi(),
-    showLauncher: () => ensureLauncherUi(),
-    forceLauncherRecovery: (reason) => forceLauncherRecovery(reason),
-    launcherStatus: () => getLauncherStatusSnapshot(),
-    audio: {
-      open: () => openGmAudioPage({ force: true }),
-      getCatalog: () => foundry.utils.deepClone(getAudioLibraryCatalog()),
-      getCatalogWithHidden: () => foundry.utils.deepClone(getAudioLibraryCatalog({ includeHidden: true })),
-      scan: (options = {}) => scanAudioLibraryCatalog(options),
-      clear: () => clearAudioLibraryCatalog(),
-      hideTrack: (trackId) => hideAudioLibraryTrack(trackId),
-      restoreTrack: (trackId) => restoreHiddenAudioLibraryTrack(trackId),
-      restoreAllTracks: () => restoreAllHiddenAudioLibraryTracks(),
-      getMixPresets: () => foundry.utils.deepClone(getAllAudioMixPresets()),
-      createMixPreset: () => createAudioMixPresetFromSelection(),
-      deleteSelectedMixPreset: () => deleteSelectedAudioMixPreset(),
-      addTrackToSelectedMixPreset: (trackId) => addTrackToSelectedAudioMixPreset(trackId),
-      queueTrackNext: (trackId) => queueSelectedTrackNext({ dataset: { trackId } }),
-      moveTrackToIndexInSelectedMixPreset: (trackId, targetIndex) => moveTrackToIndexInSelectedAudioMixPreset(trackId, targetIndex),
-      moveTrackToTopInSelectedMixPreset: (trackId) => moveTrackToTopInSelectedAudioMixPreset(trackId),
-      moveTrackInSelectedMixPreset: (trackId, direction) => moveTrackWithinSelectedAudioMixPreset(trackId, direction),
-      removeTrackFromSelectedMixPreset: (trackId) => removeTrackFromSelectedAudioMixPreset(trackId),
-      playMix: (presetId) => playAudioMixPresetById(presetId ?? getSelectedAudioMixPreset().id),
-      nextTrack: () => playNextAudioMixTrack(),
-      restartTrack: () => restartCurrentAudioMixTrack(),
-      stopMix: () => stopAudioMixPlayback(),
-      pick: ({ kind = "all", usage = "all", search = "" } = {}) => {
-        const catalog = getAudioLibraryCatalog();
-        const normalizedKind = normalizeAudioLibraryKind(kind);
-        const normalizedUsage = normalizeAudioLibraryUsage(usage);
-        const normalizedSearch = normalizeAudioLibrarySearch(search);
-        const candidates = catalog.items.filter((item) => {
-          if (normalizedKind !== "all" && item.kind !== normalizedKind) return false;
-          if (normalizedUsage !== "all" && item.usage !== normalizedUsage) return false;
-          if (!normalizedSearch) return true;
-          const haystack = `${item.name} ${item.category} ${item.subcategory} ${item.tags.join(" ")}`.toLowerCase();
-          return haystack.includes(normalizedSearch);
-        });
-        if (candidates.length <= 0) return null;
-        return foundry.utils.deepClone(candidates[Math.floor(Math.random() * candidates.length)]);
-      }
-    },
-    apiStatus: () => ({
-      moduleActive: Boolean(game.modules?.get?.(MODULE_ID)?.active),
-      hasGameApi: Boolean(game.partyOperations || game.partyops),
-      hasModuleApi: Boolean(game.modules?.get?.(MODULE_ID)?.api),
-      hasGlobalApi: Boolean(globalThis.partyOperations || globalThis.PartyOperations || globalThis.partyops),
-      launcher: ensureLauncherUi()
-    })
-  };
-
-  // Backward-compatible aliases for older macro snippets.
-  api.openRestWatch = api.restWatch;
-  api.openMarchingOrder = api.marchingOrder;
-  api.openOperations = api.operations;
-  api.openGM = api.gm;
-  api.openGmMerchants = api.gmMerchants;
-  api.openGmAudio = api.gmAudio;
-  api.openSettingsHub = api.settingsHub;
-  api.gather = api.gatherResources;
-  api.launcher = api.ensureLauncher;
-
-  return api;
+  return buildPartyOperationsApiSurface({
+    foundryRef: foundry,
+    gameRef: game,
+    globalRef: globalThis,
+    moduleId: MODULE_ID,
+    ensureLauncherUi,
+    openMainTab,
+    openGmMerchantsPage,
+    openGmAudioPage,
+    refreshOpenApps,
+    getOperationsLedger,
+    runGatherResourcesAction,
+    applyOperationalUpkeep,
+    getInjuryRecoveryState,
+    applyRecoveryCycle,
+    runSessionAutopilot,
+    undoLastSessionAutopilot,
+    syncAllInjuriesToSimpleCalendar,
+    scheduleIntegrationSync,
+    openPartyOperationsSettingsHub,
+    getModuleConfigSnapshot,
+    getPartyOpsConfigSetting,
+    savePartyOpsConfigSetting,
+    getInventoryHookModeSetting,
+    setInventoryHookMode,
+    getLauncherPlacement,
+    setLauncherPlacement,
+    getLootSourceConfig,
+    getCrBracket,
+    convertCurrencyToGpEquivalent,
+    rollIndividualTreasure,
+    rollHoardTreasure,
+    applyLootTweakers,
+    summarizeLoot,
+    generateLootPreviewPayload,
+    generateLootFromPackIds,
+    getLootPreviewResult,
+    diagnoseWorldData,
+    resetFloatingLauncherPosition,
+    forceLauncherRecovery,
+    getLauncherStatusSnapshot,
+    getAudioLibraryCatalog,
+    scanAudioLibraryCatalog,
+    clearAudioLibraryCatalog,
+    hideAudioLibraryTrack,
+    restoreHiddenAudioLibraryTrack,
+    restoreAllHiddenAudioLibraryTracks,
+    getAllAudioMixPresets,
+    createAudioMixPresetFromSelection,
+    deleteSelectedAudioMixPreset,
+    addTrackToSelectedAudioMixPreset,
+    queueSelectedTrackNext,
+    moveTrackToIndexInSelectedAudioMixPreset,
+    moveTrackToTopInSelectedAudioMixPreset,
+    moveTrackWithinSelectedAudioMixPreset,
+    removeTrackFromSelectedAudioMixPreset,
+    playAudioMixPresetById,
+    getSelectedAudioMixPreset,
+    playNextAudioMixTrack,
+    restartCurrentAudioMixTrack,
+    stopAudioMixPlayback,
+    normalizeAudioLibraryKind,
+    normalizeAudioLibraryUsage,
+    normalizeAudioLibrarySearch
+  });
 }
 
 function registerPartyOperationsApi() {
-  const api = buildPartyOperationsApi();
-  return attachModuleApi({
+  return registerPartyOperationsApiSurface({
+    attachModuleApi,
     moduleId: MODULE_ID,
-    api,
-    onModuleApiAttachFailure: (error, defineError) => {
-      bootstrapLogger.warn("unable to attach api on module reference", error, defineError);
-    }
+    api: buildPartyOperationsApi(),
+    logger: bootstrapLogger
   });
-}
-
-function ensureClickOpener() {
-  let opener = document.getElementById("po-click-opener");
-  if (!opener) {
-    opener = document.createElement("button");
-    opener.id = "po-click-opener";
-    opener.type = "button";
-    opener.setAttribute("title", "Open Party Operations");
-    opener.setAttribute("aria-label", "Open Party Operations");
-    opener.innerHTML = '<i class="fas fa-compass"></i>';
-    opener.addEventListener("click", () => {
-      ensureFloatingLauncher();
-      handleLauncherAction("rest");
-    });
-    document.body.appendChild(opener);
-  }
-
-  applyClickOpenerInlineStyles(opener);
-}
-
-function ensureSidebarLauncher() {
-  const sidebar = document.getElementById("sidebar");
-  const host = getSidebarLauncherHost();
-  if (!sidebar || !host) return null;
-
-  let launcher = document.getElementById("po-sidebar-launcher");
-  if (!launcher) {
-    launcher = document.createElement("section");
-    launcher.id = "po-sidebar-launcher";
-    launcher.classList.add("po-sidebar-launcher");
-  }
-
-  if (launcher.parentElement !== host) {
-    if (host === sidebar) host.appendChild(launcher);
-    else host.prepend(launcher);
-  } else if (host !== sidebar && host.firstElementChild !== launcher) {
-    host.prepend(launcher);
-  }
-
-  const setLauncherMarkup = (target) => {
-    const buttonsMarkup = PO_SIDEBAR_VIEW_ITEMS
-      .filter((item) => !item.gmOnly || canAccessGmPage())
-      .map((item) => {
-        const gmClass = item.gmOnly ? " po-sidebar-gm" : "";
-        return `
-        <button type="button" class="po-sidebar-btn${gmClass}" data-action="${item.action}" data-tab-id="${item.id}" data-target="${item.target}" title="${item.title}" aria-label="${item.title}">
-          <i class="${item.icon}"></i><span>${item.label}</span>
-        </button>`;
-      })
-      .join("");
-
-    target.innerHTML = `
-      <header class="po-sidebar-launcher-header">
-        <h4 class="po-sidebar-launcher-title">Party Operations</h4>
-        <button type="button" class="po-sidebar-btn po-sidebar-dock" data-action="dock-floating" title="Dock launcher on screen" aria-label="Dock launcher on screen">
-          <i class="fas fa-external-link-alt"></i>
-        </button>
-      </header>
-      <div class="po-sidebar-launcher-grid">
-        ${buttonsMarkup}
-      </div>
-      <section class="po-sidebar-launcher-audio" data-po-sidebar-launcher-audio></section>
-    `;
-    logUiDebug("sidebar-launcher", "rebuilt sidebar launcher", {
-      hostId: String(host?.id ?? "").trim() || null,
-      hostClass: String(host?.className ?? "").trim() || null,
-      items: PO_SIDEBAR_VIEW_ITEMS
-        .filter((item) => !item.gmOnly || canAccessGmPage())
-        .map((item) => ({ id: item.id, action: item.action, target: item.target }))
-    });
-  };
-
-  const hasRestBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="rest-watch"]'));
-  const hasOperationsBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="operations"]'));
-  const hasMarchBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="marching-order"]'));
-  const hasGmBtn = !canAccessGmPage() || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
-  const hasDockBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-action="dock-floating"]'));
-  if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
-    setLauncherMarkup(launcher);
-  }
-
-  if (launcher.dataset.poSidebarLauncherBound !== "1") {
-    launcher.dataset.poSidebarLauncherBound = "1";
-    launcher.addEventListener("click", (event) => {
-      const button = event.target?.closest(".po-sidebar-btn");
-      if (!button) return;
-      const action = button.dataset.action;
-      if (!action) return;
-      logUiDebug("sidebar-launcher", "sidebar launcher click", {
-        action,
-        tabId: button.dataset.tabId,
-        target: button.dataset.target,
-        template: getTemplateForMainTab(button.dataset.tabId)
-      });
-      handleLauncherAction(action);
-    });
-    launcher.addEventListener("change", (event) => {
-      const select = event.target?.closest(".po-sidebar-launcher-audio-select");
-      if (!select) return;
-      handleSidebarLauncherAudioPresetSelection(select);
-    });
-  }
-
-  const gmButton = launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]');
-  if (gmButton) gmButton.style.display = canAccessGmPage() ? "" : "none";
-  syncSidebarLauncherAudioUi(launcher);
-  return launcher;
-}
-
-function ensureFloatingLauncher() {
-  let launcher = document.getElementById("po-floating-launcher");
-
-  const setLauncherMarkup = (target) => {
-    target.innerHTML = `
-      <div class="po-floating-handle" title="Drag to move" aria-label="Drag to move"><i class="fas fa-grip-lines-vertical"></i></div>
-      <button type="button" class="po-floating-btn" data-action="rest" title="Open Rest Watch" aria-label="Open Rest Watch">
-        <i class="fas fa-moon"></i>
-      </button>
-      <button type="button" class="po-floating-btn" data-action="operations" title="Open Operations" aria-label="Open Operations">
-        <i class="fas fa-clipboard-list"></i>
-      </button>
-      <button type="button" class="po-floating-btn" data-action="march" title="Open Marching Order" aria-label="Open Marching Order"><i class="fas fa-arrow-up"></i></button>
-      <button type="button" class="po-floating-btn po-floating-gm" data-action="gm" title="Open GM Section" aria-label="Open GM Section">
-        <i class="fas fa-user-shield"></i>
-      </button>
-      <button type="button" class="po-floating-btn po-floating-dock" data-action="dock-sidebar" title="Dock launcher in sidebar" aria-label="Dock launcher in sidebar">
-        <i class="fas fa-columns"></i>
-      </button>
-      <button type="button" class="po-floating-btn po-floating-lock" data-action="lock" title="Lock launcher" aria-label="Lock launcher">
-        <i class="fas fa-lock"></i>
-      </button>
-      <button type="button" class="po-floating-btn po-floating-unlock" data-action="unlock" title="Unlock launcher" aria-label="Unlock launcher">
-        <i class="fas fa-lock-open"></i>
-      </button>
-    `;
-  };
-
-  if (!launcher) {
-    launcher = document.createElement("div");
-    launcher.id = "po-floating-launcher";
-    launcher.classList.add("po-floating-launcher");
-    setLauncherMarkup(launcher);
-    document.body.appendChild(launcher);
-
-    launcher.addEventListener("click", (event) => {
-      const button = event.target?.closest(".po-floating-btn");
-      if (!button) return;
-      const action = button.dataset.action;
-      if (!action) return;
-      handleLauncherAction(action, { launcherElement: launcher });
-    });
-
-    const handle = launcher.querySelector(".po-floating-handle");
-    let dragging = false;
-    let startX = 0;
-    let startY = 0;
-    let originLeft = 0;
-    let originTop = 0;
-    let lastLockedDragNoticeAt = 0;
-
-    const onMove = (event) => {
-      if (!dragging) return;
-      const next = clampFloatingLauncherPosition({
-        left: originLeft + (event.clientX - startX),
-        top: originTop + (event.clientY - startY)
-      });
-      launcher.style.left = `${next.left}px`;
-      launcher.style.top = `${next.top}px`;
-    };
-
-    const onUp = async () => {
-      if (!dragging) return;
-      dragging = false;
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-      await saveFloatingLauncherPosition({
-        left: parseFloat(launcher.style.left || String(getFloatingLauncherLeftInset())),
-        top: parseFloat(launcher.style.top || "180")
-      });
-    };
-
-    const startDrag = (event) => {
-      if (isFloatingLauncherLocked()) {
-        const now = Date.now();
-        if (now - lastLockedDragNoticeAt > 1500) {
-          lastLockedDragNoticeAt = now;
-          ui.notifications?.info("Launcher position is locked. Click unlock to move it.");
-        }
-        event.preventDefault();
-        return;
-      }
-      if (event.target?.closest(".po-floating-btn")) return;
-      if (event.button !== undefined && event.button !== 0) return;
-      dragging = true;
-      startX = event.clientX;
-      startY = event.clientY;
-      originLeft = parseFloat(launcher.style.left || String(getFloatingLauncherLeftInset()));
-      originTop = parseFloat(launcher.style.top || "180");
-      document.addEventListener("pointermove", onMove);
-      document.addEventListener("pointerup", onUp);
-      event.preventDefault();
-    };
-
-    handle?.addEventListener("pointerdown", startDrag);
-    launcher.addEventListener("pointerdown", startDrag);
-
-    window.addEventListener("resize", () => {
-      const clamped = clampFloatingLauncherPosition({
-        left: parseFloat(launcher.style.left || String(getFloatingLauncherLeftInset())),
-        top: parseFloat(launcher.style.top || "180")
-      });
-      launcher.style.left = `${clamped.left}px`;
-      launcher.style.top = `${clamped.top}px`;
-    });
-  } else {
-    const hasRestBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="rest"]'));
-    const hasOperationsBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="operations"]'));
-    const hasMarchBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="march"]'));
-    const hasGmBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="gm"]'));
-    const hasDockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="dock-sidebar"]'));
-    const hasLockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="lock"]'));
-    const hasUnlockBtn = Boolean(launcher.querySelector('.po-floating-btn[data-action="unlock"]'));
-    if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn || !hasLockBtn || !hasUnlockBtn) {
-      setLauncherMarkup(launcher);
-    }
-  }
-
-  const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
-  if (gmButton) gmButton.style.display = canAccessGmPage() ? "" : "none";
-
-  const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
-  applyFloatingLauncherInlineStyles(launcher, pos);
-  applyFloatingLauncherLockUi(launcher, isFloatingLauncherLocked());
 }
 
 function getRollValidator() {
@@ -44436,7 +43625,7 @@ async function diagnoseWorldData(options = {}) {
 }
 
 function setupPartyOperationsUI() {
-  return setupLegacyPartyOperationsUi({
+  return setupPartyOperationsUi({
     openMainTab,
     canAccessAllPlayerOps,
     canAccessGmPage,
@@ -44447,7 +43636,7 @@ function setupPartyOperationsUI() {
   });
 }
 
-const registerPartyOpsHooks = createLegacyPartyOpsHookRegistrar({
+const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   moduleId: MODULE_ID,
   settings: SETTINGS,
   autoUpkeepPromptStates: AUTO_UPKEEP_PROMPT_STATES,
@@ -44472,8 +43661,8 @@ const registerPartyOpsHooks = createLegacyPartyOpsHookRegistrar({
   foundryRef: foundry
 });
 
-export function installLegacyAppBehaviors() {
-  return installLegacyAppBehaviorsSurface({
+export function installPartyOperationsAppBehaviors() {
+  return installPartyOperationsAppBehaviorsSurface({
     installRememberedWindowPositionBehavior,
     appClasses: [
       BaseStatefulPageApp,
@@ -44487,8 +43676,8 @@ export function installLegacyAppBehaviors() {
   });
 }
 
-export function buildLegacyPartyOperationsInitConfig() {
-  return buildLegacyPartyOperationsInitConfigSurface({
+export function buildPartyOperationsInitConfig() {
+  return buildPartyOperationsInitConfigSurface({
     registerPartyOperationsApi,
     registerFeatureModules,
     preloadPartyOperationsPartialTemplates,
@@ -44533,12 +43722,12 @@ export function buildLegacyPartyOperationsInitConfig() {
 }
 
 export function onPartyOperationsInit() {
-  installLegacyAppBehaviors();
-  runPartyOperationsInit(buildLegacyPartyOperationsInitConfig());
+  installPartyOperationsAppBehaviors();
+  runPartyOperationsInit(buildPartyOperationsInitConfig());
 }
 
-export function buildLegacyPartyOperationsReadyConfig() {
-  return buildLegacyPartyOperationsReadyConfigSurface({
+export function buildPartyOperationsReadyConfig() {
+  return buildPartyOperationsReadyConfigSurface({
     registerPartyOperationsApi,
     ensureSettingsRegistered: ensurePartyOpsSettingsRegistered,
     validatePartyOperationsTemplates,
@@ -44566,10 +43755,39 @@ export function buildLegacyPartyOperationsReadyConfig() {
 }
 
 export function onPartyOperationsReady() {
-  runPartyOperationsReady(buildLegacyPartyOperationsReadyConfig());
+  runPartyOperationsReady(buildPartyOperationsReadyConfig());
 }
 
-const handlePartyOperationsSocketMessage = createLegacyPartyOperationsSocketMessageHandler({
+const {
+  applyPlayerMerchantBarterRequest,
+  applyPlayerMerchantTradeRequest,
+  applyPlayerLootClaimRequest,
+  applyPlayerLootCurrencyClaimRequest,
+  applyPlayerLootVouchRequest
+} = createPlayerRequestHandlers({
+  resolveRequester,
+  sanitizeSocketIdentifier,
+  ensureMerchantsState,
+  getOperationsLedger,
+  resolveMerchantSettlementForUser,
+  clampSocketText,
+  resolveMerchantBarterForUser,
+  emitModuleSocket,
+  normalizeMerchantSettlementSelection,
+  socketChannel: SOCKET_CHANNEL,
+  getMerchantBarterResolutionKey,
+  getMerchantBarterResolutionEntryByKey,
+  applyMerchantTradeForUser,
+  clearMerchantBarterResolutionEntryByKey,
+  applyLootClaimForUser,
+  postLootItemClaimToChat,
+  applyLootCurrencyClaimForUser,
+  postLootCurrencyClaimToChat,
+  applyLootVouchForUser,
+  uiRef: ui
+});
+
+const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
   game,
   applyPlayerGatherRequest,
   promptLocalGatherCheckRoll,
@@ -44650,148 +43868,6 @@ const handlePartyOperationsSocketMessage = createLegacyPartyOperationsSocketMess
   applyPlayerLootVouchRequest
 });
 
-async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  if (!merchantId || !actorId) return;
-  const merchants = ensureMerchantsState(getOperationsLedger());
-  const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
-    allowStoredPreference: false
-  });
-
-  const resolved = await resolveMerchantBarterForUser(requester, { merchantId, actorId, settlement });
-  const resolutionPayload = resolved?.ok && resolved?.resolution
-    ? {
-      applied: true,
-      source: String(resolved.resolution?.source ?? "resolved"),
-      ability: String(resolved.resolution?.ability ?? "cha"),
-      abilityLabel: String(resolved.resolution?.abilityLabel ?? "Charisma"),
-      checkTotal: Number(resolved.resolution?.checkTotal ?? 0),
-      margin: Number(resolved.resolution?.margin ?? 0),
-      success: Boolean(resolved.resolution?.success),
-      delta: Number(resolved.resolution?.delta ?? 0),
-      buyMarkupDelta: Number(resolved.resolution?.buyMarkupDelta ?? 0),
-      sellRateDelta: Number(resolved.resolution?.sellRateDelta ?? 0),
-      createdAt: Number(resolved.resolution?.createdAt ?? Date.now())
-    }
-    : null;
-
-  emitModuleSocket({
-    type: "ops:merchant-barter-result",
-    userId: String(requester?.id ?? ""),
-    merchantId,
-    actorId,
-    settlement: normalizeMerchantSettlementSelection(resolved?.settlement ?? settlement),
-    ok: Boolean(resolved?.ok),
-    summary: resolved?.ok
-      ? String(resolved?.summary ?? "Barter resolved.")
-      : String(resolved?.message ?? "Barter request failed."),
-    resolution: resolutionPayload
-  }, { channel: SOCKET_CHANNEL });
-
-  if (!resolved?.ok) {
-    ui.notifications?.warn(`Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`);
-    return;
-  }
-  ui.notifications?.info(`Resolved barter for ${requester.name}: ${resolved.summary}`);
-}
-
-async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  if (!merchantId || !actorId) return;
-  const merchants = ensureMerchantsState(getOperationsLedger());
-  const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
-    allowStoredPreference: false
-  });
-  const normalizeLines = (raw) => {
-    const source = Array.isArray(raw) ? raw : [];
-    const rows = [];
-    for (const entry of source) {
-      const itemId = sanitizeSocketIdentifier(entry?.itemId, { maxLength: 64 });
-      const qtyRaw = Number(entry?.qty ?? entry?.quantity ?? 0);
-      const qty = Number.isFinite(qtyRaw) ? Math.max(0, Math.min(999, Math.floor(qtyRaw))) : 0;
-      if (!itemId || qty <= 0) continue;
-      rows.push({ itemId, qty });
-    }
-    return rows;
-  };
-  const tradePayload = {
-    merchantId,
-    actorId,
-    settlement,
-    buyItems: normalizeLines(message?.buyItems),
-    sellItems: normalizeLines(message?.sellItems)
-  };
-  const barterKey = getMerchantBarterResolutionKey({
-    userId: String(requester?.id ?? "").trim(),
-    actorId,
-    merchantId,
-    settlement
-  });
-  const cachedBarterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
-  if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
-  const outcome = await applyMerchantTradeForUser(requester, tradePayload);
-  if (!outcome.ok) {
-    ui.notifications?.warn(`Merchant trade failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
-    return;
-  }
-  clearMerchantBarterResolutionEntryByKey(barterKey);
-  ui.notifications?.info(`${requester.name} completed merchant trade for ${outcome.actorName}.`);
-}
-
-async function applyPlayerLootClaimRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
-  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-  if (!actorId || !itemId) return;
-  const outcome = await applyLootClaimForUser(requester, actorId, itemId, runId);
-  if (!outcome.ok) {
-    ui.notifications?.warn(`Loot claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
-    return;
-  }
-  await postLootItemClaimToChat(outcome);
-  ui.notifications?.info(`${requester.name} claimed ${outcome.itemName} for ${outcome.actorName}.`);
-}
-
-async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-  if (!actorId) return;
-  const outcome = await applyLootCurrencyClaimForUser(requester, actorId, runId);
-  if (!outcome.ok) {
-    ui.notifications?.warn(`Currency claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
-    return;
-  }
-  await postLootCurrencyClaimToChat(outcome);
-  const s = outcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
-  ui.notifications?.info(`${requester.name} claimed currency for ${outcome.actorName}: ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
-}
-
-async function applyPlayerLootVouchRequest(message, requesterRef = null) {
-  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
-  if (!requester) return;
-  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-  const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
-  const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-  if (!actorId || !itemId) return;
-  const shouldVouch = message?.shouldVouch !== false;
-  const outcome = await applyLootVouchForUser(requester, actorId, itemId, shouldVouch, runId);
-  if (!outcome.ok) {
-    ui.notifications?.warn(`Loot voucher failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
-    return;
-  }
-  ui.notifications?.info(`${requester.name} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
-}
-
 function toggleCardNotes(element) {
   const entry = element?.closest(".po-watch-entry");
   const notes = entry?.querySelector(".po-notes");
@@ -44846,55 +43922,26 @@ async function toggleCampfireAll() {
   ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
 }
 
+const refreshOpenAppsController = createOpenAppRefresher({
+  normalizeRefreshScopeList,
+  getRefreshTargetWindowIds,
+  refreshableWindowIds: PARTY_OPS_REFRESHABLE_WINDOW_IDS,
+  getKnownInstances: () => getPartyOpsAppInstances(REFRESH_KNOWN_INSTANCE_KEYS),
+  getUiWindows: () => ui.windows,
+  getAppWindowId,
+  appHasFocusedTypingInput,
+  logUiDebug,
+  captureWindowState,
+  rememberWindowState: (app, windowState) => pendingWindowRestore.set(app, windowState),
+  renderAppWithPreservedState,
+  captureCanvasViewState,
+  refreshLauncherAudioUi,
+  queueCanvasViewRestore,
+  requestAnimationFrameFn: requestAnimationFrame
+});
+
 function refreshOpenApps(options = {}) {
-  const scopes = normalizeRefreshScopeList(options?.scopes ?? options?.scope);
-  if (scopes.length <= 0 || options?.all === true) {
-    refreshOpenAppsQueueAll = true;
-  } else {
-    for (const scope of scopes) refreshOpenAppsScopeQueue.add(scope);
-  }
-
-  if (refreshOpenAppsQueued) return;
-  refreshOpenAppsQueued = true;
-  requestAnimationFrame(() => {
-    refreshOpenAppsQueued = false;
-    const targetIds = refreshOpenAppsQueueAll
-      ? new Set(PARTY_OPS_REFRESHABLE_WINDOW_IDS)
-      : getRefreshTargetWindowIds(Array.from(refreshOpenAppsScopeQueue));
-    refreshOpenAppsQueueAll = false;
-    refreshOpenAppsScopeQueue.clear();
-
-    const canvasSnapshot = captureCanvasViewState();
-    const knownInstances = getPartyOpsAppInstances(REFRESH_KNOWN_INSTANCE_KEYS)
-      .filter((app) => app?.element?.isConnected)
-      .filter((app) => targetIds.has(getAppWindowId(app)));
-    const apps = Object.values(ui.windows)
-      .filter((app) => targetIds.has(getAppWindowId(app)));
-    const unique = Array.from(new Set([...apps, ...knownInstances]));
-    for (const app of unique) {
-      // Force re-prepare context and re-render for v12 ApplicationV2
-      if (!app?.render) continue;
-      if (appHasFocusedTypingInput(app)) {
-        logUiDebug("refresh", "skipping rerender for app with focused text input", {
-          appId: String(app?.id ?? app?.options?.id ?? ""),
-          appClass: String(app?.constructor?.name ?? "Application")
-        });
-        continue;
-      }
-      const windowState = captureWindowState(app);
-      if (windowState) {
-        pendingWindowRestore.set(app, windowState);
-      }
-      renderAppWithPreservedState(app, { force: true, parts: ["main"], focus: false }, {
-        preserveCanvas: false
-      });
-    }
-    refreshLauncherAudioUi();
-    queueCanvasViewRestore(canvasSnapshot, {
-      action: "refresh-open-apps",
-      eventType: "refresh"
-    });
-  });
+  return refreshOpenAppsController(options);
 }
 
 function setupRestWatchDragAndDrop(html) {

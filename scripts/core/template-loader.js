@@ -1,4 +1,4 @@
-import { PO_TEMPLATE_MAP } from "../core/window-config.js";
+import { PO_TEMPLATE_MAP } from "./window-config.js";
 
 export const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
   "modules/party-operations/templates/partials/gm-panel-nav.hbs",

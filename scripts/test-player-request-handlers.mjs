@@ -1,0 +1,131 @@
+import assert from "node:assert/strict";
+
+import { createPlayerRequestHandlers } from "./core/player-request-handlers.js";
+
+function buildBaseHandlers(overrides = {}) {
+  const calls = {
+    emitted: [],
+    warns: [],
+    infos: [],
+    barterRequests: [],
+    tradeRequests: [],
+    lootClaims: [],
+    lootCurrencyClaims: [],
+    lootVouches: [],
+    postedItemClaims: [],
+    postedCurrencyClaims: [],
+    clearedBarterKeys: []
+  };
+  const handlers = createPlayerRequestHandlers({
+    resolveRequester: () => ({ id: "user-1", name: "Aria" }),
+    sanitizeSocketIdentifier: (value) => String(value ?? "").trim(),
+    ensureMerchantsState: (ledger) => ledger,
+    getOperationsLedger: () => ({ merchants: true }),
+    resolveMerchantSettlementForUser: () => "waterdeep",
+    clampSocketText: (value) => String(value ?? "").trim(),
+    resolveMerchantBarterForUser: async (_requester, payload) => {
+      calls.barterRequests.push(payload);
+      return {
+        ok: true,
+        settlement: payload.settlement,
+        summary: "Discount secured.",
+        resolution: { checkTotal: 19, success: true }
+      };
+    },
+    emitModuleSocket: (payload, options) => calls.emitted.push({ payload, options }),
+    normalizeMerchantSettlementSelection: (value) => String(value ?? "").trim().toLowerCase(),
+    socketChannel: "module.party-operations",
+    getMerchantBarterResolutionKey: ({ userId, actorId, merchantId, settlement }) => `${userId}:${actorId}:${merchantId}:${settlement}`,
+    getMerchantBarterResolutionEntryByKey: () => null,
+    applyMerchantTradeForUser: async (_requester, payload) => {
+      calls.tradeRequests.push(payload);
+      return { ok: true, actorName: "Borin" };
+    },
+    clearMerchantBarterResolutionEntryByKey: (key) => calls.clearedBarterKeys.push(key),
+    applyLootClaimForUser: async (_requester, actorId, itemId, runId) => {
+      calls.lootClaims.push({ actorId, itemId, runId });
+      return { ok: true, actorName: "Borin", itemName: "Rope" };
+    },
+    postLootItemClaimToChat: async (payload) => calls.postedItemClaims.push(payload),
+    applyLootCurrencyClaimForUser: async (_requester, actorId, runId) => {
+      calls.lootCurrencyClaims.push({ actorId, runId });
+      return { ok: true, actorName: "Borin", share: { pp: 1, gp: 2, sp: 3, cp: 4 } };
+    },
+    postLootCurrencyClaimToChat: async (payload) => calls.postedCurrencyClaims.push(payload),
+    applyLootVouchForUser: async (_requester, actorId, itemId, shouldVouch, runId) => {
+      calls.lootVouches.push({ actorId, itemId, shouldVouch, runId });
+      return { ok: true, itemName: "Rope" };
+    },
+    uiRef: {
+      notifications: {
+        warn: (message) => calls.warns.push(message),
+        info: (message) => calls.infos.push(message)
+      }
+    },
+    ...overrides
+  });
+
+  return { handlers, calls };
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers();
+  await handlers.applyPlayerMerchantBarterRequest({
+    userId: "user-1",
+    merchantId: "merchant-1",
+    actorId: "actor-1",
+    settlement: "Waterdeep"
+  });
+
+  assert.deepEqual(calls.barterRequests, [{ merchantId: "merchant-1", actorId: "actor-1", settlement: "waterdeep" }]);
+  assert.equal(calls.emitted.length, 1);
+  assert.equal(calls.emitted[0].options.channel, "module.party-operations");
+  assert.match(calls.infos[0], /Resolved barter for Aria/);
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers({
+    getMerchantBarterResolutionEntryByKey: () => ({ applied: true, delta: -1 })
+  });
+  await handlers.applyPlayerMerchantTradeRequest({
+    userId: "user-1",
+    merchantId: "merchant-1",
+    actorId: "actor-1",
+    buyItems: [{ itemId: "buy-1", qty: 2 }, { itemId: "", qty: 4 }],
+    sellItems: [{ itemId: "sell-1", quantity: 3 }, { itemId: "sell-2", qty: 0 }]
+  });
+
+  assert.deepEqual(calls.tradeRequests, [{
+    merchantId: "merchant-1",
+    actorId: "actor-1",
+    settlement: "waterdeep",
+    buyItems: [{ itemId: "buy-1", qty: 2 }],
+    sellItems: [{ itemId: "sell-1", qty: 3 }],
+    barterResolution: { applied: true, delta: -1 }
+  }]);
+  assert.deepEqual(calls.clearedBarterKeys, ["user-1:actor-1:merchant-1:waterdeep"]);
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers();
+  await handlers.applyPlayerLootClaimRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1" });
+  await handlers.applyPlayerLootCurrencyClaimRequest({ userId: "user-1", actorId: "actor-1", runId: "run-1" });
+  await handlers.applyPlayerLootVouchRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1", shouldVouch: false });
+
+  assert.deepEqual(calls.lootClaims, [{ actorId: "actor-1", itemId: "item-1", runId: "run-1" }]);
+  assert.equal(calls.postedItemClaims.length, 1);
+  assert.deepEqual(calls.lootCurrencyClaims, [{ actorId: "actor-1", runId: "run-1" }]);
+  assert.equal(calls.postedCurrencyClaims.length, 1);
+  assert.deepEqual(calls.lootVouches, [{ actorId: "actor-1", itemId: "item-1", shouldVouch: false, runId: "run-1" }]);
+  assert.match(calls.infos.at(-1), /removed voucher from Rope/);
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers({
+    applyLootClaimForUser: async () => ({ ok: false, message: "No share available." })
+  });
+  await handlers.applyPlayerLootClaimRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1" });
+  assert.deepEqual(calls.warns, ["Loot claim failed (Aria): No share available."]);
+}
+
+process.stdout.write("player request handlers validation passed\n");

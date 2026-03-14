@@ -10,7 +10,7 @@ export function createPartyOperationsInitHandler({
       try {
         installAppBehaviors();
       } catch (error) {
-        console.warn("party-operations: failed to install legacy app behaviors", error);
+        console.warn("party-operations: failed to install app behaviors", error);
       }
     }
     const config = typeof buildInitConfig === "function" ? buildInitConfig() : {};

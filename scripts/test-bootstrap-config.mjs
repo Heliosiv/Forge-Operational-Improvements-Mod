@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 
 import {
-  buildLegacyPartyOperationsInitConfig,
-  buildLegacyPartyOperationsReadyConfig,
-  createLegacyPartyOpsHookRegistrar,
-  installLegacyAppBehaviors,
-  setupLegacyPartyOperationsUi
-} from "./legacy/bootstrap-surface.js";
+  buildPartyOperationsInitConfig,
+  buildPartyOperationsReadyConfig,
+  createPartyOperationsHookRegistrar,
+  installPartyOperationsAppBehaviors,
+  setupPartyOperationsUi
+} from "./bootstrap/config.js";
 
 {
   const calls = [];
 
-  installLegacyAppBehaviors({
+  installPartyOperationsAppBehaviors({
     installRememberedWindowPositionBehavior(appClass) {
       calls.push(appClass);
     },
@@ -24,9 +24,10 @@ import {
 {
   let payload = null;
 
-  setupLegacyPartyOperationsUi({
+  setupPartyOperationsUi({
     openMainTab: "open",
     canAccessAllPlayerOps: "access",
+    canAccessGmPage: "gm-access",
     ensureLauncherUi: "launcher",
     hideManagedAudioMixPlaylistUi: "hide",
     setTimeoutFn: "timeout",
@@ -40,6 +41,7 @@ import {
   assert.deepEqual(payload, {
     openMainTab: "open",
     canAccessAllPlayerOps: "access",
+    canAccessGmPage: "gm-access",
     ensureLauncherUi: "launcher",
     hideManagedAudioMixPlaylistUi: "hide",
     setTimeoutFn: "timeout",
@@ -50,7 +52,7 @@ import {
 {
   let buildHookModulesPayload = null;
   let createHookRegistrarPayload = null;
-  const registerPartyOpsHooks = createLegacyPartyOpsHookRegistrar({
+  const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
     moduleId: "party-operations",
     settings: { REST_STATE: "restWatchState" },
     buildHookModules(payload) {
@@ -75,7 +77,7 @@ import {
 }
 
 {
-  const config = buildLegacyPartyOperationsInitConfig({
+  const config = buildPartyOperationsInitConfig({
     registerPartyOperationsApi: "api",
     registerFeatureModules: "features",
     preloadPartyOperationsPartialTemplates: "preload",
@@ -120,7 +122,7 @@ import {
 }
 
 {
-  const config = buildLegacyPartyOperationsReadyConfig({
+  const config = buildPartyOperationsReadyConfig({
     registerPartyOperationsApi: "api",
     ensureSettingsRegistered: "ensure-settings",
     validatePartyOperationsTemplates: "validate",

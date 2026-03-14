@@ -1,49 +1,48 @@
 import { createPartyOperationsInitHandler } from "./init.js";
 import { createPartyOperationsReadyHandler } from "./ready.js";
 
-export function createLegacyBootstrapLoader(importLegacyModule = () => import("../legacy/bootstrap-bridge.js")) {
-  let legacyBootstrapModulePromise = null;
+export function createPartyOperationsBootstrapLoader(importBootstrapModule = () => import("../party-operations.js")) {
+  let bootstrapModulePromise = null;
 
-  return async function loadLegacyBootstrapModule() {
-    legacyBootstrapModulePromise ??= Promise.resolve().then(() => importLegacyModule());
-    return legacyBootstrapModulePromise;
+  return async function loadBootstrapModule() {
+    bootstrapModulePromise ??= Promise.resolve().then(() => importBootstrapModule());
+    return bootstrapModulePromise;
   };
 }
 
 export function createLazyPartyOperationsInitHandler({
-  loadLegacyBootstrapModule = createLegacyBootstrapLoader(),
+  loadBootstrapModule = createPartyOperationsBootstrapLoader(),
   createInitHandler = createPartyOperationsInitHandler
 } = {}) {
   return async function onPartyOperationsInit() {
-    const legacyBootstrap = await loadLegacyBootstrapModule();
+    const bootstrapModule = await loadBootstrapModule();
     const initHandler = createInitHandler({
-      installAppBehaviors: legacyBootstrap.installLegacyAppBehaviors,
-      buildInitConfig: legacyBootstrap.buildLegacyPartyOperationsInitConfig
+      installAppBehaviors: bootstrapModule.installPartyOperationsAppBehaviors,
+      buildInitConfig: bootstrapModule.buildPartyOperationsInitConfig
     });
     return initHandler();
   };
 }
 
 export function createLazyPartyOperationsReadyHandler({
-  loadLegacyBootstrapModule = createLegacyBootstrapLoader(),
+  loadBootstrapModule = createPartyOperationsBootstrapLoader(),
   createReadyHandler = createPartyOperationsReadyHandler
 } = {}) {
   return async function onPartyOperationsReady() {
-    const legacyBootstrap = await loadLegacyBootstrapModule();
+    const bootstrapModule = await loadBootstrapModule();
     const readyHandler = createReadyHandler({
-      buildReadyConfig: legacyBootstrap.buildLegacyPartyOperationsReadyConfig
+      buildReadyConfig: bootstrapModule.buildPartyOperationsReadyConfig
     });
     return readyHandler();
   };
 }
 
-const loadLegacyBootstrapModule = createLegacyBootstrapLoader();
+const loadBootstrapModule = createPartyOperationsBootstrapLoader();
 
-// Keep the Foundry entrypoint small while the legacy module is decomposed behind this bridge.
 export const onPartyOperationsInit = createLazyPartyOperationsInitHandler({
-  loadLegacyBootstrapModule
+  loadBootstrapModule
 });
 
 export const onPartyOperationsReady = createLazyPartyOperationsReadyHandler({
-  loadLegacyBootstrapModule
+  loadBootstrapModule
 });

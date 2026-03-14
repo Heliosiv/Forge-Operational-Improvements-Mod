@@ -1,9 +1,10 @@
 import { buildPartyOpsRuntimeHookModules, createPartyOpsHookRegistrar } from "../hooks/runtime-hooks.js";
 import { registerPartyOperationsUiHooks } from "../hooks/ui-hooks.js";
 
-export function setupLegacyPartyOperationsUi({
+export function setupPartyOperationsUi({
   openMainTab,
   canAccessAllPlayerOps,
+  canAccessGmPage = canAccessAllPlayerOps,
   ensureLauncherUi,
   hideManagedAudioMixPlaylistUi,
   setTimeoutFn = globalThis.window?.setTimeout?.bind(globalThis.window),
@@ -13,6 +14,7 @@ export function setupLegacyPartyOperationsUi({
   return registerUiHooks({
     openMainTab,
     canAccessAllPlayerOps,
+    canAccessGmPage,
     ensureLauncherUi,
     hideManagedAudioMixPlaylistUi,
     setTimeoutFn,
@@ -20,7 +22,7 @@ export function setupLegacyPartyOperationsUi({
   });
 }
 
-export function createLegacyPartyOpsHookRegistrar({
+export function createPartyOperationsHookRegistrar({
   buildHookModules = buildPartyOpsRuntimeHookModules,
   createHookRegistrar = createPartyOpsHookRegistrar,
   ...hookModuleDeps
@@ -30,7 +32,7 @@ export function createLegacyPartyOpsHookRegistrar({
   });
 }
 
-export function installLegacyAppBehaviors({
+export function installPartyOperationsAppBehaviors({
   installRememberedWindowPositionBehavior,
   appClasses = []
 } = {}) {
@@ -40,7 +42,7 @@ export function installLegacyAppBehaviors({
   }
 }
 
-export function buildLegacyPartyOperationsInitConfig({
+export function buildPartyOperationsInitConfig({
   registerPartyOperationsApi,
   registerFeatureModules,
   preloadPartyOperationsPartialTemplates,
@@ -125,7 +127,7 @@ export function buildLegacyPartyOperationsInitConfig({
   };
 }
 
-export function buildLegacyPartyOperationsReadyConfig({
+export function buildPartyOperationsReadyConfig({
   registerPartyOperationsApi,
   ensureSettingsRegistered,
   validatePartyOperationsTemplates,
