@@ -52,7 +52,7 @@ Rest and march flows now have focused validation scripts, but player-facing resp
 
 - Candidates: launcher UI, settings wiring, socket/event handling, utility formatting.
 - Status: PARTIAL
-- Notes: `scripts/module.js`, `scripts/bootstrap`, and `scripts/hooks` already existed, the operations-journal domain now has dedicated modules for view state/context (`scripts/features/operations-journal.js`), folder/write services (`scripts/features/operations-journal-service.js`), and settings reads (`scripts/features/operations-journal-settings.js`), and typed config access now lives in `scripts/core/config-access.js` with deterministic coverage. The monolith is still too large, but extraction is now active rather than just planned.
+- Notes: `scripts/module.js`, `scripts/bootstrap`, and `scripts/hooks` already existed, the operations-journal domain now has dedicated modules for view state/context (`scripts/features/operations-journal.js`), folder/write services (`scripts/features/operations-journal-service.js`), and settings reads (`scripts/features/operations-journal-settings.js`), typed config access now lives in `scripts/core/config-access.js`, and additional low-coupling runtime helpers now live in `scripts/core/launcher-state.js`, `scripts/core/settings-access.js`, `scripts/core/settings-bootstrap.js`, `scripts/core/integration-access.js`, `scripts/core/gather-settings.js`, `scripts/core/gather-history-view.js`, `scripts/core/gm-downtime-view.js`, and `scripts/core/player-hub-actions.js` with deterministic coverage. The monolith is still too large, but extraction is active and startup-sensitive helpers are now being moved behind narrower module boundaries.
 
 #### J-005: Build first deterministic test suite
 
@@ -95,3 +95,4 @@ Rest and march flows now have focused validation scripts, but player-facing resp
 ## Journal Meta
 
 - 2026-03-14: Rebased the journal on the current repository state, added architecture policy, added PR validation, added release guardrails, extracted the operations-journal helper/service/settings modules from the monolith, and moved typed config access into `scripts/core/config-access.js`.
+- 2026-03-14: Continued J-004 by extracting launcher/settings/integration/gather access helpers plus gather-history view state, GM downtime view state, and player-hub action normalization into dedicated `scripts/core` modules with deterministic tests.

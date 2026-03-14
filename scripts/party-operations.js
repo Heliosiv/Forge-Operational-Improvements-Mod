@@ -78,6 +78,14 @@ import {
 } from "./core/calendar-bridge.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
+import { createGatherHistoryView } from "./core/gather-history-view.js";
+import { createGatherSettingsAccess } from "./core/gather-settings.js";
+import { createGmDowntimeViewAccess } from "./core/gm-downtime-view.js";
+import { createIntegrationAccess } from "./core/integration-access.js";
+import { createLauncherStateAccess } from "./core/launcher-state.js";
+import { createPlayerHubActions } from "./core/player-hub-actions.js";
+import { createPartyOperationsSettingsAccess } from "./core/settings-access.js";
+import { createPartyOperationsSettingsBootstrap } from "./core/settings-bootstrap.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
 import { createPartyOperationsConfigAccess } from "./core/config-access.js";
 import {
@@ -2995,35 +3003,52 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
   return true;
 }
 
-function getIntegrationModeSetting() {
-  return game.settings.get(MODULE_ID, SETTINGS.INTEGRATION_MODE) ?? INTEGRATION_MODES.AUTO;
-}
-
-function areAdvancedSettingsEnabled() {
-  try {
-    return Boolean(game.settings.get(MODULE_ID, SETTINGS.ADVANCED_SETTINGS_ENABLED));
-  } catch {
-    return false;
-  }
-}
-
-function shouldAutoOpenRestForPlayers() {
-  try {
-    return Boolean(game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST));
-  } catch {
-    return false;
-  }
-}
-
-function normalizeLauncherPlacement(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === LAUNCHER_PLACEMENTS.SIDEBAR) return LAUNCHER_PLACEMENTS.SIDEBAR;
-  if (normalized === LAUNCHER_PLACEMENTS.BOTH) return LAUNCHER_PLACEMENTS.BOTH;
-  return LAUNCHER_PLACEMENTS.FLOATING;
-}
-
 let mainTabNavigator = null;
 let launcherUiController = null;
+let integrationAccess = null;
+let gatherSettingsAccess = null;
+const {
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap
+} = createLauncherStateAccess({
+  resolveController: () => launcherUiController,
+  launcherPlacements: LAUNCHER_PLACEMENTS
+});
+const {
+  normalizePlayerHubMode,
+  getPlayerHubModeSetting,
+  areAdvancedSettingsEnabled,
+  shouldAutoOpenRestForPlayers,
+  normalizeLauncherPlacement
+} = createPartyOperationsSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  playerHubModes: PLAYER_HUB_MODES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  gameRef: game
+});
+
+// Defer these reads so config-access wiring cannot reference later bindings during module evaluation.
+function getIntegrationModeSettingForConfig(...args) {
+  return integrationAccess?.getIntegrationModeSetting?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function resolveIntegrationModeForConfig(...args) {
+  return integrationAccess?.resolveIntegrationMode?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function isDaeAvailableForConfig(...args) {
+  return Boolean(integrationAccess?.isDaeAvailable?.(...args) ?? false);
+}
+
+function getGatherRollModeSettingForConfig(...args) {
+  return gatherSettingsAccess?.getGatherRollModeSetting?.(...args) ?? "prefer-monks";
+}
+
+function getGatherResourceConfigForConfig(...args) {
+  return gatherSettingsAccess?.getGatherResourceConfig?.(...args) ?? {};
+}
 
 function openMainTab(...args) {
   return mainTabNavigator?.openMainTab?.(...args) ?? null;
@@ -3078,17 +3103,90 @@ const {
     partyOpsConfigNormalizationInProgress = Boolean(value);
   },
   getPlayerHubModeSetting,
-  getLauncherPlacement: () => getLauncherPlacement(),
-  isFloatingLauncherLocked: () => isFloatingLauncherLocked(),
-  getIntegrationModeSetting,
-  resolveIntegrationMode,
-  isDaeAvailable,
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  getIntegrationModeSetting: getIntegrationModeSettingForConfig,
+  resolveIntegrationMode: resolveIntegrationModeForConfig,
+  isDaeAvailable: isDaeAvailableForConfig,
   getJournalVisibilityMode,
   getJournalFilterDebounceMs,
   getSessionSummaryRangeSetting,
-  getGatherRollModeSetting,
-  getGatherResourceConfig,
+  getGatherRollModeSetting: getGatherRollModeSettingForConfig,
+  getGatherResourceConfig: getGatherResourceConfigForConfig,
   foundryRef: foundry
+});
+const {
+  getIntegrationModeSetting,
+  isDaeAvailable,
+  resolveIntegrationMode
+} = (integrationAccess = createIntegrationAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  integrationModes: INTEGRATION_MODES,
+  gameRef: game
+}));
+const {
+  getGatherRollModeSetting,
+  clampGatherInteger,
+  clampGatherModifier,
+  normalizeGatherTravelTradeoff,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceConfig,
+  getGatherEnvironmentChoices,
+  getGatherQuickPresets,
+  getGatherQuickPresetById,
+  getGatherResourceTypeLabel,
+  buildGatherPresetContext
+} = (gatherSettingsAccess = createGatherSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  gatherDefaults: GATHER_DEFAULTS,
+  gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  gatherQuickPresets: GATHER_QUICK_PRESETS,
+  gameRef: game
+}));
+const {
+  getGatherHistoryViewState,
+  setGatherHistoryViewState,
+  buildGatherHistoryContext
+} = createGatherHistoryView({
+  gatherHistorySortOptions: GATHER_HISTORY_SORT_OPTIONS,
+  gatherHistoryResultFilterOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS,
+  gatherHistoryResourceFilterOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceTypeLabel,
+  formatGatherFlagLabel,
+  formatGatherComplicationLabel,
+  sessionStorageRef: sessionStorage,
+  resolveUserId: () => game.user?.id ?? "anon",
+  randomId: () => foundry.utils.randomID(),
+  getNow: () => Date.now(),
+  createDate: (value) => new Date(value)
+});
+const {
+  normalizeDowntimeEntriesSort,
+  normalizeDowntimeLogsSort,
+  getGmDowntimeViewState,
+  setGmDowntimeViewState
+} = createGmDowntimeViewAccess({
+  downtimeEntrySortOptions: DOWNTIME_ENTRY_SORT_OPTIONS,
+  downtimeLogSortOptions: DOWNTIME_LOG_SORT_OPTIONS,
+  sessionStorageRef: sessionStorage,
+  resolveUserId: () => game.user?.id ?? "anon"
+});
+const {
+  normalizePlayerHubActionType,
+  normalizePlayerHubClaimVariant,
+  getPlayerHubActionRequestFromUiAction
+} = createPlayerHubActions({
+  playerHubActionTypes: PLAYER_HUB_ACTION_TYPES,
+  playerHubClaimVariants: PLAYER_HUB_CLAIM_VARIANTS
 });
 
 const {
@@ -3113,417 +3211,64 @@ const {
   notifyUiWarnThrottled,
   canAccessAllPlayerOps
 });
-
-function registerPartyOpsSettings(onSettingsChanged = () => {}) {
-  registerPartyOpsUiSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    settingsHubType: PartyOperationsSettingsHub,
-    areAdvancedSettingsEnabled,
-    lootScarcityLevels: LOOT_SCARCITY_LEVELS,
-    playerHubModes: PLAYER_HUB_MODES,
-    defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
-    validatePartyOpsConfig,
-    notifyUiInfoThrottled,
-    normalizePlayerHubMode,
-    setModuleSettingWithLocalRefreshSuppressed,
-    isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
-    setPartyOpsConfigNormalizationInProgress: (value) => {
-      partyOpsConfigNormalizationInProgress = Boolean(value);
-    },
-    onSettingsChanged
-  });
-}
-
-function hasRegisteredPartyOpsSettingsNamespace(moduleId = MODULE_ID) {
-  const prefix = `${String(moduleId ?? "").trim()}.`;
-  if (!prefix || !game?.settings) return false;
-  try {
-    return Array.from(game.settings.settings?.keys?.() ?? []).some((key) => String(key ?? "").startsWith(prefix));
-  } catch {
-    return false;
-  }
-}
+const {
+  registerPartyOpsSettings,
+  hasRegisteredPartyOpsSettingsNamespace,
+  ensurePartyOpsSettingsRegistered
+} = createPartyOperationsSettingsBootstrap({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  settingsHubType: PartyOperationsSettingsHub,
+  areAdvancedSettingsEnabled,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  playerHubModes: PLAYER_HUB_MODES,
+  defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+  validatePartyOpsConfig,
+  notifyUiInfoThrottled,
+  normalizePlayerHubMode,
+  setModuleSettingWithLocalRefreshSuppressed,
+  isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+  setPartyOpsConfigNormalizationInProgress: (value) => {
+    partyOpsConfigNormalizationInProgress = Boolean(value);
+  },
+  registerPartyOpsUiSettings,
+  registerPartyOpsDataSettings,
+  registerPartyOpsFeatureSettings,
+  getRefreshScopesForSettingKey,
+  refreshOpenApps,
+  buildDefaultRestWatchState,
+  buildDefaultMarchingOrderState,
+  buildDefaultActivityState,
+  buildDefaultOperationsLedger,
+  buildDefaultInjuryRecoveryState,
+  buildDefaultLootSourceConfig,
+  buildDefaultAudioLibraryCatalog,
+  buildDefaultAudioLibraryHiddenTrackStore,
+  buildDefaultAudioMixPresetStore,
+  syncAudioLibraryDraftFromSettings,
+  autoInventoryPackIndexCache,
+  autoInventoryDefaults: {
+    itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+    consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+    currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+    qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+  },
+  gatherDefaults: GATHER_DEFAULTS,
+  gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  ensureLauncherUi,
+  resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  openRestWatchUiForCurrentUser,
+  openMainTab,
+  gameRef: game
+});
 
 function canAccessGmPage(user = game.user) {
   return Boolean(user?.isGM);
-}
-
-function ensurePartyOpsSettingsRegistered() {
-  if (hasRegisteredPartyOpsSettingsNamespace(MODULE_ID)) return false;
-  registerPartyOpsSettings((key) => {
-    if (key === SETTINGS.DEBUG_ENABLED) return;
-    const scopes = getRefreshScopesForSettingKey(key);
-    refreshOpenApps({ scopes });
-  });
-  registerPartyOpsDataSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    buildDefaultRestWatchState,
-    buildDefaultMarchingOrderState,
-    buildDefaultActivityState,
-    buildDefaultOperationsLedger,
-    buildDefaultInjuryRecoveryState,
-    buildDefaultLootSourceConfig,
-    buildDefaultAudioLibraryCatalog,
-    buildDefaultAudioLibraryHiddenTrackStore,
-    buildDefaultAudioMixPresetStore
-  });
-  syncAudioLibraryDraftFromSettings();
-  registerPartyOpsFeatureSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    areAdvancedSettingsEnabled,
-    autoInventoryPackIndexCache,
-    autoInventoryDefaults: {
-      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
-      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
-      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
-      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
-    },
-    gatherDefaults: GATHER_DEFAULTS,
-    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
-    launcherPlacements: LAUNCHER_PLACEMENTS,
-    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
-    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
-    inventoryHookModes: INVENTORY_HOOK_MODES,
-    ensureLauncherUi,
-    resetFloatingLauncherPosition,
-    refreshOpenApps,
-    refreshScopeKeys: REFRESH_SCOPE_KEYS,
-    openRestWatchUiForCurrentUser,
-    openMainTab
-  });
-  return true;
-}
-
-function getGatherRollModeSetting() {
-  return game.settings.get(MODULE_ID, SETTINGS.GATHER_ROLL_MODE) ?? "prefer-monks";
-}
-
-function clampGatherInteger(value, min, max, fallback) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(raw)));
-}
-
-function clampGatherModifier(value, fallback = 0) {
-  return clampGatherInteger(value, -20, 20, fallback);
-}
-
-function normalizeGatherTravelTradeoff(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (raw === GATHER_TRAVEL_CHOICES.FELL_BEHIND) return GATHER_TRAVEL_CHOICES.FELL_BEHIND;
-  return GATHER_TRAVEL_CHOICES.PACE;
-}
-
-function normalizeGatherEnvironmentKey(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  return GATHER_ENVIRONMENT_KEYS.includes(raw) ? raw : GATHER_ENVIRONMENT_KEYS[0];
-}
-
-function normalizeGatherResourceType(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  return raw === "water" ? "water" : "food";
-}
-
-function getGatherResourceConfig() {
-  const getSetting = (key, fallback) => {
-    try {
-      const value = game.settings.get(MODULE_ID, key);
-      return value === undefined ? fallback : value;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const config = {
-    enabled: Boolean(getSetting(SETTINGS.GATHER_ENABLED, GATHER_DEFAULTS.enabled)),
-    minimumHours: clampGatherInteger(getSetting(SETTINGS.GATHER_MIN_HOURS, GATHER_DEFAULTS.minimumHours), 1, 24, GATHER_DEFAULTS.minimumHours),
-    disallowCombat: Boolean(getSetting(SETTINGS.GATHER_DISALLOW_COMBAT, GATHER_DEFAULTS.disallowCombat)),
-    baseDc: {
-      lush_forest_or_river_valley: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_LUSH, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley), 1, 30, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley),
-      temperate_hills_or_light_woodland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_TEMPERATE, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland), 1, 30, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland),
-      sparse_plains_or_rocky: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_SPARSE, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky), 1, 30, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky),
-      cold_mountains_or_swamp: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_COLD, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp), 1, 30, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp),
-      desert_blighted_wasteland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_DESERT, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland), 1, 30, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland)
-    },
-    seasonMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_SEASON_MOD, GATHER_DEFAULTS.seasonMod), GATHER_DEFAULTS.seasonMod),
-    weatherMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_WEATHER_MOD, GATHER_DEFAULTS.weatherMod), GATHER_DEFAULTS.weatherMod),
-    corruptionMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_CORRUPTION_MOD, GATHER_DEFAULTS.corruptionMod), GATHER_DEFAULTS.corruptionMod),
-    herbalismAdvantageEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HERBALISM_ADVANTAGE, GATHER_DEFAULTS.herbalismAdvantageEnabled)),
-    hostileEncounterFlagEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HOSTILE_FAIL_FLAG, GATHER_DEFAULTS.hostileEncounterFlagEnabled)),
-    failBy5ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_FAIL_BY5_COMPLICATION, GATHER_DEFAULTS.failBy5ComplicationEnabled)),
-    successBy5DoubleEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, GATHER_DEFAULTS.successBy5DoubleEnabled)),
-    nat20BonusEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT20_BONUS, GATHER_DEFAULTS.nat20BonusEnabled)),
-    nat1ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT1_FLAG, GATHER_DEFAULTS.nat1ComplicationEnabled)),
-    corruptionWaterCheckEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_CORRUPTION_WATER_CHECK, GATHER_DEFAULTS.corruptionWaterCheckEnabled)),
-    corruptionConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_CORRUPTION_SAVE_DC, GATHER_DEFAULTS.corruptionConSaveDc), 1, 30, GATHER_DEFAULTS.corruptionConSaveDc),
-    waterAutoFoundEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_WATER_AUTO_FOUND, GATHER_DEFAULTS.waterAutoFoundEnabled)),
-    travelTradeoffEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_TRAVEL_TRADEOFF, GATHER_DEFAULTS.travelTradeoffEnabled)),
-    travelTradeoffDefault: normalizeGatherTravelTradeoff(getSetting(SETTINGS.GATHER_TRAVEL_TRADEOFF_DEFAULT, GATHER_DEFAULTS.travelTradeoffDefault)),
-    travelConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_TRAVEL_CON_SAVE_DC, GATHER_DEFAULTS.travelConSaveDc), 1, 30, GATHER_DEFAULTS.travelConSaveDc)
-  };
-  return config;
-}
-
-function getGatherEnvironmentChoices(config = getGatherResourceConfig()) {
-  const baseDc = config?.baseDc ?? GATHER_DEFAULTS.baseDc;
-  return GATHER_ENVIRONMENT_KEYS.map((key) => ({
-    value: key,
-    label: `${GATHER_ENVIRONMENT_LABELS[key] ?? key} (DC ${Math.max(1, Math.floor(Number(baseDc?.[key] ?? 10) || 10))})`
-  }));
-}
-
-function getGatherQuickPresets(config = getGatherResourceConfig()) {
-  return GATHER_QUICK_PRESETS.map((entry) => {
-    const source = entry?.options ?? {};
-    const environment = normalizeGatherEnvironmentKey(source.environment);
-    const resourceType = normalizeGatherResourceType(source.resourceType);
-    return {
-      id: String(entry?.id ?? "").trim(),
-      label: String(entry?.label ?? "Preset").trim() || "Preset",
-      description: String(entry?.description ?? "").trim(),
-      options: {
-        environment,
-        resourceType,
-        gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
-        seasonMod: clampGatherModifier(source.seasonMod, config.seasonMod),
-        weatherMod: clampGatherModifier(source.weatherMod, config.weatherMod),
-        corruptionMod: clampGatherModifier(source.corruptionMod, config.corruptionMod),
-        hostileTerrain: Boolean(source.hostileTerrain),
-        isCorruptedRegion: Boolean(source.isCorruptedRegion),
-        waterAutoFound: Boolean(source.waterAutoFound),
-        duringTravel: Boolean(source.duringTravel),
-        travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff ?? config.travelTradeoffDefault)
-      }
-    };
-  });
-}
-
-function getGatherQuickPresetById(presetId, config = getGatherResourceConfig()) {
-  const id = String(presetId ?? "").trim();
-  if (!id) return null;
-  return getGatherQuickPresets(config).find((entry) => entry.id === id) ?? null;
-}
-
-function getGatherResourceTypeLabel(value) {
-  return normalizeGatherResourceType(value) === "water" ? "Water" : "Food";
-}
-
-function buildGatherPresetContext(config = getGatherResourceConfig()) {
-  return getGatherQuickPresets(config).map((preset) => {
-    const options = preset?.options ?? {};
-    const environment = normalizeGatherEnvironmentKey(options.environment);
-    const resourceType = normalizeGatherResourceType(options.resourceType);
-    const gatherMode = String(options.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
-    const tagParts = [];
-    if (Boolean(options.duringTravel)) tagParts.push("Travel");
-    if (Boolean(options.hostileTerrain)) tagParts.push("Hostile");
-    if (Boolean(options.isCorruptedRegion)) tagParts.push("Corrupted");
-    if (resourceType === "water" && Boolean(options.waterAutoFound)) tagParts.push("Auto-water");
-    return {
-      id: String(preset?.id ?? "").trim(),
-      label: String(preset?.label ?? "Preset").trim() || "Preset",
-      description: String(preset?.description ?? "").trim(),
-      summary: `${getGatherResourceTypeLabel(resourceType)} | ${GATHER_ENVIRONMENT_LABELS[environment] ?? environment} | ${gatherMode === "plant" ? "Plant" : "Standard"}`,
-      tagsText: tagParts.join(" - "),
-      hasTags: tagParts.length > 0
-    };
-  });
-}
-
-function buildGatherHistoryContext(resourcesState = null, options = {}) {
-  const rows = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
-  const viewStateRaw = options?.viewState ?? getGatherHistoryViewState();
-  const viewState = {
-    search: normalizeGatherHistorySearch(viewStateRaw?.search),
-    result: normalizeGatherHistoryResultFilter(viewStateRaw?.result),
-    resource: normalizeGatherHistoryResourceFilter(viewStateRaw?.resource),
-    environment: normalizeGatherHistoryEnvironmentFilter(viewStateRaw?.environment),
-    actor: normalizeGatherHistoryActorFilter(viewStateRaw?.actor),
-    sort: normalizeGatherHistorySort(viewStateRaw?.sort)
-  };
-
-  const mappedRows = rows.map((entry) => {
-    const source = entry && typeof entry === "object" ? entry : {};
-    const timestamp = Number(source.timestamp ?? Date.now());
-    const timestampDate = new Date(Number.isFinite(timestamp) ? timestamp : Date.now());
-    const success = String(source.result ?? "").trim().toLowerCase() === "success" || source.success === true;
-    const environment = normalizeGatherEnvironmentKey(source.environment);
-    const environmentLabel = GATHER_ENVIRONMENT_LABELS[environment] ?? environment;
-    const resourceType = normalizeGatherResourceType(source.resourceType);
-    const resourceTypeLabel = getGatherResourceTypeLabel(resourceType);
-    const flags = Array.isArray(source.flags) ? source.flags : [];
-    const complications = Array.isArray(source.complications) ? source.complications : [];
-    const notes = Array.isArray(source.notes) ? source.notes : [];
-    const detailParts = [];
-    if (flags.length > 0) detailParts.push(`Flags: ${flags.map((flag) => formatGatherFlagLabel(flag)).join(", ")}`);
-    if (complications.length > 0) detailParts.push(`Complications: ${complications.map((flag) => formatGatherComplicationLabel(flag)).join(", ")}`);
-    if (notes.length > 0) detailParts.push(`Notes: ${notes.join(" | ")}`);
-    const inventoryGainAmount = Math.max(0, Number(source.inventoryGainAmount ?? 0) || 0);
-    const inventoryGainSource = String(source.inventoryGainSource ?? "").trim();
-    const requesterName = String(source.requesterName ?? "").trim();
-    const approvedBy = String(source.approvedBy ?? "").trim();
-    const rationDieTotal = Number(source.rationDieTotal);
-    const yieldRolledBy = String(source.yieldRolledBy ?? "").trim();
-    if (inventoryGainAmount > 0) {
-      const sourceLabel = inventoryGainSource ? ` (${inventoryGainSource})` : "";
-      detailParts.push(`Inventory +${inventoryGainAmount}${sourceLabel}`);
-    }
-    if (requesterName) detailParts.push(`Requested by ${requesterName}`);
-    if (approvedBy) detailParts.push(`Approved by ${approvedBy}`);
-    if (Number.isFinite(rationDieTotal)) {
-      const yieldByLabel = yieldRolledBy ? ` by ${yieldRolledBy}` : "";
-      detailParts.push(`Yield d6 ${Math.max(1, Math.floor(rationDieTotal))}${yieldByLabel}`);
-    }
-    if (source.appliedToLedger === false && Math.max(0, Number(source.rations ?? 0) || 0) > 0) {
-      detailParts.push("Not applied to party pools");
-    }
-
-    const checkTotal = Number(source.checkTotal ?? 0);
-    const dc = Number(source.dc ?? 0);
-    const rollLabel = Number.isFinite(checkTotal) ? `${Math.floor(checkTotal)}` : "-";
-    const dcLabel = Number.isFinite(dc) ? `${Math.max(1, Math.floor(dc))}` : "-";
-    const actorName = String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
-    const actorKey = actorName.toLowerCase();
-    const rations = Math.max(0, Math.floor(Number(source.rations ?? 0) || 0));
-    const detailsText = detailParts.length > 0 ? detailParts.join(" - ") : "-";
-    const createdBy = String(source.createdBy ?? "GM").trim() || "GM";
-    const dayKey = String(source.dayKey ?? "").trim();
-    const resultKey = success ? "success" : "fail";
-    const resultLabel = success ? "Success" : "Fail";
-
-    return {
-      id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-      timestampLabel: Number.isFinite(timestampDate.getTime()) ? timestampDate.toLocaleString() : "Unknown",
-      dayKey,
-      actorName,
-      actorKey,
-      environment,
-      environmentLabel,
-      resultKey,
-      resultLabel,
-      resultClass: success ? "is-success" : "is-fail",
-      isSuccess: success,
-      rollVsDc: `${rollLabel} vs ${dcLabel}`,
-      resourceType,
-      resourceTypeLabel,
-      rations,
-      detailsText,
-      createdBy,
-      searchText: `${actorName} ${environmentLabel} ${resultLabel} ${resourceTypeLabel} ${detailsText} ${dayKey} ${createdBy}`.toLowerCase()
-    };
-  });
-
-  const actorMap = new Map();
-  for (const row of mappedRows) {
-    if (!row.actorKey || row.actorKey === "all") continue;
-    if (!actorMap.has(row.actorKey)) actorMap.set(row.actorKey, row.actorName);
-  }
-  if (viewState.actor !== "all" && !actorMap.has(viewState.actor)) {
-    viewState.actor = "all";
-  }
-
-  const filteredRows = mappedRows
-    .filter((row) => {
-      if (viewState.result !== "all" && row.resultKey !== viewState.result) return false;
-      if (viewState.resource !== "all" && row.resourceType !== viewState.resource) return false;
-      if (viewState.environment !== "all" && row.environment !== viewState.environment) return false;
-      if (viewState.actor !== "all" && row.actorKey !== viewState.actor) return false;
-      if (viewState.search && !row.searchText.includes(viewState.search.toLowerCase())) return false;
-      return true;
-    })
-    .sort((left, right) => {
-      switch (viewState.sort) {
-        case "oldest":
-          return Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0);
-        case "actor-asc": {
-          const nameCompare = String(left.actorName ?? "").localeCompare(String(right.actorName ?? ""));
-          if (nameCompare !== 0) return nameCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "actor-desc": {
-          const nameCompare = String(right.actorName ?? "").localeCompare(String(left.actorName ?? ""));
-          if (nameCompare !== 0) return nameCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "rations-asc": {
-          const rationCompare = Number(left.rations ?? 0) - Number(right.rations ?? 0);
-          if (rationCompare !== 0) return rationCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "rations-desc": {
-          const rationCompare = Number(right.rations ?? 0) - Number(left.rations ?? 0);
-          if (rationCompare !== 0) return rationCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "newest":
-        default:
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-      }
-    });
-
-  const actorOptions = [
-    { value: "all", label: "All Actors", selected: viewState.actor === "all" },
-    ...Array.from(actorMap.entries())
-      .sort((left, right) => String(left[1] ?? "").localeCompare(String(right[1] ?? "")))
-      .map(([value, label]) => ({
-        value,
-        label,
-        selected: viewState.actor === value
-      }))
-  ];
-
-  const environmentOptions = [
-    { value: "all", label: "All Environments", selected: viewState.environment === "all" },
-    ...GATHER_ENVIRONMENT_KEYS.map((key) => ({
-      value: key,
-      label: GATHER_ENVIRONMENT_LABELS[key] ?? key,
-      selected: viewState.environment === key
-    }))
-  ];
-
-  return {
-    rows: filteredRows,
-    hasRows: filteredRows.length > 0,
-    hasAnyRows: mappedRows.length > 0,
-    totalCount: mappedRows.length,
-    visibleCount: filteredRows.length,
-    hiddenCount: Math.max(0, mappedRows.length - filteredRows.length),
-    hasActiveFilters: Boolean(
-      viewState.search
-      || viewState.result !== "all"
-      || viewState.resource !== "all"
-      || viewState.environment !== "all"
-      || viewState.actor !== "all"
-    ),
-    emptyMessage: mappedRows.length > 0
-      ? "No gather checks match the current filters."
-      : "No gather checks logged yet.",
-    sortOptions: GATHER_HISTORY_SORT_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.sort === entry.value
-    })),
-    resultOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.result === entry.value
-    })),
-    resourceOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.resource === entry.value
-    })),
-    environmentOptions,
-    actorOptions,
-    filters: {
-      ...viewState,
-      searchPlaceholder: "Filter by actor, note, or result"
-    }
-  };
 }
 
 function buildGatherRequestContext(resourcesState = null, options = {}) {
@@ -3972,18 +3717,6 @@ function resolveGatherResourceOutcome(input = {}) {
     complications,
     notes
   };
-}
-
-function isDaeAvailable() {
-  return Boolean(game.modules.get("dae")?.active);
-}
-
-function resolveIntegrationMode() {
-  const configured = getIntegrationModeSetting();
-  if (configured === INTEGRATION_MODES.OFF) return INTEGRATION_MODES.OFF;
-  if (configured === INTEGRATION_MODES.FLAGS) return INTEGRATION_MODES.FLAGS;
-  if (configured === INTEGRATION_MODES.DAE) return isDaeAvailable() ? INTEGRATION_MODES.DAE : INTEGRATION_MODES.FLAGS;
-  return isDaeAvailable() ? INTEGRATION_MODES.DAE : INTEGRATION_MODES.FLAGS;
 }
 
 function isTrackableCharacter(actor) {
@@ -5971,83 +5704,6 @@ function getSelectedReputationNoteLogId(element, factionIdInput) {
   return selectedFromUi || selectedFromState;
 }
 
-function getGatherHistoryViewStorageKey() {
-  return `po-gather-history-view-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeGatherHistorySort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "newest";
-}
-
-function normalizeGatherHistoryResultFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryResourceFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryEnvironmentFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "all") return "all";
-  return GATHER_ENVIRONMENT_KEYS.includes(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryActorFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase().slice(0, 120);
-  return normalized || "all";
-}
-
-function normalizeGatherHistorySearch(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function getGatherHistoryViewState() {
-  const fallback = {
-    search: "",
-    result: "all",
-    resource: "all",
-    environment: "all",
-    actor: "all",
-    sort: "newest"
-  };
-  const raw = sessionStorage.getItem(getGatherHistoryViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      search: normalizeGatherHistorySearch(parsed?.search),
-      result: normalizeGatherHistoryResultFilter(parsed?.result),
-      resource: normalizeGatherHistoryResourceFilter(parsed?.resource),
-      environment: normalizeGatherHistoryEnvironmentFilter(parsed?.environment),
-      actor: normalizeGatherHistoryActorFilter(parsed?.actor),
-      sort: normalizeGatherHistorySort(parsed?.sort)
-    };
-  } catch (_error) {
-    return fallback;
-  }
-}
-
-function setGatherHistoryViewState(patch = {}) {
-  const previous = getGatherHistoryViewState();
-  const next = {
-    search: patch?.search === undefined ? previous.search : normalizeGatherHistorySearch(patch.search),
-    result: patch?.result === undefined ? previous.result : normalizeGatherHistoryResultFilter(patch.result),
-    resource: patch?.resource === undefined ? previous.resource : normalizeGatherHistoryResourceFilter(patch.resource),
-    environment: patch?.environment === undefined ? previous.environment : normalizeGatherHistoryEnvironmentFilter(patch.environment),
-    actor: patch?.actor === undefined ? previous.actor : normalizeGatherHistoryActorFilter(patch.actor),
-    sort: patch?.sort === undefined ? previous.sort : normalizeGatherHistorySort(patch.sort)
-  };
-  sessionStorage.setItem(getGatherHistoryViewStorageKey(), JSON.stringify(next));
-  return next;
-}
-
 function getReputationFilterState() {
   const defaults = { keyword: "", standing: "all" };
   const raw = sessionStorage.getItem(getReputationFilterStorageKey());
@@ -6080,51 +5736,6 @@ function normalizeMerchantSettlementSelection(value) {
 
 function normalizeEnvironmentCheckTrigger(trigger = "move") {
   return String(trigger ?? "").trim().toLowerCase() === "manual" ? "manual" : "move";
-}
-
-function getGmDowntimeViewStorageKey() {
-  return `po-gm-downtime-view-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeDowntimeEntriesSort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "pending";
-}
-
-function normalizeDowntimeLogsSort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(DOWNTIME_LOG_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "resolved-desc";
-}
-
-function getGmDowntimeViewState() {
-  const fallback = { entriesSort: "pending", logsSort: "resolved-desc" };
-  const raw = sessionStorage.getItem(getGmDowntimeViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      entriesSort: normalizeDowntimeEntriesSort(parsed?.entriesSort),
-      logsSort: normalizeDowntimeLogsSort(parsed?.logsSort)
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function setGmDowntimeViewState(patch = {}) {
-  const previous = getGmDowntimeViewState();
-  const next = {
-    entriesSort: patch?.entriesSort === undefined
-      ? previous.entriesSort
-      : normalizeDowntimeEntriesSort(patch.entriesSort),
-    logsSort: patch?.logsSort === undefined
-      ? previous.logsSort
-      : normalizeDowntimeLogsSort(patch.logsSort)
-  };
-  sessionStorage.setItem(getGmDowntimeViewStorageKey(), JSON.stringify(next));
-  return next;
 }
 
 function getNonPartySyncFilterStorageKey() {
@@ -6160,21 +5771,6 @@ function getLootPreviewResultStorageKey() {
   return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
 }
 
-function normalizePlayerHubMode(value, fallback = PLAYER_HUB_MODES.SIMPLE) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === PLAYER_HUB_MODES.ADVANCED) return PLAYER_HUB_MODES.ADVANCED;
-  if (normalized === PLAYER_HUB_MODES.SIMPLE) return PLAYER_HUB_MODES.SIMPLE;
-  return fallback;
-}
-
-function getPlayerHubModeSetting() {
-  try {
-    return normalizePlayerHubMode(game.settings.get(MODULE_ID, SETTINGS.PLAYER_HUB_MODE), PLAYER_HUB_MODES.SIMPLE);
-  } catch {
-    return PLAYER_HUB_MODES.SIMPLE;
-  }
-}
-
 function isMarchingOrderPlayerLocked(user = game.user) {
   if (canAccessAllPlayerOps(user)) return false;
   try {
@@ -6196,29 +5792,6 @@ function getSelectablePlayerActorsForUser(user = game.user) {
   for (const actor of getOwnedPcActors()) addActor(actor);
   for (const actor of game.actors?.contents ?? []) addActor(actor);
   return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-}
-
-function normalizePlayerHubActionType(value) {
-  const normalized = String(value ?? "").trim();
-  switch (normalized) {
-    case PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH:
-      return PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH;
-    case PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK:
-      return PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK;
-    case PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT:
-      return PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT;
-    case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
-      return PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME;
-    default:
-      return "";
-  }
-}
-
-function normalizePlayerHubClaimVariant(value, fallback = PLAYER_HUB_CLAIM_VARIANTS.ITEM) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.CURRENCY) return PLAYER_HUB_CLAIM_VARIANTS.CURRENCY;
-  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.ITEM) return PLAYER_HUB_CLAIM_VARIANTS.ITEM;
-  return fallback;
 }
 
 async function submitPlayerHubAction(type, payload = {}) {
@@ -6244,30 +5817,6 @@ async function submitPlayerHubAction(type, payload = {}) {
       return { handled: true, rerender: true };
     default:
       return { handled: false, rerender: false };
-  }
-}
-
-function getPlayerHubActionRequestFromUiAction(action) {
-  const normalized = String(action ?? "").trim().toLowerCase();
-  switch (normalized) {
-    case "assign-me":
-      return { type: PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH };
-    case "set-player-rank":
-      return { type: PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK };
-    case "submit-downtime-action":
-      return { type: PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME };
-    case "claim-loot-item":
-      return {
-        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
-        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.ITEM
-      };
-    case "claim-loot-currency":
-      return {
-        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
-        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
-      };
-    default:
-      return null;
   }
 }
 
