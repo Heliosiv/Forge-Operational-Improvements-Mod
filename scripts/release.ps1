@@ -12,6 +12,11 @@ if (-not (Test-Path "module.json")) {
   throw "module.json not found. Run this from the module repository."
 }
 
+$stableVersionPattern = '^\d+\.\d+\.\d+$'
+if ($Version -notmatch $stableVersionPattern) {
+  throw "Release versions must use stable semver (x.y.z). Test channel versions are blocked from the release script."
+}
+
 function Invoke-GitCommand {
   param(
     [Parameter(Mandatory = $true)]
@@ -61,6 +66,11 @@ try {
   $module = $raw | ConvertFrom-Json
   $module.version = $Version
   $module | ConvertTo-Json -Depth 20 | Set-Content -NoNewline "module.json"
+
+  & node "scripts/validate-governance.mjs" "--mode" "release" "--expected-tag" "v$Version"
+  if ($LASTEXITCODE -ne 0) {
+    throw "Governance validation failed for release v$Version"
+  }
 
   Invoke-GitCommand -Args @("add", "module.json")
   Invoke-GitCommand -Args @("add", "-u")

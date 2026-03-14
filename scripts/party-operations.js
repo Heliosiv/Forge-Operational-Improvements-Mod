@@ -9,6 +9,9 @@ import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
+import { createOperationsJournalFeature } from "./features/operations-journal.js";
+import { createOperationsJournalSettings } from "./features/operations-journal-settings.js";
+import { createOperationsJournalService } from "./features/operations-journal-service.js";
 import {
   applyMarchRequest,
   createMarchFeatureModule,
@@ -76,6 +79,7 @@ import {
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
+import { createPartyOperationsConfigAccess } from "./core/config-access.js";
 import {
   buildPartyOperationsInitConfig as buildPartyOperationsInitConfigSurface,
   buildPartyOperationsReadyConfig as buildPartyOperationsReadyConfigSurface,
@@ -326,7 +330,6 @@ const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
 const pendingWindowPositionPersistTimers = new Map();
 let latestCanvasRestoreRequestId = 0;
-const journalFilterDebounceTimers = new WeakMap();
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
 const playerUiLocalSettingOverridesMemory = new Map();
@@ -1436,7 +1439,6 @@ const OPERATIONS_JOURNAL_CATEGORIES = {
   "loot-claims": "Loot Claims",
   session: "Session"
 };
-const journalFolderEnsurePromises = new Map();
 
 function getCurrentModuleVersion() {
   const module = game.modules?.get(MODULE_ID);
@@ -1600,6 +1602,60 @@ const {
   setActiveLootSettingsTab
 } = createLootUiState({
   lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS
+});
+const {
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getSessionSummaryWindowBounds
+} = createOperationsJournalSettings({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+  gameRef: game
+});
+const {
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  ensureOperationsJournalFolderTree,
+  journalFolderIsUnderRoot,
+  createOperationsJournalEntry,
+  openJournalEntryFromElement
+} = createOperationsJournalService({
+  moduleId: MODULE_ID,
+  journalFolderCacheSettingKey: SETTINGS.JOURNAL_FOLDER_CACHE,
+  journalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  journalRootLegacyNames: OPERATIONS_JOURNAL_ROOT_NAME_LEGACY,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  canAccessAllPlayerOps,
+  getJournalVisibilityMode,
+  setModuleSettingWithLocalRefreshSuppressed,
+  gameRef: game,
+  foundryRef: foundry,
+  uiRef: ui,
+  constRef: CONST,
+  FolderClass: Folder,
+  JournalEntryClass: JournalEntry
+});
+const {
+  getOperationsJournalViewState,
+  setOperationsJournalViewState,
+  buildJournalSortOptions,
+  buildJournalCategoryOptions,
+  scheduleOperationsJournalFilterUpdate,
+  handleOperationsJournalAction,
+  buildOperationsJournalContext
+} = createOperationsJournalFeature({
+  journalSortOptions: JOURNAL_SORT_OPTIONS,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  operationsJournalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  getJournalFilterDebounceMs,
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  journalFolderIsUnderRoot,
+  openJournalEntryFromElement
 });
 const GATHER_HISTORY_SORT_OPTIONS = [
   { value: "newest", label: "Newest First" },
@@ -2943,62 +2999,6 @@ function getIntegrationModeSetting() {
   return game.settings.get(MODULE_ID, SETTINGS.INTEGRATION_MODE) ?? INTEGRATION_MODES.AUTO;
 }
 
-function validatePartyOpsConfig(input) {
-  const source = (input && typeof input === "object" && !Array.isArray(input)) ? input : {};
-  const rarityRaw = (source.rarityWeights && typeof source.rarityWeights === "object" && !Array.isArray(source.rarityWeights))
-    ? source.rarityWeights
-    : {};
-
-  const lootScarcityRaw = String(source.lootScarcity ?? DEFAULT_PARTY_OPS_CONFIG.lootScarcity).trim().toLowerCase();
-  const lootScarcity = lootScarcityRaw === LOOT_SCARCITY_LEVELS.ABUNDANT || lootScarcityRaw === LOOT_SCARCITY_LEVELS.SCARCE
-    ? lootScarcityRaw
-    : LOOT_SCARCITY_LEVELS.NORMAL;
-
-  const rarityWeights = {};
-  for (const rarity of PARTY_OPS_LOOT_RARITIES) {
-    const rawWeight = Number(rarityRaw[rarity]);
-    rarityWeights[rarity] = Number.isFinite(rawWeight)
-      ? Math.max(0, rawWeight)
-      : DEFAULT_PARTY_OPS_CONFIG.rarityWeights[rarity];
-  }
-
-  const multiplierRaw = Number(source.crGoldMultiplier);
-  const crGoldMultiplier = Number.isFinite(multiplierRaw) && multiplierRaw > 0
-    ? multiplierRaw
-    : DEFAULT_PARTY_OPS_CONFIG.crGoldMultiplier;
-
-  return {
-    debugEnabled: Boolean(source.debugEnabled),
-    lootScarcity,
-    rarityWeights,
-    crGoldMultiplier
-  };
-}
-
-function getPartyOpsConfigSetting() {
-  const raw = game.settings.get(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG);
-  const normalized = validatePartyOpsConfig(raw);
-  const rawSerialized = JSON.stringify(raw ?? null);
-  const normalizedSerialized = JSON.stringify(normalized);
-  if (!partyOpsConfigNormalizationInProgress && rawSerialized !== normalizedSerialized) {
-    partyOpsConfigNormalizationInProgress = true;
-    void setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized)
-      .catch((error) => {
-        console.warn(`${MODULE_ID}: failed to normalize partyOpsConfig on load`, error);
-      })
-      .finally(() => {
-        partyOpsConfigNormalizationInProgress = false;
-      });
-  }
-  return normalized;
-}
-
-async function savePartyOpsConfigSetting(input) {
-  const normalized = validatePartyOpsConfig(input);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized);
-  return normalized;
-}
-
 function areAdvancedSettingsEnabled() {
   try {
     return Boolean(game.settings.get(MODULE_ID, SETTINGS.ADVANCED_SETTINGS_ENABLED));
@@ -3054,6 +3054,42 @@ function ensureLauncherUi(...args) {
   }
   return launcherUiController.ensureLauncherUi(...args);
 }
+
+const {
+  validatePartyOpsConfig,
+  getPartyOpsConfigSetting,
+  savePartyOpsConfigSetting,
+  normalizeInventoryHookMode,
+  getInventoryHookModeSetting,
+  setInventoryHookMode,
+  getModuleConfigSnapshot
+} = createPartyOperationsConfigAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  configSchema: CONFIG_SCHEMA,
+  defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  partyOpsLootRarities: PARTY_OPS_LOOT_RARITIES,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  gameRef: game,
+  setModuleSettingWithLocalRefreshSuppressed,
+  isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+  setPartyOpsConfigNormalizationInProgress: (value) => {
+    partyOpsConfigNormalizationInProgress = Boolean(value);
+  },
+  getPlayerHubModeSetting,
+  getLauncherPlacement: () => getLauncherPlacement(),
+  isFloatingLauncherLocked: () => isFloatingLauncherLocked(),
+  getIntegrationModeSetting,
+  resolveIntegrationMode,
+  isDaeAvailable,
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getGatherRollModeSetting,
+  getGatherResourceConfig,
+  foundryRef: foundry
+});
 
 const {
   PartyOperationsSettingsHub,
@@ -3159,57 +3195,6 @@ function ensurePartyOpsSettingsRegistered() {
     openMainTab
   });
   return true;
-}
-
-function normalizeInventoryHookMode(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (raw === INVENTORY_HOOK_MODES.OFF) return INVENTORY_HOOK_MODES.OFF;
-  if (raw === INVENTORY_HOOK_MODES.REFRESH) return INVENTORY_HOOK_MODES.REFRESH;
-  return INVENTORY_HOOK_MODES.SYNC;
-}
-
-function getInventoryHookModeSetting() {
-  const configured = game.settings.get(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE);
-  return normalizeInventoryHookMode(configured);
-}
-
-async function setInventoryHookMode(mode) {
-  const normalized = normalizeInventoryHookMode(mode);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INVENTORY_HOOK_MODE, normalized);
-  return normalized;
-}
-
-function getModuleConfigSnapshot() {
-  return {
-    schema: CONFIG_SCHEMA,
-    ui: {
-      playerHubMode: getPlayerHubModeSetting()
-    },
-    launcher: {
-      placement: getLauncherPlacement(),
-      floatingLocked: isFloatingLauncherLocked()
-    },
-    integration: {
-      configuredMode: getIntegrationModeSetting(),
-      resolvedMode: resolveIntegrationMode(),
-      daeAvailable: isDaeAvailable()
-    },
-    journal: {
-      visibility: getJournalVisibilityMode(),
-      filterDebounceMs: getJournalFilterDebounceMs(),
-      sessionSummaryRange: getSessionSummaryRangeSetting()
-    },
-    inventory: {
-      hookMode: getInventoryHookModeSetting()
-    },
-    gather: {
-      rollMode: getGatherRollModeSetting(),
-      rules: foundry.utils.deepClone(getGatherResourceConfig())
-    },
-    typedConfig: {
-      value: getPartyOpsConfigSetting()
-    }
-  };
 }
 
 function getGatherRollModeSetting() {
@@ -6175,10 +6160,6 @@ function getLootPreviewResultStorageKey() {
   return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
 }
 
-function getOperationsJournalViewStorageKey() {
-  return `po-operations-journal-view-${game.user?.id ?? "anon"}`;
-}
-
 function normalizePlayerHubMode(value, fallback = PLAYER_HUB_MODES.SIMPLE) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (normalized === PLAYER_HUB_MODES.ADVANCED) return PLAYER_HUB_MODES.ADVANCED;
@@ -6288,90 +6269,6 @@ function getPlayerHubActionRequestFromUiAction(action) {
     default:
       return null;
   }
-}
-
-function getOperationsJournalViewState() {
-  const fallback = { filter: "", sort: "newest", category: "all" };
-  const raw = sessionStorage.getItem(getOperationsJournalViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    const filter = String(parsed?.filter ?? "").trim();
-    const sortRaw = String(parsed?.sort ?? "newest").trim().toLowerCase();
-    const categoryRaw = String(parsed?.category ?? "all").trim().toLowerCase();
-    const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
-    const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
-    return {
-      filter,
-      sort: sortAllowed.has(sortRaw) ? sortRaw : "newest",
-      category: categoryAllowed.has(categoryRaw) ? categoryRaw : "all"
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function setOperationsJournalViewState(patch = {}) {
-  const prev = getOperationsJournalViewState();
-  const next = {
-    ...prev,
-    ...patch
-  };
-  const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
-  const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
-  next.filter = String(next.filter ?? "").trim();
-  next.sort = sortAllowed.has(String(next.sort ?? "").trim().toLowerCase()) ? String(next.sort).trim().toLowerCase() : "newest";
-  next.category = categoryAllowed.has(String(next.category ?? "").trim().toLowerCase()) ? String(next.category).trim().toLowerCase() : "all";
-  sessionStorage.setItem(getOperationsJournalViewStorageKey(), JSON.stringify(next));
-}
-
-function getJournalVisibilityMode() {
-  const raw = String(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY) ?? JOURNAL_VISIBILITY_MODES.PUBLIC)
-    .trim()
-    .toLowerCase();
-  if (raw === JOURNAL_VISIBILITY_MODES.GM_PRIVATE) return JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
-  if (raw === JOURNAL_VISIBILITY_MODES.REDACTED) return JOURNAL_VISIBILITY_MODES.REDACTED;
-  return JOURNAL_VISIBILITY_MODES.PUBLIC;
-}
-
-function getJournalFilterDebounceMs() {
-  const raw = Number(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FILTER_DEBOUNCE_MS) ?? 180);
-  if (!Number.isFinite(raw)) return 180;
-  return Math.max(0, Math.min(1000, Math.floor(raw)));
-}
-
-function getSessionSummaryRangeSetting() {
-  const raw = String(game.settings.get(MODULE_ID, SETTINGS.SESSION_SUMMARY_RANGE) ?? "last-24h").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(SESSION_SUMMARY_RANGE_OPTIONS, raw) ? raw : "last-24h";
-}
-
-function getSessionSummaryWindowBounds() {
-  const mode = getSessionSummaryRangeSetting();
-  const now = Date.now();
-  if (mode === "last-7d") {
-    return { mode, start: now - (7 * 86400000), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
-  }
-  if (mode === "today") {
-    const startDate = new Date();
-    startDate.setHours(0, 0, 0, 0);
-    return { mode, start: Number(startDate.getTime()), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
-  }
-  return { mode: "last-24h", start: now - 86400000, end: now, label: SESSION_SUMMARY_RANGE_OPTIONS["last-24h"] };
-}
-
-function scheduleOperationsJournalFilterUpdate(app, value, rerender) {
-  const existing = journalFilterDebounceTimers.get(app);
-  if (existing) window.clearTimeout(existing);
-  const delay = getJournalFilterDebounceMs();
-  const timer = window.setTimeout(() => {
-    setOperationsJournalViewState({ filter: String(value ?? "") });
-    try {
-      rerender?.();
-    } finally {
-      journalFilterDebounceTimers.delete(app);
-    }
-  }, delay);
-  journalFilterDebounceTimers.set(app, timer);
 }
 
 function clearScheduledSopNoteSave(app, sopKey) {
@@ -7067,147 +6964,6 @@ function hydrateCachedNoteDraftInputs(root) {
   });
 
   syncOperationalSopNoteViews(root);
-}
-
-function buildJournalSortOptions(selectedSort = "newest") {
-  const selected = String(selectedSort ?? "newest").trim().toLowerCase();
-  return JOURNAL_SORT_OPTIONS.map((entry) => ({
-    value: entry.value,
-    label: entry.label,
-    selected: entry.value === selected
-  }));
-}
-
-function buildJournalCategoryOptions(selectedCategory = "all") {
-  const selected = String(selectedCategory ?? "all").trim().toLowerCase();
-  return [
-    { value: "all", label: "All Categories", selected: selected === "all" },
-    ...Object.entries(OPERATIONS_JOURNAL_CATEGORIES).map(([value, label]) => ({
-      value,
-      label,
-      selected: selected === value
-    }))
-  ];
-}
-
-async function handleOperationsJournalAction(action, element, rerender) {
-  const actionKey = String(action ?? "").trim();
-  if (!actionKey) return false;
-  if (actionKey === "set-journal-filter") {
-    setOperationsJournalViewState({ filter: String(element?.value ?? "") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "set-journal-sort") {
-    setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "set-journal-category") {
-    setOperationsJournalViewState({ category: String(element?.value ?? "all") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "open-journal-entry") {
-    await openJournalEntryFromElement(element);
-    return true;
-  }
-  return false;
-}
-
-function buildOperationsJournalContext() {
-  const view = getOperationsJournalViewState();
-  const root = findOperationsJournalRootFolder();
-  const rootFolderId = String(root?.id ?? "").trim();
-  const rootFolderName = String(root?.name ?? OPERATIONS_JOURNAL_ROOT_NAME).trim() || OPERATIONS_JOURNAL_ROOT_NAME;
-  const selectedCategory = String(view?.category ?? "all").trim().toLowerCase() || "all";
-  const filterNeedle = String(view?.filter ?? "").trim().toLowerCase();
-  const selectedSort = String(view?.sort ?? "newest").trim().toLowerCase() || "newest";
-
-  const resolveEntryFolder = (entry) => {
-    const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
-    return folderId ? game.folders?.get(folderId) ?? null : null;
-  };
-
-  const resolveCategoryForEntry = (entryFolder) => {
-    const folder = entryFolder;
-    if (!folder) return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
-
-    let current = folder;
-    let guard = 0;
-    while (current && guard < 40) {
-      const parentId = getJournalFolderParentId(current);
-      if (parentId === rootFolderId) {
-        const label = String(current.name ?? "").trim();
-        const key = Object.entries(OPERATIONS_JOURNAL_CATEGORIES).find(([, value]) => String(value ?? "").trim().toLowerCase() === label.toLowerCase())?.[0] ?? "session";
-        return { key, label: label || OPERATIONS_JOURNAL_CATEGORIES[key] || OPERATIONS_JOURNAL_CATEGORIES.session };
-      }
-      current = parentId ? game.folders?.get(parentId) ?? null : null;
-      guard += 1;
-    }
-
-    return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
-  };
-
-  const rows = (game.journal?.contents ?? [])
-    .filter((entry) => {
-      if (!entry) return false;
-      if (!rootFolderId) return false;
-      const entryFolder = resolveEntryFolder(entry);
-      const entryFolderId = String(entryFolder?.id ?? "").trim();
-      return journalFolderIsUnderRoot(entryFolderId, rootFolderId);
-    })
-    .map((entry) => {
-      const name = String(entry?.name ?? "Untitled").trim() || "Untitled";
-      const entryFolder = resolveEntryFolder(entry);
-      const folderLabel = String(entryFolder?.name ?? "Unfiled").trim() || "Unfiled";
-      const category = resolveCategoryForEntry(entryFolder);
-      const updatedAtRaw = Number(entry?._stats?.modifiedTime ?? entry?._stats?.createdTime ?? Date.now());
-      const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : Date.now();
-      const updatedAtDate = new Date(updatedAt);
-      const searchBlob = [name, folderLabel, category.label, category.key].join(" ").toLowerCase();
-      return {
-        id: String(entry?.id ?? "").trim(),
-        name,
-        folderLabel,
-        categoryKey: category.key,
-        categoryLabel: category.label,
-        updatedAt,
-        updatedAtLabel: Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Unknown",
-        searchBlob
-      };
-    })
-    .filter((row) => {
-      if (selectedCategory !== "all" && row.categoryKey !== selectedCategory) return false;
-      if (filterNeedle && !row.searchBlob.includes(filterNeedle)) return false;
-      return true;
-    });
-
-  const sortedRows = [...rows].sort((a, b) => {
-    if (selectedSort === "oldest") return Number(a.updatedAt) - Number(b.updatedAt);
-    if (selectedSort === "title") return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    if (selectedSort === "folder") {
-      const folderCompare = String(a.folderLabel ?? "").localeCompare(String(b.folderLabel ?? ""));
-      if (folderCompare !== 0) return folderCompare;
-      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    }
-    return Number(b.updatedAt) - Number(a.updatedAt);
-  });
-
-  return {
-    rootFolderName,
-    hasRootFolder: Boolean(rootFolderId),
-    selectedFilter: String(view?.filter ?? ""),
-    selectedSort,
-    selectedCategory,
-    sortOptions: buildJournalSortOptions(selectedSort),
-    categoryOptions: buildJournalCategoryOptions(selectedCategory),
-    rows: sortedRows,
-    visibleCount: sortedRows.length,
-    totalCount: rows.length,
-    hasRows: sortedRows.length > 0,
-    hasFilter: Boolean(filterNeedle)
-  };
 }
 
 function parseLootPreviewNumericInput(value, fallback = 0) {
@@ -38172,228 +37928,6 @@ async function runLootItemRollOff(itemIdInput, runIdInput = "") {
     itemName: String(item.name ?? "Item"),
     winnerName: String(winner.actorName ?? "Actor")
   };
-}
-
-function getJournalFolderParentId(folder) {
-  return String(folder?.folder?.id ?? folder?.folder ?? folder?.parent?.id ?? "").trim();
-}
-
-function findJournalFolderByName(name, parentId = "") {
-  const targetName = String(name ?? "").trim().toLowerCase();
-  const targetParentId = String(parentId ?? "").trim();
-  return (game.folders?.contents ?? []).find((folder) => {
-    if (!folder || String(folder.type ?? "") !== "JournalEntry") return false;
-    if (String(folder.name ?? "").trim().toLowerCase() !== targetName) return false;
-    return getJournalFolderParentId(folder) === targetParentId;
-  }) ?? null;
-}
-
-function findOperationsJournalRootFolder() {
-  const preferred = findJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
-  if (preferred) return preferred;
-  for (const legacyName of OPERATIONS_JOURNAL_ROOT_NAME_LEGACY) {
-    const legacy = findJournalFolderByName(legacyName, "");
-    if (legacy) return legacy;
-  }
-  return null;
-}
-
-async function ensureOperationsJournalRootFolder() {
-  const existing = findOperationsJournalRootFolder();
-  if (existing) {
-    const existingName = String(existing.name ?? "").trim();
-    if (existingName !== OPERATIONS_JOURNAL_ROOT_NAME && canAccessAllPlayerOps()) {
-      try {
-        await existing.update({ name: OPERATIONS_JOURNAL_ROOT_NAME });
-      } catch {
-        // Non-fatal; continue using existing folder.
-      }
-    }
-    return existing;
-  }
-  return ensureJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
-}
-
-function getJournalFolderCacheState() {
-  const raw = game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE);
-  if (!raw || typeof raw !== "object") return {};
-  return raw;
-}
-
-async function setJournalFolderCacheState(patch = {}) {
-  const current = getJournalFolderCacheState();
-  const next = foundry.utils.mergeObject(current, patch, {
-    inplace: false,
-    insertKeys: true,
-    insertValues: true
-  });
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.JOURNAL_FOLDER_CACHE, next);
-}
-
-async function ensureJournalFolderByName(name, parentId = "") {
-  const normalizedName = String(name ?? "").trim();
-  const normalizedParentId = String(parentId ?? "").trim();
-  const key = `${normalizedParentId}::${normalizedName.toLowerCase()}`;
-
-  const cache = getJournalFolderCacheState();
-  const cachedId = String(cache?.folders?.[key] ?? "").trim();
-  if (cachedId) {
-    const cachedFolder = game.folders?.get(cachedId) ?? null;
-    if (cachedFolder && String(cachedFolder.type ?? "") === "JournalEntry") {
-      const cachedName = String(cachedFolder.name ?? "").trim().toLowerCase();
-      const cachedParentId = getJournalFolderParentId(cachedFolder);
-      if (cachedName === normalizedName.toLowerCase() && cachedParentId === normalizedParentId) return cachedFolder;
-    }
-    if (canAccessAllPlayerOps()) {
-      await setJournalFolderCacheState({ folders: { [key]: "" } });
-    }
-  }
-
-  const existing = findJournalFolderByName(normalizedName, normalizedParentId);
-  if (existing) {
-    if (canAccessAllPlayerOps()) {
-      await setJournalFolderCacheState({ folders: { [key]: String(existing.id ?? "") } });
-    }
-    return existing;
-  }
-
-  const activePromise = journalFolderEnsurePromises.get(key);
-  if (activePromise) return activePromise;
-
-  const createPromise = (async () => {
-    const created = await Folder.create({
-      name: normalizedName || "Folder",
-      type: "JournalEntry",
-      folder: normalizedParentId || null
-    });
-    if (canAccessAllPlayerOps() && created?.id) {
-      await setJournalFolderCacheState({ folders: { [key]: String(created.id) } });
-    }
-    return created;
-  })();
-
-  journalFolderEnsurePromises.set(key, createPromise);
-  try {
-    return await createPromise;
-  } finally {
-    journalFolderEnsurePromises.delete(key);
-  }
-}
-
-async function ensureOperationsJournalFolder(categoryKey = "session") {
-  const normalized = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryKey)
-    ? categoryKey
-    : "session";
-  const root = await ensureOperationsJournalRootFolder();
-  const categoryLabel = OPERATIONS_JOURNAL_CATEGORIES[normalized];
-  const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
-  return { root, categoryFolder, categoryKey: normalized, categoryLabel };
-}
-
-async function ensureOperationsJournalFolderTree() {
-  if (!canAccessAllPlayerOps()) return null;
-  const root = await ensureOperationsJournalRootFolder();
-  const categories = [];
-  for (const [categoryKey, categoryLabel] of Object.entries(OPERATIONS_JOURNAL_CATEGORIES)) {
-    const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
-    categories.push({ categoryKey, categoryLabel, categoryFolder });
-  }
-  return { root, categories };
-}
-
-function journalFolderIsUnderRoot(folderId, rootId) {
-  const start = String(folderId ?? "").trim();
-  const root = String(rootId ?? "").trim();
-  if (!start || !root) return false;
-  let currentId = start;
-  let guard = 0;
-  while (currentId && guard < 40) {
-    if (currentId === root) return true;
-    const folder = game.folders?.get(currentId);
-    currentId = getJournalFolderParentId(folder);
-    guard += 1;
-  }
-  return false;
-}
-
-async function createOperationsJournalEntry(options = {}) {
-  if (!canAccessAllPlayerOps()) return null;
-
-  const categoryRaw = String(options?.category ?? options?.categoryKey ?? "session").trim().toLowerCase();
-  const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw)
-    ? categoryRaw
-    : "session";
-  const title = String(options?.title ?? "Operations Log").trim() || "Operations Log";
-  const summary = String(options?.summary ?? "").trim();
-  const redactedSummary = String(options?.redactedSummary ?? "").trim();
-  const body = String(options?.body ?? "").trim() || "<p>No details provided.</p>";
-  const redactedBody = String(options?.redactedBody ?? "").trim();
-  const sensitivity = String(options?.sensitivity ?? "public").trim().toLowerCase();
-
-  const visibility = getJournalVisibilityMode();
-  let effectiveSummary = summary;
-  let effectiveBody = body;
-
-  if (sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.REDACTED) {
-    effectiveSummary = redactedSummary || summary;
-    effectiveBody = redactedBody || body;
-  }
-
-  const gmOnly = sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
-  const ownership = gmOnly
-    ? (() => {
-      const next = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
-      for (const user of game.users?.contents ?? []) {
-        if (!user) continue;
-        if (user.isGM) next[String(user.id)] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
-      }
-      return next;
-    })()
-    : { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
-
-  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-  const stamp = new Date().toLocaleString();
-  const safeStamp = escape(stamp);
-  const safeEffectiveSummary = escape(effectiveSummary);
-  const finalBody = `
-    <p><em>${safeStamp}</em></p>
-    ${safeEffectiveSummary ? `<p>${safeEffectiveSummary}</p>` : ""}
-    ${effectiveBody}
-  `;
-
-  try {
-    const { categoryFolder } = await ensureOperationsJournalFolder(categoryKey);
-    const htmlFormat = Number(CONST?.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1);
-    const entry = await JournalEntry.create({
-      name: `${title} - ${stamp}`,
-      folder: categoryFolder?.id ?? null,
-      ownership,
-      pages: [{
-        name: "Log",
-        type: "text",
-        text: {
-          format: htmlFormat,
-          content: finalBody
-        }
-      }]
-    });
-    return entry ?? null;
-  } catch (error) {
-    console.warn(`${MODULE_ID}: failed creating operations journal entry`, error);
-    ui.notifications?.warn(`Party Operations journal write failed: ${title}`);
-    return null;
-  }
-}
-
-async function openJournalEntryFromElement(element) {
-  const entryId = String(element?.dataset?.journalId ?? "").trim();
-  if (!entryId) return;
-  const entry = game.journal?.get(entryId);
-  if (!entry) {
-    ui.notifications?.warn("Journal entry not found.");
-    return;
-  }
-  entry.sheet?.render(true);
 }
 
 async function buildLootClaimItemDocumentData(itemEntry = {}) {

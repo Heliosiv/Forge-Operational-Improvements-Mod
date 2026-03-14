@@ -4,7 +4,7 @@ Party Operations is a Foundry VTT module for running the table-facing logistics 
 
 ## Current Build
 
-The current released build in this repository is `2.2.4-test.29`.
+The current repository manifest version is `2.2.7-test.12`.
 
 ## What This Module Covers
 
@@ -43,6 +43,8 @@ The GM Audio page is part of the current build line.
 ## Documentation
 
 - Usage guide: [HOW_TO_USE.md](./HOW_TO_USE.md)
+- Architecture: [ARCHITECTURE.md](./ARCHITECTURE.md)
+- Fix journal: [LOGICS_JOURNAL.md](./LOGICS_JOURNAL.md)
 - Build notes and fixes: [BUG_FIXES.md](./BUG_FIXES.md)
 - Roadmap: [ROADMAP.md](./ROADMAP.md)
 
@@ -54,10 +56,16 @@ Validate the module before publishing:
 npm run check
 ```
 
+Run baseline governance and manifest checks only:
+
+```powershell
+npm run check:baseline
+```
+
 Create a release with the helper script:
 
 ```powershell
-./scripts/release.ps1 -Version 2.2.4-test.29 -Message "Release"
+./scripts/release.ps1 -Version 2.2.7 -Message "Release"
 ```
 
-GitHub Actions runs on pushes to `main`, version tags matching `v*.*.*`, and manual dispatch. The workflow validates `module.json`, rebuilds `release/module.zip`, and updates the GitHub Release assets used by the manifest URLs above.
+GitHub Actions runs full validation on pull requests to `main`. Tagged stable releases matching `v*.*.*` rebuild `release/module.zip` and publish the GitHub Release assets used by the manifest URLs above. Pushes to `main` still validate and package, but they no longer publish test-channel artifacts as the stable release.
