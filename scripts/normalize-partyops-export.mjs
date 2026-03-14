@@ -2,12 +2,14 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import {
+import syncDnd5eItemsIntoManifest from "./sync-dnd5e-items-into-manifest.cjs";
+
+const {
   enrichManifestItem,
   normalizeEffects,
   normalizeItemFlags,
   stampPartyOperationsMetadata
-} from "./sync-dnd5e-items-into-manifest.js";
+} = syncDnd5eItemsIntoManifest;
 
 const MODULE_ID = "party-operations";
 const DEFAULT_SOURCE_PATH = "C:/Users/Kyle/Downloads/party-ops-2026-03-09-export.json";

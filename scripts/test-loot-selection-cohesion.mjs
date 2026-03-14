@@ -85,4 +85,25 @@ const gemBundle = buildLootCohesiveBundle(gem, {
 assert.equal(gemBundle.length, 1);
 assert.ok(gemBundle[0].quantity >= 2);
 
+const boltCase = {
+  uuid: "Item.bolt-case",
+  name: "Crossbow Bolt Case",
+  itemType: "container",
+  itemValueGp: 1,
+  merchantCategories: ["container", "storage"],
+  keywords: ["loot.container", "merchant.container"]
+};
+
+const boltCaseBundle = buildLootCohesiveBundle(boltCase, {
+  budgetRemainingGp: 20,
+  draft: { challenge: "mid" },
+  pool: [],
+  selected: [],
+  random: () => 0
+});
+
+assert.equal(boltCaseBundle.length, 1);
+assert.equal(boltCaseBundle[0].candidate.uuid, "Item.bolt-case");
+assert.equal(boltCaseBundle[0].quantity, 1);
+
 process.stdout.write("loot selection cohesion validation passed\n");

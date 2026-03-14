@@ -61,7 +61,21 @@ function isMagicLike(entry = {}) {
     || normalizeText(entry?.rarity) === "very-rare";
 }
 
+function isContainerLike(entry = {}) {
+  const itemType = normalizeText(entry?.itemType);
+  if (itemType === "container" || itemType === "backpack") return true;
+  const categories = new Set(normalizeList(entry?.merchantCategories));
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return categories.has("container")
+    || categories.has("storage")
+    || keywords.has("loot.container")
+    || keywords.has("merchant.container")
+    || keywords.has("merchant.storage")
+    || keywords.has("foundrytype.container");
+}
+
 function isAmmoLike(entry = {}) {
+  if (isContainerLike(entry) || isQuiverLike(entry)) return false;
   const itemType = normalizeText(entry?.itemType);
   if (itemType === "ammunition" || itemType === "ammo") return true;
   const name = normalizeText(entry?.name);
@@ -86,7 +100,7 @@ function isQuiverLike(entry = {}) {
   return /\bquiver\b/.test(name)
     || /\bbolt case\b/.test(name)
     || /\bammo pouch\b/.test(name)
-    || /\bcase\b/.test(name);
+    || /\barrow case\b/.test(name);
 }
 
 function getAmmoToken(entry = {}) {
