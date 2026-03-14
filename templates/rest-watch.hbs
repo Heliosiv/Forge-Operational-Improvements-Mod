@@ -13,7 +13,7 @@
       {{/if}}
     </nav>
     <div class="po-controls">
-      {{#if isGM}}
+      {{#if showGmPageTab}}
       <button type="button" class="po-icon-btn" data-action="open-settings-hub" aria-label="Open Settings Hub" title="Open Settings Hub">
         <i class="fa-solid fa-gear"></i>
       </button>
@@ -737,7 +737,7 @@
             </div>
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
-              {{#if @root.isGM}}
+              {{#if @root.showGmPageTab}}
               <button type="button" class="po-btn po-btn-sm" data-action="open-gm-factions-page">Open GM Faction Workspace</button>
               {{/if}}
             </div>
@@ -821,7 +821,7 @@
           <div class="po-op-role-row">
             <div class="po-section-title">No revealed factions match the current view.</div>
             <div class="po-op-summary">The shared board only shows factions the GM has pushed to party understanding.</div>
-            {{#if @root.isGM}}
+            {{#if @root.showGmPageTab}}
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="open-gm-factions-page">Open GM Faction Workspace</button>
             </div>
@@ -1048,7 +1048,7 @@
               {{/if}}
             </div>
           </div>
-          {{#if @root.isGM}}
+          {{#if @root.showGmPageTab}}
           <div class="po-op-action-row">
             <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Editor</button>
           </div>
@@ -1400,7 +1400,7 @@
 
         {{/if}}
 
-        {{#if @root.isGM}}
+        {{#if @root.showGmPageTab}}
         {{#if operationsPageGm}}
         <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell">
           {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs"}}

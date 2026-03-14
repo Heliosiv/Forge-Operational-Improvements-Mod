@@ -140,3 +140,83 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
   }
 }
+
+export function setupRestWatchDragAndDrop(html, deps = {}) {
+  const {
+    getRestWatchState,
+    canAccessAllPlayerOps,
+    isLockedForUser,
+    updateRestWatchState,
+    ensureRestSlotEntriesList,
+    addActorToRestSlot,
+    refreshRestWatchAppsImmediately
+  } = deps;
+
+  const state = getRestWatchState();
+  const isGM = canAccessAllPlayerOps();
+  if (!isGM || isLockedForUser(state, isGM)) return;
+
+  html.querySelectorAll(".po-watch-entry").forEach((entry) => {
+    const actorId = entry.dataset.actorId;
+    if (!actorId) return;
+    entry.setAttribute("draggable", "true");
+    entry.classList.add("is-draggable");
+    if (entry.dataset.poRestDndBound === "1") return;
+    entry.dataset.poRestDndBound = "1";
+    entry.addEventListener("dragstart", (event) => {
+      const slotId = entry.closest(".po-card")?.dataset?.slotId;
+      if (!slotId) return;
+      const payload = JSON.stringify({ actorId, fromSlotId: slotId });
+      event.dataTransfer?.setData("text/plain", payload);
+      event.dataTransfer?.setDragImage?.(entry, 20, 20);
+    });
+  });
+
+  html.querySelectorAll(".po-card").forEach((card) => {
+    if (card.dataset.poRestDropBound === "1") return;
+    card.dataset.poRestDropBound = "1";
+
+    card.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      card.classList.add("is-drop-target");
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("is-drop-target");
+    });
+
+    card.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      card.classList.remove("is-drop-target");
+
+      const raw = event.dataTransfer?.getData("text/plain") ?? "";
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const actorId = data?.actorId;
+      const fromSlotId = data?.fromSlotId;
+      const targetSlotId = card.dataset.slotId;
+      if (!actorId || !fromSlotId || !targetSlotId) return;
+      if (fromSlotId === targetSlotId) return;
+
+      await updateRestWatchState((state) => {
+        const slots = state.slots ?? [];
+        const source = slots.find((slot) => slot.id === fromSlotId);
+        if (source) {
+          ensureRestSlotEntriesList(source);
+          source.entries = source.entries.filter((entry) => entry.actorId !== actorId);
+        }
+
+        const target = slots.find((slot) => slot.id === targetSlotId);
+        if (!target) return;
+        addActorToRestSlot(target, actorId);
+      }, { skipLocalRefresh: true });
+
+      refreshRestWatchAppsImmediately();
+    });
+  });
+}

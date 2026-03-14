@@ -9,7 +9,26 @@ import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
-import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
+import {
+  applyMarchRequest,
+  createMarchFeatureModule,
+  normalizeSocketMarchRequest,
+  setupMarchingDragAndDrop as setupMarchingDragAndDropFeature
+} from "./features/march-feature.js";
+import {
+  MARCH_DOCTRINE_STATES,
+  MARCH_DOCTRINE_TRIGGERS,
+  buildDefaultMarchDoctrineTracker,
+  buildDoctrineCheckPayload,
+  buildMarchFormationChoices,
+  clearDoctrineTriggerPending,
+  ensureMarchDoctrineTracker,
+  evaluateMarchingFormationState,
+  getMarchDoctrineTriggerLabel,
+  getMarchFormationDefinition,
+  markDoctrineTriggerPending,
+  normalizeMarchingFormationId
+} from "./features/march-doctrine.js";
 import {
   applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
   applyPlayerDowntimeClearRequest as applyPlayerDowntimeClearRequestFeature,
@@ -20,7 +39,12 @@ import {
   applyPlayerSettingWriteRequest as applyPlayerSettingWriteRequestFeature,
   applyPlayerSopNoteRequest as applyPlayerSopNoteRequestFeature
 } from "./features/operations-player-handlers.js";
-import { applyRestRequest, createRestFeatureModule, normalizeSocketRestRequest } from "./features/rest-feature.js";
+import {
+  applyRestRequest,
+  createRestFeatureModule,
+  normalizeSocketRestRequest,
+  setupRestWatchDragAndDrop as setupRestWatchDragAndDropFeature
+} from "./features/rest-feature.js";
 import { attachModuleApi } from "./core/api-registry.js";
 import { createOpenAppRefresher } from "./core/app-refresh.js";
 import {
@@ -305,6 +329,22 @@ let latestCanvasRestoreRequestId = 0;
 const journalFilterDebounceTimers = new WeakMap();
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
+const playerUiLocalSettingOverridesMemory = new Map();
+const playerPermissionDebugMemory = [];
+const PLAYER_PERMISSION_DEBUG_LIMIT = 50;
+const SHARED_ACTOR_NOTE_FLAGS = Object.freeze({
+  REST_WATCH: "sharedRestWatchNotes",
+  MARCHING: "sharedMarchingNote"
+});
+const PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS = new Set([
+  SETTINGS.REST_STATE,
+  SETTINGS.REST_COMMITTED,
+  SETTINGS.REST_ACTIVITIES,
+  SETTINGS.MARCH_STATE,
+  SETTINGS.MARCH_COMMITTED,
+  SETTINGS.OPS_LEDGER,
+  SETTINGS.INJURY_RECOVERY
+]);
 const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 const pendingGatherCheckRequests = new Map();
@@ -2099,6 +2139,16 @@ function notifyUiWarnThrottled(message, options = {}) {
   const key = String(options.key ?? text);
   const ttlMs = Number(options.ttlMs ?? 1200);
   if (!shouldEmitThrottledUiNotice(`warn:${key}`, ttlMs)) return;
+  if (
+    text.includes("GM permissions are required")
+    || text.includes("Only the GM can")
+    || text.includes("change blocked")
+  ) {
+    logPlayerPermissionDebug("ui-warning", text, {
+      key,
+      ttlMs
+    });
+  }
   ui.notifications?.warn(text);
 }
 
@@ -2222,6 +2272,133 @@ function canAccessAllPlayerOps(user = game.user) {
 function hasActiveGmClient() {
   const users = game.users?.contents ?? game.users ?? [];
   return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
+}
+
+function getPlayerUiLocalOverrideStorageKey() {
+  return `po-player-ui-setting-overrides-${game.user?.id ?? "anon"}`;
+}
+
+function getPlayerPermissionDebugStorageKey() {
+  return `po-permission-debug-${game.user?.id ?? "anon"}`;
+}
+
+function readSessionStorageJson(key, fallback) {
+  try {
+    const raw = globalThis.sessionStorage?.getItem?.(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionStorageJson(key, value) {
+  try {
+    globalThis.sessionStorage?.setItem?.(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readPlayerUiLocalSettingOverrides() {
+  const key = getPlayerUiLocalOverrideStorageKey();
+  const stored = readSessionStorageJson(key, null);
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) return stored;
+  return Object.fromEntries(playerUiLocalSettingOverridesMemory.entries());
+}
+
+function writePlayerUiLocalSettingOverrides(overrides = {}) {
+  const normalized = overrides && typeof overrides === "object" && !Array.isArray(overrides)
+    ? overrides
+    : {};
+  playerUiLocalSettingOverridesMemory.clear();
+  for (const [key, value] of Object.entries(normalized)) {
+    playerUiLocalSettingOverridesMemory.set(String(key ?? "").trim(), foundry.utils.deepClone(value));
+  }
+  writeSessionStorageJson(getPlayerUiLocalOverrideStorageKey(), normalized);
+}
+
+function getPlayerUiLocalSettingOverride(settingKey) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return undefined;
+  const overrides = readPlayerUiLocalSettingOverrides();
+  if (!Object.prototype.hasOwnProperty.call(overrides, normalizedSettingKey)) return undefined;
+  return foundry.utils.deepClone(overrides[normalizedSettingKey]);
+}
+
+function setPlayerUiLocalSettingOverride(settingKey, value) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return false;
+  const overrides = readPlayerUiLocalSettingOverrides();
+  overrides[normalizedSettingKey] = foundry.utils.deepClone(value);
+  writePlayerUiLocalSettingOverrides(overrides);
+  return true;
+}
+
+function canUsePlayerUiLocalOverride(settingKey, user = game.user) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  return Boolean(
+    normalizedSettingKey
+    && PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS.has(normalizedSettingKey)
+    && user
+    && !user.isGM
+    && canAccessAllPlayerOps(user)
+    && !hasActiveGmClient()
+  );
+}
+
+function getModuleSettingWithPlayerUiOverride(settingKey) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return undefined;
+  if (canUsePlayerUiLocalOverride(normalizedSettingKey)) {
+    const override = getPlayerUiLocalSettingOverride(normalizedSettingKey);
+    if (override !== undefined) return override;
+  }
+  return game.settings.get(MODULE_ID, normalizedSettingKey);
+}
+
+function logPlayerPermissionDebug(code, message, details = {}) {
+  const entry = {
+    at: new Date().toISOString(),
+    userId: String(game.user?.id ?? "").trim(),
+    userName: String(game.user?.name ?? "Unknown").trim() || "Unknown",
+    code: String(code ?? "").trim() || "unknown",
+    message: String(message ?? "").trim() || "Permission barrier encountered.",
+    details: details && typeof details === "object" && !Array.isArray(details)
+      ? foundry.utils.deepClone(details)
+      : {}
+  };
+  playerPermissionDebugMemory.unshift(entry);
+  if (playerPermissionDebugMemory.length > PLAYER_PERMISSION_DEBUG_LIMIT) {
+    playerPermissionDebugMemory.length = PLAYER_PERMISSION_DEBUG_LIMIT;
+  }
+  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
+  const next = [entry, ...(Array.isArray(stored) ? stored : [])].slice(0, PLAYER_PERMISSION_DEBUG_LIMIT);
+  writeSessionStorageJson(getPlayerPermissionDebugStorageKey(), next);
+  console.warn(`[${MODULE_ID}][permission-debug] ${entry.message}`, entry);
+  try {
+    globalThis.dispatchEvent?.(new CustomEvent(`${MODULE_ID}:permission-debug`, { detail: entry }));
+  } catch {
+    // Ignore event dispatch failures in older browser contexts.
+  }
+  return entry;
+}
+
+function getPlayerPermissionDebugEntries() {
+  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
+  const entries = Array.isArray(stored) ? stored : playerPermissionDebugMemory;
+  return foundry.utils.deepClone(entries);
+}
+
+function clearPlayerPermissionDebugEntries() {
+  playerPermissionDebugMemory.length = 0;
+  try {
+    globalThis.sessionStorage?.removeItem?.(getPlayerPermissionDebugStorageKey());
+  } catch {
+    // Ignore storage cleanup failures.
+  }
 }
 
 function getRenderableElementRoot(html) {
@@ -2717,7 +2894,7 @@ function consumeSuppressedSettingRefresh(fullSettingKey) {
 
 async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
   const normalizedSettingKey = String(settingKey ?? "").trim();
-  if (!normalizedSettingKey) return;
+  if (!normalizedSettingKey) return false;
   const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${normalizedSettingKey}`) ?? null;
   const settingScope = String(settingRecord?.scope ?? "").trim().toLowerCase();
 
@@ -2726,13 +2903,27 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
       const fullClientSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
       suppressNextSettingRefresh(fullClientSettingKey);
       await game.settings.set(MODULE_ID, normalizedSettingKey, value);
-      return;
+      return true;
     }
-    if (!canAccessAllPlayerOps(game.user)) return;
+    if (!canAccessAllPlayerOps(game.user)) return false;
     const hasActiveGm = hasActiveGmClient();
     if (!hasActiveGm) {
+      if (canUsePlayerUiLocalOverride(normalizedSettingKey, game.user)) {
+        setPlayerUiLocalSettingOverride(normalizedSettingKey, value);
+        logPlayerPermissionDebug("local-override", "Saved Party Operations change to local player test state because no GM client is active.", {
+          settingKey: normalizedSettingKey
+        });
+        notifyUiInfoThrottled(
+          "Party Operations saved locally for player-side UI testing. Changes are not synced until a GM client reconnects.",
+          { key: `player-local-override:${normalizedSettingKey}`, ttlMs: 5000 }
+        );
+        return true;
+      }
+      logPlayerPermissionDebug("no-active-gm", "Party Operations change blocked because no active GM client is available.", {
+        settingKey: normalizedSettingKey
+      });
       ui.notifications?.warn("Party Operations change blocked: no active GM client is available.");
-      return;
+      return false;
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "ops:setting-write",
@@ -2740,11 +2931,12 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
       settingKey: normalizedSettingKey,
       value: foundry.utils.deepClone(value)
     });
-    return;
+    return true;
   }
   const fullSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
   suppressNextSettingRefresh(fullSettingKey);
   await game.settings.set(MODULE_ID, normalizedSettingKey, value);
+  return true;
 }
 
 function getIntegrationModeSetting() {
@@ -3478,6 +3670,156 @@ async function setLegacyPartyOpsFlagSilently(actor, flagKeyInput, value) {
   }
 }
 
+function getModuleActorFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag(MODULE_ID, flagKey);
+    } catch {
+      // Fall through to direct data access.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.${MODULE_ID}.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.[MODULE_ID];
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setModuleActorFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag(MODULE_ID, flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canUserPersistSharedActorNotes(actor, user = game.user) {
+  if (!actor || !user) return false;
+  if (user.isGM) return true;
+  try {
+    if (typeof actor.testUserPermission === "function") {
+      return Boolean(actor.testUserPermission(user, "OWNER"));
+    }
+  } catch {
+    // Fall through to conservative owner check.
+  }
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
+}
+
+function resolveActorDocument(actorOrActorId) {
+  if (!actorOrActorId) return null;
+  if (typeof actorOrActorId === "string") return game.actors?.get?.(actorOrActorId) ?? null;
+  return actorOrActorId?.documentName === "Actor" ? actorOrActorId : null;
+}
+
+function normalizeSharedRestWatchNoteStore(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const store = {};
+  for (const [slotId, entry] of Object.entries(source)) {
+    const normalizedSlotId = String(slotId ?? "").trim();
+    if (!normalizedSlotId) continue;
+    const record = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry
+      : { text: entry };
+    store[normalizedSlotId] = {
+      text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+      updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+      updatedBy: String(record.updatedBy ?? "").trim(),
+      source: normalizeRestNoteSaveSource(record.source)
+    };
+  }
+  return store;
+}
+
+function normalizeSharedMarchingNoteRecord(value) {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : { text: value };
+  return {
+    text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+    updatedBy: String(record.updatedBy ?? "").trim()
+  };
+}
+
+function getPublishedRestWatchNoteText(actorOrActorId, slotIdInput, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return String(fallback ?? "");
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  if (!Object.prototype.hasOwnProperty.call(store, slotId)) return String(fallback ?? "");
+  return String(store[slotId]?.text ?? "");
+}
+
+function getPublishedMarchingNoteText(actorOrActorId, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return String(fallback ?? "");
+  const record = getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING);
+  if (record === undefined) return String(fallback ?? "");
+  return String(normalizeSharedMarchingNoteRecord(record).text ?? "");
+}
+
+async function publishRestWatchNoteForActor(actorOrActorId, slotIdInput, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  store[slotId] = {
+    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim(),
+    source: normalizeRestNoteSaveSource(options.source)
+  };
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH, store);
+}
+
+async function publishMarchingNoteForActor(actorOrActorId, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING, {
+    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim()
+  });
+}
+
+function applyPublishedRestWatchNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  const slots = Array.isArray(state.slots) ? state.slots : [];
+  slots.forEach((slot, index) => {
+    const slotId = String(slot?.id ?? `watch-${index + 1}`).trim();
+    const entries = ensureRestSlotEntriesList(slot);
+    entries.forEach((entry) => {
+      entry.notes = getPublishedRestWatchNoteText(entry?.actorId, slotId, entry?.notes ?? "");
+    });
+  });
+  return state;
+}
+
+function applyPublishedMarchingNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  if (!state.notes || typeof state.notes !== "object") state.notes = {};
+  for (const actorId of getOrderedMarchingActors(state)) {
+    state.notes[actorId] = getPublishedMarchingNoteText(actorId, state.notes?.[actorId] ?? "");
+  }
+  return state;
+}
+
 function getGatherAttemptState(actor) {
   if (!actor) return { lastDay: "", lastEnvironmentSignature: "" };
   return {
@@ -3705,8 +4047,7 @@ function buildIntegrationGlobalContext() {
   const ledger = getOperationsLedger();
   const injuryRecovery = getInjuryRecoveryState();
   const operations = buildOperationsContext();
-  const formation = normalizeMarchingFormation(marchState.formation ?? "default");
-  const doctrineEffects = getDoctrineEffects(formation);
+  const formationSnapshot = getMarchingFormationSnapshot(marchState);
   const rankByActorId = {};
   for (const rank of ["front", "middle", "rear"]) {
     for (const actorId of marchState.ranks?.[rank] ?? []) {
@@ -3738,8 +4079,7 @@ function buildIntegrationGlobalContext() {
     ledger,
     injuryRecovery,
     operations,
-    formation,
-    doctrineEffects,
+    formationSnapshot,
     rankByActorId,
     watchSlotsByActorId,
     rolesByActorId
@@ -3770,6 +4110,9 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       ? (Array.isArray(summaryEffects.worldDaeChanges) ? summaryEffects.worldDaeChanges : [])
       : [])
     : (Array.isArray(summaryEffects.customDaeChanges) ? summaryEffects.customDaeChanges : []);
+  const formationDaeChanges = Array.isArray(globalContext.formationSnapshot?.effectChangesByActorId?.[actorId])
+    ? globalContext.formationSnapshot.effectChangesByActorId[actorId]
+    : [];
 
   return {
     moduleVersion: getCurrentModuleVersion(),
@@ -3791,12 +4134,19 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
       minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
       minorSavingThrowBonus: Number(globalModifiers.savingThrows ?? 0),
-      customDaeChanges
+      customDaeChanges: [...customDaeChanges, ...formationDaeChanges]
     },
     doctrine: {
-      formation: globalContext.formation,
-      surprise: globalContext.doctrineEffects.surprise,
-      ambush: globalContext.doctrineEffects.ambush
+      formation: globalContext.formationSnapshot?.formation?.id ?? "loose",
+      formationLabel: globalContext.formationSnapshot?.formation?.label ?? "Loose Formation",
+      category: globalContext.formationSnapshot?.formation?.category ?? "loose",
+      valid: Boolean(globalContext.formationSnapshot?.validity?.isValid),
+      doctrineState: globalContext.formationSnapshot?.doctrine?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      formationState: globalContext.formationSnapshot?.formationState?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      cohesionCheckRequired: Boolean(globalContext.formationSnapshot?.doctrine?.cohesionCheckRequired),
+      effectSummaries: Array.isArray(globalContext.formationSnapshot?.effectSummaries)
+        ? globalContext.formationSnapshot.effectSummaries
+        : []
     },
     assignment: {
       watch: {
@@ -4878,7 +5228,37 @@ function buildIntegrationEffectData(payload, actor = null) {
     {
       key: `flags.${MODULE_ID}.ae.formation`,
       mode,
-      value: String(payload.doctrine.formation ?? "default"),
+      value: String(payload.doctrine.formation ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationCategory`,
+      mode,
+      value: String(payload.doctrine.category ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.doctrineState`,
+      mode,
+      value: String(payload.doctrine.doctrineState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationState`,
+      mode,
+      value: String(payload.doctrine.formationState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationValid`,
+      mode,
+      value: payload.doctrine.valid ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.cohesionCheckRequired`,
+      mode,
+      value: payload.doctrine.cohesionCheckRequired ? "1" : "0",
       priority
     },
     {
@@ -6356,14 +6736,30 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
   const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   setNoteDraftCacheValue(cacheKey, text);
 
-  if (!canAccessAllPlayerOps()) {
-    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
-    if (options?.notify) ui.notifications?.info("Note saved.");
-    return true;
+  if (!game.user?.isGM) {
+    if (!hasActiveGmClient()) {
+      const published = await publishRestWatchNoteForActor(actorId, slotId, text, {
+        source,
+        user: game.user
+      });
+      if (published) {
+        refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+        if (options?.notify) ui.notifications?.info("Note saved.");
+        return true;
+      }
+      logPlayerPermissionDebug("rest-note-local-fallback", "Rest watch note could not be published to the actor document; falling back to player-local state.", {
+        actorId,
+        slotId
+      });
+    }
+    const saved = await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
+    if (options?.notify && saved) ui.notifications?.info("Note saved.");
+    return Boolean(saved);
   }
 
   let changed = false;
-  await updateRestWatchState((state) => {
+  const saved = await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
     if (!slot.entries && slot.actorId) {
@@ -6387,10 +6783,10 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
     changed = true;
   });
 
-  if (options?.notify) {
+  if (options?.notify && saved) {
     ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
   }
-  return changed;
+  return saved ? changed : false;
 }
 
 async function saveRestWatchEntryNoteFromElement(element, options = {}) {
@@ -6450,24 +6846,38 @@ async function saveMarchingNoteByContext(context = {}, options = {}) {
   const cacheKey = getMarchingNoteCacheKey(actorId);
   setNoteDraftCacheValue(cacheKey, text);
 
-  if (!canAccessAllPlayerOps()) {
-    await updateMarchingOrderState({ op: "setNote", actorId, text });
-    if (options?.notify) ui.notifications?.info("Note saved.");
-    return true;
+  if (!game.user?.isGM) {
+    if (!hasActiveGmClient()) {
+      const published = await publishMarchingNoteForActor(actorId, text, {
+        user: game.user
+      });
+      if (published) {
+        refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        if (options?.notify) ui.notifications?.info("Note saved.");
+        return true;
+      }
+      logPlayerPermissionDebug("march-note-local-fallback", "Marching note could not be published to the actor document; falling back to player-local state.", {
+        actorId
+      });
+    }
+    const saved = await updateMarchingOrderState({ op: "setNote", actorId, text });
+    if (options?.notify && saved) ui.notifications?.info("Note saved.");
+    return Boolean(saved);
   }
 
   let changed = false;
-  await updateMarchingOrderState((state) => {
+  const saved = await updateMarchingOrderState((state) => {
     if (!state.notes) state.notes = {};
     const previous = String(state.notes[actorId] ?? "");
     if (previous === text) return;
     state.notes[actorId] = text;
     changed = true;
   });
-  if (options?.notify) {
+  if (options?.notify && saved) {
     ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
   }
-  return changed;
+  return saved ? changed : false;
 }
 
 async function saveMarchingNoteFromElement(element, options = {}) {
@@ -8624,7 +9034,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     // Setup drag-and-drop for rest watch entries
-    setupRestWatchDragAndDrop(this.element);
+    setupRestWatchDragAndDropFeature(this.element, {
+      getRestWatchState,
+      canAccessAllPlayerOps,
+      isLockedForUser,
+      updateRestWatchState,
+      ensureRestSlotEntriesList,
+      addActorToRestSlot,
+      refreshRestWatchAppsImmediately
+    });
     
     if (game.user?.isGM && canAccessAllPlayerOps() && shouldAutoOpenRestForPlayers() && !this._openedPlayers) {
       emitOpenRestPlayers();
@@ -8790,6 +9208,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.render({ force: true, popOut: true });
         },
         "open-settings-hub": async () => {
+          if (!canAccessGmPage()) {
+            ui.notifications?.warn("GM permissions are required to open Party Operations settings.");
+            return;
+          }
           openPartyOperationsSettingsHub({ force: true });
         },
         "assign": async () => {
@@ -9633,17 +10055,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
     if (!slotId) return;
     const text = event.target.value ?? "";
+    const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
+    if (!actorId) return;
 
-    if (!canAccessAllPlayerOps()) {
-      const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
-      if (!actorId) return;
-      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
+    if (!game.user?.isGM) {
+      await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+        notify: false,
+        source: "manual"
+      });
       return;
     }
 
-    await updateRestWatchState((state) => {
-      const slot = state.slots.find((entry) => entry.id === slotId);
-      if (slot) slot.notes = text;
+    await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+      notify: false,
+      source: "manual"
     });
   }
 
@@ -9856,7 +10281,7 @@ async function setGlobalModifierExcluded(modifierId, excluded, options = {}) {
 
 function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view global modifiers.");
     return null;
   }
@@ -10274,7 +10699,7 @@ function buildGmLootClaimsBoardContext() {
 
 function openGmFactionsPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view faction controls.");
     return null;
   }
@@ -10289,7 +10714,7 @@ function openGmFactionsPage(renderOptions = { force: true }) {
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view environment controls.");
     return null;
   }
@@ -10304,7 +10729,7 @@ function openGmEnvironmentPage(renderOptions = { force: true }) {
 
 function openGmDowntimePage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view downtime controls.");
     return null;
   }
@@ -10319,7 +10744,7 @@ function openGmDowntimePage(renderOptions = { force: true }) {
 
 function openGmMerchantsPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view merchant controls.");
     return null;
   }
@@ -10334,7 +10759,7 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
 
 function openGmAudioPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view audio controls.");
     return null;
   }
@@ -10349,7 +10774,7 @@ function openGmAudioPage(renderOptions = { force: true }) {
 
 function openGmLootPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
@@ -10365,7 +10790,7 @@ function openGmLootPage(renderOptions = { force: true }) {
 function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   const key = String(panelKey ?? "").trim().toLowerCase();
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view GM panels.");
     return null;
   }
@@ -11397,7 +11822,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     const text = event.target.value ?? "";
     const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
     if (!actorId) return;
-    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
+    await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+      notify: false,
+      source: "manual"
+    });
   }
 
   async close(options = {}) {
@@ -11426,17 +11854,10 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   async _prepareContext() {
     const isGM = canAccessAllPlayerOps();
     const state = getMarchingOrderState();
+    const formationSnapshot = getMarchingFormationSnapshot(state);
     const ranks = buildRanksView(state, isGM);
     const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
     const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
-    const formation = normalizeMarchingFormation(state.formation ?? "default");
-    const formationLabels = {
-      default: "Default Formation (2 front, 3 middle)",
-      "combat-ready": "Combat-Ready Formation (2 front, 2 middle)",
-      "tight-corridor": "Tight Corridor Formation (2 front, 2 middle)",
-      "low-visibility": "Low-Visibility Formation (1 front, 1 middle)"
-    };
-    const doctrineEffects = getDoctrineEffects(formation);
     const tracker = ensureDoctrineTracker(state);
     const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
     const miniVizUi = buildMiniVizUiContext();
@@ -11449,6 +11870,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
     return {
       isGM,
+      showGmPageTab: canAccessGmPage(),
       locked: state.locked,
       lockBannerText,
       lockBannerTooltip,
@@ -11462,6 +11884,28 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       usageToggleLabel: "Collapse",
       usageToggleIcon: "fa-chevron-up",
       ranks,
+      formationChoices: buildMarchFormationChoices(formationSnapshot.formation.id),
+      formationSummary: {
+        label: formationSnapshot.formation.label,
+        category: formationSnapshot.formation.category,
+        categoryLabel: formationSnapshot.formation.categoryLabel,
+        summary: formationSnapshot.formation.summary,
+        validityLabel: formationSnapshot.validity.stateLabel,
+        valid: formationSnapshot.validity.isValid,
+        doctrineStateLabel: formationSnapshot.doctrine.stateLabel,
+        doctrineChecksActive: formationSnapshot.doctrine.checksActive,
+        cohesionChecksActive: formationSnapshot.doctrine.cohesionChecksActive,
+        cohesionCheckRequired: formationSnapshot.doctrine.cohesionCheckRequired,
+        formationStateLabel: formationSnapshot.formationState.stateLabel,
+        lastCheckAt: tracker.lastCheckAt ?? "-",
+        lastCheckTriggerLabel: formationSnapshot.doctrine.lastCheckTriggerLabel ?? "-",
+        lastCheckSummary: tracker.lastCheckSummary ?? "-",
+        pendingTriggerLabel: formationSnapshot.doctrine.pendingTriggerLabel ?? "",
+        effectEntries: formationSnapshot.effectEntries,
+        effectSummaries: formationSnapshot.effectSummaries,
+        invalidReasons: formationSnapshot.validity.reasons,
+        bandTargets: formationSnapshot.bandTargets
+      },
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
@@ -11484,27 +11928,20 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         gmNotesToggleLabel: "Collapse",
         gmNotesToggleIcon: "fa-chevron-up"
       },
-      formation,
-      formationLabel: formationLabels[formation] ?? formationLabels.default,
-      doctrineEffects,
       doctrineTracker: {
         lastCheckAt: tracker.lastCheckAt ?? "-",
-        lastCheckNote: tracker.lastCheckNote ?? "-"
+        lastCheckTrigger: tracker.lastCheckTrigger ?? "-",
+        lastCheckSummary: tracker.lastCheckSummary ?? "-"
       },
       miniViz,
       ...miniVizUi,
-      activateFormation: {
-        default: formation === "default",
-        combatReady: formation === "combat-ready",
-        tightCorridor: formation === "tight-corridor",
-        lowVisibility: formation === "low-visibility"
-      },
       overview: {
         totalAssigned,
         frontCount,
         middleCount,
         rearCount,
-        formationLabel: formationLabels[formation] ?? formationLabels.default,
+        formationLabel: formationSnapshot.formation.label,
+        formationStateLabel: formationSnapshot.formationState.stateLabel,
         lightSources,
         lockState
       }
@@ -11583,7 +12020,20 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
     }
     
-    setupMarchingDragAndDrop(this.element);
+    setupMarchingDragAndDropFeature(this.element, {
+      getMarchingOrderState,
+      canAccessAllPlayerOps,
+      canDragEntry,
+      isLockedForUser,
+      notifyUiWarnThrottled,
+      updateMarchingOrderState,
+      refreshSingleAppPreservingView,
+      getAppInstance,
+      markDoctrineTriggerPending,
+      doctrineTriggers: MARCH_DOCTRINE_TRIGGERS,
+      normalizeMarchingFormation,
+      appInstanceKeys: APP_INSTANCE_KEYS
+    });
     refreshTabAccessibility(this.element);
     diagnoseRenderedMainTabs(this.element, "marching-order");
     if (isModuleDebugEnabled()) {
@@ -11711,17 +12161,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "ping":
           await pingActorFromElement(element);
           break;
-        case "formation-standard":
-          await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
-          break;
-        case "formation-combat-ready":
-          await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
-          break;
-        case "formation-tight-corridor":
-          await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
-          break;
-        case "formation-low-visibility":
-          await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
+        case "formation-set":
+          await applyMarchingFormation({ type: element?.dataset?.formationId });
           break;
         case "doctrine-check":
           await runDoctrineCheckPrompt();
@@ -11754,20 +12195,17 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     const text = event.target.value ?? "";
 
-    if (!canAccessAllPlayerOps()) {
+    if (!game.user?.isGM) {
       const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId || getActiveActorForUser()?.id;
       if (!actorId) return;
-      await updateMarchingOrderState({ op: "setNote", actorId, text });
+      await saveMarchingNoteByContext({ actorId, text }, { notify: false });
       return;
     }
 
     // GM: apply per-actor notes directly
     const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId;
     if (!actorId) return;
-    await updateMarchingOrderState((state) => {
-      if (!state.notes) state.notes = {};
-      state.notes[actorId] = text;
-    });
+    await saveMarchingNoteByContext({ actorId, text }, { notify: false });
   }
 
   async #onGMNotesChange(event) {
@@ -11780,7 +12218,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
       return;
     }
-    if (!canAccessAllPlayerOps()) return; // GM notes are GM-only
+    if (!canAccessGmPage()) return; // GM notes are GM-only
     const text = event.target.value ?? "";
     await updateMarchingOrderState((state) => {
       state.gmNotes = text;
@@ -21284,7 +21722,7 @@ function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getC
 }
 
 function getOperationsLedger() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.OPS_LEDGER);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.OPS_LEDGER);
   const defaults = buildDefaultOperationsLedger();
   const merged = foundry.utils.mergeObject(defaults, stored ?? {}, {
     inplace: false,
@@ -21362,18 +21800,26 @@ async function updateOperationsLedger(mutator, options = {}) {
     mutator(ledger);
 
     if (!game.user?.isGM) {
+      if (!hasActiveGmClient()) {
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+        if (!saved) return false;
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "ops:ledger-write",
         userId: game.user.id,
         ledger
       });
-      return;
+      return true;
     }
 
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    if (!saved) return false;
     scheduleIntegrationSync("operations-ledger");
     if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
     if (!options.skipSocketRefresh) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    return true;
   } catch (error) {
     logUiFailure("operations-ledger", "update failed", error, {
       skipLocalRefresh: Boolean(options?.skipLocalRefresh),
@@ -29250,7 +29696,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const defaultActorId = selectableActors.some((actor) => String(actor.id) === activeActorId)
     ? activeActorId
     : String(selectableActors[0]?.id ?? "");
-  const canChooseActor = isGMUser;
+  const canChooseActor = canAccessAllPlayerOps(user);
   const actorOptions = canChooseActor
     ? [
       { id: "", name: "Select actor", selected: !defaultActorId },
@@ -30671,9 +31117,7 @@ function readDowntimeSubmissionFromUi(element) {
   const root = element?.closest(".po-downtime-panel");
   if (!root) return null;
   const selectedActorId = String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim();
-  const actorId = canAccessAllPlayerOps()
-    ? selectedActorId
-    : String(getActiveActorForUser(game.user)?.id ?? selectedActorId).trim();
+  const actorId = selectedActorId || String(getActiveActorForUser(game.user)?.id ?? "").trim();
   return {
     actorId,
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
@@ -40114,7 +40558,7 @@ function buildDefaultInjuryRecoveryState() {
 }
 
 function getInjuryRecoveryState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.INJURY_RECOVERY);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.INJURY_RECOVERY);
   return foundry.utils.mergeObject(buildDefaultInjuryRecoveryState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -40125,16 +40569,19 @@ function getInjuryRecoveryState() {
 async function updateInjuryRecoveryState(mutator) {
   if (typeof mutator !== "function") return;
   if (!canAccessAllPlayerOps()) {
+    logPlayerPermissionDebug("injury-gm-only", "Injury Recovery update blocked because the user lacks shared Party Operations permissions.", {});
     ui.notifications?.warn("Only the GM can update injury recovery.");
     return;
   }
   const state = getInjuryRecoveryState();
   mutator(state);
 
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("injury-recovery");
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.INJURY });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.INJURY });
+  return true;
 }
 
 function buildInjuryActorOptions(selectedActorId = "") {
@@ -41080,7 +41527,7 @@ async function showRecoveryBrief() {
 }
 
 function getRestActivities() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.REST_ACTIVITIES);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_ACTIVITIES);
   return foundry.utils.mergeObject(buildDefaultActivityState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -41148,7 +41595,7 @@ function buildDefaultMarchingOrderState() {
     lockedBy: "",
     lastUpdatedAt: "-",
     lastUpdatedBy: "-",
-    formation: "default",
+    formation: "loose",
     ranks: {
       front: [],
       middle: [],
@@ -41158,10 +41605,7 @@ function buildDefaultMarchingOrderState() {
     gmNotes: "",
     light: {},
     lightRanges: {},
-    doctrineTracker: {
-      lastCheckAt: "-",
-      lastCheckNote: "-"
-    }
+    doctrineTracker: buildDefaultMarchDoctrineTracker()
   };
 }
 
@@ -41182,74 +41626,65 @@ function getMarchLightRange(state, actorId) {
 }
 
 function ensureDoctrineTracker(state) {
-  if (!state.doctrineTracker || typeof state.doctrineTracker !== "object") {
-    state.doctrineTracker = {
-      lastCheckAt: "-",
-      lastCheckNote: "-"
-    };
-  }
-  if (typeof state.doctrineTracker.lastCheckAt !== "string") {
-    state.doctrineTracker.lastCheckAt = "-";
-  }
-  if (typeof state.doctrineTracker.lastCheckNote !== "string") {
-    state.doctrineTracker.lastCheckNote = "-";
-  }
-  return state.doctrineTracker;
+  return ensureMarchDoctrineTracker(state);
 }
 
 function normalizeMarchingFormation(type) {
-  const value = type ?? "default";
-  const map = {
-    standard: "default",
-    "two-wide": "tight-corridor",
-    "single-file": "low-visibility",
-    wedge: "combat-ready",
-    default: "default",
-    "combat-ready": "combat-ready",
-    "tight-corridor": "tight-corridor",
-    "low-visibility": "low-visibility"
-  };
-  return map[value] ?? "default";
+  return normalizeMarchingFormationId(type);
 }
 
-function getDoctrineEffects(formation) {
-  const normalized = normalizeMarchingFormation(formation);
-  switch (normalized) {
-    case "combat-ready":
-      return {
-        surprise: "Improved first-contact readiness",
-        ambush: "Reduced frontal ambush vulnerability"
-      };
-    case "tight-corridor":
-      return {
-        surprise: "Neutral surprise posture",
-        ambush: "Reduced flank exposure in confined spaces"
-      };
-    case "low-visibility":
-      return {
-        surprise: "Improved stealth approach",
-        ambush: "Higher rear compression risk if detected"
-      };
-    default:
-      return {
-        surprise: "Balanced readiness",
-        ambush: "Balanced vulnerability"
-      };
-  }
+function getMarchingGridUnitPixels() {
+  const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100);
+  return Number.isFinite(gridSize) && gridSize > 0 ? gridSize : 100;
 }
 
-function getDoctrineCheckPrompt(formation) {
-  const normalized = normalizeMarchingFormation(formation);
-  switch (normalized) {
-    case "combat-ready":
-      return "Combat-ready: grant advantage on first readiness check; reduce frontal ambush impact by one step.";
-    case "tight-corridor":
-      return "Tight corridor: reduce flank/split ambush exposure by one step in confined spaces.";
-    case "low-visibility":
-      return "Low-visibility: grant advantage on stealthy approach; if detected, increase rear-pressure risk by one step.";
-    default:
-      return "Default: no modifier by doctrine alone; resolve surprise and ambush from encounter context.";
+function getMarchingTokenPositions(state = getMarchingOrderState()) {
+  const positions = {};
+  if (!canvas?.ready) return positions;
+  for (const actorId of getOrderedMarchingActors(state)) {
+    const actor = game.actors.get(actorId);
+    const token = actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()?.[0] ?? null;
+    const center = token?.center ?? token?.object?.center ?? null;
+    const x = Number(center?.x);
+    const y = Number(center?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    positions[actorId] = { x, y };
   }
+  return positions;
+}
+
+function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
+  return evaluateMarchingFormationState({
+    formationId: state.formation ?? "loose",
+    ranks: state.ranks ?? {},
+    doctrineTracker: ensureDoctrineTracker(state),
+    tokenPositionsByActorId: getMarchingTokenPositions(state),
+    gridUnitPixels: getMarchingGridUnitPixels()
+  });
+}
+
+function getActorCharismaModifier(actor) {
+  const direct = Number(actor?.system?.abilities?.cha?.mod);
+  if (Number.isFinite(direct)) return direct;
+  const derived = Number(actor?.system?.abilities?.cha?.save);
+  if (Number.isFinite(derived)) return derived;
+  return 0;
+}
+
+function getMarchDoctrineActorRows(state = getMarchingOrderState()) {
+  const snapshot = getMarchingFormationSnapshot(state);
+  return snapshot.assignedActorIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      return {
+        actorId,
+        name: String(actor?.name ?? "Unknown"),
+        charismaModifier: getActorCharismaModifier(actor),
+        rankId: snapshot.rankByActorId[actorId] ?? "rear"
+      };
+    })
+    .filter(Boolean);
 }
 
 function getActiveActorForUser(user = game.user) {
@@ -41279,20 +41714,25 @@ async function applyMarchingFormation({ front, middle, type }) {
     return;
   }
   const ordered = getOrderedMarchingActors(state);
-  const frontCount = Math.max(0, front ?? 0);
-  const middleCount = Math.max(0, middle ?? 0);
+  const nextFormation = normalizeMarchingFormation(type ?? state.formation ?? "loose");
+  const definition = getMarchFormationDefinition(nextFormation);
+  const frontCount = Math.max(0, front ?? definition?.bandTargets?.front?.recommended ?? 0);
+  const middleCount = Math.max(0, middle ?? definition?.bandTargets?.middle?.recommended ?? 0);
   const frontActors = ordered.slice(0, frontCount);
   const middleActors = ordered.slice(frontCount, frontCount + middleCount);
   const rearActors = ordered.slice(frontCount + middleCount);
-  const nextFormation = normalizeMarchingFormation(type ?? state.formation ?? "default");
 
   await updateMarchingOrderState((state) => {
     state.formation = nextFormation;
-    state.ranks = {
-      front: frontActors,
-      middle: middleActors,
-      rear: rearActors
-    };
+    if (nextFormation !== "free") {
+      state.ranks = {
+        front: frontActors,
+        middle: middleActors,
+        rear: rearActors
+      };
+    }
+    if (nextFormation === "free") clearDoctrineTriggerPending(state);
+    else markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
   });
 }
 
@@ -41313,7 +41753,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    return;
+    return true;
   }
   const state = getRestWatchState();
   if (typeof mutatorOrRequest === "function") {
@@ -41331,20 +41771,22 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       emitSocketRefresh,
       logUiDebug
     });
-    return;
+    return true;
   }
   stampUpdate(state);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("rest-watch");
   if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+  return true;
 }
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
     if (isMarchingOrderPlayerLocked(game.user)) {
       ui.notifications?.warn("Marching order is locked for players.");
-      return;
+      return false;
     }
     const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
       marchOps: SOCKET_MARCH_OPS,
@@ -41363,7 +41805,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       // Refresh immediately for player to avoid stale lag
       refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
     }
-    return;
+    return true;
   }
   const state = getMarchingOrderState();
   if (typeof mutatorOrRequest === "function") {
@@ -41379,15 +41821,20 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       refreshOpenApps,
       refreshScopeKeys: REFRESH_SCOPE_KEYS,
       emitSocketRefresh,
-      logUiDebug
+      logUiDebug,
+      markDoctrineTriggerPending,
+      doctrineTriggers: MARCH_DOCTRINE_TRIGGERS,
+      normalizeMarchingFormation
     });
-    return;
+    return true;
   }
   stampUpdate(state);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("marching-order");
   if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+  return true;
 }
 
 function stampUpdate(state, user = game.user) {
@@ -41439,7 +41886,7 @@ async function assignSlotToUser(element) {
     return;
   }
   
-  if (!canAccessAllPlayerOps()) {
+  if (!game.user?.isGM) {
     const slotId = element?.closest(".po-card")?.dataset?.slotId;
     const clicked = state.slots.find((s) => s.id === slotId);
     if (!clicked) return;
@@ -41504,11 +41951,12 @@ async function assignSlotByPicker(element, config = {}) {
           const actorId = html.find("select[name=actorId]").val();
           if (!targetSlotId || !actorId) return;
           let added = false;
-          await updateRestWatchState((state) => {
+          const updated = await updateRestWatchState((state) => {
             const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
             added = addActorToRestSlot(slot, actorId);
           }, { skipLocalRefresh: true });
+          if (!updated) return;
           if (!added) {
             const actorName = game.actors.get(actorId)?.name ?? "That actor";
             ui.notifications?.info(`${actorName} is already assigned to that watch.`);
@@ -41539,13 +41987,14 @@ async function clearSlotEntry(element) {
   if (!slotId || !actorId) return;
   const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   
-  if (!canAccessAllPlayerOps()) {
-    await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+  if (!game.user?.isGM) {
+    const updated = await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+    if (!updated) return;
     clearNoteDraftCacheValue(cacheKey);
     return;
   }
   
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
     // Migrate old format
@@ -41562,6 +42011,7 @@ async function clearSlotEntry(element) {
       slot.notes = "";
     }
   });
+  if (!updated) return;
   clearNoteDraftCacheValue(cacheKey);
 }
 
@@ -41679,8 +42129,9 @@ async function autofillFromParty() {
 }
 
 async function restoreRestCommitted() {
-  const committed = game.settings.get(MODULE_ID, SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  const committed = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  if (!saved) return;
   scheduleIntegrationSync("rest-watch-restore");
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });        // ensures local refresh even if socket doesn't echo back
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
@@ -41688,7 +42139,8 @@ async function restoreRestCommitted() {
 
 async function commitRestWatchState() {
   const state = getRestWatchState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  if (!saved) return;
   ui.notifications?.info("Rest watch snapshot saved.");
 }
 
@@ -41784,57 +42236,61 @@ async function clearRestWatchAll() {
 async function runDoctrineCheckPrompt() {
   if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
-  const formation = normalizeMarchingFormation(state.formation ?? "default");
-  const effects = getDoctrineEffects(formation);
-  const note = getDoctrineCheckPrompt(formation);
-  const rankLabels = {
-    front: "Front",
-    middle: "Middle",
-    rear: "Rear"
-  };
-  const orderedRankIds = ["front", "middle", "rear"];
+  const formationSnapshot = getMarchingFormationSnapshot(state);
   const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-  const seenActors = new Set();
-  const doctrinePartyRows = [];
-  for (const rankId of orderedRankIds) {
-    for (const actorId of state.ranks?.[rankId] ?? []) {
-      if (!actorId || seenActors.has(actorId)) continue;
-      seenActors.add(actorId);
-      const actor = game.actors.get(actorId);
-      if (!actor) continue;
-      const range = getMarchLightRange(state, actorId);
-      doctrinePartyRows.push(
-        `<li><strong>${escape(actor.name)}</strong> (${escape(rankLabels[rankId] ?? rankId)}) - ${state.light?.[actorId] ? `Torch active (Bright ${range.bright} ft / Dim ${range.dim} ft)` : "No torch"}</li>`
-      );
-    }
-  }
-  const doctrinePartySummary = doctrinePartyRows.length > 0
-    ? `<ul>${doctrinePartyRows.join("")}</ul>`
-    : "<p><em>No actors currently assigned to marching order.</em></p>";
-
-  await updateMarchingOrderState((state) => {
-    const tracker = ensureDoctrineTracker(state);
-    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    tracker.lastCheckNote = note;
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const trigger = formationSnapshot.doctrine.pendingTrigger || MARCH_DOCTRINE_TRIGGERS.MANUAL;
+  const checkPayloadBase = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows
   });
 
-  const labelMap = {
-    default: "Default Formation",
-    "combat-ready": "Combat-Ready Formation",
-    "tight-corridor": "Tight Corridor Formation",
-    "low-visibility": "Low-Visibility Formation"
-  };
+  if (!checkPayloadBase.active) {
+    ui.notifications?.info("Free formation bypasses doctrine checks.");
+    return;
+  }
+
+  const roll = await (new Roll(`1d20 + ${checkPayloadBase.averageModifier}`)).evaluate();
+  const checkPayload = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows,
+    rollTotal: roll.total
+  });
+
+  await updateMarchingOrderState((draft) => {
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.state = checkPayload.state;
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = checkPayload.trigger;
+    tracker.lastCheckSummary = checkPayload.summary;
+    tracker.lastCheckRollTotal = Number(checkPayload.rollTotal ?? 0);
+    tracker.lastCheckDc = Number(checkPayload.dc ?? 0);
+    clearDoctrineTriggerPending(draft);
+  });
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+
+  const doctrinePartySummary = doctrineRows.length > 0
+    ? `<ul>${doctrineRows.map((row) => `<li><strong>${escape(row.name)}</strong> (${escape(row.rankId)}) CHA ${row.charismaModifier >= 0 ? "+" : ""}${row.charismaModifier}</li>`).join("")}</ul>`
+    : "<p><em>No assigned actors were available for the check.</em></p>";
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
-      <p><strong>Doctrine Check Prompt</strong></p>
-      <p><strong>Formation:</strong> ${labelMap[formation] ?? labelMap.default}</p>
-      <p><strong>Surprise Posture:</strong> ${effects.surprise}</p>
-      <p><strong>Ambush Exposure:</strong> ${effects.ambush}</p>
-      <p><strong>Marching Panel:</strong></p>
+      <p><strong>Doctrine Check</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot.formation.label)}</p>
+      <p><strong>Category:</strong> ${escape(formationSnapshot.formation.categoryLabel)}</p>
+      <p><strong>Trigger:</strong> ${escape(getMarchDoctrineTriggerLabel(checkPayload.trigger))}</p>
+      <p><strong>Method:</strong> ${escape(checkPayload.methodLabel)}</p>
+      <p><strong>Roll:</strong> ${escape(checkPayload.summary)} Result ${roll.total}</p>
+      <p><strong>Doctrine State:</strong> ${escape(checkPayload.stateLabel)}</p>
+      <p><strong>Formation State:</strong> ${escape(updatedSnapshot.formationState.stateLabel)}</p>
+      <p><strong>Assigned Group:</strong></p>
       ${doctrinePartySummary}
-      <p><em>${escape(note)}</em></p>
+      <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
     `
   });
 }
@@ -41903,13 +42359,20 @@ async function assignActorToRank(element) {
         callback: async (html) => {
           const actorId = html.find("select[name=actorId]").val();
           if (!actorId) return;
-          await updateMarchingOrderState((state) => {
+          const updated = await updateMarchingOrderState((state) => {
             for (const key of Object.keys(state.ranks)) {
               state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
             }
             if (!state.ranks[rankId]) state.ranks[rankId] = [];
             state.ranks[rankId].push(actorId);
+            if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+              markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+            }
           }, { skipLocalRefresh: true });
+          if (!updated) {
+            refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+            return;
+          }
 
           const moved = moveActorEntryToRankDom(rankId, actorId);
           if (!moved) {
@@ -41937,14 +42400,18 @@ async function removeActorFromRanks(element) {
   const actorId = element?.dataset?.actorId;
   if (!actorId) return;
 
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
     }
     if (state.notes) delete state.notes[actorId];
     if (state.light) delete state.light[actorId];
     if (state.lightRanges) delete state.lightRanges[actorId];
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
   });
+  if (!updated) return;
   clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
 }
 
@@ -41971,7 +42438,7 @@ async function joinRank(element) {
     return;
   }
   
-  if (!canAccessAllPlayerOps()) {
+  if (!game.user?.isGM) {
     await updateMarchingOrderState({ op: "joinRank", rankId, actorId: actor.id });
     return;
   }
@@ -41981,6 +42448,9 @@ async function joinRank(element) {
     }
     if (!state.ranks[rankId]) state.ranks[rankId] = [];
     state.ranks[rankId].push(actor.id);
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
   });
 }
 
@@ -41988,7 +42458,7 @@ async function toggleLight(element) {
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
   if (!actorId) return;
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     if (!state.light) state.light = {};
     if (!state.lightRanges) state.lightRanges = {};
     state.light[actorId] = Boolean(checked);
@@ -41999,6 +42469,10 @@ async function toggleLight(element) {
       };
     }
   }, { skipLocalRefresh: true });
+  if (!updated) {
+    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
   const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
@@ -42012,7 +42486,7 @@ async function setLightRange(element) {
   if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
   const fallback = rangeKey === "bright" ? DEFAULT_MARCH_LIGHT_BRIGHT : DEFAULT_MARCH_LIGHT_DIM;
   const value = normalizeLightDistance(element?.value, fallback);
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     if (!state.lightRanges) state.lightRanges = {};
     const current = getMarchLightRange(state, actorId);
     const next = {
@@ -42026,6 +42500,10 @@ async function setLightRange(element) {
       state.lightRanges[actorId].dim = next.bright;
     }
   }, { skipLocalRefresh: true });
+  if (!updated) {
+    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
   const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
@@ -42077,12 +42555,18 @@ async function clearMarchingAll() {
     state.light = {};
     state.lightRanges = {};
     state.gmNotes = "";
+    if (normalizeMarchingFormation(state.formation ?? "loose") === "free") {
+      clearDoctrineTriggerPending(state);
+    } else {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION);
+    }
   });
 }
 
 async function commitMarchingOrderState() {
   const state = getMarchingOrderState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  if (!saved) return;
   ui.notifications?.info("Marching order snapshot saved.");
 }
 
@@ -42128,7 +42612,7 @@ function openActorSheetFromElement(element) {
 }
 
 function getRestWatchState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.REST_STATE);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_STATE);
   const merged = foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -42139,18 +42623,22 @@ function getRestWatchState() {
   const slotIds = merged.slots.map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
   merged.campfire = Boolean(merged.campfire);
   merged.campfireBySlot = normalizeRestWatchCampfireBySlot(merged?.campfireBySlot, slotIds, merged.campfire);
+  applyPublishedRestWatchNotesToState(merged);
   merged.locked = false;
   merged.lockedBy = "";
   return merged;
 }
 
 function getMarchingOrderState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.MARCH_STATE);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.MARCH_STATE);
   const merged = foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
     insertValues: true
   });
+  merged.formation = normalizeMarchingFormation(merged.formation ?? "loose");
+  ensureDoctrineTracker(merged);
+  applyPublishedMarchingNotesToState(merged);
   merged.locked = false;
   merged.lockedBy = "";
   return merged;
@@ -42388,28 +42876,27 @@ function buildWatchSlotsView(state, isGM, visibility) {
 
 function buildRanksView(state, isGM) {
   const lockedForUser = isLockedForUser(state, isGM);
-  const formation = normalizeMarchingFormation(state.formation ?? "default");
-  
-  // Get formation-based capacity
-  const getFormationCapacity = (rankId) => {
-    switch (formation) {
-      case "default":
-        return rankId === "front" ? 2 : rankId === "middle" ? 3 : null;
-      case "combat-ready":
-        return rankId === "front" ? 2 : rankId === "middle" ? 2 : null;
-      case "tight-corridor":
-        return rankId === "front" ? 2 : rankId === "middle" ? 2 : null;
-      case "low-visibility":
-        return rankId === "front" ? 1 : rankId === "middle" ? 1 : null;
-      default:
-        return rankId === "front" ? 2 : rankId === "middle" ? 3 : null;
-    }
-  };
-
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const bandTargets = formationSnapshot.bandTargets ?? {};
   const rankConfigs = {
-    front: { capacity: getFormationCapacity("front"), desc: "First to engage", icon: "fa-shield" },
-    middle: { capacity: getFormationCapacity("middle"), desc: "Support & balance", icon: "fa-users" },
-    rear: { capacity: null, desc: "Rear guard", icon: "fa-arrow-turn-up" }
+    front: {
+      capacity: bandTargets.front?.recommended ?? null,
+      capLimit: bandTargets.front?.max ?? null,
+      desc: "Lead band",
+      icon: "fa-shield"
+    },
+    middle: {
+      capacity: bandTargets.middle?.recommended ?? null,
+      capLimit: bandTargets.middle?.max ?? null,
+      desc: "Center band",
+      icon: "fa-users"
+    },
+    rear: {
+      capacity: bandTargets.rear?.recommended ?? null,
+      capLimit: bandTargets.rear?.max ?? null,
+      desc: "Rear band",
+      icon: "fa-arrow-turn-up"
+    }
   };
 
   const base = buildEmptyRanks(isGM).map((rank) => {
@@ -42439,11 +42926,16 @@ function buildRanksView(state, isGM) {
       .filter(Boolean);
 
     const capacity = config?.capacity;
-    const capacityPercent = capacity ? Math.min(100, (entries.length / capacity) * 100) : 0;
+    const capacityForBar = config?.capLimit ?? capacity;
+    const capacityPercent = capacityForBar ? Math.min(100, (entries.length / capacityForBar) * 100) : 0;
+    const desc = capacity
+      ? `${config.desc} - target ${capacity}${config?.capLimit !== null && config?.capLimit !== capacity ? `, max ${config.capLimit}` : ""}`
+      : config.desc;
 
     return {
       ...rank,
       ...config,
+      desc,
       entries,
       capacity,
       capacityPercent,
@@ -43236,81 +43728,6 @@ function buildQuickNotes(state) {
   return notes;
 }
 
-function setupMarchingDragAndDrop(html) {
-  const state = getMarchingOrderState();
-  const isGM = canAccessAllPlayerOps();
-  const locked = state.locked;
-
-  html.querySelectorAll(".po-entry").forEach((entry) => {
-    const actorId = entry.dataset.actorId;
-    const draggable = canDragEntry(actorId, isGM, locked);
-    entry.setAttribute("draggable", draggable ? "true" : "false");
-    entry.classList.toggle("is-draggable", draggable);
-    if (!draggable) return;
-    if (entry.dataset.poDndEntryBound === "1") return;
-    entry.dataset.poDndEntryBound = "1";
-    entry.addEventListener("dragstart", (event) => {
-      event.dataTransfer?.setData("text/plain", actorId);
-      event.dataTransfer?.setDragImage?.(entry, 20, 20);
-    });
-
-    const handle = entry.querySelector(".po-entry-handle");
-    if (handle) {
-      handle.setAttribute("draggable", "true");
-      if (handle.dataset.poDndHandleBound !== "1") {
-        handle.dataset.poDndHandleBound = "1";
-        handle.addEventListener("dragstart", (event) => {
-          event.dataTransfer?.setData("text/plain", actorId);
-          event.dataTransfer?.setDragImage?.(entry, 20, 20);
-          event.stopPropagation();
-        });
-      }
-    }
-  });
-
-  html.querySelectorAll(".po-rank-col").forEach((column) => {
-    if (column.dataset.poDndColBound === "1") return;
-    column.dataset.poDndColBound = "1";
-    column.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-
-    column.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      if (!isGM) return;
-      const liveState = getMarchingOrderState();
-      if (isLockedForUser(liveState, isGM)) {
-        notifyUiWarnThrottled("Marching order is locked by the GM.", {
-          key: "marching-order-locked",
-          ttlMs: 1500
-        });
-        return;
-      }
-      const actorId = event.dataTransfer?.getData("text/plain");
-      if (!actorId) return;
-      const rankId = column.dataset.rankId;
-      if (!rankId) return;
-
-      const targetEntry = event.target?.closest(".po-entry");
-      const entryList = Array.from(column.querySelectorAll(".po-entry"));
-      const insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
-
-      await updateMarchingOrderState((state) => {
-        for (const key of Object.keys(state.ranks)) {
-          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
-        }
-        if (!state.ranks[rankId]) state.ranks[rankId] = [];
-        const target = state.ranks[rankId];
-        const safeIndex = Math.max(0, Math.min(insertIndex, target.length));
-        target.splice(safeIndex, 0, actorId);
-      }, { skipLocalRefresh: true });
-
-      refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
-    });
-  });
-}
-
 function queueInventoryRefresh(actor, reason = "inventory-update") {
   if (!actor || actor.documentName !== "Actor") return;
   const hookMode = getInventoryHookModeSetting();
@@ -43464,7 +43881,9 @@ function buildPartyOperationsApi() {
     stopAudioMixPlayback,
     normalizeAudioLibraryKind,
     normalizeAudioLibraryUsage,
-    normalizeAudioLibrarySearch
+    normalizeAudioLibrarySearch,
+    getPlayerPermissionDebugEntries,
+    clearPlayerPermissionDebugEntries
   });
 }
 
@@ -43894,11 +44313,12 @@ async function toggleCampfire(element) {
     return;
   }
   const newValue = !getRestWatchSlotCampfireState(state, slotId);
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
     state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
     state.campfireBySlot[slotId] = newValue;
   });
+  if (!updated) return;
   const slotLabel = String(element?.dataset?.slotLabel ?? "").trim() || "watch";
   const status = newValue ? `Campfire lit for ${slotLabel}` : `Campfire extinguished for ${slotLabel}`;
   ui.notifications?.info(status);
@@ -43912,7 +44332,7 @@ async function toggleCampfireAll() {
   const state = getRestWatchState();
   const overview = buildRestWatchCampfireOverview(buildWatchSlotsView(state, true, state.visibility ?? "names-passives"));
   const newValue = !overview.allLit;
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
     state.campfire = newValue;
     state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
@@ -43920,6 +44340,7 @@ async function toggleCampfireAll() {
       state.campfireBySlot[slotId] = newValue;
     }
   });
+  if (!updated) return;
   ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
 }
 
@@ -43943,76 +44364,6 @@ const refreshOpenAppsController = createOpenAppRefresher({
 
 function refreshOpenApps(options = {}) {
   return refreshOpenAppsController(options);
-}
-
-function setupRestWatchDragAndDrop(html) {
-  const state = getRestWatchState();
-  const isGM = canAccessAllPlayerOps();
-  if (!isGM || isLockedForUser(state, isGM)) return;
-
-  html.querySelectorAll(".po-watch-entry").forEach((entry) => {
-    const actorId = entry.dataset.actorId;
-    if (!actorId) return;
-    entry.setAttribute("draggable", "true");
-    entry.classList.add("is-draggable");
-    if (entry.dataset.poRestDndBound === "1") return;
-    entry.dataset.poRestDndBound = "1";
-    entry.addEventListener("dragstart", (event) => {
-      const slotId = entry.closest(".po-card")?.dataset?.slotId;
-      if (!slotId) return;
-      const payload = JSON.stringify({ actorId, fromSlotId: slotId });
-      event.dataTransfer?.setData("text/plain", payload);
-      event.dataTransfer?.setDragImage?.(entry, 20, 20);
-    });
-  });
-
-  html.querySelectorAll(".po-card").forEach((card) => {
-    if (card.dataset.poRestDropBound === "1") return;
-    card.dataset.poRestDropBound = "1";
-
-    card.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      card.classList.add("is-drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-
-    card.addEventListener("dragleave", () => {
-      card.classList.remove("is-drop-target");
-    });
-
-    card.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      card.classList.remove("is-drop-target");
-
-      const raw = event.dataTransfer?.getData("text/plain") ?? "";
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        return;
-      }
-      const actorId = data?.actorId;
-      const fromSlotId = data?.fromSlotId;
-      const targetSlotId = card.dataset.slotId;
-      if (!actorId || !fromSlotId || !targetSlotId) return;
-      if (fromSlotId === targetSlotId) return;
-
-      await updateRestWatchState((state) => {
-        const slots = state.slots ?? [];
-        const source = slots.find((slot) => slot.id === fromSlotId);
-        if (source) {
-          ensureRestSlotEntriesList(source);
-          source.entries = source.entries.filter((entry) => entry.actorId !== actorId);
-        }
-
-        const target = slots.find((slot) => slot.id === targetSlotId);
-        if (!target) return;
-        addActorToRestSlot(target, actorId);
-      }, { skipLocalRefresh: true });
-
-      refreshRestWatchAppsImmediately();
-    });
-  });
 }
 
 function openRestWatchPlayerApp() {

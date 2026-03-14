@@ -8,7 +8,7 @@
       <button type="button" class="po-tab" data-action="switch-tab" data-tab="rest" aria-selected="false" aria-current="false">Rest Watch</button>
       <button type="button" class="po-tab is-active" data-action="switch-tab" data-tab="march" aria-selected="true" aria-current="page">Marching Order</button>
       <button type="button" class="po-tab" data-action="switch-tab" data-tab="operations" aria-selected="false" aria-current="false">Operations</button>
-      {{#if isGM}}
+      {{#if showGmPageTab}}
       <button type="button" class="po-tab" data-action="switch-tab" data-tab="gm" aria-selected="false" aria-current="false">GM</button>
       {{/if}}
     </nav>
@@ -38,6 +38,10 @@
     <article class="po-overview-card">
       <span>Formation</span>
       <strong>{{overview.formationLabel}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Formation State</span>
+      <strong>{{overview.formationStateLabel}}</strong>
     </article>
     <article class="po-overview-card">
       <span>Light Sources</span>
@@ -185,15 +189,42 @@
           </header>
           {{#unless gmSections.formationsCollapsed}}
           <div class="po-collapsible-body">
-            <div class="po-formation-display">Current: <strong>{{formationLabel}}</strong></div>
-            <div class="po-formation-effect">Surprise: {{doctrineEffects.surprise}}</div>
-            <div class="po-formation-effect">Ambush: {{doctrineEffects.ambush}}</div>
-            <div class="po-formation-effect">Last doctrine check: {{doctrineTracker.lastCheckAt}}</div>
-            <button type="button" class="po-btn {{#if activateFormation.default}}is-active{{/if}}" data-action="formation-standard">Default Formation</button>
-            <button type="button" class="po-btn {{#if activateFormation.combatReady}}is-active{{/if}}" data-action="formation-combat-ready">Combat-Ready Formation</button>
-            <button type="button" class="po-btn {{#if activateFormation.tightCorridor}}is-active{{/if}}" data-action="formation-tight-corridor">Tight Corridor Formation</button>
-            <button type="button" class="po-btn {{#if activateFormation.lowVisibility}}is-active{{/if}}" data-action="formation-low-visibility">Low-Visibility Formation</button>
-            <button type="button" class="po-btn" data-action="doctrine-check">Post Doctrine Check Prompt</button>
+            <div class="po-formation-display">Current: <strong>{{formationSummary.label}}</strong></div>
+            <div class="po-formation-effect">Category: {{formationSummary.categoryLabel}}</div>
+            <div class="po-formation-effect">Formation state: {{formationSummary.formationStateLabel}}</div>
+            <div class="po-formation-effect">Doctrine state: {{formationSummary.doctrineStateLabel}}</div>
+            <div class="po-formation-effect">Doctrine checks active: {{#if formationSummary.doctrineChecksActive}}Yes{{else}}No{{/if}}</div>
+            <div class="po-formation-effect">Cohesion checks active: {{#if formationSummary.cohesionChecksActive}}Yes{{else}}No{{/if}}</div>
+            <div class="po-formation-effect">Cohesion check required: {{#if formationSummary.cohesionCheckRequired}}Yes{{else}}No{{/if}}</div>
+            <div class="po-formation-effect">Layout validity: {{formationSummary.validityLabel}}</div>
+            <div class="po-formation-effect">Last doctrine check: {{formationSummary.lastCheckAt}}</div>
+            <div class="po-formation-effect">Last trigger: {{formationSummary.lastCheckTriggerLabel}}</div>
+            <div class="po-formation-effect">Last summary: {{formationSummary.lastCheckSummary}}</div>
+            {{#if formationSummary.pendingTriggerLabel}}
+            <div class="po-formation-effect">Pending trigger: {{formationSummary.pendingTriggerLabel}}</div>
+            {{/if}}
+            <div class="po-formation-effect">{{formationSummary.summary}}</div>
+            <div class="po-formation-effect">
+              Active effects:
+              {{#each formationSummary.effectSummaries}}
+              {{#if @first}}{{this}}{{else}} | {{this}}{{/if}}
+              {{else}}
+              None
+              {{/each}}
+            </div>
+            {{#if formationSummary.invalidReasons.[0]}}
+            <div class="po-formation-invalid">
+              {{#each formationSummary.invalidReasons}}
+              <div class="po-formation-effect is-invalid">{{message}}</div>
+              {{/each}}
+            </div>
+            {{/if}}
+            <div class="po-formation-grid">
+              {{#each formationChoices}}
+              <button type="button" class="po-btn {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}">{{label}}</button>
+              {{/each}}
+            </div>
+            <button type="button" class="po-btn" data-action="doctrine-check">Run Doctrine Check</button>
           </div>
           {{/unless}}
         </div>
