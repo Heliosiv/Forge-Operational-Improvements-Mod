@@ -964,6 +964,7 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
 
 const {
   mainTabIds: PO_MAIN_TAB_IDS,
+  switchTabIds: PO_SWITCH_TAB_IDS,
   getTemplateForMainTab,
   normalizeMainTabId,
   normalizeSwitchTabId,

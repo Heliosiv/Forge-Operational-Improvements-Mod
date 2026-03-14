@@ -59,6 +59,7 @@ export function createMainTabRegistry({ templateMap = {} } = {}) {
 
   return {
     mainTabIds,
+    switchTabIds,
     mainTabActions,
     getTemplateForMainTab,
     normalizeMainTabId,
