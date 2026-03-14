@@ -22,14 +22,18 @@ export function registerPartyOpsUiSettings({
     }
   };
 
-  game.settings.registerMenu(moduleId, "settingsHub", {
-    name: "Settings Hub",
-    label: "Open Settings Hub",
-    hint: "Open a guided Party Operations settings editor.",
-    icon: "fas fa-sliders-h",
-    type: settingsHubType,
-    restricted: true
-  });
+  try {
+    game.settings.registerMenu(moduleId, "settingsHub", {
+      name: "Settings Hub",
+      label: "Open Settings Hub",
+      hint: "Open a guided Party Operations settings editor.",
+      icon: "fas fa-sliders-h",
+      type: settingsHubType,
+      restricted: true
+    });
+  } catch (error) {
+    console.warn(`${moduleId}: failed to register settings hub menu`, error);
+  }
 
   game.settings.register(moduleId, settings.ADVANCED_SETTINGS_ENABLED, {
     name: "Show Advanced Settings",

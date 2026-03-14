@@ -6,7 +6,13 @@ export function createPartyOperationsInitHandler({
   runInit = runPartyOperationsInit
 } = {}) {
   return function onPartyOperationsInit() {
-    if (typeof installAppBehaviors === "function") installAppBehaviors();
+    if (typeof installAppBehaviors === "function") {
+      try {
+        installAppBehaviors();
+      } catch (error) {
+        console.warn("party-operations: failed to install legacy app behaviors", error);
+      }
+    }
     const config = typeof buildInitConfig === "function" ? buildInitConfig() : {};
     return runInit(config);
   };

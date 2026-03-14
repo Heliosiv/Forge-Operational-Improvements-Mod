@@ -5,6 +5,8 @@ import { createPartyOperationsReadyHandler } from "./bootstrap/ready.js";
 import { registerInitHooks } from "./hooks/init.js";
 import { registerReadyHooks } from "./hooks/ready.js";
 
+const originalConsoleWarn = console.warn;
+
 {
   const callOrder = [];
 
@@ -24,6 +26,32 @@ import { registerReadyHooks } from "./hooks/ready.js";
 
   assert.equal(handler(), "init-result");
   assert.deepEqual(callOrder, ["install", "build", "init"]);
+}
+
+{
+  const callOrder = [];
+  const warnings = [];
+  console.warn = (...args) => warnings.push(args.map((entry) => String(entry)).join(" "));
+
+  const handler = createPartyOperationsInitHandler({
+    installAppBehaviors() {
+      callOrder.push("install");
+      throw new Error("install failed");
+    },
+    buildInitConfig() {
+      callOrder.push("build");
+      return { stage: "init" };
+    },
+    runInit(config) {
+      callOrder.push(config.stage);
+      return "init-result";
+    }
+  });
+
+  assert.equal(handler(), "init-result");
+  assert.deepEqual(callOrder, ["install", "build", "init"]);
+  assert.ok(warnings.some((entry) => entry.includes("failed to install legacy app behaviors")));
+  console.warn = originalConsoleWarn;
 }
 
 {
@@ -64,6 +92,31 @@ import { registerReadyHooks } from "./hooks/ready.js";
 
 {
   const registrations = [];
+  let initCalls = 0;
+  const initHandler = () => {
+    initCalls += 1;
+  };
+
+  registerInitHooks({
+    HooksRef: {
+      once(event, handler) {
+        registrations.push({ event, handler });
+      }
+    },
+    gameRef: {
+      ready: true
+    },
+    onInit: initHandler
+  });
+
+  assert.deepEqual(registrations, [
+    { event: "init", handler: initHandler }
+  ]);
+  assert.equal(initCalls, 1);
+}
+
+{
+  const registrations = [];
   const readyHandler = () => {};
   const extraHandlerOne = () => {};
   const extraHandlerTwo = () => {};
@@ -83,4 +136,38 @@ import { registerReadyHooks } from "./hooks/ready.js";
     { event: "ready", handler: extraHandlerOne },
     { event: "ready", handler: extraHandlerTwo }
   ]);
+}
+
+{
+  const registrations = [];
+  const callOrder = [];
+  const readyHandler = () => {
+    callOrder.push("ready");
+  };
+  const extraHandlerOne = () => {
+    callOrder.push("extra-1");
+  };
+  const extraHandlerTwo = () => {
+    callOrder.push("extra-2");
+  };
+
+  registerReadyHooks({
+    HooksRef: {
+      once(event, handler) {
+        registrations.push({ event, handler });
+      }
+    },
+    gameRef: {
+      ready: true
+    },
+    onReady: readyHandler,
+    readyHandlers: [extraHandlerOne, null, extraHandlerTwo]
+  });
+
+  assert.deepEqual(registrations, [
+    { event: "ready", handler: readyHandler },
+    { event: "ready", handler: extraHandlerOne },
+    { event: "ready", handler: extraHandlerTwo }
+  ]);
+  assert.deepEqual(callOrder, ["ready", "extra-1", "extra-2"]);
 }

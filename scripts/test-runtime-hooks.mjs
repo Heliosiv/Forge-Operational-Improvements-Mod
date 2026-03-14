@@ -159,7 +159,15 @@ import {
 
   const audioHandler = modules.find((module) => module.id === "audio-playback").registrations[0][1];
   audioHandler({ parent: { id: "playlist-1" } }, { volume: 0.5 });
-  assert.deepEqual(audioResyncs, []);
+  assert.deepEqual(audioResyncs, [
+    {
+      delayMs: 80,
+      payload: {
+        playlist: { id: "playlist-1" },
+        refresh: true
+      }
+    }
+  ]);
 
   const userPresenceHandler = modules.find((module) => module.id === "user-presence").registrations[0][1];
   userPresenceHandler({ isGM: true, active: true }, { active: true });

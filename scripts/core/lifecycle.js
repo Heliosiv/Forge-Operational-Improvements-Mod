@@ -16,6 +16,15 @@ function schedule(setTimeoutFn, delayMs, callback) {
   callback();
 }
 
+function invokeSafely(logger, moduleId, message, callback) {
+  try {
+    return callback?.();
+  } catch (error) {
+    warn(logger, moduleId, message, error);
+    return undefined;
+  }
+}
+
 export function runPartyOperationsInit({
   registerPartyOperationsApi,
   registerFeatureModules,
@@ -32,8 +41,8 @@ export function runPartyOperationsInit({
   logger = console,
   moduleId = "party-operations"
 } = {}) {
-  registerPartyOperationsApi?.();
-  registerFeatureModules?.();
+  invokeSafely(logger, moduleId, "failed to register module API", registerPartyOperationsApi);
+  invokeSafely(logger, moduleId, "failed to register feature modules", registerFeatureModules);
 
   try {
     const preloadPromise = preloadPartyOperationsPartialTemplates?.();
@@ -42,19 +51,26 @@ export function runPartyOperationsInit({
     warn(logger, moduleId, "failed to preload partial templates", error);
   }
 
-  registerPartyOpsSettings?.((key) => {
-    if (key === settings?.DEBUG_ENABLED) return;
-    const scopes = getRefreshScopesForSettingKey?.(key);
-    refreshOpenApps?.({ scopes });
+  invokeSafely(logger, moduleId, "failed to register UI settings", () => {
+    registerPartyOpsSettings?.((key) => {
+      if (key === settings?.DEBUG_ENABLED) return;
+      const scopes = getRefreshScopesForSettingKey?.(key);
+      refreshOpenApps?.({ scopes });
+    });
   });
 
-  registerPartyOpsDataSettings?.(dataSettingsConfig);
-  syncAudioLibraryDraftFromSettings?.();
-  registerPartyOpsFeatureSettings?.(featureSettingsConfig);
+  invokeSafely(logger, moduleId, "failed to register data settings", () => {
+    registerPartyOpsDataSettings?.(dataSettingsConfig);
+  });
+  invokeSafely(logger, moduleId, "failed to sync audio library draft from settings", syncAudioLibraryDraftFromSettings);
+  invokeSafely(logger, moduleId, "failed to register feature settings", () => {
+    registerPartyOpsFeatureSettings?.(featureSettingsConfig);
+  });
 }
 
 export function runPartyOperationsReady({
   registerPartyOperationsApi,
+  ensureSettingsRegistered,
   validatePartyOperationsTemplates,
   bindPoBrowserBackNavigation,
   setupPartyOperationsUI,
@@ -82,6 +98,7 @@ export function runPartyOperationsReady({
   moduleId = "party-operations"
 } = {}) {
   registerPartyOperationsApi?.();
+  invokeSafely(logger, moduleId, "failed to ensure settings are registered", ensureSettingsRegistered);
   void validatePartyOperationsTemplates?.();
   bindPoBrowserBackNavigation?.();
   setupPartyOperationsUI?.();
@@ -100,7 +117,7 @@ export function runPartyOperationsReady({
   notifyDailyInjuryReminders?.();
 
   schedule(setTimeoutFn, managedAudioSyncDelayMs, () => {
-    void syncManagedAudioMixPlaybackForCurrentUser?.();
+    void syncManagedAudioMixPlaybackForCurrentUser?.({ reason: "ready", allowAutostart: true });
   });
 
   if (!game?.user?.isGM) {

@@ -285,7 +285,11 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     buybackAllowedTypes: Object.freeze([...MERCHANT_ALLOWED_ITEM_TYPE_LIST]),
     barterEnabled: true,
     barterDc: 15,
-    barterAbility: "cha"
+    barterAbility: "cha",
+    barterSuccessBuyModifier: -0.05,
+    barterSuccessSellModifier: 0.05,
+    barterFailureBuyModifier: 0.05,
+    barterFailureSellModifier: -0.05
   }),
   stock: Object.freeze({
     sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
@@ -373,6 +377,14 @@ function clampMerchantMarkupPercent(value, fallback = 0) {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return Math.max(0, Math.min(MERCHANT_MAX_MARKUP_PERCENT, Number(fallback) || 0));
   return Math.max(0, Math.min(MERCHANT_MAX_MARKUP_PERCENT, Number(raw.toFixed(2))));
+}
+
+export function normalizeMerchantBarterModifier(value, fallback = 0) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) {
+    return Number(Math.max(-10, Math.min(10, Number(fallback) || 0)).toFixed(2));
+  }
+  return Number(Math.max(-10, Math.min(10, raw)).toFixed(2));
 }
 
 function clampMerchantItemCount(value, fallback = MERCHANT_DEFAULTS.stock.maxItems) {
@@ -749,7 +761,23 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       buybackAllowedTypes: normalizeMerchantAllowedItemTypes(MERCHANT_DEFAULTS.pricing.buybackAllowedTypes),
       barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled,
       barterDc: MERCHANT_DEFAULTS.pricing.barterDc,
-      barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha")
+      barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
+      barterSuccessBuyModifier: normalizeMerchantBarterModifier(
+        MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier,
+        -0.05
+      ),
+      barterSuccessSellModifier: normalizeMerchantBarterModifier(
+        MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier,
+        0.05
+      ),
+      barterFailureBuyModifier: normalizeMerchantBarterModifier(
+        MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier,
+        0.05
+      ),
+      barterFailureSellModifier: normalizeMerchantBarterModifier(
+        MERCHANT_DEFAULTS.pricing.barterFailureSellModifier,
+        -0.05
+      )
     },
     stock: {
       sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
@@ -823,6 +851,62 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const barterAbility = ["str", "dex", "con", "int", "wis", "cha"].includes(barterAbilityRaw)
     ? barterAbilityRaw
     : String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
+  const barterSuccessBuyModifierPercentRaw = Number(
+    source?.barterSuccessBuyModifierPercent
+    ?? (Number(
+      source?.barterSuccessBuyModifier
+      ?? existingPricing?.barterSuccessBuyModifier
+      ?? MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
+    ) * 100)
+  );
+  const barterSuccessBuyModifier = Number.isFinite(barterSuccessBuyModifierPercentRaw)
+    ? normalizeMerchantBarterModifier(
+      barterSuccessBuyModifierPercentRaw / 100,
+      MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
+    )
+    : Number(MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier);
+  const barterSuccessSellModifierPercentRaw = Number(
+    source?.barterSuccessSellModifierPercent
+    ?? (Number(
+      source?.barterSuccessSellModifier
+      ?? existingPricing?.barterSuccessSellModifier
+      ?? MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
+    ) * 100)
+  );
+  const barterSuccessSellModifier = Number.isFinite(barterSuccessSellModifierPercentRaw)
+    ? normalizeMerchantBarterModifier(
+      barterSuccessSellModifierPercentRaw / 100,
+      MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
+    )
+    : Number(MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier);
+  const barterFailureBuyModifierPercentRaw = Number(
+    source?.barterFailureBuyModifierPercent
+    ?? (Number(
+      source?.barterFailureBuyModifier
+      ?? existingPricing?.barterFailureBuyModifier
+      ?? MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
+    ) * 100)
+  );
+  const barterFailureBuyModifier = Number.isFinite(barterFailureBuyModifierPercentRaw)
+    ? normalizeMerchantBarterModifier(
+      barterFailureBuyModifierPercentRaw / 100,
+      MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
+    )
+    : Number(MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier);
+  const barterFailureSellModifierPercentRaw = Number(
+    source?.barterFailureSellModifierPercent
+    ?? (Number(
+      source?.barterFailureSellModifier
+      ?? existingPricing?.barterFailureSellModifier
+      ?? MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
+    ) * 100)
+  );
+  const barterFailureSellModifier = Number.isFinite(barterFailureSellModifierPercentRaw)
+    ? normalizeMerchantBarterModifier(
+      barterFailureSellModifierPercentRaw / 100,
+      MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
+    )
+    : Number(MERCHANT_DEFAULTS.pricing.barterFailureSellModifier);
   const accessModeRaw = String(source?.accessMode ?? source?.access?.mode ?? "all").trim().toLowerCase();
   const accessMode = accessModeRaw === "assigned" ? "assigned" : "all";
   const stockCount = clampMerchantItemCount(
@@ -896,7 +980,11 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       buybackAllowedTypes,
       barterEnabled,
       barterDc,
-      barterAbility
+      barterAbility,
+      barterSuccessBuyModifier,
+      barterSuccessSellModifier,
+      barterFailureBuyModifier,
+      barterFailureSellModifier
     },
     stock: {
       sourceType,

@@ -266,11 +266,30 @@
                   <span data-merchant-source-ref-total-count>{{merchants.gm.sourceRefOptionCount}}</span>
                   total.
                 </div>
-                <div class="po-merchant-source-list" data-po-scroll-preserve="merchant-source-ref-list">
+                {{#if merchants.gm.sourceRefIsFolderTree}}
+                <div class="po-op-summary">Parent folder selections include every child folder beneath them. Pick the parent for a whole branch or a child for a narrower stock source.</div>
+                {{/if}}
+                <div class="po-merchant-source-list {{#if merchants.gm.sourceRefIsFolderTree}}is-folder-tree{{/if}}" data-po-scroll-preserve="merchant-source-ref-list">
                   {{#each merchants.gm.sourceRefSelectableOptions}}
-                  <label class="po-merchant-source-option {{#if disabled}}is-disabled{{/if}}" data-merchant-source-option data-search="{{label}} {{value}}">
+                  <label
+                    class="po-merchant-source-option {{#if disabled}}is-disabled{{/if}} {{#if ../merchants.gm.sourceRefIsFolderTree}}is-folder-node{{/if}}"
+                    data-merchant-source-option
+                    data-search="{{searchText}} {{label}} {{value}}"
+                    data-source-filter-match="{{#if matchesActiveFilters}}1{{else}}0{{/if}}"
+                    {{#if ../merchants.gm.sourceRefIsFolderTree}}style="--po-source-depth: {{depth}};"{{/if}}
+                  >
                     <input type="checkbox" name="merchantSourceRef" value="{{value}}" data-action="merchant-editor-draft-change" {{#if selected}}checked{{/if}} {{#if disabled}}disabled{{/if}} />
+                    {{#if ../merchants.gm.sourceRefIsFolderTree}}
+                    <span class="po-merchant-source-option-copy">
+                      <span class="po-merchant-source-option-title-row">
+                        <span class="po-merchant-source-option-title">{{label}}</span>
+                        {{#if hasChildren}}<span class="po-pill">{{descendantCountLabel}}</span>{{/if}}
+                      </span>
+                      {{#if hasParent}}<span class="po-merchant-source-option-meta">{{parentPathLabel}}</span>{{/if}}
+                    </span>
+                    {{else}}
                     <span>{{label}}</span>
+                    {{/if}}
                   </label>
                   {{/each}}
                 </div>
@@ -599,6 +618,23 @@
                 <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                 {{/each}}
               </select>
+            </label>
+            <div class="po-op-summary">Buy Price changes what the actor pays. Sell Value changes what the actor receives. Use negative values to reduce a rate and positive values to increase it.</div>
+            <label class="po-resource-row">
+              <span>Success Buy Price %</span>
+              <input type="number" min="-1000" max="1000" step="1" name="merchantBarterSuccessBuyModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterSuccessBuyModifierPercent}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Success Sell Value %</span>
+              <input type="number" min="-1000" max="1000" step="1" name="merchantBarterSuccessSellModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterSuccessSellModifierPercent}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Failure Buy Price %</span>
+              <input type="number" min="-1000" max="1000" step="1" name="merchantBarterFailureBuyModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterFailureBuyModifierPercent}}" />
+            </label>
+            <label class="po-resource-row">
+              <span>Failure Sell Value %</span>
+              <input type="number" min="-1000" max="1000" step="1" name="merchantBarterFailureSellModifierPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.barterFailureSellModifierPercent}}" />
             </label>
             <div class="po-resource-row">
               <span>Buyback Item Types</span>

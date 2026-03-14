@@ -4,6 +4,8 @@
   data-actor-id="{{actorId}}"
   data-settlement="{{settlement}}"
   data-barter-key="{{barterResolutionKey}}"
+  data-base-buy-markup="{{baseBuyMarkup}}"
+  data-base-sell-rate="{{baseSellRate}}"
 >
   <div class="po-merchant-trade-shell">
     <section class="po-merchant-trade-hero">
@@ -87,7 +89,7 @@
             <tbody>
               {{#if hasBuyRows}}
               {{#each buyRows}}
-              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}">
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" />
@@ -105,7 +107,7 @@
                   </div>
                 </td>
                 <td>{{qty}}</td>
-                <td>{{unitLabel}}</td>
+                <td data-merchant-unit-label>{{unitLabel}}</td>
                 <td>
                   <input
                     class="po-input po-merchant-trade-qty"
@@ -152,7 +154,7 @@
             <tbody>
               {{#if hasSellRows}}
               {{#each sellRows}}
-              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}">
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}" data-price-kind="sell" data-base-gp="{{baseGp}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" />
@@ -171,7 +173,7 @@
                 </td>
                 <td>{{itemTypeLabel}}</td>
                 <td>{{qty}}</td>
-                <td>{{unitLabel}}</td>
+                <td data-merchant-unit-label>{{unitLabel}}</td>
                 <td>
                   <input
                     class="po-input po-merchant-trade-qty"

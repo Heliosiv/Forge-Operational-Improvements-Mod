@@ -30,6 +30,7 @@
   </header>
 
   <div class="po-body">
+  <div class="po-primary-shell">
 
   {{#if mainTabRestWatch}}
   <section class="po-overview" aria-label="Rest watch status">
@@ -61,7 +62,7 @@
   {{/if}}
 
   <section class="po-content" id="{{#if mainTabRestWatch}}po-panel-rest-watch{{else}}po-panel-operations{{/if}}">
-    <div class="po-grid {{#if mainTabOperationsOrGm}}is-operations-layout{{/if}}">
+    <div class="po-grid po-primary-layout {{#if mainTabOperationsOrGm}}is-operations-layout{{/if}}">
       {{#if mainTabRestWatch}}
       <div class="po-cards">
         {{#each slots}}
@@ -732,15 +733,20 @@
           <div class="po-reputation-toolbar">
             <div>
               <div class="po-section-title">Reputation & Factions</div>
-              <div class="po-hint">Track faction standing, keep upcoming notes as drafts, and archive the dated history for later review.</div>
+              <div class="po-hint">Shared Operations view. Players can sort the factions that have been revealed here, while the full faction ledger stays in the GM workspace.</div>
             </div>
-            <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="show-reputation-brief">Show Reputation Brief</button>
+              {{#if @root.isGM}}
+              <button type="button" class="po-btn po-btn-sm" data-action="open-gm-factions-page">Open GM Faction Workspace</button>
+              {{/if}}
+            </div>
           </div>
           <div class="po-reputation-overview">
             <div class="po-reputation-stat">
-              <span class="po-reputation-stat-label">Visible</span>
-              <strong>{{operations.reputation.visibleCount}}</strong>
-              <span class="po-reputation-stat-meta">of {{operations.reputation.totalCount}} tracked factions</span>
+              <span class="po-reputation-stat-label">Revealed</span>
+              <strong>{{operations.reputation.totalCount}}</strong>
+              <span class="po-reputation-stat-meta">shared faction entries</span>
             </div>
             <div class="po-reputation-stat">
               <span class="po-reputation-stat-label">Allied</span>
@@ -753,9 +759,9 @@
               <span class="po-reputation-stat-meta">dangerous relationships</span>
             </div>
             <div class="po-reputation-stat">
-              <span class="po-reputation-stat-label">Custom</span>
-              <strong>{{operations.reputation.customCount}}</strong>
-              <span class="po-reputation-stat-meta">GM-added factions</span>
+              <span class="po-reputation-stat-label">Showing</span>
+              <strong>{{operations.reputation.visibleCount}}</strong>
+              <span class="po-reputation-stat-meta">matching current filters</span>
             </div>
           </div>
           <div class="po-op-role-row po-reputation-filters">
@@ -773,287 +779,55 @@
             </label>
             <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-filters">Clear Filters</button>
           </div>
-          {{#if @root.isGM}}
-          <section class="po-op-role-row po-reputation-gm-tools po-reputation-builder">
-            <div class="po-reputation-card-head">
-              <div class="po-reputation-card-title">
-                <div class="po-op-role-name">Faction Builder</div>
-                <div class="po-reputation-card-subtitle">Create a faction with identity, saved notes, linked players, and current player-driven standing shifts.</div>
-              </div>
-              <div class="po-op-role-status po-reputation-standing-pill">Standing {{operations.reputation.builder.score}} | {{operations.reputation.builder.access}}</div>
-            </div>
-            <div class="po-reputation-builder-grid">
-              <label class="po-resource-row">
-                <span>Faction Name</span>
-                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="label" value="{{operations.reputation.builder.label}}" placeholder="e.g., Black Salt Consortium" />
-              </label>
-              <label class="po-resource-row">
-                <span>Type / Category</span>
-                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="category" value="{{operations.reputation.builder.category}}" placeholder="Guild, court, cult, militia..." />
-              </label>
-              <label class="po-resource-row">
-                <span>Represents / Sphere</span>
-                <input type="text" class="po-input" data-action="set-reputation-builder-field" data-field="represents" value="{{operations.reputation.builder.represents}}" placeholder="What influence or domain this faction covers" />
-              </label>
-              <label class="po-resource-row">
-                <span>Linked Player</span>
-                <select class="po-select" data-action="set-reputation-builder-field" data-field="linkedActorId">
-                  {{#each operations.reputation.builder.actorOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Starting Standing (-5 to +5)</span>
-                <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-builder-field" data-field="score" value="{{operations.reputation.builder.score}}" />
-              </label>
-            </div>
-            <label class="po-resource-row po-notes-row-lg">
-              <span>What This Faction Is / What It Represents</span>
-              <textarea class="po-input" rows="4" data-action="set-reputation-builder-field" data-field="summary" placeholder="What the faction is, what it wants, and why the party cares about it.">{{operations.reputation.builder.summary}}</textarea>
-            </label>
-            <label class="po-resource-row po-notes-row-lg">
-              <span>Current Saved Note</span>
-              <textarea class="po-input" rows="4" data-action="set-reputation-builder-field" data-field="note" placeholder="Current situation, leverage, tensions, or next expected outcome.">{{operations.reputation.builder.note}}</textarea>
-            </label>
-            <div class="po-reputation-player-impact-section">
-              <div class="po-reputation-inline-head">
-                <div>
-                  <div class="po-section-title">Player Influence</div>
-                  <div class="po-op-summary">Track the current faction increases or decreases attached to specific player characters.</div>
-                </div>
-                <div class="po-reputation-log-meta">
-                  <span class="po-reputation-log-chip po-reputation-impact-total {{operations.reputation.builder.playerImpactToneClass}}">Current Total {{operations.reputation.builder.playerImpactTotalLabel}}</span>
-                  <span class="po-reputation-log-chip">{{operations.reputation.builder.playerImpactCount}} linked entries</span>
-                </div>
-              </div>
-              <div class="po-reputation-player-impact-list">
-                {{#each operations.reputation.builder.playerImpacts}}
-                <div class="po-reputation-player-impact-row">
-                  <label class="po-resource-row">
-                    <span>Player</span>
-                    <select class="po-select" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="actorId">
-                      {{#each actorOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                      {{/each}}
-                    </select>
-                  </label>
-                  <label class="po-resource-row">
-                    <span>Delta</span>
-                    <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="delta" value="{{delta}}" />
-                  </label>
-                  <label class="po-resource-row po-notes-row-lg">
-                    <span>Reason / Note</span>
-                    <textarea class="po-input" rows="2" data-action="set-reputation-builder-impact" data-impact-id="{{id}}" data-field="note" placeholder="Why this player is moving the faction up or down.">{{note}}</textarea>
-                  </label>
-                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-builder-impact" data-impact-id="{{id}}">Remove</button>
-                </div>
-                {{/each}}
-              </div>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-builder-impact">Add Player Influence</button>
-              </div>
-            </div>
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm is-primary" data-action="add-reputation-faction">Create Faction</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-builder">Clear Builder</button>
-            </div>
-          </section>
-          {{/if}}
+          {{#if operations.reputation.visibleCount}}
           <div class="po-reputation-grid">
             {{#each operations.reputation.filteredFactions}}
             <section class="po-op-role-row po-reputation-faction-card {{standingClass}}" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
               <div class="po-reputation-card-head">
                 <div class="po-reputation-card-title">
                   <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-reputation-card-subtitle">{{#if isCore}}Core faction{{else}}Custom faction{{/if}}</div>
+                  <div class="po-reputation-card-subtitle">Revealed faction</div>
                 </div>
                 <div class="po-op-role-status po-reputation-standing-pill">Standing {{score}} | {{access}}</div>
               </div>
               <div class="po-reputation-detail-chips">
                 <span class="po-reputation-log-chip">Type: {{categoryLabel}}</span>
                 {{#if hasRepresents}}<span class="po-reputation-log-chip">Represents: {{represents}}</span>{{/if}}
-                {{#if hasLinkedActor}}<span class="po-reputation-log-chip">Linked Player: {{linkedActorName}}</span>{{/if}}
-                <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Player Delta {{playerImpactTotalLabel}}</span>
+                <span class="po-reputation-log-chip">Access: {{access}}</span>
               </div>
-              {{#if @root.isGM}}
-              <div class="po-reputation-detail-grid">
-                {{#unless isCore}}
-                <label class="po-resource-row">
-                  <span>Faction Name</span>
-                  <input type="text" class="po-input" data-action="set-reputation-label" data-faction="{{id}}" value="{{label}}" />
-                </label>
-                {{/unless}}
-                <label class="po-resource-row">
-                  <span>Type / Category</span>
-                  <input type="text" class="po-input" data-action="set-reputation-detail" data-faction="{{id}}" data-field="category" value="{{category}}" placeholder="Guild, house, cult, militia..." />
-                </label>
-                <label class="po-resource-row">
-                  <span>Represents / Sphere</span>
-                  <input type="text" class="po-input" data-action="set-reputation-detail" data-faction="{{id}}" data-field="represents" value="{{represents}}" placeholder="What influence or domain this faction covers" />
-                </label>
-                <label class="po-resource-row">
-                  <span>Linked Player</span>
-                  <select class="po-select" data-action="set-reputation-detail" data-faction="{{id}}" data-field="linkedActorId">
-                    {{#each linkedActorOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <label class="po-resource-row">
-                  <span>Standing (-5 to +5)</span>
-                  <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-score" data-faction="{{id}}" value="{{score}}" />
-                </label>
-              </div>
-              <div class="po-op-action-row po-reputation-score-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="-1">Lower</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="adjust-reputation-score" data-faction="{{id}}" data-delta="1">Raise</button>
-              </div>
-              <label class="po-resource-row po-notes-row-lg">
-                <span>What This Faction Is / What It Represents</span>
-                <textarea class="po-input" rows="3" data-action="set-reputation-detail" data-faction="{{id}}" data-field="summary" placeholder="What this faction is, what it wants, and how it fits into the campaign.">{{summary}}</textarea>
-              </label>
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Upcoming Note / Outcome Impact</span>
-                <textarea class="po-input po-reputation-note" rows="5" data-action="set-reputation-note" data-faction="{{id}}" placeholder="Describe what happened, what changed, and what the party can expect next.">{{note}}</textarea>
-              </label>
-              <div class="po-reputation-player-impact-section">
-                <div class="po-reputation-inline-head">
-                  <div>
-                    <div class="po-section-title">Player Influence</div>
-                    <div class="po-op-summary">Current faction increases or decreases based on the players.</div>
-                  </div>
-                  <div class="po-reputation-log-meta">
-                    <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Current Total {{playerImpactTotalLabel}}</span>
-                    <span class="po-reputation-log-chip">{{playerImpactCount}} linked entries</span>
-                  </div>
-                </div>
-                {{#if playerImpacts.length}}
-                <div class="po-reputation-player-impact-list">
-                  {{#each playerImpacts}}
-                  <div class="po-reputation-player-impact-row">
-                    <label class="po-resource-row">
-                      <span>Player</span>
-                      <select class="po-select" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="actorId">
-                        {{#each actorOptions}}
-                        <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                        {{/each}}
-                      </select>
-                    </label>
-                    <label class="po-resource-row">
-                      <span>Delta</span>
-                      <input type="number" min="-5" max="5" step="1" class="po-input" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="delta" value="{{delta}}" />
-                    </label>
-                    <label class="po-resource-row po-notes-row-lg">
-                      <span>Reason / Note</span>
-                      <textarea class="po-input" rows="2" data-action="set-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}" data-field="note" placeholder="Why this player is moving the faction up or down.">{{note}}</textarea>
-                    </label>
-                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-player-impact" data-faction="{{../id}}" data-impact-id="{{id}}">Remove</button>
-                  </div>
-                  {{/each}}
-                </div>
-                {{else}}
-                <div class="po-op-summary">No player-linked faction shifts tracked yet.</div>
-                {{/if}}
-                <div class="po-op-action-row">
-                  <button type="button" class="po-btn po-btn-sm" data-action="add-reputation-player-impact" data-faction="{{id}}">Add Player Influence</button>
-                </div>
-              </div>
-              <div class="po-op-action-row po-reputation-primary-actions">
-                <button type="button" class="po-btn po-btn-sm" data-action="log-reputation-note" data-faction="{{id}}">Log Note w/ World Date</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-note" data-faction="{{id}}">Clear Draft</button>
-              </div>
-              <div class="po-reputation-log-row">
-                <label class="po-resource-row">
-                  <span>Review Logged Notes{{#if hasNoteLogs}} ({{noteLogCount}}){{/if}}</span>
-                  <select class="po-select" data-action="load-reputation-note-log" data-faction="{{id}}">
-                    <option value="">Select a logged note...</option>
-                    {{#each noteLogOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <div class="po-sop-note-view po-reputation-log-view">
-                  <div class="po-reputation-log-meta">
-                    {{#if hasSelectedNoteLog}}
-                    <span class="po-reputation-log-chip">Logged {{selectedNoteLogDayLabel}}</span>
-                    <span class="po-reputation-log-chip">Rep {{selectedNoteLogScoreLabel}}</span>
-                    {{#if selectedNoteLogClockLabel}}<span class="po-reputation-log-chip">{{selectedNoteLogClockLabel}}</span>{{/if}}
-                    <span class="po-reputation-log-chip">By {{selectedNoteLogLoggedBy}}</span>
-                    {{#if hasSelectedNoteLogCalendar}}<span class="po-reputation-log-chip">Calendar Synced</span>{{/if}}
-                    {{else}}
-                    <span class="po-reputation-log-chip is-muted">Archived notes stay here for review</span>
-                    {{/if}}
-                  </div>
-                  <div class="po-sop-note-view-body {{#unless hasSelectedNoteLog}}is-empty{{/unless}}">
-                    {{#if hasSelectedNoteLog}}
-                    {{selectedNoteLogText}}
-                    {{else}}
-                    {{#if hasNoteLogs}}
-                    Select a logged note to read it here without overwriting the current draft.
-                    {{else}}
-                    No archived notes yet.
-                    {{/if}}
-                    {{/if}}
-                  </div>
-                </div>
-                <div class="po-op-action-row po-reputation-log-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="use-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Load Into Editor</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="post-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Post Selected Note</button>
-                  {{#if hasSelectedNoteLogJournal}}
-                  <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{selectedNoteLogJournalEntryId}}">Open Archive</button>
-                  {{/if}}
-                  <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-reputation-note-log" data-faction="{{id}}" {{#unless hasSelectedNoteLog}}disabled{{/unless}}>Delete Logged Note</button>
-                </div>
-              </div>
-              {{#unless isCore}}
-              <button type="button" class="po-btn po-btn-sm is-danger po-reputation-remove-btn" data-action="remove-reputation-faction" data-faction="{{id}}">Remove Faction</button>
-              {{/unless}}
-              {{else}}
               <div class="po-reputation-readonly">
                 <div class="po-op-summary">Type: {{categoryLabel}}</div>
-                {{#if hasRepresents}}<div class="po-op-summary">Represents: {{represents}}</div>{{/if}}
-                {{#if hasLinkedActor}}<div class="po-op-summary">Linked Player: {{linkedActorName}}</div>{{/if}}
                 <div class="po-op-summary">Standing: {{score}} ({{access}})</div>
-                {{#if hasSummary}}
+                {{#if hasRepresents}}<div class="po-op-summary">Represents: {{represents}}</div>{{/if}}
+                {{#if hasOperationsSummary}}
                 <div class="po-sop-note-view po-reputation-log-view">
-                  <div class="po-sop-note-view-body">{{summary}}</div>
-                </div>
-                {{/if}}
-                {{#if hasPlayerImpacts}}
-                <div class="po-reputation-player-impact-section">
-                  <div class="po-reputation-inline-head">
-                    <div>
-                      <div class="po-section-title">Player Influence</div>
-                    </div>
-                    <div class="po-reputation-log-meta">
-                      <span class="po-reputation-log-chip po-reputation-impact-total {{playerImpactToneClass}}">Current Total {{playerImpactTotalLabel}}</span>
-                    </div>
-                  </div>
-                  <div class="po-reputation-player-impact-list">
-                    {{#each configuredPlayerImpacts}}
-                    <div class="po-reputation-player-impact-row is-readonly">
-                      <div class="po-op-summary"><strong>{{actorLabel}}</strong> {{deltaLabel}}</div>
-                      {{#if note}}<div class="po-op-summary">{{note}}</div>{{/if}}
-                    </div>
-                    {{/each}}
-                  </div>
+                  <div class="po-sop-note-view-body">{{operationsSummary}}</div>
                 </div>
                 {{/if}}
                 <div class="po-sop-note-view po-reputation-log-view">
-                  <div class="po-sop-note-view-body {{#unless note}}is-empty{{/unless}}">
-                    {{#if note}}
-                    {{note}}
+                  <div class="po-sop-note-view-body {{#unless hasOperationsNote}}is-empty{{/unless}}">
+                    {{#if hasOperationsNote}}
+                    {{operationsNote}}
                     {{else}}
-                    No current faction note.
+                    No current posted faction update.
                     {{/if}}
                   </div>
                 </div>
               </div>
-              {{/if}}
             </section>
             {{/each}}
           </div>
+          {{else}}
+          <div class="po-op-role-row">
+            <div class="po-section-title">No revealed factions match the current view.</div>
+            <div class="po-op-summary">The shared board only shows factions the GM has pushed to party understanding.</div>
+            {{#if @root.isGM}}
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="open-gm-factions-page">Open GM Faction Workspace</button>
+            </div>
+            {{/if}}
+          </div>
+          {{/if}}
         </div>
 
         {{/if}}
@@ -1628,7 +1402,7 @@
 
         {{#if @root.isGM}}
         {{#if operationsPageGm}}
-        <div id="po-gm-workspace" class="po-gm-shell po-gm-workspace-shell">
+        <section id="po-gm-workspace" class="po-content po-gm-shell po-gm-workspace-shell">
           {{> "modules/party-operations/templates/partials/gm-panel-nav.hbs"}}
 
           <section class="po-gm-section po-gm-page-intro po-gm-workspace-intro">
@@ -1998,7 +1772,7 @@
               </div>
             </section>
           </div>
-        </div>
+        </section>
 
         
         {{/if}}
@@ -2009,6 +1783,7 @@
       {{/if}}
     </div>
   </section>
+  </div>
   </div>
 
   <footer class="po-footer">

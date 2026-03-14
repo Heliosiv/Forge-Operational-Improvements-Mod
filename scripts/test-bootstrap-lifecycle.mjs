@@ -77,10 +77,62 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 }
 
 {
+  const callOrder = [];
+  const warnings = [];
+
+  runPartyOperationsInit({
+    registerPartyOperationsApi() {
+      callOrder.push("api");
+    },
+    registerFeatureModules() {
+      callOrder.push("features");
+      throw new Error("feature bootstrap failed");
+    },
+    preloadPartyOperationsPartialTemplates() {
+      callOrder.push("preload");
+      return Promise.resolve();
+    },
+    registerPartyOpsSettings() {
+      callOrder.push("settings");
+    },
+    settings: {
+      DEBUG_ENABLED: "debugEnabled"
+    },
+    registerPartyOpsDataSettings() {
+      callOrder.push("data");
+    },
+    syncAudioLibraryDraftFromSettings() {
+      callOrder.push("sync-audio");
+    },
+    registerPartyOpsFeatureSettings() {
+      callOrder.push("feature-settings");
+    },
+    logger: {
+      warn(message) {
+        warnings.push(String(message));
+      }
+    }
+  });
+
+  assert.deepEqual(callOrder, [
+    "api",
+    "features",
+    "preload",
+    "settings",
+    "data",
+    "sync-audio",
+    "feature-settings"
+  ]);
+  assert.ok(warnings.some((entry) => entry.includes("failed to register feature modules")));
+}
+
+{
   const scheduledDelays = [];
   const socketRegistrations = [];
+  const managedAudioSyncCalls = [];
   const calls = {
     api: 0,
+    ensureSettingsRegistered: 0,
     validate: 0,
     bindBackNav: 0,
     setupUi: 0,
@@ -100,6 +152,9 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   runPartyOperationsReady({
     registerPartyOperationsApi() {
       calls.api += 1;
+    },
+    ensureSettingsRegistered() {
+      calls.ensureSettingsRegistered += 1;
     },
     validatePartyOperationsTemplates() {
       calls.validate += 1;
@@ -121,7 +176,8 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     notifyDailyInjuryReminders() {
       calls.notifyDailyInjuryReminders += 1;
     },
-    syncManagedAudioMixPlaybackForCurrentUser() {
+    syncManagedAudioMixPlaybackForCurrentUser(options) {
+      managedAudioSyncCalls.push(options);
       calls.syncManagedAudio += 1;
       return Promise.resolve();
     },
@@ -166,6 +222,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   });
 
   assert.equal(calls.api, 1);
+  assert.equal(calls.ensureSettingsRegistered, 1);
   assert.equal(calls.validate, 1);
   assert.equal(calls.bindBackNav, 1);
   assert.equal(calls.setupUi, 1);
@@ -173,6 +230,9 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   assert.deepEqual(calls.forceLauncherRecovery, ["ready-self-heal"]);
   assert.equal(calls.notifyDailyInjuryReminders, 1);
   assert.equal(calls.syncManagedAudio, 1);
+  assert.deepEqual(managedAudioSyncCalls, [
+    { reason: "ready", allowAutostart: true }
+  ]);
   assert.deepEqual(calls.schedulePendingSopNoteSync, ["ready"]);
   assert.deepEqual(calls.scheduleIntegrationSync, []);
   assert.equal(calls.autoRefreshTick, 0);
@@ -191,6 +251,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 
 {
   const scheduledDelays = [];
+  const managedAudioSyncCalls = [];
   const calls = {
     schedulePendingSopNoteSync: [],
     scheduleIntegrationSync: [],
@@ -202,6 +263,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 
   runPartyOperationsReady({
     registerPartyOperationsApi() {},
+    ensureSettingsRegistered() {},
     validatePartyOperationsTemplates() {
       return Promise.resolve();
     },
@@ -212,7 +274,8 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
       return Promise.resolve();
     },
     notifyDailyInjuryReminders() {},
-    syncManagedAudioMixPlaybackForCurrentUser() {
+    syncManagedAudioMixPlaybackForCurrentUser(options) {
+      managedAudioSyncCalls.push(options);
       return Promise.resolve();
     },
     game: {
@@ -253,6 +316,9 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 
   assert.deepEqual(calls.schedulePendingSopNoteSync, []);
   assert.deepEqual(calls.scheduleIntegrationSync, ["ready"]);
+  assert.deepEqual(managedAudioSyncCalls, [
+    { reason: "ready", allowAutostart: true }
+  ]);
   assert.equal(calls.autoRefreshTick, 1);
   assert.deepEqual(calls.queueAudioWarmup, [{ delayMs: 0 }]);
   assert.equal(calls.ensureJournalTree, 1);
@@ -320,6 +386,61 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
       }
     }
   ]);
+}
+
+{
+  const warnings = [];
+
+  runPartyOperationsReady({
+    registerPartyOperationsApi() {},
+    ensureSettingsRegistered() {
+      throw new Error("settings fallback failed");
+    },
+    validatePartyOperationsTemplates() {
+      return Promise.resolve();
+    },
+    bindPoBrowserBackNavigation() {},
+    setupPartyOperationsUI() {},
+    ensureLauncherUi() {},
+    forceLauncherRecovery() {
+      return Promise.resolve();
+    },
+    notifyDailyInjuryReminders() {},
+    syncManagedAudioMixPlaybackForCurrentUser() {
+      return Promise.resolve();
+    },
+    game: {
+      user: {
+        isGM: false
+      }
+    },
+    schedulePendingSopNoteSync() {},
+    scheduleIntegrationSync() {},
+    handleAutomaticMerchantAutoRefreshTick() {
+      return Promise.resolve();
+    },
+    queueAudioLibraryMetadataWarmup() {},
+    ensureOperationsJournalFolderTree() {
+      return Promise.resolve();
+    },
+    scheduleLootManifestCompendiumTypeFolderSync() {
+      return Promise.resolve();
+    },
+    registerModuleSocketHandler() {},
+    socketChannel: "module.party-operations",
+    socketHandler: "socket-handler",
+    registerPartyOpsHooks() {},
+    setTimeoutFn(callback) {
+      callback();
+    },
+    logger: {
+      warn(message) {
+        warnings.push(String(message));
+      }
+    }
+  });
+
+  assert.ok(warnings.some((entry) => entry.includes("failed to ensure settings are registered")));
 }
 
 {

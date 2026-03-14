@@ -25,6 +25,7 @@
   </header>
 
   <div class="po-body">
+  <div class="po-primary-shell">
   <section id="po-march-overview" class="po-overview" aria-label="Marching status">
     <article class="po-overview-card">
       <span>Assigned Actors</span>
@@ -61,7 +62,7 @@
       {{/unless}}
     </section>
 
-    <div class="po-grid po-columns">
+    <div class="po-grid po-columns po-primary-layout">
       <div id="po-march-ranks" class="po-ranks po-left">
         {{#each ranks}}
         <section class="po-rank-col po-collapsible {{#if collapsed}}is-collapsed{{/if}}" data-rank-id="{{id}}" data-section-id="rank-{{id}}">
@@ -271,6 +272,7 @@
     </div>
   </section>
   </div>
+</div>
 
 </div>
 

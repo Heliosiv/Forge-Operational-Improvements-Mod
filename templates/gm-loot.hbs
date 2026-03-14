@@ -103,16 +103,17 @@
               </div>
             </div>
 
-            <div class="po-loot-action-bar">
-              <div class="po-loot-action-group">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="roll-loot-preview">Generate Loot</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="add-loot-preview-item">Add Item</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear Builder Items</button>
-              </div>
-              <div class="po-loot-action-group po-loot-action-group-publish">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
-              </div>
+          </section>
+
+          <section class="po-gm-section po-loot-action-bar po-loot-action-bar-sticky">
+            <div class="po-loot-action-group po-loot-action-group-primary">
+              <button type="button" class="po-btn po-btn-sm is-primary po-loot-generate-btn" data-action="roll-loot-preview">Generate Loot</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="add-loot-preview-item">Add Item</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="clear-loot-preview">Clear Builder Items</button>
+            </div>
+            <div class="po-loot-action-group po-loot-action-group-publish">
+              <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-loot-claims">Give to Players</button>
+              <button type="button" class="po-btn po-btn-sm is-danger" data-action="clear-loot-claims" {{#unless lootClaims.canArchiveSelectedRun}}disabled{{/unless}}>Archive Selected Run</button>
             </div>
           </section>
 
@@ -174,11 +175,21 @@
                 <div class="po-section-title">Builder Items</div>
                 <div class="po-hint">Drag an item from the sidebar or compendium into this tray to inject it directly into the current output.</div>
               </div>
-              <div class="po-loot-builder-status">
-                <span class="po-pill">{{preview.stats.itemCountGenerated}} generated</span>
-                <span class="po-pill">{{preview.stats.itemCountTarget}} target</span>
-                <span class="po-pill">{{preview.stats.finalCombinedValueGp}} gp total</span>
-                <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp items</span>
+              <div class="po-loot-builder-items-tools">
+                <div class="po-loot-builder-status">
+                  <span class="po-pill">{{preview.stats.itemCountGenerated}} generated</span>
+                  <span class="po-pill">{{preview.stats.itemCountTarget}} target</span>
+                  <span class="po-pill">{{preview.stats.finalCombinedValueGp}} gp total</span>
+                  <span class="po-pill">{{preview.stats.finalItemsValueGp}} gp items</span>
+                </div>
+                <label class="po-resource-row po-loot-sort-row">
+                  <span>Sort</span>
+                  <select name="lootPreviewSort" class="po-select" data-action="set-loot-preview-field" data-field="sort">
+                    {{#each preview.sortOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
               </div>
             </div>
             <div class="po-loot-preview-dropzone-shell">
@@ -200,7 +211,7 @@
 
             {{#if preview.items.length}}
             <div class="po-loot-preview-items-grid">
-              {{#each preview.items}}
+              {{#each preview.itemsSorted}}
               <article class="po-op-role-row po-gm-loot-source-card po-gm-loot-source-card-compact po-gm-loot-builder-item-card" data-po-item-card="loot-builder-item" data-item-id="{{id}}" data-uuid="{{uuid}}">
                 <div class="po-loot-builder-item-card-head">
                   <img class="po-loot-builder-item-thumb" src="{{img}}" alt="{{name}}" loading="lazy" {{#if canOpen}}data-po-item-open-target="true" title="Double-click to open {{name}}"{{/if}} />

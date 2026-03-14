@@ -62,8 +62,9 @@ function applyMerchantSourceRefFilter(root, options = {}) {
   const optionsList = getMerchantSourceRefOptionElements(root);
   let visibleCount = 0;
   for (const optionRow of optionsList) {
+    const matchesSourceFilters = String(optionRow.dataset?.sourceFilterMatch ?? "1") !== "0";
     const searchBlob = String(optionRow.dataset?.search ?? optionRow.textContent ?? "").toLowerCase();
-    const visible = !needle || searchBlob.includes(needle);
+    const visible = matchesSourceFilters && (!needle || searchBlob.includes(needle));
     optionRow.hidden = !visible;
     optionRow.classList.toggle("is-hidden", !visible);
     if (visible) visibleCount += 1;

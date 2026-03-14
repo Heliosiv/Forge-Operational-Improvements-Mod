@@ -3,6 +3,7 @@ export const PARTY_OPS_APP_INSTANCE_KEYS = Object.freeze({
   MARCHING_ORDER: "marchingOrder",
   REST_WATCH_PLAYER: "restWatchPlayer",
   GLOBAL_MODIFIER_SUMMARY: "globalModifierSummary",
+  GM_FACTIONS_PAGE: "gmFactionsPage",
   GM_ENVIRONMENT_PAGE: "gmEnvironmentPage",
   GM_DOWNTIME_PAGE: "gmDowntimePage",
   GM_MERCHANTS_PAGE: "gmMerchantsPage",

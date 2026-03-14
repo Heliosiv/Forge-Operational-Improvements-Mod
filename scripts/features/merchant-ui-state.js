@@ -171,6 +171,13 @@ export function createMerchantUiState({
     return String(readSessionValue(getMerchantEditorStorageKey()) ?? "").trim();
   }
 
+  function getMerchantEditorPersistedId(fallbackInput = "") {
+    const selection = getMerchantEditorSelection();
+    if (selection === "__new__") return "";
+    const fallback = String(fallbackInput ?? "").trim();
+    return selection || fallback;
+  }
+
   function getMerchantEditorDraftStorageKey() {
     return `po-merchant-editor-draft-${getCurrentUserId()}`;
   }
@@ -498,6 +505,7 @@ export function createMerchantUiState({
     setSelectedMerchantTabId,
     setSelectedMerchantTabIdFromElement,
     getMerchantEditorSelection,
+    getMerchantEditorPersistedId,
     setMerchantEditorSelection,
     normalizeMerchantEditorSelectionKey,
     getMerchantEditorDraftState,

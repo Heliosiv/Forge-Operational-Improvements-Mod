@@ -18,6 +18,7 @@ export function createAudioMixPresetManager({
   defaultPresetId = "",
   canAccessAllPlayerOps,
   getSelectedAudioMixPreset,
+  setSelectedAudioMixPresetId,
   getAudioMixPresetById,
   updateStoredAudioMixPresets,
   serializeAudioMixPresetForStore,
@@ -134,7 +135,8 @@ export function createAudioMixPresetManager({
       store.presets.push(preset);
       return store;
     });
-    if (audioLibraryUiState) audioLibraryUiState.selectedMixPresetId = preset.id;
+    if (typeof setSelectedAudioMixPresetId === "function") setSelectedAudioMixPresetId(preset.id);
+    else if (audioLibraryUiState) audioLibraryUiState.selectedMixPresetId = preset.id;
     setAudioMixStatus?.(`Created and saved custom preset: ${preset.label}`);
     return preset;
   }
@@ -279,7 +281,8 @@ export function createAudioMixPresetManager({
       store.presets = store.presets.filter((entry) => entry.id !== preset.id);
       return store;
     });
-    if (audioLibraryUiState) audioLibraryUiState.selectedMixPresetId = defaultPresetId;
+    if (typeof setSelectedAudioMixPresetId === "function") setSelectedAudioMixPresetId(defaultPresetId);
+    else if (audioLibraryUiState) audioLibraryUiState.selectedMixPresetId = defaultPresetId;
     setAudioMixStatus?.(clearedQueue
       ? `Deleted custom preset and cleared its queue: ${preset.label}`
       : `Deleted custom preset: ${preset.label}`);

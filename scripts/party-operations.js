@@ -1,3 +1,4 @@
+import { createGmFactionsPageApp } from "./features/factions-ui.js";
 import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
@@ -30,6 +31,18 @@ import {
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
 import { createFeatureRegistrar } from "./core/feature-registry.js";
+import {
+  addCalendarDays as addCalendarDaysBridge,
+  formatCalendarDateTimeLabel as formatCalendarDateTimeLabelBridge,
+  getCalendarClockContext as getCalendarClockContextBridge,
+  getCalendarDayKey as getCalendarDayKeyBridge,
+  getCalendarDueCount as getCalendarDueCountBridge,
+  getCurrentWorldTimestamp as getCurrentWorldTimestampBridge,
+  getElapsedCalendarDays as getElapsedCalendarDaysBridge,
+  getSimpleCalendarApi as getSimpleCalendarApiBridge,
+  getSimpleCalendarApiCandidates as getSimpleCalendarApiCandidatesBridge,
+  isSimpleCalendarActive as isSimpleCalendarActiveBridge
+} from "./core/calendar-bridge.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
@@ -71,6 +84,7 @@ import {
   MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
   MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
   clampMerchantValueStrictness as clampMerchantValueStrictnessDomain,
+  normalizeMerchantBarterModifier as normalizeMerchantBarterModifierDomain,
   normalizeMerchantAutoRefreshConfig as normalizeMerchantAutoRefreshConfigDomain,
   normalizeMerchantTagList as normalizeMerchantTagListDomain,
   normalizeMerchantKeywordList as normalizeMerchantKeywordListDomain,
@@ -119,6 +133,14 @@ import {
   estimateVariableTreasureOutcome,
   rollVariableTreasureOutcome
 } from "./features/loot-variable-treasure.js";
+import { aggregateLootEntriesForStacks } from "./features/loot-entry-stacking.js";
+import { buildLootCohesiveBundle } from "./features/loot-selection-cohesion.js";
+import { getLootSelectionIntelligenceWeight } from "./features/loot-selection-intelligence.js";
+import {
+  LOOT_PREVIEW_SORT_OPTIONS,
+  normalizeLootPreviewSort,
+  sortLootPreviewItems
+} from "./features/loot-preview-display.js";
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
@@ -136,6 +158,7 @@ const REFRESH_KNOWN_INSTANCE_KEYS = Object.freeze([
   APP_INSTANCE_KEYS.MARCHING_ORDER,
   APP_INSTANCE_KEYS.REST_WATCH_PLAYER,
   APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY,
+  APP_INSTANCE_KEYS.GM_FACTIONS_PAGE,
   APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE,
   APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE,
   APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE,
@@ -466,6 +489,7 @@ const APP_WINDOW_SIZE_PROFILES = Object.freeze({
   "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "marching-order": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "global-modifiers": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "gm-factions": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-environment": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-downtime": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "gm-merchants": NEAR_FULLSCREEN_WINDOW_PROFILE,
@@ -479,6 +503,7 @@ const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
   "rest-watch-player-app": "rest-watch-player",
   "marching-order-app": "marching-order",
   "party-operations-global-modifier-summary": "global-modifiers",
+  "party-operations-gm-factions-page": "gm-factions",
   "party-operations-gm-environment-page": "gm-environment",
   "party-operations-gm-downtime-page": "gm-downtime",
   "party-operations-gm-merchants-page": "gm-merchants",
@@ -491,6 +516,7 @@ const APP_WINDOW_POSITION_STORAGE_KEYS = Object.freeze({
   "rest-watch": "main-ops",
   "marching-order": "main-ops",
   "global-modifiers": "main-ops",
+  "gm-factions": "main-ops",
   "gm-environment": "main-ops",
   "gm-downtime": "main-ops",
   "gm-merchants": "main-ops",
@@ -1666,6 +1692,7 @@ const {
   setSelectedMerchantTabId,
   setSelectedMerchantTabIdFromElement,
   getMerchantEditorSelection,
+  getMerchantEditorPersistedId,
   setMerchantEditorSelection,
   normalizeMerchantEditorSelectionKey,
   getMerchantEditorDraftState,
@@ -2907,6 +2934,64 @@ function registerPartyOpsSettings(onSettingsChanged = () => {}) {
   });
 }
 
+function hasRegisteredPartyOpsSettingsNamespace(moduleId = MODULE_ID) {
+  const prefix = `${String(moduleId ?? "").trim()}.`;
+  if (!prefix || !game?.settings) return false;
+  try {
+    return Array.from(game.settings.settings?.keys?.() ?? []).some((key) => String(key ?? "").startsWith(prefix));
+  } catch {
+    return false;
+  }
+}
+
+function ensurePartyOpsSettingsRegistered() {
+  if (hasRegisteredPartyOpsSettingsNamespace(MODULE_ID)) return false;
+  registerPartyOpsSettings((key) => {
+    if (key === SETTINGS.DEBUG_ENABLED) return;
+    const scopes = getRefreshScopesForSettingKey(key);
+    refreshOpenApps({ scopes });
+  });
+  registerPartyOpsDataSettings({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore
+  });
+  syncAudioLibraryDraftFromSettings();
+  registerPartyOpsFeatureSettings({
+    moduleId: MODULE_ID,
+    settings: SETTINGS,
+    areAdvancedSettingsEnabled,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults: {
+      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+    },
+    gatherDefaults: GATHER_DEFAULTS,
+    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+    launcherPlacements: LAUNCHER_PLACEMENTS,
+    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+    inventoryHookModes: INVENTORY_HOOK_MODES,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition,
+    refreshOpenApps,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    openRestWatchUiForCurrentUser,
+    openMainTab
+  });
+  return true;
+}
+
 function normalizeInventoryHookMode(value) {
   const raw = String(value ?? "").trim().toLowerCase();
   if (raw === INVENTORY_HOOK_MODES.OFF) return INVENTORY_HOOK_MODES.OFF;
@@ -3369,16 +3454,7 @@ function buildRestWatchCampfireOverview(slots = []) {
 }
 
 function getGatherDayKey(timestamp = getCurrentWorldTimestamp()) {
-  const api = getSimpleCalendarApi();
-  if (isSimpleCalendarActive() && api?.timestampToDate) {
-    try {
-      const date = api.timestampToDate(timestamp);
-      return `Y${Number(date?.year ?? 0)}-M${Number(date?.month ?? 0)}-D${Number(date?.day ?? 0)}`;
-    } catch {
-      // Fall through.
-    }
-  }
-  return `D${Math.floor(Number(timestamp ?? 0) / 86400)}`;
+  return getCalendarDayKeyBridge(timestamp, { gameRef: game, globalRef: globalThis });
 }
 
 function buildGatherEnvironmentSignature(input = {}) {
@@ -5383,6 +5459,17 @@ function clampReputationStandingValue(value) {
   return Number.isFinite(numeric) ? Math.max(-5, Math.min(5, Math.floor(numeric))) : 0;
 }
 
+const REPUTATION_VIEW_SCOPES = Object.freeze({
+  OPERATIONS: "operations",
+  GM: "gm"
+});
+
+function normalizeReputationViewScope(value) {
+  return String(value ?? "").trim().toLowerCase() === REPUTATION_VIEW_SCOPES.GM
+    ? REPUTATION_VIEW_SCOPES.GM
+    : REPUTATION_VIEW_SCOPES.OPERATIONS;
+}
+
 function getEmptyReputationPlayerImpact() {
   return {
     id: foundry.utils.randomID(),
@@ -6768,6 +6855,7 @@ function normalizeLootPreviewDraft(input = {}) {
   const maxItemsRaw = parseLootPreviewNumericInput(input?.maxItems, 0);
   const maxItemValueGpRaw = parseLootPreviewNumericInput(input?.maxItemValueGp, 0);
   const targetItemsValueGpRaw = parseLootPreviewNumericInput(input?.targetItemsValueGp, 0);
+  const sort = normalizeLootPreviewSort(input?.sort);
   const deterministic = shouldUseDeterministicLootRng(input);
   const seed = String(input?.seed ?? "").trim();
   const dateBucket = String(input?.dateBucket ?? "").trim();
@@ -6819,6 +6907,7 @@ function normalizeLootPreviewDraft(input = {}) {
     maxItems,
     maxItemValueGp,
     targetItemsValueGp,
+    sort,
     deterministic,
     seed,
     dateBucket
@@ -7576,6 +7665,11 @@ function buildOperationsContextFallback() {
         challengeOptions: LOOT_PREVIEW_CHALLENGE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackChallenge })),
         scaleOptions: LOOT_PREVIEW_SCALE_OPTIONS.map((entry) => ({ ...entry, selected: entry.value === fallbackScale })),
         draft: fallbackPreviewDraft,
+        sort: normalizeLootPreviewSort(fallbackPreviewDraft?.sort),
+        sortOptions: LOOT_PREVIEW_SORT_OPTIONS.map((entry) => ({
+          ...entry,
+          selected: entry.value === normalizeLootPreviewSort(fallbackPreviewDraft?.sort)
+        })),
         hasResult: false,
         generatedAtLabel: "-",
         generatedBy: "-",
@@ -7599,6 +7693,7 @@ function buildOperationsContextFallback() {
           deltaGp: 0
         },
         items: [],
+        itemsSorted: [],
         tableRolls: [],
         warnings: []
       }
@@ -7897,6 +7992,10 @@ function buildOperationsContextFallback() {
           barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled !== false,
           barterDc: Number(MERCHANT_DEFAULTS.pricing.barterDc ?? 15),
           barterAbility: normalizeMerchantBarterAbility(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
+          barterSuccessBuyModifierPercent: Number(((MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05) * 100).toFixed(2)),
+          barterSuccessSellModifierPercent: Number(((MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05) * 100).toFixed(2)),
+          barterFailureBuyModifierPercent: Number(((MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05) * 100).toFixed(2)),
+          barterFailureSellModifierPercent: Number(((MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05) * 100).toFixed(2)),
           sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
           sourceRef: "",
           sourcePackIds: [],
@@ -9224,7 +9323,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "show-reputation-brief": async () => {
-          await showReputationBrief();
+          await showReputationBrief({ scope: REPUTATION_VIEW_SCOPES.OPERATIONS });
         },
         "toggle-loot-pack-sources-collapsed": async () => {
           const current = getLootPackSourcesUiState();
@@ -9366,6 +9465,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             force: true,
             runId: getLootClaimRunIdFromElement(element)
           });
+        },
+        "open-gm-factions-page": async () => {
+          openGmFactionsPage({ force: true });
         },
         "gm-quick-add-faction": async () => {
           await gmQuickAddFaction();
@@ -10070,6 +10172,25 @@ function buildGmLootPageContext() {
   };
 }
 
+function buildGmFactionsPageContext() {
+  const operations = getStandaloneOpsContext();
+  const ledger = getOperationsLedger();
+  const reputationState = ensureReputationState(ledger);
+  const reputationFilters = getReputationFilterState();
+  const reputation = buildReputationContext(reputationState, reputationFilters, {
+    scope: REPUTATION_VIEW_SCOPES.GM
+  });
+  return {
+    moduleVersion: getCurrentModuleVersion(),
+    generatedAtLabel: new Date().toLocaleString(),
+    generatedBy: String(game.user?.name ?? "GM"),
+    operations: {
+      ...operations,
+      reputation
+    }
+  };
+}
+
 function buildGmLootClaimsBoardContext() {
   return {
     moduleVersion: getCurrentModuleVersion(),
@@ -10079,6 +10200,21 @@ function buildGmLootClaimsBoardContext() {
     isGM: Boolean(canAccessAllPlayerOps()),
     canManageClaims: Boolean(canAccessAllPlayerOps())
   };
+}
+
+function openGmFactionsPage(renderOptions = { force: true }) {
+  const suppressHistory = Boolean(renderOptions?.suppressHistory);
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("GM permissions are required to view faction controls.");
+    return null;
+  }
+  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE);
+  const app = existingApp?.element?.isConnected
+    ? existingApp
+    : new GmFactionsPageApp(getResponsiveWindowOptions("gm-factions"));
+  app.render(renderOptions);
+  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-factions" });
+  return app;
 }
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
@@ -10167,9 +10303,7 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   let app = null;
   if (key === "faction") {
     setActiveGmQuickPanel("none");
-    setActiveRestMainTab("operations");
-    setActiveOperationsPage("reputation");
-    app = openMainTab("operations", { ...renderOptions, suppressHistory });
+    app = openGmFactionsPage({ ...renderOptions, suppressHistory });
   } else if (key === "global-modifiers") {
     app = openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
   } else if (key === "environment") {
@@ -10315,6 +10449,42 @@ class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
     restorePendingScrollState(this);
   }
 }
+
+export const GmFactionsPageApp = createGmFactionsPageApp({
+  BaseStatefulPageApp,
+  getResponsiveWindowPosition,
+  setPageInstance: (instance) => {
+    setAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE, instance);
+  },
+  buildContext: buildGmFactionsPageContext,
+  openMainTab,
+  setReputationFilterState,
+  showReputationBrief: () => showReputationBrief({ scope: REPUTATION_VIEW_SCOPES.GM }),
+  setReputationScore,
+  adjustReputationScore,
+  setReputationNote,
+  logReputationNote,
+  loadReputationNoteLog,
+  useReputationNoteLog,
+  postReputationNoteLog,
+  clearReputationNote,
+  removeReputationNoteLog,
+  setReputationLabel,
+  setReputationDetail,
+  setReputationOperationsVisibility,
+  setReputationOperationsField,
+  setReputationPlayerImpactField,
+  addReputationPlayerImpact,
+  removeReputationPlayerImpact,
+  setReputationBuilderField,
+  setReputationBuilderImpactField,
+  addReputationBuilderImpact,
+  removeReputationBuilderImpact,
+  clearReputationBuilder,
+  addReputationFaction,
+  removeReputationFaction,
+  openGmPanelByKey
+});
 
 export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   BaseStatefulPageApp,
@@ -12121,6 +12291,7 @@ const audioMixPresetManager = createAudioMixPresetManager({
   defaultPresetId: AUDIO_MIX_PRESET_DEFAULT_ID,
   canAccessAllPlayerOps,
   getSelectedAudioMixPreset,
+  setSelectedAudioMixPresetId,
   getAudioMixPresetById,
   updateStoredAudioMixPresets,
   serializeAudioMixPresetForStore,
@@ -12535,12 +12706,31 @@ function syncAudioLibraryDraftFromSettings() {
   audioStore.syncAudioLibraryDraftFromSettings();
 }
 
+function saveSharedAudioLibraryCatalog(catalog) {
+  return audioStore.saveSharedAudioLibraryCatalog(catalog);
+}
+
+function getSharedSelectedAudioMixPresetId() {
+  return audioStore.getSharedSelectedAudioMixPresetId();
+}
+
+function setSharedSelectedAudioMixPresetId(value) {
+  return audioStore.setSharedSelectedAudioMixPresetId(value);
+}
+
 function getAudioLibrarySourceSetting() {
   return audioStore.getAudioLibrarySourceSetting();
 }
 
 function getAudioLibraryRootSetting() {
   return audioStore.getAudioLibraryRootSetting();
+}
+
+function setSelectedAudioMixPresetId(value, { persist = true } = {}) {
+  const preset = getAudioMixPresetById(value ?? AUDIO_MIX_PRESET_DEFAULT_ID);
+  audioLibraryUiState.selectedMixPresetId = preset?.id ?? AUDIO_MIX_PRESET_DEFAULT_ID;
+  if (persist) setSharedSelectedAudioMixPresetId(audioLibraryUiState.selectedMixPresetId);
+  return audioLibraryUiState.selectedMixPresetId;
 }
 
 function normalizeAudioLibraryItem(entry = {}) {
@@ -12858,6 +13048,7 @@ async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_SOURCE, catalog.source);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_ROOT, catalog.rootPath);
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
+  saveSharedAudioLibraryCatalog(catalog);
 
   audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
   setSelectedAudioLibraryTrackSelectionIds([]);
@@ -12881,6 +13072,7 @@ async function clearAudioLibraryCatalog() {
     return false;
   }
   await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, buildDefaultAudioLibraryCatalog());
+  saveSharedAudioLibraryCatalog(buildDefaultAudioLibraryCatalog());
   audioLibraryUiState.selectedTrackId = "";
   setSelectedAudioLibraryTrackSelectionIds([]);
   setSelectedAudioMixTrackSelectionIds([]);
@@ -13127,7 +13319,7 @@ function clearAudioMixTrackSelections() {
 
 function selectAudioMixPreset(actionElement) {
   const preset = getAudioMixPresetById(actionElement?.dataset?.presetId ?? actionElement?.value);
-  audioLibraryUiState.selectedMixPresetId = preset.id;
+  setSelectedAudioMixPresetId(preset.id);
   resetAudioMixTrackBrowserPages();
   refreshLauncherAudioUi();
 }
@@ -13536,6 +13728,18 @@ function getManagedAudioMixPlayingSound(playlist = getManagedAudioMixPlaylist(),
     ?? null;
 }
 
+function getManagedAudioMixSoundFromState(playlist = getManagedAudioMixPlaylist(), mixState = getAudioMixStateFlag(playlist)) {
+  const sounds = Array.from(playlist?.sounds?.contents ?? []);
+  const preferredSoundId = String(mixState?.playlistSoundId ?? "").trim();
+  const activeTrackId = String(mixState?.activeTrackId ?? "").trim();
+  const activeTrackPath = normalizeAudioLibraryRootPath(mixState?.activeTrackPath ?? "");
+  return sounds.find((sound) => String(sound?.id ?? "").trim() === preferredSoundId)
+    ?? sounds.find((sound) => getManagedAudioMixTrackIdFromPlaylistSound(sound) === activeTrackId)
+    ?? sounds.find((sound) => normalizeAudioLibraryRootPath(sound?.path ?? "") === activeTrackPath)
+    ?? getManagedAudioMixPlayingSound(playlist, preferredSoundId)
+    ?? null;
+}
+
 async function syncManagedAudioMixStateFromPlaylist(playlist = getManagedAudioMixPlaylist(), options = {}) {
   if (!game.user?.isGM || !playlist) return null;
   const priorState = options?.priorState ?? getAudioMixStateFlag(playlist);
@@ -13601,21 +13805,9 @@ async function syncManagedAudioMixStateFromPlaylist(playlist = getManagedAudioMi
 }
 
 function hideManagedAudioMixPlaylistUi(root = document) {
-  const playlist = getManagedAudioMixPlaylist();
-  const playlistId = String(playlist?.id ?? "").trim();
-  if (!playlistId || !root?.querySelectorAll) return;
-  const selectors = [
-    `[data-tab="playlists"] [data-document-id="${playlistId}"]`,
-    `[data-tab="playlists"] [data-entry-id="${playlistId}"]`,
-    `#playlists [data-document-id="${playlistId}"]`,
-    `#playlists [data-entry-id="${playlistId}"]`
-  ];
-  for (const selector of selectors) {
-    for (const element of root.querySelectorAll(selector)) {
-      const row = element.closest("li, section, article, .directory-item") ?? element;
-      row.style.display = "none";
-    }
-  }
+  // Keep the managed playlist visible in Foundry's audio deck so deck controls
+  // remain the source of truth for playback.
+  return root;
 }
 
 function shouldSequenceAudioMixPresetPlayback(preset, candidateCount = 0) {
@@ -13946,10 +14138,112 @@ async function dispatchAudioMixSocketMessage(command, payload = {}) {
   return true;
 }
 
-async function syncManagedAudioMixPlaybackForCurrentUser() {
-  await stopLocalManagedAudioMixPlayback({ fade: 0 });
+async function autoStartManagedAudioMixFromSavedState() {
+  if (!game.user?.isGM) return false;
   const playlist = getManagedAudioMixPlaylist();
-  return Boolean(getAudioMixStateFlag(playlist).isPlaying);
+  const mixState = getAudioMixStateFlag(playlist);
+  const preset = getAudioMixPresetById(mixState.presetId || getSharedSelectedAudioMixPresetId() || getSelectedAudioMixPreset().id);
+  const queuedTrackIds = normalizeAudioMixPresetTrackIds(mixState.queueTrackIds?.length > 0
+    ? mixState.queueTrackIds
+    : preset?.trackIds ?? []);
+  if (queuedTrackIds.length <= 0) return false;
+  try {
+    await playAudioMixPresetById(preset.id, {
+      queueTrackIds: queuedTrackIds,
+      preferredTrackId: queuedTrackIds[0],
+      currentIndex: 0,
+      excludeTrackId: ""
+    });
+    return true;
+  } catch (error) {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: failed to auto-start saved audio mix`, error);
+    }
+    return false;
+  }
+}
+
+async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
+  const playlist = getManagedAudioMixPlaylist();
+  const mixState = getAudioMixStateFlag(playlist);
+  const allowAutostart = Boolean(options?.allowAutostart);
+  const activeSound = playlist ? getManagedAudioMixPlayingSound(playlist, mixState.playlistSoundId) : null;
+
+  if (!playlist) {
+    await stopLocalManagedAudioMixPlayback({ fade: 0 });
+    if (allowAutostart && game.user?.isGM) {
+      return autoStartManagedAudioMixFromSavedState();
+    }
+    return false;
+  }
+
+  if (!activeSound) {
+    await stopLocalManagedAudioMixPlayback({ fade: 0 });
+    if (game.user?.isGM) {
+      await syncManagedAudioMixStateFromPlaylist(playlist, {
+        refresh: options?.refresh === true
+      });
+    }
+    if (allowAutostart && game.user?.isGM && !mixState.isPlaying) {
+      return autoStartManagedAudioMixFromSavedState();
+    }
+    return false;
+  }
+
+  const activeSoundId = String(activeSound?.id ?? "").trim();
+  let effectiveMixState = mixState;
+  const needsStateRefresh = Boolean(game.user?.isGM) && (
+    !mixState.isPlaying
+    || !String(mixState.playbackId ?? "").trim()
+    || String(mixState.playlistSoundId ?? "").trim() !== activeSoundId
+  );
+  if (needsStateRefresh) {
+    effectiveMixState = await syncManagedAudioMixStateFromPlaylist(playlist, {
+      priorState: mixState,
+      playlistSoundId: activeSoundId,
+      refresh: options?.refresh === true
+    }) ?? mixState;
+  }
+
+  const playbackId = String(effectiveMixState.playbackId ?? "").trim()
+    || `${String(playlist?.id ?? "").trim()}:${activeSoundId}`;
+  const trackId = getManagedAudioMixTrackIdFromPlaylistSound(activeSound)
+    || normalizeAudioLibraryRootPath(effectiveMixState.activeTrackId ?? "")
+    || normalizeAudioLibraryRootPath(activeSound?.path ?? "");
+  const trackPath = String(activeSound?.path ?? effectiveMixState.activeTrackPath ?? "").trim();
+  if (!trackPath) {
+    await stopLocalManagedAudioMixPlayback({ fade: 0 });
+    return false;
+  }
+
+  const isSamePlayback = Boolean(
+    managedAudioMixLocalState.sound
+    && managedAudioMixLocalState.playbackId === playbackId
+    && managedAudioMixLocalState.trackId === trackId
+  );
+  if (isSamePlayback) {
+    managedAudioMixLocalState.startedAt = Math.max(0, Number(effectiveMixState.startedAt ?? managedAudioMixLocalState.startedAt ?? 0) || 0);
+    await setLocalManagedAudioMixPlaybackVolume({
+      playbackId,
+      volume: effectiveMixState.volume,
+      fade: Math.min(180, Math.max(0, Math.floor(Number(effectiveMixState.fade ?? 0) || 0)))
+    });
+    return true;
+  }
+
+  return startLocalManagedAudioMixPlayback({
+    playlistId: String(playlist?.id ?? "").trim(),
+    playlistSoundId: String(activeSound?.id ?? effectiveMixState.playlistSoundId ?? "").trim(),
+    presetId: String(effectiveMixState.presetId ?? "").trim(),
+    playbackId,
+    trackId,
+    trackPath,
+    volume: effectiveMixState.volume,
+    fade: effectiveMixState.fade,
+    channel: effectiveMixState.channel,
+    loop: Boolean(activeSound?.repeat),
+    startedAt: Math.max(0, Number(effectiveMixState.startedAt ?? 0) || 0)
+  });
 }
 
 function queueManagedAudioMixPlaybackResync(delayMs = 60, options = {}) {
@@ -13957,14 +14251,16 @@ function queueManagedAudioMixPlaybackResync(delayMs = 60, options = {}) {
     window.clearTimeout(managedAudioMixResyncTimerId);
     managedAudioMixResyncTimerId = null;
   }
-  managedAudioMixResyncTimerId = window.setTimeout(() => {
+  managedAudioMixResyncTimerId = window.setTimeout(async () => {
     managedAudioMixResyncTimerId = null;
-    void syncManagedAudioMixPlaybackForCurrentUser();
     if (game.user?.isGM && options?.syncState !== false) {
-      void syncManagedAudioMixStateFromPlaylist(options?.playlist ?? getManagedAudioMixPlaylist(), {
+      await syncManagedAudioMixStateFromPlaylist(options?.playlist ?? getManagedAudioMixPlaylist(), {
         refresh: options?.refresh === true
       });
     }
+    await syncManagedAudioMixPlaybackForCurrentUser({
+      refresh: options?.refresh === true
+    });
   }, Math.max(0, Math.floor(Number(delayMs ?? 60) || 60)));
 }
 
@@ -14036,7 +14332,7 @@ async function playAudioMixPresetById(presetId, options = {}) {
     currentIndex,
     startedAt: nextState?.startedAt ?? Date.now()
   });
-  audioLibraryUiState.selectedMixPresetId = preset.id;
+  setSelectedAudioMixPresetId(preset.id);
   audioLibraryUiState.selectedTrackId = String(chosenCandidate?.item?.id ?? audioLibraryUiState.selectedTrackId);
   setAudioMixStatus(`Playing ${preset.label}: ${String(chosenCandidate?.item?.name ?? chosenSound.name ?? "Track")}`);
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
@@ -15686,10 +15982,41 @@ function chunkDocumentRows(rows = [], size = 50) {
   return chunks;
 }
 
-function getLootManifestImportedWorldItems(pack) {
+function buildFolderTreeScopeIds(folders = []) {
+  const seedFolders = Array.isArray(folders) ? folders : [];
+  const allItemFolders = (game.folders?.contents ?? []).filter((folder) => {
+    const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+    return type === "item";
+  });
+  const childrenByParentId = new Map();
+  for (const folder of allItemFolders) {
+    const parentId = getDocumentFolderParentId(folder);
+    if (!parentId) continue;
+    if (!childrenByParentId.has(parentId)) childrenByParentId.set(parentId, []);
+    childrenByParentId.get(parentId).push(folder);
+  }
+
+  const scopedIds = new Set();
+  const pending = [...seedFolders];
+  while (pending.length > 0) {
+    const folder = pending.pop();
+    const folderId = String(folder?.id ?? "").trim();
+    if (!folderId || scopedIds.has(folderId)) continue;
+    scopedIds.add(folderId);
+    for (const child of (childrenByParentId.get(folderId) ?? [])) pending.push(child);
+  }
+  return scopedIds;
+}
+
+function getLootManifestImportedWorldItems(pack, options = {}) {
   const packId = String(pack?.collection ?? "").trim();
   if (!packId) return [];
+  const managedFolderIds = options?.managedFolderIds instanceof Set
+    ? options.managedFolderIds
+    : new Set();
   return (game.items?.contents ?? []).filter((item) => {
+    const folderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
+    if (folderId && managedFolderIds.has(folderId)) return true;
     const importFlag = getLootManifestImportFlag(item);
     if (String(importFlag?.sourcePackId ?? "").trim() === packId) return true;
     const sourceKey = getLootManifestImportedSourceKey(item);
@@ -15740,8 +16067,9 @@ async function clearLootManifestImportedWorldItems() {
     return { ok: false, reason: "pack-missing" };
   }
 
-  const importedItems = getLootManifestImportedWorldItems(pack);
   const managedFolders = getLootManifestManagedWorldFolders(pack);
+  const managedFolderIds = buildFolderTreeScopeIds(managedFolders);
+  const importedItems = getLootManifestImportedWorldItems(pack, { managedFolderIds });
   if (importedItems.length <= 0 && managedFolders.length <= 0) {
     ui.notifications?.info("No imported built items were found in the world.");
     return { ok: true, packId: String(pack?.collection ?? "").trim(), deletedItems: 0, deletedFolders: 0 };
@@ -15766,9 +16094,19 @@ async function clearLootManifestImportedWorldItems() {
     await Item.deleteDocuments(batch);
   }
 
+  const remainingScopedItems = getLootManifestImportedWorldItems(pack, { managedFolderIds });
+  let deletedFolders = 0;
   for (const folder of sortFoldersDeepestFirst(managedFolders)) {
+    const folderId = String(folder?.id ?? "").trim();
+    if (!folderId) continue;
+    const folderStillHasItems = (game.items?.contents ?? []).some((item) => {
+      const itemFolderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
+      return itemFolderId === folderId;
+    });
+    if (folderStillHasItems) continue;
     try {
       await folder.delete();
+      deletedFolders += 1;
     } catch (error) {
       console.warn(`${MODULE_ID}: failed to delete managed loot import folder`, folder, error);
     }
@@ -15789,9 +16127,16 @@ async function clearLootManifestImportedWorldItems() {
     ok: true,
     packId: String(pack?.collection ?? "").trim(),
     deletedItems: importedItems.length,
-    deletedFolders: managedFolders.length
+    deletedFolders
   };
-  ui.notifications?.info(`Cleared ${report.deletedItems} imported built item(s) and ${report.deletedFolders} folder(s).`);
+  if (remainingScopedItems.length > 0) {
+    ui.notifications?.warn(
+      `Cleared ${report.deletedItems} imported built item(s). `
+      + `${remainingScopedItems.length} item(s) still remain in the managed folder tree, so folders were left in place.`
+    );
+  } else {
+    ui.notifications?.info(`Cleared ${report.deletedItems} imported built item(s) and ${report.deletedFolders} folder(s).`);
+  }
   return report;
 }
 
@@ -18918,71 +19263,6 @@ function getLootRarityBucket(rarity) {
   return normalizeLootRarity(rarity) || "common";
 }
 
-function isLootEntryStackable(entry = {}) {
-  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
-  if (itemType === "ammunition" || itemType === "ammo") return true;
-  const name = String(entry?.name ?? "").trim().toLowerCase();
-  if (!name) return false;
-  const coinLike = /\b(copper|silver|electrum|gold|platinum)\b/.test(name)
-    || /\b(cp|sp|ep|gp|pp)\b/.test(name)
-    || /\bcoins?\b/.test(name);
-  return coinLike;
-}
-
-function getLootEntryStackKey(entry = {}) {
-  if (!isLootEntryStackable(entry)) return "";
-  const uuid = String(entry?.uuid ?? "").trim();
-  if (uuid) return `uuid:${uuid}`;
-  const name = String(entry?.name ?? "").trim().toLowerCase();
-  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
-  const rarity = String(entry?.rarity ?? "").trim().toLowerCase();
-  const sourceLabel = String(entry?.sourceLabel ?? "").trim().toLowerCase();
-  return `name:${name}|type:${itemType}|rarity:${rarity}|source:${sourceLabel}`;
-}
-
-function aggregateLootEntriesForStacks(values = []) {
-  const source = Array.isArray(values) ? values : [];
-  if (source.length <= 1) return source.map((entry) => ({ ...entry, quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) }));
-  const aggregated = [];
-  const byKey = new Map();
-  for (const raw of source) {
-    if (!raw || typeof raw !== "object") continue;
-    const entry = {
-      ...raw,
-      quantity: Math.max(1, Math.floor(Number(raw?.quantity ?? 1) || 1))
-    };
-    const stackKey = getLootEntryStackKey(entry);
-    if (!stackKey) {
-      aggregated.push(entry);
-      continue;
-    }
-    const existingIndex = byKey.get(stackKey);
-    if (existingIndex === undefined) {
-      byKey.set(stackKey, aggregated.length);
-      aggregated.push(entry);
-      continue;
-    }
-    const existing = aggregated[existingIndex];
-    existing.quantity += entry.quantity;
-    existing.itemValueGp = Math.max(0, Number(existing.itemValueGp ?? 0) || 0) + Math.max(0, Number(entry.itemValueGp ?? 0) || 0);
-    if (existing.itemWeightLb !== undefined || entry.itemWeightLb !== undefined) {
-      existing.itemWeightLb = roundLootWeightLb(
-        Math.max(0, Number(existing.itemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.itemWeightLb ?? 0) || 0)
-      );
-    }
-    if (existing.baseItemValueGp !== undefined || entry.baseItemValueGp !== undefined) {
-      existing.baseItemValueGp = Math.max(0, Number(existing.baseItemValueGp ?? 0) || 0) + Math.max(0, Number(entry.baseItemValueGp ?? 0) || 0);
-    }
-    if (existing.baseItemWeightLb !== undefined || entry.baseItemWeightLb !== undefined) {
-      existing.baseItemWeightLb = roundLootWeightLb(
-        Math.max(0, Number(existing.baseItemWeightLb ?? 0) || 0) + Math.max(0, Number(entry.baseItemWeightLb ?? 0) || 0)
-      );
-    }
-    aggregated[existingIndex] = existing;
-  }
-  return aggregated;
-}
-
 function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
@@ -19461,7 +19741,10 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     budgetWeight *= 0.5 + progressRatio;
   }
   const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
-  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight;
+  const intelligenceWeight = Math.max(0.000001, Number(
+    getLootSelectionIntelligenceWeight(entry, state, phase)
+  ) || 0.000001);
+  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight * intelligenceWeight;
 }
 
 function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spend") {
@@ -19472,50 +19755,88 @@ function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spen
 
 function commitLootBudgetPick(state = {}, picked = null) {
   if (!picked || !state) return false;
-  const rarityBucket = getLootRarityBucket(picked.rarity);
-  const rolledVariableTreasure = rollLootVariableTreasureSelection(
-    picked,
-    state?.variableTreasurePools ?? {},
-    state?.random ?? Math.random
-  );
-  const resolvedItemValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
-  const resolvedItemWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
-  const resolvedBaseItemValueGp = Math.max(0, Number(
-    rolledVariableTreasure?.baseItemValueGp
-    ?? picked?.baseItemValueGp
-    ?? picked?.itemValueGp
+  const targetItemBudgetGp = Math.max(0, Number(
+    state?.budgetContext?.targetItemBudgetGp
+    ?? state?.budgetContext?.effectiveTotalTargetGp
     ?? 0
   ) || 0);
-  const resolvedBaseItemWeightLb = roundLootWeightLb(Math.max(0, Number(
-    rolledVariableTreasure?.baseItemWeightLb
-    ?? picked?.baseItemWeightLb
-    ?? picked?.itemWeightLb
-    ?? 0
-  ) || 0));
-  state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
-  state.selected.push({
-    name: picked.name,
-    img: picked.img,
-    itemType: picked.itemType,
-    rarity: picked.rarity || "",
-    sourceLabel: picked.sourceLabel,
-    uuid: picked.uuid,
-    itemValueGp: resolvedItemValueGp,
-    itemWeightLb: resolvedItemWeightLb,
-    baseItemValueGp: resolvedBaseItemValueGp,
-    baseItemWeightLb: resolvedBaseItemWeightLb,
-    variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
+  const budgetRemainingGp = Math.max(0, targetItemBudgetGp - Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0));
+  const bundleRows = buildLootCohesiveBundle(picked, {
+    pool: Array.isArray(state?.pool) ? state.pool.filter((entry) => entry !== picked) : [],
+    selected: state?.selected ?? [],
+    budgetRemainingGp,
+    draft: state?.draft ?? {},
+    random: state?.random ?? Math.random
   });
-  state.selectedTotalValueGp += resolvedItemValueGp;
+
+  const consumedCandidates = new Set();
+  for (const row of (Array.isArray(bundleRows) && bundleRows.length ? bundleRows : [{ candidate: picked, quantity: 1 }])) {
+    const candidate = row?.candidate;
+    if (!candidate) continue;
+    const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
+    const rarityBucket = getLootRarityBucket(candidate.rarity);
+    const rolledVariableTreasure = rollLootVariableTreasureSelection(
+      candidate,
+      state?.variableTreasurePools ?? {},
+      state?.random ?? Math.random
+    );
+    const resolvedUnitValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? candidate?.itemValueGp ?? 0) || 0);
+    const resolvedUnitWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? candidate?.itemWeightLb ?? 0) || 0));
+    const resolvedUnitBaseValueGp = Math.max(0, Number(
+      rolledVariableTreasure?.baseItemValueGp
+      ?? candidate?.baseItemValueGp
+      ?? candidate?.itemValueGp
+      ?? 0
+    ) || 0);
+    const resolvedUnitBaseWeightLb = roundLootWeightLb(Math.max(0, Number(
+      rolledVariableTreasure?.baseItemWeightLb
+      ?? candidate?.baseItemWeightLb
+      ?? candidate?.itemWeightLb
+      ?? 0
+    ) || 0));
+    const resolvedItemValueGp = Math.max(0, Number((resolvedUnitValueGp * quantity).toFixed(2)));
+    const resolvedItemWeightLb = roundLootWeightLb(resolvedUnitWeightLb * quantity);
+    const resolvedBaseItemValueGp = Math.max(0, Number((resolvedUnitBaseValueGp * quantity).toFixed(2)));
+    const resolvedBaseItemWeightLb = roundLootWeightLb(resolvedUnitBaseWeightLb * quantity);
+    state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
+    state.selected.push({
+      name: candidate.name,
+      img: candidate.img,
+      itemType: candidate.itemType,
+      rarity: candidate.rarity || "",
+      rarityBucket,
+      sourceId: candidate.sourceId,
+      sourceLabel: candidate.sourceLabel,
+      uuid: candidate.uuid,
+      quantity,
+      itemValueGp: resolvedItemValueGp,
+      itemWeightLb: resolvedItemWeightLb,
+      baseItemValueGp: resolvedBaseItemValueGp,
+      baseItemWeightLb: resolvedBaseItemWeightLb,
+      variableTreasureKind: normalizeLootVariableTreasureKind(candidate?.variableTreasureKind),
+      merchantCategories: Array.isArray(candidate?.merchantCategories) ? [...candidate.merchantCategories] : [],
+      keywords: Array.isArray(candidate?.keywords) ? [...candidate.keywords] : [],
+      tier: String(candidate?.tier ?? "").trim().toLowerCase(),
+      valueBand: String(candidate?.valueBand ?? "").trim().toLowerCase(),
+      priceDenomination: String(candidate?.priceDenomination ?? "").trim().toLowerCase(),
+      tagSchema: String(candidate?.tagSchema ?? "").trim().toLowerCase()
+    });
+    state.selectedTotalValueGp += resolvedItemValueGp;
+    consumedCandidates.add(candidate);
+  }
+
   const mode = String(state?.draft?.mode ?? "horde").trim().toLowerCase();
   const encounterCreatures = Math.max(1, Number(state?.budgetContext?.combatants ?? 1) || 1);
+  const pickedRarityBucket = getLootRarityBucket(picked.rarity);
   const duplicateChance = Math.min(0.75, 0.2 + (Math.max(0, encounterCreatures - 1) * 0.1));
   const allowEncounterDuplicate = mode === "encounter"
     && encounterCreatures > 1
-    && (rarityBucket === "common" || rarityBucket === "uncommon")
+    && (pickedRarityBucket === "common" || pickedRarityBucket === "uncommon")
     && (state.random?.() ?? Math.random()) < duplicateChance;
-  if (!allowEncounterDuplicate) {
-    const index = state.pool.indexOf(picked);
+  for (const candidate of consumedCandidates) {
+    if (!candidate) continue;
+    if (candidate === picked && allowEncounterDuplicate) continue;
+    const index = state.pool.indexOf(candidate);
     if (index >= 0) state.pool.splice(index, 1);
   }
   return true;
@@ -19749,7 +20070,10 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
         valueBudgetContext
       ) || 0));
       const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
-      return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight;
+      const intelligenceWeight = Math.max(0.000001, Number(
+        getLootSelectionIntelligenceWeight(entry, { selected, draft }, "spend")
+      ) || 0.000001);
+      return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight * intelligenceWeight;
     });
     const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0));
     const picked = pickedRow?.item ?? null;
@@ -19776,13 +20100,21 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       img: picked.img,
       itemType: picked.itemType,
       rarity: picked.rarity || "",
+      rarityBucket,
+      sourceId: picked.sourceId,
       sourceLabel: picked.sourceLabel,
       uuid: picked.uuid,
       itemValueGp: resolvedItemValueGp,
       itemWeightLb: resolvedItemWeightLb,
       baseItemValueGp: resolvedBaseItemValueGp,
       baseItemWeightLb: resolvedBaseItemWeightLb,
-      variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind)
+      variableTreasureKind: normalizeLootVariableTreasureKind(picked?.variableTreasureKind),
+      merchantCategories: Array.isArray(picked?.merchantCategories) ? [...picked.merchantCategories] : [],
+      keywords: Array.isArray(picked?.keywords) ? [...picked.keywords] : [],
+      tier: String(picked?.tier ?? "").trim().toLowerCase(),
+      valueBand: String(picked?.valueBand ?? "").trim().toLowerCase(),
+      priceDenomination: String(picked?.priceDenomination ?? "").trim().toLowerCase(),
+      tagSchema: String(picked?.tagSchema ?? "").trim().toLowerCase()
     });
     selectedTotalValueGp += resolvedItemValueGp;
     const allowEncounterDuplicate = mode === "encounter"
@@ -20413,6 +20745,7 @@ function buildLootPreviewContext() {
   const draft = getLootPreviewDraft();
   const result = getLootPreviewResult();
   const hasResult = Boolean(result && typeof result === "object");
+  const previewSort = normalizeLootPreviewSort(draft?.sort);
   const mode = String(draft.mode ?? "horde");
   const profile = String(draft.profile ?? "standard");
   const challenge = String(draft.challenge ?? "mid");
@@ -20446,6 +20779,35 @@ function buildLootPreviewContext() {
   const valueBudgetSummary = `Current target: ${valueBudgetContext.effectiveTotalTargetGp} gp total, split to ${valueBudgetContext.targetItemBudgetGp} gp in items and ${valueBudgetContext.targetCurrencyBudgetGp} gp in coin.`;
   const valueStrictnessSummary = `${valueBudgetContext.strictnessBandLabel} keeps the total between ${valueBudgetContext.targetValueRangeMinGp}-${valueBudgetContext.targetValueRangeMaxGp} gp (plus or minus ${valueBudgetContext.tolerancePercent}%).`;
   const itemStrictnessSummary = `Item budget window: ${valueBudgetContext.itemTargetValueRangeMinGp}-${valueBudgetContext.itemTargetValueRangeMaxGp} gp.`;
+  const itemRows = Array.isArray(result?.items)
+    ? result.items.map((entry, index) => ({
+      id: String(entry?.id ?? `${String(entry?.uuid ?? "").trim() || String(entry?.name ?? "item").trim() || "item"}-${index}`),
+      uuid: String(entry?.uuid ?? "").trim(),
+      name: String(entry?.name ?? "Item"),
+      img: String(entry?.img ?? "icons/svg/item-bag.svg"),
+      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+      itemType: String(entry?.itemType ?? ""),
+      rarity: String(entry?.rarity ?? ""),
+      itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+      itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+      variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+      itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
+        ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+        : "",
+      itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
+      tierLabel: formatPartyOperationsTierLabel(entry?.tier ?? ""),
+      valueBandLabel: formatPartyOperationsValueBandLabel(entry?.valueBand ?? ""),
+      tagSchemaLabel: formatPartyOperationsTagSchemaLabel(entry?.tagSchema ?? ""),
+      metaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }),
+      sourceLabel: String(entry?.sourceLabel ?? ""),
+      hasRarity: String(entry?.rarity ?? "").trim().length > 0,
+      hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
+      hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
+      hasMetaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }).length > 0,
+      hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
+      canOpen: String(entry?.uuid ?? "").trim().length > 0
+    }))
+    : [];
   return {
     draft,
     showEncounterCreatures: mode === "encounter",
@@ -20528,35 +20890,13 @@ function buildLootPreviewContext() {
       deterministic: Boolean(result?.stats?.deterministic ?? draft?.deterministic !== false),
       seed: String(result?.stats?.seed ?? "")
     },
-    items: Array.isArray(result?.items)
-      ? result.items.map((entry, index) => ({
-        id: String(entry?.id ?? `${String(entry?.uuid ?? "").trim() || String(entry?.name ?? "item").trim() || "item"}-${index}`),
-        uuid: String(entry?.uuid ?? "").trim(),
-        name: String(entry?.name ?? "Item"),
-        img: String(entry?.img ?? "icons/svg/item-bag.svg"),
-        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
-        itemType: String(entry?.itemType ?? ""),
-        rarity: String(entry?.rarity ?? ""),
-        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
-        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
-        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
-        itemValueLabel: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0
-          ? `${Number(entry?.itemValueGp ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
-          : "",
-        itemWeightLabel: formatLootWeightLabel(entry?.itemWeightLb ?? 0),
-        tierLabel: formatPartyOperationsTierLabel(entry?.tier ?? ""),
-        valueBandLabel: formatPartyOperationsValueBandLabel(entry?.valueBand ?? ""),
-        tagSchemaLabel: formatPartyOperationsTagSchemaLabel(entry?.tagSchema ?? ""),
-        metaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }),
-        sourceLabel: String(entry?.sourceLabel ?? ""),
-        hasRarity: String(entry?.rarity ?? "").trim().length > 0,
-        hasItemValue: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0,
-        hasItemWeight: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)) > 0,
-        hasMetaPills: buildPartyOperationsMetaPillsFromData(entry, { maxPills: 4 }).length > 0,
-        hasQuantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)) > 1,
-        canOpen: String(entry?.uuid ?? "").trim().length > 0
-      }))
-      : [],
+    sort: previewSort,
+    sortOptions: LOOT_PREVIEW_SORT_OPTIONS.map((entry) => ({
+      ...entry,
+      selected: entry.value === previewSort
+    })),
+    items: itemRows,
+    itemsSorted: sortLootPreviewItems(itemRows, previewSort),
     tableRolls: Array.isArray(result?.tableRolls)
       ? result.tableRolls.map((entry) => ({
         sourceLabel: String(entry?.sourceLabel ?? "Source"),
@@ -21022,10 +21362,11 @@ function isLootItemLikelyMajor(entry = {}) {
 }
 
 function getUpkeepDueCount(timestamp = getCurrentWorldTimestamp()) {
-  const worldTs = Number(timestamp);
-  if (!Number.isFinite(worldTs)) return 0;
-  const duskOffsetSeconds = UPKEEP_DUSK_MINUTES * 60;
-  return Math.floor((worldTs - duskOffsetSeconds) / 86400);
+  return getCalendarDueCountBridge(timestamp, {
+    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    gameRef: game,
+    globalRef: globalThis
+  });
 }
 
 function getNextUpkeepDueKey(timestamp = getCurrentWorldTimestamp()) {
@@ -21033,13 +21374,11 @@ function getNextUpkeepDueKey(timestamp = getCurrentWorldTimestamp()) {
 }
 
 function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getCurrentWorldTimestamp()) {
-  const now = Number(currentTimestamp);
-  const last = Number(lastAppliedTimestamp);
-  if (!Number.isFinite(now)) return 0;
-  if (!Number.isFinite(last)) return 0;
-  const nowDue = getUpkeepDueCount(now);
-  const lastDue = getUpkeepDueCount(last);
-  return Math.max(0, nowDue - lastDue);
+  return getElapsedCalendarDaysBridge(lastAppliedTimestamp, currentTimestamp, {
+    boundaryMinutes: UPKEEP_DUSK_MINUTES,
+    gameRef: game,
+    globalRef: globalThis
+  });
 }
 
 function getOperationsLedger() {
@@ -21473,7 +21812,9 @@ function buildOperationsContext() {
   const recon = buildReconContext(reconState);
   const reputationState = ensureReputationState(ledger);
   const reputationFilters = getReputationFilterState();
-  const reputation = buildReputationContext(reputationState, reputationFilters);
+  const reputation = buildReputationContext(reputationState, reputationFilters, {
+    scope: REPUTATION_VIEW_SCOPES.OPERATIONS
+  });
   const partyHealthState = ensurePartyHealthState(ledger);
   const downtimeState = ensureDowntimeState(ledger);
   const downtime = buildDowntimeContext(downtimeState);
@@ -22191,7 +22532,9 @@ function getOperationalEffects(ledger, roles, sops) {
   const hasChronicler = Boolean(ledger.roles?.chronicler);
   const hasSteward = Boolean(ledger.roles?.steward);
   const recon = buildReconContext(ensureReconState(ledger));
-  const reputation = buildReputationContext(ensureReputationState(ledger));
+  const reputation = buildReputationContext(ensureReputationState(ledger), {}, {
+    scope: REPUTATION_VIEW_SCOPES.GM
+  });
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
   const weatherState = ensureWeatherState(ledger);
   const weatherVisibilityModifier = Number(weatherState.current?.visibilityModifier ?? 0);
@@ -22409,6 +22752,9 @@ function getDefaultReputationFactions() {
       playerImpacts: [],
       score: 0,
       note: "",
+      operationsVisible: true,
+      operationsSummary: "Faith leaders, temples, and sacred orders the party has dealt with openly.",
+      operationsNote: "",
       noteLogs: [],
       isCore: true
     },
@@ -22422,6 +22768,9 @@ function getDefaultReputationFactions() {
       playerImpacts: [],
       score: 0,
       note: "",
+      operationsVisible: true,
+      operationsSummary: "Courts, titled houses, and political elites that visibly shape the party's access.",
+      operationsNote: "",
       noteLogs: [],
       isCore: true
     },
@@ -22435,6 +22784,9 @@ function getDefaultReputationFactions() {
       playerImpacts: [],
       score: 0,
       note: "",
+      operationsVisible: true,
+      operationsSummary: "Underworld groups, fences, and brokers the party knows are in play.",
+      operationsNote: "",
       noteLogs: [],
       isCore: true
     },
@@ -22448,6 +22800,9 @@ function getDefaultReputationFactions() {
       playerImpacts: [],
       score: 0,
       note: "",
+      operationsVisible: true,
+      operationsSummary: "Public sentiment, local communities, and everyday rumor pressure around the party.",
+      operationsNote: "",
       noteLogs: [],
       isCore: true
     }
@@ -22480,18 +22835,34 @@ function normalizeReputationFaction(entry = {}) {
   const playerImpacts = Array.isArray(entry?.playerImpacts)
     ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
     : [];
+  const isCore = Boolean(entry.isCore);
+  const summary = String(entry.summary ?? "");
+  const operationsVisible = entry?.operationsVisible === undefined
+    ? (entry?.playerVisible === undefined ? isCore : entry.playerVisible !== false)
+    : entry.operationsVisible !== false;
+  const operationsSummary = entry?.operationsSummary !== undefined
+    ? String(entry.operationsSummary ?? "")
+    : (entry?.playerSummary !== undefined
+      ? String(entry.playerSummary ?? "")
+      : (isCore ? summary : ""));
+  const operationsNote = entry?.operationsNote !== undefined
+    ? String(entry.operationsNote ?? "")
+    : String(entry?.playerNote ?? "");
   return {
     id: String(entry.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     label: String(entry.label ?? "Faction").trim() || "Faction",
     category: String(entry.category ?? "").trim(),
     represents: String(entry.represents ?? "").trim(),
-    summary: String(entry.summary ?? ""),
+    summary,
     linkedActorId: String(entry.linkedActorId ?? entry.actorId ?? "").trim(),
     score: clampReputationStandingValue(entry.score ?? 0),
     note: String(entry.note ?? ""),
+    operationsVisible,
+    operationsSummary,
+    operationsNote,
     noteLogs,
     playerImpacts,
-    isCore: Boolean(entry.isCore)
+    isCore
   };
 }
 
@@ -22580,15 +22951,18 @@ function getReputationAccessLabel(score) {
   return map[String(value)] ?? "Neutral";
 }
 
-function buildReputationContext(reputationState, filters = {}) {
-  const noteLogSelections = getReputationNoteLogSelections();
+function buildReputationContext(reputationState, filters = {}, options = {}) {
+  const scope = normalizeReputationViewScope(options?.scope);
+  const isGmScope = scope === REPUTATION_VIEW_SCOPES.GM;
+  const noteLogSelections = isGmScope ? getReputationNoteLogSelections() : {};
   const builder = buildReputationBuilderContext(getReputationBuilderState());
   const rawFactions = Array.isArray(reputationState?.factions)
     ? reputationState.factions.map((entry) => normalizeReputationFaction(entry))
     : getDefaultReputationFactions().map((entry) => normalizeReputationFaction(entry));
-  const factions = rawFactions.map((faction) => {
+
+  const allFactions = rawFactions.map((faction) => {
     const band = getReputationBand(faction.score);
-    const noteLogs = Array.isArray(faction.noteLogs)
+    const noteLogs = isGmScope && Array.isArray(faction.noteLogs)
       ? faction.noteLogs.map((row) => normalizeReputationNoteLog(row)).sort((a, b) => Number(b.loggedAt ?? 0) - Number(a.loggedAt ?? 0))
       : [];
     let selectedNoteLogId = String(noteLogSelections[faction.id] ?? "").trim();
@@ -22618,9 +22992,9 @@ function buildReputationContext(reputationState, filters = {}) {
     const selectedPreview = selectedPreviewSource.length > 160
       ? `${selectedPreviewSource.slice(0, 157)}...`
       : selectedPreviewSource;
-    const linkedActorName = getReputationActorName(faction.linkedActorId);
-    const playerImpacts = buildReputationPlayerImpactRows(faction.playerImpacts);
-    const configuredPlayerImpacts = playerImpacts.filter((entry) => entry.configured);
+    const linkedActorName = isGmScope ? getReputationActorName(faction.linkedActorId) : "";
+    const playerImpacts = isGmScope ? buildReputationPlayerImpactRows(faction.playerImpacts) : [];
+    const configuredPlayerImpacts = isGmScope ? playerImpacts.filter((entry) => entry.configured) : [];
     const playerImpactTotal = configuredPlayerImpacts.reduce((sum, entry) => sum + Number(entry.delta ?? 0), 0);
     return {
       ...faction,
@@ -22631,11 +23005,15 @@ function buildReputationContext(reputationState, filters = {}) {
       access: getReputationAccessLabel(faction.score),
       categoryLabel: String(faction.category ?? "").trim() || "Unspecified",
       linkedActorName,
-      hasLinkedActor: Boolean(linkedActorName),
-      linkedActorOptions: buildReputationActorOptions(faction.linkedActorId),
+      hasLinkedActor: isGmScope && Boolean(linkedActorName),
+      linkedActorOptions: isGmScope ? buildReputationActorOptions(faction.linkedActorId) : [],
       hasCategory: Boolean(String(faction.category ?? "").trim()),
       hasRepresents: Boolean(String(faction.represents ?? "").trim()),
-      hasSummary: Boolean(String(faction.summary ?? "").trim()),
+      hasSummary: isGmScope && Boolean(String(faction.summary ?? "").trim()),
+      hasOperationsSummary: Boolean(String(faction.operationsSummary ?? "").trim()),
+      hasOperationsNote: Boolean(String(faction.operationsNote ?? "").trim()),
+      visibleToOperations: faction.operationsVisible !== false,
+      operationsVisibilityLabel: faction.operationsVisible !== false ? "Operations: Revealed" : "Operations: Hidden",
       playerImpacts,
       configuredPlayerImpacts,
       playerImpactCount: configuredPlayerImpacts.length,
@@ -22659,13 +23037,19 @@ function buildReputationContext(reputationState, filters = {}) {
       selectedNoteLogJournalEntryId: String(selectedNoteLog?.journalEntryId ?? "").trim(),
       selectedNoteLogCalendarEntryId: String(selectedNoteLog?.calendarEntryId ?? "").trim(),
       hasSelectedNoteLogJournal: Boolean(String(selectedNoteLog?.journalEntryId ?? "").trim()),
-      hasSelectedNoteLogCalendar: Boolean(String(selectedNoteLog?.calendarEntryId ?? "").trim())
+      hasSelectedNoteLogCalendar: Boolean(String(selectedNoteLog?.calendarEntryId ?? "").trim()),
+      summary: isGmScope ? String(faction.summary ?? "") : "",
+      note: isGmScope ? String(faction.note ?? "") : "",
+      linkedActorId: isGmScope ? String(faction.linkedActorId ?? "") : ""
     };
   });
 
+  const scopedFactions = isGmScope
+    ? allFactions
+    : allFactions.filter((faction) => faction.visibleToOperations);
   const filterKeyword = String(filters?.keyword ?? "").trim().toLowerCase();
   const filterStanding = String(filters?.standing ?? "all").trim().toLowerCase();
-  const filteredFactions = factions.filter((faction) => {
+  const filteredFactions = scopedFactions.filter((faction) => {
     const numericStanding = Number(filterStanding);
     const filterAsExactScore = Number.isFinite(numericStanding) && String(Math.floor(numericStanding)) === filterStanding;
     const standingMatch = filterStanding === "all"
@@ -22673,22 +23057,35 @@ function buildReputationContext(reputationState, filters = {}) {
       || faction.band === filterStanding;
     if (!standingMatch) return false;
     if (!filterKeyword) return true;
-    const historical = (faction.noteLogs ?? []).map((row) => String(row.note ?? "")).join(" ");
-    const playerDetails = (faction.configuredPlayerImpacts ?? [])
-      .map((row) => `${row.actorName} ${row.note} ${row.deltaLabel}`)
-      .join(" ");
-    const haystack = `${faction.label} ${faction.category} ${faction.represents} ${faction.summary} ${faction.note} ${historical} ${faction.band} ${faction.access} ${faction.score} ${faction.linkedActorName} ${playerDetails}`.toLowerCase();
+    const historical = isGmScope ? (faction.noteLogs ?? []).map((row) => String(row.note ?? "")).join(" ") : "";
+    const playerDetails = isGmScope
+      ? (faction.configuredPlayerImpacts ?? []).map((row) => `${row.actorName} ${row.note} ${row.deltaLabel}`).join(" ")
+      : "";
+    const scopeSummary = isGmScope ? String(faction.summary ?? "") : String(faction.operationsSummary ?? "");
+    const scopeNote = isGmScope ? String(faction.note ?? "") : String(faction.operationsNote ?? "");
+    const linkedActorSearch = isGmScope ? String(faction.linkedActorName ?? "") : "";
+    const visibilitySearch = isGmScope ? faction.operationsVisibilityLabel : "";
+    const haystack = `${faction.label} ${faction.category} ${faction.represents} ${scopeSummary} ${scopeNote} ${historical} ${faction.band} ${faction.access} ${faction.score} ${linkedActorSearch} ${playerDetails} ${visibilitySearch}`.toLowerCase();
     return haystack.includes(filterKeyword);
   });
 
+  const revealedCount = allFactions.filter((faction) => faction.visibleToOperations).length;
+  const hiddenCount = Math.max(0, allFactions.length - revealedCount);
+
   return {
+    scope,
+    isGmScope,
     builder,
-    factions,
+    factions: scopedFactions,
+    allFactions: isGmScope ? allFactions : scopedFactions,
     filteredFactions,
-    coreCount: factions.filter((faction) => faction.isCore).length,
-    customCount: factions.filter((faction) => !faction.isCore).length,
-    totalCount: factions.length,
+    coreCount: scopedFactions.filter((faction) => faction.isCore).length,
+    customCount: scopedFactions.filter((faction) => !faction.isCore).length,
+    totalCount: scopedFactions.length,
     visibleCount: filteredFactions.length,
+    trackedCount: isGmScope ? allFactions.length : scopedFactions.length,
+    revealedCount: isGmScope ? revealedCount : scopedFactions.length,
+    hiddenCount: isGmScope ? hiddenCount : 0,
     filters: {
       keyword: String(filters?.keyword ?? ""),
       standing: filterStanding || "all",
@@ -22707,8 +23104,8 @@ function buildReputationContext(reputationState, filters = {}) {
         { value: "-5", label: "-5 Nemesis", selected: filterStanding === "-5" }
       ]
     },
-    highStandingCount: factions.filter((faction) => ["favorable", "trusted"].includes(faction.band)).length,
-    hostileCount: factions.filter((faction) => faction.band === "hostile").length
+    highStandingCount: scopedFactions.filter((faction) => ["favorable", "trusted"].includes(faction.band)).length,
+    hostileCount: scopedFactions.filter((faction) => faction.band === "hostile").length
   };
 }
 
@@ -22925,6 +23322,10 @@ function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_S
   return clampMerchantValueStrictnessDomain(value, fallback);
 }
 
+function normalizeMerchantBarterModifier(value, fallback = 0) {
+  return normalizeMerchantBarterModifierDomain(value, fallback);
+}
+
 function normalizeMerchantAutoRefreshConfig(raw = {}, fallback = MERCHANT_DEFAULTS.stock.autoRefresh) {
   return normalizeMerchantAutoRefreshConfigDomain(raw, fallback);
 }
@@ -23077,6 +23478,22 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     source?.pricing?.barterAbility ?? source?.barterAbility,
     MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
   );
+  const barterSuccessBuyModifier = normalizeMerchantBarterModifier(
+    source?.pricing?.barterSuccessBuyModifier ?? source?.barterSuccessBuyModifier,
+    MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05
+  );
+  const barterSuccessSellModifier = normalizeMerchantBarterModifier(
+    source?.pricing?.barterSuccessSellModifier ?? source?.barterSuccessSellModifier,
+    MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05
+  );
+  const barterFailureBuyModifier = normalizeMerchantBarterModifier(
+    source?.pricing?.barterFailureBuyModifier ?? source?.barterFailureBuyModifier,
+    MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05
+  );
+  const barterFailureSellModifier = normalizeMerchantBarterModifier(
+    source?.pricing?.barterFailureSellModifier ?? source?.barterFailureSellModifier,
+    MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05
+  );
   const buyMarkup = Number.isFinite(buyMarkupRaw) ? Math.max(0, Math.min(10, Number(buyMarkupRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.buyMarkup;
   const sellRate = Number.isFinite(sellRateRaw) ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.sellRate;
   const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
@@ -23153,7 +23570,11 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
       buybackAllowedTypes,
       barterEnabled,
       barterDc,
-      barterAbility
+      barterAbility,
+      barterSuccessBuyModifier,
+      barterSuccessSellModifier,
+      barterFailureBuyModifier,
+      barterFailureSellModifier
     },
     stock: {
       sourceType,
@@ -24138,10 +24559,42 @@ function getMerchantWorldFolderAndDescendantIds(selectedFolderIds = []) {
   return resolved;
 }
 
-function getMerchantWorldFolderOptions(selectedFolderIds = []) {
+function hasActiveMerchantWorldFolderFilters(merchant = {}) {
+  const stock = merchant?.stock ?? {};
+  const allowedTypes = normalizeMerchantAllowedItemTypes(stock?.allowedTypes ?? []);
+  const includeTags = normalizeMerchantTagList(stock?.includeTags ?? []);
+  const excludeTags = normalizeMerchantTagList(stock?.excludeTags ?? []);
+  const includeKeywords = normalizeMerchantKeywordList(stock?.keywordInclude ?? []);
+  const excludeKeywords = normalizeMerchantKeywordList(stock?.keywordExclude ?? []);
+  return allowedTypes.length > 0 && allowedTypes.length < MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+    || includeTags.length > 0
+    || excludeTags.length > 0
+    || includeKeywords.length > 0
+    || excludeKeywords.length > 0;
+}
+
+function getMerchantMatchingWorldFolderIds(merchant = {}, folderRows = []) {
+  if (!hasActiveMerchantWorldFolderFilters(merchant)) return null;
+  const rowById = new Map((Array.isArray(folderRows) ? folderRows : []).map((entry) => [String(entry?.value ?? "").trim(), entry]));
+  const candidateRows = buildMerchantCandidateRows(game.items?.contents ?? [], merchant);
+  const matchedFolderIds = new Set();
+  for (const row of candidateRows) {
+    let folderId = String(row?.data?.folder?.id ?? row?.data?.folder ?? row?.data?.folderId ?? "").trim();
+    if (!folderId) continue;
+    const visited = new Set();
+    while (folderId && !visited.has(folderId)) {
+      visited.add(folderId);
+      matchedFolderIds.add(folderId);
+      folderId = String(rowById.get(folderId)?.parentId ?? "").trim();
+    }
+  }
+  return matchedFolderIds;
+}
+
+function getMerchantWorldFolderOptions(selectedFolderIds = [], options = {}) {
   const selectedValues = normalizeMerchantSourcePackIds(selectedFolderIds);
   const selectedSet = new Set(selectedValues);
-  const options = (game.folders?.contents ?? [])
+  const folderRows = (game.folders?.contents ?? [])
     .filter((folder) => {
       const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
       return type === "item";
@@ -24149,24 +24602,17 @@ function getMerchantWorldFolderOptions(selectedFolderIds = []) {
     .map((folder) => {
       const id = String(folder?.id ?? "").trim();
       const label = String(folder?.name ?? id).trim() || id;
+      const parentId = String(getDocumentFolderParentId(folder) ?? "").trim();
       return {
         value: id,
         label,
+        parentId,
+        sort: Number(folder?.sort ?? 0) || 0,
         selected: selectedSet.has(id)
       };
     })
-    .filter((entry) => entry.value)
-    .sort((a, b) => String(a.label ?? "").localeCompare(String(b.label ?? "")));
-  for (const selectedFolderId of selectedValues) {
-    if (!selectedFolderId) continue;
-    if (options.some((entry) => entry.value === selectedFolderId)) continue;
-    options.push({
-      value: selectedFolderId,
-      label: `${selectedFolderId} (Unavailable)`,
-      selected: true
-    });
-  }
-  if (options.length <= 0) {
+    .filter((entry) => entry.value);
+  if (folderRows.length <= 0) {
     return [{
       value: "",
       label: "No Item Folders Available",
@@ -24174,24 +24620,88 @@ function getMerchantWorldFolderOptions(selectedFolderIds = []) {
       disabled: true
     }];
   }
+  const matchingFolderIds = getMerchantMatchingWorldFolderIds(options?.merchant ?? {}, folderRows);
+  const rowById = new Map(folderRows.map((entry) => [entry.value, entry]));
+  const childrenByParentId = new Map();
+  for (const row of folderRows) {
+    const parentId = rowById.has(row.parentId) ? row.parentId : "";
+    const siblings = childrenByParentId.get(parentId) ?? [];
+    siblings.push(row);
+    childrenByParentId.set(parentId, siblings);
+  }
+  const sortRows = (rows = []) => [...rows].sort((a, b) => {
+    const sortDelta = Number(a?.sort ?? 0) - Number(b?.sort ?? 0);
+    if (sortDelta !== 0) return sortDelta;
+    return String(a?.label ?? "").localeCompare(String(b?.label ?? ""));
+  });
+  const formatNestedFolderCount = (count) => `${count} nested folder${count === 1 ? "" : "s"}`;
+  const flattenBranch = (parentId = "", ancestors = []) => {
+    const rows = sortRows(childrenByParentId.get(parentId) ?? []);
+    return rows.flatMap((row) => {
+      const pathLabels = [...ancestors, row.label];
+      const childRows = flattenBranch(row.value, pathLabels);
+      const descendantCount = childRows.length;
+      const parentPathLabel = ancestors.join(" / ");
+      return [{
+        value: row.value,
+        label: row.label,
+        selected: row.selected,
+        matchesActiveFilters: !matchingFolderIds || matchingFolderIds.has(row.value),
+        depth: ancestors.length,
+        hasParent: ancestors.length > 0,
+        parentPathLabel,
+        pathLabel: pathLabels.join(" / "),
+        hasChildren: descendantCount > 0,
+        descendantCount,
+        descendantCountLabel: descendantCount > 0 ? formatNestedFolderCount(descendantCount) : "",
+        searchText: [
+          row.label,
+          row.value,
+          parentPathLabel,
+          pathLabels.join(" / ")
+        ].filter(Boolean).join(" ")
+      }, ...childRows];
+    });
+  };
+  const folderOptions = flattenBranch("");
+  for (const selectedFolderId of selectedValues) {
+    if (!selectedFolderId) continue;
+    if (folderOptions.some((entry) => entry.value === selectedFolderId)) continue;
+    folderOptions.push({
+      value: selectedFolderId,
+      label: `${selectedFolderId} (Unavailable)`,
+      selected: true,
+      matchesActiveFilters: true,
+      depth: 0,
+      hasParent: false,
+      parentPathLabel: "",
+      pathLabel: selectedFolderId,
+      hasChildren: false,
+      descendantCount: 0,
+      descendantCountLabel: "",
+      searchText: selectedFolderId
+    });
+  }
   if (selectedValues.length <= 0) {
-    options.unshift({
+    folderOptions.unshift({
       value: "",
       label: "Select one or more item folders",
       selected: true,
       disabled: true
     });
   }
-  return options;
+  return folderOptions;
 }
 
-function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = []) {
+function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = [], options = {}) {
   return getMerchantSourceRefOptionsForEditorDomain(
     sourceTypeInput,
     selectedSourceRefs,
     sourcePackOptions,
     {
-      getWorldFolderOptions: getMerchantWorldFolderOptions
+      getWorldFolderOptions: (selectedFolderIds) => getMerchantWorldFolderOptions(selectedFolderIds, {
+        merchant: options?.merchant ?? {}
+      })
     }
   );
 }
@@ -24833,7 +25343,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     const autoRefreshIntervalDays = Math.max(1, Number(autoRefresh.intervalDays ?? MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays);
     const lastRefreshedWorldTs = Math.max(0, Number(stockMeta?.lastRefreshedWorldTs ?? 0) || 0);
     const nextAutoRefreshTs = autoRefreshEnabled && lastRefreshedWorldTs > 0
-      ? lastRefreshedWorldTs + (autoRefreshIntervalDays * 86400)
+      ? addCalendarDaysBridge(lastRefreshedWorldTs, autoRefreshIntervalDays, { gameRef: game, globalRef: globalThis })
       : 0;
     const autoRefreshSummaryLabel = autoRefreshEnabled
       ? `Every ${autoRefreshIntervalDays} day${autoRefreshIntervalDays === 1 ? "" : "s"}`
@@ -25186,13 +25696,15 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorSourceRefOptions = getMerchantSourceRefOptionsForEditor(
     editorSourceType,
     editorSourceRefs,
-    editorSourcePackOptions
+    editorSourcePackOptions,
+    { merchant: editorDraft }
   );
   const editorSourceRefHintLabel = String(
     editorSourceRefOptions.find((entry) => !String(entry?.value ?? "").trim())?.label ?? ""
   ).trim();
   const editorSourceRefSelectableOptions = editorSourceRefOptions
     .filter((entry) => String(entry?.value ?? "").trim().length > 0);
+  const editorSourceRefIsFolderTree = editorSourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER;
   const editorSourceRefSelectedCount = editorSourceRefSelectableOptions
     .filter((entry) => Boolean(entry?.selected))
     .length;
@@ -25231,6 +25743,22 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorBarterAbility = normalizeMerchantBarterAbility(
     editorDraft?.pricing?.barterAbility,
     MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"
+  );
+  const editorBarterSuccessBuyModifier = normalizeMerchantBarterModifier(
+    editorDraft?.pricing?.barterSuccessBuyModifier,
+    MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05
+  );
+  const editorBarterSuccessSellModifier = normalizeMerchantBarterModifier(
+    editorDraft?.pricing?.barterSuccessSellModifier,
+    MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05
+  );
+  const editorBarterFailureBuyModifier = normalizeMerchantBarterModifier(
+    editorDraft?.pricing?.barterFailureBuyModifier,
+    MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05
+  );
+  const editorBarterFailureSellModifier = normalizeMerchantBarterModifier(
+    editorDraft?.pricing?.barterFailureSellModifier,
+    MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05
   );
   const editorStockCountRaw = Number(editorDraft?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
   const editorStockCount = Number.isFinite(editorStockCountRaw)
@@ -25408,6 +25936,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         barterEnabled: editorBarterEnabled,
         barterDc: editorBarterDc,
         barterAbility: editorBarterAbility,
+        barterSuccessBuyModifierPercent: Number((editorBarterSuccessBuyModifier * 100).toFixed(2)),
+        barterSuccessSellModifierPercent: Number((editorBarterSuccessSellModifier * 100).toFixed(2)),
+        barterFailureBuyModifierPercent: Number((editorBarterFailureBuyModifier * 100).toFixed(2)),
+        barterFailureSellModifierPercent: Number((editorBarterFailureSellModifier * 100).toFixed(2)),
         sourceType: editorSourceType,
         sourceRef: String(editorSourceRefs[0] ?? editorDraft?.stock?.sourceRef ?? ""),
         sourcePackIds: editorSourceRefs,
@@ -25446,6 +25978,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
       sourceRefOptions: editorSourceRefOptions,
       sourceRefSelectableOptions: editorSourceRefSelectableOptions,
+      sourceRefIsFolderTree: editorSourceRefIsFolderTree,
       hasSourceRefSelectableOptions: editorSourceRefSelectableOptions.length > 0,
       sourceRefOptionCount: editorSourceRefSelectableOptions.length,
       sourceRefSelectedCount: editorSourceRefSelectedCount,
@@ -25553,7 +26086,7 @@ function readMerchantDefinitionPatchFromElement(element) {
       .filter(Boolean);
     return normalizeMerchantSourcePackIds(selectedValues);
   };
-  const merchantId = getText("input[name='merchantId']");
+  const merchantId = getMerchantEditorPersistedId(getText("input[name='merchantId']"));
   const existingMerchant = merchantId ? getMerchantById(merchantId) : null;
   const draftState = getMerchantEditorDraftState();
   const selectionKey = normalizeMerchantEditorSelectionKey(getMerchantEditorSelection());
@@ -25606,6 +26139,22 @@ function readMerchantDefinitionPatchFromElement(element) {
   const barterAbility = (
     getText("select[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
     || getText("input[name='merchantBarterAbility']", { missing: existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha" })
+  );
+  const barterSuccessBuyModifierPercent = getNumber(
+    "input[name='merchantBarterSuccessBuyModifierPercent']",
+    Number(existingPricing?.barterSuccessBuyModifier ?? MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05) * 100
+  );
+  const barterSuccessSellModifierPercent = getNumber(
+    "input[name='merchantBarterSuccessSellModifierPercent']",
+    Number(existingPricing?.barterSuccessSellModifier ?? MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05) * 100
+  );
+  const barterFailureBuyModifierPercent = getNumber(
+    "input[name='merchantBarterFailureBuyModifierPercent']",
+    Number(existingPricing?.barterFailureBuyModifier ?? MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05) * 100
+  );
+  const barterFailureSellModifierPercent = getNumber(
+    "input[name='merchantBarterFailureSellModifierPercent']",
+    Number(existingPricing?.barterFailureSellModifier ?? MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05) * 100
   );
   const allowedTypes = existingAllowedTypes;
   const markupPercent = getNumber(
@@ -25665,6 +26214,10 @@ function readMerchantDefinitionPatchFromElement(element) {
     barterEnabled,
     barterDc,
     barterAbility,
+    barterSuccessBuyModifierPercent,
+    barterSuccessSellModifierPercent,
+    barterFailureBuyModifierPercent,
+    barterFailureSellModifierPercent,
     stockCount: Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
     targetValueGp: getNumber("input[name='merchantTargetValueGp']", Number(existingStock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp)),
     valueStrictness: getNumber(
@@ -26018,10 +26571,10 @@ async function refreshAllMerchantStocks(options = {}) {
 }
 
 function getMerchantAutoRefreshElapsedDays(lastRefreshedWorldTs, currentTimestamp = getCurrentWorldTimestamp()) {
-  const current = Number(currentTimestamp);
-  const last = Number(lastRefreshedWorldTs);
-  if (!Number.isFinite(current) || !Number.isFinite(last) || current <= last) return 0;
-  return Math.max(0, Math.floor((current - last) / 86400));
+  return getElapsedCalendarDaysBridge(lastRefreshedWorldTs, currentTimestamp, {
+    gameRef: game,
+    globalRef: globalThis
+  });
 }
 
 async function handleAutomaticMerchantAutoRefreshTick() {
@@ -26234,9 +26787,9 @@ function setMerchantBarterResolutionEntry(entry = {}) {
     checkTotal: Number.isFinite(Number(entry?.checkTotal)) ? Math.floor(Number(entry.checkTotal)) : null,
     margin: Number.isFinite(Number(entry?.margin)) ? Math.floor(Number(entry.margin)) : 0,
     success: Boolean(entry?.success),
-    delta: Number.isFinite(Number(entry?.delta)) ? Number(entry.delta) : 0,
-    buyMarkupDelta: Number.isFinite(Number(entry?.buyMarkupDelta)) ? Number(entry.buyMarkupDelta) : 0,
-    sellRateDelta: Number.isFinite(Number(entry?.sellRateDelta)) ? Number(entry.sellRateDelta) : 0,
+    delta: normalizeMerchantBarterModifier(entry?.delta, 0),
+    buyMarkupDelta: normalizeMerchantBarterModifier(entry?.buyMarkupDelta, 0),
+    sellRateDelta: normalizeMerchantBarterModifier(entry?.sellRateDelta, 0),
     createdAt: Math.max(0, Number(entry?.createdAt ?? Date.now()) || Date.now())
   };
   merchantBarterResolutionByKey.set(key, stored);
@@ -26249,15 +26802,65 @@ function clearMerchantBarterResolutionEntryByKey(keyInput = "") {
   merchantBarterResolutionByKey.delete(key);
 }
 
+function formatMerchantSignedPercentLabel(value = 0) {
+  const percent = Number((Math.abs(Number(value) || 0) * 100).toFixed(2));
+  const formatted = percent.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return `${Number(value) >= 0 ? "+" : "-"}${formatted}%`;
+}
+
+function getMerchantBarterOutcomeEffectSummary(buyMarkupDelta = 0, sellRateDelta = 0) {
+  const parts = [];
+  if (Math.abs(Number(buyMarkupDelta) || 0) > 0.0001) {
+    parts.push(`buy price ${formatMerchantSignedPercentLabel(buyMarkupDelta)}`);
+  }
+  if (Math.abs(Number(sellRateDelta) || 0) > 0.0001) {
+    parts.push(`sell value ${formatMerchantSignedPercentLabel(sellRateDelta)}`);
+  }
+  return parts.join(", ") || "no price change";
+}
+
+function getMerchantBarterPricingModifiers(pricing = {}) {
+  return {
+    successBuyModifier: normalizeMerchantBarterModifier(
+      pricing?.barterSuccessBuyModifier,
+      MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05
+    ),
+    successSellModifier: normalizeMerchantBarterModifier(
+      pricing?.barterSuccessSellModifier,
+      MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05
+    ),
+    failureBuyModifier: normalizeMerchantBarterModifier(
+      pricing?.barterFailureBuyModifier,
+      MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05
+    ),
+    failureSellModifier: normalizeMerchantBarterModifier(
+      pricing?.barterFailureSellModifier,
+      MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05
+    )
+  };
+}
+
+function getMerchantBarterConfigSummaryText(pricing = {}) {
+  const modifiers = getMerchantBarterPricingModifiers(pricing);
+  const successSummary = getMerchantBarterOutcomeEffectSummary(
+    modifiers.successBuyModifier,
+    modifiers.successSellModifier
+  );
+  const failureSummary = getMerchantBarterOutcomeEffectSummary(
+    modifiers.failureBuyModifier,
+    modifiers.failureSellModifier
+  );
+  return `Success: ${successSummary}. Failure: ${failureSummary}.`;
+}
+
 function getMerchantBarterUiSummaryText(barter = {}, options = {}) {
   if (!barter || barter.applied === false) return String(options?.fallback ?? "No barter adjustment applied.");
-  const buyShift = Math.abs(Math.round((Number(barter?.buyMarkupDelta ?? 0) || 0) * 100));
-  const sellShift = Math.abs(Math.round((Number(barter?.sellRateDelta ?? 0) || 0) * 100));
-  const buyLabel = `${Number(barter?.buyMarkupDelta ?? 0) >= 0 ? "+" : "-"}${buyShift}% buy`;
-  const sellLabel = `${Number(barter?.sellRateDelta ?? 0) >= 0 ? "+" : "-"}${sellShift}% sell`;
-  const verdict = barter?.success ? "Favorable" : "Unfavorable";
+  const verdict = barter?.success ? "Success" : "Failure";
   const total = Number.isFinite(Number(barter?.checkTotal)) ? ` (${Math.floor(Number(barter.checkTotal))})` : "";
-  return `${verdict}${total}: ${buyLabel}, ${sellLabel}`;
+  return `${verdict}${total}: ${getMerchantBarterOutcomeEffectSummary(
+    barter?.buyMarkupDelta ?? 0,
+    barter?.sellRateDelta ?? 0
+  )}`;
 }
 
 function getMerchantTradeDialogRoot(htmlOrRoot) {
@@ -26332,21 +26935,23 @@ async function postMerchantTradeToChat(outcome = {}) {
   });
 }
 
-function computeMerchantBarterAdjustment(checkTotalInput, dcInput) {
+function computeMerchantBarterAdjustment(checkTotalInput, dcInput, pricing = {}) {
   const checkTotal = Math.floor(Number(checkTotalInput ?? 0) || 0);
   const dc = Math.max(1, Math.floor(Number(dcInput ?? 10) || 10));
   const margin = checkTotal - dc;
   const success = margin >= 0;
-  const tiers = 1 + Math.floor(Math.abs(margin) / 5);
-  const delta = Math.min(0.25, tiers * 0.05);
+  const modifiers = getMerchantBarterPricingModifiers(pricing);
+  const buyMarkupDelta = success ? modifiers.successBuyModifier : modifiers.failureBuyModifier;
+  const sellRateDelta = success ? modifiers.successSellModifier : modifiers.failureSellModifier;
+  const delta = Math.max(Math.abs(buyMarkupDelta), Math.abs(sellRateDelta));
   return {
     checkTotal,
     dc,
     margin,
     success,
     delta,
-    buyMarkupDelta: success ? -delta : delta,
-    sellRateDelta: success ? delta : -delta
+    buyMarkupDelta,
+    sellRateDelta
   };
 }
 
@@ -26397,7 +27002,7 @@ async function rollMerchantBarterCheck(actor, merchant = {}, options = {}) {
     source = "fallback";
   }
 
-  const adjustment = computeMerchantBarterAdjustment(total, dc);
+  const adjustment = computeMerchantBarterAdjustment(total, dc, pricing);
   return {
     enabled: true,
     applied: true,
@@ -26420,13 +27025,29 @@ function normalizeMerchantTradeBarterResolution(barterInput, merchant = {}) {
   const ability = normalizeMerchantBarterAbility(payload?.ability ?? pricing?.barterAbility ?? "cha", "cha");
   const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[ability] ?? "Charisma");
   const dc = Math.max(1, Math.min(40, Math.floor(Number(pricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc ?? 15) || 15)));
+  const computed = computeMerchantBarterAdjustment(Math.floor(checkTotalRaw), dc, pricing);
+  const buyMarkupDelta = Number.isFinite(Number(payload?.buyMarkupDelta))
+    ? normalizeMerchantBarterModifier(payload?.buyMarkupDelta, computed.buyMarkupDelta)
+    : Number(computed.buyMarkupDelta ?? 0);
+  const sellRateDelta = Number.isFinite(Number(payload?.sellRateDelta))
+    ? normalizeMerchantBarterModifier(payload?.sellRateDelta, computed.sellRateDelta)
+    : Number(computed.sellRateDelta ?? 0);
+  const delta = Number.isFinite(Number(payload?.delta))
+    ? normalizeMerchantBarterModifier(payload?.delta, computed.delta)
+    : Number(Math.max(Math.abs(buyMarkupDelta), Math.abs(sellRateDelta)).toFixed(2));
   return {
     enabled: true,
     applied: true,
     source: String(payload?.source ?? "resolved").trim() || "resolved",
     ability,
     abilityLabel,
-    ...computeMerchantBarterAdjustment(Math.floor(checkTotalRaw), dc)
+    checkTotal: computed.checkTotal,
+    dc: computed.dc,
+    margin: Number.isFinite(Number(payload?.margin)) ? Math.floor(Number(payload.margin)) : computed.margin,
+    success: typeof payload?.success === "boolean" ? Boolean(payload.success) : computed.success,
+    delta,
+    buyMarkupDelta,
+    sellRateDelta
   };
 }
 
@@ -26711,18 +27332,20 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     .map((item) => {
       const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
       const itemData = getMerchantItemData(item);
+      const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
       const unitCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
         img: String(item?.img ?? "icons/svg/item-bag.svg"),
         qty,
+        baseGp,
         unitCp,
         unitLabel: formatMerchantCp(unitCp),
         metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
         hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
-        valueLabel: Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0)) > 0
-          ? `${Number(getLootItemGpValueFromData(itemData) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+        valueLabel: baseGp > 0
+          ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
           : ""
       };
     })
@@ -26739,6 +27362,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
       .map((item) => {
         const itemData = getMerchantItemData(item);
         const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
+        const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
         const unitCp = getMerchantItemUnitPriceCp(itemData, sellRate);
         return {
           itemId: String(item?.id ?? ""),
@@ -26747,12 +27371,13 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           itemType: String(item?.type ?? "").trim().toLowerCase(),
           itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[String(item?.type ?? "").trim().toLowerCase()] ?? item?.type ?? "item"),
           qty,
+          baseGp,
           unitCp,
           unitLabel: formatMerchantCp(unitCp),
           metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }),
           hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 3 }).length > 0,
-          valueLabel: Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0)) > 0
-            ? `${Number(getLootItemGpValueFromData(itemData) || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
+          valueLabel: baseGp > 0
+            ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
             : ""
         };
       })
@@ -26771,6 +27396,8 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     merchantStockActorId: String(merchantActor?.id ?? ""),
     settlement,
     barterResolutionKey,
+    baseBuyMarkup: buyMarkup,
+    baseSellRate: sellRate,
     merchantName: String(merchant?.name ?? "Merchant"),
     merchantTitle: String(merchant?.title ?? "").trim(),
     merchantImg: String(merchant?.img ?? merchantActor?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
@@ -26786,7 +27413,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     barterStatusLabel,
     barterStatusState,
     barterHint: barterEnabled
-      ? `${barterAbilityLabel} barter check. ${game.user?.isGM ? "Resolve it here before finalizing." : "Ask the GM to resolve it before finalizing."}`
+      ? `${barterAbilityLabel} barter check. ${getMerchantBarterConfigSummaryText(merchant?.pricing ?? {})} ${game.user?.isGM ? "Resolve it here before finalizing." : "Ask the GM to resolve it before finalizing."}`
       : "This merchant is not accepting barter checks.",
     buyCountLabel: merchantItems.length > 0
       ? `${merchantItems.length} wares listed`
@@ -26848,42 +27475,75 @@ function bindMerchantTradeDialogItemOpeners(html) {
   });
 }
 
-function bindMerchantTradeDialogTotals(html) {
-  const root = getMerchantTradeDialogRoot(html);
-  if (!root) return;
+function recalculateMerchantTradeDialogTotals(root) {
+  if (!(root instanceof HTMLElement)) return;
   const buyNode = root.querySelector("[data-merchant-buy-total]");
   const sellNode = root.querySelector("[data-merchant-sell-total]");
   const netNode = root.querySelector("[data-merchant-net-total]");
   const netCard = root.querySelector(".po-merchant-trade-total-card.is-net");
-  const recalc = () => {
-    const sumBySelector = (selector) => Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
-      const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
-      const max = Math.max(0, Math.floor(Number(input?.getAttribute?.("max") ?? 0) || 0));
-      if (qty > max) input.value = String(max);
-      const unitCp = Math.max(0, Math.floor(Number(input?.dataset?.unitCp ?? 0) || 0));
-      return sum + (Math.max(0, Math.min(qty, max)) * unitCp);
-    }, 0);
-    const buyCp = sumBySelector("input[data-merchant-buy-item]");
-    const sellCp = sumBySelector("input[data-merchant-sell-item]");
-    const netCp = buyCp - sellCp;
-    if (buyNode) buyNode.textContent = formatMerchantCp(buyCp);
-    if (sellNode) sellNode.textContent = formatMerchantCp(sellCp);
-    if (netNode) {
-      netNode.textContent = netCp >= 0
-        ? `${formatMerchantCp(netCp)} paid`
-        : `${formatMerchantCp(Math.abs(netCp))} received`;
+  const sumBySelector = (selector) => Array.from(root.querySelectorAll(selector)).reduce((sum, input) => {
+    const qty = Math.max(0, Math.floor(Number(input?.value ?? 0) || 0));
+    const max = Math.max(0, Math.floor(Number(input?.getAttribute?.("max") ?? 0) || 0));
+    if (qty > max) input.value = String(max);
+    const unitCp = Math.max(0, Math.floor(Number(input?.dataset?.unitCp ?? 0) || 0));
+    return sum + (Math.max(0, Math.min(qty, max)) * unitCp);
+  }, 0);
+  const buyCp = sumBySelector("input[data-merchant-buy-item]");
+  const sellCp = sumBySelector("input[data-merchant-sell-item]");
+  const netCp = buyCp - sellCp;
+  if (buyNode) buyNode.textContent = formatMerchantCp(buyCp);
+  if (sellNode) sellNode.textContent = formatMerchantCp(sellCp);
+  if (netNode) {
+    netNode.textContent = netCp >= 0
+      ? `${formatMerchantCp(netCp)} paid`
+      : `${formatMerchantCp(Math.abs(netCp))} received`;
+  }
+  if (netCard instanceof HTMLElement) {
+    netCard.dataset.netState = netCp > 0 ? "pay" : (netCp < 0 ? "receive" : "even");
+  }
+}
+
+function refreshMerchantTradeDialogPricing(root) {
+  if (!(root instanceof HTMLElement)) return;
+  const barterKey = String(root.dataset?.barterKey ?? "").trim();
+  const barter = barterKey ? getMerchantBarterResolutionEntryByKey(barterKey) : null;
+  const baseBuyMarkup = Math.max(0, Number(root.dataset?.baseBuyMarkup ?? 1) || 1);
+  const baseSellRate = Math.max(0, Number(root.dataset?.baseSellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) || MERCHANT_DEFAULTS.pricing.sellRate);
+  const effectiveBuyMarkup = Math.max(
+    0,
+    Math.min(10, Number((baseBuyMarkup + Number(barter?.buyMarkupDelta ?? 0)).toFixed(2)))
+  );
+  const effectiveSellRate = Math.max(
+    0,
+    Math.min(10, Number((baseSellRate + Number(barter?.sellRateDelta ?? 0)).toFixed(2)))
+  );
+  const priceRows = Array.from(root.querySelectorAll("tr[data-price-kind][data-base-gp]"));
+  for (const row of priceRows) {
+    if (!(row instanceof HTMLElement)) continue;
+    const rateKind = String(row.dataset?.priceKind ?? "").trim().toLowerCase();
+    const baseGp = Math.max(0, Number(row.dataset?.baseGp ?? 0) || 0);
+    const rate = rateKind === "sell" ? effectiveSellRate : effectiveBuyMarkup;
+    const unitCp = Math.max(0, Math.round(baseGp * rate * 100));
+    const unitLabelNode = row.querySelector("[data-merchant-unit-label]");
+    if (unitLabelNode) unitLabelNode.textContent = formatMerchantCp(unitCp);
+    const qtyInput = row.querySelector("input[data-merchant-buy-item], input[data-merchant-sell-item]");
+    if (qtyInput instanceof HTMLInputElement) {
+      qtyInput.dataset.unitCp = String(unitCp);
     }
-    if (netCard instanceof HTMLElement) {
-      netCard.dataset.netState = netCp > 0 ? "pay" : (netCp < 0 ? "receive" : "even");
-    }
-  };
+  }
+  recalculateMerchantTradeDialogTotals(root);
+}
+
+function bindMerchantTradeDialogTotals(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root) return;
   root.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
     if (!target.matches("input[data-merchant-buy-item], input[data-merchant-sell-item]")) return;
-    recalc();
+    recalculateMerchantTradeDialogTotals(root);
   });
-  recalc();
+  refreshMerchantTradeDialogPricing(root);
 }
 
 async function resolveMerchantBarterForUser(user, payload = {}) {
@@ -26966,6 +27626,7 @@ function bindMerchantTradeDialogBarterButton(html) {
     });
     const cached = getMerchantBarterResolutionEntryByKey(key);
     if (cached?.applied) setMerchantTradeDialogBarterStatus(root, { summary: getMerchantBarterUiSummaryText(cached) });
+    refreshMerchantTradeDialogPricing(root);
   };
 
   barterButton.addEventListener("click", async () => {
@@ -27043,6 +27704,7 @@ function syncMerchantBarterStatusForOpenDialogs(payload = {}) {
     if (meta.merchantId !== merchantId || meta.actorId !== actorId || meta.settlement !== settlement) continue;
     if (ok) setMerchantTradeDialogBarterStatus(root, { summary: summary || getMerchantBarterUiSummaryText(getMerchantBarterResolutionEntryByKey(key) ?? {}) });
     else setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: summary || "Barter request failed." });
+    refreshMerchantTradeDialogPricing(root);
   }
 
   if (ok) ui.notifications?.info(summary || "Barter resolved by GM.");
@@ -27160,7 +27822,7 @@ function getMerchantIdFromElementOrEditor(element) {
   const explicit = String(element?.dataset?.merchantId ?? "").trim();
   if (explicit) return explicit;
   const root = getMerchantEditorRootFromElement(element);
-  return String(root?.querySelector?.("input[name='merchantId']")?.value ?? "").trim();
+  return getMerchantEditorPersistedId(root?.querySelector?.("input[name='merchantId']")?.value);
 }
 
 async function setMerchantSettlementFromElement(element) {
@@ -34738,8 +35400,8 @@ function buildReputationCalendarPayload(faction, logEntry) {
     endTime: now + 60,
     timestamp: now,
     allDay: false,
-    playerVisible: true,
-    public: true
+    playerVisible: false,
+    public: false
   };
 }
 
@@ -34770,12 +35432,17 @@ async function logReputationNote(element) {
   const clock = getClockContext();
   let createdLog = null;
   let factionLabel = "Faction";
+  let factionCalendarState = { label: "Faction", operationsVisible: false };
 
   await updateOperationsLedger((ledger) => {
     const reputation = ensureReputationState(ledger);
     const entry = reputation.factions.find((row) => row.id === factionId);
     if (!entry) return;
     factionLabel = String(entry.label ?? "Faction");
+    factionCalendarState = {
+      label: factionLabel,
+      operationsVisible: entry.operationsVisible !== false
+    };
     if (!Array.isArray(entry.noteLogs)) entry.noteLogs = [];
     const logEntry = normalizeReputationNoteLog({
       id: foundry.utils.randomID(),
@@ -34819,7 +35486,7 @@ async function logReputationNote(element) {
     `
   });
   const journalEntryId = String(archiveEntry?.id ?? "").trim();
-  const calendarEntryId = await syncReputationLogToSimpleCalendar({ label: factionLabel }, createdLog);
+  const calendarEntryId = await syncReputationLogToSimpleCalendar(factionCalendarState, createdLog);
   if (calendarEntryId || journalEntryId) {
     await updateOperationsLedger((ledger) => {
       const reputation = ensureReputationState(ledger);
@@ -34833,10 +35500,6 @@ async function logReputationNote(element) {
   }
 
   ui.notifications?.info(`Logged reputation note for ${factionLabel}.`);
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `<p><strong>Reputation Log:</strong> ${poEscapeHtml(factionLabel)} - ${signedScore}</p><p>${poEscapeHtml(String(createdLog.dayLabel ?? ""))}</p><p>${poEscapeHtml(String(createdLog.note ?? ""))}</p>`
-  });
 }
 
 async function loadReputationNoteLog(element) {
@@ -34988,6 +35651,14 @@ async function postReputationNoteLog(element) {
   const dayLabel = String(logRow.dayLabel ?? "").trim() || formatRecoveryDueLabel(Number(logRow.loggedAt ?? getCurrentWorldTimestamp()));
   const postedBy = String(game.user?.name ?? "GM").trim() || "GM";
 
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const target = reputation.factions.find((row) => String(row?.id ?? "").trim() === factionId);
+    if (!target) return;
+    target.operationsVisible = true;
+    target.operationsNote = String(logRow.note ?? "");
+  });
+
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
@@ -35044,6 +35715,12 @@ function normalizeReputationDetailField(fieldInput) {
   return allowed.has(field) ? field : "";
 }
 
+function normalizeReputationOperationsField(fieldInput) {
+  const field = String(fieldInput ?? "").trim();
+  const allowed = new Set(["operationsSummary", "operationsNote"]);
+  return allowed.has(field) ? field : "";
+}
+
 function normalizeReputationPlayerImpactField(fieldInput) {
   const field = String(fieldInput ?? "").trim();
   const allowed = new Set(["actorId", "delta", "note"]);
@@ -35074,6 +35751,39 @@ async function setReputationDetail(element) {
       entry.linkedActorId = value;
       return;
     }
+    entry[field] = value;
+  });
+}
+
+async function setReputationOperationsVisibility(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  if (!faction) return;
+  const visible = element?.checked === true;
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
+    entry.operationsVisible = visible;
+  });
+}
+
+async function setReputationOperationsField(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can update reputation.");
+    return;
+  }
+  const faction = String(element?.dataset?.faction ?? "").trim();
+  const field = normalizeReputationOperationsField(element?.dataset?.field);
+  if (!faction || !field) return;
+  const value = String(element?.value ?? "");
+  await updateOperationsLedger((ledger) => {
+    const reputation = ensureReputationState(ledger);
+    const entry = reputation.factions.find((row) => row.id === faction);
+    if (!entry) return;
     entry[field] = value;
   });
 }
@@ -35229,6 +35939,9 @@ async function addReputationFaction(element) {
       linkedActorId: draft.linkedActorId,
       score: draft.score,
       note: draft.note,
+      operationsVisible: false,
+      operationsSummary: "",
+      operationsNote: "",
       noteLogs: [],
       playerImpacts: draft.playerImpacts,
       isCore: false
@@ -35254,21 +35967,40 @@ async function removeReputationFaction(element) {
   setReputationNoteLogSelection(faction, "");
 }
 
-async function showReputationBrief() {
-  const reputation = buildOperationsContext().reputation;
+async function showReputationBrief(options = {}) {
+  const scope = normalizeReputationViewScope(options?.scope);
+  const reputation = buildReputationContext(
+    ensureReputationState(getOperationsLedger()),
+    getReputationFilterState(),
+    { scope }
+  );
   const rows = reputation.factions
-    .map((faction) => `<li>${faction.label}: ${faction.score} (${faction.band}) - Access ${faction.access}${faction.note ? ` - ${faction.note}` : ""}</li>`)
+    .map((faction) => {
+      const note = scope === REPUTATION_VIEW_SCOPES.GM
+        ? String(faction.note ?? "")
+        : String(faction.operationsNote ?? "");
+      const visibilityLabel = scope === REPUTATION_VIEW_SCOPES.GM ? ` - ${faction.operationsVisibilityLabel}` : "";
+      return `<li>${poEscapeHtml(faction.label)}: ${poEscapeHtml(String(faction.score))} (${poEscapeHtml(faction.band)}) - Access ${poEscapeHtml(faction.access)}${poEscapeHtml(visibilityLabel)}${note ? ` - ${poEscapeHtml(note)}` : ""}</li>`;
+    })
     .join("");
+  const summaryRows = scope === REPUTATION_VIEW_SCOPES.GM
+    ? `
+      <p><strong>Tracked Factions:</strong> ${reputation.totalCount}</p>
+      <p><strong>Revealed to Operations:</strong> ${reputation.revealedCount}</p>
+      <p><strong>Hidden from Operations:</strong> ${reputation.hiddenCount}</p>
+    `
+    : `<p><strong>Revealed Factions:</strong> ${reputation.totalCount}</p>`;
 
   const content = `
     <div class="po-help">
+      ${summaryRows}
       <p><strong>High Standing Factions:</strong> ${reputation.highStandingCount}</p>
       <p><strong>Hostile Factions:</strong> ${reputation.hostileCount}</p>
       <ul>${rows || "<li>No faction data.</li>"}</ul>
     </div>
   `;
   await Dialog.prompt({
-    title: "Reputation & Faction Brief",
+    title: scope === REPUTATION_VIEW_SCOPES.GM ? "GM Reputation & Faction Brief" : "Reputation & Faction Brief",
     content,
     rejectClose: false,
     callback: () => {}
@@ -35626,7 +36358,8 @@ function readLootPreviewDraftFromUi(element) {
     valueStrictness: readFieldValue("lootPreviewValueStrictness", "valueStrictness", current?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS),
     maxItems: readFieldValue("lootPreviewMaxItems", "maxItems", current?.maxItems ?? 0),
     maxItemValueGp: readFieldValue("lootPreviewMaxItemValueGp", "maxItemValueGp", current?.maxItemValueGp ?? 0),
-    targetItemsValueGp: readFieldValue("lootPreviewTargetItemsValueGp", "targetItemsValueGp", current?.targetItemsValueGp ?? 0)
+    targetItemsValueGp: readFieldValue("lootPreviewTargetItemsValueGp", "targetItemsValueGp", current?.targetItemsValueGp ?? 0),
+    sort: readFieldValue("lootPreviewSort", "sort", current?.sort ?? "generated")
   });
 }
 
@@ -37738,8 +38471,7 @@ async function gmQuickAddFaction() {
     return;
   }
   setActiveGmQuickPanel("none");
-  setActiveRestMainTab("operations");
-  setActiveOperationsPage("reputation");
+  openGmFactionsPage({ force: true });
 }
 
 async function gmQuickSubmitFaction(element) {
@@ -37747,9 +38479,8 @@ async function gmQuickSubmitFaction(element) {
     ui.notifications?.warn("Only the GM can update reputation.");
     return;
   }
-  setActiveRestMainTab("operations");
-  setActiveOperationsPage("reputation");
   await addReputationFaction(element);
+  openGmFactionsPage({ force: true });
 }
 
 function getDaeModifierCategoryOptions() {
@@ -39886,7 +40617,7 @@ function buildInjuryCalendarPayload(actor, entry) {
   const worldNow = getCurrentWorldTimestamp();
   const recoveryDays = Math.max(0, Number(entry?.recoveryDays ?? 0));
   const rawDueTimestamp = Number(entry?.recoveryDueTs);
-  const fallbackDueTimestamp = worldNow + (recoveryDays * 86400);
+  const fallbackDueTimestamp = addCalendarDaysBridge(worldNow, recoveryDays, { gameRef: game, globalRef: globalThis });
   const dueTimestamp = Number.isFinite(rawDueTimestamp) ? rawDueTimestamp : fallbackDueTimestamp;
   const startTimestamp = Math.floor(dueTimestamp);
   const endTimestamp = startTimestamp + 60;
@@ -40203,7 +40934,7 @@ async function upsertInjuryEntry(element) {
       stabilized,
       recoveryDays,
       notes,
-      recoveryDueTs: getCurrentWorldTimestamp() + (recoveryDays * 86400)
+      recoveryDueTs: addCalendarDaysBridge(getCurrentWorldTimestamp(), recoveryDays, { gameRef: game, globalRef: globalThis })
     };
   });
 
@@ -40225,16 +40956,7 @@ async function upsertInjuryEntry(element) {
 }
 
 function getInjuryReminderDayKey(timestamp = getCurrentWorldTimestamp()) {
-  const api = getSimpleCalendarApi();
-  if (isSimpleCalendarActive() && api?.timestampToDate) {
-    try {
-      const date = api.timestampToDate(timestamp);
-      return `Y${Number(date?.year ?? 0)}-M${Number(date?.month ?? 0)}-D${Number(date?.day ?? 0)}`;
-    } catch {
-      // Fall through.
-    }
-  }
-  return `D${Math.floor(Number(timestamp ?? 0) / 86400)}`;
+  return getCalendarDayKeyBridge(timestamp, { gameRef: game, globalRef: globalThis });
 }
 
 async function notifyDailyInjuryReminders() {
@@ -40400,7 +41122,7 @@ async function applyRecoveryCycle(options = {}) {
         if (calendarEntryId) calendarEntriesToClear.push(calendarEntryId);
         delete mutable.injuries[actorId];
       } else {
-        entry.recoveryDueTs = getCurrentWorldTimestamp() + (after * 86400);
+        entry.recoveryDueTs = addCalendarDaysBridge(getCurrentWorldTimestamp(), after, { gameRef: game, globalRef: globalThis });
         actorsToSync.add(actorId);
       }
     }
@@ -41882,33 +42604,15 @@ function formatClockLabel(hours24, minutes) {
 }
 
 function isSimpleCalendarActive() {
-  return Boolean(game.modules.get("foundryvtt-simple-calendar")?.active || game.modules.get("simple-calendar")?.active);
+  return isSimpleCalendarActiveBridge({ gameRef: game, globalRef: globalThis });
 }
 
 function getSimpleCalendarApiCandidates() {
-  const moduleApi = game.modules.get("foundryvtt-simple-calendar")?.api ?? game.modules.get("simple-calendar")?.api ?? null;
-  const rawCandidates = [
-    globalThis.SimpleCalendar?.api,
-    globalThis.SimpleCalendar,
-    game?.simpleCalendar?.api,
-    game?.simpleCalendar,
-    moduleApi
-  ];
-  const unique = [];
-  const seen = new Set();
-  for (const candidate of rawCandidates) {
-    if (!candidate || typeof candidate !== "object") continue;
-    if (seen.has(candidate)) continue;
-    seen.add(candidate);
-    unique.push(candidate);
-  }
-  return unique;
+  return getSimpleCalendarApiCandidatesBridge({ gameRef: game, globalRef: globalThis });
 }
 
 function getSimpleCalendarApi() {
-  const candidates = getSimpleCalendarApiCandidates();
-  if (!candidates.length) return null;
-  return candidates.find((api) => typeof api?.timestampToDate === "function") ?? candidates[0];
+  return getSimpleCalendarApiBridge({ gameRef: game, globalRef: globalThis });
 }
 
 function hasKnownSimpleCalendarMutationMethods(api) {
@@ -42001,7 +42705,7 @@ function hasSimpleCalendarMutationApi(api) {
 }
 
 function getCurrentWorldTimestamp() {
-  return Number(game.time?.worldTime ?? 0);
+  return getCurrentWorldTimestampBridge({ gameRef: game });
 }
 
 function extractCalendarEntryId(result) {
@@ -42259,56 +42963,11 @@ async function removeSimpleCalendarEntry(api, entryId) {
 }
 
 function formatRecoveryDueLabel(timestamp) {
-  const worldTimeSeconds = Number(timestamp ?? 0);
-  if (!Number.isFinite(worldTimeSeconds)) return "-";
-  const api = getSimpleCalendarApi();
-  if (isSimpleCalendarActive() && api?.timestampToDate) {
-    try {
-      const date = api.timestampToDate(worldTimeSeconds);
-      const year = Number(date?.year ?? 0);
-      const month = Number(date?.month ?? 0);
-      const day = Number(date?.day ?? 0);
-      const hour = Number(date?.hour ?? date?.hours ?? 0);
-      const minute = Number(date?.minute ?? date?.minutes ?? 0);
-      return `Y${year} M${month} D${day} ${formatClockLabel(hour, minute)}`;
-    } catch {
-      // Fall through to world-time label.
-    }
-  }
-  const totalMinutes = ((Math.floor(worldTimeSeconds / 60) % 1440) + 1440) % 1440;
-  const day = Math.floor(worldTimeSeconds / 86400);
-  return `Day ${day} ${formatClockLabel(Math.floor(totalMinutes / 60), totalMinutes % 60)}`;
+  return formatCalendarDateTimeLabelBridge(timestamp, { gameRef: game, globalRef: globalThis });
 }
 
 function getClockContext() {
-  const worldTimeSeconds = getCurrentWorldTimestamp();
-  const totalMinutes = ((Math.floor(worldTimeSeconds / 60) % 1440) + 1440) % 1440;
-  const fallbackHours = Math.floor(totalMinutes / 60);
-  const fallbackMinutes = totalMinutes % 60;
-  const simpleCalendarActive = isSimpleCalendarActive();
-  const simpleCalendarApi = getSimpleCalendarApi();
-
-  if (simpleCalendarActive && simpleCalendarApi?.timestampToDate) {
-    try {
-      const date = simpleCalendarApi.timestampToDate(worldTimeSeconds);
-      const hour = Number(date?.hour ?? date?.hours ?? fallbackHours);
-      const minute = Number(date?.minute ?? date?.minutes ?? fallbackMinutes);
-      const normalizedMinutes = ((Math.floor(hour) * 60 + Math.floor(minute)) % 1440 + 1440) % 1440;
-      return {
-        totalMinutes: normalizedMinutes,
-        label: formatClockLabel(hour, minute),
-        source: "Simple Calendar"
-      };
-    } catch {
-      // Fall through to world time fallback.
-    }
-  }
-
-  return {
-    totalMinutes,
-    label: formatClockLabel(fallbackHours, fallbackMinutes),
-    source: "World Time"
-  };
+  return getCalendarClockContextBridge(getCurrentWorldTimestamp(), { gameRef: game, globalRef: globalThis });
 }
 
 function parseClockToken(value) {
@@ -43965,6 +44624,7 @@ export function onPartyOperationsInit() {
 export function buildLegacyPartyOperationsReadyConfig() {
   return {
     registerPartyOperationsApi,
+    ensureSettingsRegistered: ensurePartyOpsSettingsRegistered,
     validatePartyOperationsTemplates,
     bindPoBrowserBackNavigation,
     setupPartyOperationsUI,

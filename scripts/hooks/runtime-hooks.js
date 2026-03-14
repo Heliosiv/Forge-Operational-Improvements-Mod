@@ -238,7 +238,7 @@ function buildAudioPlaybackHookModule({
     registrations: [
       ["updatePlaylistSound", (sound, changed) => {
         const playlist = sound?.parent ?? null;
-        if (!gameRef?.user?.isGM || !isManagedAudioMixPlaylist?.(playlist)) return;
+        if (!isManagedAudioMixPlaylist?.(playlist)) return;
         if (!changed || typeof changed !== "object") return;
 
         const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")
@@ -251,7 +251,7 @@ function buildAudioPlaybackHookModule({
         queueManagedAudioMixPlaybackResync?.(80, { playlist, refresh: true });
       }],
       ["updatePlaylist", (playlist, changed) => {
-        if (!gameRef?.user?.isGM || !isManagedAudioMixPlaylist?.(playlist)) return;
+        if (!isManagedAudioMixPlaylist?.(playlist)) return;
         if (!changed || typeof changed !== "object") return;
 
         const touchesPlayback = Object.prototype.hasOwnProperty.call(changed, "playing")

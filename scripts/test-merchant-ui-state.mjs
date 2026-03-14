@@ -70,6 +70,13 @@ assert.deepEqual(uiState.getMerchantEditorDraftState(), {
   selectionKey: "merchant-1",
   draft: { id: "merchant-1", name: "Quartermaster Vale" }
 });
+assert.equal(uiState.getMerchantEditorPersistedId("merchant-fallback"), "merchant-1");
+
+uiState.setMerchantEditorSelection("__new__");
+assert.equal(uiState.getMerchantEditorPersistedId("merchant-fallback"), "");
+
+uiState.setMerchantEditorSelection("");
+assert.equal(uiState.getMerchantEditorPersistedId("merchant-fallback"), "merchant-fallback");
 
 assert.equal(uiState.setMerchantEditorViewTab("settings"), "settings");
 assert.equal(uiState.getMerchantEditorViewTab(), "settings");

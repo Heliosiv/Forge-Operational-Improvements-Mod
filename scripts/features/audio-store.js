@@ -11,6 +11,7 @@ function deepCloneValue(value, foundryRef) {
 export function createAudioStore({
   gameRef = globalThis.game,
   foundryRef = globalThis.foundry,
+  storageRef = globalThis.localStorage,
   moduleId = "party-operations",
   settings = {},
   refreshScopeKeys = {},
@@ -60,6 +61,10 @@ export function createAudioStore({
       presets: [],
       overrides: {}
     };
+  }
+
+  function getSharedAudioStateStorageKey() {
+    return `${moduleId}.sharedAudioState`;
   }
 
   function normalizeStoredAudioLibraryValue(value, { allowArray = false } = {}) {
@@ -198,6 +203,160 @@ export function createAudioStore({
     };
   }
 
+  function hasAudioMixPresetStoreData(store = {}) {
+    const normalizedStore = normalizeAudioMixPresetStore(store);
+    return normalizedStore.presets.length > 0 || Object.keys(normalizedStore.overrides ?? {}).length > 0;
+  }
+
+  function normalizeSharedAudioState(value = {}) {
+    const normalizedValue = normalizeStoredAudioLibraryValue(value);
+    return {
+      version: 1,
+      catalog: normalizeAudioLibraryCatalog(
+        normalizedValue?.catalog
+        ?? normalizedValue?.audioLibraryCatalog
+        ?? normalizedValue?.libraryCatalog
+        ?? buildDefaultAudioLibraryCatalog()
+      ),
+      hiddenTracks: normalizeAudioLibraryHiddenTrackStore(
+        normalizedValue?.hiddenTracks
+        ?? normalizedValue?.audioLibraryHiddenTracks
+        ?? buildDefaultAudioLibraryHiddenTrackStore()
+      ),
+      mixPresets: normalizeAudioMixPresetStore(
+        normalizedValue?.mixPresets
+        ?? normalizedValue?.audioMixPresets
+        ?? normalizedValue?.presetStore
+        ?? buildDefaultAudioMixPresetStore()
+      ),
+      selectedMixPresetId: String(
+        normalizedValue?.selectedMixPresetId
+        ?? normalizedValue?.selectedPresetId
+        ?? ""
+      ).trim()
+    };
+  }
+
+  function readSharedAudioState() {
+    try {
+      const raw = storageRef?.getItem?.(getSharedAudioStateStorageKey());
+      if (!raw) return normalizeSharedAudioState({});
+      return normalizeSharedAudioState(JSON.parse(raw));
+    } catch {
+      return normalizeSharedAudioState({});
+    }
+  }
+
+  function writeSharedAudioState(state = {}) {
+    const normalized = normalizeSharedAudioState(state);
+    try {
+      storageRef?.setItem?.(getSharedAudioStateStorageKey(), JSON.stringify(normalized));
+    } catch {
+      // Ignore storage failures outside browser execution contexts.
+    }
+    return normalized;
+  }
+
+  function updateSharedAudioState(mutator) {
+    const current = readSharedAudioState();
+    const next = normalizeSharedAudioState(typeof mutator === "function"
+      ? (mutator(deepCloneValue(current, foundryRef)) ?? current)
+      : current);
+    return writeSharedAudioState(next);
+  }
+
+  function getWorldAudioLibraryCatalog() {
+    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_CATALOG);
+    return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+  }
+
+  function getWorldAudioLibraryHiddenTrackStore() {
+    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_HIDDEN_TRACKS);
+    return normalizeAudioLibraryHiddenTrackStore(stored ?? buildDefaultAudioLibraryHiddenTrackStore());
+  }
+
+  function getWorldAudioMixPresetStore() {
+    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_MIX_PRESETS);
+    return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
+  }
+
+  function choosePreferredAudioLibraryCatalog(primaryCatalog = {}, secondaryCatalog = {}) {
+    const primary = normalizeAudioLibraryCatalog(primaryCatalog);
+    const secondary = normalizeAudioLibraryCatalog(secondaryCatalog);
+    if (primary.items.length <= 0) return secondary;
+    if (secondary.items.length <= 0) return primary;
+    if (primary.scannedAt !== secondary.scannedAt) {
+      return primary.scannedAt >= secondary.scannedAt ? primary : secondary;
+    }
+    return primary.items.length >= secondary.items.length ? primary : secondary;
+  }
+
+  function mergeAudioLibraryHiddenTrackStores(primaryStore = {}, secondaryStore = {}) {
+    const primary = normalizeAudioLibraryHiddenTrackStore(primaryStore);
+    const secondary = normalizeAudioLibraryHiddenTrackStore(secondaryStore);
+    return {
+      version: audioLibraryHiddenTrackStoreVersion,
+      trackIds: normalizeAudioMixPresetTrackIds([
+        ...secondary.trackIds,
+        ...primary.trackIds
+      ])
+    };
+  }
+
+  function mergeAudioMixPresetStores(primaryStore = {}, secondaryStore = {}) {
+    const primary = normalizeAudioMixPresetStore(primaryStore);
+    const secondary = normalizeAudioMixPresetStore(secondaryStore);
+    const presetMap = new Map();
+    for (const preset of secondary.presets) {
+      const presetId = String(preset?.id ?? "").trim();
+      if (!presetId) continue;
+      presetMap.set(presetId, preset);
+    }
+    for (const preset of primary.presets) {
+      const presetId = String(preset?.id ?? "").trim();
+      if (!presetId) continue;
+      presetMap.set(presetId, preset);
+    }
+    return {
+      version: audioMixPresetStoreVersion,
+      presets: Array.from(presetMap.values()),
+      overrides: {
+        ...(secondary.overrides ?? {}),
+        ...(primary.overrides ?? {})
+      }
+    };
+  }
+
+  function hydrateSharedAudioStateFromWorldSettings() {
+    const sharedState = readSharedAudioState();
+    const worldCatalog = getWorldAudioLibraryCatalog();
+    const worldHiddenTracks = getWorldAudioLibraryHiddenTrackStore();
+    const worldMixPresets = getWorldAudioMixPresetStore();
+    const currentSelectedPresetId = String(sharedState.selectedMixPresetId ?? "").trim();
+    const selectedPresetId = String(audioLibraryUiState?.selectedMixPresetId ?? "").trim();
+    let didChange = false;
+    const nextState = { ...sharedState };
+
+    if (sharedState.catalog.items.length <= 0 && worldCatalog.items.length > 0) {
+      nextState.catalog = worldCatalog;
+      didChange = true;
+    }
+    if (sharedState.hiddenTracks.trackIds.length <= 0 && worldHiddenTracks.trackIds.length > 0) {
+      nextState.hiddenTracks = worldHiddenTracks;
+      didChange = true;
+    }
+    if (!hasAudioMixPresetStoreData(sharedState.mixPresets) && hasAudioMixPresetStoreData(worldMixPresets)) {
+      nextState.mixPresets = worldMixPresets;
+      didChange = true;
+    }
+    if (!currentSelectedPresetId && selectedPresetId && selectedPresetId !== audioMixPresetDefaultId) {
+      nextState.selectedMixPresetId = selectedPresetId;
+      didChange = true;
+    }
+
+    return didChange ? writeSharedAudioState(nextState) : sharedState;
+  }
+
   function getBuiltInAudioMixPresets() {
     const store = getStoredAudioMixPresetStore();
     return audioMixBuiltInPresets.map((preset) => {
@@ -323,8 +482,10 @@ export function createAudioStore({
   }
 
   function getStoredAudioMixPresetStore() {
-    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_MIX_PRESETS);
-    return normalizeAudioMixPresetStore(stored ?? buildDefaultAudioMixPresetStore());
+    const worldStore = getWorldAudioMixPresetStore();
+    const sharedStore = hydrateSharedAudioStateFromWorldSettings().mixPresets;
+    if (!hasAudioMixPresetStoreData(sharedStore)) return worldStore;
+    return mergeAudioMixPresetStores(sharedStore, worldStore);
   }
 
   function getAllAudioMixPresets() {
@@ -354,27 +515,38 @@ export function createAudioStore({
   }
 
   function getAudioLibrarySourceSetting() {
-    return normalizeAudioLibrarySource(gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_SOURCE));
+    const worldValue = String(gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_SOURCE) ?? "").trim();
+    if (worldValue) return normalizeAudioLibrarySource(worldValue);
+    return normalizeAudioLibrarySource(hydrateSharedAudioStateFromWorldSettings().catalog.source);
   }
 
   function getAudioLibraryRootSetting() {
-    return normalizeAudioLibraryRootPath(gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_ROOT));
+    const worldValue = String(gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_ROOT) ?? "").trim();
+    if (worldValue) return normalizeAudioLibraryRootPath(worldValue);
+    return normalizeAudioLibraryRootPath(hydrateSharedAudioStateFromWorldSettings().catalog.rootPath);
   }
 
   function syncAudioLibraryDraftFromSettings() {
+    const sharedState = hydrateSharedAudioStateFromWorldSettings();
     if (!audioLibraryUiState?.draft) return;
     audioLibraryUiState.draft.source = getAudioLibrarySourceSetting();
     audioLibraryUiState.draft.rootPath = getAudioLibraryRootSetting();
+    const sharedSelectedPresetId = String(sharedState.selectedMixPresetId ?? "").trim();
+    if (sharedSelectedPresetId) {
+      audioLibraryUiState.selectedMixPresetId = getAudioMixPresetById(sharedSelectedPresetId)?.id ?? audioMixPresetDefaultId;
+    }
   }
 
   function getStoredAudioLibraryCatalog() {
-    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_CATALOG);
-    return normalizeAudioLibraryCatalog(stored ?? buildDefaultAudioLibraryCatalog());
+    const worldCatalog = getWorldAudioLibraryCatalog();
+    const sharedCatalog = hydrateSharedAudioStateFromWorldSettings().catalog;
+    return choosePreferredAudioLibraryCatalog(sharedCatalog, worldCatalog);
   }
 
   function getStoredAudioLibraryHiddenTrackStore() {
-    const stored = gameRef?.settings?.get?.(moduleId, settings?.AUDIO_LIBRARY_HIDDEN_TRACKS);
-    return normalizeAudioLibraryHiddenTrackStore(stored ?? buildDefaultAudioLibraryHiddenTrackStore());
+    const worldStore = getWorldAudioLibraryHiddenTrackStore();
+    const sharedStore = hydrateSharedAudioStateFromWorldSettings().hiddenTracks;
+    return mergeAudioLibraryHiddenTrackStores(sharedStore, worldStore);
   }
 
   function getHiddenAudioLibraryTrackIds() {
@@ -415,6 +587,11 @@ export function createAudioStore({
   async function saveAudioMixPresetStore(store) {
     const normalized = normalizeAudioMixPresetStore(store);
     await setModuleSettingWithLocalRefreshSuppressed?.(settings?.AUDIO_MIX_PRESETS, normalized);
+    updateSharedAudioState((state) => ({
+      ...state,
+      mixPresets: normalized,
+      selectedMixPresetId: String(audioLibraryUiState?.selectedMixPresetId ?? state.selectedMixPresetId ?? "").trim()
+    }));
     refreshOpenApps?.({ scope: refreshScopeKeys?.LOOT });
     emitSocketRefresh?.({ scope: refreshScopeKeys?.LOOT });
     return normalized;
@@ -423,9 +600,35 @@ export function createAudioStore({
   async function saveAudioLibraryHiddenTrackStore(store) {
     const normalized = normalizeAudioLibraryHiddenTrackStore(store);
     await setModuleSettingWithLocalRefreshSuppressed?.(settings?.AUDIO_LIBRARY_HIDDEN_TRACKS, normalized);
+    updateSharedAudioState((state) => ({
+      ...state,
+      hiddenTracks: normalized
+    }));
     refreshOpenApps?.({ scope: refreshScopeKeys?.LOOT });
     emitSocketRefresh?.({ scope: refreshScopeKeys?.LOOT });
     return normalized;
+  }
+
+  function saveSharedAudioLibraryCatalog(catalog) {
+    const normalized = normalizeAudioLibraryCatalog(catalog);
+    return updateSharedAudioState((state) => ({
+      ...state,
+      catalog: normalized
+    }));
+  }
+
+  function getSharedSelectedAudioMixPresetId() {
+    return String(readSharedAudioState().selectedMixPresetId ?? "").trim();
+  }
+
+  function setSharedSelectedAudioMixPresetId(value) {
+    const normalized = String(value ?? "").trim();
+    const nextSelectedPresetId = getAudioMixPresetById(normalized)?.id ?? audioMixPresetDefaultId;
+    updateSharedAudioState((state) => ({
+      ...state,
+      selectedMixPresetId: nextSelectedPresetId
+    }));
+    return nextSelectedPresetId;
   }
 
   async function updateStoredAudioLibraryHiddenTracks(mutator) {
@@ -485,6 +688,9 @@ export function createAudioStore({
     getAudioLibraryCatalogWarmupKey,
     saveAudioMixPresetStore,
     saveAudioLibraryHiddenTrackStore,
+    saveSharedAudioLibraryCatalog,
+    getSharedSelectedAudioMixPresetId,
+    setSharedSelectedAudioMixPresetId,
     updateStoredAudioLibraryHiddenTracks,
     updateStoredAudioMixPresets
   };
