@@ -9,7 +9,29 @@ import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
-import { applyMarchRequest, createMarchFeatureModule, normalizeSocketMarchRequest } from "./features/march-feature.js";
+import { createOperationsJournalFeature } from "./features/operations-journal.js";
+import { createOperationsJournalSettings } from "./features/operations-journal-settings.js";
+import { createOperationsJournalService } from "./features/operations-journal-service.js";
+import {
+  applyMarchRequest,
+  createMarchFeatureModule,
+  normalizeSocketMarchRequest,
+  setupMarchingDragAndDrop as setupMarchingDragAndDropFeature
+} from "./features/march-feature.js";
+import {
+  MARCH_DOCTRINE_STATES,
+  MARCH_DOCTRINE_TRIGGERS,
+  buildDefaultMarchDoctrineTracker,
+  buildDoctrineCheckPayload,
+  buildMarchFormationChoices,
+  clearDoctrineTriggerPending,
+  ensureMarchDoctrineTracker,
+  evaluateMarchingFormationState,
+  getMarchDoctrineTriggerLabel,
+  getMarchFormationDefinition,
+  markDoctrineTriggerPending,
+  normalizeMarchingFormationId
+} from "./features/march-doctrine.js";
 import {
   applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
   applyPlayerDowntimeClearRequest as applyPlayerDowntimeClearRequestFeature,
@@ -20,7 +42,12 @@ import {
   applyPlayerSettingWriteRequest as applyPlayerSettingWriteRequestFeature,
   applyPlayerSopNoteRequest as applyPlayerSopNoteRequestFeature
 } from "./features/operations-player-handlers.js";
-import { applyRestRequest, createRestFeatureModule, normalizeSocketRestRequest } from "./features/rest-feature.js";
+import {
+  applyRestRequest,
+  createRestFeatureModule,
+  normalizeSocketRestRequest,
+  setupRestWatchDragAndDrop as setupRestWatchDragAndDropFeature
+} from "./features/rest-feature.js";
 import { attachModuleApi } from "./core/api-registry.js";
 import { createOpenAppRefresher } from "./core/app-refresh.js";
 import {
@@ -51,7 +78,16 @@ import {
 } from "./core/calendar-bridge.js";
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
+import { createGatherHistoryView } from "./core/gather-history-view.js";
+import { createGatherSettingsAccess } from "./core/gather-settings.js";
+import { createGmDowntimeViewAccess } from "./core/gm-downtime-view.js";
+import { createIntegrationAccess } from "./core/integration-access.js";
+import { createLauncherStateAccess } from "./core/launcher-state.js";
+import { createPlayerHubActions } from "./core/player-hub-actions.js";
+import { createPartyOperationsSettingsAccess } from "./core/settings-access.js";
+import { createPartyOperationsSettingsBootstrap } from "./core/settings-bootstrap.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
+import { createPartyOperationsConfigAccess } from "./core/config-access.js";
 import {
   buildPartyOperationsInitConfig as buildPartyOperationsInitConfigSurface,
   buildPartyOperationsReadyConfig as buildPartyOperationsReadyConfigSurface,
@@ -302,9 +338,24 @@ const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
 const pendingWindowPositionPersistTimers = new Map();
 let latestCanvasRestoreRequestId = 0;
-const journalFilterDebounceTimers = new WeakMap();
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
+const playerUiLocalSettingOverridesMemory = new Map();
+const playerPermissionDebugMemory = [];
+const PLAYER_PERMISSION_DEBUG_LIMIT = 50;
+const SHARED_ACTOR_NOTE_FLAGS = Object.freeze({
+  REST_WATCH: "sharedRestWatchNotes",
+  MARCHING: "sharedMarchingNote"
+});
+const PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS = new Set([
+  SETTINGS.REST_STATE,
+  SETTINGS.REST_COMMITTED,
+  SETTINGS.REST_ACTIVITIES,
+  SETTINGS.MARCH_STATE,
+  SETTINGS.MARCH_COMMITTED,
+  SETTINGS.OPS_LEDGER,
+  SETTINGS.INJURY_RECOVERY
+]);
 const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 const pendingGatherCheckRequests = new Map();
@@ -1396,7 +1447,6 @@ const OPERATIONS_JOURNAL_CATEGORIES = {
   "loot-claims": "Loot Claims",
   session: "Session"
 };
-const journalFolderEnsurePromises = new Map();
 
 function getCurrentModuleVersion() {
   const module = game.modules?.get(MODULE_ID);
@@ -1560,6 +1610,60 @@ const {
   setActiveLootSettingsTab
 } = createLootUiState({
   lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS
+});
+const {
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getSessionSummaryWindowBounds
+} = createOperationsJournalSettings({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+  gameRef: game
+});
+const {
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  ensureOperationsJournalFolderTree,
+  journalFolderIsUnderRoot,
+  createOperationsJournalEntry,
+  openJournalEntryFromElement
+} = createOperationsJournalService({
+  moduleId: MODULE_ID,
+  journalFolderCacheSettingKey: SETTINGS.JOURNAL_FOLDER_CACHE,
+  journalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  journalRootLegacyNames: OPERATIONS_JOURNAL_ROOT_NAME_LEGACY,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  canAccessAllPlayerOps,
+  getJournalVisibilityMode,
+  setModuleSettingWithLocalRefreshSuppressed,
+  gameRef: game,
+  foundryRef: foundry,
+  uiRef: ui,
+  constRef: CONST,
+  FolderClass: Folder,
+  JournalEntryClass: JournalEntry
+});
+const {
+  getOperationsJournalViewState,
+  setOperationsJournalViewState,
+  buildJournalSortOptions,
+  buildJournalCategoryOptions,
+  scheduleOperationsJournalFilterUpdate,
+  handleOperationsJournalAction,
+  buildOperationsJournalContext
+} = createOperationsJournalFeature({
+  journalSortOptions: JOURNAL_SORT_OPTIONS,
+  journalCategories: OPERATIONS_JOURNAL_CATEGORIES,
+  operationsJournalRootName: OPERATIONS_JOURNAL_ROOT_NAME,
+  getJournalFilterDebounceMs,
+  getJournalFolderParentId,
+  findOperationsJournalRootFolder,
+  journalFolderIsUnderRoot,
+  openJournalEntryFromElement
 });
 const GATHER_HISTORY_SORT_OPTIONS = [
   { value: "newest", label: "Newest First" },
@@ -2099,6 +2203,16 @@ function notifyUiWarnThrottled(message, options = {}) {
   const key = String(options.key ?? text);
   const ttlMs = Number(options.ttlMs ?? 1200);
   if (!shouldEmitThrottledUiNotice(`warn:${key}`, ttlMs)) return;
+  if (
+    text.includes("GM permissions are required")
+    || text.includes("Only the GM can")
+    || text.includes("change blocked")
+  ) {
+    logPlayerPermissionDebug("ui-warning", text, {
+      key,
+      ttlMs
+    });
+  }
   ui.notifications?.warn(text);
 }
 
@@ -2222,6 +2336,133 @@ function canAccessAllPlayerOps(user = game.user) {
 function hasActiveGmClient() {
   const users = game.users?.contents ?? game.users ?? [];
   return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
+}
+
+function getPlayerUiLocalOverrideStorageKey() {
+  return `po-player-ui-setting-overrides-${game.user?.id ?? "anon"}`;
+}
+
+function getPlayerPermissionDebugStorageKey() {
+  return `po-permission-debug-${game.user?.id ?? "anon"}`;
+}
+
+function readSessionStorageJson(key, fallback) {
+  try {
+    const raw = globalThis.sessionStorage?.getItem?.(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeSessionStorageJson(key, value) {
+  try {
+    globalThis.sessionStorage?.setItem?.(key, JSON.stringify(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readPlayerUiLocalSettingOverrides() {
+  const key = getPlayerUiLocalOverrideStorageKey();
+  const stored = readSessionStorageJson(key, null);
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) return stored;
+  return Object.fromEntries(playerUiLocalSettingOverridesMemory.entries());
+}
+
+function writePlayerUiLocalSettingOverrides(overrides = {}) {
+  const normalized = overrides && typeof overrides === "object" && !Array.isArray(overrides)
+    ? overrides
+    : {};
+  playerUiLocalSettingOverridesMemory.clear();
+  for (const [key, value] of Object.entries(normalized)) {
+    playerUiLocalSettingOverridesMemory.set(String(key ?? "").trim(), foundry.utils.deepClone(value));
+  }
+  writeSessionStorageJson(getPlayerUiLocalOverrideStorageKey(), normalized);
+}
+
+function getPlayerUiLocalSettingOverride(settingKey) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return undefined;
+  const overrides = readPlayerUiLocalSettingOverrides();
+  if (!Object.prototype.hasOwnProperty.call(overrides, normalizedSettingKey)) return undefined;
+  return foundry.utils.deepClone(overrides[normalizedSettingKey]);
+}
+
+function setPlayerUiLocalSettingOverride(settingKey, value) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return false;
+  const overrides = readPlayerUiLocalSettingOverrides();
+  overrides[normalizedSettingKey] = foundry.utils.deepClone(value);
+  writePlayerUiLocalSettingOverrides(overrides);
+  return true;
+}
+
+function canUsePlayerUiLocalOverride(settingKey, user = game.user) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  return Boolean(
+    normalizedSettingKey
+    && PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS.has(normalizedSettingKey)
+    && user
+    && !user.isGM
+    && canAccessAllPlayerOps(user)
+    && !hasActiveGmClient()
+  );
+}
+
+function getModuleSettingWithPlayerUiOverride(settingKey) {
+  const normalizedSettingKey = String(settingKey ?? "").trim();
+  if (!normalizedSettingKey) return undefined;
+  if (canUsePlayerUiLocalOverride(normalizedSettingKey)) {
+    const override = getPlayerUiLocalSettingOverride(normalizedSettingKey);
+    if (override !== undefined) return override;
+  }
+  return game.settings.get(MODULE_ID, normalizedSettingKey);
+}
+
+function logPlayerPermissionDebug(code, message, details = {}) {
+  const entry = {
+    at: new Date().toISOString(),
+    userId: String(game.user?.id ?? "").trim(),
+    userName: String(game.user?.name ?? "Unknown").trim() || "Unknown",
+    code: String(code ?? "").trim() || "unknown",
+    message: String(message ?? "").trim() || "Permission barrier encountered.",
+    details: details && typeof details === "object" && !Array.isArray(details)
+      ? foundry.utils.deepClone(details)
+      : {}
+  };
+  playerPermissionDebugMemory.unshift(entry);
+  if (playerPermissionDebugMemory.length > PLAYER_PERMISSION_DEBUG_LIMIT) {
+    playerPermissionDebugMemory.length = PLAYER_PERMISSION_DEBUG_LIMIT;
+  }
+  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
+  const next = [entry, ...(Array.isArray(stored) ? stored : [])].slice(0, PLAYER_PERMISSION_DEBUG_LIMIT);
+  writeSessionStorageJson(getPlayerPermissionDebugStorageKey(), next);
+  console.warn(`[${MODULE_ID}][permission-debug] ${entry.message}`, entry);
+  try {
+    globalThis.dispatchEvent?.(new CustomEvent(`${MODULE_ID}:permission-debug`, { detail: entry }));
+  } catch {
+    // Ignore event dispatch failures in older browser contexts.
+  }
+  return entry;
+}
+
+function getPlayerPermissionDebugEntries() {
+  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
+  const entries = Array.isArray(stored) ? stored : playerPermissionDebugMemory;
+  return foundry.utils.deepClone(entries);
+}
+
+function clearPlayerPermissionDebugEntries() {
+  playerPermissionDebugMemory.length = 0;
+  try {
+    globalThis.sessionStorage?.removeItem?.(getPlayerPermissionDebugStorageKey());
+  } catch {
+    // Ignore storage cleanup failures.
+  }
 }
 
 function getRenderableElementRoot(html) {
@@ -2717,7 +2958,7 @@ function consumeSuppressedSettingRefresh(fullSettingKey) {
 
 async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
   const normalizedSettingKey = String(settingKey ?? "").trim();
-  if (!normalizedSettingKey) return;
+  if (!normalizedSettingKey) return false;
   const settingRecord = game.settings?.settings?.get?.(`${MODULE_ID}.${normalizedSettingKey}`) ?? null;
   const settingScope = String(settingRecord?.scope ?? "").trim().toLowerCase();
 
@@ -2726,13 +2967,27 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
       const fullClientSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
       suppressNextSettingRefresh(fullClientSettingKey);
       await game.settings.set(MODULE_ID, normalizedSettingKey, value);
-      return;
+      return true;
     }
-    if (!canAccessAllPlayerOps(game.user)) return;
+    if (!canAccessAllPlayerOps(game.user)) return false;
     const hasActiveGm = hasActiveGmClient();
     if (!hasActiveGm) {
+      if (canUsePlayerUiLocalOverride(normalizedSettingKey, game.user)) {
+        setPlayerUiLocalSettingOverride(normalizedSettingKey, value);
+        logPlayerPermissionDebug("local-override", "Saved Party Operations change to local player test state because no GM client is active.", {
+          settingKey: normalizedSettingKey
+        });
+        notifyUiInfoThrottled(
+          "Party Operations saved locally for player-side UI testing. Changes are not synced until a GM client reconnects.",
+          { key: `player-local-override:${normalizedSettingKey}`, ttlMs: 5000 }
+        );
+        return true;
+      }
+      logPlayerPermissionDebug("no-active-gm", "Party Operations change blocked because no active GM client is available.", {
+        settingKey: normalizedSettingKey
+      });
       ui.notifications?.warn("Party Operations change blocked: no active GM client is available.");
-      return;
+      return false;
     }
     game.socket.emit(SOCKET_CHANNEL, {
       type: "ops:setting-write",
@@ -2740,98 +2995,60 @@ async function setModuleSettingWithLocalRefreshSuppressed(settingKey, value) {
       settingKey: normalizedSettingKey,
       value: foundry.utils.deepClone(value)
     });
-    return;
+    return true;
   }
   const fullSettingKey = `${MODULE_ID}.${normalizedSettingKey}`;
   suppressNextSettingRefresh(fullSettingKey);
   await game.settings.set(MODULE_ID, normalizedSettingKey, value);
-}
-
-function getIntegrationModeSetting() {
-  return game.settings.get(MODULE_ID, SETTINGS.INTEGRATION_MODE) ?? INTEGRATION_MODES.AUTO;
-}
-
-function validatePartyOpsConfig(input) {
-  const source = (input && typeof input === "object" && !Array.isArray(input)) ? input : {};
-  const rarityRaw = (source.rarityWeights && typeof source.rarityWeights === "object" && !Array.isArray(source.rarityWeights))
-    ? source.rarityWeights
-    : {};
-
-  const lootScarcityRaw = String(source.lootScarcity ?? DEFAULT_PARTY_OPS_CONFIG.lootScarcity).trim().toLowerCase();
-  const lootScarcity = lootScarcityRaw === LOOT_SCARCITY_LEVELS.ABUNDANT || lootScarcityRaw === LOOT_SCARCITY_LEVELS.SCARCE
-    ? lootScarcityRaw
-    : LOOT_SCARCITY_LEVELS.NORMAL;
-
-  const rarityWeights = {};
-  for (const rarity of PARTY_OPS_LOOT_RARITIES) {
-    const rawWeight = Number(rarityRaw[rarity]);
-    rarityWeights[rarity] = Number.isFinite(rawWeight)
-      ? Math.max(0, rawWeight)
-      : DEFAULT_PARTY_OPS_CONFIG.rarityWeights[rarity];
-  }
-
-  const multiplierRaw = Number(source.crGoldMultiplier);
-  const crGoldMultiplier = Number.isFinite(multiplierRaw) && multiplierRaw > 0
-    ? multiplierRaw
-    : DEFAULT_PARTY_OPS_CONFIG.crGoldMultiplier;
-
-  return {
-    debugEnabled: Boolean(source.debugEnabled),
-    lootScarcity,
-    rarityWeights,
-    crGoldMultiplier
-  };
-}
-
-function getPartyOpsConfigSetting() {
-  const raw = game.settings.get(MODULE_ID, SETTINGS.PARTY_OPS_CONFIG);
-  const normalized = validatePartyOpsConfig(raw);
-  const rawSerialized = JSON.stringify(raw ?? null);
-  const normalizedSerialized = JSON.stringify(normalized);
-  if (!partyOpsConfigNormalizationInProgress && rawSerialized !== normalizedSerialized) {
-    partyOpsConfigNormalizationInProgress = true;
-    void setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized)
-      .catch((error) => {
-        console.warn(`${MODULE_ID}: failed to normalize partyOpsConfig on load`, error);
-      })
-      .finally(() => {
-        partyOpsConfigNormalizationInProgress = false;
-      });
-  }
-  return normalized;
-}
-
-async function savePartyOpsConfigSetting(input) {
-  const normalized = validatePartyOpsConfig(input);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.PARTY_OPS_CONFIG, normalized);
-  return normalized;
-}
-
-function areAdvancedSettingsEnabled() {
-  try {
-    return Boolean(game.settings.get(MODULE_ID, SETTINGS.ADVANCED_SETTINGS_ENABLED));
-  } catch {
-    return false;
-  }
-}
-
-function shouldAutoOpenRestForPlayers() {
-  try {
-    return Boolean(game.settings.get(MODULE_ID, SETTINGS.PLAYER_AUTO_OPEN_REST));
-  } catch {
-    return false;
-  }
-}
-
-function normalizeLauncherPlacement(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === LAUNCHER_PLACEMENTS.SIDEBAR) return LAUNCHER_PLACEMENTS.SIDEBAR;
-  if (normalized === LAUNCHER_PLACEMENTS.BOTH) return LAUNCHER_PLACEMENTS.BOTH;
-  return LAUNCHER_PLACEMENTS.FLOATING;
+  return true;
 }
 
 let mainTabNavigator = null;
 let launcherUiController = null;
+let integrationAccess = null;
+let gatherSettingsAccess = null;
+const {
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap
+} = createLauncherStateAccess({
+  resolveController: () => launcherUiController,
+  launcherPlacements: LAUNCHER_PLACEMENTS
+});
+const {
+  normalizePlayerHubMode,
+  getPlayerHubModeSetting,
+  areAdvancedSettingsEnabled,
+  shouldAutoOpenRestForPlayers,
+  normalizeLauncherPlacement
+} = createPartyOperationsSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  playerHubModes: PLAYER_HUB_MODES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  gameRef: game
+});
+
+// Defer these reads so config-access wiring cannot reference later bindings during module evaluation.
+function getIntegrationModeSettingForConfig(...args) {
+  return integrationAccess?.getIntegrationModeSetting?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function resolveIntegrationModeForConfig(...args) {
+  return integrationAccess?.resolveIntegrationMode?.(...args) ?? INTEGRATION_MODES.AUTO;
+}
+
+function isDaeAvailableForConfig(...args) {
+  return Boolean(integrationAccess?.isDaeAvailable?.(...args) ?? false);
+}
+
+function getGatherRollModeSettingForConfig(...args) {
+  return gatherSettingsAccess?.getGatherRollModeSetting?.(...args) ?? "prefer-monks";
+}
+
+function getGatherResourceConfigForConfig(...args) {
+  return gatherSettingsAccess?.getGatherResourceConfig?.(...args) ?? {};
+}
 
 function openMainTab(...args) {
   return mainTabNavigator?.openMainTab?.(...args) ?? null;
@@ -2864,6 +3081,115 @@ function ensureLauncherUi(...args) {
 }
 
 const {
+  validatePartyOpsConfig,
+  getPartyOpsConfigSetting,
+  savePartyOpsConfigSetting,
+  normalizeInventoryHookMode,
+  getInventoryHookModeSetting,
+  setInventoryHookMode,
+  getModuleConfigSnapshot
+} = createPartyOperationsConfigAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  configSchema: CONFIG_SCHEMA,
+  defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  partyOpsLootRarities: PARTY_OPS_LOOT_RARITIES,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  gameRef: game,
+  setModuleSettingWithLocalRefreshSuppressed,
+  isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+  setPartyOpsConfigNormalizationInProgress: (value) => {
+    partyOpsConfigNormalizationInProgress = Boolean(value);
+  },
+  getPlayerHubModeSetting,
+  getLauncherPlacement: getLauncherPlacementForConfig,
+  isFloatingLauncherLocked: isFloatingLauncherLockedForConfig,
+  getIntegrationModeSetting: getIntegrationModeSettingForConfig,
+  resolveIntegrationMode: resolveIntegrationModeForConfig,
+  isDaeAvailable: isDaeAvailableForConfig,
+  getJournalVisibilityMode,
+  getJournalFilterDebounceMs,
+  getSessionSummaryRangeSetting,
+  getGatherRollModeSetting: getGatherRollModeSettingForConfig,
+  getGatherResourceConfig: getGatherResourceConfigForConfig,
+  foundryRef: foundry
+});
+const {
+  getIntegrationModeSetting,
+  isDaeAvailable,
+  resolveIntegrationMode
+} = (integrationAccess = createIntegrationAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  integrationModes: INTEGRATION_MODES,
+  gameRef: game
+}));
+const {
+  getGatherRollModeSetting,
+  clampGatherInteger,
+  clampGatherModifier,
+  normalizeGatherTravelTradeoff,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceConfig,
+  getGatherEnvironmentChoices,
+  getGatherQuickPresets,
+  getGatherQuickPresetById,
+  getGatherResourceTypeLabel,
+  buildGatherPresetContext
+} = (gatherSettingsAccess = createGatherSettingsAccess({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  gatherDefaults: GATHER_DEFAULTS,
+  gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  gatherQuickPresets: GATHER_QUICK_PRESETS,
+  gameRef: game
+}));
+const {
+  getGatherHistoryViewState,
+  setGatherHistoryViewState,
+  buildGatherHistoryContext
+} = createGatherHistoryView({
+  gatherHistorySortOptions: GATHER_HISTORY_SORT_OPTIONS,
+  gatherHistoryResultFilterOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS,
+  gatherHistoryResourceFilterOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS,
+  gatherEnvironmentKeys: GATHER_ENVIRONMENT_KEYS,
+  gatherEnvironmentLabels: GATHER_ENVIRONMENT_LABELS,
+  normalizeGatherEnvironmentKey,
+  normalizeGatherResourceType,
+  getGatherResourceTypeLabel,
+  formatGatherFlagLabel,
+  formatGatherComplicationLabel,
+  sessionStorageRef: sessionStorage,
+  resolveUserId: () => game.user?.id ?? "anon",
+  randomId: () => foundry.utils.randomID(),
+  getNow: () => Date.now(),
+  createDate: (value) => new Date(value)
+});
+const {
+  normalizeDowntimeEntriesSort,
+  normalizeDowntimeLogsSort,
+  getGmDowntimeViewState,
+  setGmDowntimeViewState
+} = createGmDowntimeViewAccess({
+  downtimeEntrySortOptions: DOWNTIME_ENTRY_SORT_OPTIONS,
+  downtimeLogSortOptions: DOWNTIME_LOG_SORT_OPTIONS,
+  sessionStorageRef: sessionStorage,
+  resolveUserId: () => game.user?.id ?? "anon"
+});
+const {
+  normalizePlayerHubActionType,
+  normalizePlayerHubClaimVariant,
+  getPlayerHubActionRequestFromUiAction
+} = createPlayerHubActions({
+  playerHubActionTypes: PLAYER_HUB_ACTION_TYPES,
+  playerHubClaimVariants: PLAYER_HUB_CLAIM_VARIANTS
+});
+
+const {
   PartyOperationsSettingsHub,
   openPartyOperationsSettingsHub
 } = createPartyOperationsSettingsHub({
@@ -2885,468 +3211,64 @@ const {
   notifyUiWarnThrottled,
   canAccessAllPlayerOps
 });
-
-function registerPartyOpsSettings(onSettingsChanged = () => {}) {
-  registerPartyOpsUiSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    settingsHubType: PartyOperationsSettingsHub,
-    areAdvancedSettingsEnabled,
-    lootScarcityLevels: LOOT_SCARCITY_LEVELS,
-    playerHubModes: PLAYER_HUB_MODES,
-    defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
-    validatePartyOpsConfig,
-    notifyUiInfoThrottled,
-    normalizePlayerHubMode,
-    setModuleSettingWithLocalRefreshSuppressed,
-    isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
-    setPartyOpsConfigNormalizationInProgress: (value) => {
-      partyOpsConfigNormalizationInProgress = Boolean(value);
-    },
-    onSettingsChanged
-  });
-}
-
-function hasRegisteredPartyOpsSettingsNamespace(moduleId = MODULE_ID) {
-  const prefix = `${String(moduleId ?? "").trim()}.`;
-  if (!prefix || !game?.settings) return false;
-  try {
-    return Array.from(game.settings.settings?.keys?.() ?? []).some((key) => String(key ?? "").startsWith(prefix));
-  } catch {
-    return false;
-  }
-}
+const {
+  registerPartyOpsSettings,
+  hasRegisteredPartyOpsSettingsNamespace,
+  ensurePartyOpsSettingsRegistered
+} = createPartyOperationsSettingsBootstrap({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  settingsHubType: PartyOperationsSettingsHub,
+  areAdvancedSettingsEnabled,
+  lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  playerHubModes: PLAYER_HUB_MODES,
+  defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
+  validatePartyOpsConfig,
+  notifyUiInfoThrottled,
+  normalizePlayerHubMode,
+  setModuleSettingWithLocalRefreshSuppressed,
+  isPartyOpsConfigNormalizationInProgress: () => partyOpsConfigNormalizationInProgress,
+  setPartyOpsConfigNormalizationInProgress: (value) => {
+    partyOpsConfigNormalizationInProgress = Boolean(value);
+  },
+  registerPartyOpsUiSettings,
+  registerPartyOpsDataSettings,
+  registerPartyOpsFeatureSettings,
+  getRefreshScopesForSettingKey,
+  refreshOpenApps,
+  buildDefaultRestWatchState,
+  buildDefaultMarchingOrderState,
+  buildDefaultActivityState,
+  buildDefaultOperationsLedger,
+  buildDefaultInjuryRecoveryState,
+  buildDefaultLootSourceConfig,
+  buildDefaultAudioLibraryCatalog,
+  buildDefaultAudioLibraryHiddenTrackStore,
+  buildDefaultAudioMixPresetStore,
+  syncAudioLibraryDraftFromSettings,
+  autoInventoryPackIndexCache,
+  autoInventoryDefaults: {
+    itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+    consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+    currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+    qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
+  },
+  gatherDefaults: GATHER_DEFAULTS,
+  gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+  launcherPlacements: LAUNCHER_PLACEMENTS,
+  journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+  sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+  inventoryHookModes: INVENTORY_HOOK_MODES,
+  ensureLauncherUi,
+  resetFloatingLauncherPosition: resetFloatingLauncherPositionForBootstrap,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  openRestWatchUiForCurrentUser,
+  openMainTab,
+  gameRef: game
+});
 
 function canAccessGmPage(user = game.user) {
   return Boolean(user?.isGM);
-}
-
-function ensurePartyOpsSettingsRegistered() {
-  if (hasRegisteredPartyOpsSettingsNamespace(MODULE_ID)) return false;
-  registerPartyOpsSettings((key) => {
-    if (key === SETTINGS.DEBUG_ENABLED) return;
-    const scopes = getRefreshScopesForSettingKey(key);
-    refreshOpenApps({ scopes });
-  });
-  registerPartyOpsDataSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    buildDefaultRestWatchState,
-    buildDefaultMarchingOrderState,
-    buildDefaultActivityState,
-    buildDefaultOperationsLedger,
-    buildDefaultInjuryRecoveryState,
-    buildDefaultLootSourceConfig,
-    buildDefaultAudioLibraryCatalog,
-    buildDefaultAudioLibraryHiddenTrackStore,
-    buildDefaultAudioMixPresetStore
-  });
-  syncAudioLibraryDraftFromSettings();
-  registerPartyOpsFeatureSettings({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    areAdvancedSettingsEnabled,
-    autoInventoryPackIndexCache,
-    autoInventoryDefaults: {
-      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
-      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
-      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
-      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
-    },
-    gatherDefaults: GATHER_DEFAULTS,
-    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
-    launcherPlacements: LAUNCHER_PLACEMENTS,
-    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
-    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
-    inventoryHookModes: INVENTORY_HOOK_MODES,
-    ensureLauncherUi,
-    resetFloatingLauncherPosition,
-    refreshOpenApps,
-    refreshScopeKeys: REFRESH_SCOPE_KEYS,
-    openRestWatchUiForCurrentUser,
-    openMainTab
-  });
-  return true;
-}
-
-function normalizeInventoryHookMode(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (raw === INVENTORY_HOOK_MODES.OFF) return INVENTORY_HOOK_MODES.OFF;
-  if (raw === INVENTORY_HOOK_MODES.REFRESH) return INVENTORY_HOOK_MODES.REFRESH;
-  return INVENTORY_HOOK_MODES.SYNC;
-}
-
-function getInventoryHookModeSetting() {
-  const configured = game.settings.get(MODULE_ID, SETTINGS.INVENTORY_HOOK_MODE);
-  return normalizeInventoryHookMode(configured);
-}
-
-async function setInventoryHookMode(mode) {
-  const normalized = normalizeInventoryHookMode(mode);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INVENTORY_HOOK_MODE, normalized);
-  return normalized;
-}
-
-function getModuleConfigSnapshot() {
-  return {
-    schema: CONFIG_SCHEMA,
-    ui: {
-      playerHubMode: getPlayerHubModeSetting()
-    },
-    launcher: {
-      placement: getLauncherPlacement(),
-      floatingLocked: isFloatingLauncherLocked()
-    },
-    integration: {
-      configuredMode: getIntegrationModeSetting(),
-      resolvedMode: resolveIntegrationMode(),
-      daeAvailable: isDaeAvailable()
-    },
-    journal: {
-      visibility: getJournalVisibilityMode(),
-      filterDebounceMs: getJournalFilterDebounceMs(),
-      sessionSummaryRange: getSessionSummaryRangeSetting()
-    },
-    inventory: {
-      hookMode: getInventoryHookModeSetting()
-    },
-    gather: {
-      rollMode: getGatherRollModeSetting(),
-      rules: foundry.utils.deepClone(getGatherResourceConfig())
-    },
-    typedConfig: {
-      value: getPartyOpsConfigSetting()
-    }
-  };
-}
-
-function getGatherRollModeSetting() {
-  return game.settings.get(MODULE_ID, SETTINGS.GATHER_ROLL_MODE) ?? "prefer-monks";
-}
-
-function clampGatherInteger(value, min, max, fallback) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(raw)));
-}
-
-function clampGatherModifier(value, fallback = 0) {
-  return clampGatherInteger(value, -20, 20, fallback);
-}
-
-function normalizeGatherTravelTradeoff(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  if (raw === GATHER_TRAVEL_CHOICES.FELL_BEHIND) return GATHER_TRAVEL_CHOICES.FELL_BEHIND;
-  return GATHER_TRAVEL_CHOICES.PACE;
-}
-
-function normalizeGatherEnvironmentKey(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  return GATHER_ENVIRONMENT_KEYS.includes(raw) ? raw : GATHER_ENVIRONMENT_KEYS[0];
-}
-
-function normalizeGatherResourceType(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
-  return raw === "water" ? "water" : "food";
-}
-
-function getGatherResourceConfig() {
-  const getSetting = (key, fallback) => {
-    try {
-      const value = game.settings.get(MODULE_ID, key);
-      return value === undefined ? fallback : value;
-    } catch {
-      return fallback;
-    }
-  };
-
-  const config = {
-    enabled: Boolean(getSetting(SETTINGS.GATHER_ENABLED, GATHER_DEFAULTS.enabled)),
-    minimumHours: clampGatherInteger(getSetting(SETTINGS.GATHER_MIN_HOURS, GATHER_DEFAULTS.minimumHours), 1, 24, GATHER_DEFAULTS.minimumHours),
-    disallowCombat: Boolean(getSetting(SETTINGS.GATHER_DISALLOW_COMBAT, GATHER_DEFAULTS.disallowCombat)),
-    baseDc: {
-      lush_forest_or_river_valley: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_LUSH, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley), 1, 30, GATHER_DEFAULTS.baseDc.lush_forest_or_river_valley),
-      temperate_hills_or_light_woodland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_TEMPERATE, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland), 1, 30, GATHER_DEFAULTS.baseDc.temperate_hills_or_light_woodland),
-      sparse_plains_or_rocky: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_SPARSE, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky), 1, 30, GATHER_DEFAULTS.baseDc.sparse_plains_or_rocky),
-      cold_mountains_or_swamp: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_COLD, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp), 1, 30, GATHER_DEFAULTS.baseDc.cold_mountains_or_swamp),
-      desert_blighted_wasteland: clampGatherInteger(getSetting(SETTINGS.GATHER_DC_DESERT, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland), 1, 30, GATHER_DEFAULTS.baseDc.desert_blighted_wasteland)
-    },
-    seasonMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_SEASON_MOD, GATHER_DEFAULTS.seasonMod), GATHER_DEFAULTS.seasonMod),
-    weatherMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_WEATHER_MOD, GATHER_DEFAULTS.weatherMod), GATHER_DEFAULTS.weatherMod),
-    corruptionMod: clampGatherModifier(getSetting(SETTINGS.GATHER_DEFAULT_CORRUPTION_MOD, GATHER_DEFAULTS.corruptionMod), GATHER_DEFAULTS.corruptionMod),
-    herbalismAdvantageEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HERBALISM_ADVANTAGE, GATHER_DEFAULTS.herbalismAdvantageEnabled)),
-    hostileEncounterFlagEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_HOSTILE_FAIL_FLAG, GATHER_DEFAULTS.hostileEncounterFlagEnabled)),
-    failBy5ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_FAIL_BY5_COMPLICATION, GATHER_DEFAULTS.failBy5ComplicationEnabled)),
-    successBy5DoubleEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, GATHER_DEFAULTS.successBy5DoubleEnabled)),
-    nat20BonusEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT20_BONUS, GATHER_DEFAULTS.nat20BonusEnabled)),
-    nat1ComplicationEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_NAT1_FLAG, GATHER_DEFAULTS.nat1ComplicationEnabled)),
-    corruptionWaterCheckEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_CORRUPTION_WATER_CHECK, GATHER_DEFAULTS.corruptionWaterCheckEnabled)),
-    corruptionConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_CORRUPTION_SAVE_DC, GATHER_DEFAULTS.corruptionConSaveDc), 1, 30, GATHER_DEFAULTS.corruptionConSaveDc),
-    waterAutoFoundEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_WATER_AUTO_FOUND, GATHER_DEFAULTS.waterAutoFoundEnabled)),
-    travelTradeoffEnabled: Boolean(getSetting(SETTINGS.GATHER_ENABLE_TRAVEL_TRADEOFF, GATHER_DEFAULTS.travelTradeoffEnabled)),
-    travelTradeoffDefault: normalizeGatherTravelTradeoff(getSetting(SETTINGS.GATHER_TRAVEL_TRADEOFF_DEFAULT, GATHER_DEFAULTS.travelTradeoffDefault)),
-    travelConSaveDc: clampGatherInteger(getSetting(SETTINGS.GATHER_TRAVEL_CON_SAVE_DC, GATHER_DEFAULTS.travelConSaveDc), 1, 30, GATHER_DEFAULTS.travelConSaveDc)
-  };
-  return config;
-}
-
-function getGatherEnvironmentChoices(config = getGatherResourceConfig()) {
-  const baseDc = config?.baseDc ?? GATHER_DEFAULTS.baseDc;
-  return GATHER_ENVIRONMENT_KEYS.map((key) => ({
-    value: key,
-    label: `${GATHER_ENVIRONMENT_LABELS[key] ?? key} (DC ${Math.max(1, Math.floor(Number(baseDc?.[key] ?? 10) || 10))})`
-  }));
-}
-
-function getGatherQuickPresets(config = getGatherResourceConfig()) {
-  return GATHER_QUICK_PRESETS.map((entry) => {
-    const source = entry?.options ?? {};
-    const environment = normalizeGatherEnvironmentKey(source.environment);
-    const resourceType = normalizeGatherResourceType(source.resourceType);
-    return {
-      id: String(entry?.id ?? "").trim(),
-      label: String(entry?.label ?? "Preset").trim() || "Preset",
-      description: String(entry?.description ?? "").trim(),
-      options: {
-        environment,
-        resourceType,
-        gatherMode: String(source.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard",
-        seasonMod: clampGatherModifier(source.seasonMod, config.seasonMod),
-        weatherMod: clampGatherModifier(source.weatherMod, config.weatherMod),
-        corruptionMod: clampGatherModifier(source.corruptionMod, config.corruptionMod),
-        hostileTerrain: Boolean(source.hostileTerrain),
-        isCorruptedRegion: Boolean(source.isCorruptedRegion),
-        waterAutoFound: Boolean(source.waterAutoFound),
-        duringTravel: Boolean(source.duringTravel),
-        travelTradeoff: normalizeGatherTravelTradeoff(source.travelTradeoff ?? config.travelTradeoffDefault)
-      }
-    };
-  });
-}
-
-function getGatherQuickPresetById(presetId, config = getGatherResourceConfig()) {
-  const id = String(presetId ?? "").trim();
-  if (!id) return null;
-  return getGatherQuickPresets(config).find((entry) => entry.id === id) ?? null;
-}
-
-function getGatherResourceTypeLabel(value) {
-  return normalizeGatherResourceType(value) === "water" ? "Water" : "Food";
-}
-
-function buildGatherPresetContext(config = getGatherResourceConfig()) {
-  return getGatherQuickPresets(config).map((preset) => {
-    const options = preset?.options ?? {};
-    const environment = normalizeGatherEnvironmentKey(options.environment);
-    const resourceType = normalizeGatherResourceType(options.resourceType);
-    const gatherMode = String(options.gatherMode ?? "standard").trim().toLowerCase() === "plant" ? "plant" : "standard";
-    const tagParts = [];
-    if (Boolean(options.duringTravel)) tagParts.push("Travel");
-    if (Boolean(options.hostileTerrain)) tagParts.push("Hostile");
-    if (Boolean(options.isCorruptedRegion)) tagParts.push("Corrupted");
-    if (resourceType === "water" && Boolean(options.waterAutoFound)) tagParts.push("Auto-water");
-    return {
-      id: String(preset?.id ?? "").trim(),
-      label: String(preset?.label ?? "Preset").trim() || "Preset",
-      description: String(preset?.description ?? "").trim(),
-      summary: `${getGatherResourceTypeLabel(resourceType)} | ${GATHER_ENVIRONMENT_LABELS[environment] ?? environment} | ${gatherMode === "plant" ? "Plant" : "Standard"}`,
-      tagsText: tagParts.join(" - "),
-      hasTags: tagParts.length > 0
-    };
-  });
-}
-
-function buildGatherHistoryContext(resourcesState = null, options = {}) {
-  const rows = Array.isArray(resourcesState?.gather?.history) ? resourcesState.gather.history : [];
-  const viewStateRaw = options?.viewState ?? getGatherHistoryViewState();
-  const viewState = {
-    search: normalizeGatherHistorySearch(viewStateRaw?.search),
-    result: normalizeGatherHistoryResultFilter(viewStateRaw?.result),
-    resource: normalizeGatherHistoryResourceFilter(viewStateRaw?.resource),
-    environment: normalizeGatherHistoryEnvironmentFilter(viewStateRaw?.environment),
-    actor: normalizeGatherHistoryActorFilter(viewStateRaw?.actor),
-    sort: normalizeGatherHistorySort(viewStateRaw?.sort)
-  };
-
-  const mappedRows = rows.map((entry) => {
-    const source = entry && typeof entry === "object" ? entry : {};
-    const timestamp = Number(source.timestamp ?? Date.now());
-    const timestampDate = new Date(Number.isFinite(timestamp) ? timestamp : Date.now());
-    const success = String(source.result ?? "").trim().toLowerCase() === "success" || source.success === true;
-    const environment = normalizeGatherEnvironmentKey(source.environment);
-    const environmentLabel = GATHER_ENVIRONMENT_LABELS[environment] ?? environment;
-    const resourceType = normalizeGatherResourceType(source.resourceType);
-    const resourceTypeLabel = getGatherResourceTypeLabel(resourceType);
-    const flags = Array.isArray(source.flags) ? source.flags : [];
-    const complications = Array.isArray(source.complications) ? source.complications : [];
-    const notes = Array.isArray(source.notes) ? source.notes : [];
-    const detailParts = [];
-    if (flags.length > 0) detailParts.push(`Flags: ${flags.map((flag) => formatGatherFlagLabel(flag)).join(", ")}`);
-    if (complications.length > 0) detailParts.push(`Complications: ${complications.map((flag) => formatGatherComplicationLabel(flag)).join(", ")}`);
-    if (notes.length > 0) detailParts.push(`Notes: ${notes.join(" | ")}`);
-    const inventoryGainAmount = Math.max(0, Number(source.inventoryGainAmount ?? 0) || 0);
-    const inventoryGainSource = String(source.inventoryGainSource ?? "").trim();
-    const requesterName = String(source.requesterName ?? "").trim();
-    const approvedBy = String(source.approvedBy ?? "").trim();
-    const rationDieTotal = Number(source.rationDieTotal);
-    const yieldRolledBy = String(source.yieldRolledBy ?? "").trim();
-    if (inventoryGainAmount > 0) {
-      const sourceLabel = inventoryGainSource ? ` (${inventoryGainSource})` : "";
-      detailParts.push(`Inventory +${inventoryGainAmount}${sourceLabel}`);
-    }
-    if (requesterName) detailParts.push(`Requested by ${requesterName}`);
-    if (approvedBy) detailParts.push(`Approved by ${approvedBy}`);
-    if (Number.isFinite(rationDieTotal)) {
-      const yieldByLabel = yieldRolledBy ? ` by ${yieldRolledBy}` : "";
-      detailParts.push(`Yield d6 ${Math.max(1, Math.floor(rationDieTotal))}${yieldByLabel}`);
-    }
-    if (source.appliedToLedger === false && Math.max(0, Number(source.rations ?? 0) || 0) > 0) {
-      detailParts.push("Not applied to party pools");
-    }
-
-    const checkTotal = Number(source.checkTotal ?? 0);
-    const dc = Number(source.dc ?? 0);
-    const rollLabel = Number.isFinite(checkTotal) ? `${Math.floor(checkTotal)}` : "-";
-    const dcLabel = Number.isFinite(dc) ? `${Math.max(1, Math.floor(dc))}` : "-";
-    const actorName = String(source.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
-    const actorKey = actorName.toLowerCase();
-    const rations = Math.max(0, Math.floor(Number(source.rations ?? 0) || 0));
-    const detailsText = detailParts.length > 0 ? detailParts.join(" - ") : "-";
-    const createdBy = String(source.createdBy ?? "GM").trim() || "GM";
-    const dayKey = String(source.dayKey ?? "").trim();
-    const resultKey = success ? "success" : "fail";
-    const resultLabel = success ? "Success" : "Fail";
-
-    return {
-      id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
-      timestampLabel: Number.isFinite(timestampDate.getTime()) ? timestampDate.toLocaleString() : "Unknown",
-      dayKey,
-      actorName,
-      actorKey,
-      environment,
-      environmentLabel,
-      resultKey,
-      resultLabel,
-      resultClass: success ? "is-success" : "is-fail",
-      isSuccess: success,
-      rollVsDc: `${rollLabel} vs ${dcLabel}`,
-      resourceType,
-      resourceTypeLabel,
-      rations,
-      detailsText,
-      createdBy,
-      searchText: `${actorName} ${environmentLabel} ${resultLabel} ${resourceTypeLabel} ${detailsText} ${dayKey} ${createdBy}`.toLowerCase()
-    };
-  });
-
-  const actorMap = new Map();
-  for (const row of mappedRows) {
-    if (!row.actorKey || row.actorKey === "all") continue;
-    if (!actorMap.has(row.actorKey)) actorMap.set(row.actorKey, row.actorName);
-  }
-  if (viewState.actor !== "all" && !actorMap.has(viewState.actor)) {
-    viewState.actor = "all";
-  }
-
-  const filteredRows = mappedRows
-    .filter((row) => {
-      if (viewState.result !== "all" && row.resultKey !== viewState.result) return false;
-      if (viewState.resource !== "all" && row.resourceType !== viewState.resource) return false;
-      if (viewState.environment !== "all" && row.environment !== viewState.environment) return false;
-      if (viewState.actor !== "all" && row.actorKey !== viewState.actor) return false;
-      if (viewState.search && !row.searchText.includes(viewState.search.toLowerCase())) return false;
-      return true;
-    })
-    .sort((left, right) => {
-      switch (viewState.sort) {
-        case "oldest":
-          return Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0);
-        case "actor-asc": {
-          const nameCompare = String(left.actorName ?? "").localeCompare(String(right.actorName ?? ""));
-          if (nameCompare !== 0) return nameCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "actor-desc": {
-          const nameCompare = String(right.actorName ?? "").localeCompare(String(left.actorName ?? ""));
-          if (nameCompare !== 0) return nameCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "rations-asc": {
-          const rationCompare = Number(left.rations ?? 0) - Number(right.rations ?? 0);
-          if (rationCompare !== 0) return rationCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "rations-desc": {
-          const rationCompare = Number(right.rations ?? 0) - Number(left.rations ?? 0);
-          if (rationCompare !== 0) return rationCompare;
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-        }
-        case "newest":
-        default:
-          return Number(right.timestamp ?? 0) - Number(left.timestamp ?? 0);
-      }
-    });
-
-  const actorOptions = [
-    { value: "all", label: "All Actors", selected: viewState.actor === "all" },
-    ...Array.from(actorMap.entries())
-      .sort((left, right) => String(left[1] ?? "").localeCompare(String(right[1] ?? "")))
-      .map(([value, label]) => ({
-        value,
-        label,
-        selected: viewState.actor === value
-      }))
-  ];
-
-  const environmentOptions = [
-    { value: "all", label: "All Environments", selected: viewState.environment === "all" },
-    ...GATHER_ENVIRONMENT_KEYS.map((key) => ({
-      value: key,
-      label: GATHER_ENVIRONMENT_LABELS[key] ?? key,
-      selected: viewState.environment === key
-    }))
-  ];
-
-  return {
-    rows: filteredRows,
-    hasRows: filteredRows.length > 0,
-    hasAnyRows: mappedRows.length > 0,
-    totalCount: mappedRows.length,
-    visibleCount: filteredRows.length,
-    hiddenCount: Math.max(0, mappedRows.length - filteredRows.length),
-    hasActiveFilters: Boolean(
-      viewState.search
-      || viewState.result !== "all"
-      || viewState.resource !== "all"
-      || viewState.environment !== "all"
-      || viewState.actor !== "all"
-    ),
-    emptyMessage: mappedRows.length > 0
-      ? "No gather checks match the current filters."
-      : "No gather checks logged yet.",
-    sortOptions: GATHER_HISTORY_SORT_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.sort === entry.value
-    })),
-    resultOptions: GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.result === entry.value
-    })),
-    resourceOptions: GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => ({
-      value: entry.value,
-      label: entry.label,
-      selected: viewState.resource === entry.value
-    })),
-    environmentOptions,
-    actorOptions,
-    filters: {
-      ...viewState,
-      searchPlaceholder: "Filter by actor, note, or result"
-    }
-  };
 }
 
 function buildGatherRequestContext(resourcesState = null, options = {}) {
@@ -3476,6 +3398,156 @@ async function setLegacyPartyOpsFlagSilently(actor, flagKeyInput, value) {
   } catch {
     return false;
   }
+}
+
+function getModuleActorFlag(actor, flagKeyInput) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey) return undefined;
+  if (typeof actor.getFlag === "function") {
+    try {
+      return actor.getFlag(MODULE_ID, flagKey);
+    } catch {
+      // Fall through to direct data access.
+    }
+  }
+  const getProperty = globalThis?.foundry?.utils?.getProperty;
+  if (typeof getProperty === "function") {
+    const direct = getProperty(actor, `flags.${MODULE_ID}.${flagKey}`);
+    if (direct !== undefined) return direct;
+  }
+  const root = actor?.flags?.[MODULE_ID];
+  if (!root || typeof root !== "object") return undefined;
+  return flagKey.split(".").reduce((value, segment) => {
+    if (!value || typeof value !== "object") return undefined;
+    return value[segment];
+  }, root);
+}
+
+async function setModuleActorFlagSilently(actor, flagKeyInput, value) {
+  const flagKey = String(flagKeyInput ?? "").trim();
+  if (!actor || !flagKey || typeof actor.setFlag !== "function") return false;
+  try {
+    await actor.setFlag(MODULE_ID, flagKey, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canUserPersistSharedActorNotes(actor, user = game.user) {
+  if (!actor || !user) return false;
+  if (user.isGM) return true;
+  try {
+    if (typeof actor.testUserPermission === "function") {
+      return Boolean(actor.testUserPermission(user, "OWNER"));
+    }
+  } catch {
+    // Fall through to conservative owner check.
+  }
+  const userCharacterId = String(user?.character?.id ?? "").trim();
+  const actorId = String(actor?.id ?? "").trim();
+  return Boolean(userCharacterId && actorId && userCharacterId === actorId);
+}
+
+function resolveActorDocument(actorOrActorId) {
+  if (!actorOrActorId) return null;
+  if (typeof actorOrActorId === "string") return game.actors?.get?.(actorOrActorId) ?? null;
+  return actorOrActorId?.documentName === "Actor" ? actorOrActorId : null;
+}
+
+function normalizeSharedRestWatchNoteStore(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const store = {};
+  for (const [slotId, entry] of Object.entries(source)) {
+    const normalizedSlotId = String(slotId ?? "").trim();
+    if (!normalizedSlotId) continue;
+    const record = entry && typeof entry === "object" && !Array.isArray(entry)
+      ? entry
+      : { text: entry };
+    store[normalizedSlotId] = {
+      text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+      updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+      updatedBy: String(record.updatedBy ?? "").trim(),
+      source: normalizeRestNoteSaveSource(record.source)
+    };
+  }
+  return store;
+}
+
+function normalizeSharedMarchingNoteRecord(value) {
+  const record = value && typeof value === "object" && !Array.isArray(value)
+    ? value
+    : { text: value };
+  return {
+    text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
+    updatedBy: String(record.updatedBy ?? "").trim()
+  };
+}
+
+function getPublishedRestWatchNoteText(actorOrActorId, slotIdInput, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return String(fallback ?? "");
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  if (!Object.prototype.hasOwnProperty.call(store, slotId)) return String(fallback ?? "");
+  return String(store[slotId]?.text ?? "");
+}
+
+function getPublishedMarchingNoteText(actorOrActorId, fallback = "") {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return String(fallback ?? "");
+  const record = getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING);
+  if (record === undefined) return String(fallback ?? "");
+  return String(normalizeSharedMarchingNoteRecord(record).text ?? "");
+}
+
+async function publishRestWatchNoteForActor(actorOrActorId, slotIdInput, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  store[slotId] = {
+    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim(),
+    source: normalizeRestNoteSaveSource(options.source)
+  };
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH, store);
+}
+
+async function publishMarchingNoteForActor(actorOrActorId, text, options = {}) {
+  const actor = resolveActorDocument(actorOrActorId);
+  if (!actor) return false;
+  if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
+  return setModuleActorFlagSilently(actor, SHARED_ACTOR_NOTE_FLAGS.MARCHING, {
+    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    updatedAt: Date.now(),
+    updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim()
+  });
+}
+
+function applyPublishedRestWatchNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  const slots = Array.isArray(state.slots) ? state.slots : [];
+  slots.forEach((slot, index) => {
+    const slotId = String(slot?.id ?? `watch-${index + 1}`).trim();
+    const entries = ensureRestSlotEntriesList(slot);
+    entries.forEach((entry) => {
+      entry.notes = getPublishedRestWatchNoteText(entry?.actorId, slotId, entry?.notes ?? "");
+    });
+  });
+  return state;
+}
+
+function applyPublishedMarchingNotesToState(state) {
+  if (!state || typeof state !== "object") return state;
+  if (!state.notes || typeof state.notes !== "object") state.notes = {};
+  for (const actorId of getOrderedMarchingActors(state)) {
+    state.notes[actorId] = getPublishedMarchingNoteText(actorId, state.notes?.[actorId] ?? "");
+  }
+  return state;
 }
 
 function getGatherAttemptState(actor) {
@@ -3647,18 +3719,6 @@ function resolveGatherResourceOutcome(input = {}) {
   };
 }
 
-function isDaeAvailable() {
-  return Boolean(game.modules.get("dae")?.active);
-}
-
-function resolveIntegrationMode() {
-  const configured = getIntegrationModeSetting();
-  if (configured === INTEGRATION_MODES.OFF) return INTEGRATION_MODES.OFF;
-  if (configured === INTEGRATION_MODES.FLAGS) return INTEGRATION_MODES.FLAGS;
-  if (configured === INTEGRATION_MODES.DAE) return isDaeAvailable() ? INTEGRATION_MODES.DAE : INTEGRATION_MODES.FLAGS;
-  return isDaeAvailable() ? INTEGRATION_MODES.DAE : INTEGRATION_MODES.FLAGS;
-}
-
 function isTrackableCharacter(actor) {
   if (!actor) return false;
   return actor.type === "character" || actor.hasPlayerOwner;
@@ -3705,8 +3765,7 @@ function buildIntegrationGlobalContext() {
   const ledger = getOperationsLedger();
   const injuryRecovery = getInjuryRecoveryState();
   const operations = buildOperationsContext();
-  const formation = normalizeMarchingFormation(marchState.formation ?? "default");
-  const doctrineEffects = getDoctrineEffects(formation);
+  const formationSnapshot = getMarchingFormationSnapshot(marchState);
   const rankByActorId = {};
   for (const rank of ["front", "middle", "rear"]) {
     for (const actorId of marchState.ranks?.[rank] ?? []) {
@@ -3738,8 +3797,7 @@ function buildIntegrationGlobalContext() {
     ledger,
     injuryRecovery,
     operations,
-    formation,
-    doctrineEffects,
+    formationSnapshot,
     rankByActorId,
     watchSlotsByActorId,
     rolesByActorId
@@ -3770,6 +3828,9 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       ? (Array.isArray(summaryEffects.worldDaeChanges) ? summaryEffects.worldDaeChanges : [])
       : [])
     : (Array.isArray(summaryEffects.customDaeChanges) ? summaryEffects.customDaeChanges : []);
+  const formationDaeChanges = Array.isArray(globalContext.formationSnapshot?.effectChangesByActorId?.[actorId])
+    ? globalContext.formationSnapshot.effectChangesByActorId[actorId]
+    : [];
 
   return {
     moduleVersion: getCurrentModuleVersion(),
@@ -3791,12 +3852,19 @@ function buildActorIntegrationPayload(actorId, globalContext, options = {}) {
       minorAbilityCheckBonus: Number(globalModifiers.abilityChecks ?? 0),
       minorPerceptionBonus: Number(globalModifiers.perceptionChecks ?? 0),
       minorSavingThrowBonus: Number(globalModifiers.savingThrows ?? 0),
-      customDaeChanges
+      customDaeChanges: [...customDaeChanges, ...formationDaeChanges]
     },
     doctrine: {
-      formation: globalContext.formation,
-      surprise: globalContext.doctrineEffects.surprise,
-      ambush: globalContext.doctrineEffects.ambush
+      formation: globalContext.formationSnapshot?.formation?.id ?? "loose",
+      formationLabel: globalContext.formationSnapshot?.formation?.label ?? "Loose Formation",
+      category: globalContext.formationSnapshot?.formation?.category ?? "loose",
+      valid: Boolean(globalContext.formationSnapshot?.validity?.isValid),
+      doctrineState: globalContext.formationSnapshot?.doctrine?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      formationState: globalContext.formationSnapshot?.formationState?.state ?? MARCH_DOCTRINE_STATES.STABLE,
+      cohesionCheckRequired: Boolean(globalContext.formationSnapshot?.doctrine?.cohesionCheckRequired),
+      effectSummaries: Array.isArray(globalContext.formationSnapshot?.effectSummaries)
+        ? globalContext.formationSnapshot.effectSummaries
+        : []
     },
     assignment: {
       watch: {
@@ -4878,7 +4946,37 @@ function buildIntegrationEffectData(payload, actor = null) {
     {
       key: `flags.${MODULE_ID}.ae.formation`,
       mode,
-      value: String(payload.doctrine.formation ?? "default"),
+      value: String(payload.doctrine.formation ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationCategory`,
+      mode,
+      value: String(payload.doctrine.category ?? "loose"),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.doctrineState`,
+      mode,
+      value: String(payload.doctrine.doctrineState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationState`,
+      mode,
+      value: String(payload.doctrine.formationState ?? MARCH_DOCTRINE_STATES.STABLE),
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.formationValid`,
+      mode,
+      value: payload.doctrine.valid ? "1" : "0",
+      priority
+    },
+    {
+      key: `flags.${MODULE_ID}.ae.cohesionCheckRequired`,
+      mode,
+      value: payload.doctrine.cohesionCheckRequired ? "1" : "0",
       priority
     },
     {
@@ -5606,83 +5704,6 @@ function getSelectedReputationNoteLogId(element, factionIdInput) {
   return selectedFromUi || selectedFromState;
 }
 
-function getGatherHistoryViewStorageKey() {
-  return `po-gather-history-view-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeGatherHistorySort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "newest";
-}
-
-function normalizeGatherHistoryResultFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_RESULT_FILTER_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryResourceFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(GATHER_HISTORY_RESOURCE_FILTER_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryEnvironmentFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === "all") return "all";
-  return GATHER_ENVIRONMENT_KEYS.includes(normalized) ? normalized : "all";
-}
-
-function normalizeGatherHistoryActorFilter(value) {
-  const normalized = String(value ?? "").trim().toLowerCase().slice(0, 120);
-  return normalized || "all";
-}
-
-function normalizeGatherHistorySearch(value) {
-  return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function getGatherHistoryViewState() {
-  const fallback = {
-    search: "",
-    result: "all",
-    resource: "all",
-    environment: "all",
-    actor: "all",
-    sort: "newest"
-  };
-  const raw = sessionStorage.getItem(getGatherHistoryViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      search: normalizeGatherHistorySearch(parsed?.search),
-      result: normalizeGatherHistoryResultFilter(parsed?.result),
-      resource: normalizeGatherHistoryResourceFilter(parsed?.resource),
-      environment: normalizeGatherHistoryEnvironmentFilter(parsed?.environment),
-      actor: normalizeGatherHistoryActorFilter(parsed?.actor),
-      sort: normalizeGatherHistorySort(parsed?.sort)
-    };
-  } catch (_error) {
-    return fallback;
-  }
-}
-
-function setGatherHistoryViewState(patch = {}) {
-  const previous = getGatherHistoryViewState();
-  const next = {
-    search: patch?.search === undefined ? previous.search : normalizeGatherHistorySearch(patch.search),
-    result: patch?.result === undefined ? previous.result : normalizeGatherHistoryResultFilter(patch.result),
-    resource: patch?.resource === undefined ? previous.resource : normalizeGatherHistoryResourceFilter(patch.resource),
-    environment: patch?.environment === undefined ? previous.environment : normalizeGatherHistoryEnvironmentFilter(patch.environment),
-    actor: patch?.actor === undefined ? previous.actor : normalizeGatherHistoryActorFilter(patch.actor),
-    sort: patch?.sort === undefined ? previous.sort : normalizeGatherHistorySort(patch.sort)
-  };
-  sessionStorage.setItem(getGatherHistoryViewStorageKey(), JSON.stringify(next));
-  return next;
-}
-
 function getReputationFilterState() {
   const defaults = { keyword: "", standing: "all" };
   const raw = sessionStorage.getItem(getReputationFilterStorageKey());
@@ -5715,51 +5736,6 @@ function normalizeMerchantSettlementSelection(value) {
 
 function normalizeEnvironmentCheckTrigger(trigger = "move") {
   return String(trigger ?? "").trim().toLowerCase() === "manual" ? "manual" : "move";
-}
-
-function getGmDowntimeViewStorageKey() {
-  return `po-gm-downtime-view-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeDowntimeEntriesSort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "pending";
-}
-
-function normalizeDowntimeLogsSort(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  const allowed = new Set(DOWNTIME_LOG_SORT_OPTIONS.map((entry) => entry.value));
-  return allowed.has(normalized) ? normalized : "resolved-desc";
-}
-
-function getGmDowntimeViewState() {
-  const fallback = { entriesSort: "pending", logsSort: "resolved-desc" };
-  const raw = sessionStorage.getItem(getGmDowntimeViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      entriesSort: normalizeDowntimeEntriesSort(parsed?.entriesSort),
-      logsSort: normalizeDowntimeLogsSort(parsed?.logsSort)
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function setGmDowntimeViewState(patch = {}) {
-  const previous = getGmDowntimeViewState();
-  const next = {
-    entriesSort: patch?.entriesSort === undefined
-      ? previous.entriesSort
-      : normalizeDowntimeEntriesSort(patch.entriesSort),
-    logsSort: patch?.logsSort === undefined
-      ? previous.logsSort
-      : normalizeDowntimeLogsSort(patch.logsSort)
-  };
-  sessionStorage.setItem(getGmDowntimeViewStorageKey(), JSON.stringify(next));
-  return next;
 }
 
 function getNonPartySyncFilterStorageKey() {
@@ -5795,25 +5771,6 @@ function getLootPreviewResultStorageKey() {
   return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
 }
 
-function getOperationsJournalViewStorageKey() {
-  return `po-operations-journal-view-${game.user?.id ?? "anon"}`;
-}
-
-function normalizePlayerHubMode(value, fallback = PLAYER_HUB_MODES.SIMPLE) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === PLAYER_HUB_MODES.ADVANCED) return PLAYER_HUB_MODES.ADVANCED;
-  if (normalized === PLAYER_HUB_MODES.SIMPLE) return PLAYER_HUB_MODES.SIMPLE;
-  return fallback;
-}
-
-function getPlayerHubModeSetting() {
-  try {
-    return normalizePlayerHubMode(game.settings.get(MODULE_ID, SETTINGS.PLAYER_HUB_MODE), PLAYER_HUB_MODES.SIMPLE);
-  } catch {
-    return PLAYER_HUB_MODES.SIMPLE;
-  }
-}
-
 function isMarchingOrderPlayerLocked(user = game.user) {
   if (canAccessAllPlayerOps(user)) return false;
   try {
@@ -5835,29 +5792,6 @@ function getSelectablePlayerActorsForUser(user = game.user) {
   for (const actor of getOwnedPcActors()) addActor(actor);
   for (const actor of game.actors?.contents ?? []) addActor(actor);
   return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
-}
-
-function normalizePlayerHubActionType(value) {
-  const normalized = String(value ?? "").trim();
-  switch (normalized) {
-    case PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH:
-      return PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH;
-    case PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK:
-      return PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK;
-    case PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT:
-      return PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT;
-    case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
-      return PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME;
-    default:
-      return "";
-  }
-}
-
-function normalizePlayerHubClaimVariant(value, fallback = PLAYER_HUB_CLAIM_VARIANTS.ITEM) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.CURRENCY) return PLAYER_HUB_CLAIM_VARIANTS.CURRENCY;
-  if (normalized === PLAYER_HUB_CLAIM_VARIANTS.ITEM) return PLAYER_HUB_CLAIM_VARIANTS.ITEM;
-  return fallback;
 }
 
 async function submitPlayerHubAction(type, payload = {}) {
@@ -5884,114 +5818,6 @@ async function submitPlayerHubAction(type, payload = {}) {
     default:
       return { handled: false, rerender: false };
   }
-}
-
-function getPlayerHubActionRequestFromUiAction(action) {
-  const normalized = String(action ?? "").trim().toLowerCase();
-  switch (normalized) {
-    case "assign-me":
-      return { type: PLAYER_HUB_ACTION_TYPES.ASSIGN_WATCH };
-    case "set-player-rank":
-      return { type: PLAYER_HUB_ACTION_TYPES.SET_MARCH_RANK };
-    case "submit-downtime-action":
-      return { type: PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME };
-    case "claim-loot-item":
-      return {
-        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
-        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.ITEM
-      };
-    case "claim-loot-currency":
-      return {
-        type: PLAYER_HUB_ACTION_TYPES.CLAIM_LOOT,
-        claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
-      };
-    default:
-      return null;
-  }
-}
-
-function getOperationsJournalViewState() {
-  const fallback = { filter: "", sort: "newest", category: "all" };
-  const raw = sessionStorage.getItem(getOperationsJournalViewStorageKey());
-  if (!raw) return fallback;
-  try {
-    const parsed = JSON.parse(raw);
-    const filter = String(parsed?.filter ?? "").trim();
-    const sortRaw = String(parsed?.sort ?? "newest").trim().toLowerCase();
-    const categoryRaw = String(parsed?.category ?? "all").trim().toLowerCase();
-    const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
-    const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
-    return {
-      filter,
-      sort: sortAllowed.has(sortRaw) ? sortRaw : "newest",
-      category: categoryAllowed.has(categoryRaw) ? categoryRaw : "all"
-    };
-  } catch {
-    return fallback;
-  }
-}
-
-function setOperationsJournalViewState(patch = {}) {
-  const prev = getOperationsJournalViewState();
-  const next = {
-    ...prev,
-    ...patch
-  };
-  const sortAllowed = new Set(["newest", "oldest", "title", "folder"]);
-  const categoryAllowed = new Set(["all", ...Object.keys(OPERATIONS_JOURNAL_CATEGORIES)]);
-  next.filter = String(next.filter ?? "").trim();
-  next.sort = sortAllowed.has(String(next.sort ?? "").trim().toLowerCase()) ? String(next.sort).trim().toLowerCase() : "newest";
-  next.category = categoryAllowed.has(String(next.category ?? "").trim().toLowerCase()) ? String(next.category).trim().toLowerCase() : "all";
-  sessionStorage.setItem(getOperationsJournalViewStorageKey(), JSON.stringify(next));
-}
-
-function getJournalVisibilityMode() {
-  const raw = String(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_ENTRY_VISIBILITY) ?? JOURNAL_VISIBILITY_MODES.PUBLIC)
-    .trim()
-    .toLowerCase();
-  if (raw === JOURNAL_VISIBILITY_MODES.GM_PRIVATE) return JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
-  if (raw === JOURNAL_VISIBILITY_MODES.REDACTED) return JOURNAL_VISIBILITY_MODES.REDACTED;
-  return JOURNAL_VISIBILITY_MODES.PUBLIC;
-}
-
-function getJournalFilterDebounceMs() {
-  const raw = Number(game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FILTER_DEBOUNCE_MS) ?? 180);
-  if (!Number.isFinite(raw)) return 180;
-  return Math.max(0, Math.min(1000, Math.floor(raw)));
-}
-
-function getSessionSummaryRangeSetting() {
-  const raw = String(game.settings.get(MODULE_ID, SETTINGS.SESSION_SUMMARY_RANGE) ?? "last-24h").trim().toLowerCase();
-  return Object.prototype.hasOwnProperty.call(SESSION_SUMMARY_RANGE_OPTIONS, raw) ? raw : "last-24h";
-}
-
-function getSessionSummaryWindowBounds() {
-  const mode = getSessionSummaryRangeSetting();
-  const now = Date.now();
-  if (mode === "last-7d") {
-    return { mode, start: now - (7 * 86400000), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
-  }
-  if (mode === "today") {
-    const startDate = new Date();
-    startDate.setHours(0, 0, 0, 0);
-    return { mode, start: Number(startDate.getTime()), end: now, label: SESSION_SUMMARY_RANGE_OPTIONS[mode] };
-  }
-  return { mode: "last-24h", start: now - 86400000, end: now, label: SESSION_SUMMARY_RANGE_OPTIONS["last-24h"] };
-}
-
-function scheduleOperationsJournalFilterUpdate(app, value, rerender) {
-  const existing = journalFilterDebounceTimers.get(app);
-  if (existing) window.clearTimeout(existing);
-  const delay = getJournalFilterDebounceMs();
-  const timer = window.setTimeout(() => {
-    setOperationsJournalViewState({ filter: String(value ?? "") });
-    try {
-      rerender?.();
-    } finally {
-      journalFilterDebounceTimers.delete(app);
-    }
-  }, delay);
-  journalFilterDebounceTimers.set(app, timer);
 }
 
 function clearScheduledSopNoteSave(app, sopKey) {
@@ -6356,14 +6182,30 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
   const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   setNoteDraftCacheValue(cacheKey, text);
 
-  if (!canAccessAllPlayerOps()) {
-    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
-    if (options?.notify) ui.notifications?.info("Note saved.");
-    return true;
+  if (!game.user?.isGM) {
+    if (!hasActiveGmClient()) {
+      const published = await publishRestWatchNoteForActor(actorId, slotId, text, {
+        source,
+        user: game.user
+      });
+      if (published) {
+        refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+        if (options?.notify) ui.notifications?.info("Note saved.");
+        return true;
+      }
+      logPlayerPermissionDebug("rest-note-local-fallback", "Rest watch note could not be published to the actor document; falling back to player-local state.", {
+        actorId,
+        slotId
+      });
+    }
+    const saved = await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text, source });
+    if (options?.notify && saved) ui.notifications?.info("Note saved.");
+    return Boolean(saved);
   }
 
   let changed = false;
-  await updateRestWatchState((state) => {
+  const saved = await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
     if (!slot.entries && slot.actorId) {
@@ -6387,10 +6229,10 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
     changed = true;
   });
 
-  if (options?.notify) {
+  if (options?.notify && saved) {
     ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
   }
-  return changed;
+  return saved ? changed : false;
 }
 
 async function saveRestWatchEntryNoteFromElement(element, options = {}) {
@@ -6450,24 +6292,38 @@ async function saveMarchingNoteByContext(context = {}, options = {}) {
   const cacheKey = getMarchingNoteCacheKey(actorId);
   setNoteDraftCacheValue(cacheKey, text);
 
-  if (!canAccessAllPlayerOps()) {
-    await updateMarchingOrderState({ op: "setNote", actorId, text });
-    if (options?.notify) ui.notifications?.info("Note saved.");
-    return true;
+  if (!game.user?.isGM) {
+    if (!hasActiveGmClient()) {
+      const published = await publishMarchingNoteForActor(actorId, text, {
+        user: game.user
+      });
+      if (published) {
+        refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+        if (options?.notify) ui.notifications?.info("Note saved.");
+        return true;
+      }
+      logPlayerPermissionDebug("march-note-local-fallback", "Marching note could not be published to the actor document; falling back to player-local state.", {
+        actorId
+      });
+    }
+    const saved = await updateMarchingOrderState({ op: "setNote", actorId, text });
+    if (options?.notify && saved) ui.notifications?.info("Note saved.");
+    return Boolean(saved);
   }
 
   let changed = false;
-  await updateMarchingOrderState((state) => {
+  const saved = await updateMarchingOrderState((state) => {
     if (!state.notes) state.notes = {};
     const previous = String(state.notes[actorId] ?? "");
     if (previous === text) return;
     state.notes[actorId] = text;
     changed = true;
   });
-  if (options?.notify) {
+  if (options?.notify && saved) {
     ui.notifications?.info(changed ? "Note saved." : "No note changes to save.");
   }
-  return changed;
+  return saved ? changed : false;
 }
 
 async function saveMarchingNoteFromElement(element, options = {}) {
@@ -6657,147 +6513,6 @@ function hydrateCachedNoteDraftInputs(root) {
   });
 
   syncOperationalSopNoteViews(root);
-}
-
-function buildJournalSortOptions(selectedSort = "newest") {
-  const selected = String(selectedSort ?? "newest").trim().toLowerCase();
-  return JOURNAL_SORT_OPTIONS.map((entry) => ({
-    value: entry.value,
-    label: entry.label,
-    selected: entry.value === selected
-  }));
-}
-
-function buildJournalCategoryOptions(selectedCategory = "all") {
-  const selected = String(selectedCategory ?? "all").trim().toLowerCase();
-  return [
-    { value: "all", label: "All Categories", selected: selected === "all" },
-    ...Object.entries(OPERATIONS_JOURNAL_CATEGORIES).map(([value, label]) => ({
-      value,
-      label,
-      selected: selected === value
-    }))
-  ];
-}
-
-async function handleOperationsJournalAction(action, element, rerender) {
-  const actionKey = String(action ?? "").trim();
-  if (!actionKey) return false;
-  if (actionKey === "set-journal-filter") {
-    setOperationsJournalViewState({ filter: String(element?.value ?? "") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "set-journal-sort") {
-    setOperationsJournalViewState({ sort: String(element?.value ?? "newest") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "set-journal-category") {
-    setOperationsJournalViewState({ category: String(element?.value ?? "all") });
-    rerender?.();
-    return true;
-  }
-  if (actionKey === "open-journal-entry") {
-    await openJournalEntryFromElement(element);
-    return true;
-  }
-  return false;
-}
-
-function buildOperationsJournalContext() {
-  const view = getOperationsJournalViewState();
-  const root = findOperationsJournalRootFolder();
-  const rootFolderId = String(root?.id ?? "").trim();
-  const rootFolderName = String(root?.name ?? OPERATIONS_JOURNAL_ROOT_NAME).trim() || OPERATIONS_JOURNAL_ROOT_NAME;
-  const selectedCategory = String(view?.category ?? "all").trim().toLowerCase() || "all";
-  const filterNeedle = String(view?.filter ?? "").trim().toLowerCase();
-  const selectedSort = String(view?.sort ?? "newest").trim().toLowerCase() || "newest";
-
-  const resolveEntryFolder = (entry) => {
-    const folderId = String(entry?.folder?.id ?? entry?.folder ?? "").trim();
-    return folderId ? game.folders?.get(folderId) ?? null : null;
-  };
-
-  const resolveCategoryForEntry = (entryFolder) => {
-    const folder = entryFolder;
-    if (!folder) return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
-
-    let current = folder;
-    let guard = 0;
-    while (current && guard < 40) {
-      const parentId = getJournalFolderParentId(current);
-      if (parentId === rootFolderId) {
-        const label = String(current.name ?? "").trim();
-        const key = Object.entries(OPERATIONS_JOURNAL_CATEGORIES).find(([, value]) => String(value ?? "").trim().toLowerCase() === label.toLowerCase())?.[0] ?? "session";
-        return { key, label: label || OPERATIONS_JOURNAL_CATEGORIES[key] || OPERATIONS_JOURNAL_CATEGORIES.session };
-      }
-      current = parentId ? game.folders?.get(parentId) ?? null : null;
-      guard += 1;
-    }
-
-    return { key: "session", label: OPERATIONS_JOURNAL_CATEGORIES.session };
-  };
-
-  const rows = (game.journal?.contents ?? [])
-    .filter((entry) => {
-      if (!entry) return false;
-      if (!rootFolderId) return false;
-      const entryFolder = resolveEntryFolder(entry);
-      const entryFolderId = String(entryFolder?.id ?? "").trim();
-      return journalFolderIsUnderRoot(entryFolderId, rootFolderId);
-    })
-    .map((entry) => {
-      const name = String(entry?.name ?? "Untitled").trim() || "Untitled";
-      const entryFolder = resolveEntryFolder(entry);
-      const folderLabel = String(entryFolder?.name ?? "Unfiled").trim() || "Unfiled";
-      const category = resolveCategoryForEntry(entryFolder);
-      const updatedAtRaw = Number(entry?._stats?.modifiedTime ?? entry?._stats?.createdTime ?? Date.now());
-      const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : Date.now();
-      const updatedAtDate = new Date(updatedAt);
-      const searchBlob = [name, folderLabel, category.label, category.key].join(" ").toLowerCase();
-      return {
-        id: String(entry?.id ?? "").trim(),
-        name,
-        folderLabel,
-        categoryKey: category.key,
-        categoryLabel: category.label,
-        updatedAt,
-        updatedAtLabel: Number.isFinite(updatedAtDate.getTime()) ? updatedAtDate.toLocaleString() : "Unknown",
-        searchBlob
-      };
-    })
-    .filter((row) => {
-      if (selectedCategory !== "all" && row.categoryKey !== selectedCategory) return false;
-      if (filterNeedle && !row.searchBlob.includes(filterNeedle)) return false;
-      return true;
-    });
-
-  const sortedRows = [...rows].sort((a, b) => {
-    if (selectedSort === "oldest") return Number(a.updatedAt) - Number(b.updatedAt);
-    if (selectedSort === "title") return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    if (selectedSort === "folder") {
-      const folderCompare = String(a.folderLabel ?? "").localeCompare(String(b.folderLabel ?? ""));
-      if (folderCompare !== 0) return folderCompare;
-      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    }
-    return Number(b.updatedAt) - Number(a.updatedAt);
-  });
-
-  return {
-    rootFolderName,
-    hasRootFolder: Boolean(rootFolderId),
-    selectedFilter: String(view?.filter ?? ""),
-    selectedSort,
-    selectedCategory,
-    sortOptions: buildJournalSortOptions(selectedSort),
-    categoryOptions: buildJournalCategoryOptions(selectedCategory),
-    rows: sortedRows,
-    visibleCount: sortedRows.length,
-    totalCount: rows.length,
-    hasRows: sortedRows.length > 0,
-    hasFilter: Boolean(filterNeedle)
-  };
 }
 
 function parseLootPreviewNumericInput(value, fallback = 0) {
@@ -8624,7 +8339,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
 
     // Setup drag-and-drop for rest watch entries
-    setupRestWatchDragAndDrop(this.element);
+    setupRestWatchDragAndDropFeature(this.element, {
+      getRestWatchState,
+      canAccessAllPlayerOps,
+      isLockedForUser,
+      updateRestWatchState,
+      ensureRestSlotEntriesList,
+      addActorToRestSlot,
+      refreshRestWatchAppsImmediately
+    });
     
     if (game.user?.isGM && canAccessAllPlayerOps() && shouldAutoOpenRestForPlayers() && !this._openedPlayers) {
       emitOpenRestPlayers();
@@ -8790,6 +8513,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           this.render({ force: true, popOut: true });
         },
         "open-settings-hub": async () => {
+          if (!canAccessGmPage()) {
+            ui.notifications?.warn("GM permissions are required to open Party Operations settings.");
+            return;
+          }
           openPartyOperationsSettingsHub({ force: true });
         },
         "assign": async () => {
@@ -9633,17 +9360,20 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
     if (!slotId) return;
     const text = event.target.value ?? "";
+    const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
+    if (!actorId) return;
 
-    if (!canAccessAllPlayerOps()) {
-      const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
-      if (!actorId) return;
-      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
+    if (!game.user?.isGM) {
+      await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+        notify: false,
+        source: "manual"
+      });
       return;
     }
 
-    await updateRestWatchState((state) => {
-      const slot = state.slots.find((entry) => entry.id === slotId);
-      if (slot) slot.notes = text;
+    await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+      notify: false,
+      source: "manual"
     });
   }
 
@@ -9856,7 +9586,7 @@ async function setGlobalModifierExcluded(modifierId, excluded, options = {}) {
 
 function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view global modifiers.");
     return null;
   }
@@ -10274,7 +10004,7 @@ function buildGmLootClaimsBoardContext() {
 
 function openGmFactionsPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view faction controls.");
     return null;
   }
@@ -10289,7 +10019,7 @@ function openGmFactionsPage(renderOptions = { force: true }) {
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view environment controls.");
     return null;
   }
@@ -10304,7 +10034,7 @@ function openGmEnvironmentPage(renderOptions = { force: true }) {
 
 function openGmDowntimePage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view downtime controls.");
     return null;
   }
@@ -10319,7 +10049,7 @@ function openGmDowntimePage(renderOptions = { force: true }) {
 
 function openGmMerchantsPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view merchant controls.");
     return null;
   }
@@ -10334,7 +10064,7 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
 
 function openGmAudioPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view audio controls.");
     return null;
   }
@@ -10349,7 +10079,7 @@ function openGmAudioPage(renderOptions = { force: true }) {
 
 function openGmLootPage(renderOptions = { force: true }) {
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
@@ -10365,7 +10095,7 @@ function openGmLootPage(renderOptions = { force: true }) {
 function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   const key = String(panelKey ?? "").trim().toLowerCase();
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessAllPlayerOps()) {
+  if (!canAccessGmPage()) {
     ui.notifications?.warn("GM permissions are required to view GM panels.");
     return null;
   }
@@ -11397,7 +11127,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     const text = event.target.value ?? "";
     const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
     if (!actorId) return;
-    await updateRestWatchState({ op: "setEntryNotes", slotId, actorId, text });
+    await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
+      notify: false,
+      source: "manual"
+    });
   }
 
   async close(options = {}) {
@@ -11426,17 +11159,10 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
   async _prepareContext() {
     const isGM = canAccessAllPlayerOps();
     const state = getMarchingOrderState();
+    const formationSnapshot = getMarchingFormationSnapshot(state);
     const ranks = buildRanksView(state, isGM);
     const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
     const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
-    const formation = normalizeMarchingFormation(state.formation ?? "default");
-    const formationLabels = {
-      default: "Default Formation (2 front, 3 middle)",
-      "combat-ready": "Combat-Ready Formation (2 front, 2 middle)",
-      "tight-corridor": "Tight Corridor Formation (2 front, 2 middle)",
-      "low-visibility": "Low-Visibility Formation (1 front, 1 middle)"
-    };
-    const doctrineEffects = getDoctrineEffects(formation);
     const tracker = ensureDoctrineTracker(state);
     const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
     const miniVizUi = buildMiniVizUiContext();
@@ -11449,6 +11175,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
     return {
       isGM,
+      showGmPageTab: canAccessGmPage(),
       locked: state.locked,
       lockBannerText,
       lockBannerTooltip,
@@ -11462,6 +11189,28 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       usageToggleLabel: "Collapse",
       usageToggleIcon: "fa-chevron-up",
       ranks,
+      formationChoices: buildMarchFormationChoices(formationSnapshot.formation.id),
+      formationSummary: {
+        label: formationSnapshot.formation.label,
+        category: formationSnapshot.formation.category,
+        categoryLabel: formationSnapshot.formation.categoryLabel,
+        summary: formationSnapshot.formation.summary,
+        validityLabel: formationSnapshot.validity.stateLabel,
+        valid: formationSnapshot.validity.isValid,
+        doctrineStateLabel: formationSnapshot.doctrine.stateLabel,
+        doctrineChecksActive: formationSnapshot.doctrine.checksActive,
+        cohesionChecksActive: formationSnapshot.doctrine.cohesionChecksActive,
+        cohesionCheckRequired: formationSnapshot.doctrine.cohesionCheckRequired,
+        formationStateLabel: formationSnapshot.formationState.stateLabel,
+        lastCheckAt: tracker.lastCheckAt ?? "-",
+        lastCheckTriggerLabel: formationSnapshot.doctrine.lastCheckTriggerLabel ?? "-",
+        lastCheckSummary: tracker.lastCheckSummary ?? "-",
+        pendingTriggerLabel: formationSnapshot.doctrine.pendingTriggerLabel ?? "",
+        effectEntries: formationSnapshot.effectEntries,
+        effectSummaries: formationSnapshot.effectSummaries,
+        invalidReasons: formationSnapshot.validity.reasons,
+        bandTargets: formationSnapshot.bandTargets
+      },
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
@@ -11484,27 +11233,20 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         gmNotesToggleLabel: "Collapse",
         gmNotesToggleIcon: "fa-chevron-up"
       },
-      formation,
-      formationLabel: formationLabels[formation] ?? formationLabels.default,
-      doctrineEffects,
       doctrineTracker: {
         lastCheckAt: tracker.lastCheckAt ?? "-",
-        lastCheckNote: tracker.lastCheckNote ?? "-"
+        lastCheckTrigger: tracker.lastCheckTrigger ?? "-",
+        lastCheckSummary: tracker.lastCheckSummary ?? "-"
       },
       miniViz,
       ...miniVizUi,
-      activateFormation: {
-        default: formation === "default",
-        combatReady: formation === "combat-ready",
-        tightCorridor: formation === "tight-corridor",
-        lowVisibility: formation === "low-visibility"
-      },
       overview: {
         totalAssigned,
         frontCount,
         middleCount,
         rearCount,
-        formationLabel: formationLabels[formation] ?? formationLabels.default,
+        formationLabel: formationSnapshot.formation.label,
+        formationStateLabel: formationSnapshot.formationState.stateLabel,
         lightSources,
         lockState
       }
@@ -11583,7 +11325,20 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
     }
     
-    setupMarchingDragAndDrop(this.element);
+    setupMarchingDragAndDropFeature(this.element, {
+      getMarchingOrderState,
+      canAccessAllPlayerOps,
+      canDragEntry,
+      isLockedForUser,
+      notifyUiWarnThrottled,
+      updateMarchingOrderState,
+      refreshSingleAppPreservingView,
+      getAppInstance,
+      markDoctrineTriggerPending,
+      doctrineTriggers: MARCH_DOCTRINE_TRIGGERS,
+      normalizeMarchingFormation,
+      appInstanceKeys: APP_INSTANCE_KEYS
+    });
     refreshTabAccessibility(this.element);
     diagnoseRenderedMainTabs(this.element, "marching-order");
     if (isModuleDebugEnabled()) {
@@ -11711,17 +11466,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "ping":
           await pingActorFromElement(element);
           break;
-        case "formation-standard":
-          await applyMarchingFormation({ front: 2, middle: 3, type: "default" });
-          break;
-        case "formation-combat-ready":
-          await applyMarchingFormation({ front: 2, middle: 2, type: "combat-ready" });
-          break;
-        case "formation-tight-corridor":
-          await applyMarchingFormation({ front: 2, middle: 2, type: "tight-corridor" });
-          break;
-        case "formation-low-visibility":
-          await applyMarchingFormation({ front: 1, middle: 1, type: "low-visibility" });
+        case "formation-set":
+          await applyMarchingFormation({ type: element?.dataset?.formationId });
           break;
         case "doctrine-check":
           await runDoctrineCheckPrompt();
@@ -11754,20 +11500,17 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     const text = event.target.value ?? "";
 
-    if (!canAccessAllPlayerOps()) {
+    if (!game.user?.isGM) {
       const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId || getActiveActorForUser()?.id;
       if (!actorId) return;
-      await updateMarchingOrderState({ op: "setNote", actorId, text });
+      await saveMarchingNoteByContext({ actorId, text }, { notify: false });
       return;
     }
 
     // GM: apply per-actor notes directly
     const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId;
     if (!actorId) return;
-    await updateMarchingOrderState((state) => {
-      if (!state.notes) state.notes = {};
-      state.notes[actorId] = text;
-    });
+    await saveMarchingNoteByContext({ actorId, text }, { notify: false });
   }
 
   async #onGMNotesChange(event) {
@@ -11780,7 +11523,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       });
       return;
     }
-    if (!canAccessAllPlayerOps()) return; // GM notes are GM-only
+    if (!canAccessGmPage()) return; // GM notes are GM-only
     const text = event.target.value ?? "";
     await updateMarchingOrderState((state) => {
       state.gmNotes = text;
@@ -21284,7 +21027,7 @@ function getUpkeepDaysFromCalendar(lastAppliedTimestamp, currentTimestamp = getC
 }
 
 function getOperationsLedger() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.OPS_LEDGER);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.OPS_LEDGER);
   const defaults = buildDefaultOperationsLedger();
   const merged = foundry.utils.mergeObject(defaults, stored ?? {}, {
     inplace: false,
@@ -21362,18 +21105,26 @@ async function updateOperationsLedger(mutator, options = {}) {
     mutator(ledger);
 
     if (!game.user?.isGM) {
+      if (!hasActiveGmClient()) {
+        const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+        if (!saved) return false;
+        if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+        return true;
+      }
       game.socket.emit(SOCKET_CHANNEL, {
         type: "ops:ledger-write",
         userId: game.user.id,
         ledger
       });
-      return;
+      return true;
     }
 
-    await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.OPS_LEDGER, ledger);
+    if (!saved) return false;
     scheduleIntegrationSync("operations-ledger");
     if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
     if (!options.skipSocketRefresh) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.OPERATIONS });
+    return true;
   } catch (error) {
     logUiFailure("operations-ledger", "update failed", error, {
       skipLocalRefresh: Boolean(options?.skipLocalRefresh),
@@ -29250,7 +29001,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const defaultActorId = selectableActors.some((actor) => String(actor.id) === activeActorId)
     ? activeActorId
     : String(selectableActors[0]?.id ?? "");
-  const canChooseActor = isGMUser;
+  const canChooseActor = canAccessAllPlayerOps(user);
   const actorOptions = canChooseActor
     ? [
       { id: "", name: "Select actor", selected: !defaultActorId },
@@ -30671,9 +30422,7 @@ function readDowntimeSubmissionFromUi(element) {
   const root = element?.closest(".po-downtime-panel");
   if (!root) return null;
   const selectedActorId = String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim();
-  const actorId = canAccessAllPlayerOps()
-    ? selectedActorId
-    : String(getActiveActorForUser(game.user)?.id ?? selectedActorId).trim();
+  const actorId = selectedActorId || String(getActiveActorForUser(game.user)?.id ?? "").trim();
   return {
     actorId,
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
@@ -37730,228 +37479,6 @@ async function runLootItemRollOff(itemIdInput, runIdInput = "") {
   };
 }
 
-function getJournalFolderParentId(folder) {
-  return String(folder?.folder?.id ?? folder?.folder ?? folder?.parent?.id ?? "").trim();
-}
-
-function findJournalFolderByName(name, parentId = "") {
-  const targetName = String(name ?? "").trim().toLowerCase();
-  const targetParentId = String(parentId ?? "").trim();
-  return (game.folders?.contents ?? []).find((folder) => {
-    if (!folder || String(folder.type ?? "") !== "JournalEntry") return false;
-    if (String(folder.name ?? "").trim().toLowerCase() !== targetName) return false;
-    return getJournalFolderParentId(folder) === targetParentId;
-  }) ?? null;
-}
-
-function findOperationsJournalRootFolder() {
-  const preferred = findJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
-  if (preferred) return preferred;
-  for (const legacyName of OPERATIONS_JOURNAL_ROOT_NAME_LEGACY) {
-    const legacy = findJournalFolderByName(legacyName, "");
-    if (legacy) return legacy;
-  }
-  return null;
-}
-
-async function ensureOperationsJournalRootFolder() {
-  const existing = findOperationsJournalRootFolder();
-  if (existing) {
-    const existingName = String(existing.name ?? "").trim();
-    if (existingName !== OPERATIONS_JOURNAL_ROOT_NAME && canAccessAllPlayerOps()) {
-      try {
-        await existing.update({ name: OPERATIONS_JOURNAL_ROOT_NAME });
-      } catch {
-        // Non-fatal; continue using existing folder.
-      }
-    }
-    return existing;
-  }
-  return ensureJournalFolderByName(OPERATIONS_JOURNAL_ROOT_NAME, "");
-}
-
-function getJournalFolderCacheState() {
-  const raw = game.settings.get(MODULE_ID, SETTINGS.JOURNAL_FOLDER_CACHE);
-  if (!raw || typeof raw !== "object") return {};
-  return raw;
-}
-
-async function setJournalFolderCacheState(patch = {}) {
-  const current = getJournalFolderCacheState();
-  const next = foundry.utils.mergeObject(current, patch, {
-    inplace: false,
-    insertKeys: true,
-    insertValues: true
-  });
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.JOURNAL_FOLDER_CACHE, next);
-}
-
-async function ensureJournalFolderByName(name, parentId = "") {
-  const normalizedName = String(name ?? "").trim();
-  const normalizedParentId = String(parentId ?? "").trim();
-  const key = `${normalizedParentId}::${normalizedName.toLowerCase()}`;
-
-  const cache = getJournalFolderCacheState();
-  const cachedId = String(cache?.folders?.[key] ?? "").trim();
-  if (cachedId) {
-    const cachedFolder = game.folders?.get(cachedId) ?? null;
-    if (cachedFolder && String(cachedFolder.type ?? "") === "JournalEntry") {
-      const cachedName = String(cachedFolder.name ?? "").trim().toLowerCase();
-      const cachedParentId = getJournalFolderParentId(cachedFolder);
-      if (cachedName === normalizedName.toLowerCase() && cachedParentId === normalizedParentId) return cachedFolder;
-    }
-    if (canAccessAllPlayerOps()) {
-      await setJournalFolderCacheState({ folders: { [key]: "" } });
-    }
-  }
-
-  const existing = findJournalFolderByName(normalizedName, normalizedParentId);
-  if (existing) {
-    if (canAccessAllPlayerOps()) {
-      await setJournalFolderCacheState({ folders: { [key]: String(existing.id ?? "") } });
-    }
-    return existing;
-  }
-
-  const activePromise = journalFolderEnsurePromises.get(key);
-  if (activePromise) return activePromise;
-
-  const createPromise = (async () => {
-    const created = await Folder.create({
-      name: normalizedName || "Folder",
-      type: "JournalEntry",
-      folder: normalizedParentId || null
-    });
-    if (canAccessAllPlayerOps() && created?.id) {
-      await setJournalFolderCacheState({ folders: { [key]: String(created.id) } });
-    }
-    return created;
-  })();
-
-  journalFolderEnsurePromises.set(key, createPromise);
-  try {
-    return await createPromise;
-  } finally {
-    journalFolderEnsurePromises.delete(key);
-  }
-}
-
-async function ensureOperationsJournalFolder(categoryKey = "session") {
-  const normalized = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryKey)
-    ? categoryKey
-    : "session";
-  const root = await ensureOperationsJournalRootFolder();
-  const categoryLabel = OPERATIONS_JOURNAL_CATEGORIES[normalized];
-  const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
-  return { root, categoryFolder, categoryKey: normalized, categoryLabel };
-}
-
-async function ensureOperationsJournalFolderTree() {
-  if (!canAccessAllPlayerOps()) return null;
-  const root = await ensureOperationsJournalRootFolder();
-  const categories = [];
-  for (const [categoryKey, categoryLabel] of Object.entries(OPERATIONS_JOURNAL_CATEGORIES)) {
-    const categoryFolder = await ensureJournalFolderByName(categoryLabel, root?.id ?? "");
-    categories.push({ categoryKey, categoryLabel, categoryFolder });
-  }
-  return { root, categories };
-}
-
-function journalFolderIsUnderRoot(folderId, rootId) {
-  const start = String(folderId ?? "").trim();
-  const root = String(rootId ?? "").trim();
-  if (!start || !root) return false;
-  let currentId = start;
-  let guard = 0;
-  while (currentId && guard < 40) {
-    if (currentId === root) return true;
-    const folder = game.folders?.get(currentId);
-    currentId = getJournalFolderParentId(folder);
-    guard += 1;
-  }
-  return false;
-}
-
-async function createOperationsJournalEntry(options = {}) {
-  if (!canAccessAllPlayerOps()) return null;
-
-  const categoryRaw = String(options?.category ?? options?.categoryKey ?? "session").trim().toLowerCase();
-  const categoryKey = Object.prototype.hasOwnProperty.call(OPERATIONS_JOURNAL_CATEGORIES, categoryRaw)
-    ? categoryRaw
-    : "session";
-  const title = String(options?.title ?? "Operations Log").trim() || "Operations Log";
-  const summary = String(options?.summary ?? "").trim();
-  const redactedSummary = String(options?.redactedSummary ?? "").trim();
-  const body = String(options?.body ?? "").trim() || "<p>No details provided.</p>";
-  const redactedBody = String(options?.redactedBody ?? "").trim();
-  const sensitivity = String(options?.sensitivity ?? "public").trim().toLowerCase();
-
-  const visibility = getJournalVisibilityMode();
-  let effectiveSummary = summary;
-  let effectiveBody = body;
-
-  if (sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.REDACTED) {
-    effectiveSummary = redactedSummary || summary;
-    effectiveBody = redactedBody || body;
-  }
-
-  const gmOnly = sensitivity === "gm" && visibility === JOURNAL_VISIBILITY_MODES.GM_PRIVATE;
-  const ownership = gmOnly
-    ? (() => {
-      const next = { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.NONE };
-      for (const user of game.users?.contents ?? []) {
-        if (!user) continue;
-        if (user.isGM) next[String(user.id)] = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
-      }
-      return next;
-    })()
-    : { default: CONST.DOCUMENT_OWNERSHIP_LEVELS.OBSERVER };
-
-  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-  const stamp = new Date().toLocaleString();
-  const safeStamp = escape(stamp);
-  const safeEffectiveSummary = escape(effectiveSummary);
-  const finalBody = `
-    <p><em>${safeStamp}</em></p>
-    ${safeEffectiveSummary ? `<p>${safeEffectiveSummary}</p>` : ""}
-    ${effectiveBody}
-  `;
-
-  try {
-    const { categoryFolder } = await ensureOperationsJournalFolder(categoryKey);
-    const htmlFormat = Number(CONST?.JOURNAL_ENTRY_PAGE_FORMATS?.HTML ?? 1);
-    const entry = await JournalEntry.create({
-      name: `${title} - ${stamp}`,
-      folder: categoryFolder?.id ?? null,
-      ownership,
-      pages: [{
-        name: "Log",
-        type: "text",
-        text: {
-          format: htmlFormat,
-          content: finalBody
-        }
-      }]
-    });
-    return entry ?? null;
-  } catch (error) {
-    console.warn(`${MODULE_ID}: failed creating operations journal entry`, error);
-    ui.notifications?.warn(`Party Operations journal write failed: ${title}`);
-    return null;
-  }
-}
-
-async function openJournalEntryFromElement(element) {
-  const entryId = String(element?.dataset?.journalId ?? "").trim();
-  if (!entryId) return;
-  const entry = game.journal?.get(entryId);
-  if (!entry) {
-    ui.notifications?.warn("Journal entry not found.");
-    return;
-  }
-  entry.sheet?.render(true);
-}
-
 async function buildLootClaimItemDocumentData(itemEntry = {}) {
   const uuid = String(itemEntry?.uuid ?? "").trim();
   let data = null;
@@ -40114,7 +39641,7 @@ function buildDefaultInjuryRecoveryState() {
 }
 
 function getInjuryRecoveryState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.INJURY_RECOVERY);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.INJURY_RECOVERY);
   return foundry.utils.mergeObject(buildDefaultInjuryRecoveryState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -40125,16 +39652,19 @@ function getInjuryRecoveryState() {
 async function updateInjuryRecoveryState(mutator) {
   if (typeof mutator !== "function") return;
   if (!canAccessAllPlayerOps()) {
+    logPlayerPermissionDebug("injury-gm-only", "Injury Recovery update blocked because the user lacks shared Party Operations permissions.", {});
     ui.notifications?.warn("Only the GM can update injury recovery.");
     return;
   }
   const state = getInjuryRecoveryState();
   mutator(state);
 
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.INJURY_RECOVERY, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("injury-recovery");
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.INJURY });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.INJURY });
+  return true;
 }
 
 function buildInjuryActorOptions(selectedActorId = "") {
@@ -41080,7 +40610,7 @@ async function showRecoveryBrief() {
 }
 
 function getRestActivities() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.REST_ACTIVITIES);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_ACTIVITIES);
   return foundry.utils.mergeObject(buildDefaultActivityState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -41148,7 +40678,7 @@ function buildDefaultMarchingOrderState() {
     lockedBy: "",
     lastUpdatedAt: "-",
     lastUpdatedBy: "-",
-    formation: "default",
+    formation: "loose",
     ranks: {
       front: [],
       middle: [],
@@ -41158,10 +40688,7 @@ function buildDefaultMarchingOrderState() {
     gmNotes: "",
     light: {},
     lightRanges: {},
-    doctrineTracker: {
-      lastCheckAt: "-",
-      lastCheckNote: "-"
-    }
+    doctrineTracker: buildDefaultMarchDoctrineTracker()
   };
 }
 
@@ -41182,74 +40709,65 @@ function getMarchLightRange(state, actorId) {
 }
 
 function ensureDoctrineTracker(state) {
-  if (!state.doctrineTracker || typeof state.doctrineTracker !== "object") {
-    state.doctrineTracker = {
-      lastCheckAt: "-",
-      lastCheckNote: "-"
-    };
-  }
-  if (typeof state.doctrineTracker.lastCheckAt !== "string") {
-    state.doctrineTracker.lastCheckAt = "-";
-  }
-  if (typeof state.doctrineTracker.lastCheckNote !== "string") {
-    state.doctrineTracker.lastCheckNote = "-";
-  }
-  return state.doctrineTracker;
+  return ensureMarchDoctrineTracker(state);
 }
 
 function normalizeMarchingFormation(type) {
-  const value = type ?? "default";
-  const map = {
-    standard: "default",
-    "two-wide": "tight-corridor",
-    "single-file": "low-visibility",
-    wedge: "combat-ready",
-    default: "default",
-    "combat-ready": "combat-ready",
-    "tight-corridor": "tight-corridor",
-    "low-visibility": "low-visibility"
-  };
-  return map[value] ?? "default";
+  return normalizeMarchingFormationId(type);
 }
 
-function getDoctrineEffects(formation) {
-  const normalized = normalizeMarchingFormation(formation);
-  switch (normalized) {
-    case "combat-ready":
-      return {
-        surprise: "Improved first-contact readiness",
-        ambush: "Reduced frontal ambush vulnerability"
-      };
-    case "tight-corridor":
-      return {
-        surprise: "Neutral surprise posture",
-        ambush: "Reduced flank exposure in confined spaces"
-      };
-    case "low-visibility":
-      return {
-        surprise: "Improved stealth approach",
-        ambush: "Higher rear compression risk if detected"
-      };
-    default:
-      return {
-        surprise: "Balanced readiness",
-        ambush: "Balanced vulnerability"
-      };
-  }
+function getMarchingGridUnitPixels() {
+  const gridSize = Number(canvas?.scene?.grid?.size ?? canvas?.grid?.size ?? 100);
+  return Number.isFinite(gridSize) && gridSize > 0 ? gridSize : 100;
 }
 
-function getDoctrineCheckPrompt(formation) {
-  const normalized = normalizeMarchingFormation(formation);
-  switch (normalized) {
-    case "combat-ready":
-      return "Combat-ready: grant advantage on first readiness check; reduce frontal ambush impact by one step.";
-    case "tight-corridor":
-      return "Tight corridor: reduce flank/split ambush exposure by one step in confined spaces.";
-    case "low-visibility":
-      return "Low-visibility: grant advantage on stealthy approach; if detected, increase rear-pressure risk by one step.";
-    default:
-      return "Default: no modifier by doctrine alone; resolve surprise and ambush from encounter context.";
+function getMarchingTokenPositions(state = getMarchingOrderState()) {
+  const positions = {};
+  if (!canvas?.ready) return positions;
+  for (const actorId of getOrderedMarchingActors(state)) {
+    const actor = game.actors.get(actorId);
+    const token = actor?.getActiveTokens?.(true, true)?.[0] ?? actor?.getActiveTokens?.()?.[0] ?? null;
+    const center = token?.center ?? token?.object?.center ?? null;
+    const x = Number(center?.x);
+    const y = Number(center?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    positions[actorId] = { x, y };
   }
+  return positions;
+}
+
+function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
+  return evaluateMarchingFormationState({
+    formationId: state.formation ?? "loose",
+    ranks: state.ranks ?? {},
+    doctrineTracker: ensureDoctrineTracker(state),
+    tokenPositionsByActorId: getMarchingTokenPositions(state),
+    gridUnitPixels: getMarchingGridUnitPixels()
+  });
+}
+
+function getActorCharismaModifier(actor) {
+  const direct = Number(actor?.system?.abilities?.cha?.mod);
+  if (Number.isFinite(direct)) return direct;
+  const derived = Number(actor?.system?.abilities?.cha?.save);
+  if (Number.isFinite(derived)) return derived;
+  return 0;
+}
+
+function getMarchDoctrineActorRows(state = getMarchingOrderState()) {
+  const snapshot = getMarchingFormationSnapshot(state);
+  return snapshot.assignedActorIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      return {
+        actorId,
+        name: String(actor?.name ?? "Unknown"),
+        charismaModifier: getActorCharismaModifier(actor),
+        rankId: snapshot.rankByActorId[actorId] ?? "rear"
+      };
+    })
+    .filter(Boolean);
 }
 
 function getActiveActorForUser(user = game.user) {
@@ -41279,20 +40797,25 @@ async function applyMarchingFormation({ front, middle, type }) {
     return;
   }
   const ordered = getOrderedMarchingActors(state);
-  const frontCount = Math.max(0, front ?? 0);
-  const middleCount = Math.max(0, middle ?? 0);
+  const nextFormation = normalizeMarchingFormation(type ?? state.formation ?? "loose");
+  const definition = getMarchFormationDefinition(nextFormation);
+  const frontCount = Math.max(0, front ?? definition?.bandTargets?.front?.recommended ?? 0);
+  const middleCount = Math.max(0, middle ?? definition?.bandTargets?.middle?.recommended ?? 0);
   const frontActors = ordered.slice(0, frontCount);
   const middleActors = ordered.slice(frontCount, frontCount + middleCount);
   const rearActors = ordered.slice(frontCount + middleCount);
-  const nextFormation = normalizeMarchingFormation(type ?? state.formation ?? "default");
 
   await updateMarchingOrderState((state) => {
     state.formation = nextFormation;
-    state.ranks = {
-      front: frontActors,
-      middle: middleActors,
-      rear: rearActors
-    };
+    if (nextFormation !== "free") {
+      state.ranks = {
+        front: frontActors,
+        middle: middleActors,
+        rear: rearActors
+      };
+    }
+    if (nextFormation === "free") clearDoctrineTriggerPending(state);
+    else markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
   });
 }
 
@@ -41313,7 +40836,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    return;
+    return true;
   }
   const state = getRestWatchState();
   if (typeof mutatorOrRequest === "function") {
@@ -41331,20 +40854,22 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       emitSocketRefresh,
       logUiDebug
     });
-    return;
+    return true;
   }
   stampUpdate(state);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("rest-watch");
   if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
+  return true;
 }
 
 async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
     if (isMarchingOrderPlayerLocked(game.user)) {
       ui.notifications?.warn("Marching order is locked for players.");
-      return;
+      return false;
     }
     const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
       marchOps: SOCKET_MARCH_OPS,
@@ -41363,7 +40888,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       // Refresh immediately for player to avoid stale lag
       refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
     }
-    return;
+    return true;
   }
   const state = getMarchingOrderState();
   if (typeof mutatorOrRequest === "function") {
@@ -41379,15 +40904,20 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       refreshOpenApps,
       refreshScopeKeys: REFRESH_SCOPE_KEYS,
       emitSocketRefresh,
-      logUiDebug
+      logUiDebug,
+      markDoctrineTriggerPending,
+      doctrineTriggers: MARCH_DOCTRINE_TRIGGERS,
+      normalizeMarchingFormation
     });
-    return;
+    return true;
   }
   stampUpdate(state);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_STATE, state);
+  if (!saved) return false;
   if (game.user?.isGM) scheduleIntegrationSync("marching-order");
   if (!options.skipLocalRefresh) refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
   if (game.user?.isGM) emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.MARCH });
+  return true;
 }
 
 function stampUpdate(state, user = game.user) {
@@ -41439,7 +40969,7 @@ async function assignSlotToUser(element) {
     return;
   }
   
-  if (!canAccessAllPlayerOps()) {
+  if (!game.user?.isGM) {
     const slotId = element?.closest(".po-card")?.dataset?.slotId;
     const clicked = state.slots.find((s) => s.id === slotId);
     if (!clicked) return;
@@ -41504,11 +41034,12 @@ async function assignSlotByPicker(element, config = {}) {
           const actorId = html.find("select[name=actorId]").val();
           if (!targetSlotId || !actorId) return;
           let added = false;
-          await updateRestWatchState((state) => {
+          const updated = await updateRestWatchState((state) => {
             const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
             added = addActorToRestSlot(slot, actorId);
           }, { skipLocalRefresh: true });
+          if (!updated) return;
           if (!added) {
             const actorName = game.actors.get(actorId)?.name ?? "That actor";
             ui.notifications?.info(`${actorName} is already assigned to that watch.`);
@@ -41539,13 +41070,14 @@ async function clearSlotEntry(element) {
   if (!slotId || !actorId) return;
   const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   
-  if (!canAccessAllPlayerOps()) {
-    await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+  if (!game.user?.isGM) {
+    const updated = await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+    if (!updated) return;
     clearNoteDraftCacheValue(cacheKey);
     return;
   }
   
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
     // Migrate old format
@@ -41562,6 +41094,7 @@ async function clearSlotEntry(element) {
       slot.notes = "";
     }
   });
+  if (!updated) return;
   clearNoteDraftCacheValue(cacheKey);
 }
 
@@ -41679,8 +41212,9 @@ async function autofillFromParty() {
 }
 
 async function restoreRestCommitted() {
-  const committed = game.settings.get(MODULE_ID, SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  const committed = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  if (!saved) return;
   scheduleIntegrationSync("rest-watch-restore");
   refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });        // ensures local refresh even if socket doesn't echo back
   emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.REST });
@@ -41688,7 +41222,8 @@ async function restoreRestCommitted() {
 
 async function commitRestWatchState() {
   const state = getRestWatchState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  if (!saved) return;
   ui.notifications?.info("Rest watch snapshot saved.");
 }
 
@@ -41784,57 +41319,61 @@ async function clearRestWatchAll() {
 async function runDoctrineCheckPrompt() {
   if (!canAccessAllPlayerOps()) return;
   const state = getMarchingOrderState();
-  const formation = normalizeMarchingFormation(state.formation ?? "default");
-  const effects = getDoctrineEffects(formation);
-  const note = getDoctrineCheckPrompt(formation);
-  const rankLabels = {
-    front: "Front",
-    middle: "Middle",
-    rear: "Rear"
-  };
-  const orderedRankIds = ["front", "middle", "rear"];
+  const formationSnapshot = getMarchingFormationSnapshot(state);
   const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
-  const seenActors = new Set();
-  const doctrinePartyRows = [];
-  for (const rankId of orderedRankIds) {
-    for (const actorId of state.ranks?.[rankId] ?? []) {
-      if (!actorId || seenActors.has(actorId)) continue;
-      seenActors.add(actorId);
-      const actor = game.actors.get(actorId);
-      if (!actor) continue;
-      const range = getMarchLightRange(state, actorId);
-      doctrinePartyRows.push(
-        `<li><strong>${escape(actor.name)}</strong> (${escape(rankLabels[rankId] ?? rankId)}) - ${state.light?.[actorId] ? `Torch active (Bright ${range.bright} ft / Dim ${range.dim} ft)` : "No torch"}</li>`
-      );
-    }
-  }
-  const doctrinePartySummary = doctrinePartyRows.length > 0
-    ? `<ul>${doctrinePartyRows.join("")}</ul>`
-    : "<p><em>No actors currently assigned to marching order.</em></p>";
-
-  await updateMarchingOrderState((state) => {
-    const tracker = ensureDoctrineTracker(state);
-    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    tracker.lastCheckNote = note;
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const trigger = formationSnapshot.doctrine.pendingTrigger || MARCH_DOCTRINE_TRIGGERS.MANUAL;
+  const checkPayloadBase = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows
   });
 
-  const labelMap = {
-    default: "Default Formation",
-    "combat-ready": "Combat-Ready Formation",
-    "tight-corridor": "Tight Corridor Formation",
-    "low-visibility": "Low-Visibility Formation"
-  };
+  if (!checkPayloadBase.active) {
+    ui.notifications?.info("Free formation bypasses doctrine checks.");
+    return;
+  }
+
+  const roll = await (new Roll(`1d20 + ${checkPayloadBase.averageModifier}`)).evaluate();
+  const checkPayload = buildDoctrineCheckPayload({
+    formationId: formationSnapshot.formation.id,
+    doctrineState: formationSnapshot.doctrine.state,
+    trigger,
+    actorRows: doctrineRows,
+    rollTotal: roll.total
+  });
+
+  await updateMarchingOrderState((draft) => {
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.state = checkPayload.state;
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = checkPayload.trigger;
+    tracker.lastCheckSummary = checkPayload.summary;
+    tracker.lastCheckRollTotal = Number(checkPayload.rollTotal ?? 0);
+    tracker.lastCheckDc = Number(checkPayload.dc ?? 0);
+    clearDoctrineTriggerPending(draft);
+  });
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+
+  const doctrinePartySummary = doctrineRows.length > 0
+    ? `<ul>${doctrineRows.map((row) => `<li><strong>${escape(row.name)}</strong> (${escape(row.rankId)}) CHA ${row.charismaModifier >= 0 ? "+" : ""}${row.charismaModifier}</li>`).join("")}</ul>`
+    : "<p><em>No assigned actors were available for the check.</em></p>";
 
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
-      <p><strong>Doctrine Check Prompt</strong></p>
-      <p><strong>Formation:</strong> ${labelMap[formation] ?? labelMap.default}</p>
-      <p><strong>Surprise Posture:</strong> ${effects.surprise}</p>
-      <p><strong>Ambush Exposure:</strong> ${effects.ambush}</p>
-      <p><strong>Marching Panel:</strong></p>
+      <p><strong>Doctrine Check</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot.formation.label)}</p>
+      <p><strong>Category:</strong> ${escape(formationSnapshot.formation.categoryLabel)}</p>
+      <p><strong>Trigger:</strong> ${escape(getMarchDoctrineTriggerLabel(checkPayload.trigger))}</p>
+      <p><strong>Method:</strong> ${escape(checkPayload.methodLabel)}</p>
+      <p><strong>Roll:</strong> ${escape(checkPayload.summary)} Result ${roll.total}</p>
+      <p><strong>Doctrine State:</strong> ${escape(checkPayload.stateLabel)}</p>
+      <p><strong>Formation State:</strong> ${escape(updatedSnapshot.formationState.stateLabel)}</p>
+      <p><strong>Assigned Group:</strong></p>
       ${doctrinePartySummary}
-      <p><em>${escape(note)}</em></p>
+      <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
     `
   });
 }
@@ -41903,13 +41442,20 @@ async function assignActorToRank(element) {
         callback: async (html) => {
           const actorId = html.find("select[name=actorId]").val();
           if (!actorId) return;
-          await updateMarchingOrderState((state) => {
+          const updated = await updateMarchingOrderState((state) => {
             for (const key of Object.keys(state.ranks)) {
               state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
             }
             if (!state.ranks[rankId]) state.ranks[rankId] = [];
             state.ranks[rankId].push(actorId);
+            if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+              markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+            }
           }, { skipLocalRefresh: true });
+          if (!updated) {
+            refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+            return;
+          }
 
           const moved = moveActorEntryToRankDom(rankId, actorId);
           if (!moved) {
@@ -41937,14 +41483,18 @@ async function removeActorFromRanks(element) {
   const actorId = element?.dataset?.actorId;
   if (!actorId) return;
 
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
     }
     if (state.notes) delete state.notes[actorId];
     if (state.light) delete state.light[actorId];
     if (state.lightRanges) delete state.lightRanges[actorId];
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
   });
+  if (!updated) return;
   clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
 }
 
@@ -41971,7 +41521,7 @@ async function joinRank(element) {
     return;
   }
   
-  if (!canAccessAllPlayerOps()) {
+  if (!game.user?.isGM) {
     await updateMarchingOrderState({ op: "joinRank", rankId, actorId: actor.id });
     return;
   }
@@ -41981,6 +41531,9 @@ async function joinRank(element) {
     }
     if (!state.ranks[rankId]) state.ranks[rankId] = [];
     state.ranks[rankId].push(actor.id);
+    if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+    }
   });
 }
 
@@ -41988,7 +41541,7 @@ async function toggleLight(element) {
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
   if (!actorId) return;
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     if (!state.light) state.light = {};
     if (!state.lightRanges) state.lightRanges = {};
     state.light[actorId] = Boolean(checked);
@@ -41999,6 +41552,10 @@ async function toggleLight(element) {
       };
     }
   }, { skipLocalRefresh: true });
+  if (!updated) {
+    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
   const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
@@ -42012,7 +41569,7 @@ async function setLightRange(element) {
   if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
   const fallback = rangeKey === "bright" ? DEFAULT_MARCH_LIGHT_BRIGHT : DEFAULT_MARCH_LIGHT_DIM;
   const value = normalizeLightDistance(element?.value, fallback);
-  await updateMarchingOrderState((state) => {
+  const updated = await updateMarchingOrderState((state) => {
     if (!state.lightRanges) state.lightRanges = {};
     const current = getMarchLightRange(state, actorId);
     const next = {
@@ -42026,6 +41583,10 @@ async function setLightRange(element) {
       state.lightRanges[actorId].dim = next.bright;
     }
   }, { skipLocalRefresh: true });
+  if (!updated) {
+    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    return;
+  }
   const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
@@ -42077,12 +41638,18 @@ async function clearMarchingAll() {
     state.light = {};
     state.lightRanges = {};
     state.gmNotes = "";
+    if (normalizeMarchingFormation(state.formation ?? "loose") === "free") {
+      clearDoctrineTriggerPending(state);
+    } else {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION);
+    }
   });
 }
 
 async function commitMarchingOrderState() {
   const state = getMarchingOrderState();
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  if (!saved) return;
   ui.notifications?.info("Marching order snapshot saved.");
 }
 
@@ -42128,7 +41695,7 @@ function openActorSheetFromElement(element) {
 }
 
 function getRestWatchState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.REST_STATE);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.REST_STATE);
   const merged = foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
@@ -42139,18 +41706,22 @@ function getRestWatchState() {
   const slotIds = merged.slots.map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
   merged.campfire = Boolean(merged.campfire);
   merged.campfireBySlot = normalizeRestWatchCampfireBySlot(merged?.campfireBySlot, slotIds, merged.campfire);
+  applyPublishedRestWatchNotesToState(merged);
   merged.locked = false;
   merged.lockedBy = "";
   return merged;
 }
 
 function getMarchingOrderState() {
-  const stored = game.settings.get(MODULE_ID, SETTINGS.MARCH_STATE);
+  const stored = getModuleSettingWithPlayerUiOverride(SETTINGS.MARCH_STATE);
   const merged = foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
     inplace: false,
     insertKeys: true,
     insertValues: true
   });
+  merged.formation = normalizeMarchingFormation(merged.formation ?? "loose");
+  ensureDoctrineTracker(merged);
+  applyPublishedMarchingNotesToState(merged);
   merged.locked = false;
   merged.lockedBy = "";
   return merged;
@@ -42388,28 +41959,27 @@ function buildWatchSlotsView(state, isGM, visibility) {
 
 function buildRanksView(state, isGM) {
   const lockedForUser = isLockedForUser(state, isGM);
-  const formation = normalizeMarchingFormation(state.formation ?? "default");
-  
-  // Get formation-based capacity
-  const getFormationCapacity = (rankId) => {
-    switch (formation) {
-      case "default":
-        return rankId === "front" ? 2 : rankId === "middle" ? 3 : null;
-      case "combat-ready":
-        return rankId === "front" ? 2 : rankId === "middle" ? 2 : null;
-      case "tight-corridor":
-        return rankId === "front" ? 2 : rankId === "middle" ? 2 : null;
-      case "low-visibility":
-        return rankId === "front" ? 1 : rankId === "middle" ? 1 : null;
-      default:
-        return rankId === "front" ? 2 : rankId === "middle" ? 3 : null;
-    }
-  };
-
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const bandTargets = formationSnapshot.bandTargets ?? {};
   const rankConfigs = {
-    front: { capacity: getFormationCapacity("front"), desc: "First to engage", icon: "fa-shield" },
-    middle: { capacity: getFormationCapacity("middle"), desc: "Support & balance", icon: "fa-users" },
-    rear: { capacity: null, desc: "Rear guard", icon: "fa-arrow-turn-up" }
+    front: {
+      capacity: bandTargets.front?.recommended ?? null,
+      capLimit: bandTargets.front?.max ?? null,
+      desc: "Lead band",
+      icon: "fa-shield"
+    },
+    middle: {
+      capacity: bandTargets.middle?.recommended ?? null,
+      capLimit: bandTargets.middle?.max ?? null,
+      desc: "Center band",
+      icon: "fa-users"
+    },
+    rear: {
+      capacity: bandTargets.rear?.recommended ?? null,
+      capLimit: bandTargets.rear?.max ?? null,
+      desc: "Rear band",
+      icon: "fa-arrow-turn-up"
+    }
   };
 
   const base = buildEmptyRanks(isGM).map((rank) => {
@@ -42439,11 +42009,16 @@ function buildRanksView(state, isGM) {
       .filter(Boolean);
 
     const capacity = config?.capacity;
-    const capacityPercent = capacity ? Math.min(100, (entries.length / capacity) * 100) : 0;
+    const capacityForBar = config?.capLimit ?? capacity;
+    const capacityPercent = capacityForBar ? Math.min(100, (entries.length / capacityForBar) * 100) : 0;
+    const desc = capacity
+      ? `${config.desc} - target ${capacity}${config?.capLimit !== null && config?.capLimit !== capacity ? `, max ${config.capLimit}` : ""}`
+      : config.desc;
 
     return {
       ...rank,
       ...config,
+      desc,
       entries,
       capacity,
       capacityPercent,
@@ -43236,81 +42811,6 @@ function buildQuickNotes(state) {
   return notes;
 }
 
-function setupMarchingDragAndDrop(html) {
-  const state = getMarchingOrderState();
-  const isGM = canAccessAllPlayerOps();
-  const locked = state.locked;
-
-  html.querySelectorAll(".po-entry").forEach((entry) => {
-    const actorId = entry.dataset.actorId;
-    const draggable = canDragEntry(actorId, isGM, locked);
-    entry.setAttribute("draggable", draggable ? "true" : "false");
-    entry.classList.toggle("is-draggable", draggable);
-    if (!draggable) return;
-    if (entry.dataset.poDndEntryBound === "1") return;
-    entry.dataset.poDndEntryBound = "1";
-    entry.addEventListener("dragstart", (event) => {
-      event.dataTransfer?.setData("text/plain", actorId);
-      event.dataTransfer?.setDragImage?.(entry, 20, 20);
-    });
-
-    const handle = entry.querySelector(".po-entry-handle");
-    if (handle) {
-      handle.setAttribute("draggable", "true");
-      if (handle.dataset.poDndHandleBound !== "1") {
-        handle.dataset.poDndHandleBound = "1";
-        handle.addEventListener("dragstart", (event) => {
-          event.dataTransfer?.setData("text/plain", actorId);
-          event.dataTransfer?.setDragImage?.(entry, 20, 20);
-          event.stopPropagation();
-        });
-      }
-    }
-  });
-
-  html.querySelectorAll(".po-rank-col").forEach((column) => {
-    if (column.dataset.poDndColBound === "1") return;
-    column.dataset.poDndColBound = "1";
-    column.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-
-    column.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      if (!isGM) return;
-      const liveState = getMarchingOrderState();
-      if (isLockedForUser(liveState, isGM)) {
-        notifyUiWarnThrottled("Marching order is locked by the GM.", {
-          key: "marching-order-locked",
-          ttlMs: 1500
-        });
-        return;
-      }
-      const actorId = event.dataTransfer?.getData("text/plain");
-      if (!actorId) return;
-      const rankId = column.dataset.rankId;
-      if (!rankId) return;
-
-      const targetEntry = event.target?.closest(".po-entry");
-      const entryList = Array.from(column.querySelectorAll(".po-entry"));
-      const insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
-
-      await updateMarchingOrderState((state) => {
-        for (const key of Object.keys(state.ranks)) {
-          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
-        }
-        if (!state.ranks[rankId]) state.ranks[rankId] = [];
-        const target = state.ranks[rankId];
-        const safeIndex = Math.max(0, Math.min(insertIndex, target.length));
-        target.splice(safeIndex, 0, actorId);
-      }, { skipLocalRefresh: true });
-
-      refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
-    });
-  });
-}
-
 function queueInventoryRefresh(actor, reason = "inventory-update") {
   if (!actor || actor.documentName !== "Actor") return;
   const hookMode = getInventoryHookModeSetting();
@@ -43464,7 +42964,9 @@ function buildPartyOperationsApi() {
     stopAudioMixPlayback,
     normalizeAudioLibraryKind,
     normalizeAudioLibraryUsage,
-    normalizeAudioLibrarySearch
+    normalizeAudioLibrarySearch,
+    getPlayerPermissionDebugEntries,
+    clearPlayerPermissionDebugEntries
   });
 }
 
@@ -43894,11 +43396,12 @@ async function toggleCampfire(element) {
     return;
   }
   const newValue = !getRestWatchSlotCampfireState(state, slotId);
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
     state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
     state.campfireBySlot[slotId] = newValue;
   });
+  if (!updated) return;
   const slotLabel = String(element?.dataset?.slotLabel ?? "").trim() || "watch";
   const status = newValue ? `Campfire lit for ${slotLabel}` : `Campfire extinguished for ${slotLabel}`;
   ui.notifications?.info(status);
@@ -43912,7 +43415,7 @@ async function toggleCampfireAll() {
   const state = getRestWatchState();
   const overview = buildRestWatchCampfireOverview(buildWatchSlotsView(state, true, state.visibility ?? "names-passives"));
   const newValue = !overview.allLit;
-  await updateRestWatchState((state) => {
+  const updated = await updateRestWatchState((state) => {
     const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
     state.campfire = newValue;
     state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
@@ -43920,6 +43423,7 @@ async function toggleCampfireAll() {
       state.campfireBySlot[slotId] = newValue;
     }
   });
+  if (!updated) return;
   ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
 }
 
@@ -43943,76 +43447,6 @@ const refreshOpenAppsController = createOpenAppRefresher({
 
 function refreshOpenApps(options = {}) {
   return refreshOpenAppsController(options);
-}
-
-function setupRestWatchDragAndDrop(html) {
-  const state = getRestWatchState();
-  const isGM = canAccessAllPlayerOps();
-  if (!isGM || isLockedForUser(state, isGM)) return;
-
-  html.querySelectorAll(".po-watch-entry").forEach((entry) => {
-    const actorId = entry.dataset.actorId;
-    if (!actorId) return;
-    entry.setAttribute("draggable", "true");
-    entry.classList.add("is-draggable");
-    if (entry.dataset.poRestDndBound === "1") return;
-    entry.dataset.poRestDndBound = "1";
-    entry.addEventListener("dragstart", (event) => {
-      const slotId = entry.closest(".po-card")?.dataset?.slotId;
-      if (!slotId) return;
-      const payload = JSON.stringify({ actorId, fromSlotId: slotId });
-      event.dataTransfer?.setData("text/plain", payload);
-      event.dataTransfer?.setDragImage?.(entry, 20, 20);
-    });
-  });
-
-  html.querySelectorAll(".po-card").forEach((card) => {
-    if (card.dataset.poRestDropBound === "1") return;
-    card.dataset.poRestDropBound = "1";
-
-    card.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      card.classList.add("is-drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-    });
-
-    card.addEventListener("dragleave", () => {
-      card.classList.remove("is-drop-target");
-    });
-
-    card.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      card.classList.remove("is-drop-target");
-
-      const raw = event.dataTransfer?.getData("text/plain") ?? "";
-      let data;
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        return;
-      }
-      const actorId = data?.actorId;
-      const fromSlotId = data?.fromSlotId;
-      const targetSlotId = card.dataset.slotId;
-      if (!actorId || !fromSlotId || !targetSlotId) return;
-      if (fromSlotId === targetSlotId) return;
-
-      await updateRestWatchState((state) => {
-        const slots = state.slots ?? [];
-        const source = slots.find((slot) => slot.id === fromSlotId);
-        if (source) {
-          ensureRestSlotEntriesList(source);
-          source.entries = source.entries.filter((entry) => entry.actorId !== actorId);
-        }
-
-        const target = slots.find((slot) => slot.id === targetSlotId);
-        if (!target) return;
-        addActorToRestSlot(target, actorId);
-      }, { skipLocalRefresh: true });
-
-      refreshRestWatchAppsImmediately();
-    });
-  });
 }
 
 function openRestWatchPlayerApp() {

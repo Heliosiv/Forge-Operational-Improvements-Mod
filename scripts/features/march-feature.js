@@ -49,7 +49,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     refreshOpenApps,
     refreshScopeKeys,
     emitSocketRefresh,
-    logUiDebug
+    logUiDebug,
+    markDoctrineTriggerPending,
+    doctrineTriggers,
+    normalizeMarchingFormation
   } = deps;
 
   if (!request || typeof request !== "object") return;
@@ -70,6 +73,9 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     }
     if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
     state.ranks[request.rankId].push(request.actorId);
+    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
+    }
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
@@ -106,4 +112,97 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
   }
+}
+
+export function setupMarchingDragAndDrop(html, deps = {}) {
+  const {
+    getMarchingOrderState,
+    canAccessAllPlayerOps,
+    canDragEntry,
+    isLockedForUser,
+    notifyUiWarnThrottled,
+    updateMarchingOrderState,
+    refreshSingleAppPreservingView,
+    getAppInstance,
+    markDoctrineTriggerPending,
+    doctrineTriggers,
+    normalizeMarchingFormation,
+    appInstanceKeys
+  } = deps;
+
+  const state = getMarchingOrderState();
+  const isGM = canAccessAllPlayerOps();
+  const locked = state.locked;
+
+  html.querySelectorAll(".po-entry").forEach((entry) => {
+    const actorId = entry.dataset.actorId;
+    const draggable = canDragEntry(actorId, isGM, locked);
+    entry.setAttribute("draggable", draggable ? "true" : "false");
+    entry.classList.toggle("is-draggable", draggable);
+    if (!draggable) return;
+    if (entry.dataset.poDndEntryBound === "1") return;
+    entry.dataset.poDndEntryBound = "1";
+    entry.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("text/plain", actorId);
+      event.dataTransfer?.setDragImage?.(entry, 20, 20);
+    });
+
+    const handle = entry.querySelector(".po-entry-handle");
+    if (handle) {
+      handle.setAttribute("draggable", "true");
+      if (handle.dataset.poDndHandleBound !== "1") {
+        handle.dataset.poDndHandleBound = "1";
+        handle.addEventListener("dragstart", (event) => {
+          event.dataTransfer?.setData("text/plain", actorId);
+          event.dataTransfer?.setDragImage?.(entry, 20, 20);
+          event.stopPropagation();
+        });
+      }
+    }
+  });
+
+  html.querySelectorAll(".po-rank-col").forEach((column) => {
+    if (column.dataset.poDndColBound === "1") return;
+    column.dataset.poDndColBound = "1";
+    column.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+
+    column.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      if (!isGM) return;
+      const liveState = getMarchingOrderState();
+      if (isLockedForUser(liveState, isGM)) {
+        notifyUiWarnThrottled("Marching order is locked by the GM.", {
+          key: "marching-order-locked",
+          ttlMs: 1500
+        });
+        return;
+      }
+      const actorId = event.dataTransfer?.getData("text/plain");
+      if (!actorId) return;
+      const rankId = column.dataset.rankId;
+      if (!rankId) return;
+
+      const targetEntry = event.target?.closest(".po-entry");
+      const entryList = Array.from(column.querySelectorAll(".po-entry"));
+      const insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+
+      await updateMarchingOrderState((state) => {
+        for (const key of Object.keys(state.ranks)) {
+          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
+        }
+        if (!state.ranks[rankId]) state.ranks[rankId] = [];
+        const target = state.ranks[rankId];
+        const safeIndex = Math.max(0, Math.min(insertIndex, target.length));
+        target.splice(safeIndex, 0, actorId);
+        if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
+          markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
+        }
+      }, { skipLocalRefresh: true });
+
+      refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+    });
+  });
 }

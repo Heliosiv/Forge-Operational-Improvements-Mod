@@ -38,10 +38,18 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: 4) Run repository checks
+      - name: 4) Validate governance for branch builds
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: node scripts/validate-governance.mjs --mode ci
+
+      - name: 5) Validate governance for tagged releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/validate-governance.mjs --mode release --expected-tag "${GITHUB_REF_NAME}"
+
+      - name: 6) Run repository checks
         run: npm run check
 
-      - name: 5) Validate module.json version matches tag
+      - name: 7) Validate module.json version matches tag
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -50,15 +58,15 @@ jobs:
           echo "Module version: ${MODULE_VERSION}"
           test "${TAG_VERSION}" = "${MODULE_VERSION}"
 
-      - name: 6) Prepare Forge package contents
+      - name: 8) Prepare Forge package contents
         run: node scripts/prepare-package.mjs --output release
 
-      - name: 7) Build module.zip artifact
+      - name: 9) Build module.zip artifact
         run: |
           cd release/staging
           zip -r ../module.zip .
 
-      - name: 8) Upload workflow artifact
+      - name: 10) Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: party-operations-package
@@ -66,8 +74,8 @@ jobs:
             release/module.zip
             release/module.json
 
-      - name: 9) Publish GitHub release assets
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      - name: 11) Publish GitHub release assets
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.module_meta.outputs.tag }}

@@ -4754,6 +4754,35 @@
   resize: vertical;
 }
 
+.party-operations [data-tool="marching-order"] .po-formation-grid,
+.party-operations-app [data-tool="marching-order"] .po-formation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.party-operations [data-tool="marching-order"] .po-formation-effect,
+.party-operations-app [data-tool="marching-order"] .po-formation-effect {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--po-text);
+}
+
+.party-operations [data-tool="marching-order"] .po-formation-effect.is-invalid,
+.party-operations-app [data-tool="marching-order"] .po-formation-effect.is-invalid {
+  color: color-mix(in srgb, var(--po-warn) 78%, var(--po-text));
+}
+
+.party-operations [data-tool="marching-order"] .po-formation-invalid,
+.party-operations-app [data-tool="marching-order"] .po-formation-invalid {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
+}
+
 .party-operations [data-tool="marching-order"] .po-scroll-region,
 .party-operations-app [data-tool="marching-order"] .po-scroll-region {
   overflow: auto;

@@ -62,7 +62,9 @@ export function buildPartyOperationsApi(options = {}) {
     stopAudioMixPlayback,
     normalizeAudioLibraryKind,
     normalizeAudioLibraryUsage,
-    normalizeAudioLibrarySearch
+    normalizeAudioLibrarySearch,
+    getPlayerPermissionDebugEntries,
+    clearPlayerPermissionDebugEntries
   } = options;
 
   const deepClone = (value) => foundryRef?.utils?.deepClone ? foundryRef.utils.deepClone(value) : value;
@@ -154,7 +156,9 @@ export function buildPartyOperationsApi(options = {}) {
       hasModuleApi: Boolean(gameRef?.modules?.get?.(moduleId)?.api),
       hasGlobalApi: Boolean(globalRef?.partyOperations || globalRef?.PartyOperations || globalRef?.partyops),
       launcher: ensureLauncherUi()
-    })
+    }),
+    getPermissionDebugLog: () => deepClone(getPlayerPermissionDebugEntries?.() ?? []),
+    clearPermissionDebugLog: () => clearPlayerPermissionDebugEntries?.()
   };
 
   api.openRestWatch = api.restWatch;
