@@ -46,12 +46,21 @@ import {
 import { registerPartyOpsDataSettings } from "./core/settings-data.js";
 import { registerPartyOpsFeatureSettings } from "./core/settings-features.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
-import { createPartyOperationsSocketMessageHandler } from "./core/socket-message-handler.js";
 import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
-import { buildPartyOpsRuntimeHookModules, createPartyOpsHookRegistrar } from "./hooks/runtime-hooks.js";
-import { registerPartyOperationsUiHooks } from "./hooks/ui-hooks.js";
+import {
+  buildLegacyPartyOperationsInitConfig as buildLegacyPartyOperationsInitConfigSurface,
+  buildLegacyPartyOperationsReadyConfig as buildLegacyPartyOperationsReadyConfigSurface,
+  createLegacyPartyOpsHookRegistrar,
+  installLegacyAppBehaviors as installLegacyAppBehaviorsSurface,
+  setupLegacyPartyOperationsUi
+} from "./legacy/bootstrap-surface.js";
+import { createLegacyPartyOperationsSocketMessageHandler } from "./legacy/socket-surface.js";
+import {
+  preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
+  validatePartyOperationsTemplates as validatePartyOperationsTemplatesSurface
+} from "./legacy/template-surface.js";
 import {
   PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
   clearPartyOpsAppInstance,
@@ -155,6 +164,7 @@ const registerFeatureModules = createFeatureRegistrar({
 
 const REFRESH_KNOWN_INSTANCE_KEYS = Object.freeze([
   APP_INSTANCE_KEYS.REST_WATCH,
+  APP_INSTANCE_KEYS.OPERATIONS_SHELL,
   APP_INSTANCE_KEYS.MARCHING_ORDER,
   APP_INSTANCE_KEYS.REST_WATCH_PLAYER,
   APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY,
@@ -326,6 +336,8 @@ const managedAudioMixLocalState = {
   fade: 0,
   startedAt: 0
 };
+const managedAudioMixLocalSounds = new Set();
+let managedAudioMixLocalStartToken = 0;
 const audioLibraryMetadataWarmupState = {
   queued: false,
   inFlight: false,
@@ -465,15 +477,6 @@ const GATHER_QUICK_PRESETS = Object.freeze([
   }
 ]);
 
-const PO_PARTIAL_TEMPLATE_PATHS = Object.freeze([
-  "modules/party-operations/templates/partials/gm-panel-nav.hbs",
-  "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs",
-  "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs",
-  "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs",
-  "modules/party-operations/templates/partials/rest-watch-player/simple-downtime.hbs",
-  "modules/party-operations/templates/partials/rest-watch-player/classic.hbs"
-]);
-
 const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
   width: 1520,
   height: 900,
@@ -486,6 +489,7 @@ const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
 const APP_WINDOW_SIZE_PROFILES = Object.freeze({
   default: NEAR_FULLSCREEN_WINDOW_PROFILE,
   "rest-watch": NEAR_FULLSCREEN_WINDOW_PROFILE,
+  "operations-shell": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "marching-order": NEAR_FULLSCREEN_WINDOW_PROFILE,
   "global-modifiers": NEAR_FULLSCREEN_WINDOW_PROFILE,
@@ -500,6 +504,7 @@ const APP_WINDOW_SIZE_PROFILES = Object.freeze({
 
 const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
   "rest-watch-app": "rest-watch",
+  "operations-shell-app": "operations-shell",
   "rest-watch-player-app": "rest-watch-player",
   "marching-order-app": "marching-order",
   "party-operations-global-modifier-summary": "global-modifiers",
@@ -514,6 +519,7 @@ const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
 
 const APP_WINDOW_POSITION_STORAGE_KEYS = Object.freeze({
   "rest-watch": "main-ops",
+  "operations-shell": "main-ops",
   "marching-order": "main-ops",
   "global-modifiers": "main-ops",
   "gm-factions": "main-ops",
@@ -1090,30 +1096,26 @@ function diagnoseRenderedMainTabs(root, scope = "ui") {
   const renderedTabs = Array.from(root.querySelectorAll(".po-tabs-main .po-tab[data-panel], .po-tabs-main .po-tab[data-tab]"))
     .map((node) => normalizeMainTabId(node?.dataset?.panel ?? node?.dataset?.tab, "rest-watch"))
     .filter(Boolean);
-  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || canAccessAllPlayerOps());
+  const expected = Array.from(PO_MAIN_TAB_IDS).filter((id) => id !== "gm" || canAccessGmPage());
   const missing = expected.filter((id) => !renderedTabs.includes(id));
   const unknown = renderedTabs.filter((id) => !PO_MAIN_TAB_IDS.has(id));
   logUiDebug(scope, "rendered main-tab diagnostics", { expected, renderedTabs, missing, unknown });
 }
 
 async function validatePartyOperationsTemplates() {
-  const templates = [...new Set([
-    ...Object.values(PO_TEMPLATE_MAP),
-    ...PO_PARTIAL_TEMPLATE_PATHS
-  ])];
-  for (const templatePath of templates) {
-    try {
-      await getTemplate(templatePath);
-      logUiDebug("templates", "template resolved", { templatePath });
-    } catch (error) {
-      console.error(`${MODULE_ID}: failed to load template`, { templatePath, error });
-    }
-  }
+  return validatePartyOperationsTemplatesSurface({
+    templateMap: PO_TEMPLATE_MAP,
+    getTemplateFn: getTemplate,
+    logUiDebug,
+    logError: console.error,
+    moduleId: MODULE_ID
+  });
 }
 
 async function preloadPartyOperationsPartialTemplates() {
-  if (typeof loadTemplates !== "function") return;
-  await loadTemplates(PO_PARTIAL_TEMPLATE_PATHS);
+  return preloadPartyOperationsPartialTemplatesSurface({
+    loadTemplatesFn: loadTemplates
+  });
 }
 
 const INTEGRATION_MODES = {
@@ -1603,7 +1605,8 @@ const {
   setMarchSectionCollapsed
 } = createNavigationUiState({
   normalizeMainTabId,
-  canAccessAllPlayerOps
+  canAccessAllPlayerOps,
+  canAccessGmPage
 });
 const {
   LOOT_SETTINGS_TABS,
@@ -2942,6 +2945,10 @@ function hasRegisteredPartyOpsSettingsNamespace(moduleId = MODULE_ID) {
   } catch {
     return false;
   }
+}
+
+function canAccessGmPage(user = game.user) {
+  return Boolean(user?.isGM);
 }
 
 function ensurePartyOpsSettingsRegistered() {
@@ -8277,6 +8284,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
       const context = {
         isGM,
+        showGmPageTab: canAccessGmPage(),
         locked: state.locked,
         lockBannerText,
         lockBannerTooltip,
@@ -8332,7 +8340,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
           lockState,
           campfireState: campfireOverview.stateLabel
-        }
+        },
+        windowToolId: "rest-watch",
+        windowAriaLabel: "Party Operations Rest Watch"
       };
 
       logUiDebug("rest-watch", "prepared rest context", {
@@ -8368,6 +8378,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       logUiDebug("rest-watch", "falling back to safe context", { mainTab, error: String(error?.message ?? error) });
       return {
         isGM,
+        showGmPageTab: canAccessGmPage(),
         locked: Boolean(fallbackState.locked),
         lockBannerText: fallbackState.locked ? (isGM ? "Players locked" : "Locked by GM") : "",
         lockBannerTooltip: fallbackState.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "",
@@ -8423,7 +8434,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           hasLowDarkvisionCoverage: fallbackLowDarkvisionSlots > 0,
           lockState: fallbackState.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open",
           campfireState: fallbackCampfireOverview.stateLabel
-        }
+        },
+        windowToolId: "rest-watch",
+        windowAriaLabel: "Party Operations Rest Watch"
       };
     }
   }
@@ -8698,11 +8711,15 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
 
   setActivePanel(panelId, options = {}) {
     const normalized = normalizeMainTabId(panelId, "rest-watch");
-    if (normalized === "gm" && !canAccessAllPlayerOps()) {
+    if (normalized === "gm" && !canAccessGmPage()) {
       notifyUiWarnThrottled("GM permissions are required for the GM section.", {
         key: "gm-section-permission",
         ttlMs: 1500
       });
+      return;
+    }
+    if (!(this instanceof OperationsShellApp) && (normalized === "operations" || normalized === "gm")) {
+      openMainTab(normalized, { force: true });
       return;
     }
     this._activePanel = normalized;
@@ -8729,8 +8746,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     this._activePanel = normalizedMainTab;
     setActiveRestMainTab(normalizedMainTab);
 
-    if (normalizedMainTab === "marching-order") {
-      openMainTab("marching-order", { force: true });
+    if (normalizedMainTab === "marching-order" || normalizedMainTab === "operations" || normalizedMainTab === "gm") {
+      openMainTab(normalizedMainTab, { force: true });
     } else {
       this.#renderWithPreservedState({ force: true, parts: ["main"] });
       requestAnimationFrame(() => {
@@ -8900,7 +8917,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "operations-page": async () => {
           setActiveOperationsPage(element?.dataset?.page);
-          if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessAllPlayerOps()) setActiveRestMainTab("gm");
+          if (String(element?.dataset?.page ?? "").trim() === "gm" && canAccessGmPage()) setActiveRestMainTab("gm");
           else if (getActiveRestMainTab() === "gm") setActiveRestMainTab("operations");
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
@@ -9666,6 +9683,89 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         options,
         activePanel: this._activePanel ?? getActiveRestMainTab()
       });
+    }
+    return super.close(options);
+  }
+}
+
+export class OperationsShellApp extends RestWatchApp {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "operations-shell-app",
+    window: { title: "Party Operations - Operations" },
+    position: getResponsiveWindowPosition("operations-shell"),
+    resizable: true
+  });
+
+  async _prepareContext() {
+    const context = await super._prepareContext();
+    const requestedMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "operations");
+    const mainTab = requestedMainTab === "gm" && canAccessGmPage() ? "gm" : "operations";
+    return {
+      ...context,
+      showGmPageTab: canAccessGmPage(),
+      mainTab,
+      activeTab: getSwitchTabIdFromMainTabId(mainTab),
+      mainTabRestWatch: false,
+      mainTabOperations: mainTab === "operations",
+      mainTabGm: mainTab === "gm",
+      mainTabOperationsOrGm: true,
+      gmPanelTabCore: false,
+      gmPanelTabOperations: true,
+      mainContextLabel: mainTab === "gm" ? "GM" : "Operations",
+      mainSubtitleLabel: mainTab === "gm" ? "GM" : "Operations",
+      windowToolId: "operations-shell",
+      windowAriaLabel: mainTab === "gm"
+        ? "Party Operations GM Workspace"
+        : "Party Operations Operations Workspace"
+    };
+  }
+
+  async _onRender(context, options) {
+    const openedPlayers = this._openedPlayers;
+    this._openedPlayers = true;
+    await super._onRender(context, options);
+    this._openedPlayers = openedPlayers;
+    if (getAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    }
+    setAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    syncApplicationWindowTitle(this, this._activePanel === "gm"
+      ? "Party Operations - GM"
+      : "Party Operations - Operations");
+  }
+
+  setActiveTab(tabId) {
+    const requested = String(tabId ?? "").trim().toLowerCase();
+    if (!PO_SWITCH_TAB_IDS.has(requested)) {
+      logUiDebug("operations-shell", "setActiveTab ignored unknown tab", { tabId: requested });
+      return;
+    }
+
+    const normalizedMainTab = normalizeMainTabId(requested, "operations");
+    if (normalizedMainTab === "rest-watch" || normalizedMainTab === "marching-order") {
+      openMainTab(normalizedMainTab, { force: true });
+      return;
+    }
+    if (normalizedMainTab === "gm" && !canAccessGmPage()) {
+      notifyUiWarnThrottled("GM permissions are required for the GM section.", {
+        key: "gm-section-permission",
+        ttlMs: 1500
+      });
+      return;
+    }
+
+    const previousMainTab = normalizeMainTabId(this._activePanel ?? getActiveRestMainTab(), "operations");
+    if (normalizedMainTab === previousMainTab) return;
+
+    this._activePanel = normalizedMainTab;
+    setActiveRestMainTab(normalizedMainTab);
+    renderAppWithPreservedState(this, { force: true, parts: ["main"] });
+  }
+
+  async close(options = {}) {
+    clearAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    if (getAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     }
     return super.close(options);
   }
@@ -10845,7 +10945,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
       try {
         if (action === "gm-loot-claims-board-back") {
           this.close();
-          if (canAccessAllPlayerOps()) openMainTab("gm", { force: true });
+          if (canAccessGmPage()) openMainTab("gm", { force: true });
           else openOperationsLootClaimsTabForPlayer({ force: true });
           return;
         }
@@ -14002,9 +14102,41 @@ function clearManagedAudioMixLocalState() {
   managedAudioMixLocalState.startedAt = 0;
 }
 
-async function stopLocalManagedAudioMixPlayback(options = {}) {
-  const sound = managedAudioMixLocalState.sound ?? null;
-  clearManagedAudioMixLocalState();
+function getTrackedManagedAudioMixLocalSounds() {
+  return Array.from(new Set([
+    managedAudioMixLocalState.sound ?? null,
+    ...managedAudioMixLocalSounds
+  ].filter(Boolean)));
+}
+
+function logManagedAudioMixDebug(message, details = null) {
+  if (!isModuleDebugEnabled()) return;
+  try {
+    if (details === null || details === undefined) {
+      console.debug(`[${MODULE_ID}][audio-mix] ${message}`);
+      return;
+    }
+    console.debug(`[${MODULE_ID}][audio-mix] ${message}`, details);
+  } catch {
+    // Never fail user actions because of logging.
+  }
+}
+
+function buildManagedAudioMixLocalDebugState(extra = {}) {
+  return {
+    playbackId: String(managedAudioMixLocalState.playbackId ?? "").trim(),
+    playlistId: String(managedAudioMixLocalState.playlistId ?? "").trim(),
+    playlistSoundId: String(managedAudioMixLocalState.playlistSoundId ?? "").trim(),
+    trackId: String(managedAudioMixLocalState.trackId ?? "").trim(),
+    presetId: String(managedAudioMixLocalState.presetId ?? "").trim(),
+    startedAt: Math.max(0, Number(managedAudioMixLocalState.startedAt ?? 0) || 0),
+    trackedSoundCount: getTrackedManagedAudioMixLocalSounds().length,
+    startToken: managedAudioMixLocalStartToken,
+    ...extra
+  };
+}
+
+async function stopManagedAudioMixSoundInstance(sound, options = {}) {
   if (!sound) return false;
   const fade = Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0));
   try {
@@ -14025,7 +14157,29 @@ async function stopLocalManagedAudioMixPlayback(options = {}) {
       console.warn(`${MODULE_ID}: failed to stop managed audio mix playback`, error);
     }
     return false;
+  } finally {
+    managedAudioMixLocalSounds.delete(sound);
   }
+}
+
+async function stopLocalManagedAudioMixPlayback(options = {}) {
+  managedAudioMixLocalStartToken += 1;
+  const sounds = getTrackedManagedAudioMixLocalSounds();
+  logManagedAudioMixDebug("stopping local mirror playback", buildManagedAudioMixLocalDebugState({
+    fade: Math.max(0, Math.floor(Number(options?.fade ?? 0) || 0)),
+    soundCount: sounds.length
+  }));
+  clearManagedAudioMixLocalState();
+  if (sounds.length <= 0) return false;
+  let stopped = false;
+  for (const sound of sounds) {
+    stopped = (await stopManagedAudioMixSoundInstance(sound, options)) || stopped;
+  }
+  logManagedAudioMixDebug("finished stopping local mirror playback", buildManagedAudioMixLocalDebugState({
+    stopped,
+    stoppedSoundCount: sounds.length
+  }));
+  return stopped;
 }
 
 async function setLocalManagedAudioMixPlaybackVolume(message = {}) {
@@ -14069,15 +14223,26 @@ async function handleManagedAudioMixTrackEnd(playbackId) {
 
 async function startLocalManagedAudioMixPlayback(message = {}) {
   await stopLocalManagedAudioMixPlayback({ fade: 0 });
+  const startToken = ++managedAudioMixLocalStartToken;
   const fade = Math.max(0, Math.floor(Number(message?.fade ?? 0) || 0));
   const loop = Boolean(message?.loop);
   const volume = normalizeAudioMixVolume(message?.volume ?? 0.5);
   const playbackId = String(message?.playbackId ?? "").trim();
   const trackId = normalizeAudioLibraryRootPath(message?.trackId ?? "");
   let sound = null;
+  logManagedAudioMixDebug("starting local mirror playback", buildManagedAudioMixLocalDebugState({
+    requestedPlaybackId: playbackId,
+    requestedTrackId: trackId,
+    requestedTrackPath: String(message?.trackPath ?? "").trim(),
+    fade,
+    loop,
+    volume,
+    startToken
+  }));
   try {
     sound = await createManagedAudioMixSound(message);
     if (!sound) return false;
+    managedAudioMixLocalSounds.add(sound);
     let offset = 0;
     const startedAt = Math.max(0, Number(message?.startedAt ?? 0) || 0);
     const duration = Number(sound?.duration ?? 0) || 0;
@@ -14097,6 +14262,16 @@ async function startLocalManagedAudioMixPlayback(message = {}) {
       })
       : null;
     if (playResult && typeof playResult.then === "function") await playResult;
+    if (startToken !== managedAudioMixLocalStartToken) {
+      logManagedAudioMixDebug("discarding stale local mirror playback start", buildManagedAudioMixLocalDebugState({
+        staleStartToken: startToken,
+        currentStartToken: managedAudioMixLocalStartToken,
+        requestedPlaybackId: playbackId,
+        requestedTrackId: trackId
+      }));
+      await stopManagedAudioMixSoundInstance(sound, { fade: 0 });
+      return false;
+    }
     managedAudioMixLocalState.playbackId = playbackId;
     managedAudioMixLocalState.playlistId = String(message?.playlistId ?? "").trim();
     managedAudioMixLocalState.playlistSoundId = String(message?.playlistSoundId ?? "").trim();
@@ -14106,11 +14281,14 @@ async function startLocalManagedAudioMixPlayback(message = {}) {
     managedAudioMixLocalState.volume = volume;
     managedAudioMixLocalState.fade = fade;
     managedAudioMixLocalState.startedAt = startedAt;
+    logManagedAudioMixDebug("started local mirror playback", buildManagedAudioMixLocalDebugState({
+      duration: Number(sound?.duration ?? 0) || 0,
+      offset
+    }));
     return true;
   } catch (error) {
-    if (isModuleDebugEnabled()) {
-      console.warn(`${MODULE_ID}: failed to start managed audio mix playback`, error);
-    }
+    if (sound) managedAudioMixLocalSounds.delete(sound);
+    if (isModuleDebugEnabled()) console.warn(`${MODULE_ID}: failed to start managed audio mix playback`, error);
     clearManagedAudioMixLocalState();
     return false;
   }
@@ -14168,6 +14346,16 @@ async function syncManagedAudioMixPlaybackForCurrentUser(options = {}) {
   const mixState = getAudioMixStateFlag(playlist);
   const allowAutostart = Boolean(options?.allowAutostart);
   const activeSound = playlist ? getManagedAudioMixPlayingSound(playlist, mixState.playlistSoundId) : null;
+  logManagedAudioMixDebug("syncing managed audio mix playback", {
+    allowAutostart,
+    refresh: options?.refresh === true,
+    hasPlaylist: Boolean(playlist),
+    playlistId: String(playlist?.id ?? "").trim(),
+    mixPlaybackId: String(mixState?.playbackId ?? "").trim(),
+    mixPlaylistSoundId: String(mixState?.playlistSoundId ?? "").trim(),
+    activeSoundId: String(activeSound?.id ?? "").trim(),
+    local: buildManagedAudioMixLocalDebugState()
+  });
 
   if (!playlist) {
     await stopLocalManagedAudioMixPlayback({ fade: 0 });
@@ -14283,6 +14471,13 @@ async function playAudioMixPresetById(presetId, options = {}) {
   const playlist = await ensureManagedAudioMixPlaylist(preset, candidates.length);
   if (!playlist) throw new Error("The managed mix playlist could not be created.");
   const priorState = getAudioMixStateFlag(playlist);
+  logManagedAudioMixDebug("preparing managed mix preset playback", {
+    presetId: String(preset?.id ?? "").trim(),
+    priorPlaybackId: String(priorState?.playbackId ?? "").trim(),
+    candidateCount: candidates.length,
+    queuedTrackCount: queuedTrackIds.length,
+    preferredTrackId: String(options?.preferredTrackId ?? "").trim()
+  });
   await stopManagedAudioMixPlaylist(playlist);
   const orderedCandidates = buildOrderedAudioMixCandidates(candidates, options);
   const preferredTrackId = String(options.preferredTrackId ?? "").trim();
@@ -14352,6 +14547,15 @@ async function stopAudioMixPlayback(options = {}) {
   }
   const playlist = getManagedAudioMixPlaylist();
   const priorState = getAudioMixStateFlag(playlist);
+  logManagedAudioMixDebug("stopping managed mix playback", {
+    playlistId: String(playlist?.id ?? "").trim(),
+    preserveActiveTrack: options?.preserveActiveTrack === true,
+    preservePlaybackId: options?.preservePlaybackId === true,
+    preserveQueue: options?.preserveQueue === true,
+    priorPlaybackId: String(priorState?.playbackId ?? "").trim(),
+    priorPlaylistSoundId: String(priorState?.playlistSoundId ?? "").trim(),
+    local: buildManagedAudioMixLocalDebugState()
+  });
   if (playlist) await stopManagedAudioMixPlaylist(playlist);
   if (playlist) {
     const preserveActiveTrack = options?.preserveActiveTrack === true;
@@ -43608,13 +43812,18 @@ function openMainTab(tabId, renderOptions = { force: true }) {
     tabId,
     normalized,
     template: getTemplateForMainTab(normalized),
-    isGM: Boolean(canAccessAllPlayerOps())
+    isGM: Boolean(canAccessAllPlayerOps()),
+    canAccessGmPage: Boolean(canAccessGmPage())
   });
 
   if (normalized === "marching-order") {
     const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
     if (restWatchApp?.element?.isConnected) {
       void restWatchApp.close();
+    }
+    const operationsShellApp = getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL);
+    if (operationsShellApp?.element?.isConnected) {
+      void operationsShellApp.close();
     }
     const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
     if (restWatchPlayerApp?.element?.isConnected) {
@@ -43634,42 +43843,38 @@ function openMainTab(tabId, renderOptions = { force: true }) {
   if (marchingOrderApp?.element?.isConnected) {
     void marchingOrderApp.close();
   }
+  const operationsShellApp = getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL);
   const restWatchPlayerApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER);
   if (restWatchPlayerApp?.element?.isConnected) {
     void restWatchPlayerApp.close();
   }
 
-  if (normalized === "gm") {
-    if (!canAccessAllPlayerOps()) {
+  if (normalized === "gm" || normalized === "operations") {
+    const targetMainTab = normalized === "gm" ? "gm" : "operations";
+    if (targetMainTab === "gm" && !canAccessGmPage()) {
       notifyUiWarnThrottled("GM permissions are required for the GM section.", {
         key: "gm-section-permission",
         ttlMs: 1500
       });
       return null;
     }
-    setActiveRestMainTab("gm");
     const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
-    const app = restWatchApp?.element?.isConnected
-      ? restWatchApp
-      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
-    app._activePanel = "gm";
+    if (restWatchApp?.element?.isConnected) {
+      void restWatchApp.close();
+    }
+    setActiveRestMainTab(targetMainTab);
+    const app = operationsShellApp?.element?.isConnected
+      ? operationsShellApp
+      : new OperationsShellApp(getResponsiveWindowOptions("operations-shell"));
+    app._activePanel = targetMainTab;
     app.render(renderOptions);
     queueManagedAudioMixPlaybackResync();
-    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "gm" });
+    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: targetMainTab });
     return app;
   }
 
-  if (normalized === "operations") {
-    setActiveRestMainTab("operations");
-    const restWatchApp = getAppInstance(APP_INSTANCE_KEYS.REST_WATCH);
-    const app = restWatchApp?.element?.isConnected
-      ? restWatchApp
-      : new RestWatchApp(getResponsiveWindowOptions("rest-watch"));
-    app._activePanel = "operations";
-    app.render(renderOptions);
-    queueManagedAudioMixPlaybackResync();
-    if (!suppressHistory) writePoBrowserHistoryEntry({ type: "main", tab: "operations" });
-    return app;
+  if (operationsShellApp?.element?.isConnected) {
+    void operationsShellApp.close();
   }
 
   setActiveRestMainTab("rest-watch");
@@ -44173,7 +44378,7 @@ function ensureSidebarLauncher() {
 
   const setLauncherMarkup = (target) => {
     const buttonsMarkup = PO_SIDEBAR_VIEW_ITEMS
-      .filter((item) => !item.gmOnly || canAccessAllPlayerOps())
+      .filter((item) => !item.gmOnly || canAccessGmPage())
       .map((item) => {
         const gmClass = item.gmOnly ? " po-sidebar-gm" : "";
         return `
@@ -44199,7 +44404,7 @@ function ensureSidebarLauncher() {
       hostId: String(host?.id ?? "").trim() || null,
       hostClass: String(host?.className ?? "").trim() || null,
       items: PO_SIDEBAR_VIEW_ITEMS
-        .filter((item) => !item.gmOnly || canAccessAllPlayerOps())
+        .filter((item) => !item.gmOnly || canAccessGmPage())
         .map((item) => ({ id: item.id, action: item.action, target: item.target }))
     });
   };
@@ -44207,7 +44412,7 @@ function ensureSidebarLauncher() {
   const hasRestBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="rest-watch"]'));
   const hasOperationsBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="operations"]'));
   const hasMarchBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="marching-order"]'));
-  const hasGmBtn = !canAccessAllPlayerOps() || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
+  const hasGmBtn = !canAccessGmPage() || Boolean(launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]'));
   const hasDockBtn = Boolean(launcher.querySelector('.po-sidebar-btn[data-action="dock-floating"]'));
   if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
     setLauncherMarkup(launcher);
@@ -44236,7 +44441,7 @@ function ensureSidebarLauncher() {
   }
 
   const gmButton = launcher.querySelector('.po-sidebar-btn[data-tab-id="gm"]');
-  if (gmButton) gmButton.style.display = canAccessAllPlayerOps() ? "" : "none";
+  if (gmButton) gmButton.style.display = canAccessGmPage() ? "" : "none";
   syncSidebarLauncherAudioUi(launcher);
   return launcher;
 }
@@ -44360,7 +44565,7 @@ function ensureFloatingLauncher() {
   }
 
   const gmButton = launcher.querySelector('.po-floating-btn[data-action="gm"]');
-  if (gmButton) gmButton.style.display = canAccessAllPlayerOps() ? "" : "none";
+  if (gmButton) gmButton.style.display = canAccessGmPage() ? "" : "none";
 
   const pos = clampFloatingLauncherPosition(getFloatingLauncherPosition());
   applyFloatingLauncherInlineStyles(launcher, pos);
@@ -44516,9 +44721,10 @@ async function diagnoseWorldData(options = {}) {
 }
 
 function setupPartyOperationsUI() {
-  registerPartyOperationsUiHooks({
+  return setupLegacyPartyOperationsUi({
     openMainTab,
     canAccessAllPlayerOps,
+    canAccessGmPage,
     ensureLauncherUi,
     hideManagedAudioMixPlaylistUi,
     setTimeoutFn: window.setTimeout.bind(window),
@@ -44526,44 +44732,48 @@ function setupPartyOperationsUI() {
   });
 }
 
-const registerPartyOpsHooks = createPartyOpsHookRegistrar({
-  getHookModules: () => buildPartyOpsRuntimeHookModules({
-    moduleId: MODULE_ID,
-    settings: SETTINGS,
-    autoUpkeepPromptStates: AUTO_UPKEEP_PROMPT_STATES,
-    notifyDailyInjuryReminders,
-    handleAutomaticOperationalUpkeepTick,
-    handleAutomaticMerchantAutoRefreshTick,
-    handleAutomaticUpkeepChatAction,
-    schedulePendingSopNoteSync,
-    applyAutoInventoryToUnlinkedToken,
-    environmentMoveOriginByToken,
-    maybePromptEnvironmentMovementCheck,
-    hasInventoryDelta,
-    queueInventoryRefresh,
-    consumeSuppressedSettingRefresh,
-    refreshOpenApps,
-    getRefreshScopesForSettingKey,
-    scheduleIntegrationSync,
-    bindFolderOwnershipProxySubmit,
-    isManagedAudioMixPlaylist,
-    queueManagedAudioMixPlaybackResync,
-    gameRef: game,
-    foundryRef: foundry
-  })
+const registerPartyOpsHooks = createLegacyPartyOpsHookRegistrar({
+  moduleId: MODULE_ID,
+  settings: SETTINGS,
+  autoUpkeepPromptStates: AUTO_UPKEEP_PROMPT_STATES,
+  notifyDailyInjuryReminders,
+  handleAutomaticOperationalUpkeepTick,
+  handleAutomaticMerchantAutoRefreshTick,
+  handleAutomaticUpkeepChatAction,
+  schedulePendingSopNoteSync,
+  applyAutoInventoryToUnlinkedToken,
+  environmentMoveOriginByToken,
+  maybePromptEnvironmentMovementCheck,
+  hasInventoryDelta,
+  queueInventoryRefresh,
+  consumeSuppressedSettingRefresh,
+  refreshOpenApps,
+  getRefreshScopesForSettingKey,
+  scheduleIntegrationSync,
+  bindFolderOwnershipProxySubmit,
+  isManagedAudioMixPlaylist,
+  queueManagedAudioMixPlaybackResync,
+  gameRef: game,
+  foundryRef: foundry
 });
 
 export function installLegacyAppBehaviors() {
-  installRememberedWindowPositionBehavior(BaseStatefulPageApp);
-  installRememberedWindowPositionBehavior(RestWatchApp);
-  installRememberedWindowPositionBehavior(MarchingOrderApp);
-  installRememberedWindowPositionBehavior(GlobalModifierSummaryApp);
-  installRememberedWindowPositionBehavior(GmLootClaimsBoardApp);
-  installRememberedWindowPositionBehavior(RestWatchPlayerApp);
+  return installLegacyAppBehaviorsSurface({
+    installRememberedWindowPositionBehavior,
+    appClasses: [
+      BaseStatefulPageApp,
+      RestWatchApp,
+      OperationsShellApp,
+      MarchingOrderApp,
+      GlobalModifierSummaryApp,
+      GmLootClaimsBoardApp,
+      RestWatchPlayerApp
+    ]
+  });
 }
 
 export function buildLegacyPartyOperationsInitConfig() {
-  return {
+  return buildLegacyPartyOperationsInitConfigSurface({
     registerPartyOperationsApi,
     registerFeatureModules,
     preloadPartyOperationsPartialTemplates,
@@ -44572,48 +44782,39 @@ export function buildLegacyPartyOperationsInitConfig() {
     getRefreshScopesForSettingKey,
     refreshOpenApps,
     registerPartyOpsDataSettings,
-    dataSettingsConfig: {
-      moduleId: MODULE_ID,
-      settings: SETTINGS,
-      buildDefaultRestWatchState,
-      buildDefaultMarchingOrderState,
-      buildDefaultActivityState,
-      buildDefaultOperationsLedger,
-      buildDefaultInjuryRecoveryState,
-      buildDefaultLootSourceConfig,
-      buildDefaultAudioLibraryCatalog,
-      buildDefaultAudioLibraryHiddenTrackStore,
-      buildDefaultAudioMixPresetStore
-    },
+    moduleId: MODULE_ID,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore,
     syncAudioLibraryDraftFromSettings,
     registerPartyOpsFeatureSettings,
-    featureSettingsConfig: {
-      moduleId: MODULE_ID,
-      settings: SETTINGS,
-      areAdvancedSettingsEnabled,
-      autoInventoryPackIndexCache,
-      autoInventoryDefaults: {
-        itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
-        consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
-        currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
-        qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
-      },
-      gatherDefaults: GATHER_DEFAULTS,
-      gatherTravelChoices: GATHER_TRAVEL_CHOICES,
-      launcherPlacements: LAUNCHER_PLACEMENTS,
-      journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
-      sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
-      inventoryHookModes: INVENTORY_HOOK_MODES,
-      ensureLauncherUi,
-      resetFloatingLauncherPosition,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      openRestWatchUiForCurrentUser,
-      openMainTab
+    areAdvancedSettingsEnabled,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults: {
+      itemChanceScalar: AUTO_INV_DEFAULT_ITEM_CHANCE_SCALAR,
+      consumableChanceScalar: AUTO_INV_DEFAULT_CONSUMABLE_CHANCE_SCALAR,
+      currencyScalar: AUTO_INV_DEFAULT_CURRENCY_SCALAR,
+      qualityShift: AUTO_INV_DEFAULT_QUALITY_SHIFT
     },
-    logger: bootstrapLogger,
-    moduleId: MODULE_ID
-  };
+    gatherDefaults: GATHER_DEFAULTS,
+    gatherTravelChoices: GATHER_TRAVEL_CHOICES,
+    launcherPlacements: LAUNCHER_PLACEMENTS,
+    journalVisibilityModes: JOURNAL_VISIBILITY_MODES,
+    sessionSummaryRangeOptions: SESSION_SUMMARY_RANGE_OPTIONS,
+    inventoryHookModes: INVENTORY_HOOK_MODES,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition,
+    refreshScopeKeys: REFRESH_SCOPE_KEYS,
+    openRestWatchUiForCurrentUser,
+    openMainTab,
+    logger: bootstrapLogger
+  });
 }
 
 export function onPartyOperationsInit() {
@@ -44622,24 +44823,20 @@ export function onPartyOperationsInit() {
 }
 
 export function buildLegacyPartyOperationsReadyConfig() {
-  return {
+  return buildLegacyPartyOperationsReadyConfigSurface({
     registerPartyOperationsApi,
     ensureSettingsRegistered: ensurePartyOpsSettingsRegistered,
     validatePartyOperationsTemplates,
     bindPoBrowserBackNavigation,
     setupPartyOperationsUI,
     ensureLauncherUi,
-    launcherWarmupDelaysMs: [250, 1000, 3000],
-    launcherSelfHealDelayMs: 4200,
     forceLauncherRecovery,
     notifyDailyInjuryReminders,
-    managedAudioSyncDelayMs: 450,
     syncManagedAudioMixPlaybackForCurrentUser,
     game,
     schedulePendingSopNoteSync,
     scheduleIntegrationSync,
     handleAutomaticMerchantAutoRefreshTick,
-    audioLibraryWarmupDelayMs: 900,
     queueAudioLibraryMetadataWarmup,
     ensureOperationsJournalFolderTree,
     scheduleLootManifestCompendiumTypeFolderSync,
@@ -44650,172 +44847,93 @@ export function buildLegacyPartyOperationsReadyConfig() {
     setTimeoutFn: window.setTimeout.bind(window),
     logger: bootstrapLogger,
     moduleId: MODULE_ID
-  };
+  });
 }
 
 export function onPartyOperationsReady() {
   runPartyOperationsReady(buildLegacyPartyOperationsReadyConfig());
 }
 
-const handlePartyOperationsSocketMessage = createPartyOperationsSocketMessageHandler({
+const handlePartyOperationsSocketMessage = createLegacyPartyOperationsSocketMessageHandler({
   game,
   applyPlayerGatherRequest,
   promptLocalGatherCheckRoll,
   promptLocalGatherYieldRoll,
   resolvePendingGatherCheckRequest,
   resolvePendingGatherYieldRequest,
-  routeSocketDeps: {
-    settings: SETTINGS,
-    refreshScopeKeys: REFRESH_SCOPE_KEYS,
-    normalizeRefreshScopeList,
-    setLootClaimActorSelection,
-    normalizeLootClaimActorId,
-    setLootClaimRunSelection,
-    normalizeLootClaimRunId,
-    waitForLootClaimsPublished,
-    buildLootClaimsContext,
-    logUiDebug,
-    promptLootClaimsDialogForPlayer,
-    openOperationsLootClaimsTabForPlayer,
-    openRestWatchUiForCurrentUser,
-    refreshOpenApps,
-    schedulePendingSopNoteSync,
-    syncMerchantBarterStatusForOpenDialogs,
-    applyAudioMixSocketMessage,
-    getSocketRequester,
-    sanitizeSocketIdentifier,
-    normalizeSocketActivityType,
-    getRestActivities,
-    setModuleSettingWithLocalRefreshSuppressed,
-    emitSocketRefresh,
-    normalizeSocketRestRequest: (request) => normalizeSocketRestRequest(request, {
-      restOps: SOCKET_REST_OPS,
-      sanitizeSocketIdentifier,
-      clampSocketText,
-      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
-      normalizeRestNoteSaveSource
-    }),
-    applyRestRequest: (request, requesterRef) => applyRestRequest(request, requesterRef, {
-      getRestWatchState,
-      game,
-      resolveRequester,
-      canUserControlActor,
-      stampUpdate,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings: SETTINGS,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      emitSocketRefresh,
-      logUiDebug
-    }),
-    applyPlayerActivityUpdateRequest: (message) => applyPlayerActivityUpdateRequestFeature(message, null, {
-      getSocketRequester,
-      sanitizeSocketIdentifier,
-      normalizeSocketActivityType,
-      getRestActivities,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings: SETTINGS,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      emitSocketRefresh
-    }),
-    normalizeSocketMarchRequest: (request) => normalizeSocketMarchRequest(request, {
-      marchOps: SOCKET_MARCH_OPS,
-      marchRanks: SOCKET_MARCH_RANKS,
-      sanitizeSocketIdentifier,
-      clampSocketText,
-      noteMaxLength: SOCKET_NOTE_MAX_LENGTH
-    }),
-    applyMarchRequest: (request, requesterRef) => applyMarchRequest(request, requesterRef, {
-      getMarchingOrderState,
-      game,
-      resolveRequester,
-      canUserControlActor,
-      isMarchingOrderPlayerLocked,
-      stampUpdate,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings: SETTINGS,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      emitSocketRefresh,
-      logUiDebug
-    }),
-    applyPlayerSettingWriteRequest: (message, requesterRef) => applyPlayerSettingWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      isWritableModuleSettingKey,
-      game,
-      foundry,
-      moduleId: MODULE_ID,
-      suppressNextSettingRefresh,
-      refreshOpenApps,
-      getRefreshScopesForSettingKey,
-      emitSocketRefresh,
-      logUiFailure
-    }),
-    applyPlayerFolderOwnershipWriteRequest: (message, requesterRef) => applyPlayerFolderOwnershipWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      sanitizeSocketIdentifier,
-      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
-      game,
-      foundry,
-      ui,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      emitSocketRefresh,
-      moduleId: MODULE_ID
-    }),
-    applyPlayerSopNoteRequest: (message, requesterRef) => applyPlayerSopNoteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sopKeys: SOP_KEYS,
-      clampSocketText,
-      noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
-      updateOperationsLedger,
-      setSharedSopNoteText
-    }),
-    applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      buildDefaultOperationsLedger,
-      foundry,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings: SETTINGS,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys: REFRESH_SCOPE_KEYS,
-      emitSocketRefresh
-    }),
-    applyPlayerDowntimeSubmitRequest: (message, requesterRef) => applyPlayerDowntimeSubmitRequestFeature(message, requesterRef, {
-      resolveRequester,
-      getOperationsLedger,
-      ensureDowntimeState,
-      normalizeDowntimeSubmission,
-      sanitizeSocketIdentifier,
-      applyDowntimeSubmissionForUser
-    }),
-    applyPlayerDowntimeClearRequest: (message, requesterRef) => applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
-      game,
-      canUserManageDowntimeActor,
-      updateOperationsLedger,
-      ensureDowntimeState
-    }),
-    applyPlayerDowntimeCollectRequest: (message, requesterRef) => applyPlayerDowntimeCollectRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
-      applyDowntimeCollectionForUser,
-      ui,
-      getDowntimeCollectionSummary
-    }),
-    applyPlayerMerchantBarterRequest,
-    applyPlayerMerchantTradeRequest,
-    applyPlayerLootClaimRequest,
-    applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
-  }
+  settings: SETTINGS,
+  refreshScopeKeys: REFRESH_SCOPE_KEYS,
+  normalizeRefreshScopeList,
+  setLootClaimActorSelection,
+  normalizeLootClaimActorId,
+  setLootClaimRunSelection,
+  normalizeLootClaimRunId,
+  waitForLootClaimsPublished,
+  buildLootClaimsContext,
+  logUiDebug,
+  promptLootClaimsDialogForPlayer,
+  openOperationsLootClaimsTabForPlayer,
+  openRestWatchUiForCurrentUser,
+  refreshOpenApps,
+  schedulePendingSopNoteSync,
+  syncMerchantBarterStatusForOpenDialogs,
+  applyAudioMixSocketMessage,
+  getSocketRequester,
+  sanitizeSocketIdentifier,
+  normalizeSocketActivityType,
+  getRestActivities,
+  setModuleSettingWithLocalRefreshSuppressed,
+  emitSocketRefresh,
+  normalizeSocketRestRequest,
+  restOps: SOCKET_REST_OPS,
+  clampSocketText,
+  socketNoteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+  normalizeRestNoteSaveSource,
+  applyRestRequest,
+  getRestWatchState,
+  resolveRequester,
+  canUserControlActor,
+  stampUpdate,
+  scheduleIntegrationSync,
+  applyPlayerActivityUpdateRequestFeature,
+  normalizeSocketMarchRequest,
+  marchOps: SOCKET_MARCH_OPS,
+  marchRanks: SOCKET_MARCH_RANKS,
+  applyMarchRequest,
+  getMarchingOrderState,
+  isMarchingOrderPlayerLocked,
+  applyPlayerSettingWriteRequestFeature,
+  canAccessAllPlayerOps,
+  isWritableModuleSettingKey,
+  foundry,
+  moduleId: MODULE_ID,
+  suppressNextSettingRefresh,
+  getRefreshScopesForSettingKey,
+  logUiFailure,
+  applyPlayerFolderOwnershipWriteRequestFeature,
+  constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
+  ui,
+  applyPlayerSopNoteRequestFeature,
+  sopKeys: SOP_KEYS,
+  updateOperationsLedger,
+  setSharedSopNoteText,
+  applyPlayerOperationsLedgerWriteRequestFeature,
+  buildDefaultOperationsLedger,
+  applyPlayerDowntimeSubmitRequestFeature,
+  getOperationsLedger,
+  ensureDowntimeState,
+  normalizeDowntimeSubmission,
+  applyDowntimeSubmissionForUser,
+  applyPlayerDowntimeClearRequestFeature,
+  canUserManageDowntimeActor,
+  applyPlayerDowntimeCollectRequestFeature,
+  applyDowntimeCollectionForUser,
+  getDowntimeCollectionSummary,
+  applyPlayerMerchantBarterRequest,
+  applyPlayerMerchantTradeRequest,
+  applyPlayerLootClaimRequest,
+  applyPlayerLootCurrencyClaimRequest,
+  applyPlayerLootVouchRequest
 });
 
 async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
