@@ -138,62 +138,30 @@
                       <i class="fa-solid fa-xmark"></i>
                     </button>
                   </div>
-                  <div class="po-watch-assignment-status">
-                    {{#if isPendingSelection}}
-                    <span class="po-slot-chip">Preview</span>
-                    {{else}}
-                    {{#if occupied}}
-                    <span class="po-slot-chip">Locked</span>
-                    {{else}}
-                    <span class="po-slot-chip">Open</span>
-                    {{/if}}
-                    {{/if}}
-                  </div>
+                  <span class="po-slot-chip po-watch-mini-stat {{#unless hasActorDetails}}is-muted{{/unless}}">PP {{#if hasPassivePerception}}{{actor.passivePerception}}{{else}}-{{/if}}</span>
+                  <span class="po-slot-chip po-watch-mini-stat {{#unless hasActorDetails}}is-muted{{/unless}}">PI {{#if hasPassiveInvestigation}}{{actor.passiveInvestigation}}{{else}}-{{/if}}</span>
                   <div class="po-watch-assignment-inline">
-                    {{#if hasActorDetails}}
-                    <div class="po-watch-assignment-copy">
-                      <strong>{{actor.name}}</strong>
-                    </div>
-                    <div class="po-watch-assignment-actions-inline">
-                      <span class="po-slot-chip po-watch-mini-stat">PP {{#if hasPassivePerception}}{{actor.passivePerception}}{{else}}-{{/if}}</span>
-                      <span class="po-slot-chip po-watch-mini-stat">PI {{#if hasPassiveInvestigation}}{{actor.passiveInvestigation}}{{else}}-{{/if}}</span>
-                      {{#if hasSelectableValue}}
-                      <label class="po-watch-lock-toggle po-watch-lock-toggle-inline {{#if lockChecked}}is-locked{{/if}}" title="{{lockLabel}}">
-                        <input
-                          type="checkbox"
-                          class="po-watch-lock-checkbox"
-                          data-action="lock-slot-entry"
-                          data-slot-id="{{../id}}"
-                          data-entry-index="{{index}}"
-                          {{#if lockChecked}}checked{{/if}}
-                          {{#unless canLockSelection}}disabled{{/unless}}>
-                        <span>{{#if lockChecked}}Locked{{else}}Lock{{/if}}</span>
-                      </label>
-                      {{/if}}
-                      {{#if actorId}}
-                      <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-note-input-wrap-{{../id}}-{{index}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
-                        <i class="fa-solid fa-note-sticky"></i>
-                      </button>
-                      <button type="button" class="po-icon-btn" data-action="ping" data-actor-id="{{actorId}}" aria-label="Ping {{actor.name}}">
-                        <i class="fa-solid fa-location-dot"></i>
-                      </button>
-                      {{/if}}
-                    </div>
-                    <div id="po-note-input-wrap-{{../id}}-{{index}}" class="po-notes" aria-hidden="true">
-                      <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-                      <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="3" placeholder="Notes for {{actor.name}}" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
-                      {{#if canEditNotes}}
-                      <div class="po-notes-actions">
-                        <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
-                      </div>
-                      {{else}}
-                      {{#if lockHint}}
-                      <div class="po-op-summary">{{lockHint}}</div>
-                      {{/if}}
-                      {{/if}}
+                    {{#if actorId}}
+                    <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-note-input-wrap-{{../id}}-{{index}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
+                      <i class="fa-solid fa-note-sticky"></i>
+                    </button>
+                    {{else}}
+                    <button type="button" class="po-icon-btn" disabled aria-label="Notes unavailable">
+                      <i class="fa-solid fa-note-sticky"></i>
+                    </button>
+                    {{/if}}
+                  </div>
+                  {{#if hasActorDetails}}
+                  <div id="po-note-input-wrap-{{../id}}-{{index}}" class="po-notes" aria-hidden="true">
+                    <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+                    <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="3" placeholder="Notes for {{actor.name}}" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+                    {{#if canEditNotes}}
+                    <div class="po-notes-actions">
+                      <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
                     </div>
                     {{/if}}
                   </div>
+                  {{/if}}
                 </div>
                 {{/each}}
               </div>

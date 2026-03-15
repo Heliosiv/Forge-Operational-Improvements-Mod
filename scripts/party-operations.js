@@ -7913,16 +7913,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isGM = canAccessAllPlayerOps();
       const state = getRestWatchState();
       const visibility = state.visibility ?? "names-passives";
-      const previewState = ensureRestWatchSelectionPreviewState(this);
-      const slots = applyRestWatchSelectionPreview(
-        buildWatchSlotsView(state, isGM, visibility),
-        {
-          ...previewState,
-          isGM,
-          visibility,
-          activities: getRestActivities()
-        }
-      );
+      const slots = buildWatchSlotsView(state, isGM, visibility);
       const campfireOverview = buildRestWatchCampfireOverview(slots);
       const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
       const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
@@ -8059,16 +8050,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isGM = Boolean(canAccessAllPlayerOps());
       const fallbackState = getRestWatchState();
       const fallbackVisibility = fallbackState.visibility ?? "names-passives";
-      const previewState = ensureRestWatchSelectionPreviewState(this);
-      const fallbackSlots = applyRestWatchSelectionPreview(
-        buildWatchSlotsView(fallbackState, isGM, fallbackVisibility),
-        {
-          ...previewState,
-          isGM,
-          visibility: fallbackVisibility,
-          activities: getRestActivities()
-        }
-      );
+      const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
       const fallbackCampfireOverview = buildRestWatchCampfireOverview(fallbackSlots);
       const fallbackTotalSlots = fallbackSlots.length;
       const fallbackOccupiedSlots = fallbackSlots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
@@ -8566,17 +8548,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "assign-actor-global": async () => {
           await assignSlotByPicker(element, { source: "all" });
         },
-        "select-slot-entry": async () => {
-          await selectRestWatchEntrySelection(this, element);
-        },
         "set-slot-entry": async () => {
-          await updateRestWatchEntrySelection(this, element);
-        },
-        "lock-slot-entry": async () => {
-          await lockRestWatchEntrySelection(this, element);
+          await updateRestWatchEntrySelection(element);
         },
         "clear-slot-entry": async () => {
-          await clearRestWatchEntrySelection(this, element);
+          await clearRestWatchEntrySelection(element);
         },
         "assign-me": async () => {
           await assignSlotToUser(element);
@@ -42149,7 +42125,8 @@ function buildRestWatchAssignmentRows(entries, actorOptions, entriesView = []) {
       canEditNotes: Boolean(entryView?.canEditNotes),
       isActiveCharacter: Boolean(entryView?.isActiveCharacter),
       hasPassivePerception: entryView?.actor?.passivePerception !== null && entryView?.actor?.passivePerception !== undefined,
-      hasPassiveInvestigation: entryView?.actor?.passiveInvestigation !== null && entryView?.actor?.passiveInvestigation !== undefined
+      hasPassiveInvestigation: entryView?.actor?.passiveInvestigation !== null && entryView?.actor?.passiveInvestigation !== undefined,
+      ...buildRestWatchNoteButtonContext(selectedLabel || actor?.name || "Actor", entryView?.notes ?? "")
     };
   });
 }
@@ -42209,119 +42186,6 @@ function buildRestWatchDetailSummary(slot, entriesView) {
   };
 }
 
-function getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput) {
-  const slotId = String(slotIdInput ?? "").trim();
-  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
-  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return "";
-  return `${slotId}::${entryIndex}`;
-}
-
-function ensureRestWatchSelectionPreviewState(app) {
-  if (!app || typeof app !== "object") {
-    return {
-      pendingSelections: {},
-      activeSelection: { slotId: "", entryIndex: -1 }
-    };
-  }
-  if (!app._restWatchPendingSelections || typeof app._restWatchPendingSelections !== "object") {
-    app._restWatchPendingSelections = {};
-  }
-  if (!app._restWatchActiveSelection || typeof app._restWatchActiveSelection !== "object") {
-    app._restWatchActiveSelection = { slotId: "", entryIndex: -1 };
-  }
-  return {
-    pendingSelections: app._restWatchPendingSelections,
-    activeSelection: app._restWatchActiveSelection
-  };
-}
-
-function setRestWatchActiveSelection(app, slotIdInput, entryIndexInput) {
-  const previewState = ensureRestWatchSelectionPreviewState(app);
-  const slotId = String(slotIdInput ?? "").trim();
-  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
-  previewState.activeSelection.slotId = slotId;
-  previewState.activeSelection.entryIndex = Number.isInteger(entryIndex) ? entryIndex : -1;
-}
-
-function clearRestWatchPendingSelection(app, slotIdInput, entryIndexInput) {
-  const previewState = ensureRestWatchSelectionPreviewState(app);
-  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
-  if (!key) return;
-  delete previewState.pendingSelections[key];
-}
-
-function setRestWatchPendingSelection(app, slotIdInput, entryIndexInput, actorIdInput) {
-  const previewState = ensureRestWatchSelectionPreviewState(app);
-  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
-  if (!key) return;
-  previewState.pendingSelections[key] = String(actorIdInput ?? "").trim();
-}
-
-function getRestWatchPendingSelection(app, slotIdInput, entryIndexInput) {
-  const previewState = ensureRestWatchSelectionPreviewState(app);
-  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
-  if (!key) return undefined;
-  return Object.prototype.hasOwnProperty.call(previewState.pendingSelections, key)
-    ? String(previewState.pendingSelections[key] ?? "").trim()
-    : undefined;
-}
-
-function buildRestWatchPreviewSelectOptions(selectOptions = [], effectiveActorIdInput = "", actorNameInput = "") {
-  const effectiveActorId = String(effectiveActorIdInput ?? "").trim();
-  const actorName = String(actorNameInput ?? "").trim();
-  const options = Array.isArray(selectOptions)
-    ? selectOptions.map((option) => ({
-      ...option,
-      selected: String(option?.value ?? "").trim() === effectiveActorId || (!effectiveActorId && String(option?.value ?? "").trim() === "")
-    }))
-    : [];
-  if (!effectiveActorId) return options;
-  const hasOption = options.some((option) => String(option?.value ?? "").trim() === effectiveActorId);
-  if (!hasOption) {
-    options.push({
-      value: effectiveActorId,
-      label: actorName ? `${actorName} (Other Actor)` : "Assigned Actor",
-      selected: true
-    });
-  }
-  return options;
-}
-
-function buildRestWatchPreviewEntryView(actorIdInput, sourceRow = {}, allRows = [], options = {}) {
-  const actorId = String(actorIdInput ?? "").trim();
-  if (!actorId) {
-    return {
-      actorId: "",
-      actor: null,
-      activity: null,
-      notes: "",
-      hasActorDetails: false,
-      hasPassivePerception: false,
-      hasPassiveInvestigation: false
-    };
-  }
-
-  const matchingRow = (Array.isArray(allRows) ? allRows : []).find((row) => String(row?.actorId ?? "").trim() === actorId) ?? null;
-  const row = matchingRow ?? sourceRow ?? {};
-  let actorView = row?.actor ?? null;
-  let activityView = row?.activity ?? null;
-  const actor = game.actors.get(actorId) ?? null;
-  if ((!actorView || !activityView) && actor) {
-    actorView = buildActorView(actor, Boolean(options?.isGM), options?.visibility ?? "names-passives");
-    activityView = buildActivityView(actor, options?.activities?.activities?.[actorId] ?? {});
-  }
-
-  return {
-    actorId,
-    actor: actorView,
-    activity: activityView,
-    notes: String(row?.notes ?? ""),
-    hasActorDetails: Boolean(actorView),
-    hasPassivePerception: actorView?.passivePerception !== null && actorView?.passivePerception !== undefined,
-    hasPassiveInvestigation: actorView?.passiveInvestigation !== null && actorView?.passiveInvestigation !== undefined
-  };
-}
-
 function buildRestWatchNoteButtonContext(actorNameInput, noteTextInput) {
   const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
   const noteText = String(noteTextInput ?? "");
@@ -42332,63 +42196,6 @@ function buildRestWatchNoteButtonContext(actorNameInput, noteTextInput) {
     noteButtonTitle: hasSavedNote ? `Saved note for ${actorName}:\n${savedNote}` : `Open notes for ${actorName}`,
     noteButtonAriaLabel: hasSavedNote ? `Open notes for ${actorName}. Saved note available.` : `Open notes for ${actorName}`
   };
-}
-
-function applyRestWatchSelectionPreview(slots = [], options = {}) {
-  const pendingSelections = options?.pendingSelections && typeof options.pendingSelections === "object"
-    ? options.pendingSelections
-    : {};
-  const activeSelection = options?.activeSelection && typeof options.activeSelection === "object"
-    ? options.activeSelection
-    : { slotId: "", entryIndex: -1 };
-
-  return (Array.isArray(slots) ? slots : []).map((slot) => {
-    const slotId = String(slot?.id ?? "").trim();
-    const baseRows = Array.isArray(slot?.assignmentRows) ? slot.assignmentRows : [];
-    const assignmentRows = baseRows.map((row) => {
-      const key = getRestWatchSelectionPreviewKey(slotId, row.index);
-      const hasPendingSelection = key && Object.prototype.hasOwnProperty.call(pendingSelections, key);
-      const pendingActorId = hasPendingSelection ? String(pendingSelections[key] ?? "").trim() : "";
-      const effectiveActorId = hasPendingSelection ? pendingActorId : String(row?.actorId ?? "").trim();
-      const previewView = buildRestWatchPreviewEntryView(effectiveActorId, row, baseRows, options);
-      const actorName = String(previewView?.actor?.name ?? row?.actorName ?? "").trim();
-      const lockChecked = Boolean(effectiveActorId) && !hasPendingSelection;
-      const canLockSelection = Boolean(effectiveActorId) && hasPendingSelection;
-      return {
-        ...row,
-        actorId: effectiveActorId,
-        actorName,
-        occupied: Boolean(effectiveActorId),
-        hasSelectableValue: Boolean(effectiveActorId),
-        selectOptions: buildRestWatchPreviewSelectOptions(row?.selectOptions, effectiveActorId, actorName),
-        hasActorDetails: previewView.hasActorDetails,
-        actor: previewView.actor,
-        activity: previewView.activity,
-        notes: hasPendingSelection ? "" : previewView.notes,
-        canEditNotes: Boolean(previewView.actor) && !hasPendingSelection && Boolean(row?.canEditNotes),
-        isPendingSelection: hasPendingSelection,
-        isCommittedSelection: lockChecked,
-        isSelectedEntry: String(activeSelection?.slotId ?? "").trim() === slotId && Number(activeSelection?.entryIndex) === Number(row.index),
-        lockChecked,
-        canLockSelection,
-        lockLabel: lockChecked ? "Locked In" : "Lock In Selection",
-        lockHint: canLockSelection ? "Lock this selection to edit notes." : "",
-        hasPassivePerception: previewView.hasPassivePerception,
-        hasPassiveInvestigation: previewView.hasPassiveInvestigation,
-        ...buildRestWatchNoteButtonContext(actorName, hasPendingSelection ? "" : previewView.notes)
-      };
-    });
-    const selectedAssignment = assignmentRows.find((row) => row.isSelectedEntry) ?? null;
-    return {
-      ...slot,
-      assignmentRows,
-      selectedAssignment,
-      hasSelectedAssignment: Boolean(selectedAssignment?.hasActorDetails),
-      selectedAssignmentEmptyLabel: selectedAssignment
-        ? "Choose a character from the slot selector, then lock it in."
-        : "Click a slot row on the left to preview it here."
-    };
-  });
 }
 
 function bindActorSearchDialog(dialog, actors) {
@@ -42565,67 +42372,21 @@ async function commitRestWatchEntrySelection(slotIdInput, entryIndexInput, actor
   return true;
 }
 
-async function selectRestWatchEntrySelection(app, element) {
-  if (!canAccessAllPlayerOps()) return;
-  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
-  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
-  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
-  setRestWatchActiveSelection(app, slotId, entryIndex);
-  refreshSingleAppPreservingView(app);
-}
-
-async function updateRestWatchEntrySelection(app, element) {
+async function updateRestWatchEntrySelection(element) {
   if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
   const actorId = String(element?.value ?? "").trim();
-  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
-  setRestWatchActiveSelection(app, slotId, entryIndex);
-  if (actorId === committedActorId) {
-    clearRestWatchPendingSelection(app, slotId, entryIndex);
-  } else {
-    setRestWatchPendingSelection(app, slotId, entryIndex, actorId);
-  }
-  refreshSingleAppPreservingView(app);
+  await commitRestWatchEntrySelection(slotId, entryIndex, actorId);
 }
 
-async function lockRestWatchEntrySelection(app, element) {
-  if (!canAccessAllPlayerOps()) return;
-  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
-  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
-  const shouldLock = Boolean(element?.checked);
-  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
-  setRestWatchActiveSelection(app, slotId, entryIndex);
-  if (!shouldLock) {
-    refreshSingleAppPreservingView(app);
-    return;
-  }
-  const pendingActorId = getRestWatchPendingSelection(app, slotId, entryIndex);
-  if (pendingActorId === undefined) {
-    refreshSingleAppPreservingView(app);
-    return;
-  }
-  const committed = await commitRestWatchEntrySelection(slotId, entryIndex, pendingActorId);
-  if (!committed) return;
-  clearRestWatchPendingSelection(app, slotId, entryIndex);
-  refreshSingleAppPreservingView(app);
-}
-
-async function clearRestWatchEntrySelection(app, element) {
+async function clearRestWatchEntrySelection(element) {
   if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
-  setRestWatchActiveSelection(app, slotId, entryIndex);
-  clearRestWatchPendingSelection(app, slotId, entryIndex);
-  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
-  if (!committedActorId) {
-    refreshSingleAppPreservingView(app);
-    return;
-  }
   await commitRestWatchEntrySelection(slotId, entryIndex, "");
-  refreshSingleAppPreservingView(app);
 }
 
 async function clearSlotEntry(element) {
