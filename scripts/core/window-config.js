@@ -32,6 +32,7 @@ export const REFRESH_SCOPE_KEYS = Object.freeze({
 
 export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
   "rest-watch-app",
+  "party-operations-rest-watch-shared-note",
   "operations-shell-app",
   "marching-order-app",
   "rest-watch-player-app",
@@ -48,6 +49,7 @@ export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
 export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
   [REFRESH_SCOPE_KEYS.REST]: Object.freeze([
     "rest-watch-app",
+    "party-operations-rest-watch-shared-note",
     "rest-watch-player-app"
   ]),
   [REFRESH_SCOPE_KEYS.MARCH]: Object.freeze([
@@ -80,6 +82,7 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
 
 export const PO_TEMPLATE_MAP = Object.freeze({
   "rest-watch": "modules/party-operations/templates/rest-watch.hbs",
+  "rest-watch-shared-note": "modules/party-operations/templates/rest-watch-shared-note.hbs",
   "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",
   "marching-order": "modules/party-operations/templates/marching-order.hbs",
   "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",

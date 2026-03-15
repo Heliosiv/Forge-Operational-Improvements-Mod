@@ -5,6 +5,7 @@ import {
   buildDefaultMarchDoctrineTracker,
   buildDoctrineCheckPayload,
   evaluateMarchingFormationState,
+  getMarchFormationPassiveEffectDetails,
   normalizeMarchingFormationId
 } from "./features/march-doctrine.js";
 
@@ -50,6 +51,27 @@ import {
   assert.equal(snapshot.validity.isValid, true);
   assert.equal(snapshot.formationState.state, MARCH_DOCTRINE_STATES.STABLE);
   assert.deepEqual(snapshot.effectSummaries, ["+1 Passive Perception"]);
+}
+
+{
+  const passiveDetails = getMarchFormationPassiveEffectDetails("tight-guard");
+
+  assert.deepEqual(passiveDetails.positiveSummaries, [
+    "+1 Initiative",
+    "Front +1 AC",
+    "Middle +1 AC"
+  ]);
+  assert.deepEqual(passiveDetails.negativeSummaries, [
+    "-5 ft Walk Speed",
+    "-1 Stealth Checks"
+  ]);
+}
+
+{
+  const passiveDetails = getMarchFormationPassiveEffectDetails("free");
+
+  assert.equal(passiveDetails.positiveSummary, "None");
+  assert.equal(passiveDetails.negativeSummary, "None");
 }
 
 {

@@ -3,6 +3,7 @@ import { createGmEnvironmentPageApp } from "./features/environment-ui.js";
 import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
+import { RestWatchSharedNoteApp } from "./apps/rest-watch-shared-note-app.js";
 import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
 import { createAudioStore } from "./features/audio-store.js";
 import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
@@ -31,6 +32,7 @@ import {
   getMarchFormationDefinitions,
   getMarchDoctrineTriggerLabel,
   getMarchFormationDefinition,
+  getMarchFormationPassiveEffectDetails,
   markDoctrineTriggerPending,
   normalizeMarchingFormationId
 } from "./features/march-doctrine.js";
@@ -375,6 +377,7 @@ const pendingWindowPositionPersistTimers = new Map();
 let latestCanvasRestoreRequestId = 0;
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
+let restWatchSharedNoteApp = null;
 const playerUiLocalSettingOverridesMemory = new Map();
 const playerPermissionDebugMemory = [];
 const PLAYER_PERMISSION_DEBUG_LIMIT = 50;
@@ -6240,6 +6243,112 @@ async function saveRestWatchEntryNoteFromElement(element, options = {}) {
   return saveRestWatchEntryNoteByContext(context, options);
 }
 
+function getPublishedRestWatchNoteRecord(actorOrActorId, slotIdInput) {
+  const actor = resolveActorDocument(actorOrActorId);
+  const slotId = String(slotIdInput ?? "").trim();
+  if (!actor || !slotId) return null;
+  const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
+  return Object.prototype.hasOwnProperty.call(store, slotId) ? store[slotId] : null;
+}
+
+function buildRestWatchSharedNoteEditorContext(target = {}) {
+  const slotId = String(target?.slotId ?? "").trim();
+  const actorId = String(target?.actorId ?? "").trim();
+  const state = getRestWatchState();
+  const isGM = canAccessAllPlayerOps();
+  const sourceSlots = getRestWatchSourceSlots(state);
+  const slotIndex = sourceSlots.findIndex((slot, index) => String(slot?.id ?? `watch-${index + 1}`).trim() === slotId);
+  const slot = slotIndex >= 0 ? sourceSlots[slotIndex] : null;
+  const entry = slot
+    ? sanitizeRestWatchEntries(slot).find((candidate) => String(candidate?.actorId ?? "").trim() === actorId) ?? null
+    : null;
+  const actor = actorId ? game.actors.get(actorId) ?? null : null;
+  const publishedRecord = getPublishedRestWatchNoteRecord(actorId, slotId);
+  const noteText = entry
+    ? String(entry.notes ?? "")
+    : String(publishedRecord?.text ?? "");
+  const canEdit = Boolean(
+    entry
+    && actor
+    && !isLockedForUser(state, isGM)
+    && (isGM || userOwnsActor(actor))
+  );
+  const updatedAt = Number(publishedRecord?.updatedAt ?? 0) || 0;
+  const updatedAtLabel = updatedAt > 0 ? new Date(updatedAt).toLocaleString() : "";
+  const updatedBy = String(publishedRecord?.updatedBy ?? "").trim();
+  return {
+    slotId,
+    actorId,
+    actorName: String(actor?.name ?? "Unknown Actor"),
+    slotLabel: getRestWatchSlotLabel(slotId, slotIndex >= 0 ? slotIndex : null),
+    noteText,
+    noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+    canEdit,
+    hasEntry: Boolean(entry),
+    entryStatus: entry ? (canEdit ? "Editable shared note" : "Read-only shared note") : "Inactive assignment",
+    lastSavedLabel: updatedAtLabel ? `Last saved ${updatedAtLabel}${updatedBy ? ` by ${updatedBy}` : ""}` : "",
+    visibilityHint: "Saved notes are shared and visible to everyone who can open Rest Watch.",
+    missingEntryMessage: entry ? "" : "This watch assignment is no longer active. The last saved shared note is shown read-only."
+  };
+}
+
+async function saveRestWatchSharedNoteTarget(target = {}, text = "") {
+  const context = buildRestWatchSharedNoteEditorContext(target);
+  if (!context?.slotId || !context?.actorId) return false;
+  if (!context.hasEntry) {
+    ui.notifications?.warn("This rest watch assignment is no longer active.");
+    return false;
+  }
+  if (!context.canEdit) {
+    ui.notifications?.warn("You cannot edit this shared note.");
+    return false;
+  }
+  return saveRestWatchEntryNoteByContext({
+    slotId: context.slotId,
+    actorId: context.actorId,
+    text
+  }, {
+    source: "manual",
+    notify: true
+  });
+}
+
+function getOrCreateRestWatchSharedNoteApp() {
+  if (restWatchSharedNoteApp) return restWatchSharedNoteApp;
+  const existing = Object.values(ui.windows ?? {}).find((app) => String(app?.id ?? "") === "party-operations-rest-watch-shared-note");
+  if (existing) {
+    restWatchSharedNoteApp = existing;
+    return existing;
+  }
+  restWatchSharedNoteApp = new RestWatchSharedNoteApp({
+    resolveContext: buildRestWatchSharedNoteEditorContext,
+    saveNote: saveRestWatchSharedNoteTarget,
+    onCloseApp: (app) => {
+      if (restWatchSharedNoteApp === app) restWatchSharedNoteApp = null;
+    }
+  });
+  return restWatchSharedNoteApp;
+}
+
+function openRestWatchSharedNoteEditorFromElement(element) {
+  const slotId = String(
+    element?.dataset?.slotId
+    ?? element?.closest?.("[data-slot-id]")?.dataset?.slotId
+    ?? ""
+  ).trim();
+  const actorId = String(
+    element?.dataset?.actorId
+    ?? element?.closest?.("[data-actor-id]")?.dataset?.actorId
+    ?? ""
+  ).trim();
+  if (!slotId || !actorId) return null;
+  const app = getOrCreateRestWatchSharedNoteApp();
+  app.setTarget({ slotId, actorId }, { focus: true });
+  app.render({ force: true });
+  app.bringToTop?.();
+  return app;
+}
+
 function scheduleRestWatchNoteSave(app, element, options = {}) {
   if (!app || !element) return;
   const context = getRestWatchNoteContextFromElement(element);
@@ -8546,7 +8655,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await assignSlotByPicker(element, { source: "all" });
         },
         "assign-actor-global": async () => {
-          await assignSlotByPicker(element, { source: "all" });
+          await addRestWatchVisibleSlot(element);
         },
         "set-slot-entry": async () => {
           await updateRestWatchEntrySelection(element);
@@ -8564,7 +8673,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await swapSlots(element);
         },
         "toggle-notes": async () => {
-          toggleCardNotes(element);
+          openRestWatchSharedNoteEditorFromElement(element);
+        },
+        "open-shared-note": async () => {
+          openRestWatchSharedNoteEditorFromElement(element);
         },
         "save-entry-notes": async () => {
           {
@@ -11137,7 +11249,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           await clearSlotEntry(element);
           break;
         case "toggle-notes":
-          toggleCardNotes(element);
+        case "open-shared-note":
+          openRestWatchSharedNoteEditorFromElement(element);
           break;
         case "save-entry-notes":
           {
@@ -11505,6 +11618,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "refresh":
           emitSocketRefresh();
           break;
+        case "open-march-help":
+          openMarchingOrderHelpDialog();
+          break;
         case "switch-tab":
           this.#onSwitchTabClick(event, element);
           break;
@@ -11659,6 +11775,7 @@ function buildStoredWatchSlots() {
   return [1, 2, 3, 4].map((index) => ({
     id: `watch-${index}`,
     timeRange: "",
+    visibleEntryCount: 1,
     entries: [] // each entry: { actorId, notes }
   }));
 }
@@ -11755,6 +11872,17 @@ function sanitizeRestWatchEntries(slot) {
   }];
 }
 
+function normalizeRestWatchVisibleEntryCount(slot, entries = sanitizeRestWatchEntries(slot)) {
+  const requested = Number.parseInt(slot?.visibleEntryCount, 10);
+  const highestUsedIndex = (Array.isArray(entries) ? entries : []).reduce((highest, entry) => {
+    const position = normalizeRestWatchEntryPosition(entry?.position);
+    return position === null ? highest : Math.max(highest, position);
+  }, -1);
+  const minimumVisible = Math.max(1, highestUsedIndex + 1);
+  if (!Number.isInteger(requested)) return minimumVisible;
+  return Math.max(minimumVisible, Math.min(REST_WATCH_MAX_ENTRIES, requested));
+}
+
 function normalizeRestWatchSlots(slotsInput) {
   const canonicalSlots = buildStoredWatchSlots();
   const expectedIds = new Set(canonicalSlots.map((slot) => slot.id));
@@ -11770,6 +11898,7 @@ function normalizeRestWatchSlots(slotsInput) {
       timeRange: String(slot?.timeRange ?? ""),
       entries: sanitizeRestWatchEntries(slot)
     };
+    normalizedSlot.visibleEntryCount = normalizeRestWatchVisibleEntryCount(slot, normalizedSlot.entries);
     if (expectedIds.has(slotId) && !slotsById.has(slotId)) {
       slotsById.set(slotId, normalizedSlot);
       continue;
@@ -11783,6 +11912,7 @@ function normalizeRestWatchSlots(slotsInput) {
       return {
         id: slot.id,
         timeRange: exactMatch.timeRange,
+        visibleEntryCount: exactMatch.visibleEntryCount,
         entries: exactMatch.entries
       };
     }
@@ -11791,6 +11921,7 @@ function normalizeRestWatchSlots(slotsInput) {
       return {
         id: slot.id,
         timeRange: fallback.timeRange,
+        visibleEntryCount: fallback.visibleEntryCount,
         entries: fallback.entries
       };
     }
@@ -42131,6 +42262,11 @@ function buildRestWatchAssignmentRows(entries, actorOptions, entriesView = []) {
   });
 }
 
+function buildVisibleRestWatchAssignmentRows(entries, actorOptions, entriesView = [], visibleEntryCountInput = 1) {
+  const visibleEntryCount = Math.max(1, Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(visibleEntryCountInput, 10) || 1));
+  return buildRestWatchAssignmentRows(entries, actorOptions, entriesView).slice(0, visibleEntryCount);
+}
+
 function summarizeRestWatchLanguages(entriesView) {
   const labels = [];
   const seen = new Set();
@@ -42165,13 +42301,14 @@ function summarizeRestWatchLanguages(entriesView) {
 
 function buildRestWatchDetailSummary(slot, entriesView) {
   const activeCount = Array.isArray(entriesView) ? entriesView.length : 0;
+  const visibleEntryCount = Math.max(1, Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(slot?.visibleEntryCount, 10) || 1));
   const ppRange = slot?.slotPpRange ?? computePassiveRangeForEntries(entriesView, "passivePerception");
   const pivRange = slot?.slotPivRange ?? computePassiveRangeForEntries(entriesView, "passiveInvestigation");
   const languages = summarizeRestWatchLanguages(entriesView);
   const hasCoverageWarning = activeCount > 0 && Boolean(slot?.slotNoDarkvision);
   return {
-    activeCountLabel: `${activeCount} / ${REST_WATCH_MAX_ENTRIES}`,
-    openCountLabel: `${Math.max(0, REST_WATCH_MAX_ENTRIES - activeCount)} Open`,
+    activeCountLabel: `${activeCount} / ${visibleEntryCount}`,
+    openCountLabel: `${Math.max(0, visibleEntryCount - activeCount)} Open`,
     hasCoverageWarning,
     coverageLabel: activeCount === 0 ? "Coverage Pending" : (hasCoverageWarning ? "Missing Darkvision" : "Coverage Ready"),
     coverageStateClass: hasCoverageWarning ? "is-warn" : "is-ready",
@@ -42193,8 +42330,8 @@ function buildRestWatchNoteButtonContext(actorNameInput, noteTextInput) {
   const hasSavedNote = savedNote.length > 0;
   return {
     hasSavedNote,
-    noteButtonTitle: hasSavedNote ? `Saved note for ${actorName}:\n${savedNote}` : `Open notes for ${actorName}`,
-    noteButtonAriaLabel: hasSavedNote ? `Open notes for ${actorName}. Saved note available.` : `Open notes for ${actorName}`
+    noteButtonTitle: hasSavedNote ? `Open shared note for ${actorName}.\nSaved note available.` : `Open shared note for ${actorName}`,
+    noteButtonAriaLabel: hasSavedNote ? `Open shared note for ${actorName}. Saved note available.` : `Open shared note for ${actorName}`
   };
 }
 
@@ -42387,6 +42524,19 @@ async function clearRestWatchEntrySelection(element) {
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
   await commitRestWatchEntrySelection(slotId, entryIndex, "");
+}
+
+async function addRestWatchVisibleSlot(element) {
+  if (!canAccessAllPlayerOps()) return;
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  if (!slotId) return;
+  await updateRestWatchState((state) => {
+    const slot = Array.isArray(state?.slots) ? state.slots.find((entry) => String(entry?.id ?? "").trim() === slotId) : null;
+    if (!slot) return;
+    const entries = sanitizeRestWatchEntries(slot);
+    const currentVisible = normalizeRestWatchVisibleEntryCount(slot, entries);
+    slot.visibleEntryCount = Math.min(REST_WATCH_MAX_ENTRIES, currentVisible + 1);
+  });
 }
 
 async function clearSlotEntry(element) {
@@ -42998,6 +43148,30 @@ async function clearMarchingAll() {
   });
 }
 
+function openMarchingOrderHelpDialog() {
+  const content = `
+    <div class="po-help">
+      <ul class="po-help-list">
+        <li>Click an <strong>Open</strong> or <strong>Suggested</strong> slot to place an actor directly from the formation board.</li>
+        <li>Drag cards between lanes to adjust the party's marching order.</li>
+        <li>Use the card actions for notes or quick removal.</li>
+        <li>Rest Watch actors that are not placed yet can be dragged in from the roster below the board.</li>
+      </ul>
+    </div>
+  `;
+  const dialog = new Dialog({
+    title: "Marching Order Help",
+    content,
+    buttons: {
+      close: {
+        label: "Close"
+      }
+    },
+    default: "close"
+  });
+  dialog.render(true);
+}
+
 async function commitMarchingOrderState() {
   const state = getMarchingOrderState();
   const saved = await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
@@ -43257,14 +43431,15 @@ function buildWatchSlotsView(state, isGM, visibility) {
     const hasSavedNote = savedNote.length > 0;
     return {
       hasSavedNote,
-      noteButtonTitle: hasSavedNote ? `Saved note for ${actorName}:\n${savedNote}` : `Open notes for ${actorName}`,
-      noteButtonAriaLabel: hasSavedNote ? `Open notes for ${actorName}. Saved note available.` : `Open notes for ${actorName}`
+      noteButtonTitle: hasSavedNote ? `Open shared note for ${actorName}.\nSaved note available.` : `Open shared note for ${actorName}`,
+      noteButtonAriaLabel: hasSavedNote ? `Open shared note for ${actorName}. Saved note available.` : `Open shared note for ${actorName}`
     };
   };
 
   return sourceSlots.map((slot, index) => {
     const slotId = String(slot?.id ?? `watch-${index + 1}`);
     const entries = sanitizeRestWatchEntries(slot);
+    const visibleEntryCount = normalizeRestWatchVisibleEntryCount(slot, entries);
     const campfireActive = getRestWatchSlotCampfireState(state, slotId);
 
     const entriesView = entries.map((entry) => {
@@ -43293,10 +43468,11 @@ function buildWatchSlotsView(state, isGM, visibility) {
       slotNoDarkvision,
       campfireActive,
       slotPpRange,
-      slotPivRange
+      slotPivRange,
+      visibleEntryCount
     }, entriesView);
 
-    const assignmentRows = buildRestWatchAssignmentRows(entries, playerActorOptions, entriesView);
+    const assignmentRows = buildVisibleRestWatchAssignmentRows(entries, playerActorOptions, entriesView, visibleEntryCount);
 
     return {
       id: slotId,
@@ -43312,13 +43488,15 @@ function buildWatchSlotsView(state, isGM, visibility) {
       slotPivHighLabel: slotPivRange.highLabel,
       slotPivLowLabel: slotPivRange.lowLabel,
       slotNoDarkvision,
+      visibleEntryCount,
       detailSummary,
       assignmentRows,
       hasAssignmentDetails: assignmentRows.some((row) => row.hasActorDetails),
       assignedCount: entriesView.length,
-      maxEntries: REST_WATCH_MAX_ENTRIES,
-      openCount: Math.max(0, REST_WATCH_MAX_ENTRIES - entriesView.length),
-      isFull: entriesView.length >= REST_WATCH_MAX_ENTRIES,
+      maxEntries: visibleEntryCount,
+      openCount: Math.max(0, visibleEntryCount - entriesView.length),
+      isFull: visibleEntryCount >= REST_WATCH_MAX_ENTRIES,
+      canAddVisibleSlot: visibleEntryCount < REST_WATCH_MAX_ENTRIES,
       canAssign: isGM,
       canAssignMe: !isGM && !lockedForUser
     };
@@ -43498,15 +43676,20 @@ function buildFormationPreviewRows(definition) {
 
 function buildMarchFormationChoiceCards(currentFormationId) {
   const currentId = normalizeMarchingFormation(currentFormationId);
-  return getMarchFormationDefinitions().map((definition) => ({
-    id: definition.id,
-    label: definition.label,
-    category: definition.category,
-    categoryLabel: getMarchFormationCategoryLabel(definition.category),
-    summary: definition.summary,
-    active: definition.id === currentId,
-    previewRows: buildFormationPreviewRows(definition)
-  }));
+  return getMarchFormationDefinitions().map((definition) => {
+    const passiveEffects = getMarchFormationPassiveEffectDetails(definition);
+    return {
+      id: definition.id,
+      label: definition.label,
+      category: definition.category,
+      categoryLabel: getMarchFormationCategoryLabel(definition.category),
+      summary: definition.summary,
+      passivePositiveSummary: passiveEffects.positiveSummary,
+      passiveNegativeSummary: passiveEffects.negativeSummary,
+      active: definition.id === currentId,
+      previewRows: buildFormationPreviewRows(definition)
+    };
+  });
 }
 
 function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks = []) {

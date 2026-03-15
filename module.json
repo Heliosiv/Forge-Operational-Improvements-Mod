@@ -5,7 +5,7 @@
     "url":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
     "manifest":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
     "download":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
-    "version":  "2.2.7-test.15",
+    "version":  "2.2.7-test.16",
     "authors":  [
                     {
                         "name":  "Heliosiv"
@@ -26,6 +26,7 @@
                ],
     "templates":  [
                       "templates/rest-watch.hbs",
+                      "templates/rest-watch-shared-note.hbs",
                       "templates/settings-hub.hbs",
                       "templates/marching-order.hbs",
                       "templates/party-operations-app.hbs",

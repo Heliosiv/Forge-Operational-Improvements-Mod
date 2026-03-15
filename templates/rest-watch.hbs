@@ -142,7 +142,7 @@
                   <span class="po-slot-chip po-watch-mini-stat {{#unless hasActorDetails}}is-muted{{/unless}}">PI {{#if hasPassiveInvestigation}}{{actor.passiveInvestigation}}{{else}}-{{/if}}</span>
                   <div class="po-watch-assignment-inline">
                     {{#if actorId}}
-                    <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-note-input-wrap-{{../id}}-{{index}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
+                    <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="open-shared-note" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
                       <i class="fa-solid fa-note-sticky"></i>
                     </button>
                     {{else}}
@@ -151,23 +151,12 @@
                     </button>
                     {{/if}}
                   </div>
-                  {{#if hasActorDetails}}
-                  <div id="po-note-input-wrap-{{../id}}-{{index}}" class="po-notes" aria-hidden="true">
-                    <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-                    <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="3" placeholder="Notes for {{actor.name}}" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
-                    {{#if canEditNotes}}
-                    <div class="po-notes-actions">
-                      <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
-                    </div>
-                    {{/if}}
-                  </div>
-                  {{/if}}
                 </div>
                 {{/each}}
               </div>
               <div class="po-assign-actions po-watch-assignment-actions">
-                <button type="button" class="po-btn" data-action="assign-actor-global">
-                  <i class="fa-solid fa-user-plus"></i> Add Actor
+                <button type="button" class="po-btn" data-action="assign-actor-global" data-slot-id="{{id}}" {{#unless canAddVisibleSlot}}disabled{{/unless}}>
+                  <i class="fa-solid fa-plus"></i> Add Slot
                 </button>
               </div>
               {{else}}

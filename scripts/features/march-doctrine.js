@@ -640,6 +640,18 @@ function buildEffectEntries(effectState = {}) {
   return entries;
 }
 
+function splitEffectEntriesByPolarity(effectEntries = []) {
+  return effectEntries.reduce((result, entry) => {
+    if (!entry || !Number.isFinite(Number(entry.value)) || Number(entry.value) === 0) return result;
+    if (Number(entry.value) > 0) result.positiveSummaries.push(entry.summary);
+    if (Number(entry.value) < 0) result.negativeSummaries.push(entry.summary);
+    return result;
+  }, {
+    positiveSummaries: [],
+    negativeSummaries: []
+  });
+}
+
 function buildEffectChangesForActor(actorId, rankByActorId, effectEntries) {
   const rankId = rankByActorId[actorId] ?? "";
   return effectEntries
@@ -767,6 +779,20 @@ export function buildMarchFormationChoices(currentFormationId) {
     summary: entry.summary,
     active: entry.id === currentId
   }));
+}
+
+export function getMarchFormationPassiveEffectDetails(formation) {
+  const definition = typeof formation === "object" && formation
+    ? formation
+    : getMarchFormationDefinition(formation);
+  const effectEntries = buildEffectEntries(definition?.effectsByState?.stable ?? {});
+  const { positiveSummaries, negativeSummaries } = splitEffectEntriesByPolarity(effectEntries);
+  return {
+    positiveSummaries,
+    negativeSummaries,
+    positiveSummary: positiveSummaries.join(", ") || "None",
+    negativeSummary: negativeSummaries.join(", ") || "None"
+  };
 }
 
 export function evaluateMarchingFormationState({
