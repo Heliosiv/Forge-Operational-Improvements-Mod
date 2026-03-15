@@ -304,7 +304,7 @@
   top: 0;
   z-index: 7;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--po-gm-shell-border);
@@ -673,6 +673,18 @@
     .po-window[data-tool="gm-merchants"],
     .po-window[data-tool="gm-audio"],
     .po-window[data-tool="gm-loot"]
+  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
   ) .po-gm-page-intro,
   .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-page-intro,
   .party-operations .po-window[data-tool="gm-audio"] .po-audio-hero {
@@ -762,7 +774,7 @@
   top: 0;
   z-index: 7;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(152px, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   padding: 8px;
   border: 1px solid var(--po-gm-shell-border);
@@ -906,6 +918,10 @@
 }
 
 @media (max-width: 1180px) {
+  .party-operations .po-window[data-tool="gm-factions"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
   .party-operations .po-window[data-tool="gm-factions"] .po-gm-page-intro {
     grid-template-columns: 1fr;
   }

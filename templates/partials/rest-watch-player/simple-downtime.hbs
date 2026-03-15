@@ -1,10 +1,13 @@
 <section class="po-player-hub-panel po-downtime-panel" aria-label="Downtime">
   <div class="po-section-title">Submit Downtime Action</div>
-  <div class="po-hint">Submit one downtime action for a character you can manage.</div>
+  <div class="po-op-summary"><strong>Status:</strong> {{downtime.publication.statusLabel}}</div>
+  <div class="po-op-summary"><strong>Published:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</div>
+  <div class="po-hint">{{downtime.publication.submitHint}}</div>
+  {{#if downtime.submit.canSubmit}}
   {{#if downtime.submit.canChooseActor}}
   <label class="po-resource-row">
     <span>Actor</span>
-    <select name="downtimeActorId" class="po-select">
+    <select name="downtimeActorId" class="po-select" data-action="refresh-downtime-submit-selection">
       {{#each downtime.submit.actorOptions}}
       <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
       {{/each}}
@@ -15,7 +18,7 @@
   {{/if}}
   <label class="po-resource-row">
     <span>Action</span>
-    <select name="downtimeActionKey" class="po-select">
+    <select name="downtimeActionKey" class="po-select" data-action="refresh-downtime-submit-selection">
       {{#each downtime.submit.actionOptions}}
       <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
       {{/each}}
@@ -23,15 +26,127 @@
   </label>
   <label class="po-resource-row">
     <span>Hours</span>
-    <input name="downtimeHours" type="number" min="1" max="24" step="1" class="po-input" value="{{downtime.submit.hours}}" />
+    <input name="downtimeHours" type="number" min="1" max="{{downtime.submit.hoursMax}}" step="1" class="po-input" value="{{downtime.submit.hours}}" />
   </label>
   <label class="po-resource-row po-notes-row-lg">
     <span>Note</span>
     <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional context for your GM">{{downtime.submit.note}}</textarea>
   </label>
+  <div class="po-op-summary"><strong>Area Settings:</strong> {{downtime.submit.areaSettingsLabel}}</div>
+  {{#if downtime.submit.showBrowsingFields}}
+  <label class="po-resource-row">
+    <span>Browsing Ability</span>
+    <select name="downtimeBrowsingAbility" class="po-select" data-action="refresh-downtime-submit-selection">
+      {{#each downtime.submit.browsingAbilityOptions}}
+      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+      {{/each}}
+    </select>
+  </label>
+  {{/if}}
+  {{#if downtime.submit.showCraftingFields}}
+  <label class="po-resource-row">
+    <span>Craft Item</span>
+    <select name="downtimeCraftItemId" class="po-select" data-action="refresh-downtime-submit-selection">
+      <option value="">Select craftable item</option>
+      {{#each downtime.submit.craftingCategoryViews}}
+      <optgroup label="{{label}}">
+        {{#each items}}
+        <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+        {{/each}}
+      </optgroup>
+      {{/each}}
+    </select>
+  </label>
+  {{#unless downtime.submit.hasCraftingOptions}}
+  <div class="po-op-summary">No craftable items match this actor's tool proficiencies.</div>
+  {{/unless}}
+  {{#if downtime.submit.hasSelectedCraftable}}
+  <div class="po-op-summary">Crafting: {{downtime.submit.selectedCraftableName}} | Tool {{downtime.submit.selectedCraftableTool}} | Materials {{downtime.submit.selectedCraftableMaterialCost}} gp | Progress {{downtime.submit.selectedCraftableProgressRequired}}</div>
+  {{#if downtime.submit.hasCraftingProject}}
+  <div class="po-op-summary">Existing project progress: {{downtime.submit.craftingProjectProgressLabel}}</div>
+  {{/if}}
+  {{/if}}
+  <label class="po-resource-row">
+    <span>Materials</span>
+    <select name="downtimeCraftMaterialsOwned" class="po-select" data-action="refresh-downtime-submit-selection">
+      {{#each downtime.submit.materialsOwnedOptions}}
+      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+      {{/each}}
+    </select>
+  </label>
+  {{#if downtime.submit.showMaterialDropZone}}
+  <label class="po-resource-row po-notes-row-lg">
+    <span>Materials On Hand</span>
+    <input type="hidden" name="downtimeCraftMaterialDrops" value="{{downtime.submit.materialDropsJson}}" />
+    <div class="po-loot-preview-dropzone" data-downtime-material-dropzone>Drop the material items you want the GM to review for this project.</div>
+    <div class="po-loot-preview-items-grid" data-downtime-material-drop-list>
+      {{#if downtime.submit.hasMaterialDrops}}
+      {{#each downtime.submit.materialDrops}}
+      <div class="po-op-role-row">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name"><img src="{{img}}" width="18" height="18" /> {{name}}</div>
+          <div class="po-op-role-status">x{{quantity}}</div>
+        </div>
+        <div class="po-op-summary">{{#if uuid}}{{uuid}}{{else}}World Item / Snapshot{{/if}}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-material-drop" data-drop-id="{{id}}">Remove</button>
+        </div>
+      </div>
+      {{/each}}
+      {{else}}
+      <div class="po-op-summary">No materials selected.</div>
+      {{/if}}
+    </div>
+  </label>
+  <div class="po-hint">The GM decides how much of these materials count and any extra gp due when the result is collected.</div>
+  {{/if}}
+  {{/if}}
+  {{#if downtime.submit.showCraftingFields}}
+  <details class="po-panel-disclosure">
+    <summary class="po-panel-disclosure-summary">
+      <span class="po-section-title">Crafting Catalog</span>
+      <span class="po-op-summary">Expandable baseline catalog</span>
+    </summary>
+    <div class="po-panel-disclosure-body">
+      {{#each downtime.submit.craftingCatalogCategoryViews}}
+      <details class="po-panel-disclosure">
+        <summary class="po-panel-disclosure-summary">
+          <span class="po-section-title">{{label}}</span>
+          <span class="po-op-summary">{{itemCount}} items</span>
+        </summary>
+        <div class="po-panel-disclosure-body">
+          {{#each items}}
+          <div class="po-op-summary">{{name}} | {{requiredToolProficiency}} | Cost {{materialCost}}/{{baseCost}} gp | Progress {{progressRequired}}</div>
+          {{/each}}
+        </div>
+      </details>
+      {{/each}}
+    </div>
+  </details>
+  {{/if}}
+  {{#if downtime.submit.showProfessionFields}}
+  <label class="po-resource-row">
+    <span>Profession</span>
+    <select name="downtimeProfessionId" class="po-select" data-action="refresh-downtime-submit-selection">
+      <option value="">Select profession</option>
+      {{#each downtime.submit.professionOptions}}
+      <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}{{#if known}} [Known]{{/if}}</option>
+      {{/each}}
+    </select>
+  </label>
+  {{#unless downtime.submit.hasProfessionOptions}}
+  <div class="po-op-summary">No professions are available for this actor.</div>
+  {{/unless}}
+  {{#if downtime.submit.hasKnownProfessionNames}}
+  <div class="po-op-summary">Known professions: {{#each downtime.submit.knownProfessionNames}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+  {{/if}}
+  {{/if}}
   <div class="po-op-action-row">
     <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action">Submit Downtime Action</button>
   </div>
+  {{else}}
+  <div class="po-op-summary">{{downtime.submit.disabledReason}}</div>
+  {{/if}}
   <div class="po-op-divider"></div>
   <div class="po-section-title">Current Entries</div>
   {{#if downtime.hasEntries}}
@@ -42,8 +157,20 @@
       <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
     </div>
     <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+    {{#if hasActionDetails}}
+    {{#each actionDetails}}
+    <div class="po-op-summary">{{this}}</div>
+    {{/each}}
+    {{/if}}
     {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
-    {{#if hasResult}}<div class="po-op-summary">Result: {{resultSummary}}</div>{{/if}}
+    {{#if hasResult}}
+    <div class="po-op-summary">Result: {{resultSummary}}</div>
+    {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
+    {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
+    {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
+    {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
+    {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
+    {{/if}}
     <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
   </div>
   {{/each}}

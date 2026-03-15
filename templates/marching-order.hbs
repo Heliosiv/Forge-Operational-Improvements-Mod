@@ -57,10 +57,10 @@
       {{#unless usageCollapsed}}
       <div class="po-collapsible-body">
         <ul class="po-help-list">
-          <li>Use <strong>Add Actor</strong> in each rank to assign party members.</li>
-          <li>Drag actor cards by the grip handle to reorder within a rank.</li>
-          <li>Open an actor's <strong>Note</strong> from their card when you need to read or update it.</li>
-          <li>Use planning sections to organize rank assignment before movement.</li>
+          <li>Click an <strong>Open</strong> or <strong>Suggested</strong> slot to place an actor directly from the formation board.</li>
+          <li>Drag cards between lanes to adjust the party’s marching order.</li>
+          <li>Use the card actions for notes, token ping, or quick removal.</li>
+          <li>Rest Watch actors that are not placed yet can be dragged in from the roster below the board.</li>
         </ul>
       </div>
       {{/unless}}
@@ -68,117 +68,118 @@
 
     <div class="po-grid po-columns po-primary-layout">
       <div id="po-march-ranks" class="po-ranks po-left">
-        {{#each ranks}}
-        <section class="po-rank-col po-collapsible {{#if collapsed}}is-collapsed{{/if}}" data-rank-id="{{id}}" data-section-id="rank-{{id}}">
-          <header class="po-rank-header">
-            <div class="po-rank-info">
-              <div class="po-rank-title-group">
-                <i class="po-rank-icon fa-solid {{icon}}"></i>
-                <div class="po-rank-heading-copy">
-                  <div class="po-rank-title-row">
-                    <div class="po-rank-title">{{label}}</div>
-                    {{#if capacity}}
-                    <div class="po-rank-cap-text">{{entries.length}} / {{capacity}}</div>
-                    {{/if}}
-                  </div>
-                  <div class="po-rank-desc">{{desc}}</div>
-                </div>
-              </div>
-              {{#if capacity}}
-              <div class="po-rank-capacity">
-                <div class="po-rank-cap-bar">
-                  <div class="po-rank-cap-fill" style="width: {{capacityPercent}}%"></div>
-                </div>
-              </div>
-              {{/if}}
+        <section class="po-gm-section po-march-board-panel" aria-label="Formation board">
+          <div class="po-march-board-head">
+            <div>
+              <div class="po-section-title">Formation Board</div>
+              <div class="po-op-summary">{{formationBoard.formationLabel}} · {{formationBoard.formationCategoryLabel}}</div>
             </div>
-            {{#if ../isGM}}
-            <button type="button" class="po-btn po-btn-sm" data-action="assign-rank" data-rank-id="{{id}}"><i class="fa-solid fa-user-plus"></i> Add Actor</button>
+            {{#if isGM}}
+            <button type="button" class="po-btn po-btn-sm" data-action="sync-rest-watch">
+              <i class="fa-solid fa-arrows-rotate"></i> Read Rest Watch Into March
+            </button>
             {{/if}}
-          </header>
-
-          {{#unless collapsed}}
-          <div class="po-rank-entries">
-            {{#each entries}}
-            <article class="po-entry {{#if ../isGM}}is-draggable{{/if}}" data-actor-id="{{actorId}}" {{#if ../isGM}}draggable="true"{{/if}}>
-              {{#if ../../isGM}}
-              <button type="button" class="po-entry-handle" aria-label="Drag">
-                <i class="fa-solid fa-grip-lines"></i>
-              </button>
-              {{/if}}
-              <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
-              <div class="po-entry-main">
-                <div class="po-entry-title">
-                  <span class="po-entry-name">{{actor.name}}</span>
-                  <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
-                    <i class="fa-solid fa-location-dot"></i>
-                  </button>
-                </div>
-                <div class="po-entry-sub">
-                  <span class="po-pill">PP {{actor.passivePerception}}</span>
-                  {{#if ../../isGM}}
-                  {{#if actor.ac}}
-                  <span class="po-pill">AC {{actor.ac}}</span>
-                  {{/if}}
-                  {{#if actor.darkvision}}
-                  <span class="po-pill">Darkvision {{actor.darkvision}}</span>
-                  {{/if}}
-                  {{#if actor.stealthDisadv}}
-                  <span class="po-pill is-warn">Stealth Disadv</span>
-                  {{/if}}
-                  {{#if actor.languages}}
-                  <span class="po-pill">Lang {{actor.languages}}</span>
-                  {{/if}}
-                  {{#if actor.passiveInsight}}
-                  <span class="po-pill">PI {{actor.passiveInsight}}</span>
-                  {{/if}}
-                  {{#if actor.passiveInvestigation}}
-                  <span class="po-pill">PIv {{actor.passiveInvestigation}}</span>
-                  {{/if}}
-                  {{/if}}
-                  {{#if hasLight}}
-                  <span class="po-pill po-pill-torch" title="{{lightTooltip}}">
-                    <i class="fa-solid fa-fire" aria-hidden="true"></i>
-                    Torch
-                  </span>
-                  {{/if}}
-                </div>
-                <div class="po-entry-footer">
-                  {{#if notes}}
-                  <span class="po-entry-note-status" title="{{notes}}">
-                    <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
-                    Note saved
-                  </span>
-                  {{/if}}
-                  {{#if canEditNote}}
-                  <button type="button" class="po-btn po-btn-sm po-entry-note-btn" data-action="open-entry-notes">Open Note</button>
-                  {{else}}
-                  {{#if notes}}
-                  <button type="button" class="po-btn po-btn-sm po-entry-note-btn" data-action="open-entry-notes">Open Note</button>
-                  {{/if}}
-                  {{/if}}
-                </div>
-              </div>
-              <div class="po-entry-actions-inline">
-                {{#if ../../isGM}}
-                <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{actorId}}" aria-label="Remove">
-                  <i class="fa-solid fa-xmark"></i>
-                </button>
-                {{/if}}
-              </div>
-            </article>
-            {{/each}}
-
-            {{#unless entries}}
-            <div class="po-rank-empty">
-              <i class="fa-solid fa-inbox"></i>
-              <span>Empty</span>
-            </div>
-            {{/unless}}
           </div>
-          {{/unless}}
+          <div class="po-march-board-summary">
+            <span class="po-pill">Rest Watch Roster {{formationBoard.restWatchRosterCount}}</span>
+            <span class="po-pill">Placed {{formationBoard.assignedActorCount}}</span>
+            <span class="po-pill">{{formationSummary.formationStateLabel}}</span>
+          </div>
+          <div class="po-march-board-grid" data-formation-id="{{formationBoard.formationId}}">
+            {{#each formationBoard.rows}}
+            <div class="po-march-board-row" data-rank-id="{{id}}">
+              <div class="po-march-board-label">
+                <strong>{{label}}</strong>
+                <span>{{actualCount}} placed{{#if recommendedCount}} · target {{recommendedCount}}{{/if}}</span>
+              </div>
+              <div class="po-march-board-cells">
+                {{#each cells}}
+                <div class="po-march-board-cell {{#if isRecommended}}is-recommended{{/if}} {{#if hasActor}}is-occupied{{else}}is-empty{{/if}} {{#if isCurrentUserActor}}is-user-actor{{/if}}" data-rank-id="{{../id}}" data-cell-index="{{column}}" data-insert-index="{{insertIndex}}">
+                  {{#if hasActor}}
+                  <article class="po-march-board-card" data-actor-id="{{entry.actorId}}">
+                    <div class="po-march-board-card-top">
+                      <div class="po-march-board-card-title">
+                        <img class="po-portrait" src="{{entry.actor.img}}" alt="{{entry.actor.name}}" />
+                        <div class="po-march-board-card-copy">
+                          <span class="po-march-board-cell-name">{{entry.actor.name}}</span>
+                          <div class="po-march-board-card-meta">
+                            {{#if entry.actor.passivePerception}}
+                            <span class="po-pill">PP {{entry.actor.passivePerception}}</span>
+                            {{/if}}
+                            {{#if entry.actor.ac}}
+                            <span class="po-pill">AC {{entry.actor.ac}}</span>
+                            {{/if}}
+                            {{#if entry.actor.hpLabel}}
+                            <span class="po-pill">HP {{entry.actor.hpLabel}}</span>
+                            {{/if}}
+                            {{#if entry.actor.darkvision}}
+                            <span class="po-pill">DV {{entry.actor.darkvision}}</span>
+                            {{/if}}
+                            {{#if entry.hasLight}}
+                            <span class="po-pill po-pill-torch" title="{{entry.lightTooltip}}">
+                              <i class="fa-solid fa-fire" aria-hidden="true"></i>
+                              Torch
+                            </span>
+                            {{/if}}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="po-march-board-card-actions">
+                        {{#if @root.isGM}}
+                        <button type="button" class="po-entry-handle po-march-board-card-handle" aria-label="Drag">
+                          <i class="fa-solid fa-grip-lines"></i>
+                        </button>
+                        {{/if}}
+                        <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                          <i class="fa-solid fa-location-dot"></i>
+                        </button>
+                        {{#if entry.canEditNote}}
+                        <button type="button" class="po-btn po-btn-sm po-march-board-note-btn" data-action="open-entry-notes">Note</button>
+                        {{else}}
+                        {{#if entry.notes}}
+                        <button type="button" class="po-btn po-btn-sm po-march-board-note-btn" data-action="open-entry-notes">Note</button>
+                        {{/if}}
+                        {{/if}}
+                        {{#if @root.isGM}}
+                        <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{entry.actorId}}" aria-label="Remove">
+                          <i class="fa-solid fa-xmark"></i>
+                        </button>
+                        {{/if}}
+                      </div>
+                    </div>
+                    {{#if entry.notes}}
+                    <div class="po-march-board-card-note" title="{{entry.notes}}">
+                      <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+                      Note saved
+                    </div>
+                    {{/if}}
+                  </article>
+                  {{else}}
+                  <button type="button" class="po-march-board-slot" data-action="{{action}}" data-rank-id="{{../id}}" data-insert-index="{{insertIndex}}" {{#if actionDisabled}}disabled{{/if}}>
+                    <span class="po-march-board-cell-placeholder">{{placeholderLabel}}</span>
+                    <span class="po-march-board-cell-cta">{{actionLabel}}</span>
+                  </button>
+                  {{/if}}
+                </div>
+                {{/each}}
+              </div>
+            </div>
+            {{/each}}
+          </div>
+          {{#if formationBoard.hasUnassignedRestActors}}
+          <div class="po-march-board-staging">
+            <div class="po-section-title">Rest Watch Roster Not Placed</div>
+            <div class="po-march-board-staging-list">
+              {{#each formationBoard.unassignedRestActors}}
+              <div class="po-march-board-staging-chip" data-actor-id="{{id}}">
+                <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+                <span>{{name}}</span>
+              </div>
+              {{/each}}
+            </div>
+          </div>
+          {{/if}}
         </section>
-        {{/each}}
       </div>
 
       {{#if isGM}}
@@ -219,12 +220,34 @@
               {{/each}}
             </div>
             {{/if}}
-            <div class="po-formation-grid">
-              {{#each formationChoices}}
-              <button type="button" class="po-btn {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}">{{label}}</button>
+            <div class="po-formation-card-grid">
+              {{#each formationChoiceCards}}
+              <button type="button" class="po-formation-card {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}" title="{{summary}}">
+                <div class="po-formation-card-main">
+                  <div class="po-formation-card-head">
+                    <strong>{{label}}</strong>
+                    <span>{{categoryLabel}}</span>
+                  </div>
+                  <div class="po-op-summary po-formation-card-summary">{{summary}}</div>
+                </div>
+                <div class="po-formation-preview-grid" aria-hidden="true">
+                  {{#each previewRows}}
+                  <div class="po-formation-preview-row">
+                    {{#each cells}}
+                    <span class="po-formation-preview-dot {{#if filled}}is-filled{{/if}}"></span>
+                    {{/each}}
+                  </div>
+                  {{/each}}
+                </div>
+              </button>
               {{/each}}
             </div>
-            <button type="button" class="po-btn" data-action="doctrine-check">Run Doctrine Check</button>
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="sync-rest-watch">
+                <i class="fa-solid fa-arrows-rotate"></i> Read Rest Watch
+              </button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Run Doctrine Check</button>
+            </div>
           </div>
           {{/unless}}
         </div>

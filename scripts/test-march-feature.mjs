@@ -167,6 +167,71 @@ class FakeElement {
 }
 
 {
+  const state = {
+    locked: false,
+    ranks: {
+      front: ["actor-b"],
+      middle: [],
+      rear: []
+    }
+  };
+  const refreshes = [];
+
+  const stagingChip = new FakeElement({
+    dataset: { actorId: "actor-a" },
+    classes: ["po-march-board-staging-chip"]
+  });
+  const boardCard = new FakeElement({
+    dataset: { actorId: "actor-b" },
+    classes: ["po-march-board-card"]
+  });
+  const boardCell = new FakeElement({
+    dataset: { rankId: "front", insertIndex: "0" },
+    classes: ["po-march-board-cell"]
+  });
+  boardCell.queryAllResolver = (selector) => selector === ".po-march-board-card" ? [boardCard] : [];
+
+  setupMarchingDragAndDrop({
+    querySelectorAll(selector) {
+      if (selector === ".po-entry") return [];
+      if (selector === ".po-march-board-card[data-actor-id]") return [boardCard];
+      if (selector === ".po-march-board-staging-chip[data-actor-id]") return [stagingChip];
+      if (selector === ".po-rank-col") return [];
+      if (selector === ".po-march-board-cell[data-rank-id]") return [boardCell];
+      return [];
+    }
+  }, {
+    getMarchingOrderState: () => state,
+    canAccessAllPlayerOps: () => true,
+    canDragEntry: () => true,
+    isLockedForUser: () => false,
+    notifyUiWarnThrottled: () => {},
+    updateMarchingOrderState: async (mutator) => {
+      await mutator(state);
+    },
+    refreshSingleAppPreservingView: (value) => refreshes.push(value),
+    getAppInstance: () => "march-app",
+    appInstanceKeys: { MARCHING_ORDER: "march" }
+  });
+
+  assert.equal(stagingChip.attributes.get("draggable"), "true");
+  assert.equal(boardCard.attributes.get("draggable"), "true");
+
+  await boardCell.dispatch("drop", {
+    preventDefault: () => {},
+    dataTransfer: {
+      getData: () => "actor-a"
+    },
+    target: {
+      closest: (selector) => selector === ".po-march-board-card" ? boardCard : null
+    }
+  });
+
+  assert.deepEqual(state.ranks.front, ["actor-a", "actor-b"]);
+  assert.deepEqual(refreshes, ["march-app"]);
+}
+
+{
   const state = { locked: true, ranks: { front: ["actor-a"] } };
   const entry = new FakeElement({ dataset: { actorId: "actor-a" }, classes: ["po-entry"] });
   const column = new FakeElement({ dataset: { rankId: "front" }, classes: ["po-rank-col"] });

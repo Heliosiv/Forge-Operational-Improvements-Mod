@@ -27,6 +27,8 @@ import {
   clearDoctrineTriggerPending,
   ensureMarchDoctrineTracker,
   evaluateMarchingFormationState,
+  getMarchFormationCategoryLabel,
+  getMarchFormationDefinitions,
   getMarchDoctrineTriggerLabel,
   getMarchFormationDefinition,
   markDoctrineTriggerPending,
@@ -64,6 +66,13 @@ import {
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
 import { createFeatureRegistrar } from "./core/feature-registry.js";
+import {
+  canSubmitPublishedDowntime,
+  clampDowntimeHours,
+  normalizeDowntimeActionKey,
+  normalizeDowntimePublication,
+  resolveDowntimeVisibleHours
+} from "./core/downtime-policy.js";
 import {
   addCalendarDays as addCalendarDaysBridge,
   formatCalendarDateTimeLabel as formatCalendarDateTimeLabelBridge,
@@ -195,6 +204,32 @@ import {
 import { createLauncherUiController } from "./features/launcher-ui.js";
 import { createMainTabRegistry } from "./features/main-tab-registry.js";
 import { createMainTabNavigator } from "./features/main-tab-navigation.js";
+import {
+  DOWNTIME_AREA_DISCOVERY_OPTIONS as PHASE1_DISCOVERY_OPTIONS,
+  DOWNTIME_AREA_ECONOMY_OPTIONS as PHASE1_ECONOMY_OPTIONS,
+  DOWNTIME_AREA_RISK_OPTIONS as PHASE1_RISK_OPTIONS,
+  DOWNTIME_PHASE1_ACTIONS
+} from "./features/downtime-phase1-data.js";
+import {
+  DOWNTIME_PHASE1_ACTOR_FLAG_KEYS,
+  actorHasToolProficiency,
+  actorKnowsProfession,
+  buildDowntimeEntryActionSummary,
+  buildNextCraftingProjects,
+  buildPhase1SubmitOptions,
+  formatPhase1AreaSettingsLabel,
+  getActorAbilityMod,
+  getActorProficiencyBonus,
+  getCraftableById,
+  getDowntimePhase1ActionDefinition,
+  getProfessionById,
+  normalizeBrowsingAbility,
+  normalizeDowntimeResultTier,
+  normalizePhase1ActionData,
+  normalizePhase1AreaSettings,
+  normalizePhase1MaterialDrops,
+  resolvePhase1DowntimeEntry
+} from "./features/downtime-phase1-service.js";
 const DEBUG_LOG = false;
 if (DEBUG_LOG) console.log("party-operations: script loaded");
 
@@ -1452,53 +1487,10 @@ function getCurrentModuleVersion() {
   const module = game.modules?.get(MODULE_ID);
   return String(module?.version ?? module?.data?.version ?? "dev");
 }
-const DOWNTIME_ACTION_OPTIONS = [
-  {
-    key: "carousing",
-    label: "Carousing",
-    guidance: "Social networking, rumors, and contacts."
-  },
-  {
-    key: "crafting",
-    label: "Crafting",
-    guidance: "Create mundane items and accrue work progress."
-  },
-  {
-    key: "profession",
-    label: "Practicing A Profession",
-    guidance: "Earn coin through work during downtime."
-  },
-  {
-    key: "recuperating",
-    label: "Recuperating",
-    guidance: "Recover condition and reduce stress/wounds."
-  },
-  {
-    key: "research",
-    label: "Research",
-    guidance: "Discover clues, lore, or leads."
-  },
-  {
-    key: "training",
-    label: "Training",
-    guidance: "Build progress toward a language/tool proficiency."
-  }
-];
-const DOWNTIME_TUNING_ECONOMY_OPTIONS = [
-  { value: "stingy", label: "Stingy Economy" },
-  { value: "standard", label: "Standard Economy" },
-  { value: "generous", label: "Generous Economy" }
-];
-const DOWNTIME_TUNING_RISK_OPTIONS = [
-  { value: "safe", label: "Low Complication Risk" },
-  { value: "standard", label: "Standard Risk" },
-  { value: "hazardous", label: "High Complication Risk" }
-];
-const DOWNTIME_TUNING_DISCOVERY_OPTIONS = [
-  { value: "low", label: "Sparse Discovery" },
-  { value: "standard", label: "Standard Discovery" },
-  { value: "high", label: "Rich Discovery" }
-];
+const DOWNTIME_ACTION_OPTIONS = DOWNTIME_PHASE1_ACTIONS;
+const DOWNTIME_TUNING_ECONOMY_OPTIONS = PHASE1_ECONOMY_OPTIONS;
+const DOWNTIME_TUNING_RISK_OPTIONS = PHASE1_RISK_OPTIONS;
+const DOWNTIME_TUNING_DISCOVERY_OPTIONS = PHASE1_DISCOVERY_OPTIONS;
 const DOWNTIME_SOCIAL_CONTRACT_OPTIONS = [
   {
     key: "",
@@ -1820,6 +1812,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "stabilize-injury",
   "clear-injury",
   "apply-recovery-cycle",
+  "publish-downtime-hours",
   "set-downtime-hours",
   "set-downtime-tuning",
   "set-downtime-resolve-target",
@@ -1926,10 +1919,16 @@ const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
 const environmentMovePromptByActor = new Map();
 const environmentMoveOriginByToken = new Map();
 const SOCKET_NOTE_MAX_LENGTH = 4000;
+const REST_WATCH_MAX_ENTRIES = 5;
+const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
+const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
 const SOCKET_ACTIVITY_TYPES = new Set(["rested", "light", "heavy", "strenuous"]);
 const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes"]);
 const SOCKET_MARCH_OPS = new Set(["joinRank", "setNote"]);
 const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
+const restWatchSelectOptionsCache = new Map();
+let restWatchActorOptionsCache = { key: "", options: [] };
+const downtimeSubmitOptionsCache = new Map();
 
 const ENVIRONMENT_ACTIONS = [
   {
@@ -6700,7 +6699,12 @@ function syncDowntimeSubmissionDraftFromRoot(root) {
     actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
     hours: String(root.querySelector("input[name='downtimeHours']")?.value ?? ""),
-    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
+    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? ""),
+    browsingAbility: String(root.querySelector("select[name='downtimeBrowsingAbility']")?.value ?? "").trim(),
+    craftItemId: String(root.querySelector("select[name='downtimeCraftItemId']")?.value ?? "").trim(),
+    materialsOwned: String(root.querySelector("select[name='downtimeCraftMaterialsOwned']")?.value ?? "").trim(),
+    materialDropsJson: String(root.querySelector("input[name='downtimeCraftMaterialDrops']")?.value ?? "[]"),
+    professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim()
   });
 }
 
@@ -7909,7 +7913,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isGM = canAccessAllPlayerOps();
       const state = getRestWatchState();
       const visibility = state.visibility ?? "names-passives";
-      const slots = buildWatchSlotsView(state, isGM, visibility);
+      const previewState = ensureRestWatchSelectionPreviewState(this);
+      const slots = applyRestWatchSelectionPreview(
+        buildWatchSlotsView(state, isGM, visibility),
+        {
+          ...previewState,
+          isGM,
+          visibility,
+          activities: getRestActivities()
+        }
+      );
       const campfireOverview = buildRestWatchCampfireOverview(slots);
       const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
       const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
@@ -8046,7 +8059,16 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       const isGM = Boolean(canAccessAllPlayerOps());
       const fallbackState = getRestWatchState();
       const fallbackVisibility = fallbackState.visibility ?? "names-passives";
-      const fallbackSlots = buildWatchSlotsView(fallbackState, isGM, fallbackVisibility);
+      const previewState = ensureRestWatchSelectionPreviewState(this);
+      const fallbackSlots = applyRestWatchSelectionPreview(
+        buildWatchSlotsView(fallbackState, isGM, fallbackVisibility),
+        {
+          ...previewState,
+          isGM,
+          visibility: fallbackVisibility,
+          activities: getRestActivities()
+        }
+      );
       const fallbackCampfireOverview = buildRestWatchCampfireOverview(fallbackSlots);
       const fallbackTotalSlots = fallbackSlots.length;
       const fallbackOccupiedSlots = fallbackSlots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
@@ -8178,7 +8200,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
           syncDowntimeUiDraftFromElement(event.target);
         } else if (event.target?.matches("input[name='merchantCityCatalog']")) {
           setMerchantCityCatalogDraftValue(event.target?.value ?? "");
@@ -8214,7 +8236,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           cacheRestWatchNoteDraftFromElement(event.target);
           return;
         }
-        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
           syncDowntimeUiDraftFromElement(event.target);
           return;
         }
@@ -8254,6 +8276,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         if (merchantDropTarget) {
           event.preventDefault();
           if (merchantDropTarget.classList?.contains("po-merchant-curated-row")) merchantDropTarget.classList.add("is-drop-target");
+          return;
+        }
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (materialDropZone) {
+          event.preventDefault();
           return;
         }
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
@@ -8308,6 +8335,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (materialDropZone) {
+          event.preventDefault();
+          const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
+          if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
@@ -8319,6 +8353,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Update activity UI state
     this.#updateActivityUI();
     this.#applyOperationsHoverHints();
+    renderDowntimeSubmissionMaterialDropLists(this.element);
     applyNonGmOperationsReadonly(this);
     applyMerchantEditorFilters(this.element);
     refreshTabAccessibility(this.element);
@@ -8526,10 +8561,22 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await assignSlotByPicker(element, { source: "pc" });
         },
         "assign-actor": async () => {
-          await assignSlotByPicker(element, { source: "neutral-friendly" });
+          await assignSlotByPicker(element, { source: "all" });
         },
         "assign-actor-global": async () => {
           await assignSlotByPicker(element, { source: "all" });
+        },
+        "select-slot-entry": async () => {
+          await selectRestWatchEntrySelection(this, element);
+        },
+        "set-slot-entry": async () => {
+          await updateRestWatchEntrySelection(this, element);
+        },
+        "lock-slot-entry": async () => {
+          await lockRestWatchEntrySelection(this, element);
+        },
+        "clear-slot-entry": async () => {
+          await clearRestWatchEntrySelection(this, element);
         },
         "assign-me": async () => {
           await assignSlotToUser(element);
@@ -8814,6 +8861,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
+        "publish-downtime-hours": async () => {
+          await publishDowntimeHoursToPlayers();
+        },
+        "refresh-downtime-submit-selection": async () => {
+          syncDowntimeUiDraftFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
         "set-downtime-hours": async () => {
           await setDowntimeHoursGranted(element);
         },
@@ -8831,6 +8885,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "submit-downtime-action": async () => {
           await submitDowntimeAction(element);
+        },
+        "remove-downtime-material-drop": async () => {
+          const removed = removeDowntimeSubmissionMaterialDropFromUi(element);
+          if (removed) this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "clear-downtime-entry": async () => {
           await clearDowntimeEntry(element);
@@ -10343,8 +10401,12 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   buildContext: buildGmDowntimePageContext,
   openMainTab,
   setGmDowntimeViewState,
+  publishDowntimeHoursToPlayers,
   setDowntimeHoursGranted,
   setDowntimeTuningField,
+  renderDowntimeSubmissionMaterialDropList,
+  removeDowntimeSubmissionMaterialDropFromUi,
+  addDowntimeSubmissionMaterialDropFromDropEvent,
   applyDowntimeResolverBaseToUi,
   preResolveSelectedDowntimeEntry,
   resolveSelectedDowntimeEntry,
@@ -10356,11 +10418,11 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   clearDowntimeLogEntry,
   postDowntimeLogOutcome,
   collectDowntimeResult,
+  syncDowntimeUiDraftFromElement,
   removeDowntimeResolverItemDropFromUi,
   addDowntimeResolverCraftingItemDropFromDropEvent,
   addDowntimeResolverItemRewardFromDropEvent,
   renderDowntimeResolverItemDropList,
-  syncDowntimeUiDraftFromElement,
   openGmPanelByKey
 });
 
@@ -10854,16 +10916,37 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           rankButtons: []
         },
         downtime: {
+          hoursGranted: 0,
+          draftHoursGranted: 4,
+          publishedHoursGranted: 0,
+          publication: {
+            isPublished: false,
+            publishedHoursGranted: 0,
+            publishedAt: 0,
+            publishedAtLabel: "-",
+            publishedBy: "-",
+            statusLabel: "Not published to players",
+            submitHint: "Players cannot submit downtime until the GM publishes granted hours.",
+            buttonLabel: "Publish Hours to Players"
+          },
           submit: {
             actorOptions: [],
             canChooseActor: false,
+            canSubmit: false,
             actorName: "",
             actionOptions: [],
+            hoursMax: 4,
             hours: 4,
-            note: ""
+            note: "",
+            disabledReason: "Waiting for GM to publish granted downtime hours."
           },
           entries: [],
-          hasEntries: false
+          hasEntries: false,
+          pendingCount: 0,
+          resolvedCount: 0,
+          logCount: 0,
+          logs: [],
+          hasLogs: false
         },
         lootClaims: {},
         operationsJournal: {},
@@ -10929,7 +11012,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         } else if (event.target?.matches("textarea.po-notes-input")) {
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']")) {
           syncDowntimeUiDraftFromElement(event.target);
         }
       });
@@ -10945,10 +11028,24 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           cacheRestWatchNoteDraftFromElement(event.target);
           return;
         }
-        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote']")) {
+        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']")) {
           syncDowntimeUiDraftFromElement(event.target);
           return;
         }
+      });
+
+      this.element.addEventListener("dragover", (event) => {
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (!materialDropZone) return;
+        event.preventDefault();
+      });
+
+      this.element.addEventListener("drop", async (event) => {
+        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
+        if (!materialDropZone) return;
+        event.preventDefault();
+        const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
+        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
       });
 
       this.element.addEventListener("dblclick", (event) => {
@@ -10958,6 +11055,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     }
 
     this.#updateActivityUI();
+    renderDowntimeSubmissionMaterialDropLists(this.element);
     diagnoseRenderedMainTabs(this.element, "rest-watch-player");
     restorePendingWindowState(this);
     restorePendingUiState(this);
@@ -11041,6 +11139,10 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           setPlayerHubTab(element?.dataset?.tab);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           break;
+        case "refresh-downtime-submit-selection":
+          syncDowntimeUiDraftFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
         case "switch-tab":
           this.#onSwitchTabClick(event, element);
           break;
@@ -11078,6 +11180,11 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           break;
         case "set-loot-claim-run":
           if (setLootClaimRunSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "remove-downtime-material-drop":
+          if (removeDowntimeSubmissionMaterialDropFromUi(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
           break;
@@ -11167,6 +11274,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const miniViz = buildMiniVisualizationContext({ visibility: "names-passives" });
     const miniVizUi = buildMiniVizUiContext();
     const lightToggles = buildLightToggles(state, ranks, isGM);
+    const formationChoiceCards = buildMarchFormationChoiceCards(formationSnapshot.formation.id);
+    const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
     const frontCount = (ranks.find((rank) => rank.id === "front")?.entries?.length ?? 0);
     const middleCount = (ranks.find((rank) => rank.id === "middle")?.entries?.length ?? 0);
     const rearCount = (ranks.find((rank) => rank.id === "rear")?.entries?.length ?? 0);
@@ -11190,6 +11299,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       usageToggleIcon: "fa-chevron-up",
       ranks,
       formationChoices: buildMarchFormationChoices(formationSnapshot.formation.id),
+      formationChoiceCards,
+      formationBoard,
       formationSummary: {
         label: formationSnapshot.formation.label,
         category: formationSnapshot.formation.category,
@@ -11442,6 +11553,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "assign-rank":
           await assignActorToRank(element);
           break;
+        case "join-rank":
+          await joinRank(element);
+          break;
         case "remove-from-rank":
           await removeActorFromRanks(element);
           break;
@@ -11468,6 +11582,9 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
           break;
         case "formation-set":
           await applyMarchingFormation({ type: element?.dataset?.formationId });
+          break;
+        case "sync-rest-watch":
+          await syncMarchingOrderFromRestWatch();
           break;
         case "doctrine-check":
           await runDoctrineCheckPrompt();
@@ -11586,24 +11703,79 @@ function getRestWatchSlotLabel(slotIdInput, fallbackIndex = null) {
   return slotNumber ? `Watch ${slotNumber}` : "Watch";
 }
 
-function sanitizeRestWatchEntries(slot) {
-  const rawEntries = Array.isArray(slot?.entries) ? slot.entries : [];
-  const entries = rawEntries
-    .map((entry) => {
+function normalizeRestWatchEntryPosition(positionInput) {
+  const position = Number.parseInt(positionInput, 10);
+  if (!Number.isInteger(position) || position < 0 || position >= REST_WATCH_MAX_ENTRIES) return null;
+  return position;
+}
+
+function buildRestWatchFixedEntryRows(entriesInput = []) {
+  const fixedRows = Array.from({ length: REST_WATCH_MAX_ENTRIES }, () => null);
+  const pending = [];
+
+  for (const entry of Array.isArray(entriesInput) ? entriesInput : []) {
+    const actorId = String(entry?.actorId ?? "").trim();
+    if (!actorId) continue;
+    const normalizedEntry = {
+      actorId,
+      notes: String(entry?.notes ?? "")
+    };
+    const position = normalizeRestWatchEntryPosition(entry?.position);
+    if (position === null || fixedRows[position]) {
+      pending.push(normalizedEntry);
+      continue;
+    }
+    fixedRows[position] = normalizedEntry;
+  }
+
+  for (const entry of pending) {
+    const nextOpenIndex = fixedRows.findIndex((row) => !row);
+    if (nextOpenIndex === -1) break;
+    fixedRows[nextOpenIndex] = entry;
+  }
+
+  return fixedRows;
+}
+
+function serializeRestWatchFixedEntryRows(fixedRows = []) {
+  return fixedRows
+    .map((entry, position) => {
       const actorId = String(entry?.actorId ?? "").trim();
       if (!actorId) return null;
       return {
         actorId,
-        notes: String(entry?.notes ?? "")
+        notes: String(entry?.notes ?? ""),
+        position
       };
     })
     .filter(Boolean);
-  if (entries.length > 0) return entries;
+}
+
+function sanitizeRestWatchEntries(slot) {
+  const rawEntries = Array.isArray(slot?.entries) ? slot.entries : [];
+  const seenActorIds = new Set();
+  const entries = rawEntries
+    .map((entry) => {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId) return null;
+      if (seenActorIds.has(actorId)) return null;
+      seenActorIds.add(actorId);
+      return {
+        actorId,
+        notes: String(entry?.notes ?? ""),
+        position: normalizeRestWatchEntryPosition(entry?.position)
+      };
+    })
+    .filter(Boolean);
+  if (entries.length > 0) {
+    return serializeRestWatchFixedEntryRows(buildRestWatchFixedEntryRows(entries));
+  }
   const legacyActorId = String(slot?.actorId ?? "").trim();
   if (!legacyActorId) return [];
   return [{
     actorId: legacyActorId,
-    notes: String(slot?.notes ?? "")
+    notes: String(slot?.notes ?? ""),
+    position: 0
   }];
 }
 
@@ -20888,6 +21060,9 @@ function buildDefaultOperationsLedger() {
     },
     downtime: {
       hoursGranted: 4,
+      publishedHoursGranted: 0,
+      publishedAt: 0,
+      publishedBy: "",
       tuning: {
         economy: "standard",
         risk: "standard",
@@ -21383,6 +21558,107 @@ function getSelectedResourceItemQuantity(resourcesState, resourceKey) {
   return Math.max(0, Math.floor(getResourceItemQuantity(item, resourceKey)));
 }
 
+function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
+  const user = options?.user ?? game.user;
+  const canManageDowntime = canAccessAllPlayerOps(user);
+  const publication = normalizeDowntimePublication(downtimeState?.publication ?? {});
+  const entries = Array.isArray(downtimeState?.entries) ? downtimeState.entries : [];
+  const logs = Array.isArray(downtimeState?.logs) ? downtimeState.logs : [];
+  const pendingCount = entries.filter((entry) => !entry?.result).length;
+  const resolvedCount = Math.max(0, entries.length - pendingCount);
+  const visibleHoursGranted = resolveDowntimeVisibleHours({
+    isGM: canManageDowntime,
+    stateHoursGranted: downtimeState?.hoursGranted,
+    publicationHoursGranted: publication?.publishedHoursGranted,
+    published: publication?.isPublished
+  });
+  const draftHoursGranted = clampDowntimeHours(downtimeState?.hoursGranted ?? visibleHoursGranted, visibleHoursGranted);
+  const publishedAtLabel = publication.publishedAt > 0 ? new Date(publication.publishedAt).toLocaleString() : "-";
+  const canSubmit = canSubmitPublishedDowntime({
+    isGM: canManageDowntime,
+    isPublished: publication.isPublished
+  });
+
+  return {
+    hoursGranted: visibleHoursGranted,
+    draftHoursGranted,
+    publishedHoursGranted: publication.publishedHoursGranted,
+    publication: {
+      isPublished: publication.isPublished,
+      publishedHoursGranted: publication.publishedHoursGranted,
+      publishedAt: publication.publishedAt,
+      publishedAtLabel,
+      publishedBy: publication.publishedBy || "-",
+      statusLabel: publication.isPublished
+        ? `${publication.publishedHoursGranted} hour(s) published to players`
+        : "Not published to players",
+      submitHint: publication.isPublished
+        ? `Players can submit up to ${publication.publishedHoursGranted} hour(s) until you republish.`
+        : "Players cannot submit downtime until the GM publishes granted hours.",
+      buttonLabel: publication.isPublished ? "Republish Hours to Players" : "Publish Hours to Players"
+    },
+    pendingCount,
+    resolvedCount,
+    logs: [],
+    logCount: logs.length,
+    hasLogs: logs.length > 0,
+    entries: [],
+    hasEntries: entries.length > 0,
+    submit: {
+      canSubmit,
+      canChooseActor: false,
+      actorName: "",
+      actorOptions: [],
+      actionOptions: [],
+      selectedActionKey: "browsing",
+      hoursMax: Math.max(1, visibleHoursGranted),
+      hours: String(Math.max(1, visibleHoursGranted)),
+      note: "",
+      areaSettingsLabel: formatPhase1AreaSettingsLabel(downtimeState?.tuning ?? {}),
+      showBrowsingFields: false,
+      showCraftingFields: false,
+      showProfessionFields: false,
+      browsingAbilityOptions: [],
+      craftingCategoryViews: [],
+      craftingCatalogCategoryViews: [],
+      hasCraftingOptions: false,
+      materialsOwnedOptions: [],
+      showMaterialDropZone: false,
+      materialDrops: [],
+      hasMaterialDrops: false,
+      materialDropsJson: "[]",
+      professionOptions: [],
+      hasProfessionOptions: false,
+      knownProfessionNames: [],
+      hasKnownProfessionNames: false,
+      selectedCraftableName: "",
+      hasSelectedCraftable: false,
+      selectedCraftableTool: "",
+      selectedCraftableProgressRequired: 0,
+      selectedCraftableMaterialCost: 0,
+      selectedCraftableBaseCost: 0,
+      hasCraftingProject: false,
+      craftingProjectProgressLabel: "",
+      selectedProfessionName: "",
+      selectedProfessionKnown: false,
+      disabledReason: canSubmit
+        ? ""
+        : "Waiting for GM to publish granted downtime hours."
+    },
+    gmResolve: {
+      hasPending: false,
+      pendingOptions: [],
+      selectedActorId: "",
+      selectedActorName: "",
+      selectedActionKey: "browsing",
+      selectedActionLabel: "Browsing",
+      selectedActionGuidance: "",
+      hasSelectedActionDetails: false,
+      selectedActionDetails: []
+    }
+  };
+}
+
 function buildOperationsContext() {
   const ledger = getOperationsLedger();
   const roleMeta = [
@@ -21470,7 +21746,11 @@ function buildOperationsContext() {
   });
   const partyHealthState = ensurePartyHealthState(ledger);
   const downtimeState = ensureDowntimeState(ledger);
-  const downtime = buildDowntimeContext(downtimeState);
+  const activeOperationsPage = String(getActiveOperationsPage() ?? "").trim().toLowerCase();
+  const shouldBuildDowntimeDetails = activeOperationsPage === "downtime";
+  const downtime = shouldBuildDowntimeDetails
+    ? buildDowntimeContext(downtimeState)
+    : buildDowntimeSummaryContext(downtimeState);
   const lootSources = buildLootSourceRegistryContext();
   const lootClaims = buildLootClaimsContext(game.user);
   const operationsJournal = buildOperationsJournalContext();
@@ -24926,11 +25206,12 @@ function filterMerchantDefinitionsForGm(definitions = [], filterState = {}) {
 function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const user = options?.user ?? game.user;
   const merchantsState = ensureMerchantsState(ledger);
-  const viewerIsGm = canAccessAllPlayerOps(user);
+  const viewerCanManageMerchants = canAccessAllPlayerOps(user);
+  const viewerHasMerchantDebugControls = canAccessGmPage(user);
   const definitions = sortMerchantDefinitions(merchantsState.definitions ?? []);
   const stockStateById = merchantsState.stockStateById ?? {};
   const selectableActors = getDowntimeSelectableActorsForUser(user);
-  const canChooseActor = viewerIsGm;
+  const canChooseActor = viewerHasMerchantDebugControls;
   const actorOptions = selectableActors.map((actor) => ({
     id: String(actor?.id ?? ""),
     name: String(actor?.name ?? `Actor ${actor?.id ?? ""}`).trim() || `Actor ${actor?.id ?? ""}`,
@@ -25236,7 +25517,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const viewerAssignedSettlement = resolveMerchantSettlementForUser(user, merchantsState, undefined, {
     allowStoredPreference: true
   });
-  const settlementView = viewerIsGm
+  const settlementView = viewerCanManageMerchants
     ? buildMerchantSettlementOptions(
       definitionsForDisplay,
       "",
@@ -25247,14 +25528,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       activeLabel: viewerAssignedSettlement ? getMerchantSettlementLabel(viewerAssignedSettlement) : "All Locations",
       options: []
     };
-  if (viewerIsGm && hasStoredSettlement && settlementView.activeValue !== getSelectedMerchantSettlement()) {
+  if (viewerCanManageMerchants && hasStoredSettlement && settlementView.activeValue !== getSelectedMerchantSettlement()) {
     setSelectedMerchantSettlement(settlementView.activeValue);
   }
 
   const availableMerchants = (!activeActor || !viewerCanUseShop)
     ? []
     : definitionsForDisplay
-      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: viewerIsGm }))
+      .filter((merchant) => isMerchantAvailableToActor(merchant, activeActor, settlementView.activeValue, { isGM: viewerCanManageMerchants }))
       .map((merchant) => {
         const hasMerchantActor = Boolean(merchant.actorId && game.actors.get(merchant.actorId));
         const canOpenShop = Boolean(activeActorId) && hasMerchantActor;
@@ -25467,6 +25748,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     selectedSettlement: settlementView.activeValue,
     selectedSettlementLabel: settlementView.activeLabel,
     canChooseActor,
+    showGmDebugOptions: viewerHasMerchantDebugControls,
     actorOptions,
     hasActorOptions: actorOptions.length > 0,
     activeActorId,
@@ -27489,6 +27771,10 @@ async function setMerchantSettlementFromElement(element) {
 }
 
 function setMerchantActorSelectionFromElement(element) {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can change the merchant debug actor.");
+    return false;
+  }
   return setSelectedMerchantActorFromElement(element);
 }
 
@@ -28409,8 +28695,8 @@ async function openMerchantShopFromElement(element) {
 }
 
 function getDowntimeActionDefinition(actionKey = "") {
-  const key = String(actionKey ?? "").trim().toLowerCase();
-  return DOWNTIME_ACTION_OPTIONS.find((entry) => entry.key === key) ?? DOWNTIME_ACTION_OPTIONS[0];
+  const key = normalizeDowntimeActionKey(actionKey);
+  return getDowntimePhase1ActionDefinition(key);
 }
 
 function getDowntimeSocialContractDefinition(contractKey = "") {
@@ -28436,9 +28722,9 @@ function normalizeDowntimeSocialContract(rawContract = {}, actionKey = "") {
   const definition = getDowntimeSocialContractDefinition(source?.key ?? source?.value ?? "");
   const notes = String(source?.notes ?? source?.detail ?? "").trim().slice(0, 800);
   const featureItemId = String(source?.featureItemId ?? "").trim();
-  const action = String(actionKey ?? "").trim().toLowerCase();
+  const action = normalizeDowntimeActionKey(actionKey);
   const hasContract = Boolean(definition.key);
-  const available = hasContract && action === "carousing";
+  const available = hasContract && action === "browsing";
   return {
     key: available ? definition.key : "",
     label: available ? definition.label : "",
@@ -28515,6 +28801,12 @@ function normalizeDowntimeResult(result = {}) {
   const resolvedAtRaw = Number(result?.resolvedAt ?? result?.rolledAt ?? Date.now());
   const resolvedAt = Number.isFinite(resolvedAtRaw) ? resolvedAtRaw : Date.now();
   const actionDef = getDowntimeActionDefinition(result?.actionKey);
+  const actionData = normalizePhase1ActionData(actionDef.key, result?.actionData ?? {}, {
+    actor: null,
+    moduleId: MODULE_ID,
+    areaSettings: result?.areaSettings
+  });
+  const areaSettings = normalizePhase1AreaSettings(result?.areaSettings ?? actionData.areaSettings ?? {});
   const details = Array.isArray(result?.details)
     ? result.details.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 8)
     : [];
@@ -28548,17 +28840,57 @@ function normalizeDowntimeResult(result = {}) {
   const gpDelta = gpAward - gpCost;
   const rumorCount = Number.isFinite(rumorCountRaw) ? Math.max(0, Math.floor(rumorCountRaw)) : 0;
   const socialContract = normalizeDowntimeSocialContract(result?.socialContract ?? {}, actionDef.key);
+  const tier = normalizeDowntimeResultTier(result?.tier, "success");
+  const expectedQuality = String(result?.expectedQuality ?? "").trim();
+  const suggestedTags = Array.isArray(result?.suggestedTags)
+    ? result.suggestedTags.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const browsing = result?.browsing && typeof result.browsing === "object"
+    ? {
+        ability: normalizeBrowsingAbility(result.browsing.ability ?? actionData.browsingAbility),
+        dc: Math.max(0, Math.floor(Number(result.browsing.dc ?? 0) || 0)),
+        checkTotal: Math.max(0, Math.floor(Number(result.browsing.checkTotal ?? rollTotalRaw) || 0)),
+        expectedQuality: String(result.browsing.expectedQuality ?? expectedQuality).trim(),
+        gmGuidance: String(result.browsing.gmGuidance ?? "").trim()
+      }
+    : null;
+  const craftingSource = result?.crafting && typeof result.crafting === "object" ? result.crafting : {};
+  const crafting = String(craftingSource.itemId ?? "").trim()
+    ? {
+        itemId: String(craftingSource.itemId ?? "").trim(),
+        itemName: String(craftingSource.itemName ?? "").trim(),
+        progressBefore: Math.max(0, Math.floor(Number(craftingSource.progressBefore ?? 0) || 0)),
+        progressGained: Math.max(0, Math.floor(Number(craftingSource.progressGained ?? progressRaw) || 0)),
+        progressAfter: Math.max(0, Math.floor(Number(craftingSource.progressAfter ?? 0) || 0)),
+        progressRequired: Math.max(0, Math.floor(Number(craftingSource.progressRequired ?? 0) || 0)),
+        complete: craftingSource.complete === true,
+        materialsSecured: craftingSource.materialsSecured === true
+      }
+    : null;
+  const professionSource = result?.profession && typeof result.profession === "object" ? result.profession : {};
+  const profession = String(professionSource.professionId ?? "").trim()
+    ? {
+        professionId: String(professionSource.professionId ?? "").trim(),
+        professionName: String(professionSource.professionName ?? "").trim(),
+        trained: professionSource.trained === true,
+        performanceLabel: String(professionSource.performanceLabel ?? result?.performanceLabel ?? "").trim()
+      }
+    : null;
   const hasClaimableRewards = gpAward > 0
     || gpCost > 0
     || rumorCount > 0
     || itemRewards.length > 0
     || itemRewardDrops.length > 0
     || gmNotes.length > 0
-    || socialContract.hasContract;
+    || socialContract.hasContract
+    || Boolean(crafting);
   return {
     id: String(result?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
     actionKey: actionDef.key,
     actionLabel: String(result?.actionLabel ?? actionDef.label).trim() || actionDef.label,
+    actionData,
+    areaSettings,
+    tier,
     summary: String(result?.summary ?? "").trim(),
     details,
     rollTotal: Number.isFinite(rollTotalRaw) ? Math.floor(rollTotalRaw) : 0,
@@ -28574,6 +28906,12 @@ function normalizeDowntimeResult(result = {}) {
     itemRewardDrops,
     gmNotes,
     socialContract,
+    expectedQuality,
+    suggestedTags,
+    browsing,
+    crafting,
+    profession,
+    performanceLabel: String(result?.performanceLabel ?? profession?.performanceLabel ?? "").trim(),
     hasClaimableRewards,
     collected,
     collectedAt,
@@ -28586,18 +28924,21 @@ function ensureDowntimeState(ledger) {
     ledger.downtime = {};
   }
   const downtime = ledger.downtime;
-  const hoursGrantedRaw = Number(downtime.hoursGranted ?? 4);
-  downtime.hoursGranted = Number.isFinite(hoursGrantedRaw)
-    ? Math.max(1, Math.min(24, Math.floor(hoursGrantedRaw)))
-    : 4;
+  downtime.hoursGranted = clampDowntimeHours(downtime.hoursGranted, 4);
+  const publication = normalizeDowntimePublication(downtime, downtime.hoursGranted);
+  downtime.publishedHoursGranted = publication.publishedHoursGranted;
+  downtime.publishedAt = publication.publishedAt;
+  downtime.publishedBy = publication.publishedBy;
   if (!downtime.tuning || typeof downtime.tuning !== "object") downtime.tuning = {};
 
   const economyAllowed = new Set(DOWNTIME_TUNING_ECONOMY_OPTIONS.map((entry) => entry.value));
   const riskAllowed = new Set(DOWNTIME_TUNING_RISK_OPTIONS.map((entry) => entry.value));
   const discoveryAllowed = new Set(DOWNTIME_TUNING_DISCOVERY_OPTIONS.map((entry) => entry.value));
   const economy = String(downtime.tuning.economy ?? "standard").trim().toLowerCase();
-  const risk = String(downtime.tuning.risk ?? "standard").trim().toLowerCase();
-  const discovery = String(downtime.tuning.discovery ?? "standard").trim().toLowerCase();
+  const riskRaw = String(downtime.tuning.risk ?? "standard").trim().toLowerCase();
+  const discoveryRaw = String(downtime.tuning.discovery ?? "standard").trim().toLowerCase();
+  const risk = riskRaw === "safe" ? "low" : riskRaw === "hazardous" ? "high" : riskRaw;
+  const discovery = discoveryRaw === "low" ? "sparse" : discoveryRaw === "high" ? "rich" : discoveryRaw;
   downtime.tuning.economy = economyAllowed.has(economy) ? economy : "standard";
   downtime.tuning.risk = riskAllowed.has(risk) ? risk : "standard";
   downtime.tuning.discovery = discoveryAllowed.has(discovery) ? discovery : "standard";
@@ -28612,8 +28953,13 @@ function ensureDowntimeState(ledger) {
     const actorId = String(rawEntry?.actorId ?? rawActorId ?? "").trim();
     if (!actorId) continue;
     const actionDef = getDowntimeActionDefinition(rawEntry?.actionKey);
-    const rawHours = Number(rawEntry?.hours ?? downtime.hoursGranted);
-    const hours = Number.isFinite(rawHours) ? Math.max(1, Math.min(downtime.hoursGranted, Math.floor(rawHours))) : downtime.hoursGranted;
+    const hours = clampDowntimeHours(rawEntry?.hours, downtime.hoursGranted);
+    const areaSettings = normalizePhase1AreaSettings(rawEntry?.areaSettings ?? downtime.tuning, downtime.tuning);
+    const actionData = normalizePhase1ActionData(actionDef.key, rawEntry?.actionData ?? {}, {
+      actor: game.actors.get(actorId),
+      moduleId: MODULE_ID,
+      areaSettings
+    });
     const updatedAtRaw = Number(rawEntry?.updatedAt ?? rawEntry?.submittedAt ?? 0);
     const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0;
     const pending = rawEntry?.pending !== false;
@@ -28640,6 +28986,9 @@ function ensureDowntimeState(ledger) {
       actorId,
       actorName,
       actionKey: actionDef.key,
+      areaSettings,
+      actionData,
+      submittedCheck: normalizeDowntimeSubmittedCheck(rawEntry?.submittedCheck),
       hours,
       note: String(rawEntry?.note ?? "").slice(0, 1000),
       pending,
@@ -28907,16 +29256,239 @@ function canUserManageDowntimeActor(user, actor) {
   return Boolean(userCharacterId && actorId && userCharacterId === actorId);
 }
 
+function normalizeDowntimeCheckAbilityKey(value, fallback = "int") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, normalized)) return normalized;
+  const fallbackKey = String(fallback ?? "int").trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(MERCHANT_BARTER_ABILITY_LABELS, fallbackKey)) return fallbackKey;
+  return "int";
+}
+
+function normalizeDowntimeSubmittedCheck(raw = {}, fallbackAbility = "int") {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const d20 = Math.max(0, Math.floor(Number(source.d20 ?? source.natural ?? 0) || 0));
+  if (d20 <= 0) return null;
+  const abilityKey = normalizeDowntimeCheckAbilityKey(source.abilityKey ?? source.ability, fallbackAbility);
+  const abilityLabel = String(source.abilityLabel ?? MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Ability").trim() || "Ability";
+  const abilityMod = Number.isFinite(Number(source.abilityMod))
+    ? Math.floor(Number(source.abilityMod))
+    : 0;
+  const proficiencyBonus = Number.isFinite(Number(source.proficiencyBonus))
+    ? Math.max(0, Math.floor(Number(source.proficiencyBonus)))
+    : 0;
+  const computedTotal = d20 + abilityMod + proficiencyBonus;
+  const total = Number.isFinite(Number(source.total))
+    ? Math.max(1, Math.floor(Number(source.total)))
+    : computedTotal;
+  return {
+    actionKey: String(source.actionKey ?? "").trim(),
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim(),
+    checkLabel: String(source.checkLabel ?? `${abilityLabel} Check`).trim() || `${abilityLabel} Check`,
+    abilityKey,
+    abilityLabel,
+    abilityMod,
+    proficiencyBonus,
+    d20,
+    total,
+    formula: String(source.formula ?? "1d20").trim() || "1d20",
+    rolledAt: Math.max(0, Math.floor(Number(source.rolledAt ?? Date.now()) || Date.now())),
+    rolledByUserId: String(source.rolledByUserId ?? "").trim(),
+    rolledByUserName: String(source.rolledByUserName ?? "").trim() || "Player",
+    actionSummary: String(source.actionSummary ?? "").trim()
+  };
+}
+
+function buildDowntimeSubmittedCheckLabel(check = null) {
+  const normalized = normalizeDowntimeSubmittedCheck(check);
+  if (!normalized) return "";
+  const modLabel = normalized.abilityMod >= 0 ? `+${normalized.abilityMod}` : `${normalized.abilityMod}`;
+  const proficiencyLabel = normalized.proficiencyBonus > 0 ? `, proficiency +${normalized.proficiencyBonus}` : "";
+  const byLabel = normalized.rolledByUserId
+    ? `${normalized.rolledByUserName} [${normalized.rolledByUserId}]`
+    : normalized.rolledByUserName;
+  return `${normalized.total} total (${normalized.d20} on d20, ${normalized.abilityLabel} ${modLabel}${proficiencyLabel}) by ${byLabel}`;
+}
+
+function buildDowntimeSubmissionCheckRequest(submission = {}, actor = null) {
+  if (!submission || !actor) return null;
+  const actionKey = String(submission.actionKey ?? "").trim();
+  const actionDef = getDowntimeActionDefinition(actionKey);
+  const actionData = submission?.actionData && typeof submission.actionData === "object" ? submission.actionData : {};
+  const actorName = String(actor?.name ?? submission?.actorName ?? "Unknown Actor").trim() || "Unknown Actor";
+  const hours = Math.max(1, Math.floor(Number(submission?.hours ?? 1) || 1));
+  const actionSummary = buildDowntimeEntryActionSummary({
+    actionKey: actionDef.key,
+    actionData,
+    areaSettings: submission?.areaSettings ?? {},
+    actor
+  }, {
+    moduleId: MODULE_ID
+  }).join(" | ");
+
+  if (actionDef.key === "browsing") {
+    const abilityKey = normalizeBrowsingAbility(actionData?.browsingAbility);
+    const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Intelligence");
+    return {
+      actionKey: actionDef.key,
+      actorId: String(actor.id ?? "").trim(),
+      actorName,
+      checkLabel: `${abilityLabel} Browsing Check`,
+      abilityKey,
+      abilityLabel,
+      abilityMod: getActorAbilityMod(actor, abilityKey),
+      proficiencyBonus: 0,
+      actionSummary,
+      hours
+    };
+  }
+
+  if (actionDef.key === "crafting") {
+    const craftable = getCraftableById(actionData?.craftItemId);
+    if (!craftable) return null;
+    const abilityKey = normalizeDowntimeCheckAbilityKey(craftable.checkAbility, "int");
+    const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Intelligence");
+    const hasTool = actorHasToolProficiency(actor, craftable.requiredToolId, craftable.requiredToolProficiency);
+    return {
+      actionKey: actionDef.key,
+      actorId: String(actor.id ?? "").trim(),
+      actorName,
+      checkLabel: `${craftable.name} Crafting Check`,
+      abilityKey,
+      abilityLabel,
+      abilityMod: getActorAbilityMod(actor, abilityKey),
+      proficiencyBonus: hasTool ? getActorProficiencyBonus(actor) : 0,
+      actionSummary,
+      hours
+    };
+  }
+
+  const profession = getProfessionById(actionData?.professionId);
+  if (!profession) return null;
+  const abilityKey = normalizeDowntimeCheckAbilityKey(profession.checkAbility, "wis");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Wisdom");
+  const trained = actorKnowsProfession(actor, profession.id, { moduleId: MODULE_ID });
+  return {
+    actionKey: actionDef.key,
+    actorId: String(actor.id ?? "").trim(),
+    actorName,
+    checkLabel: `${profession.name} Profession Check`,
+    abilityKey,
+    abilityLabel,
+    abilityMod: getActorAbilityMod(actor, abilityKey),
+    proficiencyBonus: trained ? getActorProficiencyBonus(actor) : 0,
+    actionSummary,
+    hours
+  };
+}
+
+async function promptLocalDowntimeSubmissionCheck(submission = {}, actor = null) {
+  const request = buildDowntimeSubmissionCheckRequest(submission, actor);
+  if (!request) return null;
+  const actionLabel = String(getDowntimeActionDefinition(request.actionKey).label ?? "Downtime").trim() || "Downtime";
+  const proficiencyLine = request.proficiencyBonus > 0
+    ? `<p><strong>Modifier:</strong> ${poEscapeHtml(request.abilityLabel)} ${request.abilityMod >= 0 ? `+${request.abilityMod}` : `${request.abilityMod}`} and proficiency +${request.proficiencyBonus}</p>`
+    : `<p><strong>Modifier:</strong> ${poEscapeHtml(request.abilityLabel)} ${request.abilityMod >= 0 ? `+${request.abilityMod}` : `${request.abilityMod}`}</p>`;
+  const content = `
+    <div class="po-help">
+      <p>Submit <strong>${poEscapeHtml(actionLabel)}</strong> for <strong>${poEscapeHtml(request.actorName)}</strong>.</p>
+      <p><strong>Hidden roll:</strong> this check will be sent to the GM only and will not be shown to you.</p>
+      <p><strong>Check:</strong> ${poEscapeHtml(request.checkLabel)}</p>
+      <p><strong>Hours:</strong> ${request.hours}</p>
+      ${proficiencyLine}
+      ${request.actionSummary ? `<p><strong>Summary:</strong> ${poEscapeHtml(request.actionSummary)}</p>` : ""}
+    </div>
+  `;
+
+  return await new Promise((resolve) => {
+    let settled = false;
+    let rollPending = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const dialog = new Dialog({
+      title: "Submit Downtime Check",
+      content,
+      buttons: {
+        roll: {
+          label: "Roll and Submit",
+          callback: async () => {
+            rollPending = true;
+            const roll = await (new Roll("1d20 + @abilityMod + @proficiencyBonus", {
+              abilityMod: request.abilityMod,
+              proficiencyBonus: request.proficiencyBonus
+            })).evaluate();
+            const d20 = extractGatherNaturalResult(roll)
+              ?? Math.max(1, Math.floor(Number(roll.total ?? 1) || 1) - request.abilityMod - request.proficiencyBonus);
+            settle(normalizeDowntimeSubmittedCheck({
+              ...request,
+              d20,
+              total: Math.floor(Number(roll.total ?? 0) || 0),
+              formula: "1d20 + @abilityMod + @proficiencyBonus",
+              rolledAt: Date.now(),
+              rolledByUserId: String(game.user?.id ?? "").trim(),
+              rolledByUserName: String(game.user?.name ?? "Player").trim() || "Player"
+            }, request.abilityKey));
+          }
+        },
+        cancel: {
+          label: "Cancel",
+          callback: () => settle(null)
+        }
+      },
+      default: "roll",
+      close: () => {
+        if (!rollPending) settle(null);
+      }
+    });
+    dialog.render(true);
+  });
+}
+
+async function postDowntimeSubmissionToGmChat(entry = {}, actor = null, requester = null) {
+  const submittedCheck = normalizeDowntimeSubmittedCheck(entry?.submittedCheck);
+  if (!submittedCheck) return;
+  const gmIds = ChatMessage.getWhisperRecipients("GM").map((user) => String(user?.id ?? "").trim()).filter(Boolean);
+  if (gmIds.length <= 0) return;
+  const actionDef = getDowntimeActionDefinition(entry?.actionKey);
+  const actionSummary = buildDowntimeEntryActionSummary({
+    actionKey: actionDef.key,
+    actionData: entry?.actionData ?? {},
+    areaSettings: entry?.areaSettings ?? {},
+    actor
+  }, {
+    moduleId: MODULE_ID
+  });
+  const note = String(entry?.note ?? "").trim();
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    whisper: gmIds,
+    content: `
+      <p><strong>Pending Downtime Submission</strong></p>
+      <p><strong>Actor:</strong> ${poEscapeHtml(String(actor?.name ?? entry?.actorName ?? "Unknown Actor"))}</p>
+      <p><strong>Requested By:</strong> ${poEscapeHtml(String(requester?.name ?? submittedCheck.rolledByUserName ?? "Player"))} ${requester?.id ? `(${poEscapeHtml(String(requester.id))})` : ""}</p>
+      <p><strong>Action:</strong> ${poEscapeHtml(String(actionDef.label ?? "Downtime"))}</p>
+      <p><strong>Hours:</strong> ${Math.max(1, Math.floor(Number(entry?.hours ?? 1) || 1))}</p>
+      <p><strong>Hidden Check:</strong> ${poEscapeHtml(buildDowntimeSubmittedCheckLabel(submittedCheck))}</p>
+      ${actionSummary.map((detail) => `<p>${poEscapeHtml(detail)}</p>`).join("")}
+      ${note ? `<p><strong>Note:</strong> ${poEscapeHtml(note)}</p>` : ""}
+    `
+  });
+}
+
 function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
   const actionDef = getDowntimeActionDefinition(entry?.actionKey);
-  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
-  const hours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
-  const blocks = Math.max(1, Math.ceil(hours / 4));
-  const tuning = downtimeState?.tuning ?? {};
-  const economy = String(tuning.economy ?? "standard");
-  const discovery = String(tuning.discovery ?? "standard");
-  const economyMultiplier = economy === "stingy" ? 0.8 : economy === "generous" ? 1.3 : 1;
-  const discoveryBonus = discovery === "low" ? 0 : discovery === "high" ? 1 : 0;
+  const areaSettings = normalizePhase1AreaSettings(entry?.areaSettings ?? downtimeState?.tuning ?? {}, downtimeState?.tuning ?? {});
+  const actionData = normalizePhase1ActionData(actionDef.key, entry?.actionData ?? {}, {
+    actor: game.actors.get(String(entry?.actorId ?? "").trim()),
+    moduleId: MODULE_ID,
+    areaSettings
+  });
+  const craftable = getCraftableById(actionData?.craftItemId);
+  const profession = getProfessionById(actionData?.professionId);
 
   let gpAward = 0;
   let gpCost = 0;
@@ -28924,55 +29496,38 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
   let itemRewards = [];
   let itemRewardDrops = [];
   let summary = `${actionDef.label} resolved.`;
-  let hint = DOWNTIME_RESOLVE_DEFAULT_HINT;
-  let socialContract = normalizeDowntimeSocialContract({}, actionDef.key);
+  let hint = `Area settings: ${formatPhase1AreaSettingsLabel(areaSettings)}.`;
+  const socialContract = normalizeDowntimeSocialContract({}, actionDef.key);
 
-  switch (actionDef.key) {
-    case "carousing": {
-      const socialSpend = Math.max(2, Math.round((5 * blocks) * economyMultiplier));
-      rumorCount = Math.max(1, blocks + discoveryBonus);
-      gpAward = Math.max(0, Math.floor(blocks * economyMultiplier));
-      gpCost = socialSpend;
-      summary = `Carousing established ${rumorCount} rumor/contact lead(s).`;
-      hint = "Carousing can establish a social contract connection. Choose the contract type and confirm costs.";
-      socialContract = normalizeDowntimeSocialContract({ key: "potion-broker" }, actionDef.key);
-      break;
+  if (actionDef.key === "browsing") {
+    const browsingAbility = normalizeBrowsingAbility(actionData?.browsingAbility);
+    summary = "Browsing produced GM-facing guidance only.";
+    hint = `Resolve a ${browsingAbility.toUpperCase()} browsing check. Output guidance, expected quality, and suggested tags without writing the final story.`;
+  } else if (actionDef.key === "crafting") {
+    if (craftable) {
+      gpCost = actionData?.materialsOwned === true || actionData?.materialsSecured === true
+        ? 0
+        : Math.max(0, Math.floor(Number(craftable.materialCost ?? 0) || 0));
+      summary = `Crafting is queued for ${craftable.name}.`;
+      hint = `Validate ${craftable.requiredToolProficiency}, grant progress, and persist incomplete work on the actor.`;
+    } else {
+      summary = "Crafting requires a selected craftable item.";
+      hint = "Select a craftable item before resolving.";
     }
-    case "crafting":
-      itemRewards = ["Crafting materials package"];
-      itemRewardDrops = [];
-      gpAward = Math.max(0, Math.floor((2 * blocks) * economyMultiplier));
-      summary = "Crafting yielded usable materials or a completed mundane item.";
-      hint = "Crafting defaults to item/material rewards plus optional reimbursement. Drag dropped crafting items are granted directly on collect.";
-      break;
-    case "profession":
-      gpAward = Math.max(1, Math.floor((3 * blocks) * economyMultiplier));
-      summary = `Professional work earned ${gpAward} gp.`;
-      hint = "Profession defaults to direct coin payout.";
-      break;
-    case "recuperating":
-      summary = "Recuperation granted recovery progress and treatment stabilization.";
-      hint = "Recuperating usually grants notes/progress; coin and items are optional.";
-      break;
-    case "research":
-      rumorCount = Math.max(1, blocks + discoveryBonus);
-      summary = `Research uncovered ${rumorCount} actionable lead(s).`;
-      hint = "Research defaults to rumors/leads and reference notes.";
-      break;
-    case "training":
-      itemRewards = ["Training milestone credit"];
-      summary = `Training logged ${hours} hour(s) of progress.`;
-      hint = "Training defaults to milestone notes and optional certification reward.";
-      break;
-    default:
-      summary = `${actionDef.label} resolved for ${hours} hour(s).`;
-      hint = "Set any payout and notes, then resolve.";
-      break;
+  } else if (actionDef.key === "profession") {
+    summary = profession
+      ? `${profession.name} work will resolve trained or untrained earnings.`
+      : "Profession work requires a selected profession.";
+    hint = profession
+      ? `Resolve ${profession.name} using trained or untrained logic from actor-known professions.`
+      : "Select a profession before resolving.";
   }
 
   return {
     actionKey: actionDef.key,
     actionLabel: actionDef.label,
+    actionData,
+    areaSettings,
     gpAward: Math.max(0, Math.floor(gpAward)),
     gpCost: Math.max(0, Math.floor(gpCost)),
     rumorCount: Math.max(0, Math.floor(rumorCount)),
@@ -28986,12 +29541,77 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
   };
 }
 
+function safeStringifyCacheValue(value) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "";
+  }
+}
+
+function buildDowntimeSubmitActorCacheStamp(actor, moduleId = MODULE_ID) {
+  if (!actor) return "none";
+  const knownProfessions = actor?.flags?.[moduleId]?.[DOWNTIME_PHASE1_ACTOR_FLAG_KEYS.knownProfessions] ?? [];
+  const craftingProjects = actor?.flags?.[moduleId]?.[DOWNTIME_PHASE1_ACTOR_FLAG_KEYS.craftingProjects] ?? {};
+  const tools = actor?.system?.tools && typeof actor.system.tools === "object"
+    ? Object.entries(actor.system.tools).map(([key, value]) => ({
+      key: String(key ?? "").trim(),
+      prof: Number(value?.prof ?? value?.proficient ?? value?.value ?? 0),
+      proficient: value?.proficient === true
+    }))
+    : [];
+  return safeStringifyCacheValue({
+    actorId: String(actor?.id ?? "").trim(),
+    itemCount: Number(actor?.items?.size ?? actor?.items?.length ?? 0) || 0,
+    knownProfessions,
+    craftingProjects,
+    tools
+  });
+}
+
+function getCachedDowntimeSubmitOptions({
+  actor = null,
+  selectedActionKey = "",
+  actionData = {},
+  areaSettings = {},
+  moduleId = MODULE_ID
+} = {}) {
+  const key = safeStringifyCacheValue({
+    actorStamp: buildDowntimeSubmitActorCacheStamp(actor, moduleId),
+    selectedActionKey: String(selectedActionKey ?? "").trim(),
+    actionData,
+    areaSettings
+  });
+  const cached = downtimeSubmitOptionsCache.get(key);
+  if (cached) return cached;
+  const built = buildPhase1SubmitOptions({
+    actor,
+    selectedActionKey,
+    actionData,
+    areaSettings,
+    moduleId
+  });
+  if (downtimeSubmitOptionsCache.size >= DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX) {
+    const oldest = downtimeSubmitOptionsCache.keys().next();
+    if (!oldest.done) downtimeSubmitOptionsCache.delete(oldest.value);
+  }
+  downtimeSubmitOptionsCache.set(key, built);
+  return built;
+}
+
 function buildDowntimeContext(downtimeState = {}, options = {}) {
   const user = options.user ?? game.user;
-  const isGMUser = Boolean(user?.isGM);
+  const canManageDowntime = canAccessAllPlayerOps(user);
   const entriesSort = normalizeDowntimeEntriesSort(options?.entriesSort);
   const logsSort = normalizeDowntimeLogsSort(options?.logsSort);
-  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+  const configuredHoursGranted = clampDowntimeHours(downtimeState?.hoursGranted, 4);
+  const publication = normalizeDowntimePublication(downtimeState, configuredHoursGranted);
+  const hoursGranted = resolveDowntimeVisibleHours({
+    configuredHoursGranted,
+    publishedHoursGranted: publication.publishedHoursGranted,
+    isPublished: publication.isPublished,
+    isGM: canManageDowntime
+  });
   const tuning = downtimeState?.tuning ?? {};
   const economy = String(tuning.economy ?? "standard");
   const risk = String(tuning.risk ?? "standard");
@@ -29001,7 +29621,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const defaultActorId = selectableActors.some((actor) => String(actor.id) === activeActorId)
     ? activeActorId
     : String(selectableActors[0]?.id ?? "");
-  const canChooseActor = canAccessAllPlayerOps(user);
+  const canChooseActor = canManageDowntime;
   const actorOptions = canChooseActor
     ? [
       { id: "", name: "Select actor", selected: !defaultActorId },
@@ -29022,6 +29642,22 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const actorEntries = Object.values(downtimeState?.entries ?? {}).map((entry) => {
     const actor = game.actors.get(String(entry?.actorId ?? "").trim());
     const actionDef = getDowntimeActionDefinition(entry?.actionKey);
+    const areaSettings = normalizePhase1AreaSettings(entry?.areaSettings ?? downtimeState?.tuning ?? {}, downtimeState?.tuning ?? {});
+    const actionData = normalizePhase1ActionData(actionDef.key, entry?.actionData ?? {}, {
+      actor,
+      moduleId: MODULE_ID,
+      areaSettings
+    });
+    const actionDetails = buildDowntimeEntryActionSummary({
+      actionKey: actionDef.key,
+      actionData,
+      areaSettings,
+      actor
+    }, {
+      moduleId: MODULE_ID
+    });
+    const submittedCheck = normalizeDowntimeSubmittedCheck(entry?.submittedCheck);
+    const submittedCheckLabel = canManageDowntime ? buildDowntimeSubmittedCheckLabel(submittedCheck) : "";
     const updatedAtRawValue = Number(entry?.updatedAt ?? 0);
     const updatedAtRaw = Number.isFinite(updatedAtRawValue) ? updatedAtRawValue : 0;
     const updatedAtDate = updatedAtRaw > 0 ? new Date(updatedAtRaw) : null;
@@ -29060,18 +29696,35 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       actionKey: actionDef.key,
       actionLabel: actionDef.label,
       actionGuidance: actionDef.guidance,
-      hours: Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted))),
+      areaSettings,
+      areaSettingsLabel: formatPhase1AreaSettingsLabel(areaSettings),
+      actionData,
+      actionDetails,
+      hasActionDetails: actionDetails.length > 0,
+      hasSubmittedCheck: canManageDowntime && Boolean(submittedCheck),
+      submittedCheckLabel,
+      hours: clampDowntimeHours(entry?.hours, configuredHoursGranted),
       note: String(entry?.note ?? ""),
       hasNote: String(entry?.note ?? "").trim().length > 0,
       pending: entry?.pending !== false,
       statusLabel: entry?.pending !== false
-        ? (isGMUser && hasPreResolved ? "Pre-Resolved (GM Draft)" : "Pending Resolution")
+        ? (canManageDowntime && hasPreResolved ? "Pre-Resolved (GM Draft)" : "Pending Resolution")
         : "Resolved",
       updatedAtValue: updatedAtRaw,
       updatedAtLabel,
       updatedBy: String(entry?.updatedBy ?? "Player"),
-      canClear: isGMUser && canUserManageDowntimeActor(user, actor),
+      canClear: canManageDowntime && canUserManageDowntimeActor(user, actor),
       hasResult: Boolean(result),
+      resultTier: String(result?.tier ?? ""),
+      resultTierLabel: String(result?.tier ?? "").trim()
+        ? (String(result?.tier ?? "") === "exceptional-success"
+          ? "Exceptional Success"
+          : String(result?.tier ?? "") === "strong-success"
+            ? "Strong Success"
+            : String(result?.tier ?? "") === "success"
+              ? "Success"
+              : "Failure")
+        : "",
       resultSummary: String(result?.summary ?? ""),
       resultDetails: Array.isArray(result?.details) ? result.details : [],
       hasResultDetails: Array.isArray(result?.details) && result.details.length > 0,
@@ -29088,6 +29741,18 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       progress: Math.max(0, Number(result?.progress ?? 0) || 0),
       hasComplication: String(result?.complication ?? "").trim().length > 0,
       complication: String(result?.complication ?? ""),
+      expectedQuality: String(result?.expectedQuality ?? ""),
+      hasExpectedQuality: String(result?.expectedQuality ?? "").trim().length > 0,
+      suggestedTags: Array.isArray(result?.suggestedTags) ? result.suggestedTags : [],
+      hasSuggestedTags: Array.isArray(result?.suggestedTags) && result.suggestedTags.length > 0,
+      performanceLabel: String(result?.performanceLabel ?? ""),
+      hasPerformanceLabel: String(result?.performanceLabel ?? "").trim().length > 0,
+      craftingStatus: result?.crafting
+        ? (result.crafting.complete === true
+          ? `Completed ${result.crafting.itemName || "project"}`
+          : `${result.crafting.progressAfter}/${result.crafting.progressRequired} progress on ${result.crafting.itemName || "project"}`)
+        : "",
+      hasCraftingStatus: Boolean(result?.crafting),
       resolvedAtLabel: result?.resolvedAt ? new Date(Number(result.resolvedAt)).toLocaleString() : "",
       resolvedBy: String(result?.resolvedBy ?? ""),
       rumorCount,
@@ -29111,9 +29776,9 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       rewardSummary: rewardParts.length > 0 ? rewardParts.join(" | ") : "No claimable rewards",
       collectedAtLabel,
       collectedBy: String(result?.collectedBy ?? ""),
-      hasPreResolved: isGMUser && hasPreResolved,
-      preResolvedAtLabel: isGMUser && hasPreResolved ? stagedAtLabel : "",
-      preResolvedBy: isGMUser && hasPreResolved ? String(entry?.stagedBy ?? "GM") : ""
+      hasPreResolved: canManageDowntime && hasPreResolved,
+      preResolvedAtLabel: canManageDowntime && hasPreResolved ? stagedAtLabel : "",
+      preResolvedBy: canManageDowntime && hasPreResolved ? String(entry?.stagedBy ?? "GM") : ""
     };
   });
 
@@ -29143,8 +29808,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   });
 
   const currentEntry = actorEntries.find((entry) => entry.actorId === defaultActorId) ?? null;
-  const selectedActionKey = currentEntry?.actionKey ?? DOWNTIME_ACTION_OPTIONS[0]?.key ?? "carousing";
-  const submitHours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(currentEntry?.hours ?? hoursGranted) || hoursGranted)));
+  const selectedActionKey = currentEntry?.actionKey ?? DOWNTIME_ACTION_OPTIONS[0]?.key ?? "browsing";
+  const submitHourCap = canManageDowntime ? configuredHoursGranted : hoursGranted;
   const actionOptions = DOWNTIME_ACTION_OPTIONS.map((entry) => ({
     ...entry,
     selected: entry.key === selectedActionKey
@@ -29179,6 +29844,16 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           actorId: String(entry?.actorId ?? "").trim(),
           actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
           actionLabel: normalized.actionLabel,
+          resultTier: String(normalized.tier ?? ""),
+          resultTierLabel: String(normalized.tier ?? "").trim()
+            ? (String(normalized.tier ?? "") === "exceptional-success"
+              ? "Exceptional Success"
+              : String(normalized.tier ?? "") === "strong-success"
+                ? "Strong Success"
+                : String(normalized.tier ?? "") === "success"
+                  ? "Success"
+                  : "Failure")
+            : "",
           hours: Math.max(1, Math.floor(Number(entry?.hours ?? 4) || 4)),
           summary: normalized.summary,
           details: Array.isArray(normalized.details) ? normalized.details : [],
@@ -29194,6 +29869,18 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           gpDeltaLabel: gpDelta > 0 ? `+${gpDelta}` : String(gpDelta),
           hasComplication: normalized.complication.length > 0,
           complication: normalized.complication,
+          expectedQuality: String(normalized.expectedQuality ?? ""),
+          hasExpectedQuality: String(normalized.expectedQuality ?? "").trim().length > 0,
+          suggestedTags: Array.isArray(normalized.suggestedTags) ? normalized.suggestedTags : [],
+          hasSuggestedTags: Array.isArray(normalized.suggestedTags) && normalized.suggestedTags.length > 0,
+          performanceLabel: String(normalized.performanceLabel ?? ""),
+          hasPerformanceLabel: String(normalized.performanceLabel ?? "").trim().length > 0,
+          craftingStatus: normalized?.crafting
+            ? (normalized.crafting.complete === true
+              ? `Completed ${normalized.crafting.itemName || "project"}`
+              : `${normalized.crafting.progressAfter}/${normalized.crafting.progressRequired} progress on ${normalized.crafting.itemName || "project"}`)
+            : "",
+          hasCraftingStatus: Boolean(normalized?.crafting),
           rumorCount,
           hasRumorCount: rumorCount > 0,
           itemRewards,
@@ -29294,6 +29981,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   const resolvedSubmitActorId = actorOptions.some((entry) => entry.id === draftedSubmitActorId)
     ? draftedSubmitActorId
     : defaultActorId;
+  const submitEntry = actorEntries.find((entry) => entry.actorId === resolvedSubmitActorId) ?? currentEntry;
+  const submitHours = submitHourCap > 0
+    ? clampDowntimeHours(submitEntry?.hours ?? submitHourCap, submitHourCap)
+    : clampDowntimeHours(submitEntry?.hours ?? configuredHoursGranted, configuredHoursGranted);
   for (const option of actorOptions) {
     option.selected = option.id === resolvedSubmitActorId;
   }
@@ -29304,11 +29995,30 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     selected: entry.key === draftedSubmitActionKey
   }));
   if (!submitActionOptions.some((entry) => entry.selected)) {
-    const fallbackActionKey = String(currentEntry?.actionKey ?? submitActionOptions[0]?.key ?? "").trim();
+    const fallbackActionKey = String(submitEntry?.actionKey ?? currentEntry?.actionKey ?? submitActionOptions[0]?.key ?? "").trim();
     for (const option of submitActionOptions) {
       option.selected = option.key === fallbackActionKey;
     }
   }
+  const resolvedSubmitActionKey = String(submitActionOptions.find((entry) => entry.selected)?.key ?? submitActionOptions[0]?.key ?? selectedActionKey ?? "browsing").trim();
+  const submitActor = game.actors.get(resolvedSubmitActorId) ?? null;
+  const submitActionDataSource = {
+    ...(submitEntry?.actionData && typeof submitEntry.actionData === "object" ? submitEntry.actionData : {}),
+    ...(submitDraft && typeof submitDraft === "object" ? submitDraft : {}),
+    areaSettings: downtimeState?.tuning ?? {}
+  };
+  const submitActionDetails = getCachedDowntimeSubmitOptions({
+    actor: submitActor,
+    selectedActionKey: resolvedSubmitActionKey,
+    actionData: submitActionDataSource,
+    areaSettings: downtimeState?.tuning ?? {},
+    moduleId: MODULE_ID
+  });
+  const selectedCraftable = submitActionDetails.selectedCraftable;
+  const activeCraftingProject = submitActionDetails.craftingProject;
+  const selectedProfession = submitActionDetails.selectedProfession;
+  const hasCraftingOptions = submitActionDetails.craftingCategoryViews.some((category) => Array.isArray(category.items) && category.items.length > 0);
+  const hasProfessionOptions = submitActionDetails.professionOptions.length > 0;
 
   const draftedResolutionActorId = String(resolutionDraft?.actorId ?? "").trim();
   const resolvedPendingActorId = pendingOptions.some((entry) => entry.actorId === draftedResolutionActorId)
@@ -29319,7 +30029,21 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
   }
 
   const selectedPending = pendingOptions.find((entry) => entry.selected) ?? null;
-  const selectedPendingItemRewardDrops = parseDowntimeItemRewardDrops(String(selectedPending?.baseItemRewardDropsJson ?? "[]"));
+  const selectedPendingEntry = pendingEntries.find((entry) => entry.actorId === resolvedPendingActorId) ?? null;
+  const selectedPendingActionKey = String(selectedPending?.actionKey ?? selectedPendingEntry?.actionKey ?? "").trim();
+  const selectedPendingActionDefinition = getDowntimeActionDefinition(selectedPendingActionKey);
+  const selectedPendingActionData = normalizePhase1ActionData(selectedPendingActionDefinition.key, selectedPendingEntry?.actionData ?? {}, {
+    actor: game.actors.get(String(selectedPendingEntry?.actorId ?? "").trim()),
+    moduleId: MODULE_ID,
+    areaSettings: selectedPendingEntry?.areaSettings ?? downtimeState?.tuning ?? {}
+  });
+  const selectedPendingSubmittedCheck = normalizeDowntimeSubmittedCheck(selectedPendingEntry?.submittedCheck);
+  const selectedPendingMaterialDrops = normalizePhase1MaterialDrops(selectedPendingActionData?.materialDrops ?? []);
+  const selectedPendingCraftable = getCraftableById(selectedPendingActionData?.craftItemId);
+  const selectedPendingProfession = getProfessionById(selectedPendingActionData?.professionId);
+  const selectedPendingIsBrowsing = selectedPendingActionDefinition.key === "browsing";
+  const selectedPendingIsCrafting = selectedPendingActionDefinition.key === "crafting";
+  const selectedPendingIsProfession = selectedPendingActionDefinition.key === "profession";
   const draftedResolutionSocialContractKey = Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "socialContractKey")
     ? String(resolutionDraft?.socialContractKey ?? "").trim()
     : String(selectedPending?.baseSocialContractKey ?? "").trim();
@@ -29327,9 +30051,30 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     ? String(resolutionDraft?.itemRewardDropsJson ?? "[]")
     : String(selectedPending?.baseItemRewardDropsJson ?? "[]");
   const draftedResolutionItemRewardDrops = parseDowntimeItemRewardDrops(draftedResolutionItemRewardDropsJson);
+  const publishedAtLabel = publication.publishedAt > 0 ? new Date(publication.publishedAt).toLocaleString() : "-";
+  const canSubmit = canSubmitPublishedDowntime({
+    isGM: canManageDowntime,
+    isPublished: publication.isPublished
+  });
 
   return {
     hoursGranted,
+    draftHoursGranted: configuredHoursGranted,
+    publishedHoursGranted: publication.publishedHoursGranted,
+    publication: {
+      isPublished: publication.isPublished,
+      publishedHoursGranted: publication.publishedHoursGranted,
+      publishedAt: publication.publishedAt,
+      publishedAtLabel,
+      publishedBy: publication.publishedBy || "-",
+      statusLabel: publication.isPublished
+        ? `${publication.publishedHoursGranted} hour(s) published to players`
+        : "Not published to players",
+      submitHint: publication.isPublished
+        ? `Players can submit up to ${publication.publishedHoursGranted} hour(s) until you republish.`
+        : "Players cannot submit downtime until the GM publishes granted hours.",
+      buttonLabel: publication.isPublished ? "Republish Hours to Players" : "Publish Hours to Players"
+    },
     tuning: {
       economy,
       risk,
@@ -29350,14 +30095,49 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     submit: {
       actorOptions,
       canChooseActor,
+      canSubmit,
       actorName: actorOptions.find((entry) => entry.selected)?.name ?? "",
       actionOptions: submitActionOptions,
+      selectedActionKey: resolvedSubmitActionKey,
+      hoursMax: Math.max(1, submitHourCap || configuredHoursGranted),
       hours: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "hours")
         ? String(submitDraft?.hours ?? "")
         : submitHours,
       note: Object.prototype.hasOwnProperty.call(submitDraft ?? {}, "note")
         ? String(submitDraft?.note ?? "")
-        : (currentEntry?.note ?? "")
+        : (submitEntry?.note ?? ""),
+      areaSettingsLabel: formatPhase1AreaSettingsLabel(downtimeState?.tuning ?? {}),
+      showBrowsingFields: submitActionDetails.showBrowsingFields,
+      showCraftingFields: submitActionDetails.showCraftingFields,
+      showProfessionFields: submitActionDetails.showProfessionFields,
+      browsingAbilityOptions: submitActionDetails.browsingAbilityOptions,
+      craftingCategoryViews: submitActionDetails.craftingCategoryViews,
+      craftingCatalogCategoryViews: submitActionDetails.craftingCatalogCategoryViews,
+      hasCraftingOptions,
+      materialsOwnedOptions: submitActionDetails.materialsOwnedOptions,
+      showMaterialDropZone: submitActionDetails.showMaterialDropZone,
+      materialDrops: submitActionDetails.materialDrops,
+      hasMaterialDrops: submitActionDetails.hasMaterialDrops,
+      materialDropsJson: serializeDowntimeItemRewardDrops(submitActionDetails.materialDrops ?? []),
+      professionOptions: submitActionDetails.professionOptions,
+      hasProfessionOptions,
+      knownProfessionNames: submitActionDetails.knownProfessionNames,
+      hasKnownProfessionNames: submitActionDetails.knownProfessionNames.length > 0,
+      selectedCraftableName: String(selectedCraftable?.name ?? ""),
+      hasSelectedCraftable: Boolean(selectedCraftable),
+      selectedCraftableTool: String(selectedCraftable?.requiredToolProficiency ?? ""),
+      selectedCraftableProgressRequired: Math.max(0, Math.floor(Number(selectedCraftable?.progressRequired ?? 0) || 0)),
+      selectedCraftableMaterialCost: Math.max(0, Math.floor(Number(selectedCraftable?.materialCost ?? 0) || 0)),
+      selectedCraftableBaseCost: Math.max(0, Math.floor(Number(selectedCraftable?.baseCost ?? 0) || 0)),
+      hasCraftingProject: Boolean(activeCraftingProject),
+      craftingProjectProgressLabel: activeCraftingProject
+        ? `${Math.max(0, Math.floor(Number(activeCraftingProject.progress ?? 0) || 0))}/${Math.max(0, Math.floor(Number(activeCraftingProject.progressRequired ?? selectedCraftable?.progressRequired ?? 0) || 0))}`
+        : "",
+      selectedProfessionName: String(selectedProfession?.name ?? ""),
+      selectedProfessionKnown: selectedProfession ? actorKnowsProfession(submitActor, selectedProfession.id, { moduleId: MODULE_ID }) : false,
+      disabledReason: canSubmit
+        ? ""
+        : "Waiting for GM to publish granted downtime hours."
     },
     entriesSort,
     entriesSortOptions: DOWNTIME_ENTRY_SORT_OPTIONS.map((entry) => ({
@@ -29380,6 +30160,36 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasPending: pendingOptions.length > 0,
       pendingOptions,
       selectedActorId: resolvedPendingActorId,
+      selectedActorName: String(selectedPendingEntry?.actorName ?? ""),
+      selectedActionKey: selectedPendingActionDefinition.key,
+      selectedActionLabel: selectedPendingActionDefinition.label,
+      selectedActionGuidance: selectedPendingActionDefinition.guidance,
+      hasSelectedActionDetails: Array.isArray(selectedPendingEntry?.actionDetails) && selectedPendingEntry.actionDetails.length > 0,
+      selectedActionDetails: Array.isArray(selectedPendingEntry?.actionDetails) ? selectedPendingEntry.actionDetails : [],
+      hasSubmittedCheck: Boolean(selectedPendingSubmittedCheck),
+      submittedCheckLabel: buildDowntimeSubmittedCheckLabel(selectedPendingSubmittedCheck),
+      isBrowsing: selectedPendingIsBrowsing,
+      isCrafting: selectedPendingIsCrafting,
+      isProfession: selectedPendingIsProfession,
+      showGpAward: selectedPendingIsProfession,
+      showGpCost: selectedPendingIsProfession || selectedPendingIsCrafting,
+      showRumorCount: selectedPendingIsBrowsing,
+      showSocialContract: false,
+      showItemRewards: false,
+      showItemRewardDrops: selectedPendingIsCrafting,
+      showSubmittedMaterialDrops: selectedPendingIsCrafting,
+      submittedMaterialsModeLabel: selectedPendingIsCrafting
+        ? (selectedPendingActionData?.materialsOwned === true || selectedPendingActionData?.materialsSecured === true
+          ? "Materials On Hand"
+          : "Buy Materials")
+        : "",
+      selectedCraftableName: String(selectedPendingCraftable?.name ?? ""),
+      selectedProfessionName: String(selectedPendingProfession?.name ?? ""),
+      browsingAbilityLabel: selectedPendingIsBrowsing
+        ? (normalizeBrowsingAbility(selectedPendingActionData?.browsingAbility) === "cha" ? "Charisma" : "Intelligence")
+        : "",
+      submittedMaterialDrops: selectedPendingMaterialDrops,
+      hasSubmittedMaterialDrops: selectedPendingMaterialDrops.length > 0,
       selectedIsPreResolved: selectedPending?.isPreResolved === true,
       selectedPreResolvedLabel: String(selectedPending?.preResolvedLabel ?? ""),
       summary: Object.prototype.hasOwnProperty.call(resolutionDraft ?? {}, "summary")
@@ -29452,7 +30262,7 @@ function buildPlayerMarchQuickContext() {
 
 function getRandomDowntimeComplication(actionKey = "") {
   const catalog = {
-    carousing: [
+    browsing: [
       "A rival social contact starts spreading false rumors.",
       "A favor is now owed to a dangerous patron.",
       "A local authority notices the character's spending and asks questions."
@@ -29489,109 +30299,149 @@ function getRandomDowntimeComplication(actionKey = "") {
 }
 
 async function generateDowntimeResult(entry, downtimeState) {
-  const actionDef = getDowntimeActionDefinition(entry?.actionKey);
-  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
-  const hours = Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
-  const blocks = Math.max(1, Math.ceil(hours / 4));
-  const tuning = downtimeState?.tuning ?? {};
-  const economy = String(tuning.economy ?? "standard");
-  const risk = String(tuning.risk ?? "standard");
-  const discovery = String(tuning.discovery ?? "standard");
-
-  const economyMultiplier = economy === "stingy" ? 0.8 : economy === "generous" ? 1.3 : 1;
-  const discoveryBonus = discovery === "low" ? 0 : discovery === "high" ? 2 : 1;
-  const riskComplicationChance = risk === "safe" ? 0.1 : risk === "hazardous" ? 0.38 : 0.22;
-
-  const roll = await (new Roll("1d20")).evaluate();
-  const rollTotal = Math.max(1, Math.floor(Number(roll?.total ?? 1) || 1));
-  let gpDelta = 0;
-  let progress = 0;
-  let summary = "";
-  const details = [];
-
-  switch (actionDef.key) {
-    case "carousing": {
-      progress = Math.max(0, Math.min(3, Math.floor((rollTotal + discoveryBonus - 4) / 6)));
-      const spend = Math.max(2, Math.round((5 * blocks) * economyMultiplier));
-      gpDelta = -spend;
-      summary = progress > 0
-        ? `Built ${progress} social contact(s) while carousing.`
-        : "No lasting contact was secured while carousing.";
-      details.push(`Spent ${spend} gp on social costs and favors.`);
-      break;
-    }
-    case "crafting": {
-      progress = Math.max(1, Math.round((2 * blocks) + Math.floor((rollTotal + discoveryBonus) / 10)));
-      const cost = Math.max(1, Math.round(progress * (economy === "stingy" ? 2 : economy === "generous" ? 1 : 1.5)));
-      gpDelta = -cost;
-      summary = `Made ${progress} crafting progress point(s).`;
-      details.push(`Materials consumed: ${cost} gp.`);
-      break;
-    }
-    case "profession": {
-      const lifestyleTier = rollTotal >= 16 ? 2 : rollTotal >= 11 ? 1 : 0;
-      const wageBase = lifestyleTier === 2 ? 2 : lifestyleTier === 1 ? 1 : 0;
-      const wage = Math.max(0, Math.round((wageBase * blocks) * economyMultiplier));
-      gpDelta = wage;
-      progress = Math.max(1, blocks);
-      summary = wage > 0
-        ? `Earned ${wage} gp through professional work.`
-        : "Covered basic living expenses but earned no spare coin.";
-      break;
-    }
-    case "recuperating": {
-      const recoveryScore = rollTotal + (risk === "safe" ? 2 : risk === "hazardous" ? -2 : 0);
-      progress = recoveryScore >= 18 ? 3 : recoveryScore >= 13 ? 2 : recoveryScore >= 8 ? 1 : 0;
-      summary = progress >= 3
-        ? "Exceptional recovery progress."
-        : progress === 2
-          ? "Solid recovery progress."
-          : progress === 1
-            ? "Minor recovery progress."
-            : "No meaningful recovery progress this cycle.";
-      details.push(`Recovery score ${recoveryScore} (${rollTotal} on d20).`);
-      break;
-    }
-    case "research": {
-      progress = Math.max(0, Math.floor((rollTotal + (discoveryBonus * 2) - 6) / 7));
-      summary = progress > 0
-        ? `Uncovered ${progress} research lead(s).`
-        : "No actionable lead was uncovered this cycle.";
-      details.push("Cross-reference discovered leads with faction, map, and journal notes.");
-      break;
-    }
-    case "training": {
-      progress = Math.max(1, Math.floor(hours / 2));
-      summary = `Logged ${hours} hour(s) of structured training (${progress} progress).`;
-      details.push("Apply progress toward language/tool proficiency milestones.");
-      break;
-    }
-    default: {
-      progress = Math.max(1, blocks);
-      summary = `${actionDef.label} advanced by ${progress} progress point(s).`;
-      break;
-    }
+  const actorId = String(entry?.actorId ?? "").trim();
+  const actor = actorId ? game.actors.get(actorId) : null;
+  const submittedCheck = normalizeDowntimeSubmittedCheck(entry?.submittedCheck);
+  let d20 = Math.max(1, Math.floor(Number(submittedCheck?.d20 ?? 0) || 0));
+  if (d20 <= 0) {
+    const roll = await (new Roll("1d20")).evaluate();
+    d20 = Math.max(1, Math.floor(Number(roll?.total ?? 1) || 1));
   }
-
-  const adjustedComplicationChance = Math.max(0, Math.min(0.9, riskComplicationChance + (rollTotal <= 6 ? 0.1 : 0) - (rollTotal >= 18 ? 0.08 : 0)));
-  const complication = Math.random() < adjustedComplicationChance
-    ? getRandomDowntimeComplication(actionDef.key)
-    : "";
-  if (complication) details.push(`Complication: ${complication}`);
-
+  const resolved = resolvePhase1DowntimeEntry({
+    actor,
+    entry: {
+      ...entry,
+      areaSettings: entry?.areaSettings ?? downtimeState?.tuning ?? {},
+      actionData: entry?.actionData ?? {}
+    },
+    d20,
+    moduleId: MODULE_ID
+  });
   return normalizeDowntimeResult({
     id: foundry.utils.randomID(),
-    actionKey: actionDef.key,
-    actionLabel: actionDef.label,
-    rollTotal,
-    summary,
-    details,
-    gpDelta,
-    progress,
-    complication,
+    actionKey: resolved.actionKey,
+    actionLabel: resolved.actionLabel,
+    actionData: resolved.actionData,
+    areaSettings: resolved.areaSettings,
+    tier: resolved.tier,
+    rollTotal: resolved.rollTotal,
+    summary: resolved.summary,
+    details: resolved.details,
+    gpAward: resolved.gpAward,
+    gpCost: resolved.gpCost,
+    gpDelta: resolved.gpAward - resolved.gpCost,
+    progress: resolved.progress,
+    rumorCount: resolved.rumorCount,
+    itemRewards: resolved.itemRewards,
+    itemRewardDrops: resolved.itemRewardDrops,
+    expectedQuality: resolved.expectedQuality,
+    suggestedTags: resolved.suggestedTags,
+    browsing: resolved.browsing,
+    crafting: resolved.crafting,
+    profession: resolved.profession,
+    performanceLabel: resolved.performanceLabel,
+    complication: "",
     resolvedAt: Date.now(),
     resolvedBy: String(game.user?.name ?? "GM")
   });
+}
+
+function getDowntimeSubmissionRoot(element) {
+  return element?.closest(".po-downtime-panel") ?? null;
+}
+
+function getDowntimeSubmissionMaterialDropsFromUi(root) {
+  const field = root?.querySelector("input[name='downtimeCraftMaterialDrops']");
+  return parseDowntimeItemRewardDrops(field?.value ?? "[]");
+}
+
+function setDowntimeSubmissionMaterialDropsInUi(root, drops = []) {
+  const field = root?.querySelector("input[name='downtimeCraftMaterialDrops']");
+  if (!field) return;
+  field.value = serializeDowntimeItemRewardDrops(drops);
+}
+
+function renderDowntimeSubmissionMaterialDropList(root) {
+  const list = root?.querySelector("[data-downtime-material-drop-list]");
+  if (!list) return;
+  const drops = getDowntimeSubmissionMaterialDropsFromUi(root);
+  if (!drops.length) {
+    list.innerHTML = "<div class='po-op-summary'>No materials selected.</div>";
+    return;
+  }
+  list.innerHTML = drops.map((entry) => `
+    <div class="po-op-role-row">
+      <div class="po-op-role-head">
+        <div class="po-op-role-name"><img src="${poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"))}" width="18" height="18" /> ${poEscapeHtml(String(entry.name ?? "Item"))}</div>
+        <div class="po-op-role-status">x${Math.max(1, Math.floor(Number(entry.quantity ?? 1) || 1))}</div>
+      </div>
+      <div class="po-op-summary">${poEscapeHtml(String(entry.uuid ?? "").trim() || "World Item / Snapshot")}</div>
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-material-drop" data-drop-id="${poEscapeHtml(String(entry.id ?? ""))}">Remove</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderDowntimeSubmissionMaterialDropLists(root) {
+  if (!root?.querySelectorAll) return;
+  root.querySelectorAll(".po-downtime-panel").forEach((panel) => renderDowntimeSubmissionMaterialDropList(panel));
+}
+
+function removeDowntimeSubmissionMaterialDropFromUi(element) {
+  const root = getDowntimeSubmissionRoot(element);
+  if (!root) return false;
+  const dropId = String(element?.dataset?.dropId ?? "").trim();
+  if (!dropId) return false;
+  const current = getDowntimeSubmissionMaterialDropsFromUi(root);
+  const next = current.filter((entry) => String(entry?.id ?? "").trim() !== dropId);
+  if (next.length === current.length) return false;
+  setDowntimeSubmissionMaterialDropsInUi(root, next);
+  renderDowntimeSubmissionMaterialDropList(root);
+  syncDowntimeSubmissionDraftFromRoot(root);
+  return true;
+}
+
+async function addDowntimeSubmissionMaterialDropFromDropEvent(event) {
+  const root = getDowntimeSubmissionRoot(event?.target);
+  if (!root) return false;
+  const actionKey = String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim().toLowerCase();
+  if (actionKey !== "crafting") {
+    ui.notifications?.warn("Material drops only apply to Crafting.");
+    return false;
+  }
+  const materialsOwned = String(root.querySelector("select[name='downtimeCraftMaterialsOwned']")?.value ?? "").trim().toLowerCase();
+  if (materialsOwned !== "true") {
+    ui.notifications?.warn("Switch Crafting to Materials On Hand before dropping materials.");
+    return false;
+  }
+
+  let data = null;
+  try {
+    data = TextEditor.getDragEventData(event);
+  } catch {
+    data = null;
+  }
+  if (!data || typeof data !== "object") return false;
+  const document = await resolveLootItemDocumentFromDropData(data);
+  if (!document) {
+    ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
+    return false;
+  }
+
+  const nextDrop = buildDowntimeItemRewardDropFromDocument(document);
+  if (!nextDrop) return false;
+  const current = getDowntimeSubmissionMaterialDropsFromUi(root);
+  if (current.length >= DOWNTIME_ITEM_REWARD_DROP_LIMIT) {
+    ui.notifications?.warn(`Material drops are limited to ${DOWNTIME_ITEM_REWARD_DROP_LIMIT}.`);
+    return false;
+  }
+  current.push(nextDrop);
+  setDowntimeSubmissionMaterialDropsInUi(root, current);
+  renderDowntimeSubmissionMaterialDropList(root);
+  syncDowntimeSubmissionDraftFromRoot(root);
+  ui.notifications?.info(`Queued crafting material: ${nextDrop.name}`);
+  return true;
 }
 
 function ensureReconState(ledger) {
@@ -30401,8 +31251,12 @@ async function setOperationalResource(element) {
   return { rerender: shouldRerender };
 }
 
-function normalizeDowntimeSubmission(raw = {}, downtimeState = {}) {
-  const hoursGranted = Math.max(1, Math.min(24, Math.floor(Number(downtimeState?.hoursGranted ?? 4) || 4)));
+function normalizeDowntimeSubmission(raw = {}, downtimeState = {}, options = {}) {
+  const hoursCap = Number(options?.hoursCap);
+  const fallbackHours = clampDowntimeHours(downtimeState?.hoursGranted, 4);
+  const hoursGranted = Number.isFinite(hoursCap) && hoursCap > 0
+    ? Math.max(1, Math.min(24, Math.floor(hoursCap)))
+    : fallbackHours;
   const actorId = String(raw?.actorId ?? "").trim();
   const actionDef = getDowntimeActionDefinition(raw?.actionKey);
   const hoursRaw = Number(raw?.hours ?? hoursGranted);
@@ -30410,9 +31264,27 @@ function normalizeDowntimeSubmission(raw = {}, downtimeState = {}) {
     ? Math.max(1, Math.min(hoursGranted, Math.floor(hoursRaw)))
     : hoursGranted;
   const note = String(raw?.note ?? "").slice(0, 1000);
+  const actor = game.actors.get(actorId);
+  const areaSettings = normalizePhase1AreaSettings(raw?.areaSettings ?? downtimeState?.tuning ?? {}, downtimeState?.tuning ?? {});
+  const rawActionData = raw?.actionData && typeof raw.actionData === "object" && !Array.isArray(raw.actionData)
+    ? raw.actionData
+    : {};
+  const actionData = normalizePhase1ActionData(actionDef.key, {
+    ...rawActionData,
+    ...raw,
+    areaSettings
+  }, {
+    actor,
+    moduleId: MODULE_ID,
+    areaSettings
+  });
+  const submittedCheck = normalizeDowntimeSubmittedCheck(raw?.submittedCheck, "int");
   return {
     actorId,
     actionKey: actionDef.key,
+    areaSettings,
+    actionData,
+    submittedCheck,
     hours,
     note
   };
@@ -30427,7 +31299,12 @@ function readDowntimeSubmissionFromUi(element) {
     actorId,
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
     hours: Number(root.querySelector("input[name='downtimeHours']")?.value ?? 0),
-    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? "")
+    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? ""),
+    browsingAbility: String(root.querySelector("select[name='downtimeBrowsingAbility']")?.value ?? "").trim(),
+    craftItemId: String(root.querySelector("select[name='downtimeCraftItemId']")?.value ?? "").trim(),
+    materialsOwned: String(root.querySelector("select[name='downtimeCraftMaterialsOwned']")?.value ?? "").trim(),
+    materialDropsJson: String(root.querySelector("input[name='downtimeCraftMaterialDrops']")?.value ?? "[]"),
+    professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim()
   };
 }
 
@@ -30435,7 +31312,15 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
   if (!user) return false;
   const ledger = getOperationsLedger();
   const downtimeState = ensureDowntimeState(ledger);
-  const submission = normalizeDowntimeSubmission(rawSubmission, downtimeState);
+  const isGMUser = canAccessAllPlayerOps(user);
+  const publication = normalizeDowntimePublication(downtimeState, downtimeState.hoursGranted);
+  if (!isGMUser && !publication.isPublished) return false;
+  const submissionHoursCap = isGMUser
+    ? clampDowntimeHours(downtimeState.hoursGranted, 4)
+    : publication.publishedHoursGranted;
+  const submission = normalizeDowntimeSubmission(rawSubmission, downtimeState, {
+    hoursCap: submissionHoursCap
+  });
   if (!submission.actorId) return false;
 
   const actor = game.actors.get(submission.actorId);
@@ -30443,13 +31328,22 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
 
   await updateOperationsLedger((ledger) => {
     const downtime = ensureDowntimeState(ledger);
-    const normalized = normalizeDowntimeSubmission(submission, downtime);
+    const nextPublication = normalizeDowntimePublication(downtime, downtime.hoursGranted);
+    const nextHoursCap = isGMUser
+      ? clampDowntimeHours(downtime.hoursGranted, 4)
+      : nextPublication.publishedHoursGranted;
+    const normalized = normalizeDowntimeSubmission(submission, downtime, {
+      hoursCap: nextHoursCap
+    });
     const previous = downtime.entries?.[normalized.actorId] ?? {};
     downtime.entries[normalized.actorId] = {
       ...previous,
       actorId: normalized.actorId,
       actorName: String(actor.name ?? `Actor ${normalized.actorId}`),
       actionKey: normalized.actionKey,
+      areaSettings: normalized.areaSettings,
+      actionData: normalized.actionData,
+      submittedCheck: normalized.submittedCheck,
       hours: normalized.hours,
       note: normalized.note,
       pending: true,
@@ -30462,6 +31356,9 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
       stagedBy: ""
     };
   });
+  if (!isGMUser && submission.submittedCheck) {
+    await postDowntimeSubmissionToGmChat(submission, actor, user);
+  }
   return true;
 }
 
@@ -30469,30 +31366,74 @@ async function submitDowntimeAction(element) {
   const submission = readDowntimeSubmissionFromUi(element);
   if (!submission) return;
   syncDowntimeUiDraftFromElement(element);
+  const downtimeState = ensureDowntimeState(getOperationsLedger());
   if (!submission.actorId) {
     ui.notifications?.warn("Select an actor for downtime submission.");
     return;
   }
+  if (!canAccessAllPlayerOps()) {
+    const publication = normalizeDowntimePublication(downtimeState, downtimeState.hoursGranted);
+    if (!publication.isPublished) {
+      ui.notifications?.warn("The GM must publish granted downtime hours before players can submit.");
+      return;
+    }
+  }
 
-  if (canAccessAllPlayerOps()) {
-    const applied = await applyDowntimeSubmissionForUser(game.user, submission);
-    if (!applied) ui.notifications?.warn("Downtime submission failed.");
-    else ui.notifications?.info("Downtime action submitted.");
+  const submissionHoursCap = canAccessAllPlayerOps()
+    ? clampDowntimeHours(downtimeState.hoursGranted, 4)
+    : normalizeDowntimePublication(downtimeState, downtimeState.hoursGranted).publishedHoursGranted;
+  const normalizedSubmission = normalizeDowntimeSubmission(submission, downtimeState, {
+    hoursCap: submissionHoursCap
+  });
+  const actor = game.actors.get(normalizedSubmission.actorId);
+  const actionKey = String(normalizedSubmission.actionKey ?? "").trim();
+  if (actionKey === "crafting") {
+    const craftable = getCraftableById(normalizedSubmission.actionData?.craftItemId);
+    if (!craftable) {
+      ui.notifications?.warn("Select a craft item before submitting Crafting.");
+      return;
+    }
+    if (!actorHasToolProficiency(actor, craftable.requiredToolId, craftable.requiredToolProficiency)) {
+      ui.notifications?.warn(`The selected actor is not proficient with ${craftable.requiredToolProficiency}.`);
+      return;
+    }
+    const materialDrops = normalizePhase1MaterialDrops(normalizedSubmission.actionData?.materialDrops ?? []);
+    const materialsOnHand = normalizedSubmission.actionData?.materialsOwned === true || normalizedSubmission.actionData?.materialsSecured === true;
+    if (materialsOnHand && materialDrops.length <= 0) {
+      ui.notifications?.warn("Drop the materials on hand for the GM to review, or switch to Buy Materials.");
+      return;
+    }
+  }
+  if (actionKey === "profession" && !String(normalizedSubmission.actionData?.professionId ?? "").trim()) {
+    ui.notifications?.warn("Select a profession before submitting profession work.");
     return;
   }
 
-  const actor = game.actors.get(submission.actorId);
   if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
     ui.notifications?.warn("You can only submit downtime for party characters you can access.");
     return;
   }
 
+  if (canAccessAllPlayerOps()) {
+    const applied = await applyDowntimeSubmissionForUser(game.user, normalizedSubmission);
+    if (!applied) ui.notifications?.warn("Downtime submission failed.");
+    else ui.notifications?.info("Downtime action submitted.");
+    return;
+  }
+
+  const submittedCheck = await promptLocalDowntimeSubmissionCheck(normalizedSubmission, actor);
+  if (!submittedCheck) {
+    ui.notifications?.info("Downtime submission cancelled.");
+    return;
+  }
+  normalizedSubmission.submittedCheck = submittedCheck;
+
   game.socket.emit(SOCKET_CHANNEL, {
     type: "ops:downtime-submit",
     userId: game.user.id,
-    entry: submission
+    entry: normalizedSubmission
   });
-  ui.notifications?.info("Downtime request sent to GM.");
+  ui.notifications?.info("Downtime check submitted to GM.");
 }
 
 async function clearDowntimeEntry(element) {
@@ -30541,6 +31482,23 @@ async function setDowntimeHoursGranted(element) {
     const downtime = ensureDowntimeState(ledger);
     downtime.hoursGranted = value;
   });
+}
+
+async function publishDowntimeHoursToPlayers() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can publish downtime hours.");
+    return;
+  }
+  let publishedHours = 0;
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    downtime.publishedHoursGranted = clampDowntimeHours(downtime.hoursGranted, 4);
+    downtime.publishedAt = Date.now();
+    downtime.publishedBy = String(game.user?.name ?? "GM");
+    publishedHours = downtime.publishedHoursGranted;
+  });
+  emitOpenRestPlayers();
+  ui.notifications?.info(`Published ${publishedHours} downtime hour(s) to players.`);
 }
 
 async function setDowntimeTuningField(element) {
@@ -30786,7 +31744,7 @@ function getDowntimeActorName(actorId, fallbackName = "") {
 }
 
 function getDowntimeEntryResolvedHours(entry = {}, hoursGranted = 4) {
-  return Math.max(1, Math.min(hoursGranted, Math.floor(Number(entry?.hours ?? hoursGranted) || hoursGranted)));
+  return clampDowntimeHours(entry?.hours, hoursGranted);
 }
 
 function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {}) {
@@ -30807,6 +31765,9 @@ function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {
   );
   return normalizeDowntimeResult({
     ...rolledResult,
+    actionData: rolledResult?.actionData ?? fallbackBase?.actionData ?? {},
+    areaSettings: rolledResult?.areaSettings ?? fallbackBase?.areaSettings ?? {},
+    tier: rolledResult?.tier ?? "success",
     summary: String(rolledResult?.summary ?? fallbackBase.summary ?? "").trim() || String(fallbackBase.summary ?? ""),
     gpAward: suggestedGp,
     gpCost: suggestedCost,
@@ -30815,6 +31776,12 @@ function buildDowntimePreResolvedDraftResult(rolledResult = {}, fallbackBase = {
     itemRewards: Array.isArray(fallbackBase?.itemRewards) ? fallbackBase.itemRewards : [],
     itemRewardDrops: normalizeDowntimeItemRewardDrops(rolledResult?.itemRewardDrops ?? fallbackBase?.itemRewardDrops ?? []),
     gmNotes: "",
+    expectedQuality: String(rolledResult?.expectedQuality ?? ""),
+    suggestedTags: Array.isArray(rolledResult?.suggestedTags) ? rolledResult.suggestedTags : [],
+    browsing: rolledResult?.browsing ?? null,
+    crafting: rolledResult?.crafting ?? null,
+    profession: rolledResult?.profession ?? null,
+    performanceLabel: String(rolledResult?.performanceLabel ?? ""),
     socialContract: normalizeDowntimeSocialContract(
       rolledResult?.socialContract ?? fallbackBase?.socialContract ?? {},
       rolledResult?.actionKey ?? fallbackBase?.actionKey ?? ""
@@ -30862,6 +31829,27 @@ function applyResolvedDowntimeToState(state, {
     .slice(0, 80);
 }
 
+async function persistCraftingProgressForResolvedDowntime(actorId, result) {
+  const normalizedResult = normalizeDowntimeResult(result);
+  const crafting = normalizedResult?.crafting;
+  if (!crafting?.itemId) return;
+  const actor = game.actors.get(String(actorId ?? "").trim());
+  if (!actor) return;
+  const currentProjects = getActorCraftingProjects(actor, { moduleId: MODULE_ID });
+  const nextProjects = buildNextCraftingProjects(currentProjects, crafting, Date.now());
+  try {
+    if (typeof actor.setFlag === "function") {
+      await actor.setFlag(MODULE_ID, DOWNTIME_PHASE1_ACTOR_FLAG_KEYS.craftingProjects, nextProjects);
+      return;
+    }
+    const flags = foundry.utils.deepClone(actor.flags?.[MODULE_ID] ?? {});
+    flags[DOWNTIME_PHASE1_ACTOR_FLAG_KEYS.craftingProjects] = nextProjects;
+    await actor.update({ [`flags.${MODULE_ID}`]: flags });
+  } catch (error) {
+    console.warn(`${MODULE_ID}: failed to persist downtime crafting progress`, error);
+  }
+}
+
 function buildDowntimeResolutionDetails({
   stagedResult = null,
   gpAward = 0,
@@ -30873,6 +31861,17 @@ function buildDowntimeResolutionDetails({
   socialContract = null
 } = {}) {
   const details = [];
+  if (String(stagedResult?.tier ?? "").trim()) {
+    const tierValue = String(stagedResult.tier);
+    const tierLabel = tierValue === "exceptional-success"
+      ? "Exceptional Success"
+      : tierValue === "strong-success"
+        ? "Strong Success"
+        : tierValue === "success"
+          ? "Success"
+          : "Failure";
+    details.push(`Result tier: ${tierLabel}.`);
+  }
   if (Array.isArray(stagedResult?.details) && stagedResult.details.length > 0) {
     details.push(...stagedResult.details);
   }
@@ -30969,6 +31968,9 @@ async function resolveSelectedDowntimeEntry(element) {
     id: foundry.utils.randomID(),
     actionKey: actionDef.key,
     actionLabel: actionDef.label,
+    actionData: entry?.actionData ?? stagedResult?.actionData ?? {},
+    areaSettings: entry?.areaSettings ?? stagedResult?.areaSettings ?? {},
+    tier: stagedResult?.tier ?? "success",
     summary,
     details,
     rollTotal: Number(stagedResult?.rollTotal ?? 0) || 0,
@@ -30981,6 +31983,12 @@ async function resolveSelectedDowntimeEntry(element) {
     itemRewards: resolution.itemRewards,
     itemRewardDrops: resolution.itemRewardDrops,
     gmNotes: resolution.gmNotes,
+    expectedQuality: String(stagedResult?.expectedQuality ?? ""),
+    suggestedTags: Array.isArray(stagedResult?.suggestedTags) ? stagedResult.suggestedTags : [],
+    browsing: stagedResult?.browsing ?? null,
+    crafting: stagedResult?.crafting ?? null,
+    profession: stagedResult?.profession ?? null,
+    performanceLabel: String(stagedResult?.performanceLabel ?? ""),
     socialContract: resolution.socialContract,
     collected: false,
     resolvedAt: Date.now(),
@@ -30997,6 +32005,8 @@ async function resolveSelectedDowntimeEntry(element) {
       result
     });
   });
+
+  await persistCraftingProgressForResolvedDowntime(resolution.actorId, result);
 
   clearDowntimeUiDraft("resolution");
   ui.notifications?.info(`Resolved downtime for ${actorName}.`);
@@ -40638,6 +41648,7 @@ function buildActivityView(actor, activityState) {
     exhaustion,
     exhaustionLabel: getExhaustionLabel(exhaustion),
     activity,
+    activityLabel: activityOptions.find((option) => option.selected)?.label ?? "Rested",
     activityOptions,
     spellSlots,
     hitDice,
@@ -40819,6 +41830,51 @@ async function applyMarchingFormation({ front, middle, type }) {
   });
 }
 
+async function syncMarchingOrderFromRestWatch() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can sync marching order from rest watch.");
+    return;
+  }
+  const restState = getRestWatchState();
+  const restActorIds = getRestWatchAssignedActorIds(restState);
+  if (!restActorIds.length) {
+    ui.notifications?.warn("No actors are currently assigned in Rest Watch.");
+    return;
+  }
+
+  const state = getMarchingOrderState();
+  const currentOrdered = getOrderedMarchingActors(state).filter((actorId) => restActorIds.includes(actorId));
+  const ordered = [...currentOrdered, ...restActorIds.filter((actorId) => !currentOrdered.includes(actorId))];
+  const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+  const definition = getMarchFormationDefinition(formationId);
+
+  let nextRanks;
+  if (formationId === "free") {
+    nextRanks = {
+      front: [],
+      middle: ordered,
+      rear: []
+    };
+  } else {
+    const frontRecommended = Math.max(0, Number(definition?.bandTargets?.front?.recommended ?? 0) || 0);
+    const middleRecommended = Math.max(0, Number(definition?.bandTargets?.middle?.recommended ?? 0) || 0);
+    const frontCount = Math.min(frontRecommended, ordered.length);
+    const middleCount = Math.min(middleRecommended, Math.max(0, ordered.length - frontCount));
+    nextRanks = {
+      front: ordered.slice(0, frontCount),
+      middle: ordered.slice(frontCount, frontCount + middleCount),
+      rear: ordered.slice(frontCount + middleCount)
+    };
+  }
+
+  await updateMarchingOrderState((draft) => {
+    draft.ranks = nextRanks;
+    if (formationId === "free") clearDoctrineTriggerPending(draft);
+    else markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+  });
+  ui.notifications?.info(`Marching order synced from Rest Watch (${ordered.length} actor${ordered.length === 1 ? "" : "s"}).`);
+}
+
 async function updateRestWatchState(mutatorOrRequest, options = {}) {
   if (!canAccessAllPlayerOps()) {
     const normalizedRequest = normalizeSocketRestRequest(mutatorOrRequest, {
@@ -40844,7 +41900,9 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
   } else {
     await applyRestRequest(mutatorOrRequest, game.user.id, {
       getRestWatchState,
+      game,
       resolveRequester,
+      canUserControlActor,
       stampUpdate,
       setModuleSettingWithLocalRefreshSuppressed,
       settings: SETTINGS,
@@ -40932,7 +41990,7 @@ function ensureRestSlotEntriesList(slot) {
     slot.actorId = null;
     slot.notes = "";
   }
-  if (!Array.isArray(slot.entries)) slot.entries = [];
+  slot.entries = sanitizeRestWatchEntries(slot);
   return slot.entries;
 }
 
@@ -40948,10 +42006,420 @@ function addActorToRestSlot(slot, actorIdInput) {
   if (!slot || !actorId) return false;
   const entries = ensureRestSlotEntriesList(slot);
   if (entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId)) return false;
-  entries.push({ actorId, notes: "" });
+  if (entries.length >= REST_WATCH_MAX_ENTRIES) return false;
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  const nextOpenIndex = fixedRows.findIndex((row) => !row);
+  if (nextOpenIndex === -1) return false;
+  fixedRows[nextOpenIndex] = { actorId, notes: "" };
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
   slot.actorId = null;
   slot.notes = "";
   return true;
+}
+
+function setRestSlotEntryAtIndex(slot, entryIndexInput, actorIdInput) {
+  if (!slot) return false;
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_WATCH_MAX_ENTRIES) return false;
+
+  const actorId = String(actorIdInput ?? "").trim();
+  const entries = ensureRestSlotEntriesList(slot);
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+
+  if (!actorId) {
+    if (!fixedRows[entryIndex]) return false;
+    fixedRows[entryIndex] = null;
+    slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+    return true;
+  }
+
+  const existingIndex = fixedRows.findIndex((entry) => String(entry?.actorId ?? "").trim() === actorId);
+  if (existingIndex === entryIndex) return false;
+  const movedEntry = existingIndex >= 0 ? fixedRows[existingIndex] : { actorId, notes: "" };
+  if (existingIndex >= 0) fixedRows[existingIndex] = null;
+
+  const currentEntry = fixedRows[entryIndex];
+  fixedRows[entryIndex] = {
+    actorId,
+    notes: existingIndex >= 0 ? String(movedEntry?.notes ?? "") : (String(currentEntry?.actorId ?? "").trim() === actorId ? String(currentEntry?.notes ?? "") : "")
+  };
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+  return true;
+}
+
+function buildRestWatchActorOptionsCacheKey(actors = []) {
+  return (Array.isArray(actors) ? actors : [])
+    .map((actor) => `${String(actor?.id ?? "").trim()}:${String(actor?.name ?? "").trim()}`)
+    .join("|");
+}
+
+function getRestWatchSelectOptionsCacheKey(baseOptions = [], rowIndex = 0, actorIdInput = "", selectedLabelInput = "", hasSelectedOption = false) {
+  const actorId = String(actorIdInput ?? "").trim();
+  const selectedLabel = String(selectedLabelInput ?? "").trim();
+  const baseSignature = (Array.isArray(baseOptions) ? baseOptions : [])
+    .map((option) => `${String(option?.value ?? "").trim()}:${String(option?.label ?? "").trim()}`)
+    .join("|");
+  return `${rowIndex}|${actorId}|${selectedLabel}|${hasSelectedOption ? "1" : "0"}|${baseSignature}`;
+}
+
+function getCachedRestWatchSelectOptions(baseOptions = [], rowIndex = 0, actorIdInput = "", selectedLabelInput = "", hasSelectedOption = false) {
+  const key = getRestWatchSelectOptionsCacheKey(baseOptions, rowIndex, actorIdInput, selectedLabelInput, hasSelectedOption);
+  const cached = restWatchSelectOptionsCache.get(key);
+  if (cached) return cached;
+
+  const actorId = String(actorIdInput ?? "").trim();
+  const selectedLabel = String(selectedLabelInput ?? "").trim();
+  const options = [
+    { value: "", label: `Open Slot ${rowIndex + 1}`, selected: !actorId }
+  ];
+  if (actorId && !hasSelectedOption) {
+    options.push({
+      value: actorId,
+      label: selectedLabel ? `${selectedLabel} (Other Actor)` : "Assigned Actor",
+      selected: true
+    });
+  }
+  for (const option of Array.isArray(baseOptions) ? baseOptions : []) {
+    options.push({
+      value: option.value,
+      label: option.label,
+      selected: option.value === actorId
+    });
+  }
+
+  if (restWatchSelectOptionsCache.size >= REST_WATCH_SELECT_OPTIONS_CACHE_MAX) {
+    const oldest = restWatchSelectOptionsCache.keys().next();
+    if (!oldest.done) restWatchSelectOptionsCache.delete(oldest.value);
+  }
+  restWatchSelectOptionsCache.set(key, options);
+  return options;
+}
+
+function buildRestWatchPlayerActorOptions() {
+  const actors = getOwnedPcActors()
+    .slice()
+    .sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+  const key = buildRestWatchActorOptionsCacheKey(actors);
+  if (restWatchActorOptionsCache.key === key && Array.isArray(restWatchActorOptionsCache.options)) {
+    return restWatchActorOptionsCache.options;
+  }
+  if (restWatchActorOptionsCache.key !== key) {
+    restWatchSelectOptionsCache.clear();
+  }
+  const options = actors.map((actor) => ({
+    value: String(actor.id ?? "").trim(),
+    label: String(actor.name ?? "Unnamed Actor").trim() || "Unnamed Actor"
+  }));
+  restWatchActorOptionsCache = { key, options };
+  return options;
+}
+
+function buildRestWatchAssignmentRows(entries, actorOptions, entriesView = []) {
+  const baseOptions = Array.isArray(actorOptions) ? actorOptions : [];
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  const entryViewByActorId = new Map(
+    (Array.isArray(entriesView) ? entriesView : [])
+      .map((entryView) => {
+        const actorId = String(entryView?.actorId ?? "").trim();
+        return actorId ? [actorId, entryView] : null;
+      })
+      .filter(Boolean)
+  );
+  return Array.from({ length: REST_WATCH_MAX_ENTRIES }, (_, rowIndex) => {
+    const entry = fixedRows[rowIndex] ?? null;
+    const actorId = String(entry?.actorId ?? "").trim();
+    const actor = actorId ? game.actors.get(actorId) : null;
+    const entryView = actorId ? entryViewByActorId.get(actorId) ?? null : null;
+    const selectedLabel = String(actor?.name ?? "").trim();
+    const hasSelectedOption = actorId && baseOptions.some((option) => option.value === actorId);
+    const options = getCachedRestWatchSelectOptions(baseOptions, rowIndex, actorId, selectedLabel, hasSelectedOption);
+    return {
+      index: rowIndex,
+      slotLabel: `Slot ${rowIndex + 1}`,
+      committedActorId: actorId,
+      actorId,
+      actorName: selectedLabel,
+      occupied: Boolean(actorId),
+      hasSelectableValue: Boolean(actorId),
+      selectOptions: options,
+      hasActorDetails: Boolean(entryView?.actor),
+      actor: entryView?.actor ?? null,
+      activity: entryView?.activity ?? null,
+      notes: entryView?.notes ?? "",
+      canEditNotes: Boolean(entryView?.canEditNotes),
+      isActiveCharacter: Boolean(entryView?.isActiveCharacter),
+      hasPassivePerception: entryView?.actor?.passivePerception !== null && entryView?.actor?.passivePerception !== undefined,
+      hasPassiveInvestigation: entryView?.actor?.passiveInvestigation !== null && entryView?.actor?.passiveInvestigation !== undefined
+    };
+  });
+}
+
+function summarizeRestWatchLanguages(entriesView) {
+  const labels = [];
+  const seen = new Set();
+
+  for (const entry of entriesView ?? []) {
+    for (const labelInput of entry?.actor?.languageList ?? []) {
+      const label = String(labelInput ?? "").trim();
+      const normalized = label.toLowerCase();
+      if (!label || seen.has(normalized)) continue;
+      seen.add(normalized);
+      labels.push(label);
+    }
+  }
+
+  if (labels.length === 0) {
+    return {
+      count: 0,
+      display: "-",
+      tooltip: "",
+      countLabel: "No Languages"
+    };
+  }
+
+  const full = labels.join(", ");
+  return {
+    count: labels.length,
+    display: labels.length <= 4 ? full : `${labels.length} languages`,
+    tooltip: labels.length <= 4 ? "" : full,
+    countLabel: labels.length === 1 ? "1 Language" : `${labels.length} Languages`
+  };
+}
+
+function buildRestWatchDetailSummary(slot, entriesView) {
+  const activeCount = Array.isArray(entriesView) ? entriesView.length : 0;
+  const ppRange = slot?.slotPpRange ?? computePassiveRangeForEntries(entriesView, "passivePerception");
+  const pivRange = slot?.slotPivRange ?? computePassiveRangeForEntries(entriesView, "passiveInvestigation");
+  const languages = summarizeRestWatchLanguages(entriesView);
+  const hasCoverageWarning = activeCount > 0 && Boolean(slot?.slotNoDarkvision);
+  return {
+    activeCountLabel: `${activeCount} / ${REST_WATCH_MAX_ENTRIES}`,
+    openCountLabel: `${Math.max(0, REST_WATCH_MAX_ENTRIES - activeCount)} Open`,
+    hasCoverageWarning,
+    coverageLabel: activeCount === 0 ? "Coverage Pending" : (hasCoverageWarning ? "Missing Darkvision" : "Coverage Ready"),
+    coverageStateClass: hasCoverageWarning ? "is-warn" : "is-ready",
+    campfireLabel: slot?.campfireActive ? "Lit" : "Out",
+    campfireStateClass: slot?.campfireActive ? "is-active" : "is-inactive",
+    languagesLabel: languages.display,
+    languagesTooltip: languages.tooltip,
+    languagesCountLabel: languages.countLabel,
+    hasLanguages: languages.count > 0,
+    ppRangeLabel: `High ${ppRange.highLabel} / Low ${ppRange.lowLabel}`,
+    pivRangeLabel: `High ${pivRange.highLabel} / Low ${pivRange.lowLabel}`
+  };
+}
+
+function getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return "";
+  return `${slotId}::${entryIndex}`;
+}
+
+function ensureRestWatchSelectionPreviewState(app) {
+  if (!app || typeof app !== "object") {
+    return {
+      pendingSelections: {},
+      activeSelection: { slotId: "", entryIndex: -1 }
+    };
+  }
+  if (!app._restWatchPendingSelections || typeof app._restWatchPendingSelections !== "object") {
+    app._restWatchPendingSelections = {};
+  }
+  if (!app._restWatchActiveSelection || typeof app._restWatchActiveSelection !== "object") {
+    app._restWatchActiveSelection = { slotId: "", entryIndex: -1 };
+  }
+  return {
+    pendingSelections: app._restWatchPendingSelections,
+    activeSelection: app._restWatchActiveSelection
+  };
+}
+
+function setRestWatchActiveSelection(app, slotIdInput, entryIndexInput) {
+  const previewState = ensureRestWatchSelectionPreviewState(app);
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  previewState.activeSelection.slotId = slotId;
+  previewState.activeSelection.entryIndex = Number.isInteger(entryIndex) ? entryIndex : -1;
+}
+
+function clearRestWatchPendingSelection(app, slotIdInput, entryIndexInput) {
+  const previewState = ensureRestWatchSelectionPreviewState(app);
+  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
+  if (!key) return;
+  delete previewState.pendingSelections[key];
+}
+
+function setRestWatchPendingSelection(app, slotIdInput, entryIndexInput, actorIdInput) {
+  const previewState = ensureRestWatchSelectionPreviewState(app);
+  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
+  if (!key) return;
+  previewState.pendingSelections[key] = String(actorIdInput ?? "").trim();
+}
+
+function getRestWatchPendingSelection(app, slotIdInput, entryIndexInput) {
+  const previewState = ensureRestWatchSelectionPreviewState(app);
+  const key = getRestWatchSelectionPreviewKey(slotIdInput, entryIndexInput);
+  if (!key) return undefined;
+  return Object.prototype.hasOwnProperty.call(previewState.pendingSelections, key)
+    ? String(previewState.pendingSelections[key] ?? "").trim()
+    : undefined;
+}
+
+function buildRestWatchPreviewSelectOptions(selectOptions = [], effectiveActorIdInput = "", actorNameInput = "") {
+  const effectiveActorId = String(effectiveActorIdInput ?? "").trim();
+  const actorName = String(actorNameInput ?? "").trim();
+  const options = Array.isArray(selectOptions)
+    ? selectOptions.map((option) => ({
+      ...option,
+      selected: String(option?.value ?? "").trim() === effectiveActorId || (!effectiveActorId && String(option?.value ?? "").trim() === "")
+    }))
+    : [];
+  if (!effectiveActorId) return options;
+  const hasOption = options.some((option) => String(option?.value ?? "").trim() === effectiveActorId);
+  if (!hasOption) {
+    options.push({
+      value: effectiveActorId,
+      label: actorName ? `${actorName} (Other Actor)` : "Assigned Actor",
+      selected: true
+    });
+  }
+  return options;
+}
+
+function buildRestWatchPreviewEntryView(actorIdInput, sourceRow = {}, allRows = [], options = {}) {
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!actorId) {
+    return {
+      actorId: "",
+      actor: null,
+      activity: null,
+      notes: "",
+      hasActorDetails: false,
+      hasPassivePerception: false,
+      hasPassiveInvestigation: false
+    };
+  }
+
+  const matchingRow = (Array.isArray(allRows) ? allRows : []).find((row) => String(row?.actorId ?? "").trim() === actorId) ?? null;
+  const row = matchingRow ?? sourceRow ?? {};
+  let actorView = row?.actor ?? null;
+  let activityView = row?.activity ?? null;
+  const actor = game.actors.get(actorId) ?? null;
+  if ((!actorView || !activityView) && actor) {
+    actorView = buildActorView(actor, Boolean(options?.isGM), options?.visibility ?? "names-passives");
+    activityView = buildActivityView(actor, options?.activities?.activities?.[actorId] ?? {});
+  }
+
+  return {
+    actorId,
+    actor: actorView,
+    activity: activityView,
+    notes: String(row?.notes ?? ""),
+    hasActorDetails: Boolean(actorView),
+    hasPassivePerception: actorView?.passivePerception !== null && actorView?.passivePerception !== undefined,
+    hasPassiveInvestigation: actorView?.passiveInvestigation !== null && actorView?.passiveInvestigation !== undefined
+  };
+}
+
+function buildRestWatchNoteButtonContext(actorNameInput, noteTextInput) {
+  const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
+  const noteText = String(noteTextInput ?? "");
+  const savedNote = noteText.trim();
+  const hasSavedNote = savedNote.length > 0;
+  return {
+    hasSavedNote,
+    noteButtonTitle: hasSavedNote ? `Saved note for ${actorName}:\n${savedNote}` : `Open notes for ${actorName}`,
+    noteButtonAriaLabel: hasSavedNote ? `Open notes for ${actorName}. Saved note available.` : `Open notes for ${actorName}`
+  };
+}
+
+function applyRestWatchSelectionPreview(slots = [], options = {}) {
+  const pendingSelections = options?.pendingSelections && typeof options.pendingSelections === "object"
+    ? options.pendingSelections
+    : {};
+  const activeSelection = options?.activeSelection && typeof options.activeSelection === "object"
+    ? options.activeSelection
+    : { slotId: "", entryIndex: -1 };
+
+  return (Array.isArray(slots) ? slots : []).map((slot) => {
+    const slotId = String(slot?.id ?? "").trim();
+    const baseRows = Array.isArray(slot?.assignmentRows) ? slot.assignmentRows : [];
+    const assignmentRows = baseRows.map((row) => {
+      const key = getRestWatchSelectionPreviewKey(slotId, row.index);
+      const hasPendingSelection = key && Object.prototype.hasOwnProperty.call(pendingSelections, key);
+      const pendingActorId = hasPendingSelection ? String(pendingSelections[key] ?? "").trim() : "";
+      const effectiveActorId = hasPendingSelection ? pendingActorId : String(row?.actorId ?? "").trim();
+      const previewView = buildRestWatchPreviewEntryView(effectiveActorId, row, baseRows, options);
+      const actorName = String(previewView?.actor?.name ?? row?.actorName ?? "").trim();
+      const lockChecked = Boolean(effectiveActorId) && !hasPendingSelection;
+      const canLockSelection = Boolean(effectiveActorId) && hasPendingSelection;
+      return {
+        ...row,
+        actorId: effectiveActorId,
+        actorName,
+        occupied: Boolean(effectiveActorId),
+        hasSelectableValue: Boolean(effectiveActorId),
+        selectOptions: buildRestWatchPreviewSelectOptions(row?.selectOptions, effectiveActorId, actorName),
+        hasActorDetails: previewView.hasActorDetails,
+        actor: previewView.actor,
+        activity: previewView.activity,
+        notes: hasPendingSelection ? "" : previewView.notes,
+        canEditNotes: Boolean(previewView.actor) && !hasPendingSelection && Boolean(row?.canEditNotes),
+        isPendingSelection: hasPendingSelection,
+        isCommittedSelection: lockChecked,
+        isSelectedEntry: String(activeSelection?.slotId ?? "").trim() === slotId && Number(activeSelection?.entryIndex) === Number(row.index),
+        lockChecked,
+        canLockSelection,
+        lockLabel: lockChecked ? "Locked In" : "Lock In Selection",
+        lockHint: canLockSelection ? "Lock this selection to edit notes." : "",
+        hasPassivePerception: previewView.hasPassivePerception,
+        hasPassiveInvestigation: previewView.hasPassiveInvestigation,
+        ...buildRestWatchNoteButtonContext(actorName, hasPendingSelection ? "" : previewView.notes)
+      };
+    });
+    const selectedAssignment = assignmentRows.find((row) => row.isSelectedEntry) ?? null;
+    return {
+      ...slot,
+      assignmentRows,
+      selectedAssignment,
+      hasSelectedAssignment: Boolean(selectedAssignment?.hasActorDetails),
+      selectedAssignmentEmptyLabel: selectedAssignment
+        ? "Choose a character from the slot selector, then lock it in."
+        : "Click a slot row on the left to preview it here."
+    };
+  });
+}
+
+function bindActorSearchDialog(dialog, actors) {
+  const root = dialog?.element?.[0] ?? dialog?.element ?? null;
+  if (!root) return;
+  const searchInput = root.querySelector("input[name='actorSearch']");
+  const actorSelect = root.querySelector("select[name='actorId']");
+  if (!searchInput || !actorSelect) return;
+
+  const renderOptions = (needle = "") => {
+    const search = String(needle ?? "").trim().toLowerCase();
+    const previousValue = String(actorSelect.value ?? "").trim();
+    const matchingActors = actors.filter((actor) => {
+      const name = String(actor?.name ?? "").toLowerCase();
+      const type = String(actor?.type ?? "").toLowerCase();
+      return !search || name.includes(search) || type.includes(search);
+    });
+    actorSelect.innerHTML = matchingActors.length > 0
+      ? matchingActors.map((actor) => `<option value="${poEscapeHtml(actor.id)}">${poEscapeHtml(actor.name)}</option>`).join("")
+      : `<option value="">No matching actors</option>`;
+    if (matchingActors.some((actor) => String(actor.id ?? "").trim() === previousValue)) {
+      actorSelect.value = previousValue;
+    }
+  };
+
+  searchInput.addEventListener("input", () => {
+    renderOptions(searchInput.value);
+  });
+
+  renderOptions("");
+  searchInput.focus?.({ preventScroll: true });
 }
 
 async function assignSlotToUser(element) {
@@ -40977,6 +42445,10 @@ async function assignSlotToUser(element) {
       ui.notifications?.info(`${actor.name} is already assigned to this watch.`);
       return;
     }
+    if ((sanitizeRestWatchEntries(clicked)?.length ?? 0) >= REST_WATCH_MAX_ENTRIES) {
+      ui.notifications?.warn(`${getRestWatchSlotLabel(clicked.id)} is full.`);
+      return;
+    }
     await updateRestWatchState({ op: "assignMe", slotId: clicked.id, actorId: actor.id });
     return;
   }
@@ -40985,7 +42457,13 @@ async function assignSlotToUser(element) {
   await updateRestWatchState((state) => {
     const slot = state.slots.find((entry) => entry.id === slotId);
     if (!slot) return;
-    addActorToRestSlot(slot, actor.id);
+    if (!addActorToRestSlot(slot, actor.id)) {
+      if (restSlotHasActor(slot, actor.id)) {
+        ui.notifications?.info(`${actor.name} is already assigned to this watch.`);
+      } else {
+        ui.notifications?.warn(`Watch is full. Remove someone from ${getRestWatchSlotLabel(slotId)} before adding ${actor.name}.`);
+      }
+    }
   });
 }
 
@@ -41022,7 +42500,14 @@ async function assignSlotByPicker(element, config = {}) {
   const slotField = needsSlotSelection
     ? `<div class="form-group"><label>Watch</label><select name="slotId">${slotOptions.join("")}</select></div>`
     : "";
-  const content = `${slotField}<div class="form-group"><label>${actorLabel}</label><select name="actorId">${actorOptions.join("")}</select></div>`;
+  const searchable = source !== "pc";
+  const searchField = searchable
+    ? `<div class="form-group"><label>Search</label><input type="search" name="actorSearch" placeholder="Search actors..." autocomplete="off" /></div>`
+    : "";
+  const actorField = searchable
+    ? `<div class="form-group"><label>${actorLabel}</label><select name="actorId" size="10">${actorOptions.join("")}</select></div>`
+    : `<div class="form-group"><label>${actorLabel}</label><select name="actorId">${actorOptions.join("")}</select></div>`;
+  const content = `${slotField}${searchField}${actorField}`;
   const dialog = new Dialog({
     title: source === "pc" ? "Assign Character" : "Assign Actor",
     content,
@@ -41033,16 +42518,25 @@ async function assignSlotByPicker(element, config = {}) {
           const targetSlotId = String(slotIdFromCard ?? html.find("select[name=slotId]").val() ?? "").trim();
           const actorId = html.find("select[name=actorId]").val();
           if (!targetSlotId || !actorId) return;
-          let added = false;
+          let addStatus = "missing";
           const updated = await updateRestWatchState((state) => {
             const slot = state.slots.find((entry) => entry.id === targetSlotId);
             if (!slot) return;
-            added = addActorToRestSlot(slot, actorId);
+            if (restSlotHasActor(slot, actorId)) {
+              addStatus = "duplicate";
+              return;
+            }
+            if ((ensureRestSlotEntriesList(slot)?.length ?? 0) >= REST_WATCH_MAX_ENTRIES) {
+              addStatus = "full";
+              return;
+            }
+            addStatus = addActorToRestSlot(slot, actorId) ? "added" : "missing";
           }, { skipLocalRefresh: true });
           if (!updated) return;
-          if (!added) {
+          if (addStatus !== "added") {
             const actorName = game.actors.get(actorId)?.name ?? "That actor";
-            ui.notifications?.info(`${actorName} is already assigned to that watch.`);
+            if (addStatus === "duplicate") ui.notifications?.info(`${actorName} is already assigned to that watch.`);
+            else if (addStatus === "full") ui.notifications?.warn(`Watch is full. Remove someone before adding ${actorName}.`);
             return;
           }
           if (canAccessAllPlayerOps()) refreshRestWatchAppsImmediately();
@@ -41053,6 +42547,85 @@ async function assignSlotByPicker(element, config = {}) {
     default: "assign"
   });
   dialog.render(true);
+  if (searchable) bindActorSearchDialog(dialog, actors);
+}
+
+async function commitRestWatchEntrySelection(slotIdInput, entryIndexInput, actorIdInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.parseInt(entryIndexInput, 10);
+  const actorId = String(actorIdInput ?? "").trim();
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return false;
+  const updated = await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    setRestSlotEntryAtIndex(slot, entryIndex, actorId);
+  }, { skipLocalRefresh: true });
+  if (!updated) return false;
+  refreshRestWatchAppsImmediately();
+  return true;
+}
+
+async function selectRestWatchEntrySelection(app, element) {
+  if (!canAccessAllPlayerOps()) return;
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  setRestWatchActiveSelection(app, slotId, entryIndex);
+  refreshSingleAppPreservingView(app);
+}
+
+async function updateRestWatchEntrySelection(app, element) {
+  if (!canAccessAllPlayerOps()) return;
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  const actorId = String(element?.value ?? "").trim();
+  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
+  setRestWatchActiveSelection(app, slotId, entryIndex);
+  if (actorId === committedActorId) {
+    clearRestWatchPendingSelection(app, slotId, entryIndex);
+  } else {
+    setRestWatchPendingSelection(app, slotId, entryIndex, actorId);
+  }
+  refreshSingleAppPreservingView(app);
+}
+
+async function lockRestWatchEntrySelection(app, element) {
+  if (!canAccessAllPlayerOps()) return;
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  const shouldLock = Boolean(element?.checked);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  setRestWatchActiveSelection(app, slotId, entryIndex);
+  if (!shouldLock) {
+    refreshSingleAppPreservingView(app);
+    return;
+  }
+  const pendingActorId = getRestWatchPendingSelection(app, slotId, entryIndex);
+  if (pendingActorId === undefined) {
+    refreshSingleAppPreservingView(app);
+    return;
+  }
+  const committed = await commitRestWatchEntrySelection(slotId, entryIndex, pendingActorId);
+  if (!committed) return;
+  clearRestWatchPendingSelection(app, slotId, entryIndex);
+  refreshSingleAppPreservingView(app);
+}
+
+async function clearRestWatchEntrySelection(app, element) {
+  if (!canAccessAllPlayerOps()) return;
+  const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
+  const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  setRestWatchActiveSelection(app, slotId, entryIndex);
+  clearRestWatchPendingSelection(app, slotId, entryIndex);
+  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
+  if (!committedActorId) {
+    refreshSingleAppPreservingView(app);
+    return;
+  }
+  await commitRestWatchEntrySelection(slotId, entryIndex, "");
+  refreshSingleAppPreservingView(app);
 }
 
 async function clearSlotEntry(element) {
@@ -41088,7 +42661,9 @@ async function clearSlotEntry(element) {
       return;
     }
     if (!slot.entries) slot.entries = [];
-    slot.entries = slot.entries.filter((entry) => entry.actorId !== actorId);
+    slot.entries = sanitizeRestWatchEntries({
+      entries: slot.entries.filter((entry) => entry.actorId !== actorId)
+    });
     if (slot.entries.length === 0) {
       slot.actorId = null;
       slot.notes = "";
@@ -41313,6 +42888,8 @@ async function clearRestWatchAll() {
   if (!confirmed) return;
   await updateRestWatchState((state) => {
     state.slots = buildStoredWatchSlots();
+    state.campfire = false;
+    state.campfireBySlot = {};
   });
 }
 
@@ -41427,6 +43004,8 @@ async function assignActorToRank(element) {
   }
   const rankId = element?.dataset?.rankId;
   if (!rankId) return;
+  const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
+  const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
 
   const actors = game.actors.contents.filter((actor) => actor.hasPlayerOwner);
   const options = actors.map((actor) =>
@@ -41447,7 +43026,11 @@ async function assignActorToRank(element) {
               state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
             }
             if (!state.ranks[rankId]) state.ranks[rankId] = [];
-            state.ranks[rankId].push(actorId);
+            const target = state.ranks[rankId];
+            const safeIndex = hasRequestedInsertIndex
+              ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+              : target.length;
+            target.splice(safeIndex, 0, actorId);
             if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
               markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
             }
@@ -41509,6 +43092,8 @@ async function joinRank(element) {
   }
   let rankId = String(element?.dataset?.rankId ?? "").trim();
   if (!rankId) rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
+  const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
+  const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
   
   // If not clicked on a rank, default to middle
   if (!rankId) {
@@ -41522,7 +43107,9 @@ async function joinRank(element) {
   }
   
   if (!game.user?.isGM) {
-    await updateMarchingOrderState({ op: "joinRank", rankId, actorId: actor.id });
+    const request = { op: "joinRank", rankId, actorId: actor.id };
+    if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
+    await updateMarchingOrderState(request);
     return;
   }
   await updateMarchingOrderState((state) => {
@@ -41530,7 +43117,11 @@ async function joinRank(element) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actor.id);
     }
     if (!state.ranks[rankId]) state.ranks[rankId] = [];
-    state.ranks[rankId].push(actor.id);
+    const target = state.ranks[rankId];
+    const safeIndex = hasRequestedInsertIndex
+      ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+      : target.length;
+    target.splice(safeIndex, 0, actor.id);
     if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
       markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
     }
@@ -41896,6 +43487,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
   const activities = getRestActivities();
   const sourceSlots = getRestWatchSourceSlots(state);
+  const playerActorOptions = isGM ? buildRestWatchPlayerActorOptions() : [];
 
   const buildNoteButtonContext = (actorNameInput, noteTextInput) => {
     const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
@@ -41935,7 +43527,15 @@ function buildWatchSlotsView(state, isGM, visibility) {
     const slotHighestPP = computeHighestPPForEntries(entriesView);
     const slotPpRange = computePassiveRangeForEntries(entriesView, "passivePerception");
     const slotPivRange = computePassiveRangeForEntries(entriesView, "passiveInvestigation");
-    const slotNoDarkvision = computeNoDarkvisionForEntries(entriesView);
+    const slotNoDarkvision = isGM ? computeNoDarkvisionForEntries(entriesView) : false;
+    const detailSummary = buildRestWatchDetailSummary({
+      slotNoDarkvision,
+      campfireActive,
+      slotPpRange,
+      slotPivRange
+    }, entriesView);
+
+    const assignmentRows = buildRestWatchAssignmentRows(entries, playerActorOptions, entriesView);
 
     return {
       id: slotId,
@@ -41951,6 +43551,13 @@ function buildWatchSlotsView(state, isGM, visibility) {
       slotPivHighLabel: slotPivRange.highLabel,
       slotPivLowLabel: slotPivRange.lowLabel,
       slotNoDarkvision,
+      detailSummary,
+      assignmentRows,
+      hasAssignmentDetails: assignmentRows.some((row) => row.hasActorDetails),
+      assignedCount: entriesView.length,
+      maxEntries: REST_WATCH_MAX_ENTRIES,
+      openCount: Math.max(0, REST_WATCH_MAX_ENTRIES - entriesView.length),
+      isFull: entriesView.length >= REST_WATCH_MAX_ENTRIES,
       canAssign: isGM,
       canAssignMe: !isGM && !lockedForUser
     };
@@ -42029,6 +43636,197 @@ function buildRanksView(state, isGM) {
   });
 
   return base;
+}
+
+function getRestWatchAssignedActorIds(state = getRestWatchState()) {
+  const seen = new Set();
+  const ordered = [];
+  for (const slot of state?.slots ?? []) {
+    for (const entry of sanitizeRestWatchEntries(slot)) {
+      const actorId = String(entry?.actorId ?? "").trim();
+      if (!actorId || seen.has(actorId)) continue;
+      seen.add(actorId);
+      ordered.push(actorId);
+    }
+  }
+  return ordered;
+}
+
+function buildFormationSpreadPositions(count, columns) {
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, columns));
+  if (safeCount <= 0 || columns <= 0) return [];
+  if (safeCount === 1) return [Math.floor((columns - 1) / 2)];
+  const positions = new Set();
+  for (let index = 0; index < safeCount; index += 1) {
+    positions.add(Math.round((index * (columns - 1)) / Math.max(1, safeCount - 1)));
+  }
+  const normalized = Array.from(positions).sort((left, right) => left - right);
+  for (let index = 0; normalized.length < safeCount && index < columns; index += 1) {
+    if (!positions.has(index)) normalized.push(index);
+  }
+  return normalized.sort((left, right) => left - right).slice(0, safeCount);
+}
+
+function buildFormationTightPositions(count, columns, offset = 0) {
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, columns));
+  if (safeCount <= 0 || columns <= 0) return [];
+  const maxStart = Math.max(0, columns - safeCount);
+  const centered = Math.floor((columns - safeCount) / 2);
+  const start = Math.max(0, Math.min(maxStart, centered + offset));
+  return Array.from({ length: safeCount }, (_, index) => start + index);
+}
+
+function buildFormationCellPositions(definition, rankId, count, columns) {
+  const safeColumns = Math.max(1, Number(columns) || 1);
+  const safeCount = Math.max(0, Math.min(Number(count) || 0, safeColumns));
+  if (safeCount <= 0) return [];
+
+  const formationId = String(definition?.id ?? "").trim().toLowerCase();
+  const category = String(definition?.category ?? "").trim().toLowerCase();
+
+  if (formationId === "tight-column") {
+    const offset = rankId === "front" ? 0 : rankId === "middle" ? 1 : 0;
+    return buildFormationTightPositions(safeCount, safeColumns, offset);
+  }
+  if (formationId === "tight-guard") {
+    return buildFormationTightPositions(safeCount, safeColumns, 0);
+  }
+  if (formationId === "open-staggered") {
+    const offset = rankId === "middle" ? 1 : rankId === "rear" ? -1 : 0;
+    return buildFormationTightPositions(safeCount, safeColumns, offset);
+  }
+  if (formationId === "open-screen") {
+    return buildFormationSpreadPositions(safeCount, safeColumns);
+  }
+  if (formationId === "free") {
+    return buildFormationSpreadPositions(safeCount, safeColumns);
+  }
+  if (category === "tight") {
+    return buildFormationTightPositions(safeCount, safeColumns, 0);
+  }
+  return buildFormationSpreadPositions(safeCount, safeColumns);
+}
+
+function buildFormationPreviewRows(definition) {
+  const ranks = [
+    { id: "front", label: "Front" },
+    { id: "middle", label: "Middle" },
+    { id: "rear", label: "Rear" }
+  ];
+  const recommendedCounts = ranks.map((row) => {
+    const recommended = Number(definition?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
+    if (String(definition?.id ?? "") === "free") {
+      return row.id === "middle" ? 2 : 1;
+    }
+    return recommended;
+  });
+  const columns = Math.max(3, ...recommendedCounts, 1);
+  return ranks.map((row, rowIndex) => {
+    const activeCount = recommendedCounts[rowIndex];
+    const positions = buildFormationCellPositions(definition, row.id, activeCount, columns);
+    const cells = Array.from({ length: columns }, (_, columnIndex) => ({
+      filled: positions.includes(columnIndex)
+    }));
+    return {
+      id: row.id,
+      label: row.label,
+      cells
+    };
+  });
+}
+
+function buildMarchFormationChoiceCards(currentFormationId) {
+  const currentId = normalizeMarchingFormation(currentFormationId);
+  return getMarchFormationDefinitions().map((definition) => ({
+    id: definition.id,
+    label: definition.label,
+    category: definition.category,
+    categoryLabel: getMarchFormationCategoryLabel(definition.category),
+    summary: definition.summary,
+    active: definition.id === currentId,
+    previewRows: buildFormationPreviewRows(definition)
+  }));
+}
+
+function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks = []) {
+  const definition = getMarchFormationDefinition(formationSnapshot?.formation?.id ?? state?.formation ?? "loose");
+  const rankViewById = new Map((Array.isArray(ranks) ? ranks : []).map((rank) => [rank.id, rank]));
+  const rankRows = [
+    { id: "front", label: "Front Lane" },
+    { id: "middle", label: "Middle Lane" },
+    { id: "rear", label: "Rear Lane" }
+  ];
+  const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "").trim() : "";
+  const lockedForUser = isLockedForUser(state, isGM);
+  const canQuickPlace = isGM || (Boolean(activeActorId) && !lockedForUser);
+  const actualCounts = rankRows.map((row) => rankViewById.get(row.id)?.entries?.length ?? 0);
+  const recommendedCounts = rankRows.map((row) => {
+    const recommended = Number(formationSnapshot?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
+    if (definition.id === "free") return Math.max(recommended, actualCounts[rankRows.findIndex((entry) => entry.id === row.id)], row.id === "middle" ? 2 : 1);
+    return recommended;
+  });
+  const columns = Math.max(3, ...actualCounts, ...recommendedCounts, 1);
+  const rows = rankRows.map((row, rowIndex) => {
+    const rankView = rankViewById.get(row.id);
+    const entries = Array.isArray(rankView?.entries) ? rankView.entries : [];
+    const recommendedPositions = buildFormationCellPositions(definition, row.id, recommendedCounts[rowIndex], columns);
+    const actorPositions = [...recommendedPositions];
+    for (let columnIndex = 0; actorPositions.length < entries.length && columnIndex < columns; columnIndex += 1) {
+      if (!actorPositions.includes(columnIndex)) actorPositions.push(columnIndex);
+    }
+    actorPositions.sort((left, right) => left - right);
+    const cells = Array.from({ length: columns }, (_, columnIndex) => {
+      const actorIndex = actorPositions.indexOf(columnIndex);
+      const entry = actorIndex >= 0 ? entries[actorIndex] : null;
+      const actorId = entry?.actorId ?? "";
+      const actor = entry?.actor ?? null;
+      const insertIndex = actorPositions.filter((position) => position < columnIndex).length;
+      const isCurrentUserActor = Boolean(activeActorId && actorId && actorId === activeActorId);
+      return {
+        column: columnIndex,
+        insertIndex,
+        hasActor: Boolean(entry),
+        isRecommended: recommendedPositions.includes(columnIndex),
+        isCurrentUserActor,
+        entry,
+        actorId,
+        label: actor?.name ?? "",
+        hasToken: Boolean(actor?.img),
+        placeholderLabel: recommendedPositions.includes(columnIndex) ? "Suggested" : "Open",
+        action: isGM ? "assign-rank" : "join-rank",
+        actionLabel: isGM ? "Add Actor" : (canQuickPlace ? "Move Here" : (lockedForUser ? "Locked" : "No Character")),
+        actionDisabled: !isGM && !canQuickPlace
+      };
+    });
+    return {
+      id: row.id,
+      label: row.label,
+      actualCount: entries.length,
+      recommendedCount: recommendedCounts[rowIndex],
+      cells
+    };
+  });
+
+  const assignedActorIds = new Set(getOrderedMarchingActors(state));
+  const restWatchActorIds = getRestWatchAssignedActorIds();
+  const unassignedRestActors = restWatchActorIds
+    .filter((actorId) => !assignedActorIds.has(actorId))
+    .map((actorId) => game.actors.get(actorId))
+    .filter(Boolean)
+    .map((actor) => buildActorView(actor, isGM, "names-passives"));
+
+  return {
+    formationId: definition.id,
+    formationLabel: definition.label,
+    formationCategoryLabel: getMarchFormationCategoryLabel(definition.category),
+    summary: definition.summary,
+    rows,
+    columnCount: columns,
+    hasUnassignedRestActors: unassignedRestActors.length > 0,
+    unassignedRestActors,
+    restWatchRosterCount: restWatchActorIds.length,
+    assignedActorCount: formationSnapshot?.assignedActorIds?.length ?? 0
+  };
 }
 
 function buildNotesView(state, ranks, isGM) {
@@ -42626,8 +44424,12 @@ function buildActorView(actor, isGM, visibility) {
     darkvision: getDarkvision(actor),
     stealthDisadv: getStealthDisadv(actor),
     ac: getArmorClass(actor),
+    hp: getCurrentHitPoints(actor),
+    hpMax: getMaxHitPoints(actor),
+    hpLabel: getHitPointLabel(actor),
     languages: languageData?.display ?? null,
-    languagesTooltip: languageData?.tooltip ?? ""
+    languagesTooltip: languageData?.tooltip ?? "",
+    languageList: Array.isArray(languageData?.labels) ? [...languageData.labels] : []
   };
 
   if (isGM) return data;
@@ -42643,7 +44445,11 @@ function buildActorView(actor, isGM, visibility) {
     darkvision: null,
     stealthDisadv: null,
     ac: null,
-    languages: null
+    hp: null,
+    hpMax: null,
+    hpLabel: null,
+    languages: null,
+    languageList: []
   };
 }
 
@@ -42677,6 +44483,24 @@ function getStealthDisadv(actor) {
 
 function getArmorClass(actor) {
   return actor?.system?.attributes?.ac?.value ?? null;
+}
+
+function getCurrentHitPoints(actor) {
+  const value = Number(actor?.system?.attributes?.hp?.value);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getMaxHitPoints(actor) {
+  const value = Number(actor?.system?.attributes?.hp?.max);
+  return Number.isFinite(value) ? value : null;
+}
+
+function getHitPointLabel(actor) {
+  const current = getCurrentHitPoints(actor);
+  const max = getMaxHitPoints(actor);
+  if (current === null && max === null) return null;
+  if (max === null || max <= 0) return current === null ? null : String(current);
+  return `${current ?? 0}/${max}`;
 }
 
 function getLanguages(actor) {
@@ -42725,12 +44549,14 @@ function getLanguages(actor) {
   if (labels.length <= 3) {
     return {
       display: full,
-      tooltip: ""
+      tooltip: "",
+      labels
     };
   }
   return {
     display: `${labels.length} langs`,
-    tooltip: full
+    tooltip: full,
+    labels
   };
 }
 
@@ -43372,7 +45198,7 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
 });
 
 function toggleCardNotes(element) {
-  const entry = element?.closest(".po-watch-entry");
+  const entry = element?.closest(".po-watch-entry, .po-watch-assignment-inline, .po-watch-assignment-row");
   const notes = entry?.querySelector(".po-notes");
   if (!notes) return;
   const isActive = notes.classList.toggle("is-active");

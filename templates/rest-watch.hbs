@@ -53,186 +53,234 @@
   </section>
   {{#if isGM}}
   <div class="po-overview-actions">
-    <button type="button" class="po-btn po-btn-sm {{#if campfireOverview.allLit}}is-active{{/if}}" data-action="toggle-campfire-all">
-      <i class="fa-solid fa-fire"></i> {{campfireOverview.toggleAllLabel}}
-    </button>
+    <div class="po-rest-watch-toolbar">
+      <button type="button" class="po-btn po-btn-sm po-rest-campfire-all {{#if campfireOverview.allLit}}is-active{{/if}}" data-action="toggle-campfire-all">
+        <i class="fa-solid fa-fire"></i> {{campfireOverview.toggleAllLabel}}
+      </button>
+      <details class="po-rest-settings-menu">
+        <summary class="po-rest-settings-summary" aria-label="Watch settings" title="Watch settings">
+          <i class="fa-solid fa-gear"></i>
+        </summary>
+        <div class="po-rest-settings-menu-panel">
+          <div class="po-rest-settings-body">
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Auto-Fill</div>
+              <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
+              <button type="button" class="po-btn" data-action="autofill-last"><i class="fa-solid fa-clock-rotate-left"></i> Fill from Last Session</button>
+            </div>
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Snapshot</div>
+              <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
+            </div>
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Visibility</div>
+              <select class="po-select" data-action="visibility">
+                {{#each visibilityOptions}}
+                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                {{/each}}
+              </select>
+            </div>
+            <div class="po-rest-settings-group po-rest-settings-group-danger">
+              <div class="po-section-title">Plan</div>
+              <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
   </div>
   {{/if}}
 
   {{/if}}
 
   <section class="po-content" id="{{#if mainTabRestWatch}}po-panel-rest-watch{{else}}po-panel-operations{{/if}}">
-    <div class="po-grid po-primary-layout {{#if mainTabOperationsOrGm}}is-operations-layout{{/if}}">
+    <div class="po-grid po-primary-layout {{#if mainTabRestWatch}}is-rest-watch-layout{{/if}} {{#if mainTabOperationsOrGm}}is-operations-layout{{/if}}">
       {{#if mainTabRestWatch}}
       <div class="po-cards">
         {{#each slots}}
-        <article class="po-card" data-slot-id="{{id}}">
-          <div class="po-card-left">
-            <button type="button" class="po-btn po-btn-sm po-slot-header-btn" aria-label="{{label}}">
-              {{label}}
-              {{#if entries}}<span class="po-entry-count">{{entries.length}}</span>{{/if}}
-            </button>
-            {{#if isGM}}
-            <label class="po-sr-only" for="po-time-range-{{id}}">Time range for {{label}}</label>
-            <input id="po-time-range-{{id}}" type="text" class="po-time-range-input" data-action="time-range" data-slot-id="{{id}}" value="{{timeRange}}" placeholder="e.g., 8-10 PM" aria-label="Time range for {{label}}" />
-            {{else}}
-            {{#if timeRange}}
-            <div class="po-time-range">{{timeRange}}</div>
-            {{/if}}
-            {{/if}}
-            <div class="po-slot-insights">
-              <div class="po-slot-chip" title="Highest and lowest passive Perception among actors on this watch.">PP H {{slotPpHighLabel}} / L {{slotPpLowLabel}}</div>
-              <div class="po-slot-chip" title="Highest and lowest passive Investigation among actors on this watch.">PIv H {{slotPivHighLabel}} / L {{slotPivLowLabel}}</div>
-              {{#if isGM}}
-              {{#if slotNoDarkvision}}
-              <div class="po-slot-chip is-warn">No DV</div>
-              {{/if}}
-              {{/if}}
-            </div>
-          </div>
+        <article class="po-card po-watch-card" data-slot-id="{{id}}">
+          <div class="po-watch-card-shell">
+            <section class="po-watch-assign-pane">
+              <div class="po-watch-card-head">
+                <div>
+                  <div class="po-slot-badge">{{label}}</div>
+                  <div class="po-op-summary">Assignments {{assignedCount}} / {{maxEntries}}</div>
+                </div>
+              </div>
 
-          <div class="po-card-center">
-            {{#if hasEntries}}
-            <div class="po-watch-entry-grid">
-            {{#each entries}}
-            <div class="po-watch-entry {{#if isActiveCharacter}}is-active{{/if}}" data-actor-id="{{actorId}}">
-              <div class="po-actor">
-                <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
-                <div class="po-actor-meta">
-                  <div class="po-actor-name">
-                    {{actor.name}}
-                    <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
-                      <i class="fa-solid fa-location-dot"></i>
+              {{#if @root.isGM}}
+              <div class="po-watch-assignment-list">
+                {{#each assignmentRows}}
+                <div
+                  class="po-watch-assignment-row {{#if occupied}}is-filled{{/if}}">
+                  <label class="po-watch-assignment-label" for="po-slot-select-{{../id}}-{{index}}">{{slotLabel}}</label>
+                  <div class="po-watch-assignment-controls">
+                    <select
+                      id="po-slot-select-{{../id}}-{{index}}"
+                      class="po-select po-watch-slot-select"
+                      data-action="set-slot-entry"
+                      data-slot-id="{{../id}}"
+                      data-entry-index="{{index}}"
+                      data-committed-actor-id="{{committedActorId}}">
+                      {{#each selectOptions}}
+                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                      {{/each}}
+                    </select>
+                    <button
+                      type="button"
+                      class="po-icon-btn"
+                      data-action="clear-slot-entry"
+                      data-slot-id="{{../id}}"
+                      data-entry-index="{{index}}"
+                      data-committed-actor-id="{{committedActorId}}"
+                      aria-label="Clear {{slotLabel}}"
+                      {{#unless hasSelectableValue}}disabled{{/unless}}>
+                      <i class="fa-solid fa-xmark"></i>
                     </button>
                   </div>
-                  <div class="po-actor-sub">
-                    <div class="po-watch-stats">
-                      {{#if actor.passivePerception}}
-                      <div class="po-stat po-stat-primary">
-                        <span class="po-stat-label">PP</span>
-                        <span class="po-stat-value">{{actor.passivePerception}}</span>
-                      </div>
-                      {{/if}}
-                      
-                      {{#if actor.ac}}
-                      <div class="po-stat">
-                        <span class="po-stat-label">AC</span>
-                        <span class="po-stat-value">{{actor.ac}}</span>
-                      </div>
-                      {{/if}}
-                      {{#if actor.darkvision}}
-                      <div class="po-stat">
-                        <span class="po-stat-label">DV</span>
-                        <span class="po-stat-value">{{actor.darkvision}}</span>
-                      </div>
-                      {{/if}}
-                      {{#if actor.passiveInsight}}
-                      <div class="po-stat">
-                        <span class="po-stat-label">PI</span>
-                        <span class="po-stat-value">{{actor.passiveInsight}}</span>
-                      </div>
-                      {{/if}}
-                      {{#if actor.passiveInvestigation}}
-                      <div class="po-stat">
-                        <span class="po-stat-label">PIv</span>
-                        <span class="po-stat-value">{{actor.passiveInvestigation}}</span>
-                      </div>
-                      {{/if}}
-                      {{#if actor.stealthDisadv}}
-                      <div class="po-stat po-stat-warn">Stealth Disadv</div>
-                      {{/if}}
-                      {{#if actor.languages}}
-                      <div class="po-stat">
-                        <span class="po-stat-label">Lang</span>
-                        <span class="po-stat-value" {{#if actor.languagesTooltip}}title="{{actor.languagesTooltip}}"{{/if}}>{{actor.languages}}</span>
-                      </div>
-                      {{/if}}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {{#if activity}}
-              <div class="po-activity-section">
-                <div class="po-activity-row is-compact">
-                  <div class="po-exhaustion-badge {{#if activity.exhaustion}}is-exhausted{{/if}}" title="Exhaustion Level {{activity.exhaustion}}: {{activity.exhaustionLabel}}" aria-label="Exhaustion {{activity.exhaustion}} - {{activity.exhaustionLabel}}">
-                    {{#if activity.exhaustion}}
-                    <i class="fa-solid fa-heart-crack"></i>
-                    <span>{{activity.exhaustion}}</span>
+                  <div class="po-watch-assignment-status">
+                    {{#if isPendingSelection}}
+                    <span class="po-slot-chip">Preview</span>
                     {{else}}
-                    <i class="fa-solid fa-heart"></i>
+                    {{#if occupied}}
+                    <span class="po-slot-chip">Locked</span>
+                    {{else}}
+                    <span class="po-slot-chip">Open</span>
+                    {{/if}}
                     {{/if}}
                   </div>
-
-                  
+                  <div class="po-watch-assignment-inline">
+                    {{#if hasActorDetails}}
+                    <div class="po-watch-assignment-copy">
+                      <strong>{{actor.name}}</strong>
+                    </div>
+                    <div class="po-watch-assignment-actions-inline">
+                      <span class="po-slot-chip po-watch-mini-stat">PP {{#if hasPassivePerception}}{{actor.passivePerception}}{{else}}-{{/if}}</span>
+                      <span class="po-slot-chip po-watch-mini-stat">PI {{#if hasPassiveInvestigation}}{{actor.passiveInvestigation}}{{else}}-{{/if}}</span>
+                      {{#if hasSelectableValue}}
+                      <label class="po-watch-lock-toggle po-watch-lock-toggle-inline {{#if lockChecked}}is-locked{{/if}}" title="{{lockLabel}}">
+                        <input
+                          type="checkbox"
+                          class="po-watch-lock-checkbox"
+                          data-action="lock-slot-entry"
+                          data-slot-id="{{../id}}"
+                          data-entry-index="{{index}}"
+                          {{#if lockChecked}}checked{{/if}}
+                          {{#unless canLockSelection}}disabled{{/unless}}>
+                        <span>{{#if lockChecked}}Locked{{else}}Lock{{/if}}</span>
+                      </label>
+                      {{/if}}
+                      {{#if actorId}}
+                      <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-note-input-wrap-{{../id}}-{{index}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
+                        <i class="fa-solid fa-note-sticky"></i>
+                      </button>
+                      <button type="button" class="po-icon-btn" data-action="ping" data-actor-id="{{actorId}}" aria-label="Ping {{actor.name}}">
+                        <i class="fa-solid fa-location-dot"></i>
+                      </button>
+                      {{/if}}
+                    </div>
+                    <div id="po-note-input-wrap-{{../id}}-{{index}}" class="po-notes" aria-hidden="true">
+                      <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
+                      <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="3" placeholder="Notes for {{actor.name}}" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+                      {{#if canEditNotes}}
+                      <div class="po-notes-actions">
+                        <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
+                      </div>
+                      {{else}}
+                      {{#if lockHint}}
+                      <div class="po-op-summary">{{lockHint}}</div>
+                      {{/if}}
+                      {{/if}}
+                    </div>
+                    {{/if}}
+                  </div>
                 </div>
+                {{/each}}
               </div>
-              {{/if}}
-
-              <div class="po-entry-actions">
-                <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="toggle-notes" aria-controls="po-notes-{{../id}}-{{actorId}}" aria-expanded="false" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
-                  <i class="fa-solid fa-note-sticky"></i>
+              <div class="po-assign-actions po-watch-assignment-actions">
+                <button type="button" class="po-btn" data-action="assign-actor-global">
+                  <i class="fa-solid fa-user-plus"></i> Add Actor
                 </button>
-                {{#if canClear}}
-                <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
-                  <i class="fa-solid fa-xmark"></i>
-                </button>
-                {{/if}}
               </div>
-
-              <div id="po-notes-{{../id}}-{{actorId}}" class="po-notes" aria-hidden="true">
-                <label class="po-sr-only" for="po-note-input-{{../id}}-{{actorId}}">Notes for {{actor.name}}</label>
-                <textarea id="po-note-input-{{../id}}-{{actorId}}" class="po-notes-input" rows="2" placeholder="Notes" aria-label="Notes for {{actor.name}}" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
-                {{#if canEditNotes}}
-                <div class="po-notes-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="save-entry-notes" data-slot-id="{{../id}}" data-actor-id="{{actorId}}">Save Note</button>
+              {{else}}
+              <div class="po-watch-assignment-readonly">
+                {{#if hasEntries}}
+                {{#each entries}}
+                <div class="po-watch-readonly-row {{#if isActiveCharacter}}is-active{{/if}}">
+                  <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+                  <div class="po-watch-readonly-copy">
+                    <strong>{{actor.name}}</strong>
+                    <span>{{activity.activityLabel}}</span>
+                  </div>
                 </div>
-                {{#if @root.notesDebugHint}}
-                <div class="po-note-label">{{@root.notesDebugHint}}</div>
+                {{/each}}
+                {{else}}
+                <div class="po-empty"><div class="po-empty-text">No one assigned yet.</div></div>
                 {{/if}}
+                {{#if canAssignMe}}
+                <div class="po-assign-actions">
+                  <button type="button" class="po-btn is-primary" data-action="assign-me">Assign Me</button>
+                </div>
                 {{/if}}
               </div>
-            </div>
-            {{/each}}
-            </div>
-            {{/if}}
-
-            {{#unless hasEntries}}
-            <div class="po-empty">
-              <div class="po-empty-text">Assign character(s)...</div>
-            </div>
-            {{/unless}}
-
-            <div class="po-assign-actions">
-              {{#if canAssign}}
-              <button type="button" class="po-btn" data-action="assign-character">+ Add Character</button>
               {{/if}}
-              {{#if canAssignMe}}
-              <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
-              {{/if}}
-            </div>
-          </div>
+            </section>
 
-          <div class="po-card-right">
-            {{#if @root.isGM}}
-            <button
-              type="button"
-              class="po-campfire-toggle {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}"
-              data-action="toggle-campfire"
-              data-slot-id="{{id}}"
-              data-slot-label="{{label}}"
-              aria-pressed="{{#if campfireActive}}true{{else}}false{{/if}}"
-              title="Toggle campfire on or off for {{label}}."
-            >
-              <i class="fa-solid fa-fire"></i>
-              <span>{{campfireState}}</span>
-            </button>
-            {{else}}
-            <div class="po-campfire-status {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}" title="Campfire status for {{label}}.">
-              <i class="fa-solid fa-fire"></i>
-              <span>{{campfireState}}</span>
-            </div>
-            {{/if}}
+            <section class="po-watch-detail-pane">
+              <div class="po-watch-detail-head">
+                <div>
+                  <div class="po-section-title">Watch Summary</div>
+                  <div class="po-op-summary">{{label}} totals for GM reference.</div>
+                </div>
+                {{#if @root.isGM}}
+                <button
+                  type="button"
+                  class="po-campfire-toggle {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}"
+                  data-action="toggle-campfire"
+                  data-slot-id="{{id}}"
+                  data-slot-label="{{label}}"
+                  aria-pressed="{{#if campfireActive}}true{{else}}false{{/if}}">
+                  <i class="fa-solid fa-fire"></i>
+                  <span>{{campfireState}}</span>
+                </button>
+                {{else}}
+                <div class="po-campfire-status {{#if campfireActive}}is-active{{else}}is-inactive{{/if}}">
+                  <i class="fa-solid fa-fire"></i>
+                  <span>{{campfireState}}</span>
+                </div>
+                {{/if}}
+              </div>
+
+              <div class="po-slot-insights po-watch-detail-chips">
+                <div class="po-slot-chip">{{detailSummary.activeCountLabel}}</div>
+                <div class="po-slot-chip">{{detailSummary.openCountLabel}}</div>
+                <div class="po-slot-chip">{{detailSummary.languagesCountLabel}}</div>
+                <div class="po-slot-chip {{#if detailSummary.hasCoverageWarning}}is-warn{{/if}}">{{detailSummary.coverageLabel}}</div>
+              </div>
+
+              <div class="po-watch-total-grid">
+                <article class="po-watch-total-card">
+                  <div class="po-watch-total-label">Passive Perception</div>
+                  <div class="po-watch-total-value">{{detailSummary.ppRangeLabel}}</div>
+                </article>
+                <article class="po-watch-total-card">
+                  <div class="po-watch-total-label">Passive Investigation</div>
+                  <div class="po-watch-total-value">{{detailSummary.pivRangeLabel}}</div>
+                </article>
+                <article class="po-watch-total-card {{detailSummary.coverageStateClass}}">
+                  <div class="po-watch-total-label">Coverage</div>
+                  <div class="po-watch-total-value">{{detailSummary.coverageLabel}}</div>
+                </article>
+                <article class="po-watch-total-card {{detailSummary.campfireStateClass}}">
+                  <div class="po-watch-total-label">Campfire</div>
+                  <div class="po-watch-total-value">{{detailSummary.campfireLabel}}</div>
+                </article>
+                <article class="po-watch-total-card po-watch-total-card-wide">
+                  <div class="po-watch-total-label">Known Languages</div>
+                  <div class="po-watch-total-value {{#unless detailSummary.hasLanguages}}is-muted{{/unless}}" {{#if detailSummary.languagesTooltip}}title="{{detailSummary.languagesTooltip}}"{{/if}}>{{detailSummary.languagesLabel}}</div>
+                </article>
+              </div>
+            </section>
           </div>
         </article>
         {{/each}}
@@ -240,51 +288,8 @@
       {{/if}}
 
       {{#if isGM}}
+      {{#if gmPanelTabOperations}}
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
-        {{#if gmPanelTabCore}}
-        <div class="po-gm-section">
-          <div class="po-section-title">Auto-Fill</div>
-          <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
-          <button type="button" class="po-btn" data-action="autofill-last"><i class="fa-solid fa-clock-rotate-left"></i> Fill from Last Session</button>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Actors</div>
-          <button type="button" class="po-btn" data-action="assign-actor-global"><i class="fa-solid fa-user-plus"></i> Add Actor</button>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Snapshot</div>
-          <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Activities</div>
-          <button type="button" class="po-btn" data-action="reset-activities"><i class="fa-solid fa-arrows-rotate"></i> Reset Day</button>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Visibility</div>
-          <select class="po-select" data-action="visibility">
-            {{#each visibilityOptions}}
-            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-            {{/each}}
-          </select>
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Export</div>
-          <button type="button" class="po-btn" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
-          <button type="button" class="po-btn" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
-        </div>
-
-        <div class="po-gm-section">
-          <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
-        </div>
-        {{/if}}
-
-        {{#if gmPanelTabOperations}}
-
         {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
@@ -936,18 +941,7 @@
           <div class="po-merchant-showcase">
             <div class="po-merchant-showcase-head">
               <div class="po-op-summary">Assigned Location: {{operations.merchants.selectedSettlementLabel}}</div>
-              {{#if operations.merchants.canChooseActor}}
-              <label class="po-resource-row">
-                <span>Trading As</span>
-                <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
-                  {{#each operations.merchants.actorOptions}}
-                  <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              {{else}}
-              <div class="po-op-summary">Trading As: {{operations.merchants.activeActorName}}</div>
-              {{/if}}
+              <div class="po-op-summary">Trading As: {{#if operations.merchants.hasActiveActor}}{{operations.merchants.activeActorName}}{{else}}No eligible actor selected{{/if}}</div>
               <div class="po-op-summary">Viewer: {{operations.merchants.viewerName}}</div>
               <div class="po-op-summary">Last Access Logged: {{operations.merchants.viewerLastAccessLabel}}</div>
               <div class="po-op-summary">Shop Status: {{operations.merchants.shopStatusLabel}}</div>
@@ -1047,12 +1041,29 @@
               <div class="po-op-summary">No stocked wares are available for the selected merchant.</div>
               {{/if}}
             </div>
+
+            {{#if operations.merchants.showGmDebugOptions}}
+            <details class="po-panel-disclosure po-merchant-gm-options">
+              <summary class="po-panel-disclosure-summary">
+                <span class="po-section-title">GM Options</span>
+                <span class="po-op-summary">Debug and troubleshooting controls</span>
+              </summary>
+              <div class="po-panel-disclosure-body po-merchant-gm-options-body">
+                <label class="po-resource-row">
+                  <span>Trading As</span>
+                  <select class="po-select" data-action="merchant-select-actor" {{#unless operations.merchants.hasActorOptions}}disabled{{/unless}}>
+                    {{#each operations.merchants.actorOptions}}
+                    <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                <div class="po-op-action-row po-merchant-gm-options-actions">
+                  <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Editor</button>
+                </div>
+              </div>
+            </details>
+            {{/if}}
           </div>
-          {{#if @root.showGmPageTab}}
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-open-merchants">Open Merchant Editor</button>
-          </div>
-          {{/if}}
         </div>
 
         {{/if}}
@@ -1061,10 +1072,10 @@
 
         <div id="po-ops-downtime" class="po-gm-section po-downtime-panel">
           <div class="po-section-title">Downtime Actions</div>
-          <div class="po-hint">Players submit one DMG-style downtime action per actor. GM resolves pending entries in the GM Downtime page.</div>
+          <div class="po-hint">GM tunes downtime, publishes granted hours, players submit one action per actor, then the GM can automate or manually resolve results.</div>
 
           <div class="po-info-strip">
-            <div class="po-info-chip"><span>Hours Granted</span><strong>{{operations.downtime.hoursGranted}}</strong></div>
+            <div class="po-info-chip"><span>Available Hours</span><strong>{{#if operations.downtime.publication.isPublished}}{{operations.downtime.hoursGranted}}{{else}}-{{/if}}</strong></div>
             <div class="po-info-chip"><span>Pending</span><strong>{{operations.downtime.pendingCount}}</strong></div>
             <div class="po-info-chip"><span>Resolved</span><strong>{{operations.downtime.resolvedCount}}</strong></div>
             <div class="po-info-chip"><span>Recent Logs</span><strong>{{operations.downtime.logCount}}</strong></div>
@@ -1076,11 +1087,11 @@
               <span class="po-op-summary">How submissions and resolution work</span>
             </summary>
             <div class="po-panel-disclosure-body">
-              <div class="po-op-summary"><strong>Step 1:</strong> Pick a party character you can access, choose an action, and enter hours up to the granted limit.</div>
-              <div class="po-op-summary"><strong>Step 2:</strong> Add an optional note (goal, item, location, contact, etc.) and submit.</div>
-              <div class="po-op-summary"><strong>Step 3:</strong> GM opens the <em>GM Downtime page</em> to pre-resolve, edit rewards/notes, then final resolve to inbox.</div>
-              <div class="po-op-summary"><strong>Step 4:</strong> Review outcomes here, including gp delta, progress, and complications.</div>
-              <div class="po-hint">This workflow uses short downtime blocks (default 4 hours) so outcomes are intentionally smaller than a full downtime day.</div>
+              <div class="po-op-summary"><strong>Step 1:</strong> GM sets the draft hours and tuning, then publishes granted hours to players.</div>
+              <div class="po-op-summary"><strong>Step 2:</strong> Pick a party character you can access, choose browsing, crafting, or practicing a profession, then enter hours up to the published limit.</div>
+              <div class="po-op-summary"><strong>Step 3:</strong> Add an optional note (goal, item, location, contact, etc.) and submit.</div>
+              <div class="po-op-summary"><strong>Step 4:</strong> GM opens the <em>GM Downtime page</em> to pre-resolve automatically or edit the rewards/notes manually before final resolve to inbox.</div>
+              <div class="po-hint">{{operations.downtime.publication.submitHint}}</div>
             </div>
           </details>
 
@@ -1091,10 +1102,19 @@
                   <div class="po-op-role-name">Submit Downtime Action</div>
                   <div class="po-op-role-status">Per actor</div>
                 </div>
+                <div class="po-op-summary"><strong>Status:</strong> {{operations.downtime.publication.statusLabel}}</div>
+                <div class="po-op-summary"><strong>Published:</strong> {{operations.downtime.publication.publishedAtLabel}} by {{operations.downtime.publication.publishedBy}}</div>
+                {{#if @root.isGM}}
+                <div class="po-op-summary"><strong>Draft Hours:</strong> {{operations.downtime.draftHoursGranted}}</div>
+                <div class="po-op-action-row">
+                  <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-downtime-hours">{{operations.downtime.publication.buttonLabel}}</button>
+                </div>
+                {{/if}}
+                {{#if operations.downtime.submit.canSubmit}}
                 {{#if operations.downtime.submit.canChooseActor}}
                 <label class="po-resource-row">
                   <span>Actor</span>
-                  <select name="downtimeActorId" class="po-select">
+                  <select name="downtimeActorId" class="po-select" data-action="refresh-downtime-submit-selection">
                     {{#each operations.downtime.submit.actorOptions}}
                     <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
                     {{/each}}
@@ -1105,7 +1125,7 @@
                 {{/if}}
                 <label class="po-resource-row">
                   <span>Action</span>
-                  <select name="downtimeActionKey" class="po-select">
+                  <select name="downtimeActionKey" class="po-select" data-action="refresh-downtime-submit-selection">
                     {{#each operations.downtime.submit.actionOptions}}
                     <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                     {{/each}}
@@ -1124,13 +1144,125 @@
                 </details>
                 <label class="po-resource-row">
                   <span>Hours</span>
-                  <input name="downtimeHours" type="number" min="1" max="{{operations.downtime.hoursGranted}}" step="1" class="po-input" value="{{operations.downtime.submit.hours}}" />
+                  <input name="downtimeHours" type="number" min="1" max="{{operations.downtime.submit.hoursMax}}" step="1" class="po-input" value="{{operations.downtime.submit.hours}}" />
                 </label>
                 <label class="po-resource-row po-notes-row-lg">
                   <span>Note</span>
                   <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional intent, location, contact, or item target">{{operations.downtime.submit.note}}</textarea>
                 </label>
+                <div class="po-op-summary"><strong>Area Settings:</strong> {{operations.downtime.submit.areaSettingsLabel}}</div>
+                {{#if operations.downtime.submit.showBrowsingFields}}
+                <label class="po-resource-row">
+                  <span>Browsing Ability</span>
+                  <select name="downtimeBrowsingAbility" class="po-select" data-action="refresh-downtime-submit-selection">
+                    {{#each operations.downtime.submit.browsingAbilityOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                {{/if}}
+                {{#if operations.downtime.submit.showCraftingFields}}
+                <label class="po-resource-row">
+                  <span>Craft Item</span>
+                  <select name="downtimeCraftItemId" class="po-select" data-action="refresh-downtime-submit-selection">
+                    <option value="">Select craftable item</option>
+                    {{#each operations.downtime.submit.craftingCategoryViews}}
+                    <optgroup label="{{label}}">
+                      {{#each items}}
+                      <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+                      {{/each}}
+                    </optgroup>
+                    {{/each}}
+                  </select>
+                </label>
+                {{#unless operations.downtime.submit.hasCraftingOptions}}
+                <div class="po-op-summary">No craftable items match this actor's tool proficiencies.</div>
+                {{/unless}}
+                {{#if operations.downtime.submit.hasSelectedCraftable}}
+                <div class="po-op-summary">Crafting: {{operations.downtime.submit.selectedCraftableName}} | Tool {{operations.downtime.submit.selectedCraftableTool}} | Materials {{operations.downtime.submit.selectedCraftableMaterialCost}} gp | Progress {{operations.downtime.submit.selectedCraftableProgressRequired}}</div>
+                {{#if operations.downtime.submit.hasCraftingProject}}
+                <div class="po-op-summary">Existing project progress: {{operations.downtime.submit.craftingProjectProgressLabel}}</div>
+                {{/if}}
+                {{/if}}
+                <label class="po-resource-row">
+                  <span>Materials</span>
+                  <select name="downtimeCraftMaterialsOwned" class="po-select" data-action="refresh-downtime-submit-selection">
+                    {{#each operations.downtime.submit.materialsOwnedOptions}}
+                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                {{#if operations.downtime.submit.showMaterialDropZone}}
+                <label class="po-resource-row po-notes-row-lg">
+                  <span>Materials On Hand</span>
+                  <input type="hidden" name="downtimeCraftMaterialDrops" value="{{operations.downtime.submit.materialDropsJson}}" />
+                  <div class="po-loot-preview-dropzone" data-downtime-material-dropzone>Drop the material items you want the GM to review for this project.</div>
+                  <div class="po-loot-preview-items-grid" data-downtime-material-drop-list>
+                    {{#if operations.downtime.submit.hasMaterialDrops}}
+                    {{#each operations.downtime.submit.materialDrops}}
+                    <div class="po-op-role-row">
+                      <div class="po-op-role-head">
+                        <div class="po-op-role-name"><img src="{{img}}" width="18" height="18" /> {{name}}</div>
+                        <div class="po-op-role-status">x{{quantity}}</div>
+                      </div>
+                      <div class="po-op-summary">{{#if uuid}}{{uuid}}{{else}}World Item / Snapshot{{/if}}</div>
+                      <div class="po-op-action-row">
+                        <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-material-drop" data-drop-id="{{id}}">Remove</button>
+                      </div>
+                    </div>
+                    {{/each}}
+                    {{else}}
+                    <div class="po-op-summary">No materials selected.</div>
+                    {{/if}}
+                  </div>
+                </label>
+                <div class="po-hint">The GM decides how much of these materials count and any extra gp due when the result is collected.</div>
+                {{/if}}
+                {{/if}}
+                  {{#if operations.downtime.submit.showCraftingFields}}
+                  <details class="po-panel-disclosure">
+                    <summary class="po-panel-disclosure-summary">
+                      <span class="po-section-title">Crafting Catalog</span>
+                      <span class="po-op-summary">Expandable baseline catalog</span>
+                    </summary>
+                    <div class="po-panel-disclosure-body">
+                      {{#each operations.downtime.submit.craftingCatalogCategoryViews}}
+                      <details class="po-panel-disclosure">
+                        <summary class="po-panel-disclosure-summary">
+                          <span class="po-section-title">{{label}}</span>
+                          <span class="po-op-summary">{{itemCount}} items</span>
+                        </summary>
+                        <div class="po-panel-disclosure-body">
+                          {{#each items}}
+                          <div class="po-op-summary">{{name}} | {{requiredToolProficiency}} | Cost {{materialCost}}/{{baseCost}} gp | Progress {{progressRequired}}</div>
+                          {{/each}}
+                        </div>
+                      </details>
+                      {{/each}}
+                    </div>
+                  </details>
+                  {{/if}}
+                {{#if operations.downtime.submit.showProfessionFields}}
+                <label class="po-resource-row">
+                  <span>Profession</span>
+                  <select name="downtimeProfessionId" class="po-select" data-action="refresh-downtime-submit-selection">
+                    <option value="">Select profession</option>
+                    {{#each operations.downtime.submit.professionOptions}}
+                    <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}{{#if known}} [Known]{{/if}}</option>
+                    {{/each}}
+                  </select>
+                </label>
+                {{#unless operations.downtime.submit.hasProfessionOptions}}
+                <div class="po-op-summary">No professions are available for this actor.</div>
+                {{/unless}}
+                {{#if operations.downtime.submit.hasKnownProfessionNames}}
+                <div class="po-op-summary">Known professions: {{#each operations.downtime.submit.knownProfessionNames}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+                {{/if}}
+                {{/if}}
                 <button type="button" class="po-btn" data-action="submit-downtime-action">Submit Downtime Action</button>
+                {{else}}
+                <div class="po-op-summary">{{operations.downtime.submit.disabledReason}}</div>
+                {{/if}}
               </div>
             </div>
 
@@ -1148,6 +1280,11 @@
                     <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
                   </div>
                   <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+                  {{#if hasActionDetails}}
+                  {{#each actionDetails}}
+                  <div class="po-op-summary">{{this}}</div>
+                  {{/each}}
+                  {{/if}}
                   {{#if hasNote}}
                   <div class="po-op-summary">Note: {{note}}</div>
                   {{/if}}
@@ -1157,7 +1294,22 @@
                   {{/if}}
                   {{#if hasResult}}
                   <div class="po-op-summary">Result: {{resultSummary}}</div>
+                  {{#if resultTierLabel}}
+                  <div class="po-op-summary">Tier: {{resultTierLabel}}</div>
+                  {{/if}}
                   <div class="po-op-summary">Roll {{rollTotal}} - GP +{{gpAward}} / -{{gpCost}} (Net {{gpDeltaLabel}}) - Progress {{progress}}</div>
+                  {{#if hasExpectedQuality}}
+                  <div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>
+                  {{/if}}
+                  {{#if hasSuggestedTags}}
+                  <div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+                  {{/if}}
+                  {{#if hasPerformanceLabel}}
+                  <div class="po-op-summary">Performance: {{performanceLabel}}</div>
+                  {{/if}}
+                  {{#if hasCraftingStatus}}
+                  <div class="po-op-summary">{{craftingStatus}}</div>
+                  {{/if}}
                   {{#if hasRumorCount}}
                   <div class="po-op-summary">Rumors/Leads: {{rumorCount}}</div>
                   {{/if}}
@@ -1237,6 +1389,21 @@
                   <div class="po-op-role-status">{{hours}} hour(s)</div>
                 </div>
                 <div class="po-op-summary">{{summary}}</div>
+                {{#if resultTierLabel}}
+                <div class="po-op-summary">Tier: {{resultTierLabel}}</div>
+                {{/if}}
+                {{#if hasExpectedQuality}}
+                <div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>
+                {{/if}}
+                {{#if hasSuggestedTags}}
+                <div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
+                {{/if}}
+                {{#if hasPerformanceLabel}}
+                <div class="po-op-summary">Performance: {{performanceLabel}}</div>
+                {{/if}}
+                {{#if hasCraftingStatus}}
+                <div class="po-op-summary">{{craftingStatus}}</div>
+                {{/if}}
                 {{#if hasDetails}}
                 {{#each details}}
                 <div class="po-op-summary">{{this}}</div>
@@ -1777,9 +1944,8 @@
         
         {{/if}}
         {{/if}}
-
-        {{/if}}
       </aside>
+      {{/if}}
       {{/if}}
     </div>
   </section>

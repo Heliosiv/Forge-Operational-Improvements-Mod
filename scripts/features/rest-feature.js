@@ -7,6 +7,56 @@ export function createRestFeatureModule(deps = {}) {
   };
 }
 
+const REST_SLOT_MAX_ENTRIES = 5;
+
+function normalizeRestSlotEntryPosition(positionInput) {
+  const position = Number.parseInt(positionInput, 10);
+  if (!Number.isInteger(position) || position < 0 || position >= REST_SLOT_MAX_ENTRIES) return null;
+  return position;
+}
+
+function normalizeRestSlotEntries(slot) {
+  const source = Array.isArray(slot?.entries) ? slot.entries : [];
+  const seenActorIds = new Set();
+  const fixedRows = Array.from({ length: REST_SLOT_MAX_ENTRIES }, () => null);
+  const pending = [];
+
+  for (const sourceEntry of source) {
+    const actorId = String(sourceEntry?.actorId ?? "").trim();
+    if (!actorId || seenActorIds.has(actorId)) continue;
+    seenActorIds.add(actorId);
+    const entry = {
+      actorId,
+      notes: String(sourceEntry?.notes ?? "")
+    };
+    const position = normalizeRestSlotEntryPosition(sourceEntry?.position);
+    if (position === null || fixedRows[position]) {
+      pending.push(entry);
+      continue;
+    }
+    fixedRows[position] = entry;
+  }
+
+  for (const entry of pending) {
+    const nextOpenIndex = fixedRows.findIndex((row) => !row);
+    if (nextOpenIndex === -1) break;
+    fixedRows[nextOpenIndex] = entry;
+  }
+
+  slot.entries = fixedRows
+    .map((entry, position) => (entry ? { ...entry, position } : null))
+    .filter(Boolean);
+}
+
+function getNextOpenRestSlotPosition(slot) {
+  normalizeRestSlotEntries(slot);
+  const occupied = new Set(slot.entries.map((entry) => normalizeRestSlotEntryPosition(entry?.position)).filter(Number.isInteger));
+  for (let index = 0; index < REST_SLOT_MAX_ENTRIES; index += 1) {
+    if (!occupied.has(index)) return index;
+  }
+  return -1;
+}
+
 export function normalizeSocketRestRequest(request, deps = {}) {
   const {
     restOps,
@@ -38,11 +88,12 @@ export function normalizeSocketRestRequest(request, deps = {}) {
 
 function ensureRestSlotEntries(slot) {
   if (!slot.entries && slot.actorId) {
-    slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+    slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "", position: 0 }];
     slot.actorId = null;
     slot.notes = "";
   }
   if (!slot.entries) slot.entries = [];
+  normalizeRestSlotEntries(slot);
 }
 
 function restSlotHasActor(slot, actorIdInput) {
@@ -86,7 +137,11 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     if (!slot) return;
     ensureRestSlotEntries(slot);
     if (restSlotHasActor(slot, request.actorId)) return;
-    slot.entries.push({ actorId: request.actorId, notes: "" });
+    if ((slot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES) return;
+    const position = getNextOpenRestSlotPosition(slot);
+    if (position === -1) return;
+    slot.entries.push({ actorId: request.actorId, notes: "", position });
+    normalizeRestSlotEntries(slot);
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");
@@ -103,6 +158,7 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     const entryIndex = slot.entries.findIndex((entry) => entry.actorId === request.actorId);
     if (entryIndex === -1) return;
     slot.entries.splice(entryIndex, 1);
+    normalizeRestSlotEntries(slot);
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");

@@ -8,8 +8,11 @@ export function createGmDowntimePageApp(deps) {
     buildContext,
     openMainTab,
     setGmDowntimeViewState,
+    publishDowntimeHoursToPlayers,
     setDowntimeHoursGranted,
     setDowntimeTuningField,
+    renderDowntimeSubmissionMaterialDropList,
+    syncDowntimeUiDraftFromElement,
     applyDowntimeResolverBaseToUi,
     preResolveSelectedDowntimeEntry,
     resolveSelectedDowntimeEntry,
@@ -21,11 +24,12 @@ export function createGmDowntimePageApp(deps) {
     clearDowntimeLogEntry,
     postDowntimeLogOutcome,
     collectDowntimeResult,
+    removeDowntimeSubmissionMaterialDropFromUi,
     removeDowntimeResolverItemDropFromUi,
+    addDowntimeSubmissionMaterialDropFromDropEvent,
     addDowntimeResolverCraftingItemDropFromDropEvent,
     addDowntimeResolverItemRewardFromDropEvent,
     renderDowntimeResolverItemDropList,
-    syncDowntimeUiDraftFromElement,
     openGmPanelByKey
   } = deps;
 
@@ -81,10 +85,16 @@ export function createGmDowntimePageApp(deps) {
           setGmDowntimeViewState({ logsSort: String(actionElement?.value ?? "") });
           rerender();
         },
+        "publish-downtime-hours": rerenderAlways(publishDowntimeHoursToPlayers),
         "set-downtime-hours": rerenderAlways(setDowntimeHoursGranted),
         "set-downtime-tuning": rerenderAlways(setDowntimeTuningField),
+        "refresh-downtime-submit-selection": async (actionElement) => {
+          syncDowntimeUiDraftFromElement(actionElement);
+          rerender();
+        },
         "set-downtime-resolve-target": async (actionElement) => {
-          applyDowntimeResolverBaseToUi(actionElement, { force: true });
+          syncDowntimeUiDraftFromElement(actionElement);
+          rerender();
         },
         "prefill-downtime-resolution": async (actionElement) => {
           applyDowntimeResolverBaseToUi(actionElement, { force: true });
@@ -99,6 +109,10 @@ export function createGmDowntimePageApp(deps) {
         "clear-downtime-log": rerenderAlways(clearDowntimeLogEntry),
         "post-downtime-log": rerenderAlways(postDowntimeLogOutcome),
         "collect-downtime-result": rerenderAlways(collectDowntimeResult),
+        "remove-downtime-material-drop": async (actionElement) => {
+          removeDowntimeSubmissionMaterialDropFromUi(actionElement);
+          rerender();
+        },
         "remove-downtime-item-drop": async (actionElement) => {
           removeDowntimeResolverItemDropFromUi(actionElement);
         }
@@ -107,7 +121,7 @@ export function createGmDowntimePageApp(deps) {
 
     _bindAdditionalListeners(root) {
       const syncDraft = (target) => {
-        if (!target?.matches?.("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) return;
+        if (!target?.matches?.("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) return;
         syncDowntimeUiDraftFromElement(target);
       };
 
@@ -118,14 +132,20 @@ export function createGmDowntimePageApp(deps) {
         syncDraft(event.target);
       });
       root.addEventListener("dragover", (event) => {
-        const dropZone = event.target?.closest?.("[data-downtime-item-dropzone], [data-downtime-crafting-item-dropzone]");
+        const dropZone = event.target?.closest?.("[data-downtime-material-dropzone], [data-downtime-item-dropzone], [data-downtime-crafting-item-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
       });
       root.addEventListener("drop", (event) => {
         void (async () => {
+          const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
           const textDropZone = event.target?.closest?.("[data-downtime-item-dropzone]");
           const craftingDropZone = event.target?.closest?.("[data-downtime-crafting-item-dropzone]");
+          if (materialDropZone) {
+            event.preventDefault();
+            await addDowntimeSubmissionMaterialDropFromDropEvent(event);
+            return;
+          }
           if (craftingDropZone) {
             event.preventDefault();
             await addDowntimeResolverCraftingItemDropFromDropEvent(event);
@@ -139,6 +159,7 @@ export function createGmDowntimePageApp(deps) {
     }
 
     async _onPostRender() {
+      renderDowntimeSubmissionMaterialDropList(this.element);
       const resolverRoot = this.element?.querySelector?.(".po-downtime-resolver");
       if (resolverRoot) renderDowntimeResolverItemDropList(resolverRoot);
     }

@@ -25,7 +25,9 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
   if (op === "joinRank") {
     const rankId = String(request.rankId ?? "").trim();
     if (!marchRanks?.has?.(rankId)) return null;
-    return { op, actorId, rankId };
+    const insertIndexRaw = Number.parseInt(String(request.insertIndex ?? ""), 10);
+    const insertIndex = Number.isInteger(insertIndexRaw) && insertIndexRaw >= 0 ? insertIndexRaw : null;
+    return insertIndex === null ? { op, actorId, rankId } : { op, actorId, rankId, insertIndex };
   }
 
   return {
@@ -72,7 +74,12 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
     }
     if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
-    state.ranks[request.rankId].push(request.actorId);
+    const target = state.ranks[request.rankId];
+    const requestedInsertIndex = Number.parseInt(String(request.insertIndex ?? ""), 10);
+    const safeIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0
+      ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+      : target.length;
+    target.splice(safeIndex, 0, request.actorId);
     if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
       markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
     }
@@ -134,8 +141,15 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
   const isGM = canAccessAllPlayerOps();
   const locked = state.locked;
 
-  html.querySelectorAll(".po-entry").forEach((entry) => {
+  const draggableEntries = [
+    ...Array.from(html.querySelectorAll(".po-entry")),
+    ...Array.from(html.querySelectorAll(".po-march-board-card[data-actor-id]")),
+    ...Array.from(html.querySelectorAll(".po-march-board-staging-chip[data-actor-id]"))
+  ];
+
+  draggableEntries.forEach((entry) => {
     const actorId = entry.dataset.actorId;
+    if (!actorId) return;
     const draggable = canDragEntry(actorId, isGM, locked);
     entry.setAttribute("draggable", draggable ? "true" : "false");
     entry.classList.toggle("is-draggable", draggable);
@@ -161,7 +175,12 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     }
   });
 
-  html.querySelectorAll(".po-rank-col").forEach((column) => {
+  const dropTargets = [
+    ...Array.from(html.querySelectorAll(".po-rank-col")),
+    ...Array.from(html.querySelectorAll(".po-march-board-cell[data-rank-id]"))
+  ];
+
+  dropTargets.forEach((column) => {
     if (column.dataset.poDndColBound === "1") return;
     column.dataset.poDndColBound = "1";
     column.addEventListener("dragover", (event) => {
@@ -182,12 +201,18 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
       }
       const actorId = event.dataTransfer?.getData("text/plain");
       if (!actorId) return;
-      const rankId = column.dataset.rankId;
+      const rankId = column.dataset.rankId || column.closest?.("[data-rank-id]")?.dataset?.rankId;
       if (!rankId) return;
 
-      const targetEntry = event.target?.closest(".po-entry");
-      const entryList = Array.from(column.querySelectorAll(".po-entry"));
-      const insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+      let insertIndex = Number.parseInt(String(column.dataset.insertIndex ?? ""), 10);
+      if (!Number.isInteger(insertIndex) || insertIndex < 0) {
+        const targetEntry = event.target?.closest?.(".po-entry") ?? event.target?.closest?.(".po-march-board-card");
+        const entryList = [
+          ...Array.from(column.querySelectorAll(".po-entry")),
+          ...Array.from(column.querySelectorAll(".po-march-board-card"))
+        ];
+        insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+      }
 
       await updateMarchingOrderState((state) => {
         for (const key of Object.keys(state.ranks)) {
