@@ -19532,6 +19532,7 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     folderProfile,
     folderPathKey: String(folderProfile?.pathKey ?? "").trim().toLowerCase(),
     tagSchema: String(poFlags?.tagSchema ?? getLootItemTagSchemaFromData(data) ?? "").trim().toLowerCase(),
+    noLootStack: poFlags?.noLootStack === true,
     keywords,
     lootWeight: Math.max(0.05, Number(poFlags?.lootWeight ?? 1) || 1),
     profileWeight: getLootProfileRarityWeight(draft.profile, rarityBucket),
@@ -20069,10 +20070,16 @@ function getLootRarityKeepPriority(rarity = "") {
   return 1;
 }
 
+function getLootSelectedQuantityCount(entries = []) {
+  return Math.max(0, Math.floor((Array.isArray(entries) ? entries : []).reduce((sum, entry) => {
+    return sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1));
+  }, 0)));
+}
+
 function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spend") {
   const budgetContext = state?.budgetContext ?? {};
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
-  const selectedCount = Math.max(0, Number(state?.selected?.length ?? 0) || 0);
+  const selectedCount = getLootSelectedQuantityCount(state?.selected);
   const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
   const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
   const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
@@ -20154,7 +20161,14 @@ function commitLootBudgetPick(state = {}, picked = null) {
   for (const row of (Array.isArray(bundleRows) && bundleRows.length ? bundleRows : [{ candidate: picked, quantity: 1 }])) {
     const candidate = row?.candidate;
     if (!candidate) continue;
-    const quantity = Math.max(1, Math.floor(Number(row?.quantity ?? 1) || 1));
+    const selectedCount = getLootSelectedQuantityCount(state?.selected);
+    const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? state?.budgetContext?.targetCount ?? 1) || 1));
+    const remainingSlots = Math.max(0, targetCount - selectedCount);
+    if (remainingSlots <= 0) break;
+    const quantity = Math.max(1, Math.min(
+      remainingSlots,
+      Math.floor(Number(row?.quantity ?? 1) || 1)
+    ));
     const rarityBucket = getLootRarityBucket(candidate.rarity);
     const rolledVariableTreasure = rollLootVariableTreasureSelection(
       candidate,
@@ -20200,7 +20214,8 @@ function commitLootBudgetPick(state = {}, picked = null) {
       tier: String(candidate?.tier ?? "").trim().toLowerCase(),
       valueBand: String(candidate?.valueBand ?? "").trim().toLowerCase(),
       priceDenomination: String(candidate?.priceDenomination ?? "").trim().toLowerCase(),
-      tagSchema: String(candidate?.tagSchema ?? "").trim().toLowerCase()
+      tagSchema: String(candidate?.tagSchema ?? "").trim().toLowerCase(),
+      noLootStack: candidate?.noLootStack === true
     });
     state.selectedTotalValueGp += resolvedItemValueGp;
     consumedCandidates.add(candidate);
@@ -20261,21 +20276,22 @@ function spendBudgetLoop(state = {}) {
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
     const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
-    const hasMaxItemsCap = maxItems > 0;
+    const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
+    const effectiveItemCap = maxItems > 0 ? Math.min(maxItems, targetCount) : targetCount;
     let safety = 0;
     while (safety < 600) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
       if (remaining <= toleranceGp) return;
-      if (hasMaxItemsCap && (state.selected?.length ?? 0) >= maxItems) return;
+      if (getLootSelectedQuantityCount(state?.selected) >= effectiveItemCap) return;
       const selectionPool = buildLootPhaseSelectionPool(state, "spend");
       if (!selectionPool.length) {
         state.diagnostics.push("No spend-phase candidates in the current budget range.");
         logLootBuilderDebug("spendBudgetLoop stopped: no candidates", {
           remaining,
           toleranceGp,
-          selectedCount: state.selected?.length ?? 0,
-          maxItems
+          selectedCount: getLootSelectedQuantityCount(state?.selected),
+          itemCap: effectiveItemCap
         });
         return;
       }
@@ -20312,18 +20328,19 @@ function fillPass(state = {}) {
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
     const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
-    const hasMaxItemsCap = maxItems > 0;
+    const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
+    const effectiveItemCap = maxItems > 0 ? Math.min(maxItems, targetCount) : targetCount;
     let safety = 0;
     while (safety < 400) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
       if (remaining <= toleranceGp) return;
-      if (hasMaxItemsCap && (state.selected?.length ?? 0) >= maxItems) {
-        state.diagnostics.push("Fill pass stopped at max item cap before target tolerance was reached.");
+      if (getLootSelectedQuantityCount(state?.selected) >= effectiveItemCap) {
+        state.diagnostics.push("Fill pass stopped at the desired item count before target tolerance was reached.");
         logLootBuilderDebug("fillPass stopped at max items", {
           remaining,
           toleranceGp,
-          maxItems
+          itemCap: effectiveItemCap
         });
         return;
       }
@@ -20495,7 +20512,8 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       tier: String(picked?.tier ?? "").trim().toLowerCase(),
       valueBand: String(picked?.valueBand ?? "").trim().toLowerCase(),
       priceDenomination: String(picked?.priceDenomination ?? "").trim().toLowerCase(),
-      tagSchema: String(picked?.tagSchema ?? "").trim().toLowerCase()
+      tagSchema: String(picked?.tagSchema ?? "").trim().toLowerCase(),
+      noLootStack: picked?.noLootStack === true
     });
     selectedTotalValueGp += resolvedItemValueGp;
     const allowEncounterDuplicate = mode === "encounter"

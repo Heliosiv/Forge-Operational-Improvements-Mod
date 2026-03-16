@@ -26,6 +26,10 @@ function isLegacyStackable(entry = {}) {
   return isCoinLikeName(entry?.name);
 }
 
+function isLootEntryStackingDisabled(entry = {}) {
+  return entry?.noLootStack === true;
+}
+
 function buildExactDuplicateStackKey(entry = {}) {
   const uuid = normalizeText(entry?.uuid);
   if (uuid) return `uuid:${uuid}`;
@@ -39,6 +43,7 @@ function buildExactDuplicateStackKey(entry = {}) {
 }
 
 export function getLootEntryStackKey(entry = {}) {
+  if (isLootEntryStackingDisabled(entry)) return "";
   const exactDuplicateKey = buildExactDuplicateStackKey(entry);
   if (exactDuplicateKey) return exactDuplicateKey;
   if (!isLegacyStackable(entry)) return "";

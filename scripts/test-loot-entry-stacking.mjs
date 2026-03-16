@@ -68,4 +68,31 @@ const distinctItems = aggregateLootEntriesForStacks([
 
 assert.equal(distinctItems.length, 2);
 
+const nonStackableTrapEntries = aggregateLootEntriesForStacks([
+  {
+    uuid: "Item.trap-1",
+    name: "Hunting Trap",
+    itemType: "consumable",
+    rarity: "common",
+    sourceLabel: "World Item Directory",
+    itemValueGp: 5,
+    itemWeightLb: 25,
+    noLootStack: true
+  },
+  {
+    uuid: "Item.trap-1",
+    name: "Hunting Trap",
+    itemType: "consumable",
+    rarity: "common",
+    sourceLabel: "World Item Directory",
+    itemValueGp: 5,
+    itemWeightLb: 25,
+    noLootStack: true
+  }
+]);
+
+assert.equal(nonStackableTrapEntries.length, 2);
+assert.equal(nonStackableTrapEntries[0].quantity, 1);
+assert.equal(nonStackableTrapEntries[1].quantity, 1);
+
 process.stdout.write("loot entry stacking validation passed\n");
