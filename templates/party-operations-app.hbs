@@ -6,17 +6,9 @@
 
   <div class="po-body">
     <div class="po-tabs po-tabs-sub" role="tablist" aria-label="Party Operations Tabs">
-      <button type="button" class="po-tab {{#if tabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest-watch" role="tab" aria-selected="{{#if tabRestWatch}}true{{else}}false{{/if}}">Rest Watch</button>
       <button type="button" class="po-tab {{#if tabMarchingOrder}}is-active{{/if}}" data-action="switch-tab" data-tab="marching-order" role="tab" aria-selected="{{#if tabMarchingOrder}}true{{else}}false{{/if}}">Marching Order</button>
       <button type="button" class="po-tab {{#if tabLoot}}is-active{{/if}}" data-action="switch-tab" data-tab="loot" role="tab" aria-selected="{{#if tabLoot}}true{{else}}false{{/if}}">Loot</button>
     </div>
-
-    {{#if tabRestWatch}}
-      <article class="po-gm-section" data-tab="rest-watch">
-        <h3 class="po-section-title">Rest Watch Snapshot</h3>
-        <pre>{{snapshotsText.restWatch}}</pre>
-      </article>
-    {{/if}}
 
     {{#if tabMarchingOrder}}
       <article class="po-gm-section" data-tab="marching-order">

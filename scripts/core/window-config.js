@@ -49,6 +49,7 @@ export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
 export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
   [REFRESH_SCOPE_KEYS.REST]: Object.freeze([
     "rest-watch-app",
+    "operations-shell-app",
     "party-operations-rest-watch-shared-note",
     "rest-watch-player-app"
   ]),

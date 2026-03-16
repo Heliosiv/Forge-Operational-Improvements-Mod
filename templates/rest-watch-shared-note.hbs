@@ -1,21 +1,20 @@
 <section class="po-rest-shared-note" data-slot-id="{{slotId}}" data-actor-id="{{actorId}}">
   <div class="po-rest-shared-note-head">
-    <div>
+    <div class="po-rest-shared-note-copy">
       <div class="po-section-title">Shared Note</div>
       <div class="po-op-summary">{{slotLabel}} - {{actorName}}</div>
+      <div class="po-op-summary">{{visibilityHint}}</div>
     </div>
     {{#if lastSavedLabel}}
     <div class="po-note-label">{{lastSavedLabel}}</div>
     {{/if}}
   </div>
 
-  <div class="po-op-summary">{{visibilityHint}}</div>
-
   {{#if missingEntryMessage}}
   <div class="po-op-summary is-warn">{{missingEntryMessage}}</div>
   {{/if}}
 
-  <label class="po-resource-row po-notes-row-lg">
+  <label class="po-resource-row po-notes-row-lg po-rest-shared-note-field">
     <span>{{#if canEdit}}Shared Note{{else}}Shared Note (Read Only){{/if}}</span>
     <textarea
       class="po-input po-rest-shared-note-input"

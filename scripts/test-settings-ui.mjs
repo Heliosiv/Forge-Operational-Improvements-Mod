@@ -41,6 +41,7 @@ try {
       ADVANCED_SETTINGS_ENABLED: "advancedSettingsEnabled",
       DEBUG_ENABLED: "debugEnabled",
       LOOT_SCARCITY: "lootScarcity",
+      LOOT_HORDE_UNCOMMON_PLUS_CHANCE: "lootHordeUncommonPlusChance",
       REST_AUTOMATION_ENABLED: "restAutomationEnabled",
       MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
       PLAYER_HUB_MODE: "playerHubMode",
@@ -54,6 +55,12 @@ try {
       ABUNDANT: "abundant",
       NORMAL: "normal",
       SCARCE: "scarce"
+    },
+    lootHordeUncommonPlusChanceModes: {
+      STANDARD: "standard",
+      BOOSTED: "boosted",
+      HIGH: "high",
+      GUARANTEED: "guaranteed"
     },
     playerHubModes: {
       SIMPLE: "simple",
@@ -80,6 +87,10 @@ try {
   assert.ok(
     registeredSettings.some((entry) => entry.key === "playerHubMode"),
     "core visible settings should still register after a menu failure"
+  );
+  assert.ok(
+    registeredSettings.some((entry) => entry.key === "lootHordeUncommonPlusChance"),
+    "horde uncommon+ setting should register with the rest of the visible settings"
   );
 } finally {
   globalThis.game = originalGame;

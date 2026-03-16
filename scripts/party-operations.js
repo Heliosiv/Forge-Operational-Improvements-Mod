@@ -350,6 +350,7 @@ export const SETTINGS = {
   SHARED_GM_PERMISSIONS: "sharedGmPermissions",
   DEBUG_ENABLED: "debugEnabled",
   LOOT_SCARCITY: "lootScarcity",
+  LOOT_HORDE_UNCOMMON_PLUS_CHANCE: "lootHordeUncommonPlusChance",
   REST_AUTOMATION_ENABLED: "restAutomationEnabled",
   MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
   PARTY_OPS_CONFIG: "partyOpsConfig",
@@ -1029,6 +1030,7 @@ function getRefreshScopesForSettingKey(settingKeyInput) {
       return [REFRESH_SCOPE_KEYS.OPERATIONS];
     case SETTINGS.LOOT_SOURCE_CONFIG:
     case SETTINGS.LOOT_SCARCITY:
+    case SETTINGS.LOOT_HORDE_UNCOMMON_PLUS_CHANCE:
     case SETTINGS.AUDIO_LIBRARY_SOURCE:
     case SETTINGS.AUDIO_LIBRARY_ROOT:
     case SETTINGS.AUDIO_LIBRARY_CATALOG:
@@ -1149,6 +1151,13 @@ const LOOT_SCARCITY_LEVELS = {
   NORMAL: "normal",
   SCARCE: "scarce"
 };
+
+const LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES = Object.freeze({
+  STANDARD: "standard",
+  BOOSTED: "boosted",
+  HIGH: "high",
+  GUARANTEED: "guaranteed"
+});
 
 const PARTY_OPS_LOOT_RARITIES = ["common", "uncommon", "rare", "veryRare", "legendary"];
 const DEFAULT_PARTY_OPS_CONFIG = Object.freeze({
@@ -3198,6 +3207,7 @@ const {
   moduleId: MODULE_ID,
   settings: SETTINGS,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
   playerHubModes: PLAYER_HUB_MODES,
   launcherPlacements: LAUNCHER_PLACEMENTS,
   inventoryHookModes: INVENTORY_HOOK_MODES,
@@ -3223,6 +3233,7 @@ const {
   settingsHubType: PartyOperationsSettingsHub,
   areAdvancedSettingsEnabled,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
+  lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
   playerHubModes: PLAYER_HUB_MODES,
   defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
   validatePartyOpsConfig,
@@ -6330,7 +6341,7 @@ function getOrCreateRestWatchSharedNoteApp() {
   return restWatchSharedNoteApp;
 }
 
-function openRestWatchSharedNoteEditorFromElement(element) {
+async function openRestWatchSharedNoteEditorFromElement(element) {
   const slotId = String(
     element?.dataset?.slotId
     ?? element?.closest?.("[data-slot-id]")?.dataset?.slotId
@@ -6344,8 +6355,8 @@ function openRestWatchSharedNoteEditorFromElement(element) {
   if (!slotId || !actorId) return null;
   const app = getOrCreateRestWatchSharedNoteApp();
   app.setTarget({ slotId, actorId }, { focus: true });
-  app.render({ force: true });
-  app.bringToTop?.();
+  await app.render({ force: true });
+  app.bringToFront?.();
   return app;
 }
 
@@ -8673,10 +8684,10 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await swapSlots(element);
         },
         "toggle-notes": async () => {
-          openRestWatchSharedNoteEditorFromElement(element);
+          await openRestWatchSharedNoteEditorFromElement(element);
         },
         "open-shared-note": async () => {
-          openRestWatchSharedNoteEditorFromElement(element);
+          await openRestWatchSharedNoteEditorFromElement(element);
         },
         "save-entry-notes": async () => {
           {
@@ -11250,7 +11261,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           break;
         case "toggle-notes":
         case "open-shared-note":
-          openRestWatchSharedNoteEditorFromElement(element);
+          await openRestWatchSharedNoteEditorFromElement(element);
           break;
         case "save-entry-notes":
           {
@@ -17566,6 +17577,339 @@ function rollLootVariableTreasureSelection(entry = {}, pools = {}, randomFn = Ma
   }, pools, randomFn);
 }
 
+function isLootValuableEntry(entry = {}) {
+  const kind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  return kind === "gem" || kind === "art";
+}
+
+function getLootValuablesBudgetRatio(draft = {}) {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  if (mode !== "horde") return 0;
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+  const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
+  const baseByChallenge = {
+    low: 0.18,
+    mid: 0.24,
+    high: 0.32,
+    epic: 0.42
+  };
+  let ratio = Number(baseByChallenge[challenge] ?? baseByChallenge.mid);
+  if (scale === "small") ratio -= 0.04;
+  else if (scale === "major") ratio += 0.12;
+  if (profile === "poor") ratio -= 0.03;
+  else if (profile === "well") ratio += 0.03;
+  return Math.max(0.08, Math.min(0.65, Number(ratio.toFixed(4))));
+}
+
+function getLootValuablesArtAllocationRatio(draft = {}) {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  if (mode !== "horde") return 0;
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+  const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
+  const baseByChallenge = {
+    low: 0.48,
+    mid: 0.56,
+    high: 0.62,
+    epic: 0.7
+  };
+  let ratio = Number(baseByChallenge[challenge] ?? baseByChallenge.mid);
+  if (scale === "small") ratio -= 0.08;
+  else if (scale === "major") ratio += 0.08;
+  if (profile === "poor") ratio -= 0.05;
+  else if (profile === "well") ratio += 0.04;
+  return Math.max(0.25, Math.min(0.85, Number(ratio.toFixed(4))));
+}
+
+function getLootSelectionTotalValueGp(entries = []) {
+  return Number((Array.isArray(entries) ? entries : []).reduce((sum, entry) => {
+    return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  }, 0).toFixed(2));
+}
+
+function buildLootValuablesLaneTargets(draft = {}, budgetContext = {}, valuablesPool = [], targetCount = 0) {
+  const valuablesBudgetGp = Math.max(0, Number(budgetContext?.targetValuablesBudgetGp ?? 0) || 0);
+  const safeTargetCount = Math.max(0, Math.floor(Number(targetCount) || 0));
+  const artPool = (Array.isArray(valuablesPool) ? valuablesPool : [])
+    .filter((entry) => normalizeLootVariableTreasureKind(entry?.variableTreasureKind) === "art");
+  const gemPool = (Array.isArray(valuablesPool) ? valuablesPool : [])
+    .filter((entry) => normalizeLootVariableTreasureKind(entry?.variableTreasureKind) === "gem");
+  if (safeTargetCount <= 0 || valuablesBudgetGp <= 0) {
+    return {
+      artPool,
+      gemPool,
+      artCountTarget: 0,
+      gemCountTarget: 0,
+      artBudgetTargetGp: 0,
+      gemBudgetTargetGp: 0
+    };
+  }
+
+  if (!artPool.length) {
+    return {
+      artPool,
+      gemPool,
+      artCountTarget: 0,
+      gemCountTarget: safeTargetCount,
+      artBudgetTargetGp: 0,
+      gemBudgetTargetGp: valuablesBudgetGp
+    };
+  }
+
+  if (!gemPool.length) {
+    return {
+      artPool,
+      gemPool,
+      artCountTarget: safeTargetCount,
+      gemCountTarget: 0,
+      artBudgetTargetGp: valuablesBudgetGp,
+      gemBudgetTargetGp: 0
+    };
+  }
+
+  const artRatio = getLootValuablesArtAllocationRatio(draft);
+  const cheapestArtValueGp = Math.min(...artPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)));
+  const artBudgetTargetGp = Math.max(cheapestArtValueGp, Number((valuablesBudgetGp * artRatio).toFixed(2)));
+  const gemBudgetTargetGp = Math.max(0, Number((valuablesBudgetGp - artBudgetTargetGp).toFixed(2)));
+  const desiredArtCount = Math.max(1, Math.round(safeTargetCount * artRatio));
+  const artCountTarget = Math.min(
+    safeTargetCount,
+    deriveLootBucketTargetCount(
+      artPool,
+      artBudgetTargetGp,
+      desiredArtCount,
+      1
+    )
+  );
+  const remainingCount = Math.max(0, safeTargetCount - artCountTarget);
+  const gemCountTarget = remainingCount > 0
+    ? Math.min(
+      remainingCount,
+      deriveLootBucketTargetCount(
+        gemPool,
+        Math.max(0, gemBudgetTargetGp),
+        remainingCount,
+        0
+      )
+    )
+    : 0;
+  return {
+    artPool,
+    gemPool,
+    artCountTarget,
+    gemCountTarget,
+    artBudgetTargetGp,
+    gemBudgetTargetGp
+  };
+}
+
+function getLootTreasureKindWeightModifier(draft = {}, entry = {}, selectionCategory = "") {
+  const kind = normalizeLootVariableTreasureKind(entry?.variableTreasureKind);
+  if (!kind) return 1;
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const category = String(selectionCategory ?? "").trim().toLowerCase();
+  if (category === "valuables") {
+    const artBias = {
+      low: 1.08,
+      mid: 1.18,
+      high: 1.32,
+      epic: 1.45
+    };
+    const gemBias = {
+      low: 1.02,
+      mid: 1,
+      high: 0.98,
+      epic: 0.95
+    };
+    return kind === "art"
+      ? Number(artBias[challenge] ?? artBias.mid)
+      : Number(gemBias[challenge] ?? gemBias.mid);
+  }
+  if (mode === "encounter") return kind === "art" ? 0.45 : 0.65;
+  if (mode === "defeated") return kind === "art" ? 0.55 : 0.75;
+  return kind === "art" ? 0.8 : 0.9;
+}
+
+function buildLootBucketBudgetContext(base = {}, targetGp = 0, targetCount = 0, options = {}) {
+  const safeTargetGp = Math.max(0, Number(targetGp) || 0);
+  const safeTargetCount = Math.max(1, Math.floor(Number(targetCount) || 1));
+  const toleranceRatio = Math.max(0.05, Math.min(0.45, Number(base?.overshootAllowanceRatio ?? 0.2) || 0.2));
+  const toleranceGp = Math.max(1, Number((safeTargetGp * toleranceRatio).toFixed(2)));
+  const maxItemsRaw = Number(options?.maxItems ?? base?.maxItems ?? 0);
+  const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
+  return {
+    ...base,
+    selectionCategory: String(options?.selectionCategory ?? base?.selectionCategory ?? "").trim().toLowerCase(),
+    effectiveTotalTargetGp: safeTargetGp,
+    totalBudgetGp: safeTargetGp,
+    targetItemBudgetGp: safeTargetGp,
+    targetCount: safeTargetCount,
+    desiredItemCount: safeTargetCount,
+    targetPerItemGp: Math.max(0.5, Number((safeTargetGp / Math.max(1, safeTargetCount)).toFixed(2))),
+    targetValueRangeMinGp: Math.max(0, Number((safeTargetGp - toleranceGp).toFixed(2))),
+    targetValueRangeMaxGp: Number((safeTargetGp + toleranceGp).toFixed(2)),
+    itemTargetValueRangeMinGp: Math.max(0, Number((safeTargetGp - toleranceGp).toFixed(2))),
+    itemTargetValueRangeMaxGp: Number((safeTargetGp + toleranceGp).toFixed(2)),
+    toleranceGp,
+    itemToleranceGp: toleranceGp,
+    maxItems,
+    effectiveMaxItemValueGp: Math.max(
+      Math.max(0, Number(base?.effectiveMaxItemValueGp ?? 0) || 0),
+      Math.max(1, Number((safeTargetGp * 1.15).toFixed(2)))
+    )
+  };
+}
+
+function deriveLootBucketTargetCount(pool = [], targetGp = 0, fallbackCount = 1, minimum = 0) {
+  const entries = (Array.isArray(pool) ? pool : []).filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) > 0);
+  if (!entries.length || targetGp <= 0) return Math.max(0, Math.floor(Number(minimum) || 0));
+  const sortedValues = entries
+    .map((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0))
+    .sort((left, right) => left - right);
+  const medianValue = sortedValues[Math.floor(sortedValues.length / 2)] ?? sortedValues[0] ?? 1;
+  const desired = Math.round(targetGp / Math.max(1, medianValue));
+  const cap = Math.max(Math.floor(Number(minimum) || 0), Math.max(1, Math.floor(Number(fallbackCount) || 1)));
+  return Math.max(Math.floor(Number(minimum) || 0), Math.min(cap, Math.max(1, desired)));
+}
+
+function isLootPremiumRarity(entry = {}) {
+  const bucket = getLootRarityBucket(entry?.rarity);
+  return bucket === "uncommon" || bucket === "rare" || bucket === "very-rare" || bucket === "legendary";
+}
+
+function normalizeLootHordeUncommonPlusChanceMode(value, fallback = LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.STANDARD) return LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.STANDARD;
+  if (normalized === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.HIGH) return LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.HIGH;
+  if (normalized === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.GUARANTEED) return LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.GUARANTEED;
+  if (normalized === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED) return LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED;
+  return fallback;
+}
+
+function getLootHordeUncommonPlusChanceMode() {
+  try {
+    return normalizeLootHordeUncommonPlusChanceMode(
+      game.settings?.get?.(MODULE_ID, SETTINGS.LOOT_HORDE_UNCOMMON_PLUS_CHANCE),
+      LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED
+    );
+  } catch {
+    return LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED;
+  }
+}
+
+function buildLootPremiumLaneConfig(draft = {}, budgetContext = {}, premiumPool = [], randomFn = Math.random) {
+  const mode = String(draft?.mode ?? budgetContext?.mode ?? "horde").trim().toLowerCase();
+  if (mode !== "horde") return { enabled: false, reason: "mode" };
+  const pool = Array.isArray(premiumPool) ? premiumPool : [];
+  if (!pool.length) return { enabled: false, reason: "pool" };
+  const challenge = String(draft?.challenge ?? budgetContext?.challenge ?? "mid").trim().toLowerCase();
+  const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+  const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
+  const chanceByChallenge = { low: 0.16, mid: 0.32, high: 0.56, epic: 0.78 };
+  const ratioByChallenge = { low: 0.16, mid: 0.26, high: 0.34, epic: 0.42 };
+  let chance = Number(chanceByChallenge[challenge] ?? chanceByChallenge.mid);
+  let ratio = Number(ratioByChallenge[challenge] ?? ratioByChallenge.mid);
+  const uncommonPlusChanceMode = normalizeLootHordeUncommonPlusChanceMode(
+    draft?.hordeUncommonPlusChance ?? budgetContext?.hordeUncommonPlusChance ?? getLootHordeUncommonPlusChanceMode(),
+    LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED
+  );
+  if (scale === "small") {
+    chance -= 0.08;
+    ratio -= 0.04;
+  } else if (scale === "major") {
+    chance += 0.22;
+    ratio += 0.16;
+  }
+  if (profile === "poor") {
+    chance -= 0.04;
+    ratio -= 0.02;
+  } else if (profile === "well") {
+    chance += 0.06;
+    ratio += 0.03;
+  }
+  if (uncommonPlusChanceMode === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.BOOSTED) {
+    chance += 0.09;
+    ratio += 0.03;
+  } else if (uncommonPlusChanceMode === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.HIGH) {
+    chance += 0.2;
+    ratio += 0.06;
+  } else if (uncommonPlusChanceMode === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.GUARANTEED) {
+    chance = 1;
+    ratio += 0.1;
+  }
+  if (scale === "major") chance = Math.max(chance, 0.95);
+  const normalizedChance = uncommonPlusChanceMode === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.GUARANTEED
+    ? 1
+    : Math.max(0.02, Math.min(0.96, Number(chance.toFixed(4))));
+  const normalizedRatio = Math.max(0.08, Math.min(0.55, Number(ratio.toFixed(4))));
+  const roll = Math.max(0, Math.min(0.999999, Number(typeof randomFn === "function" ? randomFn() : Math.random()) || 0));
+  const enabled = roll < normalizedChance;
+  const itemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
+  const targetBudgetGp = Number((itemBudgetGp * normalizedRatio).toFixed(2));
+  const targetCountBase = challenge === "epic" ? 3 : challenge === "high" ? 2 : challenge === "mid" ? 2 : 1;
+  const targetCount = Math.max(1, Math.min(
+    scale === "major" ? targetCountBase + 1 : targetCountBase,
+    pool.length
+  ));
+  return {
+    enabled,
+    roll,
+    uncommonPlusChanceMode,
+    chance: normalizedChance,
+    budgetRatio: normalizedRatio,
+    targetBudgetGp,
+    targetCount
+  };
+}
+
+function buildLootPremiumLaneRarityCaps(targetCount = 0) {
+  const cap = Math.max(1, Math.floor(Number(targetCount) || 1));
+  return {
+    uncommon: cap,
+    rare: cap,
+    "very-rare": cap,
+    legendary: cap
+  };
+}
+
+function isLootPracticalHoardFiller(entry = {}) {
+  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
+  const categories = new Set((Array.isArray(entry?.merchantCategories) ? entry.merchantCategories : [])
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean));
+  const keywords = new Set((Array.isArray(entry?.keywords) ? entry.keywords : [])
+    .map((value) => String(value ?? "").trim().toLowerCase())
+    .filter(Boolean));
+  const folderPath = String(entry?.folderPathKey ?? entry?.folderProfile?.pathKey ?? "").trim().toLowerCase();
+  const name = String(entry?.name ?? "").trim().toLowerCase();
+
+  if (itemType === "consumable" || itemType === "ammo" || itemType === "ammunition") return true;
+  if (categories.has("consumable") || categories.has("alchemy") || categories.has("ammunition")) return true;
+  if (keywords.has("merchant.consumable") || keywords.has("merchant.ammunition")) return true;
+  if (folderPath.includes("consumables/")) return true;
+  if (/\b(potion|philter|elixir|tonic|scroll|ammunition|ammo|arrow|bolt|bullet|shot|ration|bandage|antitoxin|healing)\b/.test(name)) return true;
+  return false;
+}
+
+function getLootGeneralLanePool(pool = [], draft = {}) {
+  const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
+  if (mode !== "horde") return Array.isArray(pool) ? pool : [];
+  const sourcePool = Array.isArray(pool) ? pool : [];
+  const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
+  if (scale === "major") {
+    return sourcePool.length > 0 ? sourcePool : [];
+  }
+  const practicalPool = sourcePool.filter((entry) => {
+    if (isLootPremiumRarity(entry)) return false;
+    return isLootPracticalHoardFiller(entry);
+  });
+  if (practicalPool.length >= Math.max(3, Math.floor(sourcePool.length * 0.15))) return practicalPool;
+  const nonPremiumPool = sourcePool.filter((entry) => !isLootPremiumRarity(entry));
+  return nonPremiumPool.length > 0 ? nonPremiumPool : sourcePool;
+}
+
 function buildPartyOperationsMetaPillsFromData(data = {}, options = {}) {
   const maxPillsRaw = Number(options?.maxPills ?? 4);
   const maxPills = Number.isFinite(maxPillsRaw) ? Math.max(1, Math.floor(maxPillsRaw)) : 4;
@@ -18686,12 +19030,12 @@ function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountO
     if (manualTargetCount > 0) return manualTargetCount;
 
     const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
-    const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
     const profile = String(draft?.profile ?? "standard").trim().toLowerCase();
     const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
     const creatures = Math.max(1, Number(draft?.creatures ?? draft?.actorCount ?? 1) || 1);
     const scaleModifier = scale === "small" ? 0.9 : scale === "major" ? 1.2 : 1;
     const profileModifier = profile === "poor" ? 0.88 : profile === "well" ? 1.12 : 1;
+    const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
     const challengeBonus = challenge === "low" ? 0 : challenge === "mid" ? 1 : challenge === "high" ? 2 : 3;
 
     if (mode === "encounter") {
@@ -18719,9 +19063,15 @@ function resolveDesiredItemCount(draft = {}, encounterTargetGp = 0, targetCountO
       return Math.max(0, Math.min(16, Math.round(base * scaleModifier * profileModifier)));
     }
 
-    const base = challenge === "low" ? 3 : challenge === "mid" ? 5 : challenge === "high" ? 8 : 12;
-    const adjusted = Math.round(base * scaleModifier * profileModifier);
-    return Math.max(1, Math.min(60, adjusted));
+    const itemBudgetGp = Math.max(1, Number(encounterTargetGp) || 1);
+    const profilePerItemModifier = profile === "poor" ? 0.88 : profile === "well" ? 1.18 : 1;
+    const scalePerItemModifier = scale === "small" ? 0.92 : scale === "major" ? 1.08 : 1;
+    const budgetPerItemTargetGp = 180
+      * Math.sqrt(Math.max(0.25, itemBudgetGp / 1000))
+      * profilePerItemModifier
+      * scalePerItemModifier;
+    const budgetDrivenCount = Math.max(1, Math.round(itemBudgetGp / Math.max(1, budgetPerItemTargetGp)));
+    return Math.max(1, Math.min(60, budgetDrivenCount));
   } catch (error) {
     logLootBuilderFailure("resolveDesiredItemCount", error, {
       mode: draft?.mode,
@@ -18827,6 +19177,9 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
     const valueStrictness = Number.isFinite(valueStrictnessRaw)
       ? Math.max(0.5, Math.min(3, valueStrictnessRaw / 100))
       : (LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS / 100);
+    const valuablesBudgetRatio = getLootValuablesBudgetRatio(draft);
+    const targetValuablesBudgetGp = Number((share.targetCurrencyBudgetGp * valuablesBudgetRatio).toFixed(2));
+    const targetCoinBudgetGp = Number((share.targetCurrencyBudgetGp - targetValuablesBudgetGp).toFixed(2));
     return {
       mode: target.mode,
       challenge,
@@ -18840,6 +19193,9 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       totalBudgetGp: target.effectiveTotalTargetGp,
       targetItemBudgetGp: share.targetItemBudgetGp,
       targetCurrencyBudgetGp: share.targetCurrencyBudgetGp,
+      targetValuablesBudgetGp,
+      targetCoinBudgetGp,
+      valuablesBudgetRatio,
       distributionMix: share.distributionMix,
       itemSharePercent: share.itemPercent,
       currencySharePercent: share.currencyPercent,
@@ -18882,6 +19238,9 @@ function buildLootValueBudgetContext(draft = {}, targetCount = 0) {
       totalBudgetGp: 1,
       targetItemBudgetGp: 0.5,
       targetCurrencyBudgetGp: 0.5,
+      targetValuablesBudgetGp: 0,
+      targetCoinBudgetGp: 0.5,
+      valuablesBudgetRatio: 0,
       distributionMix: 50,
       itemSharePercent: 50,
       currencySharePercent: 50,
@@ -18925,12 +19284,20 @@ function resolveLootRuntimeBudgetContext(draft = {}, budgetContext = {}) {
         configuredTotalTargetGp: 0,
         configuredItemBudgetGp: 0,
         configuredCurrencyBudgetGp: 0,
+        configuredValuablesBudgetGp: 0,
+        configuredCoinBudgetGp: 0,
         configuredTargetPerItemGp: 0,
         resolvedTotalTargetGp: 0
       };
     }
     const configuredItemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
     const configuredCurrencyBudgetGp = Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0);
+    const configuredValuablesBudgetGp = Math.max(0, Number(budgetContext?.targetValuablesBudgetGp ?? 0) || 0);
+    const configuredCoinBudgetGp = Math.max(0, Number(
+      budgetContext?.targetCoinBudgetGp
+      ?? (configuredCurrencyBudgetGp - configuredValuablesBudgetGp)
+      ?? 0
+    ) || 0);
     const configuredTargetPerItemGp = Math.max(0, Number(budgetContext?.targetPerItemGp ?? 0) || 0);
     const minGp = Math.max(0, Number(budgetContext?.targetValueRangeMinGp ?? configuredTotalTargetGp) || configuredTotalTargetGp);
     const maxGp = Math.max(minGp, Number(budgetContext?.targetValueRangeMaxGp ?? configuredTotalTargetGp) || configuredTotalTargetGp);
@@ -18945,6 +19312,11 @@ function resolveLootRuntimeBudgetContext(draft = {}, budgetContext = {}) {
     const targetCount = Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1);
     const resolvedItemBudgetGp = Number((resolvedTotalTargetGp * itemRatio).toFixed(2));
     const resolvedCurrencyBudgetGp = Number((resolvedTotalTargetGp - resolvedItemBudgetGp).toFixed(2));
+    const valuablesRatio = configuredCurrencyBudgetGp > 0
+      ? Math.max(0, Math.min(1, configuredValuablesBudgetGp / configuredCurrencyBudgetGp))
+      : 0;
+    const resolvedValuablesBudgetGp = Number((resolvedCurrencyBudgetGp * valuablesRatio).toFixed(2));
+    const resolvedCoinBudgetGp = Number((resolvedCurrencyBudgetGp - resolvedValuablesBudgetGp).toFixed(2));
     const itemTolerance = resolveTolerance(
       resolvedItemBudgetGp,
       draft?.valueStrictness ?? LOOT_PREVIEW_DEFAULT_VALUE_STRICTNESS
@@ -18954,12 +19326,16 @@ function resolveLootRuntimeBudgetContext(draft = {}, budgetContext = {}) {
       configuredTotalTargetGp,
       configuredItemBudgetGp,
       configuredCurrencyBudgetGp,
+      configuredValuablesBudgetGp,
+      configuredCoinBudgetGp,
       configuredTargetPerItemGp,
       resolvedTotalTargetGp,
       effectiveTotalTargetGp: resolvedTotalTargetGp,
       totalBudgetGp: resolvedTotalTargetGp,
       targetItemBudgetGp: resolvedItemBudgetGp,
       targetCurrencyBudgetGp: resolvedCurrencyBudgetGp,
+      targetValuablesBudgetGp: resolvedValuablesBudgetGp,
+      targetCoinBudgetGp: resolvedCoinBudgetGp,
       targetPerItemGp: Math.max(0.5, Number((resolvedItemBudgetGp / targetCount).toFixed(2))),
       itemTargetValueRangeMinGp: itemTolerance.minGp,
       itemTargetValueRangeMaxGp: itemTolerance.maxGp,
@@ -19129,6 +19505,7 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
   const rawUuid = String(item?.uuid ?? data?.uuid ?? "").trim();
   const uuid = rawUuid || (context.fallbackUuidPrefix ? `${context.fallbackUuidPrefix}.${fallbackKey}` : "");
   const key = uuid || fallbackKey;
+  const folderProfile = getLootItemFolderProfileFromData(data);
 
   return {
     key,
@@ -19152,6 +19529,8 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     valueBand: String(poFlags?.valueBand ?? getLootItemValueBandFromData(data) ?? "").trim().toLowerCase(),
     priceDenomination: String(poFlags?.priceDenomination ?? getLootItemPriceDenominationFromData(data) ?? "").trim().toLowerCase(),
     merchantCategories: getLootItemMerchantCategoriesFromData(data),
+    folderProfile,
+    folderPathKey: String(folderProfile?.pathKey ?? "").trim().toLowerCase(),
     tagSchema: String(poFlags?.tagSchema ?? getLootItemTagSchemaFromData(data) ?? "").trim().toLowerCase(),
     keywords,
     lootWeight: Math.max(0.05, Number(poFlags?.lootWeight ?? 1) || 1),
@@ -19261,6 +19640,42 @@ function getLootCombatantRarityWeightModifier(draft = {}, rarity = "") {
   return 1;
 }
 
+function getLootScaleRarityCapAdjustments(draft = {}, mode = "horde", challenge = "mid", count = 0) {
+  const normalizedMode = String(mode ?? draft?.mode ?? "horde").trim().toLowerCase();
+  const normalizedScale = String(draft?.scale ?? "medium").trim().toLowerCase();
+  const normalizedChallenge = String(challenge ?? draft?.challenge ?? "mid").trim().toLowerCase();
+  const safeCount = Math.max(0, Math.floor(Number(count) || 0));
+
+  const ratioByScale = {
+    small: { uncommon: 0.72, rare: 0.52, "very-rare": 0.35, legendary: 0.2 },
+    medium: { uncommon: 1, rare: 1, "very-rare": 1, legendary: 1 },
+    major: { uncommon: 1.35, rare: 1.75, "very-rare": 2.3, legendary: 3 }
+  };
+  const floorByScale = {
+    small: { uncommon: 0, rare: 0, "very-rare": 0, legendary: 0 },
+    medium: { uncommon: 1, rare: 0, "very-rare": 0, legendary: 0 },
+    major: { uncommon: 2, rare: 1, "very-rare": 0, legendary: 0 }
+  };
+
+  const ratio = ratioByScale[normalizedScale] ?? ratioByScale.medium;
+  const floors = { ...(floorByScale[normalizedScale] ?? floorByScale.medium) };
+
+  if (normalizedMode === "horde") {
+    if (normalizedScale === "medium") {
+      if (normalizedChallenge !== "low" && safeCount >= 8) floors.rare = Math.max(floors.rare, 1);
+      if ((normalizedChallenge === "high" || normalizedChallenge === "epic") && safeCount >= 14) floors["very-rare"] = Math.max(floors["very-rare"], 1);
+      if (normalizedChallenge === "epic" && safeCount >= 30) floors.legendary = Math.max(floors.legendary, 1);
+    } else if (normalizedScale === "major") {
+      if (safeCount >= 6) floors.uncommon = Math.max(floors.uncommon, 2);
+      if (normalizedChallenge !== "low" && safeCount >= 8) floors.rare = Math.max(floors.rare, 1);
+      if ((normalizedChallenge === "high" || normalizedChallenge === "epic") && safeCount >= 12) floors["very-rare"] = Math.max(floors["very-rare"], 1);
+      if (normalizedChallenge === "epic" && safeCount >= 20) floors.legendary = Math.max(floors.legendary, 1);
+    }
+  }
+
+  return { ratio, floors };
+}
+
 function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
@@ -19292,21 +19707,50 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   const rareRatioPenalty = Math.max(0.35, 1 - pressure * 0.05);
   const veryRareRatioPenalty = Math.max(0.18, 1 - pressure * 0.07);
   const legendaryRatioPenalty = Math.max(0.1, 1 - pressure * 0.08);
+  const scaleAdjustments = getLootScaleRarityCapAdjustments(draft, mode, challenge, count);
   const caps = {
-    uncommon: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.uncommon ?? 0) * uncommonRatioBoost))),
-    rare: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.rare ?? 0) * rareRatioPenalty))),
-    "very-rare": Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge["very-rare"] ?? 0) * veryRareRatioPenalty))),
-    legendary: Math.max(0, Math.min(count, Math.floor(count * Number(byChallenge.legendary ?? 0) * legendaryRatioPenalty)))
+    uncommon: Math.max(
+      0,
+      Math.min(
+        count,
+        Math.floor(count * Number(byChallenge.uncommon ?? 0) * uncommonRatioBoost * Number(scaleAdjustments?.ratio?.uncommon ?? 1))
+      )
+    ),
+    rare: Math.max(
+      0,
+      Math.min(
+        count,
+        Math.floor(count * Number(byChallenge.rare ?? 0) * rareRatioPenalty * Number(scaleAdjustments?.ratio?.rare ?? 1))
+      )
+    ),
+    "very-rare": Math.max(
+      0,
+      Math.min(
+        count,
+        Math.floor(count * Number(byChallenge["very-rare"] ?? 0) * veryRareRatioPenalty * Number(scaleAdjustments?.ratio?.["very-rare"] ?? 1))
+      )
+    ),
+    legendary: Math.max(
+      0,
+      Math.min(
+        count,
+        Math.floor(count * Number(byChallenge.legendary ?? 0) * legendaryRatioPenalty * Number(scaleAdjustments?.ratio?.legendary ?? 1))
+      )
+    )
   };
 
-  if (mode === "horde") {
-    if (count >= 4) caps.uncommon = Math.max(caps.uncommon, 1);
-    if (challenge !== "low" && count >= 8) caps.rare = Math.max(caps.rare, 1);
-    if ((challenge === "high" || challenge === "epic") && count >= 14) caps["very-rare"] = Math.max(caps["very-rare"], 1);
-    if (challenge === "epic" && count >= 30) caps.legendary = Math.max(caps.legendary, 1);
+  if (mode === "horde" && count >= 4) {
+    caps.uncommon = Math.max(caps.uncommon, 1);
   } else if (mode === "encounter") {
     if ((challenge === "high" || challenge === "epic") && count >= 14) caps.rare = Math.max(caps.rare, 1);
     if (challenge === "epic" && count >= 20) caps["very-rare"] = Math.max(caps["very-rare"], 1);
+  }
+
+  for (const bucket of ["uncommon", "rare", "very-rare", "legendary"]) {
+    caps[bucket] = Math.max(
+      Math.max(0, Number(scaleAdjustments?.floors?.[bucket] ?? 0) || 0),
+      Math.min(count, Math.max(0, Number(caps?.[bucket] ?? 0) || 0))
+    );
   }
 
   return caps;
@@ -19448,9 +19892,13 @@ async function rollLootCurrency(draft = {}, randomContext = null, budgetContext 
   const resolvedBudgetContext = (budgetContext && typeof budgetContext === "object") ? budgetContext : null;
   const resolvedSelectedItemsValueGp = Math.max(0, Number(selectedItemsValueGp) || 0);
   const targetCurrencyGp = Math.max(0, Number(
-    resolvedBudgetContext?.effectiveTotalTargetGp
-      ? Math.max(0, Number(resolvedBudgetContext.effectiveTotalTargetGp) - resolvedSelectedItemsValueGp)
-      : (resolvedBudgetContext?.targetCurrencyBudgetGp ?? rolledBaseGp)
+    resolvedBudgetContext?.targetCoinBudgetGp
+      ?? resolvedBudgetContext?.targetCurrencyBudgetGp
+      ?? (
+        resolvedBudgetContext?.effectiveTotalTargetGp
+          ? Math.max(0, Number(resolvedBudgetContext.effectiveTotalTargetGp) - resolvedSelectedItemsValueGp)
+          : rolledBaseGp
+      )
   ) || 0);
   const gpEquivalent = Math.max(0, Number(targetCurrencyGp.toFixed(2)));
   const adjusted = Math.abs(gpEquivalent - Number(rolledBaseGp.toFixed(2))) > 0.01;
@@ -19475,10 +19923,15 @@ function getLootItemCount(draft = {}) {
 function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
   const items = Array.isArray(result?.items) ? result.items : [];
   const currencyGpEquivalent = getLootPreviewCurrencyGpEquivalent(result?.currency ?? {});
-  const finalItemsValueGp = Number(items.reduce((sum, entry) => {
+  const finalValuablesValueGp = Number(items.reduce((sum, entry) => {
+    if (!isLootValuableEntry(entry)) return sum;
     return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
   }, 0).toFixed(2));
-  const finalCurrencyValueGp = Number(currencyGpEquivalent.toFixed(2));
+  const finalItemsValueGp = Number(items.reduce((sum, entry) => {
+    if (isLootValuableEntry(entry)) return sum;
+    return sum + Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  }, 0).toFixed(2));
+  const finalCurrencyValueGp = Number((currencyGpEquivalent + finalValuablesValueGp).toFixed(2));
   const finalCombinedValueGp = Number((finalItemsValueGp + finalCurrencyValueGp).toFixed(2));
   const encounterTargetGp = Number(
     result?.stats?.encounterTargetGp
@@ -19501,6 +19954,7 @@ function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
     itemTargetGp: Number.isFinite(itemTargetGp) ? Number(itemTargetGp.toFixed(2)) : 0,
     currencyTargetGp: Number.isFinite(currencyTargetGp) ? Number(currencyTargetGp.toFixed(2)) : 0,
     finalItemsValueGp,
+    finalValuablesValueGp,
     finalCurrencyValueGp,
     finalCombinedValueGp,
     itemDeltaGp: Number((finalItemsValueGp - (Number.isFinite(itemTargetGp) ? itemTargetGp : 0)).toFixed(2)),
@@ -19665,10 +20119,13 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     budgetWeight *= 0.5 + progressRatio;
   }
   const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
+  const treasureKindWeight = Math.max(0.01, Number(
+    getLootTreasureKindWeightModifier(state?.draft ?? {}, entry, state?.selectionCategory ?? budgetContext?.selectionCategory ?? "")
+  ) || 0.01);
   const intelligenceWeight = Math.max(0.000001, Number(
     getLootSelectionIntelligenceWeight(entry, state, phase)
   ) || 0.000001);
-  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight * intelligenceWeight;
+  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight * treasureKindWeight * intelligenceWeight;
 }
 
 function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spend") {
@@ -20076,8 +20533,11 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
         "very-rare": 0,
         legendary: 0
       },
-      rarityCaps: getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? 0) || 0)),
+      rarityCaps: (options?.rarityCaps && typeof options.rarityCaps === "object")
+        ? options.rarityCaps
+        : getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? 0) || 0)),
       budgetContext,
+      selectionCategory: String(options?.selectionCategory ?? budgetContext?.selectionCategory ?? "").trim().toLowerCase(),
       targetCount: Math.max(1, Number(budgetContext?.targetCount ?? targetCount) || targetCount),
       maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
       draft,
@@ -20323,6 +20783,250 @@ async function buildLootTableRolls(sourceConfig, draft, warnings = [], randomCon
   return rolls;
 }
 
+function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, options = {}) {
+  const targetCount = Math.max(0, Math.floor(Number(count) || 0));
+  if (!Array.isArray(candidates) || candidates.length === 0 || targetCount <= 0) {
+    return [];
+  }
+  const budgetContext = (options?.budgetContext && typeof options.budgetContext === "object")
+    ? options.budgetContext
+    : buildLootValueBudgetContext(draft, targetCount);
+  const randomContext = (options?.randomContext && typeof options.randomContext === "object")
+    ? options.randomContext
+    : buildLootRandomContext(draft, budgetContext);
+  const mode = String(draft?.mode ?? budgetContext?.mode ?? "horde").trim().toLowerCase();
+  const valuablesBudgetGp = Math.max(0, Number(budgetContext?.targetValuablesBudgetGp ?? 0) || 0);
+  if (mode !== "horde" || valuablesBudgetGp <= 0) {
+    return pickLootItemsFromCandidates(candidates, targetCount, draft, { budgetContext, randomContext });
+  }
+
+  const valuablesPool = candidates.filter((entry) => isLootValuableEntry(entry));
+  const generalPool = candidates.filter((entry) => !isLootValuableEntry(entry));
+  if (!valuablesPool.length || !generalPool.length) {
+    return pickLootItemsFromCandidates(candidates, targetCount, draft, { budgetContext, randomContext });
+  }
+  const premiumPool = generalPool.filter((entry) => isLootPremiumRarity(entry));
+  const premiumLane = buildLootPremiumLaneConfig(draft, budgetContext, premiumPool, randomContext?.random ?? Math.random);
+
+  const valuablesShare = Math.max(0, Math.min(1, Number(
+    budgetContext?.targetCurrencyBudgetGp > 0
+      ? valuablesBudgetGp / Math.max(0.01, Number(budgetContext.targetCurrencyBudgetGp))
+      : 0
+  ) || 0));
+  const valuablesCountTarget = deriveLootBucketTargetCount(
+    valuablesPool,
+    valuablesBudgetGp,
+    Math.max(1, Math.ceil(targetCount * Math.max(0.2, valuablesShare))),
+    1
+  );
+  const valuablesBudgetContext = buildLootBucketBudgetContext(
+    budgetContext,
+    Math.max(
+      valuablesBudgetGp,
+      Math.min(...valuablesPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
+    ),
+    valuablesCountTarget,
+    {
+      selectionCategory: "valuables",
+      maxItems: Math.max(valuablesCountTarget + 1, valuablesCountTarget * 2)
+    }
+  );
+  const valuablesTargets = buildLootValuablesLaneTargets(draft, budgetContext, valuablesPool, valuablesCountTarget);
+  const artSelected = valuablesTargets.artCountTarget > 0
+    ? pickLootItemsFromCandidates(valuablesTargets.artPool, valuablesTargets.artCountTarget, draft, {
+      budgetContext: buildLootBucketBudgetContext(
+        budgetContext,
+        Math.max(
+          valuablesTargets.artBudgetTargetGp,
+          Math.min(...valuablesTargets.artPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
+        ),
+        valuablesTargets.artCountTarget,
+        {
+          selectionCategory: "valuables",
+          maxItems: Math.max(valuablesTargets.artCountTarget + 1, valuablesTargets.artCountTarget * 2)
+        }
+      ),
+      randomContext,
+      selectionCategory: "valuables"
+    })
+    : [];
+  const artSelectedKeys = new Set(
+    artSelected
+      .map((entry) => String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const remainingValuablesBudgetGp = Math.max(0, Number((valuablesBudgetGp - getLootSelectionTotalValueGp(artSelected)).toFixed(2)));
+  const gemPoolForSelection = artSelectedKeys.size > 0
+    ? valuablesTargets.gemPool.filter((entry) => {
+      const key = String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase();
+      return key ? !artSelectedKeys.has(key) : true;
+    })
+    : valuablesTargets.gemPool;
+  const gemCountTarget = Math.max(0, Math.min(
+    Math.max(0, valuablesCountTarget - artSelected.length),
+    Math.max(0, valuablesTargets.gemCountTarget)
+  ));
+  const gemSelected = gemCountTarget > 0 && gemPoolForSelection.length > 0
+    ? pickLootItemsFromCandidates(gemPoolForSelection, gemCountTarget, draft, {
+      budgetContext: buildLootBucketBudgetContext(
+        budgetContext,
+        Math.max(
+          Math.min(remainingValuablesBudgetGp, Math.max(0, Number(valuablesTargets.gemBudgetTargetGp ?? 0) || 0)),
+          Math.min(...gemPoolForSelection.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
+        ),
+        gemCountTarget,
+        {
+          selectionCategory: "valuables",
+          maxItems: Math.max(gemCountTarget + 1, gemCountTarget * 2)
+        }
+      ),
+      randomContext,
+      selectionCategory: "valuables"
+    })
+    : [];
+  const valuablesSelectedKeys = new Set(
+    [...artSelected, ...gemSelected]
+      .map((entry) => String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const remainingValuablesCount = Math.max(0, valuablesCountTarget - artSelected.length - gemSelected.length);
+  const remainingValuablesPool = remainingValuablesCount > 0
+    ? valuablesPool.filter((entry) => {
+      const key = String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase();
+      return key ? !valuablesSelectedKeys.has(key) : true;
+    })
+    : [];
+  const mixedValuablesSelected = remainingValuablesCount > 0 && remainingValuablesPool.length > 0
+    ? pickLootItemsFromCandidates(remainingValuablesPool, remainingValuablesCount, draft, {
+      budgetContext: valuablesBudgetContext,
+      randomContext,
+      selectionCategory: "valuables"
+    })
+    : [];
+  const valuablesSelected = [...artSelected, ...gemSelected, ...mixedValuablesSelected];
+
+  const premiumSelected = premiumLane.enabled && premiumPool.length > 0
+    ? pickLootItemsFromCandidates(
+      premiumPool,
+      premiumLane.targetCount,
+      draft,
+      {
+        budgetContext: buildLootBucketBudgetContext(
+          budgetContext,
+          Math.max(
+            premiumLane.targetBudgetGp,
+            Math.min(...premiumPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
+          ),
+          premiumLane.targetCount,
+          {
+            selectionCategory: "premium",
+            maxItems: premiumLane.targetCount
+          }
+        ),
+        randomContext,
+        selectionCategory: "premium",
+        rarityCaps: buildLootPremiumLaneRarityCaps(premiumLane.targetCount)
+      }
+    )
+    : [];
+
+  const remainingCountTarget = Math.max(0, targetCount - Math.max(0, valuablesSelected.length) - Math.max(0, premiumSelected.length));
+  const premiumSelectedKeys = new Set(
+    premiumSelected
+      .map((entry) => String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+  const generalRemainingPool = premiumSelectedKeys.size > 0
+    ? generalPool.filter((entry) => {
+      const key = String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase();
+      return key ? !premiumSelectedKeys.has(key) : true;
+    })
+    : generalPool;
+  const hoardGeneralPreferredPool = getLootGeneralLanePool(generalRemainingPool, draft);
+  const generalPoolForSelection = hoardGeneralPreferredPool.length > 0
+    ? hoardGeneralPreferredPool
+    : (generalRemainingPool.length > 0 ? generalRemainingPool : generalPool);
+  const baseItemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
+  const premiumReservedBudgetGp = premiumSelected.length > 0
+    ? Math.max(0, Number(premiumLane.targetBudgetGp ?? 0) || 0)
+    : 0;
+  const generalSelected = remainingCountTarget > 0
+    ? pickLootItemsFromCandidates(generalPoolForSelection, remainingCountTarget, draft, {
+      budgetContext: buildLootBucketBudgetContext(
+        budgetContext,
+        Math.max(0, Number((baseItemBudgetGp - premiumReservedBudgetGp).toFixed(2))),
+        remainingCountTarget,
+        {
+          selectionCategory: "general",
+          maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0)
+        }
+      ),
+      randomContext,
+      selectionCategory: "general"
+    })
+    : [];
+
+  const combined = [...valuablesSelected, ...premiumSelected, ...generalSelected];
+  const diagnostics = [];
+  const valuablesMeta = valuablesSelected?.__meta && typeof valuablesSelected.__meta === "object" ? valuablesSelected.__meta : null;
+  const premiumMeta = premiumSelected?.__meta && typeof premiumSelected.__meta === "object" ? premiumSelected.__meta : null;
+  const generalMeta = generalSelected?.__meta && typeof generalSelected.__meta === "object" ? generalSelected.__meta : null;
+  if (premiumPool.length > 0) {
+    diagnostics.push(
+      premiumLane.enabled
+        ? `Premium lane rolled in (${Math.round(premiumLane.chance * 100)}% chance, roll ${premiumLane.roll.toFixed(3)}).`
+        : `Premium lane rolled out (${Math.round(premiumLane.chance * 100)}% chance, roll ${premiumLane.roll.toFixed(3)}).`
+    );
+  }
+  for (const note of [...(valuablesMeta?.diagnostics ?? []), ...(premiumMeta?.diagnostics ?? []), ...(generalMeta?.diagnostics ?? [])]) {
+    const text = String(note ?? "").trim();
+    if (text) diagnostics.push(text);
+  }
+  const meta = {
+    deterministic: Boolean(randomContext?.deterministic),
+    seed: String(randomContext?.seed ?? ""),
+    desiredItemCount: targetCount,
+    maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
+    encounterTargetGp: Math.max(0, Number(
+      budgetContext?.configuredTotalTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? 0
+    ) || 0),
+    itemTargetGp: Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0),
+    currencyTargetGp: Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0),
+    resolvedEncounterTargetGp: Math.max(0, Number(
+      budgetContext?.resolvedTotalTargetGp
+      ?? budgetContext?.effectiveTotalTargetGp
+      ?? 0
+    ) || 0),
+    resolvedItemTargetGp: Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0),
+    resolvedCurrencyTargetGp: Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0),
+    finalItemsValueGp: 0,
+    finalValuablesValueGp: 0,
+    finalCurrencyValueGp: 0,
+    finalCombinedValueGp: 0,
+    itemDeltaGp: 0,
+    deltaGp: 0,
+    toleranceGp: Math.max(0, Number(budgetContext?.toleranceGp ?? 0) || 0),
+    tolerancePercent: Math.max(0, Number(budgetContext?.tolerancePercent ?? 0) || 0),
+    strictnessBandLabel: String(budgetContext?.strictnessBandLabel ?? "Normal"),
+    strictnessBandKey: String(budgetContext?.strictnessBandKey ?? "normal"),
+    candidateCount: Math.max(0, Number(candidates.length || 0)),
+    diagnostics
+  };
+  try {
+    Object.defineProperty(combined, "__meta", {
+      value: meta,
+      enumerable: false,
+      configurable: true,
+      writable: false
+    });
+  } catch {
+    // Non-critical metadata attachment.
+  }
+  return combined;
+}
+
 async function generateLootPreviewPayload(draftInput = {}) {
   try {
     const draft = normalizeLootPreviewDraft(draftInput);
@@ -20343,7 +21047,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
     const candidates = await buildLootItemCandidates(sourceConfig, draft, warnings);
     const desiredItemCount = runtimeBudgetContext?.targetCount ?? previewBudgetContext?.targetCount ?? getLootItemCount(draft) ?? 1;
     const itemCountTarget = Math.max(1, Number(desiredItemCount));
-    const selectedItems = pickLootItemsFromCandidates(candidates, itemCountTarget, draft, {
+    const selectedItems = pickLootItemsAcrossBudgetBuckets(candidates, itemCountTarget, draft, {
       budgetContext: runtimeBudgetContext,
       randomContext
     });
@@ -20371,6 +21075,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
       resolvedItemTargetGp: Number(runtimeBudgetContext?.targetItemBudgetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
       resolvedCurrencyTargetGp: Number(runtimeBudgetContext?.targetCurrencyBudgetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
       finalItemsValueGp: valueTotals.finalItemsValueGp,
+      finalValuablesValueGp: valueTotals.finalValuablesValueGp,
       finalCurrencyValueGp: valueTotals.finalCurrencyValueGp,
       finalCombinedValueGp: valueTotals.finalCombinedValueGp,
       itemDeltaGp: valueTotals.itemDeltaGp,
@@ -20383,6 +21088,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
       diagnostics: []
     };
     resolvedSelectionMeta.finalItemsValueGp = valueTotals.finalItemsValueGp;
+    resolvedSelectionMeta.finalValuablesValueGp = valueTotals.finalValuablesValueGp;
     resolvedSelectionMeta.finalCurrencyValueGp = valueTotals.finalCurrencyValueGp;
     resolvedSelectionMeta.finalCombinedValueGp = valueTotals.finalCombinedValueGp;
     resolvedSelectionMeta.itemDeltaGp = valueTotals.itemDeltaGp;
@@ -20439,6 +21145,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
         resolvedItemTargetGp: Number(resolvedSelectionMeta.resolvedItemTargetGp ?? previewBudgetContext?.targetItemBudgetGp ?? 0),
         resolvedCurrencyTargetGp: Number(resolvedSelectionMeta.resolvedCurrencyTargetGp ?? previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
         finalItemsValueGp: Number(resolvedSelectionMeta.finalItemsValueGp ?? 0),
+        finalValuablesValueGp: Number(resolvedSelectionMeta.finalValuablesValueGp ?? 0),
         finalCurrencyValueGp: Number(resolvedSelectionMeta.finalCurrencyValueGp ?? 0),
         finalCombinedValueGp: Number(resolvedSelectionMeta.finalCombinedValueGp ?? 0),
         itemDeltaGp: Number(resolvedSelectionMeta.itemDeltaGp ?? 0),
@@ -20700,7 +21407,16 @@ function buildLootPreviewContext() {
     : tableRollBudget === 1
       ? "Expect only an occasional bonus table contribution."
       : `Higher settings widen bonus table pulls until the builder hits the ${tableRollBudget}-roll cap for this draft.`;
-  const valueBudgetSummary = `Current target: ${valueBudgetContext.effectiveTotalTargetGp} gp total, split to ${valueBudgetContext.targetItemBudgetGp} gp in items and ${valueBudgetContext.targetCurrencyBudgetGp} gp in coin.`;
+  const valuablesBudgetGp = Math.max(0, Number(valueBudgetContext?.targetValuablesBudgetGp ?? 0) || 0);
+  const coinBudgetGp = Math.max(0, Number(
+    valueBudgetContext?.targetCoinBudgetGp
+    ?? valueBudgetContext?.targetCurrencyBudgetGp
+    ?? 0
+  ) || 0);
+  const currencyBudgetSummary = valuablesBudgetGp > 0
+    ? `${valueBudgetContext.targetCurrencyBudgetGp} gp in currency (${coinBudgetGp} coin, ${valuablesBudgetGp} gems/art)`
+    : `${valueBudgetContext.targetCurrencyBudgetGp} gp in currency`;
+  const valueBudgetSummary = `Current target: ${valueBudgetContext.effectiveTotalTargetGp} gp total, split to ${valueBudgetContext.targetItemBudgetGp} gp in items and ${currencyBudgetSummary}.`;
   const valueStrictnessSummary = `${valueBudgetContext.strictnessBandLabel} keeps the total between ${valueBudgetContext.targetValueRangeMinGp}-${valueBudgetContext.targetValueRangeMaxGp} gp (plus or minus ${valueBudgetContext.tolerancePercent}%).`;
   const itemStrictnessSummary = `Item budget window: ${valueBudgetContext.itemTargetValueRangeMinGp}-${valueBudgetContext.itemTargetValueRangeMaxGp} gp.`;
   const itemRows = Array.isArray(result?.items)
@@ -41802,6 +42518,11 @@ function buildDefaultMarchingOrderState() {
       middle: [],
       rear: []
     },
+    rankPlacements: {
+      front: {},
+      middle: {},
+      rear: {}
+    },
     notes: {},
     gmNotes: "",
     light: {},
@@ -41925,6 +42646,7 @@ async function applyMarchingFormation({ front, middle, type }) {
 
   await updateMarchingOrderState((state) => {
     state.formation = nextFormation;
+    state.rankPlacements = buildDefaultMarchRankPlacements();
     if (nextFormation !== "free") {
       state.ranks = {
         front: frontActors,
@@ -41976,6 +42698,7 @@ async function syncMarchingOrderFromRestWatch() {
 
   await updateMarchingOrderState((draft) => {
     draft.ranks = nextRanks;
+    draft.rankPlacements = buildDefaultMarchRankPlacements();
     if (formationId === "free") clearDoctrineTriggerPending(draft);
     else markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
   });
@@ -42154,6 +42877,28 @@ function setRestSlotEntryAtIndex(slot, entryIndexInput, actorIdInput) {
   return true;
 }
 
+function removeRestWatchVisibleSlotAtIndex(slot, entryIndexInput) {
+  if (!slot) return false;
+  const entryIndex = Number.isInteger(entryIndexInput) ? entryIndexInput : Number.parseInt(entryIndexInput, 10);
+  if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_WATCH_MAX_ENTRIES) return false;
+
+  const entries = ensureRestSlotEntriesList(slot);
+  const currentVisible = normalizeRestWatchVisibleEntryCount(slot, entries);
+  if (currentVisible <= 1 || entryIndex >= currentVisible) return false;
+
+  const fixedRows = buildRestWatchFixedEntryRows(entries);
+  if (fixedRows[entryIndex]) return false;
+
+  for (let index = entryIndex; index < REST_WATCH_MAX_ENTRIES - 1; index += 1) {
+    fixedRows[index] = fixedRows[index + 1] ?? null;
+  }
+  fixedRows[REST_WATCH_MAX_ENTRIES - 1] = null;
+
+  slot.entries = serializeRestWatchFixedEntryRows(fixedRows);
+  slot.visibleEntryCount = Math.max(1, currentVisible - 1);
+  return true;
+}
+
 function buildRestWatchActorOptionsCacheKey(actors = []) {
   return (Array.isArray(actors) ? actors : [])
     .map((actor) => `${String(actor?.id ?? "").trim()}:${String(actor?.name ?? "").trim()}`)
@@ -42264,7 +43009,14 @@ function buildRestWatchAssignmentRows(entries, actorOptions, entriesView = []) {
 
 function buildVisibleRestWatchAssignmentRows(entries, actorOptions, entriesView = [], visibleEntryCountInput = 1) {
   const visibleEntryCount = Math.max(1, Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(visibleEntryCountInput, 10) || 1));
-  return buildRestWatchAssignmentRows(entries, actorOptions, entriesView).slice(0, visibleEntryCount);
+  return buildRestWatchAssignmentRows(entries, actorOptions, entriesView).map((row) => ({
+    ...row,
+    isVisible: row.index < visibleEntryCount,
+    canRemoveVisibleSlot: row.index < visibleEntryCount && visibleEntryCount > 1 && !row.occupied,
+    clearButtonLabel: row.index < visibleEntryCount && visibleEntryCount > 1 && !row.occupied
+      ? `Remove ${row.slotLabel}`
+      : `Clear ${row.slotLabel}`
+  }));
 }
 
 function summarizeRestWatchLanguages(entriesView) {
@@ -42299,6 +43051,55 @@ function summarizeRestWatchLanguages(entriesView) {
   };
 }
 
+function buildDefaultMarchRankPlacements() {
+  return {
+    front: {},
+    middle: {},
+    rear: {}
+  };
+}
+
+function normalizeMarchRankPlacements(state) {
+  const base = buildDefaultMarchRankPlacements();
+  const source = state?.rankPlacements ?? {};
+  for (const rankId of Object.keys(base)) {
+    const actorIds = new Set(state?.ranks?.[rankId] ?? []);
+    const placements = {};
+    for (const [actorId, cellIndex] of Object.entries(source?.[rankId] ?? {})) {
+      const normalizedActorId = String(actorId ?? "").trim();
+      const normalizedCellIndex = Number.parseInt(String(cellIndex ?? ""), 10);
+      if (!normalizedActorId || !actorIds.has(normalizedActorId)) continue;
+      if (!Number.isInteger(normalizedCellIndex) || normalizedCellIndex < 0) continue;
+      placements[normalizedActorId] = normalizedCellIndex;
+    }
+    base[rankId] = placements;
+  }
+  return base;
+}
+
+function clearMarchActorPlacement(state, actorId) {
+  if (!state.rankPlacements || typeof state.rankPlacements !== "object") {
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+  }
+  for (const rankId of Object.keys(state.rankPlacements)) {
+    if (state.rankPlacements[rankId] && typeof state.rankPlacements[rankId] === "object") {
+      delete state.rankPlacements[rankId][actorId];
+    }
+  }
+}
+
+function setMarchActorPlacement(state, rankId, actorId, cellIndex) {
+  clearMarchActorPlacement(state, actorId);
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) return;
+  if (!state.rankPlacements || typeof state.rankPlacements !== "object") {
+    state.rankPlacements = buildDefaultMarchRankPlacements();
+  }
+  if (!state.rankPlacements[rankId] || typeof state.rankPlacements[rankId] !== "object") {
+    state.rankPlacements[rankId] = {};
+  }
+  state.rankPlacements[rankId][actorId] = cellIndex;
+}
+
 function buildRestWatchDetailSummary(slot, entriesView) {
   const activeCount = Array.isArray(entriesView) ? entriesView.length : 0;
   const visibleEntryCount = Math.max(1, Math.min(REST_WATCH_MAX_ENTRIES, Number.parseInt(slot?.visibleEntryCount, 10) || 1));
@@ -42306,11 +43107,17 @@ function buildRestWatchDetailSummary(slot, entriesView) {
   const pivRange = slot?.slotPivRange ?? computePassiveRangeForEntries(entriesView, "passiveInvestigation");
   const languages = summarizeRestWatchLanguages(entriesView);
   const hasCoverageWarning = activeCount > 0 && Boolean(slot?.slotNoDarkvision);
+  const darkvisionRange = computeHighestNumericValue((entriesView ?? []).map((entry) => entry?.actor?.darkvision));
+  const coverageLabel = activeCount === 0
+    ? "Coverage Pending"
+    : (hasCoverageWarning
+      ? "Missing Darkvision"
+      : (darkvisionRange !== null ? `Darkvision ${darkvisionRange} ft` : "No Darkvision"));
   return {
     activeCountLabel: `${activeCount} / ${visibleEntryCount}`,
     openCountLabel: `${Math.max(0, visibleEntryCount - activeCount)} Open`,
     hasCoverageWarning,
-    coverageLabel: activeCount === 0 ? "Coverage Pending" : (hasCoverageWarning ? "Missing Darkvision" : "Coverage Ready"),
+    coverageLabel,
     coverageStateClass: hasCoverageWarning ? "is-warn" : "is-ready",
     campfireLabel: slot?.campfireActive ? "Lit" : "Out",
     campfireStateClass: slot?.campfireActive ? "is-active" : "is-inactive",
@@ -42523,20 +43330,52 @@ async function clearRestWatchEntrySelection(element) {
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
-  await commitRestWatchEntrySelection(slotId, entryIndex, "");
+  const committedActorId = String(element?.dataset?.committedActorId ?? "").trim();
+  if (committedActorId) {
+    await commitRestWatchEntrySelection(slotId, entryIndex, "");
+    return;
+  }
+  const updated = await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    removeRestWatchVisibleSlotAtIndex(slot, entryIndex);
+  }, { skipLocalRefresh: true });
+  if (!updated) return;
+  refreshRestWatchAppsImmediately();
 }
 
 async function addRestWatchVisibleSlot(element) {
   if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   if (!slotId) return;
-  await updateRestWatchState((state) => {
+  let nextVisibleIndex = -1;
+  const updated = await updateRestWatchState((state) => {
     const slot = Array.isArray(state?.slots) ? state.slots.find((entry) => String(entry?.id ?? "").trim() === slotId) : null;
     if (!slot) return;
     const entries = sanitizeRestWatchEntries(slot);
     const currentVisible = normalizeRestWatchVisibleEntryCount(slot, entries);
+    nextVisibleIndex = currentVisible;
     slot.visibleEntryCount = Math.min(REST_WATCH_MAX_ENTRIES, currentVisible + 1);
-  });
+  }, { skipLocalRefresh: true });
+  if (!updated) return;
+  refreshRestWatchAppsImmediately();
+  revealRestWatchAssignmentRow(element, slotId, nextVisibleIndex);
+}
+
+function revealRestWatchAssignmentRow(element, slotIdInput, entryIndexInput) {
+  const slotId = String(slotIdInput ?? "").trim();
+  const entryIndex = Number.parseInt(entryIndexInput, 10);
+  if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
+  const appWindow = element?.closest?.(".po-window");
+  if (!appWindow) return;
+  const row = appWindow.querySelector(`.po-card[data-slot-id="${slotId}"] .po-watch-assignment-row[data-entry-index="${entryIndex}"]`);
+  if (!row) return;
+  row.classList.remove("is-hidden", "is-revealed");
+  void row.offsetWidth;
+  row.classList.add("is-revealed");
+  window.setTimeout(() => {
+    row.classList.remove("is-revealed");
+  }, 650);
 }
 
 async function clearSlotEntry(element) {
@@ -42878,6 +43717,7 @@ function refreshSingleAppPreservingView(app) {
 
 function refreshRestWatchAppsImmediately() {
   refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
+  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL));
   refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
 }
 
@@ -42917,6 +43757,8 @@ async function assignActorToRank(element) {
   if (!rankId) return;
   const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
   const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
+  const requestedCellIndex = Number.parseInt(String(element?.dataset?.cellIndex ?? ""), 10);
+  const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
 
   const actors = game.actors.contents.filter((actor) => actor.hasPlayerOwner);
   const options = actors.map((actor) =>
@@ -42936,12 +43778,14 @@ async function assignActorToRank(element) {
             for (const key of Object.keys(state.ranks)) {
               state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
             }
+            clearMarchActorPlacement(state, actorId);
             if (!state.ranks[rankId]) state.ranks[rankId] = [];
             const target = state.ranks[rankId];
             const safeIndex = hasRequestedInsertIndex
               ? Math.max(0, Math.min(requestedInsertIndex, target.length))
               : target.length;
             target.splice(safeIndex, 0, actorId);
+            setMarchActorPlacement(state, rankId, actorId, hasRequestedCellIndex ? requestedCellIndex : null);
             if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
               markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
             }
@@ -42981,6 +43825,7 @@ async function removeActorFromRanks(element) {
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
     }
+    clearMarchActorPlacement(state, actorId);
     if (state.notes) delete state.notes[actorId];
     if (state.light) delete state.light[actorId];
     if (state.lightRanges) delete state.lightRanges[actorId];
@@ -43005,6 +43850,8 @@ async function joinRank(element) {
   if (!rankId) rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
   const requestedInsertIndex = Number.parseInt(String(element?.dataset?.insertIndex ?? ""), 10);
   const hasRequestedInsertIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0;
+  const requestedCellIndex = Number.parseInt(String(element?.dataset?.cellIndex ?? ""), 10);
+  const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
   
   // If not clicked on a rank, default to middle
   if (!rankId) {
@@ -43020,6 +43867,7 @@ async function joinRank(element) {
   if (!game.user?.isGM) {
     const request = { op: "joinRank", rankId, actorId: actor.id };
     if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
+    if (hasRequestedCellIndex) request.cellIndex = requestedCellIndex;
     await updateMarchingOrderState(request);
     return;
   }
@@ -43027,12 +43875,14 @@ async function joinRank(element) {
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actor.id);
     }
+    clearMarchActorPlacement(state, actor.id);
     if (!state.ranks[rankId]) state.ranks[rankId] = [];
     const target = state.ranks[rankId];
     const safeIndex = hasRequestedInsertIndex
       ? Math.max(0, Math.min(requestedInsertIndex, target.length))
       : target.length;
     target.splice(safeIndex, 0, actor.id);
+    setMarchActorPlacement(state, rankId, actor.id, hasRequestedCellIndex ? requestedCellIndex : null);
     if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
       markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
     }
@@ -43136,6 +43986,7 @@ async function clearMarchingAll() {
   if (!confirmed) return;
   await updateMarchingOrderState((state) => {
     state.ranks = { front: [], middle: [], rear: [] };
+    state.rankPlacements = buildDefaultMarchRankPlacements();
     state.notes = {};
     state.light = {};
     state.lightRanges = {};
@@ -43246,6 +44097,7 @@ function getMarchingOrderState() {
     insertValues: true
   });
   merged.formation = normalizeMarchingFormation(merged.formation ?? "loose");
+  merged.rankPlacements = normalizeMarchRankPlacements(merged);
   ensureDoctrineTracker(merged);
   applyPublishedMarchingNotesToState(merged);
   merged.locked = false;
@@ -43714,14 +44566,34 @@ function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks =
     const rankView = rankViewById.get(row.id);
     const entries = Array.isArray(rankView?.entries) ? rankView.entries : [];
     const recommendedPositions = buildFormationCellPositions(definition, row.id, recommendedCounts[rowIndex], columns);
-    const actorPositions = [...recommendedPositions];
-    for (let columnIndex = 0; actorPositions.length < entries.length && columnIndex < columns; columnIndex += 1) {
-      if (!actorPositions.includes(columnIndex)) actorPositions.push(columnIndex);
+    const explicitPlacements = state?.rankPlacements?.[row.id] ?? {};
+    const occupiedColumns = new Set();
+    const entriesByColumn = new Map();
+    const unplacedEntries = [];
+    for (const entry of entries) {
+      const requestedColumn = Number.parseInt(String(explicitPlacements?.[entry.actorId] ?? ""), 10);
+      if (Number.isInteger(requestedColumn) && requestedColumn >= 0 && requestedColumn < columns && !occupiedColumns.has(requestedColumn)) {
+        occupiedColumns.add(requestedColumn);
+        entriesByColumn.set(requestedColumn, entry);
+        continue;
+      }
+      unplacedEntries.push(entry);
     }
-    actorPositions.sort((left, right) => left - right);
+    const fallbackColumns = [];
+    for (const columnIndex of recommendedPositions) {
+      if (!occupiedColumns.has(columnIndex)) fallbackColumns.push(columnIndex);
+    }
+    for (let columnIndex = 0; columnIndex < columns; columnIndex += 1) {
+      if (!occupiedColumns.has(columnIndex) && !fallbackColumns.includes(columnIndex)) fallbackColumns.push(columnIndex);
+    }
+    for (let index = 0; index < unplacedEntries.length && index < fallbackColumns.length; index += 1) {
+      const columnIndex = fallbackColumns[index];
+      occupiedColumns.add(columnIndex);
+      entriesByColumn.set(columnIndex, unplacedEntries[index]);
+    }
+    const actorPositions = Array.from(entriesByColumn.keys()).sort((left, right) => left - right);
     const cells = Array.from({ length: columns }, (_, columnIndex) => {
-      const actorIndex = actorPositions.indexOf(columnIndex);
-      const entry = actorIndex >= 0 ? entries[actorIndex] : null;
+      const entry = entriesByColumn.get(columnIndex) ?? null;
       const actorId = entry?.actorId ?? "";
       const actor = entry?.actor ?? null;
       const insertIndex = actorPositions.filter((position) => position < columnIndex).length;
@@ -44406,19 +45278,42 @@ function getPassive(actor, skillKey) {
   return null;
 }
 
+function getSenseRange(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : null;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/(\d+(?:\.\d+)?)/);
+    if (!match) return null;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+  if (typeof value === "object") {
+    return getSenseRange(value.value ?? value.distance ?? value.range ?? value.amount ?? null);
+  }
+  return null;
+}
+
 function getDarkvision(actor) {
   if (!actor) return null;
-  // Check active token on canvas for darkvision/vision
-  const token = actor.getActiveTokens?.(true, true)?.[0];
-  if (token) {
-    // Check if token has vision/darkvision enabled
-    const visionConfig = token.document?.sight;
-    if (visionConfig?.enabled && visionConfig?.visionRange > 0) {
-      return visionConfig.visionRange; // Return the range (e.g., 60)
-    }
-  }
-  // Fallback to actor data
-  return actor?.system?.attributes?.senses?.darkvision ?? null;
+  const darkvision = getSenseRange(
+    actor?.system?.attributes?.senses?.darkvision
+    ?? actor?.system?.traits?.senses?.darkvision
+    ?? actor?.system?.details?.senses?.darkvision
+  );
+  if (darkvision !== null) return darkvision;
+
+  const senses = actor?.system?.attributes?.senses ?? actor?.system?.traits?.senses ?? actor?.system?.details?.senses;
+  const fallbackSense = getSenseRange(senses?.special ?? senses?.units ?? null);
+  if (fallbackSense !== null && /darkvision/i.test(String(senses?.special ?? senses?.units ?? ""))) return fallbackSense;
+
+  const token = actor.getActiveTokens?.(true, true)?.[0] ?? actor.getActiveTokens?.()?.[0];
+  const tokenDarkvision = getSenseRange(
+    token?.document?.detectionModes?.find?.((mode) => String(mode?.id ?? "").toLowerCase().includes("darkvision"))?.range
+    ?? (/darkvision/i.test(String(token?.document?.sight?.visionMode ?? "")) ? token?.document?.sight?.range ?? token?.document?.sight?.visionRange : null)
+  );
+  return tokenDarkvision;
 }
 
 function getStealthDisadv(actor) {
@@ -44519,6 +45414,12 @@ function computeHighestPPForEntries(entries) {
     .filter((value) => typeof value === "number");
   if (values.length === 0) return null;
   return Math.max(...values);
+}
+
+function computeHighestNumericValue(values) {
+  const numericValues = (values ?? []).filter((value) => typeof value === "number" && Number.isFinite(value));
+  if (numericValues.length === 0) return null;
+  return Math.max(...numericValues);
 }
 
 function computePassiveRangeForEntries(entries, key) {

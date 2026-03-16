@@ -6,6 +6,7 @@ on:
       - main
     tags:
       - "v*.*.*"
+      - "!v*-test.*"
   workflow_dispatch:
 
 permissions:

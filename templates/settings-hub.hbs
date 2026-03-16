@@ -75,6 +75,16 @@
             </label>
 
             <label class="po-resource-row">
+              <span>Horde Uncommon+ Rolls</span>
+              <select class="po-select" name="lootHordeUncommonPlusChance">
+                <option value="standard" {{#if hordeUncommonPlusChanceStandard}}selected{{/if}}>Standard</option>
+                <option value="boosted" {{#if hordeUncommonPlusChanceBoosted}}selected{{/if}}>Boosted</option>
+                <option value="high" {{#if hordeUncommonPlusChanceHigh}}selected{{/if}}>High</option>
+                <option value="guaranteed" {{#if hordeUncommonPlusChanceGuaranteed}}selected{{/if}}>Guaranteed</option>
+              </select>
+            </label>
+
+            <label class="po-resource-row">
               <span>Integration Mode</span>
               <select class="po-select" name="integrationMode">
                 <option value="auto" {{#if integrationModeAuto}}selected{{/if}}>Auto</option>

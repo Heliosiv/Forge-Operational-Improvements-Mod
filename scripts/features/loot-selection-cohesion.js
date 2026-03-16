@@ -131,14 +131,27 @@ function canBatchPrimaryEntry(entry = {}) {
   return "";
 }
 
-function resolvePrimaryQuantity(entry = {}, budgetRemainingGp = 0, challenge = "mid", randomFn = Math.random) {
+function capBundledQuantity(quantity = 1, kind = "", draft = {}) {
+  const mode = normalizeText(draft?.mode) || "horde";
+  const scale = normalizeText(draft?.scale) || "medium";
+  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (mode !== "horde" || scale !== "major") return safeQuantity;
+  if (kind === "ammo") return Math.min(safeQuantity, 4);
+  if (kind === "treasure") return Math.min(safeQuantity, 2);
+  if (kind === "supply") return Math.min(safeQuantity, 2);
+  return safeQuantity;
+}
+
+function resolvePrimaryQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, randomFn = Math.random) {
   const bundleKind = canBatchPrimaryEntry(entry);
   const unitValueGp = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
   if (!bundleKind || unitValueGp <= 0 || budgetRemainingGp < unitValueGp) return 1;
   const maxAffordable = Math.max(1, Math.floor(budgetRemainingGp / Math.max(0.0001, unitValueGp)));
   if (maxAffordable <= 1) return 1;
+  const challenge = normalizeText(draft?.challenge) || "mid";
   const [minQty, maxQty] = getChallengeQuantityBand(challenge, bundleKind);
-  return Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  const quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  return capBundledQuantity(quantity, bundleKind, draft);
 }
 
 function findCompanionCandidate(anchor = {}, pool = [], selected = [], budgetRemainingGp = 0) {
@@ -185,32 +198,34 @@ function shouldAddCompanion(anchor = {}, companion = {}, randomFn = Math.random)
   return random() < 0.22;
 }
 
-function resolveCompanionQuantity(anchor = {}, companion = {}, budgetRemainingGp = 0, challenge = "mid", randomFn = Math.random) {
+function resolveCompanionQuantity(anchor = {}, companion = {}, budgetRemainingGp = 0, draft = {}, randomFn = Math.random) {
   const unitValueGp = Math.max(0, Number(companion?.itemValueGp ?? 0) || 0);
   if (unitValueGp <= 0 || budgetRemainingGp < unitValueGp) return 1;
   if (isAmmoLike(companion)) {
     const maxAffordable = Math.max(1, Math.floor(budgetRemainingGp / Math.max(0.0001, unitValueGp)));
+    const challenge = normalizeText(draft?.challenge) || "mid";
     const [minQty, maxQty] = getChallengeQuantityBand(challenge, "ammo");
-    return Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+    const quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+    return capBundledQuantity(quantity, "ammo", draft);
   }
   return 1;
 }
 
 export function buildLootCohesiveBundle(anchor = {}, options = {}) {
   const random = typeof options?.random === "function" ? options.random : Math.random;
-  const challenge = normalizeText(options?.draft?.challenge) || "mid";
+  const draft = options?.draft ?? {};
   const pool = Array.isArray(options?.pool) ? options.pool : [];
   const selected = Array.isArray(options?.selected) ? options.selected : [];
   let remainingGp = Math.max(0, Number(options?.budgetRemainingGp ?? 0) || 0);
   const rows = [];
 
-  const primaryQuantity = resolvePrimaryQuantity(anchor, remainingGp, challenge, random);
+  const primaryQuantity = resolvePrimaryQuantity(anchor, remainingGp, draft, random);
   rows.push({ candidate: anchor, quantity: primaryQuantity, reason: primaryQuantity > 1 ? "batch" : "single" });
   remainingGp = Math.max(0, remainingGp - (Math.max(0, Number(anchor?.itemValueGp ?? 0) || 0) * primaryQuantity));
 
   const companion = findCompanionCandidate(anchor, pool, selected, remainingGp);
   if (!companion || !shouldAddCompanion(anchor, companion, random)) return rows;
-  const companionQuantity = resolveCompanionQuantity(anchor, companion, remainingGp, challenge, random);
+  const companionQuantity = resolveCompanionQuantity(anchor, companion, remainingGp, draft, random);
   rows.push({ candidate: companion, quantity: companionQuantity, reason: "companion" });
   return rows;
 }

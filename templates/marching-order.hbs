@@ -13,6 +13,35 @@
       {{/if}}
     </nav>
     <div class="po-controls">
+      {{#if isGM}}
+      <details class="po-rest-settings-menu po-march-settings-menu">
+        <summary class="po-rest-settings-summary" aria-label="March settings" title="March settings">
+          <i class="fa-solid fa-gear"></i>
+        </summary>
+        <div class="po-rest-settings-menu-panel">
+          <div class="po-rest-settings-body">
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Export</div>
+              <button type="button" class="po-btn" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
+              <button type="button" class="po-btn" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
+            </div>
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Snapshot</div>
+              <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
+            </div>
+            <div class="po-rest-settings-group po-rest-settings-group-danger">
+              <div class="po-section-title">Plan</div>
+              <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
+            </div>
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">GM Marching Notes</div>
+              <label class="po-sr-only" for="po-gm-march-notes">Global marching notes</label>
+              <textarea id="po-gm-march-notes" class="po-gm-notes" rows="4" placeholder="Global notes" aria-label="Global marching notes">{{gmNotes}}</textarea>
+            </div>
+          </div>
+        </div>
+      </details>
+      {{/if}}
       <button type="button" class="po-icon-btn" data-action="open-march-help" aria-label="Help">
         <i class="fa-solid fa-circle-question"></i>
       </button>
@@ -53,125 +82,6 @@
   </section>
 
   <section class="po-content">
-    <section id="po-march-formations" class="po-gm-section po-march-formation-panel" aria-label="Formation details">
-      <div class="po-march-formation-head">
-        <div>
-          <div class="po-section-title">Formation Details</div>
-          <div class="po-formation-display">Current: <strong>{{formationSummary.label}}</strong></div>
-        </div>
-        <div class="po-march-formation-actions">
-          {{#if isGM}}
-          <button type="button" class="po-btn po-btn-sm" data-action="sync-rest-watch">
-            <i class="fa-solid fa-arrows-rotate"></i> Read Rest Watch
-          </button>
-          <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Run Doctrine Check</button>
-          {{/if}}
-        </div>
-      </div>
-
-      <div class="po-march-formation-meta-grid">
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Category</div>
-          <div class="po-watch-total-value">{{formationSummary.categoryLabel}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Formation State</div>
-          <div class="po-watch-total-value">{{formationSummary.formationStateLabel}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Doctrine State</div>
-          <div class="po-watch-total-value">{{formationSummary.doctrineStateLabel}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Layout Validity</div>
-          <div class="po-watch-total-value">{{formationSummary.validityLabel}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Doctrine Checks</div>
-          <div class="po-watch-total-value">{{#if formationSummary.doctrineChecksActive}}Active{{else}}Inactive{{/if}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Cohesion Checks</div>
-          <div class="po-watch-total-value">{{#if formationSummary.cohesionChecksActive}}Active{{else}}Inactive{{/if}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Cohesion Required</div>
-          <div class="po-watch-total-value">{{#if formationSummary.cohesionCheckRequired}}Yes{{else}}No{{/if}}</div>
-        </article>
-        <article class="po-march-formation-meta-card">
-          <div class="po-watch-total-label">Last Doctrine Check</div>
-          <div class="po-watch-total-value">{{formationSummary.lastCheckAt}}</div>
-        </article>
-      </div>
-
-      <div class="po-march-formation-detail-grid">
-        <div class="po-march-formation-detail-card">
-          <div class="po-watch-total-label">Summary</div>
-          <div class="po-op-summary">{{formationSummary.summary}}</div>
-          <div class="po-op-summary"><strong>Last Trigger:</strong> {{formationSummary.lastCheckTriggerLabel}}</div>
-          <div class="po-op-summary"><strong>Last Summary:</strong> {{formationSummary.lastCheckSummary}}</div>
-          {{#if formationSummary.pendingTriggerLabel}}
-          <div class="po-op-summary"><strong>Pending Trigger:</strong> {{formationSummary.pendingTriggerLabel}}</div>
-          {{/if}}
-        </div>
-
-        <div class="po-march-formation-detail-card">
-          <div class="po-watch-total-label">Active Effects</div>
-          <div class="po-slot-insights">
-            {{#each formationSummary.effectSummaries}}
-            <span class="po-slot-chip">{{this}}</span>
-            {{else}}
-            <span class="po-slot-chip">No active effects</span>
-            {{/each}}
-          </div>
-        </div>
-
-        {{#if formationSummary.invalidReasons.[0]}}
-        <div class="po-march-formation-detail-card is-invalid">
-          <div class="po-watch-total-label">Warnings</div>
-          {{#each formationSummary.invalidReasons}}
-          <div class="po-op-summary is-warn">{{message}}</div>
-          {{/each}}
-        </div>
-        {{/if}}
-      </div>
-
-      {{#if isGM}}
-      <div class="po-formation-card-grid po-formation-card-grid-wide">
-        {{#each formationChoiceCards}}
-        <button type="button" class="po-formation-card {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}" title="{{summary}}">
-          <div class="po-formation-card-main">
-            <div class="po-formation-card-head">
-              <strong>{{label}}</strong>
-              <span>{{categoryLabel}}</span>
-            </div>
-            <div class="po-op-summary po-formation-card-summary">{{summary}}</div>
-            <div class="po-formation-card-effects">
-              <div class="po-formation-card-effect-line">
-                <span class="po-formation-card-effect-label is-positive">Passive +</span>
-                <span class="po-formation-card-effect-value">{{passivePositiveSummary}}</span>
-              </div>
-              <div class="po-formation-card-effect-line">
-                <span class="po-formation-card-effect-label is-negative">Passive -</span>
-                <span class="po-formation-card-effect-value">{{passiveNegativeSummary}}</span>
-              </div>
-            </div>
-          </div>
-          <div class="po-formation-preview-grid" aria-hidden="true">
-            {{#each previewRows}}
-            <div class="po-formation-preview-row">
-              {{#each cells}}
-              <span class="po-formation-preview-dot {{#if filled}}is-filled{{/if}}"></span>
-              {{/each}}
-            </div>
-            {{/each}}
-          </div>
-        </button>
-        {{/each}}
-      </div>
-      {{/if}}
-    </section>
-
     <div class="po-grid po-columns po-primary-layout">
       <div id="po-march-ranks" class="po-ranks po-left">
         <section class="po-gm-section po-march-board-panel" aria-label="Formation board">
@@ -260,7 +170,7 @@
                     {{/if}}
                   </article>
                   {{else}}
-                  <button type="button" class="po-march-board-slot" data-action="{{action}}" data-rank-id="{{../id}}" data-insert-index="{{insertIndex}}" {{#if actionDisabled}}disabled{{/if}}>
+                  <button type="button" class="po-march-board-slot" data-action="{{action}}" data-rank-id="{{../id}}" data-cell-index="{{column}}" data-insert-index="{{insertIndex}}" {{#if actionDisabled}}disabled{{/if}}>
                     <span class="po-march-board-cell-placeholder">{{placeholderLabel}}</span>
                     <span class="po-march-board-cell-cta">{{actionLabel}}</span>
                   </button>
@@ -282,6 +192,124 @@
               </div>
               {{/each}}
             </div>
+          </div>
+          {{/if}}
+        </section>
+
+        <section id="po-march-formations" class="po-gm-section po-march-formation-panel" aria-label="Formation details">
+          <div class="po-march-formation-head">
+            <div>
+              <div class="po-section-title">Formation Details</div>
+              <div class="po-formation-display">Current: <strong>{{formationSummary.label}}</strong></div>
+            </div>
+            <div class="po-march-formation-actions">
+              {{#if isGM}}
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Run Doctrine Check</button>
+              {{/if}}
+            </div>
+          </div>
+
+          <div class="po-march-formation-layout">
+            <div class="po-march-formation-main">
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Summary</div>
+                <div class="po-op-summary">{{formationSummary.summary}}</div>
+                <div class="po-op-summary"><strong>Last Trigger:</strong> {{formationSummary.lastCheckTriggerLabel}}</div>
+                <div class="po-op-summary"><strong>Last Summary:</strong> {{formationSummary.lastCheckSummary}}</div>
+                {{#if formationSummary.pendingTriggerLabel}}
+                <div class="po-op-summary"><strong>Pending Trigger:</strong> {{formationSummary.pendingTriggerLabel}}</div>
+                {{/if}}
+              </div>
+
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Active Effects</div>
+                <div class="po-op-summary">
+                  {{#each formationSummary.effectSummaries}}
+                  {{this}}{{#unless @last}}; {{/unless}}
+                  {{else}}
+                  No active effects
+                  {{/each}}
+                </div>
+              </div>
+
+              {{#if formationSummary.invalidReasons.[0]}}
+              <div class="po-march-formation-detail-card is-invalid">
+                <div class="po-watch-total-label">Warnings</div>
+                {{#each formationSummary.invalidReasons}}
+                <div class="po-op-summary is-warn">{{message}}</div>
+                {{/each}}
+              </div>
+              {{/if}}
+            </div>
+
+            <aside class="po-march-formation-meta-panel" aria-label="Formation status">
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Category</div>
+                <div class="po-watch-total-value">{{formationSummary.categoryLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Formation State</div>
+                <div class="po-watch-total-value">{{formationSummary.formationStateLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Doctrine State</div>
+                <div class="po-watch-total-value">{{formationSummary.doctrineStateLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Layout Validity</div>
+                <div class="po-watch-total-value">{{formationSummary.validityLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Doctrine Checks</div>
+                <div class="po-watch-total-value">{{#if formationSummary.doctrineChecksActive}}Active{{else}}Inactive{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Cohesion Checks</div>
+                <div class="po-watch-total-value">{{#if formationSummary.cohesionChecksActive}}Active{{else}}Inactive{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Cohesion Required</div>
+                <div class="po-watch-total-value">{{#if formationSummary.cohesionCheckRequired}}Yes{{else}}No{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Last Doctrine Check</div>
+                <div class="po-watch-total-value">{{formationSummary.lastCheckAt}}</div>
+              </div>
+            </aside>
+          </div>
+
+          {{#if isGM}}
+          <div class="po-formation-card-grid po-formation-card-grid-wide">
+            {{#each formationChoiceCards}}
+            <button type="button" class="po-formation-card {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}" title="{{summary}}">
+              <div class="po-formation-card-main">
+                <div class="po-formation-card-head">
+                  <strong>{{label}}</strong>
+                  <span>{{categoryLabel}}</span>
+                </div>
+                <div class="po-op-summary po-formation-card-summary">{{summary}}</div>
+                <div class="po-formation-card-effects">
+                  <div class="po-formation-card-effect-line">
+                    <span class="po-formation-card-effect-label is-positive">Passive +</span>
+                    <span class="po-formation-card-effect-value">{{passivePositiveSummary}}</span>
+                  </div>
+                  <div class="po-formation-card-effect-line">
+                    <span class="po-formation-card-effect-label is-negative">Passive -</span>
+                    <span class="po-formation-card-effect-value">{{passiveNegativeSummary}}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="po-formation-preview-grid" aria-hidden="true">
+                {{#each previewRows}}
+                <div class="po-formation-preview-row">
+                  {{#each cells}}
+                  <span class="po-formation-preview-dot {{#if filled}}is-filled{{/if}}"></span>
+                  {{/each}}
+                </div>
+                {{/each}}
+              </div>
+            </button>
+            {{/each}}
           </div>
           {{/if}}
         </section>
@@ -309,52 +337,6 @@
             </div>
             {{/each}}
             </div>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div id="po-march-gm-export" class="po-gm-section po-collapsible {{#if gmSections.exportCollapsed}}is-collapsed{{/if}}" data-section-id="gm-export">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Export</div>
-          </header>
-          {{#unless gmSections.exportCollapsed}}
-          <div class="po-collapsible-body">
-            <button type="button" class="po-btn" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
-            <button type="button" class="po-btn" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div id="po-march-gm-snapshot" class="po-gm-section po-collapsible {{#if gmSections.snapshotCollapsed}}is-collapsed{{/if}}" data-section-id="gm-snapshot">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Snapshot</div>
-          </header>
-          {{#unless gmSections.snapshotCollapsed}}
-          <div class="po-collapsible-body">
-            <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div id="po-march-gm-clear" class="po-gm-section po-collapsible {{#if gmSections.clearCollapsed}}is-collapsed{{/if}}" data-section-id="gm-clear">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">Clear</div>
-          </header>
-          {{#unless gmSections.clearCollapsed}}
-          <div class="po-collapsible-body">
-            <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
-          </div>
-          {{/unless}}
-        </div>
-
-        <div id="po-march-gm-notes" class="po-gm-section po-collapsible {{#if gmSections.gmNotesCollapsed}}is-collapsed{{/if}}" data-section-id="gm-notes">
-          <header class="po-collapsible-head">
-            <div class="po-section-title">GM Marching Notes</div>
-          </header>
-          {{#unless gmSections.gmNotesCollapsed}}
-          <div class="po-collapsible-body">
-            <label class="po-sr-only" for="po-gm-march-notes">Global marching notes</label>
-            <textarea id="po-gm-march-notes" class="po-gm-notes" rows="4" placeholder="Global notes" aria-label="Global marching notes">{{gmNotes}}</textarea>
           </div>
           {{/unless}}
         </div>

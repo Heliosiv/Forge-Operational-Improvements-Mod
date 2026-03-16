@@ -4,6 +4,7 @@ export function registerPartyOpsUiSettings({
   settingsHubType,
   areAdvancedSettingsEnabled,
   lootScarcityLevels,
+  lootHordeUncommonPlusChanceModes = {},
   playerHubModes,
   defaultPartyOpsConfig,
   validatePartyOpsConfig,
@@ -82,6 +83,30 @@ export function registerPartyOpsUiSettings({
         ? raw
         : lootScarcityLevels.NORMAL;
       notifySettingChanged(settings.LOOT_SCARCITY, normalized);
+    }
+  });
+
+  game.settings.register(moduleId, settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE, {
+    name: "Horde Uncommon+ Roll Rate",
+    hint: "Choose how often horde loot generation opens the uncommon+ item lane.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      [lootHordeUncommonPlusChanceModes.STANDARD ?? "standard"]: "Standard",
+      [lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"]: "Boosted",
+      [lootHordeUncommonPlusChanceModes.HIGH ?? "high"]: "High",
+      [lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed"]: "Guaranteed"
+    },
+    default: lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted",
+    onChange: (value) => {
+      const raw = String(value ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted").trim().toLowerCase();
+      const normalized = raw === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard")
+        || raw === (lootHordeUncommonPlusChanceModes.HIGH ?? "high")
+        || raw === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed")
+        ? raw
+        : (lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted");
+      notifySettingChanged(settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE, normalized);
     }
   });
 

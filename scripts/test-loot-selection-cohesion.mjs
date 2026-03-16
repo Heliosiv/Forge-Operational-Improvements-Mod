@@ -22,7 +22,7 @@ const quiver = {
 
 const bundle = buildLootCohesiveBundle(arrow, {
   budgetRemainingGp: 10,
-  draft: { challenge: "mid" },
+  draft: { mode: "horde", challenge: "mid", scale: "medium" },
   pool: [quiver],
   selected: [],
   random: () => 0
@@ -54,7 +54,7 @@ const arrows = {
 
 const rangedBundle = buildLootCohesiveBundle(longbow, {
   budgetRemainingGp: 60,
-  draft: { challenge: "mid" },
+  draft: { mode: "horde", challenge: "mid", scale: "medium" },
   pool: [arrows, quiver],
   selected: [],
   random: () => 0
@@ -76,7 +76,7 @@ const gem = {
 
 const gemBundle = buildLootCohesiveBundle(gem, {
   budgetRemainingGp: 250,
-  draft: { challenge: "mid" },
+  draft: { mode: "horde", challenge: "mid", scale: "medium" },
   pool: [],
   selected: [],
   random: () => 0
@@ -96,7 +96,7 @@ const boltCase = {
 
 const boltCaseBundle = buildLootCohesiveBundle(boltCase, {
   budgetRemainingGp: 20,
-  draft: { challenge: "mid" },
+  draft: { mode: "horde", challenge: "mid", scale: "medium" },
   pool: [],
   selected: [],
   random: () => 0
@@ -105,5 +105,32 @@ const boltCaseBundle = buildLootCohesiveBundle(boltCase, {
 assert.equal(boltCaseBundle.length, 1);
 assert.equal(boltCaseBundle[0].candidate.uuid, "Item.bolt-case");
 assert.equal(boltCaseBundle[0].quantity, 1);
+
+const majorArrowBundle = buildLootCohesiveBundle(arrow, {
+  budgetRemainingGp: 10,
+  draft: { mode: "horde", challenge: "mid", scale: "major" },
+  pool: [quiver],
+  selected: [],
+  random: () => 0
+});
+
+assert.equal(majorArrowBundle[0].candidate.uuid, "Item.arrow");
+assert.ok(
+  majorArrowBundle[0].quantity <= 4,
+  "Major hordes should keep ammo batching to a few pieces instead of flooding the output."
+);
+
+const majorGemBundle = buildLootCohesiveBundle(gem, {
+  budgetRemainingGp: 250,
+  draft: { mode: "horde", challenge: "mid", scale: "major" },
+  pool: [],
+  selected: [],
+  random: () => 0
+});
+
+assert.ok(
+  majorGemBundle[0].quantity <= 2,
+  "Major hordes should keep valuables grouped into a small number of picks."
+);
 
 process.stdout.write("loot selection cohesion validation passed\n");

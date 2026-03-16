@@ -112,7 +112,8 @@
               <div class="po-watch-assignment-list">
                 {{#each assignmentRows}}
                 <div
-                  class="po-watch-assignment-row {{#if occupied}}is-filled{{/if}}">
+                  class="po-watch-assignment-row {{#if occupied}}is-filled{{/if}} {{#unless isVisible}}is-hidden{{/unless}}"
+                  data-entry-index="{{index}}">
                   <label class="po-watch-assignment-label" for="po-slot-select-{{../id}}-{{index}}">{{slotLabel}}</label>
                   <div class="po-watch-assignment-controls">
                     <select
@@ -133,8 +134,9 @@
                       data-slot-id="{{../id}}"
                       data-entry-index="{{index}}"
                       data-committed-actor-id="{{committedActorId}}"
-                      aria-label="Clear {{slotLabel}}"
-                      {{#unless hasSelectableValue}}disabled{{/unless}}>
+                      aria-label="{{clearButtonLabel}}"
+                      title="{{clearButtonLabel}}"
+                      {{#unless hasSelectableValue}}{{#unless canRemoveVisibleSlot}}disabled{{/unless}}{{/unless}}>
                       <i class="fa-solid fa-xmark"></i>
                     </button>
                   </div>

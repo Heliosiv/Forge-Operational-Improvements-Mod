@@ -7,11 +7,11 @@ export const REST_WATCH_SHARED_NOTE_APP_ID = "party-operations-rest-watch-shared
 export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
     id: REST_WATCH_SHARED_NOTE_APP_ID,
-    classes: ["party-operations"],
+    classes: ["party-operations", "po-shared-note-app"],
     tag: "section",
     window: { title: "Party Operations - Shared Rest Note" },
     position: {
-      width: 520,
+      width: 560,
       height: "auto"
     },
     resizable: true
@@ -70,8 +70,9 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
 
   async _onRender(context, options) {
     await super._onRender(context, options);
-    bindCanvasKeyboardSuppression(this.element);
-    const root = this.element;
+    const root = this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null);
+    if (!root) return;
+    bindCanvasKeyboardSuppression(root);
     if (!root) return;
 
     const textarea = root.querySelector("[data-shared-note-input]");
@@ -134,7 +135,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     this.#draftText = text;
     if (saved) {
       await this.render({ force: true, parts: ["main"], focus: false });
-      this.bringToTop?.();
+      this.bringToFront?.();
     }
   }
 }

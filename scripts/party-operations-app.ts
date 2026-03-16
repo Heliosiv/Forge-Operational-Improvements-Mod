@@ -11,16 +11,14 @@ import {
   generateSuggestedLoot
 } from "./loot-generation-engine";
 
-type PartyOpsTab = "rest-watch" | "marching-order" | "loot";
+type PartyOpsTab = "marching-order" | "loot";
 
 interface PartyOpsSnapshots {
-  restWatch: unknown;
   marchingOrder: unknown;
 }
 
 interface PartyOpsAppData {
   activeTab: PartyOpsTab;
-  tabRestWatch: boolean;
   tabMarchingOrder: boolean;
   tabLoot: boolean;
   isGeneratingLoot: boolean;
@@ -30,7 +28,6 @@ interface PartyOpsAppData {
   settings: PartyOpsConfig;
   snapshots: PartyOpsSnapshots;
   snapshotsText: {
-    restWatch: string;
     marchingOrder: string;
   };
   lootDraft: {
@@ -50,7 +47,6 @@ interface PartyOpsAppData {
 
 interface PartyOpsUiServices {
   getSettingsSnapshot(): PartyOpsConfig;
-  getRestWatchSnapshot(): unknown;
   getMarchingOrderSnapshot(): unknown;
   generateLoot(input: LootGenerationInput): Promise<LootGenerationOutput>;
 }
@@ -97,10 +93,6 @@ class PartyOpsDefaultUiServices implements PartyOpsUiServices {
     return validateConfig(raw);
   }
 
-  getRestWatchSnapshot(): unknown {
-    return game?.settings?.get?.(this.moduleId, "restWatchState") ?? {};
-  }
-
   getMarchingOrderSnapshot(): unknown {
     return game?.settings?.get?.(this.moduleId, "marchingOrderState") ?? {};
   }
@@ -132,7 +124,7 @@ class PartyOpsDefaultUiServices implements PartyOpsUiServices {
 }
 
 export class PartyOperationsApp extends Application {
-  private activeTab: PartyOpsTab = "rest-watch";
+  private activeTab: PartyOpsTab = "marching-order";
   private lootResult: LootGenerationOutput | null = null;
   private lootDraft: PartyOpsAppData["lootDraft"] = {
     cr: 5,
@@ -163,11 +155,9 @@ export class PartyOperationsApp extends Application {
   }
 
   async getData(): Promise<PartyOpsAppData> {
-    const restWatch = this.services.getRestWatchSnapshot();
     const marchingOrder = this.services.getMarchingOrderSnapshot();
     return {
       activeTab: this.activeTab,
-      tabRestWatch: this.activeTab === "rest-watch",
       tabMarchingOrder: this.activeTab === "marching-order",
       tabLoot: this.activeTab === "loot",
       isGeneratingLoot: this.isGeneratingLoot,
@@ -176,11 +166,9 @@ export class PartyOperationsApp extends Application {
       lootStatus: this.isGeneratingLoot ? "Generating loot…" : this.lootResult ? "Loot generated." : "Ready.",
       settings: this.services.getSettingsSnapshot(),
       snapshots: {
-        restWatch,
         marchingOrder
       },
       snapshotsText: {
-        restWatch: JSON.stringify(restWatch ?? {}, null, 2),
         marchingOrder: JSON.stringify(marchingOrder ?? {}, null, 2)
       },
       lootDraft: {
@@ -202,8 +190,8 @@ export class PartyOperationsApp extends Application {
 
     html.find("[data-action='switch-tab']").on("click", (event) => {
       const target = event.currentTarget as HTMLElement;
-      const nextTab = String(target?.dataset?.tab ?? "rest-watch") as PartyOpsTab;
-      this.activeTab = ["rest-watch", "marching-order", "loot"].includes(nextTab) ? nextTab : "rest-watch";
+      const nextTab = String(target?.dataset?.tab ?? "marching-order") as PartyOpsTab;
+      this.activeTab = ["marching-order", "loot"].includes(nextTab) ? nextTab : "marching-order";
       void this.render(false);
     });
 

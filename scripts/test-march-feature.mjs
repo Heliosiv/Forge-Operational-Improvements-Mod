@@ -72,6 +72,11 @@ class FakeElement {
     ranks: {
       front: ["actor-b"],
       rear: ["actor-a"]
+    },
+    rankPlacements: {
+      front: { "actor-b": 1 },
+      middle: {},
+      rear: { "actor-a": 1 }
     }
   };
   const app = { id: "march-app" };
@@ -148,6 +153,8 @@ class FakeElement {
 
   assert.deepEqual(state.ranks.front, ["actor-a", "actor-b"]);
   assert.deepEqual(state.ranks.rear, []);
+  assert.deepEqual(state.rankPlacements.front, { "actor-b": 1 });
+  assert.deepEqual(state.rankPlacements.rear, {});
   assert.deepEqual(refreshes, [app]);
 
   setupMarchingDragAndDrop(html, {
@@ -173,6 +180,11 @@ class FakeElement {
       front: ["actor-b"],
       middle: [],
       rear: []
+    },
+    rankPlacements: {
+      front: { "actor-b": 1 },
+      middle: {},
+      rear: {}
     }
   };
   const refreshes = [];
@@ -186,7 +198,7 @@ class FakeElement {
     classes: ["po-march-board-card"]
   });
   const boardCell = new FakeElement({
-    dataset: { rankId: "front", insertIndex: "0" },
+    dataset: { rankId: "front", cellIndex: "0", insertIndex: "0" },
     classes: ["po-march-board-cell"]
   });
   boardCell.queryAllResolver = (selector) => selector === ".po-march-board-card" ? [boardCard] : [];
@@ -228,6 +240,7 @@ class FakeElement {
   });
 
   assert.deepEqual(state.ranks.front, ["actor-a", "actor-b"]);
+  assert.deepEqual(state.rankPlacements.front, { "actor-a": 0, "actor-b": 1 });
   assert.deepEqual(refreshes, ["march-app"]);
 }
 

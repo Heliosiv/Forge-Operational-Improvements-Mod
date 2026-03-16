@@ -4,6 +4,7 @@ export function createPartyOperationsSettingsHub({
   moduleId,
   settings,
   lootScarcityLevels,
+  lootHordeUncommonPlusChanceModes = {},
   playerHubModes,
   launcherPlacements,
   inventoryHookModes,
@@ -45,6 +46,9 @@ export function createPartyOperationsSettingsHub({
       const advancedEnabled = areAdvancedSettingsEnabled();
       const playerHubMode = normalizePlayerHubMode(game.settings.get(moduleId, settings.PLAYER_HUB_MODE));
       const lootScarcity = String(game.settings.get(moduleId, settings.LOOT_SCARCITY) ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
+      const hordeUncommonPlusChance = String(
+        game.settings.get(moduleId, settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE) ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"
+      ).trim().toLowerCase();
       const integrationMode = String(game.settings.get(moduleId, settings.INTEGRATION_MODE) ?? "auto").trim().toLowerCase();
       const inventoryHookMode = normalizeInventoryHookMode(game.settings.get(moduleId, settings.INVENTORY_HOOK_MODE));
       const launcherPlacement = normalizeLauncherPlacement(game.settings.get(moduleId, settings.LAUNCHER_PLACEMENT));
@@ -63,6 +67,10 @@ export function createPartyOperationsSettingsHub({
         lootScarcityAbundant: lootScarcity === lootScarcityLevels.ABUNDANT,
         lootScarcityNormal: lootScarcity === lootScarcityLevels.NORMAL,
         lootScarcityScarce: lootScarcity === lootScarcityLevels.SCARCE,
+        hordeUncommonPlusChanceStandard: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard"),
+        hordeUncommonPlusChanceBoosted: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"),
+        hordeUncommonPlusChanceHigh: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.HIGH ?? "high"),
+        hordeUncommonPlusChanceGuaranteed: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed"),
         integrationModeAuto: integrationMode === "auto",
         integrationModeOff: integrationMode === "off",
         integrationModeFlags: integrationMode === "flags",
@@ -106,6 +114,13 @@ export function createPartyOperationsSettingsHub({
           const value = String(data.lootScarcity ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
           if (value === lootScarcityLevels.ABUNDANT || value === lootScarcityLevels.SCARCE) return value;
           return lootScarcityLevels.NORMAL;
+        })()],
+        [settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE, (() => {
+          const value = String(data.lootHordeUncommonPlusChance ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted").trim().toLowerCase();
+          if (value === (lootHordeUncommonPlusChanceModes.STANDARD ?? "standard")) return value;
+          if (value === (lootHordeUncommonPlusChanceModes.HIGH ?? "high")) return value;
+          if (value === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed")) return value;
+          return lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted";
         })()],
         [settings.INTEGRATION_MODE, (() => {
           const value = String(data.integrationMode ?? "auto").trim().toLowerCase();
