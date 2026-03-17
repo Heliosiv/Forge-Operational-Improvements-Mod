@@ -18,7 +18,18 @@ const functionBlock = [
   extractFunctionBlock(moduleSource, "getLootRaritySelectionCaps", "canSelectLootRarityWithCaps")
 ].join("\n\n");
 
-const context = vm.createContext({ result: {} });
+const context = vm.createContext({
+  buildLootValueBudgetContext(draft = {}, targetCount = 0) {
+    const manualTarget = Math.max(0, Number(draft?.targetItemsValueGp ?? 0) || 0);
+    const count = Math.max(1, Number(targetCount) || 1);
+    const itemBudgetGp = manualTarget > 0 ? manualTarget : 1000;
+    return {
+      targetItemBudgetGp: itemBudgetGp,
+      targetPerItemGp: itemBudgetGp / count
+    };
+  },
+  result: {}
+});
 vm.runInContext(`${functionBlock}\nresult.getLootRaritySelectionCaps = getLootRaritySelectionCaps;`, context);
 
 const { getLootRaritySelectionCaps } = context.result;
@@ -57,5 +68,28 @@ const majorEpicCaps = getLootRaritySelectionCaps({
 assert.ok(majorEpicCaps.rare >= 1, "Major epic hordes should guarantee at least one rare slot.");
 assert.ok(majorEpicCaps["very-rare"] >= 1, "Major epic hordes should guarantee at least one very-rare slot.");
 assert.ok(majorEpicCaps.legendary >= 1, "Major epic hordes should be able to guarantee a legendary slot at sufficient size.");
+
+const budgetAwareCaps = getLootRaritySelectionCaps({
+  mode: "horde",
+  challenge: "high",
+  scale: "medium",
+  targetItemsValueGp: 4000
+}, 10);
+
+const lowBudgetCaps = getLootRaritySelectionCaps({
+  mode: "horde",
+  challenge: "high",
+  scale: "medium",
+  targetItemsValueGp: 600
+}, 10);
+
+assert.ok(
+  budgetAwareCaps.rare > lowBudgetCaps.rare,
+  "Higher target-value hordes should raise rare-item caps instead of letting scale alone clamp them."
+);
+assert.ok(
+  budgetAwareCaps["very-rare"] >= lowBudgetCaps["very-rare"],
+  "Higher target-value hordes should preserve or improve very-rare access."
+);
 
 process.stdout.write("loot rarity caps validation passed\n");

@@ -42,6 +42,13 @@ const context = vm.createContext({
       }
     }
   },
+  buildLootValueBudgetContext(draft = {}) {
+    const manualTarget = Math.max(0, Number(draft?.targetItemsValueGp ?? 0) || 0);
+    if (manualTarget >= 3000) {
+      return { targetItemBudgetGp: 1900, targetPerItemGp: 260 };
+    }
+    return { targetItemBudgetGp: 700, targetPerItemGp: 70 };
+  },
   result: {}
 });
 
@@ -91,6 +98,18 @@ assert.equal(
   "Medium hordes should keep premium picks out of the general lane."
 );
 
+const budgetAwareMediumLane = getLootGeneralLanePool([cheapFiller, strongUncommon, solidCommon], {
+  mode: "horde",
+  challenge: "mid",
+  scale: "medium",
+  targetItemsValueGp: 3800
+});
+assert.equal(
+  budgetAwareMediumLane.some((entry) => entry.name === "Wand of Secrets"),
+  true,
+  "High target-value medium hordes should not let scale hide higher-priced options."
+);
+
 const majorLane = getLootGeneralLanePool([cheapFiller, strongUncommon, solidCommon], {
   mode: "horde",
   challenge: "mid",
@@ -136,6 +155,23 @@ const highPremiumLane = buildLootPremiumLaneConfig(
 assert.equal(standardPremiumLane.enabled, false, "Standard horde uncommon+ odds should still allow misses.");
 assert.equal(highPremiumLane.enabled, true, "High horde uncommon+ odds should convert the same roll into a premium lane hit.");
 assert.ok(highPremiumLane.budgetRatio > standardPremiumLane.budgetRatio, "Higher uncommon+ settings should reserve more budget for premium picks.");
+
+const budgetAwarePremiumLane = buildLootPremiumLaneConfig(
+  { mode: "horde", challenge: "mid", scale: "medium", profile: "standard", hordeUncommonPlusChance: "standard" },
+  { targetItemBudgetGp: 2400, targetCount: 6, targetPerItemGp: 400 },
+  [strongUncommon],
+  () => 0.4
+);
+
+assert.equal(
+  budgetAwarePremiumLane.enabled,
+  true,
+  "Higher target-value medium hordes should open the premium lane even without relying only on scale."
+);
+assert.ok(
+  budgetAwarePremiumLane.budgetRatio > standardPremiumLane.budgetRatio,
+  "Premium lane budget share should grow when the item target value is much higher."
+);
 
 const guaranteedPremiumLane = buildLootPremiumLaneConfig(
   { mode: "horde", challenge: "low", scale: "small", profile: "poor", hordeUncommonPlusChance: "guaranteed" },

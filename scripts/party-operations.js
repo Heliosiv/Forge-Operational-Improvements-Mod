@@ -422,6 +422,12 @@ let cachedAppWindowPositions = {};
 let cachedAppWindowPositionsLoaded = false;
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
+const lootSourceItemsCache = new Map();
+const lootCandidateBuildCache = new Map();
+const LOOT_SOURCE_ITEMS_CACHE_TTL_MS = 30000;
+const LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES = 64;
+const LOOT_CANDIDATE_BUILD_CACHE_TTL_MS = 15000;
+const LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES = 24;
 const audioLibraryMetadataWarmupState = {
   queued: false,
   inFlight: false,
@@ -17839,6 +17845,28 @@ function buildLootPremiumLaneConfig(draft = {}, budgetContext = {}, premiumPool 
     chance = 1;
     ratio += 0.1;
   }
+  const itemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
+  const targetCountRaw = Number(budgetContext?.targetCount ?? 0);
+  const targetCount = Number.isFinite(targetCountRaw) && targetCountRaw > 0
+    ? Math.max(1, targetCountRaw)
+    : 0;
+  const targetPerItemGp = Math.max(0, Number(
+    budgetContext?.targetPerItemGp
+    ?? (itemBudgetGp > 0 && targetCount > 0 ? itemBudgetGp / Math.max(1, targetCount) : 0)
+    ?? 0
+  ) || 0);
+  if (targetPerItemGp >= 140 || itemBudgetGp >= 1200) {
+    chance += 0.06;
+    ratio += 0.04;
+  }
+  if (targetPerItemGp >= 260 || itemBudgetGp >= 2200) {
+    chance += 0.1;
+    ratio += 0.06;
+  }
+  if (targetPerItemGp >= 420 || itemBudgetGp >= 3600) {
+    chance += 0.12;
+    ratio += 0.08;
+  }
   if (scale === "major") chance = Math.max(chance, 0.95);
   const normalizedChance = uncommonPlusChanceMode === LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES.GUARANTEED
     ? 1
@@ -17846,10 +17874,9 @@ function buildLootPremiumLaneConfig(draft = {}, budgetContext = {}, premiumPool 
   const normalizedRatio = Math.max(0.08, Math.min(0.55, Number(ratio.toFixed(4))));
   const roll = Math.max(0, Math.min(0.999999, Number(typeof randomFn === "function" ? randomFn() : Math.random()) || 0));
   const enabled = roll < normalizedChance;
-  const itemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
   const targetBudgetGp = Number((itemBudgetGp * normalizedRatio).toFixed(2));
   const targetCountBase = challenge === "epic" ? 3 : challenge === "high" ? 2 : challenge === "mid" ? 2 : 1;
-  const targetCount = Math.max(1, Math.min(
+  const premiumTargetCount = Math.max(1, Math.min(
     scale === "major" ? targetCountBase + 1 : targetCountBase,
     pool.length
   ));
@@ -17860,7 +17887,7 @@ function buildLootPremiumLaneConfig(draft = {}, budgetContext = {}, premiumPool 
     chance: normalizedChance,
     budgetRatio: normalizedRatio,
     targetBudgetGp,
-    targetCount
+    targetCount: premiumTargetCount
   };
 }
 
@@ -17898,14 +17925,27 @@ function getLootGeneralLanePool(pool = [], draft = {}) {
   if (mode !== "horde") return Array.isArray(pool) ? pool : [];
   const sourcePool = Array.isArray(pool) ? pool : [];
   const scale = String(draft?.scale ?? "medium").trim().toLowerCase();
-  if (scale === "major") {
+  const budgetContext = buildLootValueBudgetContext(draft, 0);
+  const targetItemBudgetGp = Math.max(0, Number(
+    draft?.targetItemBudgetGp
+    ?? budgetContext?.targetItemBudgetGp
+    ?? 0
+  ) || 0);
+  const targetPerItemGp = Math.max(0, Number(
+    draft?.targetPerItemGp
+    ?? budgetContext?.targetPerItemGp
+    ?? 0
+  ) || 0);
+  const allowBroaderPool = scale === "major" || targetPerItemGp >= 220 || targetItemBudgetGp >= 1800;
+  const suppressFillerCollapse = allowBroaderPool || targetPerItemGp >= 110 || targetItemBudgetGp >= 900;
+  if (allowBroaderPool) {
     return sourcePool.length > 0 ? sourcePool : [];
   }
   const practicalPool = sourcePool.filter((entry) => {
     if (isLootPremiumRarity(entry)) return false;
     return isLootPracticalHoardFiller(entry);
   });
-  if (practicalPool.length >= Math.max(3, Math.floor(sourcePool.length * 0.15))) return practicalPool;
+  if (!suppressFillerCollapse && practicalPool.length >= Math.max(3, Math.floor(sourcePool.length * 0.15))) return practicalPool;
   const nonPremiumPool = sourcePool.filter((entry) => !isLootPremiumRarity(entry));
   return nonPremiumPool.length > 0 ? nonPremiumPool : sourcePool;
 }
@@ -19754,6 +19794,24 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
     );
   }
 
+  if (mode === "horde" && count > 0) {
+    const budgetContext = buildLootValueBudgetContext(draft, count);
+    const targetItemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
+    const targetPerItemGp = Math.max(0, Number(budgetContext?.targetPerItemGp ?? 0) || 0);
+    if (targetPerItemGp >= 110 || targetItemBudgetGp >= 900) {
+      caps.uncommon = Math.max(caps.uncommon, Math.min(count, Math.max(1, Math.ceil(count * 0.4))));
+    }
+    if (targetPerItemGp >= 180 || targetItemBudgetGp >= 1400) {
+      caps.rare = Math.max(caps.rare, Math.min(count, Math.max(1, Math.ceil(count * 0.18))));
+    }
+    if ((challenge === "high" || challenge === "epic") && (targetPerItemGp >= 320 || targetItemBudgetGp >= 2400)) {
+      caps["very-rare"] = Math.max(caps["very-rare"], Math.min(count, Math.max(1, Math.ceil(count * 0.08))));
+    }
+    if (challenge === "epic" && (targetPerItemGp >= 520 || targetItemBudgetGp >= 4200)) {
+      caps.legendary = Math.max(caps.legendary, Math.min(count, 1));
+    }
+  }
+
   return caps;
 }
 
@@ -19921,6 +19979,112 @@ function getLootItemCount(draft = {}) {
   return Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1);
 }
 
+function getLootBuilderPerfNow() {
+  const now = globalThis?.performance?.now?.();
+  if (Number.isFinite(now)) return Number(now);
+  return Date.now();
+}
+
+function getTimedCacheEntry(cache, key, nowMs = Date.now()) {
+  if (!(cache instanceof Map)) return null;
+  if (!cache.has(key)) return null;
+  const entry = cache.get(key);
+  if (!entry || nowMs > Number(entry.expiresAt ?? 0)) {
+    cache.delete(key);
+    return null;
+  }
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry.value;
+}
+
+function setTimedCacheEntry(cache, key, value, options = {}) {
+  if (!(cache instanceof Map)) return;
+  const ttlMs = Math.max(1000, Math.floor(Number(options?.ttlMs ?? 15000) || 15000));
+  const maxEntries = Math.max(1, Math.floor(Number(options?.maxEntries ?? 32) || 32));
+  const nowMs = Number(options?.nowMs ?? Date.now());
+  cache.set(key, {
+    expiresAt: nowMs + ttlMs,
+    value
+  });
+  while (cache.size > maxEntries) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+}
+
+function normalizeLootCacheKeyArray(values = []) {
+  const source = Array.isArray(values) ? values : [];
+  const deduped = [];
+  for (const raw of source) {
+    const normalized = String(raw ?? "").trim().toLowerCase();
+    if (!normalized || deduped.includes(normalized)) continue;
+    deduped.push(normalized);
+  }
+  deduped.sort((left, right) => left.localeCompare(right));
+  return deduped;
+}
+
+function buildLootSourceItemsCacheKey(sourceId = "", baseFilterOptions = {}) {
+  const normalizedSourceId = String(sourceId ?? "").trim();
+  const typeWhitelist = normalizeLootCacheKeyArray(baseFilterOptions?.typeWhitelist ?? []);
+  return JSON.stringify({
+    sourceId: normalizedSourceId,
+    typeWhitelist
+  });
+}
+
+function buildLootCandidateBuildCacheKey(sourceConfig = {}, draft = {}, options = {}) {
+  const filters = sourceConfig?.filters ?? {};
+  const includeTags = normalizeLootCacheKeyArray(filters?.keywordIncludeTags ?? []);
+  const excludeTags = normalizeLootCacheKeyArray(filters?.keywordExcludeTags ?? []);
+  const allowedTypes = normalizeLootCacheKeyArray(filters?.allowedTypes ?? []);
+  const packs = (Array.isArray(sourceConfig?.packs) ? sourceConfig.packs : [])
+    .filter((entry) => entry?.enabled !== false)
+    .map((entry) => ({
+      id: String(entry?.id ?? "").trim(),
+      label: String(entry?.label ?? "").trim(),
+      weight: Math.max(1, Math.floor(Number(entry?.weight ?? 1) || 1))
+    }))
+    .filter((entry) => entry.id)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return JSON.stringify({
+    packs,
+    filters: {
+      manifestPackId: String(filters?.manifestPackId ?? "").trim(),
+      allowedTypes,
+      rarityFloor: String(filters?.rarityFloor ?? "").trim().toLowerCase(),
+      rarityCeiling: String(filters?.rarityCeiling ?? "").trim().toLowerCase(),
+      includeTags,
+      excludeTags
+    },
+    draft: {
+      mode: String(draft?.mode ?? "").trim().toLowerCase(),
+      challenge: String(draft?.challenge ?? "").trim().toLowerCase(),
+      scale: String(draft?.scale ?? "").trim().toLowerCase(),
+      profile: String(draft?.profile ?? "").trim().toLowerCase(),
+      encounterCr: Number(draft?.encounterCr ?? draft?.encounterCR ?? 0) || 0,
+      partyLevel: Number(draft?.partyLevel ?? 0) || 0,
+      scarcity: String(draft?.scarcity ?? "").trim().toLowerCase(),
+      hordeUncommonPlusChance: String(draft?.hordeUncommonPlusChance ?? "").trim().toLowerCase()
+    },
+    manifestFolderId: String(options?.manifestFolderId ?? "").trim()
+  });
+}
+
+function cloneLootCandidateRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length <= 0) return [];
+  return rows.map((entry) => {
+    if (!entry || typeof entry !== "object") return entry;
+    return {
+      ...entry,
+      tags: Array.isArray(entry.tags) ? [...entry.tags] : entry.tags,
+      keywords: Array.isArray(entry.keywords) ? [...entry.keywords] : entry.keywords
+    };
+  });
+}
+
 function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
   const items = Array.isArray(result?.items) ? result.items : [];
   const currencyGpEquivalent = getLootPreviewCurrencyGpEquivalent(result?.currency ?? {});
@@ -19965,6 +20129,60 @@ function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
 }
 
 async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
+  const getPerfNow = typeof getLootBuilderPerfNow === "function"
+    ? getLootBuilderPerfNow
+    : (() => {
+      const now = globalThis?.performance?.now?.();
+      if (Number.isFinite(now)) return Number(now);
+      return Date.now();
+    });
+  const readCache = typeof getTimedCacheEntry === "function"
+    ? getTimedCacheEntry
+    : (() => null);
+  const writeCache = typeof setTimedCacheEntry === "function"
+    ? setTimedCacheEntry
+    : (() => {});
+  const buildSourceCacheKey = typeof buildLootSourceItemsCacheKey === "function"
+    ? buildLootSourceItemsCacheKey
+    : ((sourceId = "") => String(sourceId ?? "").trim());
+  const buildCandidatesCacheKey = typeof buildLootCandidateBuildCacheKey === "function"
+    ? buildLootCandidateBuildCacheKey
+    : (() => "");
+  const debugLog = typeof logLootBuilderDebug === "function"
+    ? logLootBuilderDebug
+    : (() => {});
+  const cloneCandidates = typeof cloneLootCandidateRows === "function"
+    ? cloneLootCandidateRows
+    : ((rows = []) => (Array.isArray(rows) ? rows.map((entry) => ({ ...(entry ?? {}) })) : []));
+  const sourceItemsCache = (typeof lootSourceItemsCache !== "undefined" && lootSourceItemsCache instanceof Map)
+    ? lootSourceItemsCache
+    : new Map();
+  const candidatesCache = (typeof lootCandidateBuildCache !== "undefined" && lootCandidateBuildCache instanceof Map)
+    ? lootCandidateBuildCache
+    : new Map();
+  const sourceItemsCacheTtlMs = Number(
+    typeof LOOT_SOURCE_ITEMS_CACHE_TTL_MS !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_TTL_MS : 30000
+  ) || 30000;
+  const sourceItemsCacheMaxEntries = Number(
+    typeof LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES : 64
+  ) || 64;
+  const candidateCacheTtlMs = Number(
+    typeof LOOT_CANDIDATE_BUILD_CACHE_TTL_MS !== "undefined" ? LOOT_CANDIDATE_BUILD_CACHE_TTL_MS : 15000
+  ) || 15000;
+  const candidateCacheMaxEntries = Number(
+    typeof LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES !== "undefined" ? LOOT_CANDIDATE_BUILD_CACHE_MAX_ENTRIES : 24
+  ) || 24;
+  const startedAtMs = getPerfNow();
+  const nowEpochMs = Date.now();
+  const metrics = {
+    candidateCacheHit: false,
+    sourceCacheHits: 0,
+    sourceCacheMisses: 0,
+    sourceLoadMs: 0,
+    sourceFilterMs: 0,
+    sourceCount: 0,
+    candidateCount: 0
+  };
   const allowedTypes = new Set(sourceConfig?.filters?.allowedTypes ?? []);
   const floor = String(sourceConfig?.filters?.rarityFloor ?? "");
   const ceiling = String(sourceConfig?.filters?.rarityCeiling ?? "");
@@ -19990,6 +20208,25 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
       });
     enabledSources = source ? [source] : [];
   }
+  metrics.sourceCount = enabledSources.length;
+  const candidateCacheKey = buildCandidatesCacheKey(sourceConfig, draft, {
+    manifestFolderId
+  });
+  const cachedCandidates = readCache(candidatesCache, candidateCacheKey, nowEpochMs);
+  if (Array.isArray(cachedCandidates)) {
+    metrics.candidateCacheHit = true;
+    const candidates = cloneCandidates(cachedCandidates);
+    metrics.candidateCount = candidates.length;
+    debugLog("buildLootItemCandidates timing", {
+      mode: draft?.mode,
+      challenge: draft?.challenge,
+      cache: "candidates-hit",
+      totalMs: Number((getPerfNow() - startedAtMs).toFixed(2)),
+      sourceCount: metrics.sourceCount,
+      candidateCount: metrics.candidateCount
+    });
+    return candidates;
+  }
   const candidates = [];
   const baseFilterOptions = {
     typeWhitelist: [...allowedTypes]
@@ -20003,23 +20240,41 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         : sourceLabelBase;
       const sourceWeight = Math.max(1, Math.floor(Number(source?.weight ?? 1) || 1));
       if (!sourceId) continue;
-      if (sourceId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
-        logLootBuilderDebug("ignoring non-world loot item source", { sourceId, sourceLabel });
-        continue;
+      const sourceCacheKey = buildSourceCacheKey(sourceId, baseFilterOptions);
+      let sourceItems = readCache(sourceItemsCache, sourceCacheKey, nowEpochMs);
+      if (!Array.isArray(sourceItems)) {
+        metrics.sourceCacheMisses += 1;
+        const loadStartedAt = getPerfNow();
+        const rawItems = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
+          ? (game.items?.contents ?? [])
+          : await loadItemsFromPack(sourceId, { warnings, sourceLabel });
+        metrics.sourceLoadMs += getPerfNow() - loadStartedAt;
+        const filterStartedAt = getPerfNow();
+        sourceItems = filterItems(rawItems, baseFilterOptions);
+        metrics.sourceFilterMs += getPerfNow() - filterStartedAt;
+        writeCache(sourceItemsCache, sourceCacheKey, sourceItems, {
+          nowMs: nowEpochMs,
+          ttlMs: sourceItemsCacheTtlMs,
+          maxEntries: sourceItemsCacheMaxEntries
+        });
+      } else {
+        metrics.sourceCacheHits += 1;
       }
-      let worldItems = filterItems(game.items?.contents ?? [], baseFilterOptions);
-      if (manifestFolderId && manifestFolderScopeIds?.size) {
-        worldItems = worldItems.filter((item) => {
+      const filteredItems = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID && manifestFolderId && manifestFolderScopeIds?.size
+        ? sourceItems.filter((item) => {
           const itemFolderId = String(item?.folder?.id ?? item?.folder ?? item?.folderId ?? "").trim();
           return itemFolderId && manifestFolderScopeIds.has(itemFolderId);
-        });
-      }
-      for (const item of worldItems) {
+        })
+        : sourceItems;
+      const fallbackUuidPrefix = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
+        ? "World.Item"
+        : `Compendium.${sourceId}.Item`;
+      for (const item of filteredItems) {
         const candidate = buildLootCandidateFromSourceItem(item, {
           sourceId,
           sourceLabel,
           sourceWeight,
-          fallbackUuidPrefix: "World.Item"
+          fallbackUuidPrefix
         }, draft, {
           includeTags,
           excludeTags,
@@ -20058,6 +20313,24 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
       ?? 0
     ) || 0));
   }
+  metrics.candidateCount = candidates.length;
+  writeCache(candidatesCache, candidateCacheKey, cloneCandidates(candidates), {
+    nowMs: nowEpochMs,
+    ttlMs: candidateCacheTtlMs,
+    maxEntries: candidateCacheMaxEntries
+  });
+  debugLog("buildLootItemCandidates timing", {
+    mode: draft?.mode,
+    challenge: draft?.challenge,
+    cache: "candidates-miss",
+    totalMs: Number((getPerfNow() - startedAtMs).toFixed(2)),
+    sourceLoadMs: Number(metrics.sourceLoadMs.toFixed(2)),
+    sourceFilterMs: Number(metrics.sourceFilterMs.toFixed(2)),
+    sourceCount: metrics.sourceCount,
+    sourceCacheHits: metrics.sourceCacheHits,
+    sourceCacheMisses: metrics.sourceCacheMisses,
+    candidateCount: metrics.candidateCount
+  });
   return candidates;
 }
 
