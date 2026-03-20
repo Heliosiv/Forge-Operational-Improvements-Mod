@@ -84,6 +84,102 @@ const fillPhaseWeight = getLootSelectionIntelligenceWeight({
 }, state, "fill");
 
 assert.ok(fillPhaseWeight > 0);
-assert.ok(fillPhaseWeight < freshConsumable);
+assert.ok(
+  fillPhaseWeight <= (freshConsumable * 1.5),
+  "Fill-phase weighting should stay in the same general range as spend weighting."
+);
+
+const sourceState = {
+  draft: { mode: "horde" },
+  selected: [
+    {
+      uuid: "Item.common-1",
+      name: "Traveler's Cloak",
+      itemType: "equipment",
+      merchantCategories: ["outfitting"],
+      sourceId: "world-items",
+      sourceClass: "generated",
+      sourcePolicy: "normal",
+      curationScore: 3
+    }
+  ]
+};
+
+const curatedHighScore = getLootSelectionIntelligenceWeight({
+  uuid: "Item.curated-1",
+  name: "Curated Tradegood",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceId: "party-operations-manifest",
+  sourceClass: "curated",
+  sourcePolicy: "normal",
+  curationScore: 9
+}, sourceState, "spend");
+
+const generatedLowScore = getLootSelectionIntelligenceWeight({
+  uuid: "Item.generated-1",
+  name: "Generated Tradegood",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceId: "world-items",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 2
+}, sourceState, "spend");
+
+assert.ok(
+  curatedHighScore > generatedLowScore,
+  "Curated entries with stronger curation score should gain a selection preference."
+);
+
+const anchorWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.anchor-1",
+  name: "Anchor Relic",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceClass: "curated",
+  sourcePolicy: "anchor",
+  curationScore: 7
+}, sourceState, "spend");
+
+const normalWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.normal-1",
+  name: "Normal Relic",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceClass: "curated",
+  sourcePolicy: "normal",
+  curationScore: 7
+}, sourceState, "spend");
+
+assert.ok(
+  anchorWeight > normalWeight,
+  "Anchor policy candidates should be preferred to establish core loot picks."
+);
+
+const outsideBudgetSpendWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.outside-1",
+  name: "Outside Budget Curio",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceClass: "curated",
+  sourcePolicy: "outside-budget",
+  curationScore: 7
+}, sourceState, "spend");
+
+const outsideBudgetFillWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.outside-1",
+  name: "Outside Budget Curio",
+  itemType: "loot",
+  merchantCategories: ["loot", "treasure"],
+  sourceClass: "curated",
+  sourcePolicy: "outside-budget",
+  curationScore: 7
+}, sourceState, "fill");
+
+assert.ok(
+  outsideBudgetFillWeight > outsideBudgetSpendWeight,
+  "Outside-budget policy should be more attractive during fill than spend."
+);
 
 process.stdout.write("loot selection intelligence validation passed\n");

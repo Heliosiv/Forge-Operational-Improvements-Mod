@@ -18,6 +18,7 @@ const packDocs = [
   { name: "Pack Sword", itemValueGp: 1000, itemWeightLb: 3, folder: null },
   { name: "Pack Shield", itemValueGp: 600, itemWeightLb: 6, folder: null }
 ];
+const capturedIncludeModes = [];
 
 const context = vm.createContext({
   LOOT_WORLD_ITEMS_SOURCE_ID: "__world_items__",
@@ -35,17 +36,20 @@ const context = vm.createContext({
   buildLootWorldItemFolderScopeIds: () => null,
   normalizeLootKeywordTagList: (values = []) => (Array.isArray(values) ? values : []),
   filterItems: (items = []) => (Array.isArray(items) ? items : []),
-  buildLootCandidateFromSourceItem: (item, meta) => ({
-    name: String(item?.name ?? "Item"),
-    sourceId: String(meta?.sourceId ?? ""),
-    sourceLabel: String(meta?.sourceLabel ?? ""),
-    sourceWeight: Number(meta?.sourceWeight ?? 0),
-    fallbackUuidPrefix: String(meta?.fallbackUuidPrefix ?? ""),
-    itemValueGp: Number(item?.itemValueGp ?? 0),
-    itemWeightLb: Number(item?.itemWeightLb ?? 0),
-    baseItemValueGp: Number(item?.itemValueGp ?? 0),
-    baseItemWeightLb: Number(item?.itemWeightLb ?? 0)
-  }),
+  buildLootCandidateFromSourceItem: (item, meta, draft, filters) => {
+    capturedIncludeModes.push(String(filters?.includeMode ?? ""));
+    return {
+      name: String(item?.name ?? "Item"),
+      sourceId: String(meta?.sourceId ?? ""),
+      sourceLabel: String(meta?.sourceLabel ?? ""),
+      sourceWeight: Number(meta?.sourceWeight ?? 0),
+      fallbackUuidPrefix: String(meta?.fallbackUuidPrefix ?? ""),
+      itemValueGp: Number(item?.itemValueGp ?? 0),
+      itemWeightLb: Number(item?.itemWeightLb ?? 0),
+      baseItemValueGp: Number(item?.itemValueGp ?? 0),
+      baseItemWeightLb: Number(item?.itemWeightLb ?? 0)
+    };
+  },
   buildLootVariableTreasurePools: () => ({}),
   estimateLootVariableTreasureBudgetOutcome: () => null,
   roundLootWeightLb: (value) => Number(value),
@@ -100,6 +104,23 @@ assert.equal(
   manifestCandidates.every((entry) => entry.sourceId === "pack.magic"),
   true,
   "A direct manifest-pack selection should stay scoped to that pack."
+);
+
+const anyModeCandidates = await buildLootItemCandidates({
+  packs: [
+    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+    { id: "pack.magic", label: "Magic Pack", enabled: true, weight: 2 }
+  ],
+  filters: {
+    keywordIncludeMode: "any"
+  }
+}, {}, warnings);
+
+assert.ok(anyModeCandidates.length > 0, "Any-mode filtering should still permit candidate generation.");
+assert.equal(
+  capturedIncludeModes.includes("any"),
+  true,
+  "Keyword include mode should flow into candidate filtering as 'any' when configured."
 );
 
 process.stdout.write("loot item candidate source validation passed\n");

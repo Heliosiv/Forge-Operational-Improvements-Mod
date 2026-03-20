@@ -461,10 +461,17 @@
                   <div class="po-loot-section-head">
                     <div>
                       <div class="po-section-title">Require Tags</div>
-                      <div class="po-hint">All selected tags must exist on an item for it to enter the builder candidate pool.</div>
+                      <div class="po-hint">{{#if operations.lootSources.keywordIncludeModeAny}}Any selected tag can match for an item to enter the candidate pool.{{else}}All selected tags must exist on an item for it to enter the candidate pool.{{/if}}</div>
                     </div>
                     <div class="po-loot-builder-status"><span class="po-pill">{{operations.lootSources.includeTagSelectedCount}} selected</span></div>
                   </div>
+                  <label class="po-resource-row">
+                    <span>Match Mode</span>
+                    <select class="po-select" data-action="set-loot-keyword-include-mode">
+                      <option value="all" {{#if operations.lootSources.keywordIncludeModeAll}}selected{{/if}}>All include tags</option>
+                      <option value="any" {{#if operations.lootSources.keywordIncludeModeAny}}selected{{/if}}>Any include tag</option>
+                    </select>
+                  </label>
                   {{#if operations.lootSources.hasIncludeTagGroups}}
                   <div class="po-loot-tag-group-grid">
                     {{#each operations.lootSources.includeTagGroups}}
@@ -530,6 +537,7 @@
                 </article>
               </div>
               <div class="po-loot-filter-overview">
+                <span class="po-pill">Require {{#if operations.lootSources.keywordIncludeModeAny}}Any{{else}}All{{/if}}</span>
                 <span class="po-pill">{{operations.lootSources.keywordIncludeTagCount}} include tags</span>
                 <span class="po-pill">{{operations.lootSources.keywordExcludeTagCount}} exclude tags</span>
                 <span class="po-pill">{{operations.lootSources.tagCatalogCount}} catalog tags</span>

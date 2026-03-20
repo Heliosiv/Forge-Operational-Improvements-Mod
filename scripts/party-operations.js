@@ -1300,6 +1300,22 @@ const LOOT_RARITY_OPTIONS = [
   { value: "very-rare", label: "Very Rare" },
   { value: "legendary", label: "Legendary" }
 ];
+const LOOT_KEYWORD_INCLUDE_MODES = Object.freeze({
+  ALL: "all",
+  ANY: "any"
+});
+const LOOT_SOURCE_CLASSES = Object.freeze({
+  GENERATED: "generated",
+  CURATED: "curated",
+  MANUAL: "manual",
+  TABLE: "table"
+});
+const LOOT_SOURCE_POLICIES = Object.freeze({
+  NORMAL: "normal",
+  BONUS: "bonus",
+  ANCHOR: "anchor",
+  OUTSIDE_BUDGET: "outside-budget"
+});
 const LOOT_PREVIEW_MODE_OPTIONS = [
   { value: "horde", label: "Horde Loot" },
   { value: "defeated", label: "Defeated Enemy Loot" },
@@ -9255,6 +9271,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "set-loot-manifest-pack": async () => {
           await setLootManifestPack(element);
         },
+        "set-loot-keyword-include-mode": async () => {
+          await setLootKeywordIncludeMode(element);
+        },
         "set-loot-keyword-include-tags": async () => {
           await setLootKeywordIncludeTags(element);
         },
@@ -10747,6 +10766,7 @@ export const GmLootPageApp = createGmLootPageApp({
   setLootManifestPack,
   importLootManifestCompendiumToWorld,
   clearLootManifestImportedWorldItems,
+  setLootKeywordIncludeMode,
   setLootKeywordIncludeTags,
   setLootKeywordExcludeTags,
   resetLootSourceConfig,
@@ -11978,11 +11998,7 @@ function buildLootWorldItemSourceEntry(input = {}) {
 }
 
 function getLootGenerationItemPackSources() {
-  return [{
-    id: LOOT_WORLD_ITEMS_SOURCE_ID,
-    label: LOOT_WORLD_ITEMS_SOURCE_LABEL,
-    sourceKind: "world-items"
-  }];
+  return getAvailableLootItemPackSources();
 }
 
 function buildLootWorldItemsFolderFilterId(folderId = "") {
@@ -12135,6 +12151,7 @@ function buildDefaultLootSourceConfig() {
       rarityFloor: "",
       rarityCeiling: "",
       manifestPackId: "",
+      keywordIncludeMode: LOOT_KEYWORD_INCLUDE_MODES.ALL,
       keywordIncludeTags: [],
       keywordExcludeTags: []
     },
@@ -15039,12 +15056,44 @@ function normalizeLootKeywordTagList(values = []) {
     .filter((entry, index, rows) => entry.length > 0 && rows.indexOf(entry) === index);
 }
 
+function normalizeLootKeywordIncludeMode(value, fallback = LOOT_KEYWORD_INCLUDE_MODES.ALL) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === LOOT_KEYWORD_INCLUDE_MODES.ANY) return LOOT_KEYWORD_INCLUDE_MODES.ANY;
+  if (normalized === LOOT_KEYWORD_INCLUDE_MODES.ALL) return LOOT_KEYWORD_INCLUDE_MODES.ALL;
+  return fallback;
+}
+
 function parseLootKeywordTagListFromInput(value) {
   return normalizeLootKeywordTagList(String(value ?? "").split(/[\s,;\n]+/));
 }
 
 function formatLootKeywordTagListForInput(values = []) {
   return normalizeLootKeywordTagList(values).join(", ");
+}
+
+function normalizeLootSourceClass(value = "", fallback = LOOT_SOURCE_CLASSES.GENERATED) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === LOOT_SOURCE_CLASSES.CURATED) return LOOT_SOURCE_CLASSES.CURATED;
+  if (normalized === LOOT_SOURCE_CLASSES.MANUAL) return LOOT_SOURCE_CLASSES.MANUAL;
+  if (normalized === LOOT_SOURCE_CLASSES.TABLE) return LOOT_SOURCE_CLASSES.TABLE;
+  if (normalized === LOOT_SOURCE_CLASSES.GENERATED) return LOOT_SOURCE_CLASSES.GENERATED;
+  return fallback;
+}
+
+function normalizeLootSourcePolicy(value = "", fallback = LOOT_SOURCE_POLICIES.NORMAL) {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/_/g, "-");
+  if (normalized === LOOT_SOURCE_POLICIES.BONUS) return LOOT_SOURCE_POLICIES.BONUS;
+  if (normalized === LOOT_SOURCE_POLICIES.ANCHOR) return LOOT_SOURCE_POLICIES.ANCHOR;
+  if (normalized === LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET || normalized === "outsidebudget") return LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET;
+  if (normalized === LOOT_SOURCE_POLICIES.NORMAL) return LOOT_SOURCE_POLICIES.NORMAL;
+  return fallback;
+}
+
+function isLootOutsideBudgetPolicy(entryOrPolicy = null) {
+  const policy = entryOrPolicy && typeof entryOrPolicy === "object"
+    ? normalizeLootSourcePolicy(entryOrPolicy?.sourcePolicy ?? "")
+    : normalizeLootSourcePolicy(entryOrPolicy ?? "");
+  return policy === LOOT_SOURCE_POLICIES.BONUS || policy === LOOT_SOURCE_POLICIES.OUTSIDE_BUDGET;
 }
 
 function normalizeLootRarityValue(value) {
@@ -15159,6 +15208,7 @@ function normalizeLootSourceConfig(config = {}) {
         const selectedFolderId = parseLootWorldItemsFolderFilterId(id);
         return selectedFolderId ? buildLootWorldItemsFolderFilterId(selectedFolderId) : "";
       })(),
+      keywordIncludeMode: normalizeLootKeywordIncludeMode(config?.filters?.keywordIncludeMode, LOOT_KEYWORD_INCLUDE_MODES.ALL),
       keywordIncludeTags: normalizeLootKeywordTagList(config?.filters?.keywordIncludeTags ?? []),
       keywordExcludeTags: normalizeLootKeywordTagList(config?.filters?.keywordExcludeTags ?? [])
     },
@@ -16507,6 +16557,7 @@ function buildLootSourceRegistryContext() {
   const includeTagGroups = buildMerchantTagGroupsForEditor(includeTagOptions);
   const excludeTagGroups = buildMerchantTagGroupsForEditor(excludeTagOptions);
   const taxonomySummary = buildPartyOperationsTaxonomySummaryFromDocuments(getLootSourceDocumentsForEditor(config));
+  const keywordIncludeMode = normalizeLootKeywordIncludeMode(config.filters?.keywordIncludeMode, LOOT_KEYWORD_INCLUDE_MODES.ALL);
   const keywordIncludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordIncludeTags ?? []);
   const keywordExcludeTagsInput = formatLootKeywordTagListForInput(config.filters?.keywordExcludeTags ?? []);
   const updatedAt = Number(config.updatedAt ?? 0);
@@ -16542,6 +16593,9 @@ function buildLootSourceRegistryContext() {
     hasExcludeTagGroups: excludeTagGroups.length > 0,
     includeTagSelectedCount: includeTagOptions.filter((entry) => entry?.selected).length,
     excludeTagSelectedCount: excludeTagOptions.filter((entry) => entry?.selected).length,
+    keywordIncludeMode,
+    keywordIncludeModeAll: keywordIncludeMode === LOOT_KEYWORD_INCLUDE_MODES.ALL,
+    keywordIncludeModeAny: keywordIncludeMode === LOOT_KEYWORD_INCLUDE_MODES.ANY,
     taxonomySummary,
     manifestPackOptions,
     manifestPackId,
@@ -17493,6 +17547,29 @@ function getLootVariableTreasureKindFromData(data = {}) {
   return "";
 }
 
+function getLootSourceClassFromData(
+  data = {},
+  fallback = LOOT_SOURCE_CLASSES.GENERATED,
+  keywordsOverride = null,
+  poFlagsOverride = null
+) {
+  const poFlags = (poFlagsOverride && typeof poFlagsOverride === "object")
+    ? poFlagsOverride
+    : getPartyOperationsItemFlags(data);
+  const explicit = normalizeLootSourceClass(poFlags?.sourceClass ?? "", "");
+  if (explicit) return explicit;
+  const keywords = Array.isArray(keywordsOverride)
+    ? keywordsOverride
+    : getLootKeywordsFromData(data);
+  if (keywords.some((entry) => String(entry ?? "").trim().toLowerCase() === "source.party.operations.party.operations.loot.manifest")) {
+    return LOOT_SOURCE_CLASSES.CURATED;
+  }
+  if (keywords.some((entry) => String(entry ?? "").trim().toLowerCase() === "source.curated")) {
+    return LOOT_SOURCE_CLASSES.CURATED;
+  }
+  return normalizeLootSourceClass(fallback, LOOT_SOURCE_CLASSES.GENERATED);
+}
+
 function roundLootWeightLb(value = 0) {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return 0;
@@ -18048,11 +18125,35 @@ function buildPartyOperationsTaxonomySummaryFromDocuments(documents = []) {
   };
 }
 
-function isLootKeywordMatch(itemKeywords = [], includeTags = [], excludeTags = []) {
+function isLootKeywordMatch(
+  itemKeywords = [],
+  includeTags = [],
+  excludeTags = [],
+  includeMode = LOOT_KEYWORD_INCLUDE_MODES.ALL,
+  options = {}
+) {
   const keywords = new Set(normalizeLootKeywordTagList(itemKeywords));
-  const include = normalizeLootKeywordTagList(includeTags);
-  const exclude = normalizeLootKeywordTagList(excludeTags);
-  if (include.some((tag) => !keywords.has(tag))) return false;
+  const filtersAlreadyNormalized = options?.normalizedFilters === true;
+  const include = filtersAlreadyNormalized
+    ? (Array.isArray(includeTags) ? includeTags : [])
+    : normalizeLootKeywordTagList(includeTags);
+  const exclude = filtersAlreadyNormalized
+    ? (Array.isArray(excludeTags) ? excludeTags : [])
+    : normalizeLootKeywordTagList(excludeTags);
+  const mode = filtersAlreadyNormalized
+    ? (
+      String(includeMode ?? LOOT_KEYWORD_INCLUDE_MODES.ALL).trim().toLowerCase() === LOOT_KEYWORD_INCLUDE_MODES.ANY
+        ? LOOT_KEYWORD_INCLUDE_MODES.ANY
+        : LOOT_KEYWORD_INCLUDE_MODES.ALL
+    )
+    : normalizeLootKeywordIncludeMode(includeMode, LOOT_KEYWORD_INCLUDE_MODES.ALL);
+  if (include.length > 0) {
+    if (mode === LOOT_KEYWORD_INCLUDE_MODES.ANY) {
+      if (!include.some((tag) => keywords.has(tag))) return false;
+    } else if (include.some((tag) => !keywords.has(tag))) {
+      return false;
+    }
+  }
   if (exclude.some((tag) => keywords.has(tag))) return false;
   return true;
 }
@@ -19393,7 +19494,7 @@ function resolveLootRuntimeBudgetContext(draft = {}, budgetContext = {}) {
   }
 }
 
-function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, budgetContext = {}) {
+function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, budgetContext = {}, options = {}) {
   const value = Math.max(0, Number(itemValueGp) || 0);
   if (value <= 0) return 0.9;
 
@@ -19430,7 +19531,12 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
   const projectedWithinRange = rangeMaxGp > 0 && projectedTotalGp >= rangeMinGp && projectedTotalGp <= rangeMaxGp;
 
   const manualCapGp = Math.max(0, Number(budgetContext?.manualMaxItemValueGp ?? 0) || 0);
-  if (manualCapGp > 0 && value > manualCapGp) return 0;
+  const outsideBudgetPolicy = isLootOutsideBudgetPolicy(options?.entry ?? options?.sourcePolicy ?? budgetContext?.sourcePolicy ?? "");
+  if (manualCapGp > 0 && value > manualCapGp) {
+    if (!outsideBudgetPolicy) return 0;
+    const capOverRatio = value / Math.max(0.01, manualCapGp);
+    return Math.max(0.02, Math.exp(-(capOverRatio - 1) * (1.65 * strictness)) * 0.22);
+  }
   const effectiveCapGp = Math.max(0, Number(budgetContext?.effectiveMaxItemValueGp ?? 0) || 0);
   const nearMaxReferenceGp = Math.max(0, manualCapGp > 0 ? manualCapGp : effectiveCapGp);
   if (soloEncounter && nearMaxReferenceGp > 0) {
@@ -19487,7 +19593,7 @@ function getLootBudgetDrivenValueWeight(itemValueGp = 0, selectedTotalValueGp = 
   return Math.max(0.000001, weight);
 }
 
-function getLootValueBalanceWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, valueStats = {}, draft = {}, budgetContext = null) {
+function getLootValueBalanceWeight(itemValueGp = 0, selectedTotalValueGp = 0, selectedCount = 0, valueStats = {}, draft = {}, budgetContext = null, options = {}) {
   const value = Math.max(0, Number(itemValueGp) || 0);
   const hasLegacyStats = Boolean(valueStats?.hasValues);
   let legacyWeight = 1;
@@ -19511,7 +19617,7 @@ function getLootValueBalanceWeight(itemValueGp = 0, selectedTotalValueGp = 0, se
   }
 
   if (!budgetContext) return Math.max(0.000001, legacyWeight);
-  const budgetWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext);
+  const budgetWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext, options);
   if (!hasLegacyStats) return budgetWeight;
   return Math.max(0.000001, (budgetWeight * 0.86) + (legacyWeight * 0.14));
 }
@@ -19526,11 +19632,14 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
 
   const includeTags = filters.includeTags ?? [];
   const excludeTags = filters.excludeTags ?? [];
+  const includeMode = String(filters.includeMode ?? LOOT_KEYWORD_INCLUDE_MODES.ALL).trim().toLowerCase() === LOOT_KEYWORD_INCLUDE_MODES.ANY
+    ? LOOT_KEYWORD_INCLUDE_MODES.ANY
+    : LOOT_KEYWORD_INCLUDE_MODES.ALL;
   const floor = String(filters.floor ?? "");
   const ceiling = String(filters.ceiling ?? "");
 
   const keywords = getLootKeywordsFromData(data);
-  if (!isLootKeywordMatch(keywords, includeTags, excludeTags)) return null;
+  if (!isLootKeywordMatch(keywords, includeTags, excludeTags, includeMode, { normalizedFilters: true })) return null;
   const rarity = getLootRarityFromData(data);
   const rarityBucket = getLootRarityBucket(rarity);
   const itemValueGp = getLootItemGpValueFromData(data);
@@ -19546,6 +19655,15 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
   const uuid = rawUuid || (context.fallbackUuidPrefix ? `${context.fallbackUuidPrefix}.${fallbackKey}` : "");
   const key = uuid || fallbackKey;
   const folderProfile = getLootItemFolderProfileFromData(data);
+  const sourceClass = getLootSourceClassFromData(data, LOOT_SOURCE_CLASSES.GENERATED, keywords, poFlags);
+  const sourcePolicyRaw = poFlags?.sourcePolicy ?? poFlags?.lootPolicy;
+  const sourcePolicy = sourcePolicyRaw === null || sourcePolicyRaw === undefined || sourcePolicyRaw === ""
+    ? LOOT_SOURCE_POLICIES.NORMAL
+    : normalizeLootSourcePolicy(sourcePolicyRaw, LOOT_SOURCE_POLICIES.NORMAL);
+  const curationScoreRaw = poFlags?.curationScore ?? poFlags?.curatedScore;
+  const curationScore = curationScoreRaw === null || curationScoreRaw === undefined || curationScoreRaw === ""
+    ? 0
+    : Math.max(0, Math.min(10, Number(curationScoreRaw) || 0));
 
   return {
     key,
@@ -19558,6 +19676,10 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
     sourceId,
     sourceLabel,
     sourceWeight,
+    sourceClass,
+    sourcePolicy,
+    curationScore,
+    isCurated: sourceClass === LOOT_SOURCE_CLASSES.CURATED,
     itemValueGp,
     itemWeightLb,
     intrinsicItemValueGp: itemValueGp,
@@ -20054,6 +20176,9 @@ function buildLootCandidateBuildCacheKey(sourceConfig = {}, draft = {}, options 
     filters: {
       manifestPackId: String(filters?.manifestPackId ?? "").trim(),
       allowedTypes,
+      keywordIncludeMode: String(filters?.keywordIncludeMode ?? LOOT_KEYWORD_INCLUDE_MODES.ALL).trim().toLowerCase() === LOOT_KEYWORD_INCLUDE_MODES.ANY
+        ? LOOT_KEYWORD_INCLUDE_MODES.ANY
+        : LOOT_KEYWORD_INCLUDE_MODES.ALL,
       rarityFloor: String(filters?.rarityFloor ?? "").trim().toLowerCase(),
       rarityCeiling: String(filters?.rarityCeiling ?? "").trim().toLowerCase(),
       includeTags,
@@ -20083,6 +20208,22 @@ function cloneLootCandidateRows(rows = []) {
       keywords: Array.isArray(entry.keywords) ? [...entry.keywords] : entry.keywords
     };
   });
+}
+
+function freezeLootCandidateRows(rows = []) {
+  const cloned = cloneLootCandidateRows(rows);
+  for (const entry of cloned) {
+    if (!entry || typeof entry !== "object") continue;
+    if (Array.isArray(entry.tags)) Object.freeze(entry.tags);
+    if (Array.isArray(entry.keywords)) Object.freeze(entry.keywords);
+    Object.freeze(entry);
+  }
+  return cloned;
+}
+
+function hydrateLootCandidateCacheRows(rows = []) {
+  if (!Array.isArray(rows) || rows.length <= 0) return [];
+  return [...rows];
 }
 
 function calculateLootPreviewValueTotals(result = {}, budgetContext = null) {
@@ -20151,9 +20292,26 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const debugLog = typeof logLootBuilderDebug === "function"
     ? logLootBuilderDebug
     : (() => {});
-  const cloneCandidates = typeof cloneLootCandidateRows === "function"
-    ? cloneLootCandidateRows
-    : ((rows = []) => (Array.isArray(rows) ? rows.map((entry) => ({ ...(entry ?? {}) })) : []));
+  const hydrateCachedCandidates = typeof hydrateLootCandidateCacheRows === "function"
+    ? hydrateLootCandidateCacheRows
+    : ((rows = []) => (Array.isArray(rows) ? [...rows] : []));
+  const prepareCachedCandidates = typeof freezeLootCandidateRows === "function"
+    ? freezeLootCandidateRows
+    : ((rows = []) => {
+      if (!Array.isArray(rows) || rows.length <= 0) return [];
+      return rows.map((entry) => {
+        if (!entry || typeof entry !== "object") return entry;
+        const copy = {
+          ...entry,
+          tags: Array.isArray(entry.tags) ? [...entry.tags] : entry.tags,
+          keywords: Array.isArray(entry.keywords) ? [...entry.keywords] : entry.keywords
+        };
+        if (Array.isArray(copy.tags)) Object.freeze(copy.tags);
+        if (Array.isArray(copy.keywords)) Object.freeze(copy.keywords);
+        Object.freeze(copy);
+        return copy;
+      });
+    });
   const sourceItemsCache = (typeof lootSourceItemsCache !== "undefined" && lootSourceItemsCache instanceof Map)
     ? lootSourceItemsCache
     : new Map();
@@ -20195,6 +20353,16 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     : "";
   const includeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordIncludeTags ?? []);
   const excludeTags = normalizeLootKeywordTagList(sourceConfig?.filters?.keywordExcludeTags ?? []);
+  const includeModeAll = typeof LOOT_KEYWORD_INCLUDE_MODES !== "undefined"
+    ? String(LOOT_KEYWORD_INCLUDE_MODES?.ALL ?? "all").trim().toLowerCase() || "all"
+    : "all";
+  const includeModeAny = typeof LOOT_KEYWORD_INCLUDE_MODES !== "undefined"
+    ? String(LOOT_KEYWORD_INCLUDE_MODES?.ANY ?? "any").trim().toLowerCase() || "any"
+    : "any";
+  const includeModeRaw = String(sourceConfig?.filters?.keywordIncludeMode ?? includeModeAll).trim().toLowerCase();
+  const includeMode = includeModeRaw === includeModeAny
+    ? includeModeAny
+    : includeModeAll;
   let enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
   if (manifestPackId) {
     const selectedSourceId = manifestFolderId ? LOOT_WORLD_ITEMS_SOURCE_ID : manifestPackId;
@@ -20215,7 +20383,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   const cachedCandidates = readCache(candidatesCache, candidateCacheKey, nowEpochMs);
   if (Array.isArray(cachedCandidates)) {
     metrics.candidateCacheHit = true;
-    const candidates = cloneCandidates(cachedCandidates);
+    const candidates = hydrateCachedCandidates(cachedCandidates);
     metrics.candidateCount = candidates.length;
     debugLog("buildLootItemCandidates timing", {
       mode: draft?.mode,
@@ -20278,6 +20446,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         }, draft, {
           includeTags,
           excludeTags,
+          includeMode,
           floor,
           ceiling
         });
@@ -20314,7 +20483,7 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
     ) || 0));
   }
   metrics.candidateCount = candidates.length;
-  writeCache(candidatesCache, candidateCacheKey, cloneCandidates(candidates), {
+  writeCache(candidatesCache, candidateCacheKey, prepareCachedCandidates(candidates), {
     nowMs: nowEpochMs,
     ttlMs: candidateCacheTtlMs,
     maxEntries: candidateCacheMaxEntries
@@ -20349,20 +20518,32 @@ function getLootSelectedQuantityCount(entries = []) {
   }, 0)));
 }
 
+function resolveLootBudgetEnforcementTolerance(targetTotalGp = 0, toleranceGp = 0) {
+  const safeTarget = Math.max(1, Number(targetTotalGp) || 1);
+  const safeTolerance = Math.max(1, Number(toleranceGp) || 1);
+  const tightenedFromBand = Math.max(1, Number((safeTolerance * 0.65).toFixed(2)));
+  const minimumWorkingTolerance = Math.max(1, Number((safeTarget * 0.035).toFixed(2)));
+  return Math.max(1, Math.min(safeTolerance, Math.max(minimumWorkingTolerance, tightenedFromBand)));
+}
+
 function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spend") {
   const budgetContext = state?.budgetContext ?? {};
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
   const selectedCount = getLootSelectedQuantityCount(state?.selected);
   const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
   const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+  const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
   const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
   const remainingSlots = Math.max(1, Number(budgetContext?.targetCount ?? 1) - selectedCount);
   const desiredNextValue = Math.max(0.5, remaining / remainingSlots);
   const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
   const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
   const overshootLimit = Math.max(1, remaining * (1 + overshootAllowanceRatio));
-  if (phase === "spend" && remaining > toleranceGp && value > overshootLimit) return 0;
-  if (phase === "fill" && value > Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)))) return 0;
+  const outsideBudgetPolicy = isLootOutsideBudgetPolicy(entry);
+  if (!outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > overshootLimit) return 0;
+  if (!outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)))) return 0;
+  if (outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > (overshootLimit * 3)) return 0;
+  if (outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * 3.5)) return 0;
 
   const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
   const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
@@ -20371,7 +20552,7 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   const typeWeight = Math.max(0, Number(getLootBuilderItemTypeWeight(state?.draft ?? {}, entry?.itemType) || 0));
   const distance = Math.abs(value - desiredNextValue) / Math.max(1, desiredNextValue);
   const closenessWeight = 1 / (1 + (phase === "fill" ? distance * 1.1 : distance * 1.85));
-  const budgetDrivenWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext);
+  const budgetDrivenWeight = getLootBudgetDrivenValueWeight(value, selectedTotalValueGp, selectedCount, budgetContext, { entry });
   const projectedTotalGp = selectedTotalValueGp + value;
   const rangeMinGp = Math.max(0, Number(
     budgetContext?.itemTargetValueRangeMinGp
@@ -20386,6 +20567,8 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
       ?? 0
   ) || 0);
   const projectedWithinRange = rangeMaxGp > 0 && projectedTotalGp >= rangeMinGp && projectedTotalGp <= rangeMaxGp;
+  const currentDeltaGp = Math.abs(targetTotal - selectedTotalValueGp);
+  const projectedDeltaGp = Math.abs(targetTotal - projectedTotalGp);
   const progressRatio = rangeMinGp > 0
     ? Math.max(0, Math.min(1.25, projectedTotalGp / Math.max(1, rangeMinGp)))
     : Math.max(0, Math.min(1.25, projectedTotalGp / Math.max(1, targetTotal)));
@@ -20397,6 +20580,16 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     budgetWeight *= 2.2;
   } else if (phase === "spend" && rangeMinGp > 0 && projectedTotalGp < rangeMinGp) {
     budgetWeight *= 0.5 + progressRatio;
+  }
+  if (phase === "spend") {
+    if (projectedDeltaGp < currentDeltaGp) {
+      const gainRatio = (currentDeltaGp - projectedDeltaGp) / Math.max(1, currentDeltaGp);
+      budgetWeight *= 1 + Math.min(2.4, gainRatio * 2.2);
+    } else if (!outsideBudgetPolicy && remaining > enforcedToleranceGp) {
+      budgetWeight *= 0.08;
+    }
+  } else if (phase === "fill") {
+    budgetWeight *= projectedDeltaGp < currentDeltaGp ? 1.35 : 0.35;
   }
   const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
   const treasureKindWeight = Math.max(0.01, Number(
@@ -20442,6 +20635,10 @@ function commitLootBudgetPick(state = {}, picked = null) {
       remainingSlots,
       Math.floor(Number(row?.quantity ?? 1) || 1)
     ));
+    const sourceClass = normalizeLootSourceClass(candidate?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED);
+    const sourcePolicy = normalizeLootSourcePolicy(candidate?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL);
+    const curationScore = Math.max(0, Number(candidate?.curationScore ?? 0) || 0);
+    const isCurated = sourceClass === LOOT_SOURCE_CLASSES.CURATED;
     const rarityBucket = getLootRarityBucket(candidate.rarity);
     const rolledVariableTreasure = rollLootVariableTreasureSelection(
       candidate,
@@ -20466,7 +20663,7 @@ function commitLootBudgetPick(state = {}, picked = null) {
     const resolvedItemWeightLb = roundLootWeightLb(resolvedUnitWeightLb * quantity);
     const resolvedBaseItemValueGp = Math.max(0, Number((resolvedUnitBaseValueGp * quantity).toFixed(2)));
     const resolvedBaseItemWeightLb = roundLootWeightLb(resolvedUnitBaseWeightLb * quantity);
-    state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
+    state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + quantity;
     state.selected.push({
       name: candidate.name,
       img: candidate.img,
@@ -20477,6 +20674,10 @@ function commitLootBudgetPick(state = {}, picked = null) {
       sourceLabel: candidate.sourceLabel,
       uuid: candidate.uuid,
       quantity,
+      sourceClass,
+      sourcePolicy,
+      curationScore: Number(curationScore.toFixed(3)),
+      isCurated,
       itemValueGp: resolvedItemValueGp,
       itemWeightLb: resolvedItemWeightLb,
       baseItemValueGp: resolvedBaseItemValueGp,
@@ -20516,6 +20717,7 @@ function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
   const effectiveCapGp = Math.max(0, Number(budgetContext?.effectiveMaxItemValueGp ?? 0) || 0);
   const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
   const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+  const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
   const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
   const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
@@ -20528,7 +20730,7 @@ function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
       return value <= effectiveCapGp;
     });
   if (rawPool.length === 0) return [];
-  if (phase === "spend" && remaining > toleranceGp) {
+  if (phase === "spend" && remaining > enforcedToleranceGp) {
     const budgetPool = rawPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= overshootLimit);
     if (budgetPool.length > 0) return budgetPool;
     return [...rawPool].sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0)).slice(0, 18);
@@ -20547,6 +20749,7 @@ function spendBudgetLoop(state = {}) {
     const budgetContext = state?.budgetContext ?? {};
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+    const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
     const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
     const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
     const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
@@ -20555,14 +20758,14 @@ function spendBudgetLoop(state = {}) {
     while (safety < 600) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
-      if (remaining <= toleranceGp) return;
+      if (remaining <= enforcedToleranceGp) return;
       if (getLootSelectedQuantityCount(state?.selected) >= effectiveItemCap) return;
       const selectionPool = buildLootPhaseSelectionPool(state, "spend");
       if (!selectionPool.length) {
         state.diagnostics.push("No spend-phase candidates in the current budget range.");
         logLootBuilderDebug("spendBudgetLoop stopped: no candidates", {
           remaining,
-          toleranceGp,
+          toleranceGp: enforcedToleranceGp,
           selectedCount: getLootSelectedQuantityCount(state?.selected),
           itemCap: effectiveItemCap
         });
@@ -20599,6 +20802,7 @@ function fillPass(state = {}) {
     const budgetContext = state?.budgetContext ?? {};
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+    const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
     const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
     const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
     const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
@@ -20607,12 +20811,12 @@ function fillPass(state = {}) {
     while (safety < 400) {
       safety += 1;
       const remaining = Math.max(0, targetTotal - Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0));
-      if (remaining <= toleranceGp) return;
+      if (remaining <= enforcedToleranceGp) return;
       if (getLootSelectedQuantityCount(state?.selected) >= effectiveItemCap) {
         state.diagnostics.push("Fill pass stopped at the desired item count before target tolerance was reached.");
         logLootBuilderDebug("fillPass stopped at max items", {
           remaining,
-          toleranceGp,
+          toleranceGp: enforcedToleranceGp,
           itemCap: effectiveItemCap
         });
         return;
@@ -20622,7 +20826,7 @@ function fillPass(state = {}) {
         state.diagnostics.push("Fill pass ended: no affordable low-value candidates remained.");
         logLootBuilderDebug("fillPass ended with no candidates", {
           remaining,
-          toleranceGp
+          toleranceGp: enforcedToleranceGp
         });
         return;
       }
@@ -20651,16 +20855,17 @@ function trimPass(state = {}) {
     const budgetContext = state?.budgetContext ?? {};
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+    const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
     let safety = 0;
     while (safety < 200) {
       safety += 1;
       const overspent = Math.max(0, Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0) - targetTotal);
-      if (overspent <= toleranceGp) return;
+      if (overspent <= enforcedToleranceGp) return;
       if (!Array.isArray(state.selected) || state.selected.length === 0) {
         state.diagnostics.push("Trim pass could not run: no selected items.");
         logLootBuilderDebug("trimPass stopped: nothing to trim", {
           overspent,
-          toleranceGp
+          toleranceGp: enforcedToleranceGp
         });
         return;
       }
@@ -20679,9 +20884,10 @@ function trimPass(state = {}) {
       const removed = state.selected[pick.index];
       const removedValue = Math.max(0, Number(removed?.itemValueGp ?? 0) || 0);
       const bucket = getLootRarityBucket(removed?.rarity);
+      const removedQuantity = Math.max(1, Math.floor(Number(removed?.quantity ?? 1) || 1));
       state.selected.splice(pick.index, 1);
       state.selectedTotalValueGp = Math.max(0, Math.max(0, Number(state.selectedTotalValueGp ?? 0) || 0) - removedValue);
-      state.selectedByRarity[bucket] = Math.max(0, Math.max(0, Number(state.selectedByRarity[bucket] ?? 0) || 0) - 1);
+      state.selectedByRarity[bucket] = Math.max(0, Math.max(0, Number(state.selectedByRarity[bucket] ?? 0) || 0) - removedQuantity);
     }
     state.diagnostics.push("Trim pass hit safety iteration cap.");
     logLootBuilderDebug("trimPass safety cap reached", {
@@ -20719,14 +20925,19 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
     legendary: 0
   };
   let selectedTotalValueGp = 0;
-  while (pool.length > 0 && selected.length < targetCount) {
+  while (pool.length > 0 && getLootSelectedQuantityCount(selected) < targetCount) {
     const cappedPool = pool.filter((entry) => canSelectLootRarityWithCaps(entry?.rarity, selectedByRarity, rarityCaps));
     const rarityPool = cappedPool.length > 0 ? cappedPool : pool;
     const selectionPool = manualCapGp > 0
-      ? rarityPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= manualCapGp)
+      ? rarityPool.filter((entry) => {
+        const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+        if (value <= manualCapGp) return true;
+        return isLootOutsideBudgetPolicy(entry);
+      })
       : rarityPool;
     if (!selectionPool.length) break;
     const weightedPool = buildWeightedPool(selectionPool, (entry) => {
+      const selectedCount = getLootSelectedQuantityCount(selected);
       const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
       const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
       const rarityWeight = Math.max(0.01, Number(entry?.rarityWeight ?? 1) || 1);
@@ -20735,10 +20946,11 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       const valueWeight = Math.max(0, Number(getLootValueBalanceWeight(
         entry?.itemValueGp,
         selectedTotalValueGp,
-        selected.length,
+        selectedCount,
         valueStats,
         draft,
-        valueBudgetContext
+        valueBudgetContext,
+        { entry }
       ) || 0));
       const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
       const intelligenceWeight = Math.max(0.000001, Number(
@@ -20749,23 +20961,36 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
     const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0));
     const picked = pickedRow?.item ?? null;
     if (!picked) break;
+    const remainingSlots = Math.max(1, targetCount - getLootSelectedQuantityCount(selected));
+    const quantity = Math.max(1, Math.min(
+      remainingSlots,
+      Math.floor(Number(picked?.quantity ?? 1) || 1)
+    ));
+    const sourceClass = normalizeLootSourceClass(picked?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED);
+    const sourcePolicy = normalizeLootSourcePolicy(picked?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL);
+    const curationScore = Math.max(0, Number(picked?.curationScore ?? 0) || 0);
+    const isCurated = sourceClass === LOOT_SOURCE_CLASSES.CURATED;
     const rarityBucket = getLootRarityBucket(picked.rarity);
     const rolledVariableTreasure = rollLootVariableTreasureSelection(picked, variableTreasurePools, Math.random);
-    const resolvedItemValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
-    const resolvedItemWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
-    const resolvedBaseItemValueGp = Math.max(0, Number(
+    const resolvedUnitValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
+    const resolvedUnitWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
+    const resolvedUnitBaseValueGp = Math.max(0, Number(
       rolledVariableTreasure?.baseItemValueGp
       ?? picked?.baseItemValueGp
       ?? picked?.itemValueGp
       ?? 0
     ) || 0);
-    const resolvedBaseItemWeightLb = roundLootWeightLb(Math.max(0, Number(
+    const resolvedUnitBaseWeightLb = roundLootWeightLb(Math.max(0, Number(
       rolledVariableTreasure?.baseItemWeightLb
       ?? picked?.baseItemWeightLb
       ?? picked?.itemWeightLb
       ?? 0
     ) || 0));
-    selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + 1;
+    const resolvedItemValueGp = Math.max(0, Number((resolvedUnitValueGp * quantity).toFixed(2)));
+    const resolvedItemWeightLb = roundLootWeightLb(resolvedUnitWeightLb * quantity);
+    const resolvedBaseItemValueGp = Math.max(0, Number((resolvedUnitBaseValueGp * quantity).toFixed(2)));
+    const resolvedBaseItemWeightLb = roundLootWeightLb(resolvedUnitBaseWeightLb * quantity);
+    selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + quantity;
     selected.push({
       name: picked.name,
       img: picked.img,
@@ -20775,6 +21000,11 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
       sourceId: picked.sourceId,
       sourceLabel: picked.sourceLabel,
       uuid: picked.uuid,
+      quantity,
+      sourceClass,
+      sourcePolicy,
+      curationScore: Number(curationScore.toFixed(3)),
+      isCurated,
       itemValueGp: resolvedItemValueGp,
       itemWeightLb: resolvedItemWeightLb,
       baseItemValueGp: resolvedBaseItemValueGp,
@@ -21568,37 +21798,91 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
       return { gold, items: [] };
     }
 
+    const sourceConfig = getLootSourceConfig();
+    const availableSourceIds = new Set(
+      getLootGenerationItemPackSources()
+        .map((entry) => String(entry?.id ?? "").trim())
+        .filter(Boolean)
+    );
+    const requestedSourceIds = normalizedPackIds.filter((sourceId) => {
+      if (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID) return true;
+      return availableSourceIds.has(sourceId);
+    });
+    const sourceIds = requestedSourceIds.length > 0
+      ? requestedSourceIds
+      : [LOOT_WORLD_ITEMS_SOURCE_ID];
+    const sourceWeightById = new Map(
+      (Array.isArray(sourceConfig?.packs) ? sourceConfig.packs : [])
+        .map((entry) => {
+          const id = String(entry?.id ?? "").trim();
+          if (!id) return null;
+          const weight = Math.max(1, Math.floor(Number(entry?.weight ?? 1) || 1));
+          return [id, weight];
+        })
+        .filter(Boolean)
+    );
     const sourceFilter = {
-      typeWhitelist: Array.isArray(options?.typeWhitelist) ? options.typeWhitelist : undefined,
+      typeWhitelist: Array.isArray(options?.typeWhitelist)
+        ? options.typeWhitelist
+        : (Array.isArray(sourceConfig?.filters?.allowedTypes) ? sourceConfig.filters.allowedTypes : undefined),
       nameIncludes: Array.isArray(options?.nameIncludes) ? options.nameIncludes : undefined,
       rarityKeywords: Array.isArray(options?.rarityKeywords) ? options.rarityKeywords : undefined
     };
+    const includeTags = normalizeLootKeywordTagList(
+      options?.includeTags ?? sourceConfig?.filters?.keywordIncludeTags ?? []
+    );
+    const excludeTags = normalizeLootKeywordTagList(
+      options?.excludeTags ?? sourceConfig?.filters?.keywordExcludeTags ?? []
+    );
+    const includeMode = normalizeLootKeywordIncludeMode(
+      options?.keywordIncludeMode ?? options?.includeMode ?? sourceConfig?.filters?.keywordIncludeMode,
+      LOOT_KEYWORD_INCLUDE_MODES.ALL
+    );
+    const rarityFloor = normalizeLootRarityValue(options?.rarityFloor ?? sourceConfig?.filters?.rarityFloor);
+    const rarityCeiling = normalizeLootRarityValue(options?.rarityCeiling ?? sourceConfig?.filters?.rarityCeiling);
+    const challengeBucket = cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic";
+    const candidateDraft = {
+      profile: String(input?.profile ?? "standard"),
+      mode: target === "horde" ? "horde" : "defeated",
+      challenge: challengeBucket
+    };
+    const warnings = [];
 
-    const sourceItems = filterItems(game.items?.contents ?? [], sourceFilter);
     const candidates = [];
-    for (const item of sourceItems) {
-      const candidate = buildLootCandidateFromSourceItem(item, {
-        sourceId: LOOT_WORLD_ITEMS_SOURCE_ID,
-        sourceLabel: LOOT_WORLD_ITEMS_SOURCE_LABEL,
-        sourceWeight: 1,
-        fallbackUuidPrefix: "World.Item"
-      }, {
-        profile: "standard",
-        mode: target,
-        challenge: cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic"
-      }, {
-        includeTags: [],
-        excludeTags: [],
-        floor: "",
-        ceiling: ""
-      });
-      if (!candidate) continue;
-      candidates.push(candidate);
+    for (const sourceId of sourceIds) {
+      const sourceMeta = getLootPackSourceMetaById(sourceId);
+      const sourceLabel = String(
+        sourceMeta?.label
+          ?? (sourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? LOOT_WORLD_ITEMS_SOURCE_LABEL : sourceId)
+      ).trim() || sourceId;
+      const sourceWeight = Math.max(1, Math.floor(Number(sourceWeightById.get(sourceId) ?? 1) || 1));
+      const rawItems = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
+        ? (game.items?.contents ?? [])
+        : await loadItemsFromPack(sourceId, { warnings, sourceLabel });
+      const sourceItems = filterItems(rawItems, sourceFilter);
+      const fallbackUuidPrefix = sourceId === LOOT_WORLD_ITEMS_SOURCE_ID
+        ? "World.Item"
+        : `Compendium.${sourceId}.Item`;
+      for (const item of sourceItems) {
+        const candidate = buildLootCandidateFromSourceItem(item, {
+          sourceId,
+          sourceLabel,
+          sourceWeight,
+          fallbackUuidPrefix
+        }, candidateDraft, {
+          includeTags,
+          excludeTags,
+          includeMode,
+          floor: rarityFloor,
+          ceiling: rarityCeiling
+        });
+        if (!candidate) continue;
+        candidates.push(candidate);
+      }
     }
 
     if (candidates.length === 0) return { gold, items: [] };
 
-    const challengeBucket = cr <= 4 ? "low" : cr <= 10 ? "mid" : cr <= 16 ? "high" : "epic";
     const creatures = Math.max(1, Number(input?.creatures ?? input?.actorCount ?? 1) || 1);
     const selectionDraft = {
       mode: target === "horde" ? "horde" : "defeated",
@@ -21633,13 +21917,22 @@ async function generateLootFromPackIds(packIds = [], input = {}, options = {}) {
     for (const picked of pickedItems) {
       const uuid = String(picked?.uuid ?? "").trim();
       const name = String(picked?.name ?? "Item").trim() || "Item";
-      if (!uuid) continue;
-      const current = selected.get(uuid);
-      if (!current) selected.set(uuid, { uuid, name, qty: 1 });
+      const sourceId = String(picked?.sourceId ?? "").trim();
+      const quantity = Math.max(1, Math.floor(Number(picked?.quantity ?? 1) || 1));
+      const selectionKey = uuid || `name:${name.toLowerCase()}|source:${sourceId.toLowerCase()}`;
+      const current = selected.get(selectionKey);
+      if (!current) selected.set(selectionKey, { uuid, name, qty: quantity });
       else {
-        current.qty += 1;
-        selected.set(uuid, current);
+        current.qty += quantity;
+        selected.set(selectionKey, current);
       }
+    }
+
+    if (warnings.length > 0) {
+      logLootBuilderDebug("generateLootFromPackIds source warnings", {
+        warningCount: warnings.length,
+        warnings: warnings.slice(0, 8)
+      });
     }
 
     return {
@@ -30169,23 +30462,32 @@ function normalizeLootClaimActorIdList(values = []) {
 function normalizeLootClaimItemsList(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
-    .map((entry) => ({
-      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      uuid: String(entry?.uuid ?? "").trim(),
-      name: String(entry?.name ?? "Item").trim() || "Item",
-      img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
-      quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
-      itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
-      itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
-      baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
-      baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)),
-      variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
-      itemType: String(entry?.itemType ?? "").trim(),
-      rarity: String(entry?.rarity ?? "").trim(),
-      sourceLabel: String(entry?.sourceLabel ?? "").trim(),
-      majorItem: Boolean(entry?.majorItem),
-      vouchedByActorIds: normalizeLootClaimActorIdList(entry?.vouchedByActorIds)
-    }))
+    .map((entry) => {
+      const sourceClass = normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED);
+      const sourcePolicy = normalizeLootSourcePolicy(entry?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL);
+      const curationScore = Math.max(0, Math.min(10, Number(entry?.curationScore ?? 0) || 0));
+      return {
+        id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        uuid: String(entry?.uuid ?? "").trim(),
+        name: String(entry?.name ?? "Item").trim() || "Item",
+        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        quantity: Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+        itemValueGp: Math.max(0, Number(entry?.itemValueGp ?? 0) || 0),
+        itemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.itemWeightLb ?? 0) || 0)),
+        baseItemValueGp: Math.max(0, Number(entry?.baseItemValueGp ?? entry?.itemValueGp ?? 0) || 0),
+        baseItemWeightLb: roundLootWeightLb(Math.max(0, Number(entry?.baseItemWeightLb ?? entry?.itemWeightLb ?? 0) || 0)),
+        variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
+        itemType: String(entry?.itemType ?? "").trim(),
+        rarity: String(entry?.rarity ?? "").trim(),
+        sourceClass,
+        sourcePolicy,
+        curationScore: Number(curationScore.toFixed(3)),
+        isCurated: sourceClass === LOOT_SOURCE_CLASSES.CURATED || entry?.isCurated === true,
+        sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+        majorItem: Boolean(entry?.majorItem),
+        vouchedByActorIds: normalizeLootClaimActorIdList(entry?.vouchedByActorIds)
+      };
+    })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
 }
 
@@ -37832,6 +38134,21 @@ async function setLootKeywordIncludeTags(element) {
   });
 }
 
+async function setLootKeywordIncludeMode(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn("Only the GM can configure loot sources.");
+    return;
+  }
+  const includeMode = normalizeLootKeywordIncludeMode(
+    element?.value,
+    LOOT_KEYWORD_INCLUDE_MODES.ALL
+  );
+  await updateLootSourceConfig((config) => {
+    if (!config.filters || typeof config.filters !== "object") config.filters = {};
+    config.filters.keywordIncludeMode = includeMode;
+  });
+}
+
 async function setLootKeywordExcludeTags(element) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn("Only the GM can configure loot sources.");
@@ -37860,10 +38177,6 @@ async function toggleLootPackSource(element) {
   }
   const packId = String(element?.dataset?.packId ?? "").trim();
   if (!packId) return;
-  if (packId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
-    ui.notifications?.warn("Loot generation now uses imported world items only.");
-    return;
-  }
   const enabled = Boolean(element?.checked);
   const meta = getLootPackSourceMetaById(packId);
 
@@ -37895,10 +38208,6 @@ async function setLootPackWeight(element) {
   }
   const packId = String(element?.dataset?.packId ?? "").trim();
   if (!packId) return;
-  if (packId !== LOOT_WORLD_ITEMS_SOURCE_ID) {
-    ui.notifications?.warn("Loot generation now uses imported world items only.");
-    return;
-  }
   const weightRaw = Number(element?.value ?? 1);
   const weight = Number.isFinite(weightRaw) ? Math.max(1, Math.floor(weightRaw)) : 1;
   const meta = getLootPackSourceMetaById(packId);
@@ -38474,6 +38783,23 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     options?.variableTreasureKind
     ?? getLootVariableTreasureKindFromData(data)
   );
+  const sourceClass = normalizeLootSourceClass(
+    options?.sourceClass
+    ?? poFlags?.sourceClass
+    ?? getLootSourceClassFromData(data, LOOT_SOURCE_CLASSES.MANUAL),
+    LOOT_SOURCE_CLASSES.MANUAL
+  );
+  const sourcePolicy = normalizeLootSourcePolicy(
+    options?.sourcePolicy
+    ?? poFlags?.sourcePolicy
+    ?? poFlags?.lootPolicy
+    ?? "",
+    LOOT_SOURCE_POLICIES.NORMAL
+  );
+  const curationScoreRaw = Number(options?.curationScore ?? poFlags?.curationScore ?? poFlags?.curatedScore ?? 0);
+  const curationScore = Number.isFinite(curationScoreRaw)
+    ? Math.max(0, Math.min(10, Number(curationScoreRaw.toFixed(3))))
+    : 0;
   return {
     id: foundry.utils.randomID(),
     uuid,
@@ -38481,6 +38807,10 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
     itemType: String(data?.type ?? "").trim(),
     rarity,
+    sourceClass,
+    sourcePolicy,
+    curationScore,
+    isCurated: sourceClass === LOOT_SOURCE_CLASSES.CURATED,
     itemValueGp,
     itemWeightLb,
     baseItemValueGp: itemValueGp,
@@ -38492,6 +38822,7 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     merchantCategories: getLootItemMerchantCategoriesFromData(data),
     keywords: getLootKeywordsFromData(data),
     tagSchema: String(poFlags?.tagSchema ?? getLootItemTagSchemaFromData(data) ?? "").trim().toLowerCase(),
+    noLootStack: poFlags?.noLootStack === true,
     sourceLabel: buildLootPreviewSourceLabel(documentRef, options?.sourceLabel ?? "Manual Add")
   };
 }
@@ -38939,7 +39270,10 @@ async function addLootPreviewItemByUuid(uuidInput = "") {
   if (!uuid) return false;
   const document = await resolveUuidDocument(uuid);
   if (!document || document.documentName !== "Item") return false;
-  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, { sourceLabel: "Manual Add" }));
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, {
+    sourceLabel: "Manual Add",
+    sourceClass: LOOT_SOURCE_CLASSES.MANUAL
+  }));
   return true;
 }
 
@@ -39067,7 +39401,10 @@ async function addLootPreviewItemByPicker() {
     ui.notifications?.warn("Selected world item was not found.");
     return false;
   }
-  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(worldItem, { sourceLabel: "World Item Directory" }));
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(worldItem, {
+    sourceLabel: "World Item Directory",
+    sourceClass: LOOT_SOURCE_CLASSES.MANUAL
+  }));
   return true;
 }
 
@@ -39085,7 +39422,10 @@ async function addLootPreviewItemFromDropEvent(event) {
     ui.notifications?.warn("Drop an Item from the sidebar or compendium.");
     return false;
   }
-  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, { sourceLabel: "Drag Drop" }));
+  addItemToLootPreviewResult(buildLootPreviewItemFromDocument(document, {
+    sourceLabel: "Drag Drop",
+    sourceClass: LOOT_SOURCE_CLASSES.MANUAL
+  }));
   return true;
 }
 
@@ -39325,6 +39665,10 @@ async function publishLootPreviewToClaims() {
         variableTreasureKind: normalizeLootVariableTreasureKind(entry?.variableTreasureKind),
         itemType: String(entry?.itemType ?? "").trim(),
         rarity: String(entry?.rarity ?? "").trim(),
+        sourceClass: normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED),
+        sourcePolicy: normalizeLootSourcePolicy(entry?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL),
+        curationScore: Math.max(0, Math.min(10, Number(entry?.curationScore ?? 0) || 0)),
+        isCurated: Boolean(entry?.isCurated) || normalizeLootSourceClass(entry?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED) === LOOT_SOURCE_CLASSES.CURATED,
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
         majorItem: isLootItemLikelyMajor(entry),
         vouchedByActorIds: []

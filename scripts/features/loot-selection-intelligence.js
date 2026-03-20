@@ -15,6 +15,25 @@ function normalizeVariableTreasureKind(value = "") {
   return "";
 }
 
+function normalizeSourceClass(value = "") {
+  const normalized = normalizeText(value);
+  if (normalized === "curated" || normalized === "manual" || normalized === "table" || normalized === "generated") return normalized;
+  return "generated";
+}
+
+function normalizeSourcePolicy(value = "") {
+  const normalized = normalizeText(value).replace(/_/g, "-");
+  if (normalized === "anchor" || normalized === "bonus" || normalized === "outside-budget" || normalized === "normal") return normalized;
+  if (normalized === "outsidebudget") return "outside-budget";
+  return "normal";
+}
+
+function normalizeCurationScore(value = 0) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(10, numeric));
+}
+
 function getEntryIdentity(entry = {}) {
   const uuid = normalizeText(entry?.uuid);
   if (uuid) return `uuid:${uuid}`;
@@ -66,13 +85,20 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   const candidateKind = normalizeVariableTreasureKind(entry?.variableTreasureKind);
   const candidateCategories = normalizeList(entry?.merchantCategories);
   const candidatePrimaryCategory = candidateCategories[0] ?? "";
+  const candidateSourceClass = normalizeSourceClass(entry?.sourceClass);
+  const candidateSourcePolicy = normalizeSourcePolicy(entry?.sourcePolicy);
+  const candidateCurationScore = normalizeCurationScore(entry?.curationScore);
 
   const selectedTypes = new Set();
   const selectedCategories = new Set();
+  const selectedSourceClasses = new Set();
+  const selectedSourcePolicies = new Set();
   let exactDuplicateCount = 0;
   let sameTypeCount = 0;
   let sameKindCount = 0;
   let sameSourceCount = 0;
+  let sameSourceClassCount = 0;
+  let sameSourcePolicyCount = 0;
   let overlappingCategoryCount = 0;
   let samePrimaryCategoryCount = 0;
 
@@ -83,13 +109,19 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
     const selectedKind = normalizeVariableTreasureKind(selectedEntry?.variableTreasureKind);
     const selectedEntryCategories = normalizeList(selectedEntry?.merchantCategories);
     const selectedPrimaryCategory = selectedEntryCategories[0] ?? "";
+    const selectedSourceClass = normalizeSourceClass(selectedEntry?.sourceClass);
+    const selectedSourcePolicy = normalizeSourcePolicy(selectedEntry?.sourcePolicy);
 
     if (selectedType) selectedTypes.add(selectedType);
     for (const category of selectedEntryCategories) selectedCategories.add(category);
+    if (selectedSourceClass) selectedSourceClasses.add(selectedSourceClass);
+    if (selectedSourcePolicy) selectedSourcePolicies.add(selectedSourcePolicy);
     if (candidateIdentity && selectedIdentity === candidateIdentity) exactDuplicateCount += 1;
     if (candidateType && selectedType === candidateType) sameTypeCount += 1;
     if (candidateKind && selectedKind === candidateKind) sameKindCount += 1;
     if (candidateSource && selectedSource === candidateSource) sameSourceCount += 1;
+    if (candidateSourceClass && selectedSourceClass === candidateSourceClass) sameSourceClassCount += 1;
+    if (candidateSourcePolicy && selectedSourcePolicy === candidateSourcePolicy) sameSourcePolicyCount += 1;
     overlappingCategoryCount += countCategoryOverlap(candidateCategories, selectedEntry);
     if (candidatePrimaryCategory && selectedPrimaryCategory === candidatePrimaryCategory) samePrimaryCategoryCount += 1;
   }
@@ -122,6 +154,14 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
     weight *= 1 / (1 + (sameSourceCount * 0.05 * phaseInfluence));
   }
 
+  if (sameSourceClassCount > 0) {
+    weight *= 1 / (1 + (sameSourceClassCount * 0.07 * phaseInfluence));
+  }
+
+  if (sameSourcePolicyCount > 0) {
+    weight *= 1 / (1 + (sameSourcePolicyCount * 0.06 * phaseInfluence));
+  }
+
   if (candidateType && !selectedTypes.has(candidateType)) {
     weight *= 1 + (0.16 * phaseInfluence);
   }
@@ -133,6 +173,29 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   if (candidateKind && selected.every((selectedEntry) => normalizeVariableTreasureKind(selectedEntry?.variableTreasureKind) !== candidateKind)) {
     weight *= 1 + (0.08 * phaseInfluence);
   }
+
+  if (candidateSourceClass === "curated") {
+    weight *= 1 + (0.08 * phaseInfluence);
+  } else if (candidateSourceClass === "manual") {
+    weight *= 0.96;
+  } else if (candidateSourceClass === "table") {
+    weight *= 1 + (0.03 * phaseInfluence);
+  }
+
+  if (candidateSourceClass && !selectedSourceClasses.has(candidateSourceClass)) {
+    weight *= 1 + (0.05 * phaseInfluence);
+  }
+
+  if (candidateSourcePolicy === "anchor") {
+    weight *= sameSourcePolicyCount > 0 ? 1.04 : 1.22;
+  } else if (candidateSourcePolicy === "bonus") {
+    weight *= phaseKey === "fill" ? 1.25 : 1.1;
+  } else if (candidateSourcePolicy === "outside-budget") {
+    weight *= phaseKey === "fill" ? 1.35 : 0.88;
+  }
+
+  const curationFactor = 0.9 + ((candidateCurationScore / 10) * 0.2);
+  weight *= curationFactor;
 
   return Math.max(0.000001, Number(weight.toFixed(6)));
 }

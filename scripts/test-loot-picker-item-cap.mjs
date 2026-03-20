@@ -18,11 +18,15 @@ const commitBlock = extractFunctionBlock(moduleSource, "commitLootBudgetPick", "
 const context = vm.createContext({
   Math,
   result: {},
+  LOOT_SOURCE_CLASSES: { GENERATED: "generated", CURATED: "curated" },
+  LOOT_SOURCE_POLICIES: { NORMAL: "normal" },
   buildLootCohesiveBundle: (picked) => [{ candidate: picked, quantity: 6 }],
   getLootRarityBucket: () => "common",
   rollLootVariableTreasureSelection: () => null,
   roundLootWeightLb: (value) => Number(value),
   normalizeLootVariableTreasureKind: (value) => String(value ?? ""),
+  normalizeLootSourceClass: (value, fallback) => String(value ?? fallback ?? ""),
+  normalizeLootSourcePolicy: (value, fallback) => String(value ?? fallback ?? ""),
   logLootBuilderDebug: () => {}
 });
 
