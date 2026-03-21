@@ -25,6 +25,7 @@
                    "styles/po-controls.css"
                ],
     "templates":  [
+                      "templates/party-operations-app.hbs",
                       "templates/rest-watch.hbs",
                       "templates/rest-watch-shared-note.hbs",
                       "templates/settings-hub.hbs",

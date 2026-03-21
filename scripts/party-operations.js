@@ -12602,7 +12602,10 @@ const audioLibraryUiSelectionActions = createAudioLibraryUiSelectionActions({
   getAudioMixPresetById,
   setSelectedAudioMixPresetId,
   resetAudioMixTrackBrowserPages,
-  refreshLauncherAudioUi
+  refreshLauncherAudioUi: () => {
+    // Lazy reference to avoid TDZ error during module initialization
+    return launcherUiController?.refreshLauncherAudioUi?.();
+  }
 });
 const audioLibraryUiDraftActions = createAudioLibraryUiDraftActions({
   audioLibraryUiState,
