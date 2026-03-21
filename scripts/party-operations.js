@@ -5371,6 +5371,8 @@ const {
 });
 
 let getGmQuickWeatherDraftStorageKey = () => `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
+let getGmQuickWeatherDraft = () => null;
+let setGmQuickWeatherDraft = () => {};
 
 let getLootPreviewDraftStorageKey = () => `po-loot-preview-draft-${game.user?.id ?? "anon"}`;
 
