@@ -232,6 +232,13 @@
                 </div>
               </div>
 
+              {{#if formationSummary.tokenCoverageFallbackActive}}
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Token Coverage</div>
+                <div class="po-op-summary">{{formationSummary.tokenCoverageFallbackMessage}}</div>
+              </div>
+              {{/if}}
+
               {{#if formationSummary.invalidReasons.[0]}}
               <div class="po-march-formation-detail-card is-invalid">
                 <div class="po-watch-total-label">Warnings</div>

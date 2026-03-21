@@ -48,6 +48,15 @@ const DOCTRINE_TRIGGER_LABELS = Object.freeze({
   [MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION]: "Group disruption"
 });
 
+const DOCTRINE_TRIGGER_PRIORITY = Object.freeze({
+  [MARCH_DOCTRINE_TRIGGERS.MANUAL]: 0,
+  [MARCH_DOCTRINE_TRIGGERS.TRAVEL_INTERVAL]: 0,
+  [MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY]: 1,
+  [MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION]: 1,
+  [MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION]: 2,
+  [MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION]: 2
+});
+
 const EFFECT_DEFINITIONS = Object.freeze({
   initiative: Object.freeze({
     key: "initiative",
@@ -332,6 +341,11 @@ function normalizeDoctrineTrigger(value) {
   return DOCTRINE_TRIGGER_LABELS[normalized] ? normalized : MARCH_DOCTRINE_TRIGGERS.MANUAL;
 }
 
+function getDoctrineTriggerPriority(trigger) {
+  const normalized = normalizeDoctrineTrigger(trigger);
+  return Number(DOCTRINE_TRIGGER_PRIORITY[normalized] ?? 0);
+}
+
 function stateWeight(state) {
   if (state === MARCH_DOCTRINE_STATES.BROKEN) return 2;
   if (state === MARCH_DOCTRINE_STATES.STRAINED) return 1;
@@ -484,9 +498,19 @@ function evaluatePositionalValidity(definition, ranks, tokenPositionsByActorId, 
   if (assignedActorIds.length > 0 && missingTokenActorIds.length > 0) {
     reasons.push(createReason({
       code: "missing-token-positions",
-      severity: missingTokenActorIds.length === 1 ? MARCH_DOCTRINE_STATES.STRAINED : MARCH_DOCTRINE_STATES.BROKEN,
-      message: `Token positions unavailable for ${missingTokenActorIds.length} assigned actor${missingTokenActorIds.length === 1 ? "" : "s"}.`
+      severity: MARCH_DOCTRINE_STATES.STABLE,
+      message: `Token positions unavailable for ${missingTokenActorIds.length} assigned actor${missingTokenActorIds.length === 1 ? "" : "s"}; using rank-only validation.`
     }));
+    return {
+      availableTokenCount: 0,
+      missingTokenActorIds,
+      reasons,
+      bandCenters: {
+        front: null,
+        middle: null,
+        rear: null
+      }
+    };
   }
 
   const bandPoints = {};
@@ -757,7 +781,13 @@ export function ensureMarchDoctrineTracker(state) {
 
 export function markDoctrineTriggerPending(state, trigger) {
   const tracker = ensureMarchDoctrineTracker(state);
-  tracker.pendingTrigger = normalizeDoctrineTrigger(trigger);
+  const nextTrigger = normalizeDoctrineTrigger(trigger);
+  const currentTrigger = normalizeDoctrineTrigger(tracker.pendingTrigger);
+  if (currentTrigger && getDoctrineTriggerPriority(currentTrigger) >= getDoctrineTriggerPriority(nextTrigger)) {
+    tracker.cohesionCheckRequired = tracker.pendingTrigger !== "";
+    return tracker;
+  }
+  tracker.pendingTrigger = nextTrigger;
   tracker.cohesionCheckRequired = tracker.pendingTrigger !== "";
   return tracker;
 }

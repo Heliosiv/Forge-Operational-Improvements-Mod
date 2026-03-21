@@ -4,8 +4,10 @@ import {
   MARCH_DOCTRINE_STATES,
   buildDefaultMarchDoctrineTracker,
   buildDoctrineCheckPayload,
+  ensureMarchDoctrineTracker,
   evaluateMarchingFormationState,
   getMarchFormationPassiveEffectDetails,
+  markDoctrineTriggerPending,
   normalizeMarchingFormationId
 } from "./features/march-doctrine.js";
 
@@ -122,6 +124,44 @@ import {
   assert.equal(snapshot.validity.state, MARCH_DOCTRINE_STATES.STABLE);
   assert.equal(snapshot.formationState.state, MARCH_DOCTRINE_STATES.STRAINED);
   assert.deepEqual(snapshot.effectSummaries, ["-5 ft Walk Speed", "Front +1 AC"]);
+}
+
+{
+  const snapshot = evaluateMarchingFormationState({
+    formationId: "tight-guard",
+    ranks: {
+      front: ["actor-a", "actor-b"],
+      middle: ["actor-c"],
+      rear: []
+    },
+    doctrineTracker: buildDefaultMarchDoctrineTracker(),
+    tokenPositionsByActorId: {
+      "actor-a": { x: 100, y: 100 },
+      "actor-b": { x: 120, y: 520 }
+    },
+    gridUnitPixels: 100
+  });
+
+  assert.equal(snapshot.validity.isValid, true);
+  assert.equal(snapshot.validity.state, MARCH_DOCTRINE_STATES.STABLE);
+  assert.ok(
+    snapshot.validity.reasons.some((reason) => reason.code === "missing-token-positions"),
+    "Missing token coverage should add an informational reason while keeping rank-only validation active."
+  );
+}
+
+{
+  const state = { doctrineTracker: buildDefaultMarchDoctrineTracker() };
+  ensureMarchDoctrineTracker(state);
+
+  markDoctrineTriggerPending(state, "spacing-violation");
+  markDoctrineTriggerPending(state, "manual");
+
+  assert.equal(
+    state.doctrineTracker.pendingTrigger,
+    "spacing-violation",
+    "Lower-priority triggers should not overwrite existing higher-priority pending triggers."
+  );
 }
 
 {
