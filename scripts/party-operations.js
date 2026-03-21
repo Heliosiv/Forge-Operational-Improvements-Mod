@@ -7596,11 +7596,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       boundDatasetKey: "poBoundRest",
       debugScope: "rest-watch",
       onSwitchTabClick: (event, tabSwitch) => this.#onSwitchTabClick(event, tabSwitch),
-      onAction: (event) => this.#onAction(event),
+      onAction: (event) => this._onAction(event),
       changeHandlers: [
         (event) => {
           if (!event.target?.matches(REST_WATCH_ACTION_CONTROL_SELECTOR)) return false;
-          void this.#onAction(event);
+          void this._onAction(event);
           return true;
         },
         (event) => {
@@ -7635,7 +7635,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         (event) => {
           if (!event.target?.matches("input[data-action='set-loot-pack-filter']")) return false;
-          void this.#onAction(event);
+          void this._onAction(event);
           return true;
         },
         (event) => {
@@ -7916,7 +7916,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     }
   }
 
-  async #onAction(event) {
+  async _onAction(event) {
     const element = event.target?.closest("[data-action]");
     const action = element?.dataset?.action;
     const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
@@ -7988,15 +7988,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await openRestWatchSharedNoteEditorFromElement(element);
         },
         "save-entry-notes": async () => {
-          ({
-            getLootPreviewDraft,
-            getLootPreviewDraftStorageKey,
-            getLootPreviewResult,
-            getLootPreviewResultStorageKey,
-            setLootPreviewDraft,
-            setLootPreviewResult,
-          } = createLootPreviewDraftStorage({
-          }
           await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
         },
         "visibility": async () => {
