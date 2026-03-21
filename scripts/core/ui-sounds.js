@@ -59,14 +59,15 @@ function getButtonSoundPath() {
 }
 
 async function playButtonSound() {
-  if (typeof AudioHelper?.play !== "function") return;
+  const audioHelper = foundry?.audio?.AudioHelper ?? globalThis.AudioHelper;
+  if (typeof audioHelper?.play !== "function") return;
   const now = Date.now();
   if ((now - lastSoundTimestamp) < SOUND_COOLDOWN_MS) return;
 
   lastSoundTimestamp = now;
 
   try {
-    const result = AudioHelper.play({
+    const result = audioHelper.play({
       src: getButtonSoundPath(),
       volume: DEFAULT_BUTTON_SOUND_VOLUME,
       autoplay: true,

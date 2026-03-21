@@ -1,3 +1,5 @@
+import { createModulePerfTracker } from "./perf.js";
+
 function warn(logger, moduleId, message, error) {
   if (typeof logger?.warn === "function") {
     logger.warn(message, error);
@@ -38,33 +40,38 @@ export function runPartyOperationsInit({
   syncAudioLibraryDraftFromSettings,
   registerPartyOpsFeatureSettings,
   featureSettingsConfig,
+  perfTracker = createModulePerfTracker("lifecycle-init"),
   logger = console,
   moduleId = "party-operations"
 } = {}) {
-  invokeSafely(logger, moduleId, "failed to register module API", registerPartyOperationsApi);
-  invokeSafely(logger, moduleId, "failed to register feature modules", registerFeatureModules);
+  return perfTracker.time("run-init", () => {
+    invokeSafely(logger, moduleId, "failed to register module API", registerPartyOperationsApi);
+    invokeSafely(logger, moduleId, "failed to register feature modules", registerFeatureModules);
 
-  try {
-    const preloadPromise = preloadPartyOperationsPartialTemplates?.();
-    preloadPromise?.catch?.((error) => warn(logger, moduleId, "failed to preload partial templates", error));
-  } catch (error) {
-    warn(logger, moduleId, "failed to preload partial templates", error);
-  }
+    try {
+      const preloadPromise = preloadPartyOperationsPartialTemplates?.();
+      preloadPromise?.catch?.((error) => warn(logger, moduleId, "failed to preload partial templates", error));
+    } catch (error) {
+      warn(logger, moduleId, "failed to preload partial templates", error);
+    }
 
-  invokeSafely(logger, moduleId, "failed to register UI settings", () => {
-    registerPartyOpsSettings?.((key) => {
-      if (key === settings?.DEBUG_ENABLED) return;
-      const scopes = getRefreshScopesForSettingKey?.(key);
-      refreshOpenApps?.({ scopes });
+    invokeSafely(logger, moduleId, "failed to register UI settings", () => {
+      registerPartyOpsSettings?.((key) => {
+        perfTracker.increment("settings.changed", 1, { key: String(key ?? "") });
+        if (key === settings?.DEBUG_ENABLED) return;
+        const scopes = getRefreshScopesForSettingKey?.(key);
+        perfTracker.increment("settings.refresh-open-apps", 1, { key: String(key ?? "") });
+        refreshOpenApps?.({ scopes });
+      });
     });
-  });
 
-  invokeSafely(logger, moduleId, "failed to register data settings", () => {
-    registerPartyOpsDataSettings?.(dataSettingsConfig);
-  });
-  invokeSafely(logger, moduleId, "failed to sync audio library draft from settings", syncAudioLibraryDraftFromSettings);
-  invokeSafely(logger, moduleId, "failed to register feature settings", () => {
-    registerPartyOpsFeatureSettings?.(featureSettingsConfig);
+    invokeSafely(logger, moduleId, "failed to register data settings", () => {
+      registerPartyOpsDataSettings?.(dataSettingsConfig);
+    });
+    invokeSafely(logger, moduleId, "failed to sync audio library draft from settings", syncAudioLibraryDraftFromSettings);
+    invokeSafely(logger, moduleId, "failed to register feature settings", () => {
+      registerPartyOpsFeatureSettings?.(featureSettingsConfig);
+    });
   });
 }
 
@@ -72,7 +79,6 @@ export function runPartyOperationsReady({
   registerPartyOperationsApi,
   ensureSettingsRegistered,
   validatePartyOperationsTemplates,
-  bindPoBrowserBackNavigation,
   setupPartyOperationsUI,
   ensureLauncherUi,
   launcherWarmupDelaysMs = [250, 1000, 3000],
@@ -94,48 +100,61 @@ export function runPartyOperationsReady({
   socketHandler,
   registerPartyOpsHooks,
   setTimeoutFn = globalThis.window?.setTimeout?.bind(globalThis.window) ?? globalThis.setTimeout,
+  perfTracker = createModulePerfTracker("lifecycle-ready"),
   logger = console,
   moduleId = "party-operations"
 } = {}) {
-  registerPartyOperationsApi?.();
-  invokeSafely(logger, moduleId, "failed to ensure settings are registered", ensureSettingsRegistered);
-  void validatePartyOperationsTemplates?.();
-  bindPoBrowserBackNavigation?.();
-  setupPartyOperationsUI?.();
-  ensureLauncherUi?.();
+  return perfTracker.time("run-ready", () => {
+    registerPartyOperationsApi?.();
+    invokeSafely(logger, moduleId, "failed to ensure settings are registered", ensureSettingsRegistered);
+    void validatePartyOperationsTemplates?.();
+    setupPartyOperationsUI?.();
+    perfTracker.increment("launcher.ensure", 1, { reason: "ready-initial" });
+    ensureLauncherUi?.();
 
-  for (const delay of launcherWarmupDelaysMs) {
-    schedule(setTimeoutFn, delay, () => ensureLauncherUi?.());
-  }
+    for (const delay of launcherWarmupDelaysMs) {
+      perfTracker.record("launcher.warmup-delay-ms", delay, { reason: "ready-warmup" });
+      schedule(setTimeoutFn, delay, () => {
+        perfTracker.increment("launcher.ensure", 1, { reason: "ready-warmup", delayMs: delay });
+        ensureLauncherUi?.();
+      });
+    }
 
-  schedule(setTimeoutFn, launcherSelfHealDelayMs, () => {
-    forceLauncherRecovery?.("ready-self-heal")?.catch?.((error) => {
-      warn(logger, moduleId, "launcher self-heal failed", error);
+    schedule(setTimeoutFn, launcherSelfHealDelayMs, () => {
+      perfTracker.increment("launcher.self-heal", 1, { delayMs: launcherSelfHealDelayMs });
+      forceLauncherRecovery?.("ready-self-heal")?.catch?.((error) => {
+        warn(logger, moduleId, "launcher self-heal failed", error);
+      });
     });
+
+    notifyDailyInjuryReminders?.();
+
+    schedule(setTimeoutFn, managedAudioSyncDelayMs, () => {
+      perfTracker.increment("audio.managed-sync", 1, { delayMs: managedAudioSyncDelayMs });
+      void syncManagedAudioMixPlaybackForCurrentUser?.({ reason: "ready", allowAutostart: true });
+    });
+
+    if (!game?.user?.isGM) {
+      perfTracker.increment("sop.pending-sync", 1, { reason: "ready" });
+      schedulePendingSopNoteSync?.("ready");
+    } else {
+      perfTracker.increment("integration.sync", 1, { reason: "ready" });
+      scheduleIntegrationSync?.("ready");
+      perfTracker.increment("merchants.auto-refresh", 1, { reason: "ready" });
+      void handleAutomaticMerchantAutoRefreshTick?.();
+      schedule(setTimeoutFn, audioLibraryWarmupDelayMs, () => {
+        perfTracker.increment("audio.metadata-warmup", 1, { delayMs: audioLibraryWarmupDelayMs });
+        queueAudioLibraryMetadataWarmup?.({ delayMs: 0 });
+      });
+      ensureOperationsJournalFolderTree?.()?.catch?.((error) => {
+        warn(logger, moduleId, "failed to initialize operations journal folder tree", error);
+      });
+      scheduleLootManifestCompendiumTypeFolderSync?.("ready")?.catch?.((error) => {
+        warn(logger, moduleId, "failed to sync loot manifest compendium folders", error);
+      });
+    }
+
+    registerModuleSocketHandler?.({ channel: socketChannel, handler: socketHandler });
+    registerPartyOpsHooks?.();
   });
-
-  notifyDailyInjuryReminders?.();
-
-  schedule(setTimeoutFn, managedAudioSyncDelayMs, () => {
-    void syncManagedAudioMixPlaybackForCurrentUser?.({ reason: "ready", allowAutostart: true });
-  });
-
-  if (!game?.user?.isGM) {
-    schedulePendingSopNoteSync?.("ready");
-  } else {
-    scheduleIntegrationSync?.("ready");
-    void handleAutomaticMerchantAutoRefreshTick?.();
-    schedule(setTimeoutFn, audioLibraryWarmupDelayMs, () => {
-      queueAudioLibraryMetadataWarmup?.({ delayMs: 0 });
-    });
-    ensureOperationsJournalFolderTree?.()?.catch?.((error) => {
-      warn(logger, moduleId, "failed to initialize operations journal folder tree", error);
-    });
-    scheduleLootManifestCompendiumTypeFolderSync?.("ready")?.catch?.((error) => {
-      warn(logger, moduleId, "failed to sync loot manifest compendium folders", error);
-    });
-  }
-
-  registerModuleSocketHandler?.({ channel: socketChannel, handler: socketHandler });
-  registerPartyOpsHooks?.();
 }

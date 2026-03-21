@@ -1063,6 +1063,9 @@
                 </div>
                 <div class="po-op-summary"><strong>Status:</strong> {{operations.downtime.publication.statusLabel}}</div>
                 <div class="po-op-summary"><strong>Published:</strong> {{operations.downtime.publication.publishedAtLabel}} by {{operations.downtime.publication.publishedBy}}</div>
+                <div class="po-op-summary"><strong>Ready to submit:</strong> {{#if operations.downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
+                <div class="po-op-summary"><strong>Selected action:</strong> {{#each operations.downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{operations.downtime.submit.hours}} hour(s)</div>
+                <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
                 {{#if @root.isGM}}
                 <div class="po-op-summary"><strong>Draft Hours:</strong> {{operations.downtime.draftHoursGranted}}</div>
                 <div class="po-op-action-row">

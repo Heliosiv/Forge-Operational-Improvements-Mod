@@ -21,6 +21,7 @@
           <div class="po-loot-eyebrow po-gm-page-eyebrow">GM Workspace</div>
           <div class="po-section-title">Loot Workspace</div>
           <div class="po-hint">Build treasure, tune registry sources, and keep player claim boards aligned with the same shell used across the rest of the GM workspace.</div>
+          <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status aria-live="polite">{{uiActionStatusMessage}}</div>
         </div>
         <div class="po-gm-loot-summary-grid po-gm-page-stat-grid" role="list" aria-label="Loot workspace summary">
           <div class="po-gm-loot-summary-chip po-gm-page-stat" role="listitem"><span>Packs Live</span><strong>{{operations.lootSources.summary.enabledItemPacks}} / {{operations.lootSources.summary.totalItemPacks}}</strong></div>

@@ -3,6 +3,9 @@
   <div class="po-op-summary"><strong>Status:</strong> {{downtime.publication.statusLabel}}</div>
   <div class="po-op-summary"><strong>Published:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</div>
   <div class="po-hint">{{downtime.publication.submitHint}}</div>
+  <div class="po-op-summary"><strong>Ready to submit:</strong> {{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
+  <div class="po-op-summary"><strong>Selected action:</strong> {{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</div>
+  <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
   {{#if downtime.submit.canSubmit}}
   {{#if downtime.submit.canChooseActor}}
   <label class="po-resource-row">
@@ -164,12 +167,19 @@
     {{/if}}
     {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
     {{#if hasResult}}
-    <div class="po-op-summary">Result: {{resultSummary}}</div>
-    {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
-    {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
-    {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
-    {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
-    {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
+    <details class="po-panel-disclosure">
+      <summary class="po-panel-disclosure-summary">
+        <span class="po-section-title">Result: {{resultSummary}}</span>
+        <span class="po-op-summary">{{#if resultTierLabel}}Tier {{resultTierLabel}}{{else}}Details{{/if}}</span>
+      </summary>
+      <div class="po-panel-disclosure-body">
+        {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
+        {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
+        {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
+        {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
+        {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
+      </div>
+    </details>
     {{/if}}
     <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
   </div>

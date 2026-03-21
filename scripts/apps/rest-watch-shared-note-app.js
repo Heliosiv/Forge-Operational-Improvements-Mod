@@ -30,6 +30,11 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     actorId: ""
   };
   #draftText = null;
+  #isSaving = false;
+  #saveStatus = {
+    message: "",
+    tone: "info"
+  };
 
   constructor(options = {}) {
     super(options);
@@ -44,7 +49,25 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       actorId: String(target?.actorId ?? "").trim()
     };
     this.#draftText = null;
+    this.#isSaving = false;
+    this.#saveStatus = { message: "", tone: "info" };
     this.#focusInputOnRender = options.focus !== false;
+  }
+
+  #setSaveStatus(message = "", tone = "info") {
+    this.#saveStatus = {
+      message: String(message ?? "").trim(),
+      tone: String(tone ?? "info").trim().toLowerCase() || "info"
+    };
+
+    const root = this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null);
+    if (!root) return;
+    const statusNode = root.querySelector("[data-shared-note-status]");
+    if (!(statusNode instanceof HTMLElement)) return;
+
+    statusNode.textContent = this.#saveStatus.message;
+    statusNode.classList.toggle("is-warn", this.#saveStatus.tone === "warn");
+    statusNode.classList.toggle("is-ready", this.#saveStatus.tone === "ready");
   }
 
   async _prepareContext() {
@@ -64,7 +87,11 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       entryStatus: String(resolved?.entryStatus ?? ""),
       lastSavedLabel: String(resolved?.lastSavedLabel ?? ""),
       visibilityHint: String(resolved?.visibilityHint ?? "Visible to everyone who can view Rest Watch."),
-      missingEntryMessage: String(resolved?.missingEntryMessage ?? "")
+      missingEntryMessage: String(resolved?.missingEntryMessage ?? ""),
+      saveStatusMessage: this.#saveStatus.message,
+      saveStatusTone: this.#saveStatus.tone,
+      saveStatusWarn: this.#saveStatus.tone === "warn",
+      isSaving: this.#isSaving
     };
   }
 
@@ -79,6 +106,10 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     const saveButton = root.querySelector("[data-action='save-shared-note']");
     const closeButton = root.querySelector("[data-action='close-shared-note']");
 
+    if (saveButton instanceof HTMLElement) {
+      saveButton.toggleAttribute("disabled", this.#isSaving);
+    }
+
     if (textarea && textarea.dataset.poBoundInput !== "1") {
       textarea.dataset.poBoundInput = "1";
       textarea.addEventListener("input", () => {
@@ -88,6 +119,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
           const maxLength = Number(textarea.getAttribute("maxlength") ?? 0) || 0;
           counter.textContent = maxLength > 0 ? `${this.#draftText.length} / ${maxLength}` : String(this.#draftText.length);
         }
+        if (this.#saveStatus.message) this.#setSaveStatus("", "info");
       });
       textarea.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -128,14 +160,31 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
   }
 
   async #onSaveClick() {
+    if (this.#isSaving) return;
     const root = this.element;
     const textarea = root?.querySelector?.("[data-shared-note-input]");
     const text = String(textarea?.value ?? this.#draftText ?? "");
-    const saved = await this.#saveNote(this.#target, text);
-    this.#draftText = text;
-    if (saved) {
-      await this.render({ force: true, parts: ["main"], focus: false });
-      this.bringToFront?.();
+    this.#isSaving = true;
+    this.#setSaveStatus("Saving shared note...", "info");
+
+    try {
+      const saved = await this.#saveNote(this.#target, text);
+      this.#draftText = text;
+      if (saved) {
+        this.#setSaveStatus("Shared note saved.", "ready");
+        await this.render({ force: true, parts: ["main"], focus: false });
+        this.bringToFront?.();
+        return;
+      }
+
+      this.#setSaveStatus("Save failed. Please try again.", "warn");
+    } catch (error) {
+      console.warn("party-operations: failed to save shared note", error);
+      this.#setSaveStatus("Save failed. Please try again.", "warn");
+    } finally {
+      this.#isSaving = false;
+      const saveButton = root?.querySelector?.("[data-action='save-shared-note']");
+      if (saveButton instanceof HTMLElement) saveButton.toggleAttribute("disabled", this.#isSaving);
     }
   }
 }

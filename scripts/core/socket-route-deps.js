@@ -1,4 +1,12 @@
 import { createPartyOperationsSocketMessageHandler } from "./socket-message-handler.js";
+import {
+  buildCommerceSocketRouteDeps,
+  buildDowntimeSocketRouteDeps,
+  buildMarchSocketRouteDeps,
+  buildOperationsSocketRouteDeps,
+  buildRestSocketRouteDeps,
+  buildSettingsSocketRouteDeps
+} from "./socket-route-domain-builders.js";
 
 export function buildPartyOperationsSocketRouteDeps({
   settings,
@@ -98,14 +106,14 @@ export function buildPartyOperationsSocketRouteDeps({
     getRestActivities,
     setModuleSettingWithLocalRefreshSuppressed,
     emitSocketRefresh,
-    normalizeSocketRestRequest: (request) => normalizeSocketRestRequest(request, {
+    ...buildRestSocketRouteDeps({
+      normalizeSocketRestRequest,
       restOps,
       sanitizeSocketIdentifier,
       clampSocketText,
-      noteMaxLength: socketNoteMaxLength,
-      normalizeRestNoteSaveSource
-    }),
-    applyRestRequest: (request, requesterRef) => applyRestRequest(request, requesterRef, {
+      socketNoteMaxLength,
+      normalizeRestNoteSaveSource,
+      applyRestRequest,
       getRestWatchState,
       game,
       resolveRequester,
@@ -117,27 +125,20 @@ export function buildPartyOperationsSocketRouteDeps({
       refreshOpenApps,
       refreshScopeKeys,
       emitSocketRefresh,
-      logUiDebug
-    }),
-    applyPlayerActivityUpdateRequest: (message) => applyPlayerActivityUpdateRequestFeature(message, null, {
+      logUiDebug,
+      applyPlayerActivityUpdateRequestFeature,
       getSocketRequester,
-      sanitizeSocketIdentifier,
       normalizeSocketActivityType,
-      getRestActivities,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh
+      getRestActivities
     }),
-    normalizeSocketMarchRequest: (request) => normalizeSocketMarchRequest(request, {
+    ...buildMarchSocketRouteDeps({
+      normalizeSocketMarchRequest,
       marchOps,
       marchRanks,
       sanitizeSocketIdentifier,
       clampSocketText,
-      noteMaxLength: socketNoteMaxLength
-    }),
-    applyMarchRequest: (request, requesterRef) => applyMarchRequest(request, requesterRef, {
+      socketNoteMaxLength,
+      applyMarchRequest,
       getMarchingOrderState,
       game,
       resolveRequester,
@@ -152,7 +153,8 @@ export function buildPartyOperationsSocketRouteDeps({
       emitSocketRefresh,
       logUiDebug
     }),
-    applyPlayerSettingWriteRequest: (message, requesterRef) => applyPlayerSettingWriteRequestFeature(message, requesterRef, {
+    ...buildSettingsSocketRouteDeps({
+      applyPlayerSettingWriteRequestFeature,
       resolveRequester,
       canAccessAllPlayerOps,
       isWritableModuleSettingKey,
@@ -163,31 +165,22 @@ export function buildPartyOperationsSocketRouteDeps({
       refreshOpenApps,
       getRefreshScopesForSettingKey,
       emitSocketRefresh,
-      logUiFailure
-    }),
-    applyPlayerFolderOwnershipWriteRequest: (message, requesterRef) => applyPlayerFolderOwnershipWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
+      logUiFailure,
+      applyPlayerFolderOwnershipWriteRequestFeature,
       sanitizeSocketIdentifier,
       constDocOwnershipLevels,
-      game,
-      foundry,
       ui,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh,
-      moduleId
+      refreshScopeKeys
     }),
-    applyPlayerSopNoteRequest: (message, requesterRef) => applyPlayerSopNoteRequestFeature(message, requesterRef, {
+    ...buildOperationsSocketRouteDeps({
+      applyPlayerSopNoteRequestFeature,
       resolveRequester,
       sopKeys,
       clampSocketText,
-      noteMaxLength: socketNoteMaxLength,
+      socketNoteMaxLength,
       updateOperationsLedger,
-      setSharedSopNoteText
-    }),
-    applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
+      setSharedSopNoteText,
+      applyPlayerOperationsLedgerWriteRequestFeature,
       buildDefaultOperationsLedger,
       foundry,
       setModuleSettingWithLocalRefreshSuppressed,
@@ -197,34 +190,30 @@ export function buildPartyOperationsSocketRouteDeps({
       refreshScopeKeys,
       emitSocketRefresh
     }),
-    applyPlayerDowntimeSubmitRequest: (message, requesterRef) => applyPlayerDowntimeSubmitRequestFeature(message, requesterRef, {
+    ...buildDowntimeSocketRouteDeps({
+      applyPlayerDowntimeSubmitRequestFeature,
       resolveRequester,
       getOperationsLedger,
       ensureDowntimeState,
       normalizeDowntimeSubmission,
       sanitizeSocketIdentifier,
-      applyDowntimeSubmissionForUser
-    }),
-    applyPlayerDowntimeClearRequest: (message, requesterRef) => applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
+      applyDowntimeSubmissionForUser,
+      applyPlayerDowntimeClearRequestFeature,
       game,
       canUserManageDowntimeActor,
       updateOperationsLedger,
-      ensureDowntimeState
-    }),
-    applyPlayerDowntimeCollectRequest: (message, requesterRef) => applyPlayerDowntimeCollectRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
+      applyPlayerDowntimeCollectRequestFeature,
       applyDowntimeCollectionForUser,
       ui,
       getDowntimeCollectionSummary
     }),
-    applyPlayerMerchantBarterRequest,
-    applyPlayerMerchantTradeRequest,
-    applyPlayerLootClaimRequest,
-    applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    ...buildCommerceSocketRouteDeps({
+      applyPlayerMerchantBarterRequest,
+      applyPlayerMerchantTradeRequest,
+      applyPlayerLootClaimRequest,
+      applyPlayerLootCurrencyClaimRequest,
+      applyPlayerLootVouchRequest
+    })
   };
 }
 

@@ -1,3 +1,5 @@
+import { createModulePerfTracker } from "../core/perf.js";
+
 export function registerPartyOperationsUiHooks({
   HooksRef = globalThis.Hooks,
   openMainTab,
@@ -6,9 +8,37 @@ export function registerPartyOperationsUiHooks({
   ensureLauncherUi,
   hideManagedAudioMixPlaylistUi,
   setTimeoutFn = globalThis.window?.setTimeout?.bind(globalThis.window) ?? globalThis.setTimeout,
-  documentRef = globalThis.document
+  documentRef = globalThis.document,
+  perfTracker = createModulePerfTracker("ui-hooks"),
+  launcherEnsureCooldownMs = 30,
+  nowFn = Date.now
 } = {}) {
   if (typeof HooksRef?.on !== "function") return;
+
+  const lastLauncherEnsureAtByFamily = new Map();
+
+  function requestLauncherEnsure(reason, meta = {}) {
+    const family = String(meta?.family ?? "launcher-ui").trim() || "launcher-ui";
+    const nowRaw = Number(nowFn?.() ?? Date.now());
+    const now = Number.isFinite(nowRaw) ? nowRaw : Date.now();
+    const lastAt = Number(lastLauncherEnsureAtByFamily.get(family) ?? Number.NEGATIVE_INFINITY);
+    if ((now - lastAt) < launcherEnsureCooldownMs) {
+      perfTracker.increment("launcher.ensure-skipped", 1, {
+        reason,
+        family,
+        cooldownMs: launcherEnsureCooldownMs,
+        ...meta
+      });
+      return;
+    }
+    lastLauncherEnsureAtByFamily.set(family, now);
+    perfTracker.increment("launcher.ensure-request", 1, {
+      reason,
+      family,
+      ...meta
+    });
+    ensureLauncherUi?.();
+  }
 
   HooksRef.on("getSceneControlButtons", (controls) => {
     if (!Array.isArray(controls)) return;
@@ -59,26 +89,38 @@ export function registerPartyOperationsUiHooks({
   });
 
   HooksRef.on("renderSceneControls", () => {
-    ensureLauncherUi?.();
+    requestLauncherEnsure("renderSceneControls", { family: "ui-render" });
   });
 
   HooksRef.on("canvasReady", () => {
-    ensureLauncherUi?.();
+    requestLauncherEnsure("canvasReady", { family: "ui-render" });
   });
 
   HooksRef.on("renderHotbar", () => {
-    ensureLauncherUi?.();
+    requestLauncherEnsure("renderHotbar", { family: "ui-render" });
   });
 
   HooksRef.on("renderSidebarTab", (_app, html) => {
-    ensureLauncherUi?.();
-    setTimeoutFn?.(() => ensureLauncherUi?.(), 30);
+    requestLauncherEnsure("renderSidebarTab", { family: "ui-render" });
+    setTimeoutFn?.(() => requestLauncherEnsure("renderSidebarTab", {
+      family: "ui-render",
+      deferred: true,
+      delayMs: 30
+    }), 30);
+    perfTracker.increment("audio.playlist-hide", 1, { reason: "renderSidebarTab" });
     hideManagedAudioMixPlaylistUi?.(html?.[0] ?? html ?? documentRef);
-    setTimeoutFn?.(() => hideManagedAudioMixPlaylistUi?.(documentRef), 30);
+    setTimeoutFn?.(() => {
+      perfTracker.increment("audio.playlist-hide", 1, { reason: "renderSidebarTab", deferred: true, delayMs: 30 });
+      hideManagedAudioMixPlaylistUi?.(documentRef);
+    }, 30);
   });
 
   HooksRef.on("renderNavigation", () => {
-    ensureLauncherUi?.();
-    setTimeoutFn?.(() => ensureLauncherUi?.(), 30);
+    requestLauncherEnsure("renderNavigation", { family: "ui-render" });
+    setTimeoutFn?.(() => requestLauncherEnsure("renderNavigation", {
+      family: "ui-render",
+      deferred: true,
+      delayMs: 30
+    }), 30);
   });
 }

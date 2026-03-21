@@ -48,6 +48,37 @@ The GM Audio page is part of the current build line.
 - Build notes and fixes: [BUG_FIXES.md](./BUG_FIXES.md)
 - Roadmap: [ROADMAP.md](./ROADMAP.md)
 
+## External Developer Tools
+
+This workspace is wired to an external tooling repo at `E:\Computer Upgrades`.
+
+Available VS Code tasks in `.vscode/tasks.json`:
+
+- `external-tools:setup` installs or refreshes the external Python and shell tooling.
+- `external-tools:verify` checks the installed toolchain.
+- `external-tools:langgraph-starter` runs the minimal LangGraph smoke test.
+- `external-tools:repo-health` runs a LangGraph-based repository health summary against this workspace.
+- `external-tools:test-summary` runs a LangGraph-based failing-check triage workflow against this workspace.
+- `external-tools:release-readiness` runs a LangGraph-based release-readiness preflight against this workspace.
+- `external-tools:workflow-history` summarizes persisted workflow history and compares against prior stronger baselines.
+- `external-tools:workflow-history-test-summary` summarizes persisted history for the test-summary workflow.
+- `external-tools:agent-mock` runs the multi-provider agent in mock mode.
+- `external-tools:agent-copilot` runs the agent with Copilot-compatible settings.
+- `external-tools:agent-codex` runs the agent with OpenAI-compatible Codex settings.
+- `external-tools:agent-azure` runs the agent with Azure OpenAI settings.
+
+The external tool repo currently provides `memori`, `pydantic`, `sqlalchemy`, `langgraph`, `langchain-openai`, `python-dotenv`, `tmux`, and the `werks` wrapper.
+
+Provider-backed agent runs load environment variables from `E:\Computer Upgrades\.env`. Use the mock task if provider credentials are not configured yet.
+
+The repository health workflow uses LangGraph to inspect git state, package metadata, module version, and validation entry points, then emits a concise developer summary.
+
+The test-summary workflow runs a validation command, detects failing checks from the output, and compares the result with the previous recorded run.
+
+The release-readiness workflow inspects versioning, packaging tasks, release artifacts, and git state before zip creation, then compares the current assessment with the previous run.
+
+For stable versions, release-readiness now applies stricter blocking rules by default for dirty worktrees and missing packaging artifacts.
+
 ## Repository Release Flow
 
 Validate the module before publishing:

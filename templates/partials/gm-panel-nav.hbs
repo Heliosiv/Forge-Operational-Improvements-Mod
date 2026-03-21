@@ -1,29 +1,29 @@
-<div class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" aria-label="GM panel navigation">
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction">
+<div class="po-tabs po-tabs-sub po-gm-panel-tabs po-gm-ops-tabs" role="tablist" aria-label="GM panel navigation">
+  <button type="button" role="tab" aria-selected="{{#if isFactions}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-factions-page" tabindex="{{#if isFactions}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isFactions}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="faction">
     <span class="po-gm-tab-title">Reputation</span>
     <span class="po-gm-tab-sub">Factions, access, and pressure</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isGlobalModifiers}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="global-modifiers">
+  <button type="button" role="tab" aria-selected="{{#if isGlobalModifiers}}true{{else}}false{{/if}}" aria-controls="po-panel-global-modifiers" tabindex="{{#if isGlobalModifiers}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isGlobalModifiers}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="global-modifiers">
     <span class="po-gm-tab-title">Global Modifiers</span>
     <span class="po-gm-tab-sub">Review derived party-wide effects</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isEnvironment}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="environment">
+  <button type="button" role="tab" aria-selected="{{#if isEnvironment}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-environment-page" tabindex="{{#if isEnvironment}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isEnvironment}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="environment">
     <span class="po-gm-tab-title">Environment</span>
     <span class="po-gm-tab-sub">Hazards, checks, and presets</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime">
+  <button type="button" role="tab" aria-selected="{{#if isDowntime}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-downtime-page" tabindex="{{#if isDowntime}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isDowntime}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="downtime">
     <span class="po-gm-tab-title">Downtime</span>
     <span class="po-gm-tab-sub">Entries, tuning, and resolution</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants">
+  <button type="button" role="tab" aria-selected="{{#if isMerchants}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-merchants-page" tabindex="{{#if isMerchants}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isMerchants}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="merchants">
     <span class="po-gm-tab-title">Merchants</span>
     <span class="po-gm-tab-sub">Locations, stock, and shop flow</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio">
+  <button type="button" role="tab" aria-selected="{{#if isAudio}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-audio-page" tabindex="{{#if isAudio}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isAudio}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="audio">
     <span class="po-gm-tab-title">Audio</span>
     <span class="po-gm-tab-sub">Library scans and live mixes</span>
   </button>
-  <button type="button" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot">
+  <button type="button" role="tab" aria-selected="{{#if isLoot}}true{{else}}false{{/if}}" aria-controls="po-panel-gm-loot-page" tabindex="{{#if isLoot}}0{{else}}-1{{/if}}" class="po-tab po-gm-nav-tab {{#if isLoot}}is-active{{/if}}" data-action="gm-panel-tab" data-panel="loot">
     <span class="po-gm-tab-title">Loot</span>
     <span class="po-gm-tab-sub">Builder, sources, and claims</span>
   </button>

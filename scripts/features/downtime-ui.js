@@ -47,7 +47,30 @@ export function createGmDowntimePageApp(deps) {
     };
 
     async _prepareContext() {
-      return buildContext();
+      const context = buildContext() ?? {};
+      const uiStatus = this._uiActionStatus ?? { message: "", tone: "" };
+      return {
+        ...context,
+        uiActionStatusMessage: uiStatus.message,
+        uiActionStatusWarn: uiStatus.tone === "warn",
+        uiActionStatusGood: uiStatus.tone === "good"
+      };
+    }
+
+    _setUiActionStatus(message, tone = "") {
+      this._uiActionStatus = {
+        message: String(message ?? ""),
+        tone: String(tone ?? "")
+      };
+      const root = this.element instanceof HTMLElement
+        ? this.element
+        : (this.element?.[0] instanceof HTMLElement ? this.element[0] : null);
+      const statusNode = root?.querySelector?.("[data-page-action-status]");
+      if (statusNode instanceof HTMLElement) {
+        statusNode.textContent = this._uiActionStatus.message;
+        statusNode.classList.toggle("is-warn", this._uiActionStatus.tone === "warn");
+        statusNode.classList.toggle("is-good", this._uiActionStatus.tone === "good");
+      }
     }
 
     _setPageInstance(instance) {
@@ -68,6 +91,21 @@ export function createGmDowntimePageApp(deps) {
 
     _getActionHandlers() {
       const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
+      const withActionStatus = (operation, {
+        pending = "Working…",
+        success = "Update complete.",
+        failure = "Action failed."
+      } = {}) => async (actionElement, event) => {
+        this._setUiActionStatus(pending);
+        try {
+          const result = await operation(actionElement, event);
+          this._setUiActionStatus(success, "good");
+          return result;
+        } catch (error) {
+          this._setUiActionStatus(failure, "warn");
+          throw error;
+        }
+      };
       return {
         "gm-downtime-page-back": async () => {
           this.close();
@@ -85,7 +123,11 @@ export function createGmDowntimePageApp(deps) {
           setGmDowntimeViewState({ logsSort: String(actionElement?.value ?? "") });
           rerender();
         },
-        "publish-downtime-hours": rerenderAlways(publishDowntimeHoursToPlayers),
+        "publish-downtime-hours": rerenderAlways(withActionStatus(publishDowntimeHoursToPlayers, {
+          pending: "Publishing downtime hours…",
+          success: "Downtime hours published.",
+          failure: "Failed to publish downtime hours."
+        })),
         "set-downtime-hours": rerenderAlways(setDowntimeHoursGranted),
         "set-downtime-tuning": rerenderAlways(setDowntimeTuningField),
         "refresh-downtime-submit-selection": async (actionElement) => {
@@ -99,16 +141,36 @@ export function createGmDowntimePageApp(deps) {
         "prefill-downtime-resolution": async (actionElement) => {
           applyDowntimeResolverBaseToUi(actionElement, { force: true });
         },
-        "pre-resolve-selected-downtime-entry": rerenderAlways(preResolveSelectedDowntimeEntry),
-        "resolve-selected-downtime-entry": rerenderAlways(resolveSelectedDowntimeEntry),
+        "pre-resolve-selected-downtime-entry": rerenderAlways(withActionStatus(preResolveSelectedDowntimeEntry, {
+          pending: "Rolling downtime outcome…",
+          success: "Draft outcome prepared.",
+          failure: "Unable to prepare draft outcome."
+        })),
+        "resolve-selected-downtime-entry": rerenderAlways(withActionStatus(resolveSelectedDowntimeEntry, {
+          pending: "Applying downtime resolution…",
+          success: "Downtime entry resolved.",
+          failure: "Unable to resolve downtime entry."
+        })),
         "edit-downtime-result": rerenderAlways(editDowntimeResult),
-        "submit-downtime-action": rerenderAlways(submitDowntimeAction),
+        "submit-downtime-action": rerenderAlways(withActionStatus(submitDowntimeAction, {
+          pending: "Submitting downtime action…",
+          success: "Downtime action submitted.",
+          failure: "Downtime submission failed."
+        })),
         "clear-downtime-entry": rerenderAlways(clearDowntimeEntry),
         "clear-downtime-results": rerenderAlways(() => clearDowntimeResults()),
         "unarchive-downtime-log": rerenderAlways(unarchiveDowntimeLogEntry),
         "clear-downtime-log": rerenderAlways(clearDowntimeLogEntry),
-        "post-downtime-log": rerenderAlways(postDowntimeLogOutcome),
-        "collect-downtime-result": rerenderAlways(collectDowntimeResult),
+        "post-downtime-log": rerenderAlways(withActionStatus(postDowntimeLogOutcome, {
+          pending: "Posting downtime log outcome…",
+          success: "Downtime log posted.",
+          failure: "Unable to post downtime log outcome."
+        })),
+        "collect-downtime-result": rerenderAlways(withActionStatus(collectDowntimeResult, {
+          pending: "Collecting downtime result…",
+          success: "Downtime result collected.",
+          failure: "Unable to collect downtime result."
+        })),
         "remove-downtime-material-drop": async (actionElement) => {
           removeDowntimeSubmissionMaterialDropFromUi(actionElement);
           rerender();

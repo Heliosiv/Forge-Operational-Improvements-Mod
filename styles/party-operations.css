@@ -2663,9 +2663,8 @@
   overflow-x: visible;
   white-space: normal;
   gap: var(--po-space-1);
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  position: relative;
+  z-index: 1;
   padding: var(--po-space-1);
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 36%, var(--po-border));
   border-radius: var(--po-radius);

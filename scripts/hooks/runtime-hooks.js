@@ -1,6 +1,9 @@
+import { createModulePerfTracker } from "../core/perf.js";
+
 export function registerHookModule({
   HooksRef = globalThis.Hooks,
-  module
+  module,
+  perfTracker = createModulePerfTracker("runtime-hooks")
 } = {}) {
   if (typeof HooksRef?.on !== "function") return;
 
@@ -10,13 +13,15 @@ export function registerHookModule({
     const eventName = String(registration[0] ?? "").trim();
     const handler = registration[1];
     if (!eventName || typeof handler !== "function") continue;
+    perfTracker.increment("hook.registered", 1, { moduleId: String(module?.id ?? ""), eventName });
     HooksRef.on(eventName, handler);
   }
 }
 
 export function createPartyOpsHookRegistrar({
   HooksRef = globalThis.Hooks,
-  getHookModules
+  getHookModules,
+  perfTracker = createModulePerfTracker("runtime-hooks")
 } = {}) {
   let hooksRegistered = false;
 
@@ -25,8 +30,9 @@ export function createPartyOpsHookRegistrar({
     hooksRegistered = true;
 
     const hookModules = typeof getHookModules === "function" ? getHookModules() : [];
+    perfTracker.record("hook-module-count", hookModules.length, { reason: "register" });
     for (const hookModule of hookModules) {
-      registerHookModule({ HooksRef, module: hookModule });
+      registerHookModule({ HooksRef, module: hookModule, perfTracker });
     }
   };
 }
@@ -168,7 +174,8 @@ function buildSettingHookModule({
   refreshOpenApps,
   getRefreshScopesForSettingKey,
   scheduleIntegrationSync,
-  gameRef
+  gameRef,
+  perfTracker
 } = {}) {
   const restKey = `${moduleId}.${settings?.REST_STATE}`;
   const marchKey = `${moduleId}.${settings?.MARCH_STATE}`;
@@ -197,11 +204,14 @@ function buildSettingHookModule({
       ["updateSetting", (setting) => {
         const settingKey = String(setting?.key ?? "").trim();
         if (!settingKey) return;
+        perfTracker?.increment?.("setting.updated", 1, { settingKey });
         if (consumeSuppressedSettingRefresh?.(settingKey)) return;
         if (refreshKeys.has(settingKey)) {
+          perfTracker?.increment?.("refresh-open-apps", 1, { settingKey });
           refreshOpenApps?.({ scopes: getRefreshScopesForSettingKey?.(settingKey) });
         }
         if (gameRef?.user?.isGM && integrationSyncKeys.has(settingKey)) {
+          perfTracker?.increment?.("integration-sync", 1, { reason: "update-setting", settingKey });
           scheduleIntegrationSync?.("update-setting");
         }
       }]
@@ -212,13 +222,15 @@ function buildSettingHookModule({
 function buildIntegrationHookModule({
   scheduleIntegrationSync,
   bindFolderOwnershipProxySubmit,
-  gameRef
+  gameRef,
+  perfTracker
 } = {}) {
   return {
     id: "integration",
     registrations: [
       ["canvasReady", () => {
         if (!gameRef?.user?.isGM) return;
+        perfTracker?.increment?.("integration-sync", 1, { reason: "canvas-ready" });
         scheduleIntegrationSync?.("canvas-ready");
       }],
       ["renderDocumentOwnershipConfig", (app, html) => {
@@ -231,7 +243,8 @@ function buildIntegrationHookModule({
 function buildAudioPlaybackHookModule({
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
-  gameRef
+  gameRef,
+  perfTracker
 } = {}) {
   return {
     id: "audio-playback",
@@ -248,6 +261,7 @@ function buildAudioPlaybackHookModule({
           || Object.prototype.hasOwnProperty.call(changed, "path");
         if (!touchesPlayback) return;
 
+        perfTracker?.increment?.("audio-playback-resync", 1, { eventName: "updatePlaylistSound" });
         queueManagedAudioMixPlaybackResync?.(80, { playlist, refresh: true });
       }],
       ["updatePlaylist", (playlist, changed) => {
@@ -260,6 +274,7 @@ function buildAudioPlaybackHookModule({
           || Object.prototype.hasOwnProperty.call(changed, "fade");
         if (!touchesPlayback) return;
 
+        perfTracker?.increment?.("audio-playback-resync", 1, { eventName: "updatePlaylist" });
         queueManagedAudioMixPlaybackResync?.(80, { playlist, refresh: true });
       }]
     ]
@@ -288,7 +303,8 @@ export function buildPartyOpsRuntimeHookModules({
   isManagedAudioMixPlaylist,
   queueManagedAudioMixPlaybackResync,
   gameRef = globalThis.game,
-  foundryRef = globalThis.foundry
+  foundryRef = globalThis.foundry,
+  perfTracker = createModulePerfTracker("runtime-hooks")
 } = {}) {
   return [
     buildTimeHookModule({
@@ -323,17 +339,20 @@ export function buildPartyOpsRuntimeHookModules({
       refreshOpenApps,
       getRefreshScopesForSettingKey,
       scheduleIntegrationSync,
-      gameRef
+      gameRef,
+      perfTracker
     }),
     buildIntegrationHookModule({
       scheduleIntegrationSync,
       bindFolderOwnershipProxySubmit,
-      gameRef
+      gameRef,
+      perfTracker
     }),
     buildAudioPlaybackHookModule({
       isManagedAudioMixPlaylist,
       queueManagedAudioMixPlaybackResync,
-      gameRef
+      gameRef,
+      perfTracker
     })
   ];
 }

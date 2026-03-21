@@ -5,6 +5,18 @@ import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { RestWatchSharedNoteApp } from "./apps/rest-watch-shared-note-app.js";
 import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
+import { createAudioLibraryCatalogSignatureTools } from "./features/audio-library-catalog-signature.js";
+import { createAudioLibraryUiDraftActions } from "./features/audio-library-ui-draft-actions.js";
+import { createAudioLibraryUiPickerUploadActions } from "./features/audio-library-ui-picker-upload-actions.js";
+import { createAudioLibraryScanCacheStore } from "./features/audio-library-scan-cache.js";
+import { createAudioLibraryUiFilterActions } from "./features/audio-library-ui-filter-actions.js";
+import { createAudioLibraryUiSelectionActions } from "./features/audio-library-ui-selection-actions.js";
+import { createDowntimeUiDraftStorage } from "./features/downtime-ui-draft-storage.js";
+import { createGmQuickWeatherDraftStorage } from "./features/gm-quick-weather-draft.js";
+import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-storage.js";
+import { createNoteDraftCache } from "./features/note-draft-cache.js";
+import { createReputationDraftStorage } from "./features/reputation-draft-storage.js";
+import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
 import { createAudioStore } from "./features/audio-store.js";
 import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
@@ -67,6 +79,11 @@ import {
 } from "./core/constants.js";
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
+import {
+  createModulePerfTracker,
+  getPartyOpsPerfState,
+  summarizeCurrentPartyOpsPerfState
+} from "./core/perf.js";
 import { createFeatureRegistrar } from "./core/feature-registry.js";
 import {
   canSubmitPublishedDowntime,
@@ -110,6 +127,7 @@ import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
 import { createPartyOperationsSocketHandler } from "./core/socket-route-deps.js";
+import { createAppWindowPositionManager } from "./core/window-position-manager.js";
 import {
   preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
   validatePartyOperationsTemplates as validatePartyOperationsTemplatesSurface
@@ -237,6 +255,7 @@ if (DEBUG_LOG) console.log("party-operations: script loaded");
 
 const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 const bootstrapLogger = createLogger("bootstrap");
+const perfTracker = createModulePerfTracker("party-operations-runtime");
 const registerFeatureModules = createFeatureRegistrar({
   features: [
     createRestFeatureModule(),
@@ -374,7 +393,6 @@ export const SETTINGS = {
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
-const pendingWindowPositionPersistTimers = new Map();
 let latestCanvasRestoreRequestId = 0;
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
@@ -418,8 +436,6 @@ let lootManifestFolderSyncDisabledNotified = false;
 let lootManifestMonksCompatNotified = false;
 const pendingInventoryRefreshByActor = new Map();
 const autoInventoryPackIndexCache = new Map();
-let cachedAppWindowPositions = {};
-let cachedAppWindowPositionsLoaded = false;
 const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
 const lootSourceItemsCache = new Map();
@@ -565,307 +581,24 @@ const GATHER_QUICK_PRESETS = Object.freeze([
   }
 ]);
 
-const NEAR_FULLSCREEN_WINDOW_PROFILE = Object.freeze({
-  width: 1520,
-  height: 900,
-  minWidth: 860,
-  minHeight: 600,
-  maxWidthRatio: 0.94,
-  maxHeightRatio: 0.9
+const {
+  clampWindowPositionToViewport,
+  getResponsiveWindowOptions,
+  getResponsiveWindowPosition,
+  installRememberedWindowPositionBehavior,
+  normalizeWindowProfileId,
+  persistWindowStateFromApp,
+  queuePersistRememberedWindowState
+} = createAppWindowPositionManager({
+  moduleId: MODULE_ID,
+  appWindowPositionsSettingKey: SETTINGS.APP_WINDOW_POSITIONS,
+  normalizeWindowStateLike,
+  areWindowStatesEquivalent,
+  captureWindowState,
+  gameInstance: game,
+  foundryInstance: foundry,
+  globalObject: globalThis
 });
-
-const APP_WINDOW_SIZE_PROFILES = Object.freeze({
-  default: NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "rest-watch": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "operations-shell": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "rest-watch-player": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "marching-order": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "global-modifiers": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-factions": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-environment": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-downtime": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-merchants": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-audio": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-loot": NEAR_FULLSCREEN_WINDOW_PROFILE,
-  "gm-loot-claims-board": NEAR_FULLSCREEN_WINDOW_PROFILE
-});
-
-const APP_WINDOW_PROFILE_BY_ID = Object.freeze({
-  "rest-watch-app": "rest-watch",
-  "operations-shell-app": "operations-shell",
-  "rest-watch-player-app": "rest-watch-player",
-  "marching-order-app": "marching-order",
-  "party-operations-global-modifier-summary": "global-modifiers",
-  "party-operations-gm-factions-page": "gm-factions",
-  "party-operations-gm-environment-page": "gm-environment",
-  "party-operations-gm-downtime-page": "gm-downtime",
-  "party-operations-gm-merchants-page": "gm-merchants",
-  "party-operations-gm-audio-page": "gm-audio",
-  "party-operations-gm-loot-page": "gm-loot",
-  "party-operations-gm-loot-claims-board": "gm-loot-claims-board"
-});
-
-const APP_WINDOW_POSITION_STORAGE_KEYS = Object.freeze({
-  "rest-watch": "main-ops",
-  "operations-shell": "main-ops",
-  "marching-order": "main-ops",
-  "global-modifiers": "main-ops",
-  "gm-factions": "main-ops",
-  "gm-environment": "main-ops",
-  "gm-downtime": "main-ops",
-  "gm-merchants": "main-ops",
-  "gm-audio": "main-ops",
-  "gm-loot": "main-ops",
-  "rest-watch-player": "rest-watch-player",
-  "gm-loot-claims-board": "gm-loot-claims-board"
-});
-
-function normalizeWindowProfileId(profileOrApp) {
-  if (typeof profileOrApp === "string") {
-    const normalized = String(profileOrApp ?? "").trim().toLowerCase();
-    if (Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, normalized)) return normalized;
-    return "default";
-  }
-  const appId = String(profileOrApp?.options?.id ?? profileOrApp?.id ?? "").trim();
-  const mappedProfileId = APP_WINDOW_PROFILE_BY_ID[appId];
-  if (mappedProfileId && Object.prototype.hasOwnProperty.call(APP_WINDOW_SIZE_PROFILES, mappedProfileId)) return mappedProfileId;
-  return "default";
-}
-
-function getUiViewportSize() {
-  const rawWidth = Number(globalThis?.window?.innerWidth ?? document?.documentElement?.clientWidth ?? 1600);
-  const rawHeight = Number(globalThis?.window?.innerHeight ?? document?.documentElement?.clientHeight ?? 900);
-  const width = Number.isFinite(rawWidth) && rawWidth > 0 ? Math.floor(rawWidth) : 1600;
-  const height = Number.isFinite(rawHeight) && rawHeight > 0 ? Math.floor(rawHeight) : 900;
-  return {
-    width: Math.max(480, width),
-    height: Math.max(360, height)
-  };
-}
-
-function clampWindowMetric(value, min, max, fallback) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return fallback;
-  return Math.max(min, Math.min(max, Math.floor(raw)));
-}
-
-function normalizeWindowPositionStorageKey(profileOrApp) {
-  const profileId = normalizeWindowProfileId(profileOrApp);
-  return APP_WINDOW_POSITION_STORAGE_KEYS[profileId] ?? profileId;
-}
-
-function normalizeStoredAppWindowPositions(input) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
-  const normalized = {};
-  for (const [key, value] of Object.entries(input)) {
-    const normalizedKey = String(key ?? "").trim();
-    if (!normalizedKey) continue;
-    const normalizedState = normalizeWindowStateLike(value);
-    if (!normalizedState) continue;
-    normalized[normalizedKey] = normalizedState;
-  }
-  return normalized;
-}
-
-function getStoredAppWindowPositions() {
-  if (cachedAppWindowPositionsLoaded) return cachedAppWindowPositions;
-  try {
-    cachedAppWindowPositions = normalizeStoredAppWindowPositions(
-      game.settings.get(MODULE_ID, SETTINGS.APP_WINDOW_POSITIONS)
-    );
-    cachedAppWindowPositionsLoaded = true;
-  } catch {
-    return {};
-  }
-  return cachedAppWindowPositions;
-}
-
-function setStoredAppWindowPositions(input) {
-  cachedAppWindowPositions = normalizeStoredAppWindowPositions(input);
-  cachedAppWindowPositionsLoaded = true;
-  return cachedAppWindowPositions;
-}
-
-function getRememberedWindowState(profileOrApp) {
-  const storageKey = normalizeWindowPositionStorageKey(profileOrApp);
-  return normalizeWindowStateLike(getStoredAppWindowPositions()[storageKey]);
-}
-
-function queuePersistRememberedWindowState(profileOrApp, state, options = {}) {
-  const normalizedState = normalizeWindowStateLike(state);
-  if (!normalizedState) return;
-
-  const storageKey = normalizeWindowPositionStorageKey(profileOrApp);
-  const currentStates = getStoredAppWindowPositions();
-  const previousState = normalizeWindowStateLike(currentStates[storageKey]);
-  if (areWindowStatesEquivalent(previousState, normalizedState)) return;
-
-  const nextStates = setStoredAppWindowPositions({
-    ...currentStates,
-    [storageKey]: normalizedState
-  });
-
-  const existingTimer = pendingWindowPositionPersistTimers.get(storageKey);
-  if (existingTimer) {
-    try {
-      globalThis.clearTimeout(existingTimer);
-    } catch {
-      // Ignore timer cleanup failures.
-    }
-  }
-
-  const persist = async () => {
-    pendingWindowPositionPersistTimers.delete(storageKey);
-    try {
-      await game.settings.set(MODULE_ID, SETTINGS.APP_WINDOW_POSITIONS, { ...nextStates });
-    } catch {
-      // Ignore transient client-setting failures. The in-memory cache still preserves navigation.
-    }
-  };
-
-  if (options?.immediate === true) {
-    void persist();
-    return;
-  }
-
-  const timerDelayMs = Math.max(60, Math.floor(Number(options?.delayMs ?? 180) || 180));
-  try {
-    const timerId = globalThis.setTimeout(() => {
-      void persist();
-    }, timerDelayMs);
-    pendingWindowPositionPersistTimers.set(storageKey, timerId);
-  } catch {
-    void persist();
-  }
-}
-
-function persistWindowStateFromApp(app, options = {}) {
-  const windowState = captureWindowState(app);
-  if (!windowState) return;
-  queuePersistRememberedWindowState(app, windowState, options);
-}
-
-function getResponsiveWindowSize(profileOrApp, overrides = {}) {
-  const profileId = normalizeWindowProfileId(profileOrApp);
-  const profile = APP_WINDOW_SIZE_PROFILES[profileId] ?? APP_WINDOW_SIZE_PROFILES.default;
-  const patch = overrides && typeof overrides === "object" ? overrides : {};
-  const merged = {
-    width: Number(patch.width ?? profile.width),
-    height: Number(patch.height ?? profile.height),
-    minWidth: Number(patch.minWidth ?? profile.minWidth),
-    minHeight: Number(patch.minHeight ?? profile.minHeight),
-    maxWidthRatio: Number(patch.maxWidthRatio ?? profile.maxWidthRatio),
-    maxHeightRatio: Number(patch.maxHeightRatio ?? profile.maxHeightRatio)
-  };
-  const viewport = getUiViewportSize();
-  const minWidth = Math.max(420, Math.floor(Number.isFinite(merged.minWidth) ? merged.minWidth : 700));
-  const minHeight = Math.max(320, Math.floor(Number.isFinite(merged.minHeight) ? merged.minHeight : 520));
-  const maxWidthRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxWidthRatio) ? merged.maxWidthRatio : 0.95));
-  const maxHeightRatio = Math.max(0.6, Math.min(0.99, Number.isFinite(merged.maxHeightRatio) ? merged.maxHeightRatio : 0.92));
-  const maxWidth = Math.max(minWidth, Math.floor(viewport.width * maxWidthRatio));
-  const maxHeight = Math.max(minHeight, Math.floor(viewport.height * maxHeightRatio));
-  const widthFallback = clampWindowMetric(profile.width, minWidth, maxWidth, maxWidth);
-  const heightFallback = clampWindowMetric(profile.height, minHeight, maxHeight, maxHeight);
-  return {
-    width: clampWindowMetric(merged.width, minWidth, maxWidth, widthFallback),
-    height: clampWindowMetric(merged.height, minHeight, maxHeight, heightFallback)
-  };
-}
-
-function getResponsiveWindowPosition(profileOrApp, overrides = {}) {
-  const patch = overrides && typeof overrides === "object" ? overrides : {};
-  const remembered = getRememberedWindowState(profileOrApp);
-  const size = getResponsiveWindowSize(profileOrApp, remembered ? {
-    width: remembered.width,
-    height: remembered.height,
-    ...patch
-  } : patch);
-  const placement = clampWindowPositionToViewport({
-    left: Number.isFinite(Number(patch.left)) ? Number(patch.left) : remembered?.left,
-    top: Number.isFinite(Number(patch.top)) ? Number(patch.top) : remembered?.top,
-    width: size.width,
-    height: size.height
-  });
-  if (Number.isFinite(placement.left) && Number.isFinite(placement.top)) {
-    return {
-      ...size,
-      left: placement.left,
-      top: placement.top
-    };
-  }
-  return size;
-}
-
-function clampWindowPositionToViewport(position, options = {}) {
-  const viewport = getUiViewportSize();
-  const padding = Math.max(0, Math.floor(Number(options.padding ?? 8) || 8));
-  const width = Number(position?.width);
-  const height = Number(position?.height);
-  const left = Number(position?.left);
-  const top = Number(position?.top);
-  const maxLeft = Number.isFinite(width) ? Math.max(padding, viewport.width - Math.floor(width) - padding) : undefined;
-  const maxTop = Number.isFinite(height) ? Math.max(padding, viewport.height - Math.floor(height) - padding) : undefined;
-  return {
-    left: Number.isFinite(left) && Number.isFinite(maxLeft) ? Math.max(padding, Math.min(maxLeft, Math.floor(left))) : undefined,
-    top: Number.isFinite(top) && Number.isFinite(maxTop) ? Math.max(padding, Math.min(maxTop, Math.floor(top))) : undefined
-  };
-}
-
-function getResponsiveWindowOptions(profileId, options = {}) {
-  const patch = options && typeof options === "object" ? options : {};
-  const overridePosition = patch.position && typeof patch.position === "object" ? patch.position : {};
-  return foundry.utils.mergeObject(patch, {
-    position: getResponsiveWindowPosition(profileId, overridePosition)
-  }, { inplace: false, overwrite: true });
-}
-
-function installRememberedWindowPositionBehavior(appClass) {
-  if (!appClass?.prototype || appClass.prototype.__poWindowPositionPersistenceInstalled === true) return;
-
-  const originalSetPosition = appClass.prototype.setPosition;
-  if (typeof originalSetPosition === "function") {
-    appClass.prototype.setPosition = function(position = {}) {
-      const result = originalSetPosition.call(this, position);
-      try {
-        const nextState = normalizeWindowStateLike(result)
-          ?? normalizeWindowStateLike(this?.position)
-          ?? normalizeWindowStateLike(position)
-          ?? captureWindowState(this);
-        if (nextState) queuePersistRememberedWindowState(this, nextState);
-      } catch {
-        // Ignore position persistence failures so the UI still moves normally.
-      }
-      return result;
-    };
-  }
-
-  const originalClose = appClass.prototype.close;
-  if (typeof originalClose === "function") {
-    appClass.prototype.close = function(options = {}) {
-      try {
-        persistWindowStateFromApp(this, { immediate: true });
-      } catch {
-        // Ignore close-time persistence failures.
-      }
-      return originalClose.call(this, options);
-    };
-  }
-
-  appClass.prototype.persistWindowPosition = function(options = {}) {
-    try {
-      persistWindowStateFromApp(this, options);
-    } catch {
-      // Ignore manual persistence failures requested by navigation helpers.
-    }
-  };
-
-  Object.defineProperty(appClass.prototype, "__poWindowPositionPersistenceInstalled", {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false
-  });
-}
 
 function normalizePreservedRenderOptions(renderOptions = null) {
   const patch = renderOptions && typeof renderOptions === "object" ? renderOptions : {};
@@ -1070,14 +803,6 @@ const {
 } = createMainTabRegistry({
   templateMap: PO_TEMPLATE_MAP
 });
-
-function writePoBrowserHistoryEntry(_destination, _options = {}) {
-  // Browser history integration intentionally disabled.
-}
-
-function bindPoBrowserBackNavigation() {
-  // Browser back/forward handling intentionally disabled.
-}
 
 function logUiDebug(scope, message, details = null) {
   if (!isModuleDebugEnabled()) return;
@@ -5511,148 +5236,32 @@ function syncApplicationWindowTitle(app, title) {
   if (titleNode) titleNode.textContent = label;
 }
 
-function getReputationFilterStorageKey() {
-  return `po-reputation-filter-${game.user?.id ?? "anon"}`;
-}
-
-function getReputationNoteLogSelectionStorageKey() {
-  return `po-reputation-note-log-selection-${game.user?.id ?? "anon"}`;
-}
-
-function getReputationBuilderStorageKey() {
-  return `po-reputation-builder-${game.user?.id ?? "anon"}`;
-}
-
-function getReputationNoteLogSelections() {
-  const raw = sessionStorage.getItem(getReputationNoteLogSelectionStorageKey());
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const normalized = {};
-    for (const [factionId, logId] of Object.entries(parsed)) {
-      const key = String(factionId ?? "").trim();
-      if (!key) continue;
-      const value = String(logId ?? "").trim();
-      if (!value) continue;
-      normalized[key] = value;
-    }
-    return normalized;
-  } catch {
-    return {};
-  }
-}
-
-function setReputationNoteLogSelection(factionIdInput, logIdInput) {
-  const factionId = String(factionIdInput ?? "").trim();
-  if (!factionId) return "";
-  const logId = String(logIdInput ?? "").trim();
-  const state = getReputationNoteLogSelections();
-  if (!logId) {
-    delete state[factionId];
-  } else {
-    state[factionId] = logId;
-  }
-  sessionStorage.setItem(getReputationNoteLogSelectionStorageKey(), JSON.stringify(state));
-  return logId;
-}
-
-function getReputationNoteLogSelection(factionIdInput) {
-  const factionId = String(factionIdInput ?? "").trim();
-  if (!factionId) return "";
-  const state = getReputationNoteLogSelections();
-  return String(state[factionId] ?? "").trim();
-}
-
-function clampReputationStandingValue(value) {
-  const numeric = Number(value ?? 0);
-  return Number.isFinite(numeric) ? Math.max(-5, Math.min(5, Math.floor(numeric))) : 0;
-}
-
-const REPUTATION_VIEW_SCOPES = Object.freeze({
-  OPERATIONS: "operations",
-  GM: "gm"
+const {
+  clearReputationBuilderState,
+  clampReputationStandingValue,
+  getDefaultReputationBuilderDraft,
+  getEmptyReputationPlayerImpact,
+  getReputationBuilderState,
+  getReputationBuilderStorageKey,
+  getReputationFilterState,
+  getReputationFilterStorageKey,
+  getReputationNoteLogSelection,
+  getReputationNoteLogSelections,
+  getReputationNoteLogSelectionStorageKey,
+  normalizeReputationBuilderDraft,
+  normalizeReputationPlayerImpact,
+  normalizeReputationViewScope,
+  REPUTATION_VIEW_SCOPES,
+  saveReputationBuilderState,
+  setReputationFilterState,
+  setReputationNoteLogSelection,
+  updateReputationBuilderState,
+} = createReputationDraftStorage({
+  gameRef: game,
+  storage: sessionStorage,
+  randomIdFn: () => foundry.utils.randomID(),
+  deepCloneFn: (v) => foundry.utils.deepClone(v),
 });
-
-function normalizeReputationViewScope(value) {
-  return String(value ?? "").trim().toLowerCase() === REPUTATION_VIEW_SCOPES.GM
-    ? REPUTATION_VIEW_SCOPES.GM
-    : REPUTATION_VIEW_SCOPES.OPERATIONS;
-}
-
-function getEmptyReputationPlayerImpact() {
-  return {
-    id: foundry.utils.randomID(),
-    actorId: "",
-    delta: 0,
-    note: ""
-  };
-}
-
-function normalizeReputationPlayerImpact(entry = {}) {
-  return {
-    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-    actorId: String(entry?.actorId ?? "").trim(),
-    delta: clampReputationStandingValue(entry?.delta ?? 0),
-    note: String(entry?.note ?? "")
-  };
-}
-
-function getDefaultReputationBuilderDraft() {
-  return {
-    label: "",
-    category: "",
-    represents: "",
-    linkedActorId: "",
-    score: 0,
-    summary: "",
-    note: "",
-    playerImpacts: [getEmptyReputationPlayerImpact()]
-  };
-}
-
-function normalizeReputationBuilderDraft(entry = {}) {
-  const impacts = Array.isArray(entry?.playerImpacts)
-    ? entry.playerImpacts.map((row) => normalizeReputationPlayerImpact(row)).slice(0, 12)
-    : [];
-  return {
-    label: String(entry?.label ?? "").trim().slice(0, 120),
-    category: String(entry?.category ?? "").trim().slice(0, 120),
-    represents: String(entry?.represents ?? "").trim().slice(0, 180),
-    linkedActorId: String(entry?.linkedActorId ?? "").trim(),
-    score: clampReputationStandingValue(entry?.score ?? 0),
-    summary: String(entry?.summary ?? ""),
-    note: String(entry?.note ?? ""),
-    playerImpacts: impacts.length ? impacts : [getEmptyReputationPlayerImpact()]
-  };
-}
-
-function getReputationBuilderState() {
-  const raw = sessionStorage.getItem(getReputationBuilderStorageKey());
-  if (!raw) return getDefaultReputationBuilderDraft();
-  try {
-    return normalizeReputationBuilderDraft(JSON.parse(raw));
-  } catch (_error) {
-    return getDefaultReputationBuilderDraft();
-  }
-}
-
-function saveReputationBuilderState(draft = {}) {
-  const next = normalizeReputationBuilderDraft(draft);
-  sessionStorage.setItem(getReputationBuilderStorageKey(), JSON.stringify(next));
-  return next;
-}
-
-function updateReputationBuilderState(mutator) {
-  const next = foundry.utils.deepClone(getReputationBuilderState());
-  if (typeof mutator === "function") mutator(next);
-  return saveReputationBuilderState(next);
-}
-
-function clearReputationBuilderState() {
-  sessionStorage.removeItem(getReputationBuilderStorageKey());
-  return getDefaultReputationBuilderDraft();
-}
 
 function getReputationActorName(actorIdInput) {
   const actorId = String(actorIdInput ?? "").trim();
@@ -5739,30 +5348,6 @@ function getSelectedReputationNoteLogId(element, factionIdInput) {
   return selectedFromUi || selectedFromState;
 }
 
-function getReputationFilterState() {
-  const defaults = { keyword: "", standing: "all" };
-  const raw = sessionStorage.getItem(getReputationFilterStorageKey());
-  if (!raw) return defaults;
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      keyword: String(parsed?.keyword ?? ""),
-      standing: String(parsed?.standing ?? "all")
-    };
-  } catch (_error) {
-    return defaults;
-  }
-}
-
-function setReputationFilterState(patch = {}) {
-  const previous = getReputationFilterState();
-  const next = {
-    keyword: String(patch.keyword ?? previous.keyword ?? ""),
-    standing: String(patch.standing ?? previous.standing ?? "all")
-  };
-  sessionStorage.setItem(getReputationFilterStorageKey(), JSON.stringify(next));
-}
-
 function normalizeMerchantSettlementSelection(value) {
   const settlement = String(value ?? "").trim().slice(0, 120);
   if (!settlement) return "";
@@ -5794,13 +5379,9 @@ function getActiveSyncEffectsTab() {
   return stored === "archived" ? "archived" : "active";
 }
 
-function getGmQuickWeatherDraftStorageKey() {
-  return `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
-}
+let getGmQuickWeatherDraftStorageKey = () => `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
 
-function getLootPreviewDraftStorageKey() {
-  return `po-loot-preview-draft-${game.user?.id ?? "anon"}`;
-}
+let getLootPreviewDraftStorageKey = () => `po-loot-preview-draft-${game.user?.id ?? "anon"}`;
 
 function getLootPreviewResultStorageKey() {
   return `po-loot-preview-result-${game.user?.id ?? "anon"}`;
@@ -5948,164 +5529,27 @@ function buildRestWatchNoteTimerKey(slotId, actorId) {
   return `${String(slotId ?? "").trim()}::${String(actorId ?? "").trim()}`;
 }
 
-function getNoteDraftCacheStorageKey() {
-  const worldId = String(game.world?.id ?? "world").trim() || "world";
-  const userId = String(game.user?.id ?? "user").trim() || "user";
-  return `${MODULE_ID}.noteDraftCache.${worldId}.${userId}`;
-}
-
-function readNoteDraftCacheStore() {
-  try {
-    const raw = localStorage.getItem(getNoteDraftCacheStorageKey());
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeNoteDraftCacheStore(store = {}) {
-  try {
-    localStorage.setItem(getNoteDraftCacheStorageKey(), JSON.stringify(store));
-  } catch {
-    // Ignore storage errors silently.
-  }
-}
-
-function getNoteDraftCacheValue(cacheKeyInput) {
-  const cacheKey = String(cacheKeyInput ?? "").trim();
-  if (!cacheKey) return "";
-  const store = readNoteDraftCacheStore();
-  const entry = store[cacheKey];
-  if (entry && typeof entry === "object" && typeof entry.text === "string") return entry.text;
-  return "";
-}
-
-function setNoteDraftCacheValue(cacheKeyInput, textInput) {
-  const cacheKey = String(cacheKeyInput ?? "").trim();
-  if (!cacheKey) return;
-  const text = String(textInput ?? "");
-  const store = readNoteDraftCacheStore();
-  if (!text.trim()) {
-    delete store[cacheKey];
-    writeNoteDraftCacheStore(store);
-    return;
-  }
-  store[cacheKey] = {
-    text,
-    updatedAt: Date.now()
-  };
-  const entries = Object.entries(store);
-  if (entries.length > 300) {
-    entries
-      .sort((a, b) => Number(a?.[1]?.updatedAt ?? 0) - Number(b?.[1]?.updatedAt ?? 0))
-      .slice(0, entries.length - 300)
-      .forEach(([key]) => delete store[key]);
-  }
-  writeNoteDraftCacheStore(store);
-}
-
-function clearNoteDraftCacheValue(cacheKeyInput) {
-  const cacheKey = String(cacheKeyInput ?? "").trim();
-  if (!cacheKey) return;
-  const store = readNoteDraftCacheStore();
-  if (!Object.prototype.hasOwnProperty.call(store, cacheKey)) return;
-  delete store[cacheKey];
-  writeNoteDraftCacheStore(store);
-}
-
-function getRestWatchNoteCacheKey(slotIdInput, actorIdInput) {
-  const slotId = String(slotIdInput ?? "").trim();
-  const actorId = String(actorIdInput ?? "").trim();
-  if (!slotId || !actorId) return "";
-  return `rest:${slotId}:${actorId}`;
-}
-
-function getMarchingNoteCacheKey(actorIdInput) {
-  const actorId = String(actorIdInput ?? "").trim();
-  if (!actorId) return "";
-  return `march:${actorId}`;
-}
-
-function getSopNoteCacheKey(sopKeyInput) {
-  const sopKey = String(sopKeyInput ?? "").trim();
-  if (!sopKey || !SOP_KEYS.includes(sopKey)) return "";
-  return `sop:${sopKey}`;
-}
-
-function readSopCachedNoteEntry(sopKeyInput) {
-  const cacheKey = getSopNoteCacheKey(sopKeyInput);
-  if (!cacheKey) return null;
-  const store = readNoteDraftCacheStore();
-  const entry = store[cacheKey];
-  if (!entry || typeof entry !== "object") return null;
-  const text = clampSocketText(entry.text ?? "", SOCKET_NOTE_MAX_LENGTH);
-  const pendingSync = Boolean(entry.pendingSync);
-  if (!String(text ?? "").trim() && !pendingSync) return null;
-  return {
-    sopKey: String(sopKeyInput ?? "").trim(),
-    text,
-    pendingSync,
-    updatedAt: Math.max(0, Number(entry.updatedAt ?? 0) || 0)
-  };
-}
-
-function writeSopCachedNoteEntry(sopKeyInput, textInput, options = {}) {
-  const cacheKey = getSopNoteCacheKey(sopKeyInput);
-  if (!cacheKey) return;
-  const text = clampSocketText(textInput ?? "", SOCKET_NOTE_MAX_LENGTH);
-  const pendingSync = options?.pendingSync !== false;
-  if (!String(text ?? "").trim() && !pendingSync) {
-    clearNoteDraftCacheValue(cacheKey);
-    return;
-  }
-  const store = readNoteDraftCacheStore();
-  store[cacheKey] = {
-    text,
-    pendingSync,
-    updatedAt: Date.now()
-  };
-  const entries = Object.entries(store);
-  if (entries.length > 300) {
-    entries
-      .sort((a, b) => Number(a?.[1]?.updatedAt ?? 0) - Number(b?.[1]?.updatedAt ?? 0))
-      .slice(0, entries.length - 300)
-      .forEach(([key]) => delete store[key]);
-  }
-  writeNoteDraftCacheStore(store);
-}
-
-function clearSopCachedNoteEntry(sopKeyInput) {
-  const cacheKey = getSopNoteCacheKey(sopKeyInput);
-  if (!cacheKey) return;
-  clearNoteDraftCacheValue(cacheKey);
-}
-
-function resolveSopDraftForView(sopKeyInput, worldNoteInput = "") {
-  const sopKey = String(sopKeyInput ?? "").trim();
-  const worldNote = clampSocketText(worldNoteInput ?? "", SOCKET_NOTE_MAX_LENGTH);
-  const cached = readSopCachedNoteEntry(sopKey);
-  if (!cached) return { note: worldNote, pendingSync: false };
-  if (cached.text === worldNote) {
-    clearSopCachedNoteEntry(sopKey);
-    return { note: worldNote, pendingSync: false };
-  }
-  return {
-    note: String(cached.text ?? ""),
-    pendingSync: Boolean(cached.pendingSync)
-  };
-}
-
-function resolveSopNoteForView(sopKeyInput, worldNoteInput) {
-  return resolveSopDraftForView(sopKeyInput, worldNoteInput);
-}
-
-function getPendingSopCachedNotes() {
-  return SOP_KEYS
-    .map((sopKey) => readSopCachedNoteEntry(sopKey))
-    .filter((entry) => Boolean(entry?.pendingSync));
-}
+const {
+  clearNoteDraftCacheValue,
+  clearSopCachedNoteEntry,
+  getMarchingNoteCacheKey,
+  getNoteDraftCacheValue,
+  getPendingSopCachedNotes,
+  getRestWatchNoteCacheKey,
+  readSopCachedNoteEntry,
+  resolveSopDraftForView,
+  resolveSopNoteForView,
+  setNoteDraftCacheValue,
+  writeSopCachedNoteEntry
+} = createNoteDraftCache({
+  moduleId: MODULE_ID,
+  gameRef: game,
+  storage: localStorage,
+  nowFn: Date.now,
+  sopKeys: SOP_KEYS,
+  clampText: clampSocketText,
+  sopNoteMaxLength: SOCKET_NOTE_MAX_LENGTH
+});
 
 function schedulePendingSopNoteSync(reason = "context") {
   if (game.user?.isGM) return;
@@ -6747,132 +6191,33 @@ function normalizeLootPreviewDraft(input = {}) {
   };
 }
 
-function getLootPreviewDraft() {
-  const raw = sessionStorage.getItem(getLootPreviewDraftStorageKey());
-  if (!raw) return normalizeLootPreviewDraft({});
-  try {
-    return normalizeLootPreviewDraft(JSON.parse(raw));
-  } catch {
-    return normalizeLootPreviewDraft({});
-  }
-}
+let getLootPreviewDraft = () => normalizeLootPreviewDraft({});
+let setLootPreviewDraft = () => {};
 
-function setLootPreviewDraft(draft = {}) {
-  const normalized = normalizeLootPreviewDraft(draft);
-  sessionStorage.setItem(getLootPreviewDraftStorageKey(), JSON.stringify(normalized));
-}
+({
+  getLootPreviewDraft,
+  getLootPreviewDraftStorageKey,
+  setLootPreviewDraft
+} = createLootPreviewDraftStorage({
+  storage: sessionStorage,
+  gameRef: game,
+  normalizeLootPreviewDraft
+}));
 
-function getDowntimeUiDraftStorageKey() {
-  const worldId = String(game.world?.id ?? "world").trim() || "world";
-  const userId = String(game.user?.id ?? "anon").trim() || "anon";
-  return `${MODULE_ID}.downtimeUiDraft.${worldId}.${userId}`;
-}
-
-function getDowntimeUiDraft() {
-  try {
-    const raw = sessionStorage.getItem(getDowntimeUiDraftStorageKey());
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch (_error) {
-    return {};
-  }
-}
-
-function writeDowntimeUiDraft(draft = {}) {
-  try {
-    const next = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
-    if (Object.keys(next).length <= 0) {
-      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
-      return {};
-    }
-    sessionStorage.setItem(getDowntimeUiDraftStorageKey(), JSON.stringify(next));
-    return next;
-  } catch (_error) {
-    return draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
-  }
-}
-
-function setDowntimeUiDraftSection(sectionKey, patch = null) {
-  const section = String(sectionKey ?? "").trim().toLowerCase();
-  if (!section) return getDowntimeUiDraft();
-  const current = getDowntimeUiDraft();
-  const next = { ...current };
-  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
-    delete next[section];
-    return writeDowntimeUiDraft(next);
-  }
-  next[section] = {
-    ...(current?.[section] && typeof current[section] === "object" && !Array.isArray(current[section]) ? current[section] : {}),
-    ...patch
-  };
-  return writeDowntimeUiDraft(next);
-}
-
-function replaceDowntimeUiDraftSection(sectionKey, patch = null) {
-  const section = String(sectionKey ?? "").trim().toLowerCase();
-  if (!section) return getDowntimeUiDraft();
-  const current = getDowntimeUiDraft();
-  const next = { ...current };
-  if (!patch || typeof patch !== "object" || Array.isArray(patch) || Object.keys(patch).length <= 0) {
-    delete next[section];
-    return writeDowntimeUiDraft(next);
-  }
-  next[section] = { ...patch };
-  return writeDowntimeUiDraft(next);
-}
-
-function clearDowntimeUiDraft(sectionKey = null) {
-  const section = String(sectionKey ?? "").trim().toLowerCase();
-  if (!section) {
-    try {
-      sessionStorage.removeItem(getDowntimeUiDraftStorageKey());
-    } catch (_error) {
-      // Ignore storage failures outside browser execution contexts.
-    }
-    return {};
-  }
-  return replaceDowntimeUiDraftSection(section, null);
-}
-
-function syncDowntimeSubmissionDraftFromRoot(root) {
-  if (!(root instanceof HTMLElement)) return {};
-  return setDowntimeUiDraftSection("submission", {
-    actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
-    actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
-    hours: String(root.querySelector("input[name='downtimeHours']")?.value ?? ""),
-    note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? ""),
-    browsingAbility: String(root.querySelector("select[name='downtimeBrowsingAbility']")?.value ?? "").trim(),
-    craftItemId: String(root.querySelector("select[name='downtimeCraftItemId']")?.value ?? "").trim(),
-    materialsOwned: String(root.querySelector("select[name='downtimeCraftMaterialsOwned']")?.value ?? "").trim(),
-    materialDropsJson: String(root.querySelector("input[name='downtimeCraftMaterialDrops']")?.value ?? "[]"),
-    professionId: String(root.querySelector("select[name='downtimeProfessionId']")?.value ?? "").trim()
-  });
-}
-
-function syncDowntimeResolverDraftFromRoot(root) {
-  if (!(root instanceof HTMLElement)) return {};
-  return setDowntimeUiDraftSection("resolution", {
-    actorId: String(root.querySelector("select[name='resolveDowntimeActorId']")?.value ?? "").trim(),
-    summary: String(root.querySelector("input[name='resolveDowntimeSummary']")?.value ?? ""),
-    gpAward: String(root.querySelector("input[name='resolveDowntimeGp']")?.value ?? ""),
-    gpCost: String(root.querySelector("input[name='resolveDowntimeCost']")?.value ?? ""),
-    rumorCount: String(root.querySelector("input[name='resolveDowntimeRumors']")?.value ?? ""),
-    socialContractKey: String(root.querySelector("select[name='resolveDowntimeContractKey']")?.value ?? "").trim(),
-    socialContractNotes: String(root.querySelector("textarea[name='resolveDowntimeContractNotes']")?.value ?? ""),
-    itemRewardsText: String(root.querySelector("textarea[name='resolveDowntimeItems']")?.value ?? ""),
-    itemRewardDropsJson: String(root.querySelector("input[name='resolveDowntimeItemDrops']")?.value ?? "[]"),
-    gmNotes: String(root.querySelector("textarea[name='resolveDowntimeNotes']")?.value ?? "")
-  });
-}
-
-function syncDowntimeUiDraftFromElement(element) {
-  const panelRoot = element?.closest?.(".po-downtime-panel");
-  if (panelRoot instanceof HTMLElement) syncDowntimeSubmissionDraftFromRoot(panelRoot);
-  const resolverRoot = element?.closest?.(".po-downtime-resolver");
-  if (resolverRoot instanceof HTMLElement) syncDowntimeResolverDraftFromRoot(resolverRoot);
-  return getDowntimeUiDraft();
-}
+const {
+  clearDowntimeUiDraft,
+  getDowntimeUiDraft,
+  replaceDowntimeUiDraftSection,
+  setDowntimeUiDraftSection,
+  syncDowntimeResolverDraftFromRoot,
+  syncDowntimeSubmissionDraftFromRoot,
+  syncDowntimeUiDraftFromElement
+} = createDowntimeUiDraftStorage({
+  moduleId: MODULE_ID,
+  gameRef: game,
+  storage: sessionStorage,
+  htmlElementClass: HTMLElement
+});
 
 function getLootPreviewResult() {
   const raw = sessionStorage.getItem(getLootPreviewResultStorageKey());
@@ -6894,39 +6239,14 @@ function setLootPreviewResult(result = null) {
   sessionStorage.setItem(getLootPreviewResultStorageKey(), JSON.stringify(result));
 }
 
-function getGmQuickWeatherDraft() {
-  const raw = sessionStorage.getItem(getGmQuickWeatherDraftStorageKey());
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return {
-      selectedKey: String(parsed.selectedKey ?? "").trim(),
-      darkness: Number(parsed.darkness ?? 0),
-      visibilityModifier: Number(parsed.visibilityModifier ?? 0),
-      note: String(parsed.note ?? ""),
-      presetName: String(parsed.presetName ?? ""),
-      daeChanges: Array.isArray(parsed.daeChanges) ? parsed.daeChanges : []
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
-function setGmQuickWeatherDraft(draft = null) {
-  if (!draft || typeof draft !== "object") {
-    sessionStorage.removeItem(getGmQuickWeatherDraftStorageKey());
-    return;
-  }
-  sessionStorage.setItem(getGmQuickWeatherDraftStorageKey(), JSON.stringify({
-    selectedKey: String(draft.selectedKey ?? "").trim(),
-    darkness: Number(draft.darkness ?? 0),
-    visibilityModifier: Number(draft.visibilityModifier ?? 0),
-    note: String(draft.note ?? ""),
-    presetName: String(draft.presetName ?? ""),
-    daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : []
-  }));
-}
+({
+  getGmQuickWeatherDraft,
+  getGmQuickWeatherDraftStorageKey,
+  setGmQuickWeatherDraft
+} = createGmQuickWeatherDraftStorage({
+  storage: sessionStorage,
+  gameRef: game
+}));
 
 function buildMarchSectionUi(sectionId) {
   const collapsed = isMarchSectionCollapsed(sectionId);
@@ -8712,11 +8032,14 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await openRestWatchSharedNoteEditorFromElement(element);
         },
         "save-entry-notes": async () => {
-          {
-            const context = getRestWatchNoteContextFromElement(element);
-            if (context?.slotId && context?.actorId) {
-              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
-            }
+          ({
+            getLootPreviewDraft,
+            getLootPreviewDraftStorageKey,
+            getLootPreviewResult,
+            getLootPreviewResultStorageKey,
+            setLootPreviewDraft,
+            setLootPreviewResult,
+          } = createLootPreviewDraftStorage({
           }
           await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
         },
@@ -9777,7 +9100,6 @@ function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
     ? existingApp
     : new GlobalModifierSummaryApp(getResponsiveWindowOptions("global-modifiers"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "global-modifiers" });
   return app;
 }
 
@@ -10195,7 +9517,6 @@ function openGmFactionsPage(renderOptions = { force: true }) {
     ? existingApp
     : new GmFactionsPageApp(getResponsiveWindowOptions("gm-factions"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-factions" });
   return app;
 }
 
@@ -10210,7 +9531,6 @@ function openGmEnvironmentPage(renderOptions = { force: true }) {
     ? existingApp
     : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-environment" });
   return app;
 }
 
@@ -10225,7 +9545,6 @@ function openGmDowntimePage(renderOptions = { force: true }) {
     ? existingApp
     : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-downtime" });
   return app;
 }
 
@@ -10240,7 +9559,6 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
     ? existingApp
     : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-merchants" });
   return app;
 }
 
@@ -10255,7 +9573,6 @@ function openGmAudioPage(renderOptions = { force: true }) {
     ? existingApp
     : new GmAudioPageApp(getResponsiveWindowOptions("gm-audio"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-audio" });
   return app;
 }
 
@@ -10270,7 +9587,6 @@ function openGmLootPage(renderOptions = { force: true }) {
     ? existingApp
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot" });
   return app;
 }
 
@@ -10312,7 +9628,6 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
     ? existingApp
     : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
   app.render(renderOptions);
-  if (!suppressHistory) writePoBrowserHistoryEntry({ type: "window", id: "gm-loot-claims-board" });
   return app;
 }
 
@@ -12170,6 +11485,8 @@ const AUDIO_LIBRARY_FORGE_DIRECT_UPLOAD_DELAY_MS = 200;
 const AUDIO_LIBRARY_METADATA_WARMUP_DELAY_MS = 1200;
 const AUDIO_LIBRARY_METADATA_WARMUP_CONCURRENCY = 2;
 const AUDIO_LIBRARY_METADATA_TIMEOUT_MS = 8000;
+const AUDIO_LIBRARY_SCAN_CACHE_TTL_MS = 45000;
+const AUDIO_LIBRARY_SCAN_CACHE_MAX_ENTRIES = 8;
 const AUDIO_LIBRARY_KIND_LABELS = Object.freeze({
   all: "All Kinds",
   music: "Music",
@@ -12751,8 +12068,7 @@ function resetAudioMixTrackBrowserPages() {
 }
 
 function clearAudioLibraryFilters() {
-  audioLibraryUiState.filters = normalizeAudioLibraryFilters({});
-  resetAudioMixTrackBrowserPages();
+  return audioLibraryUiFilterActions.clearAudioLibraryFilters();
 }
 
 function buildAudioMixTrackBrowserPagination(totalCount, view = audioLibraryUiState.mixTrackBrowserView) {
@@ -13133,57 +12449,188 @@ async function browseAudioLibraryTree(source, rootPath) {
   return files.sort((left, right) => left.localeCompare(right));
 }
 
-async function scanAudioLibraryCatalog({ source, rootPath } = {}) {
-  if (!canAccessAllPlayerOps()) {
-    throw new Error("GM permissions are required to scan audio libraries.");
-  }
-  const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
-  const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
-  const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
-  if (pathValidationMessage) throw new Error(pathValidationMessage);
+const audioLibraryScanCache = createAudioLibraryScanCacheStore({
+  normalizeSource: normalizeAudioLibrarySource,
+  normalizeRootPath: normalizeAudioLibraryRootPath,
+  normalizePath: normalizeAudioLibraryRootPath,
+  ttlMs: AUDIO_LIBRARY_SCAN_CACHE_TTL_MS,
+  maxEntries: AUDIO_LIBRARY_SCAN_CACHE_MAX_ENTRIES
+});
+const audioLibraryCatalogSignatureTools = createAudioLibraryCatalogSignatureTools({
+  normalizeSource: normalizeAudioLibrarySource,
+  normalizeRootPath: normalizeAudioLibraryRootPath,
+  normalizeKind: normalizeAudioLibraryKind,
+  normalizeUsage: normalizeAudioLibraryUsage,
+  hashString: hashLootSeedToUint32,
+  normalizeCatalog: normalizeAudioLibraryCatalog,
+  getStoredCatalog: getStoredAudioLibraryCatalog
+});
+const audioLibraryUiSelectionActions = createAudioLibraryUiSelectionActions({
+  audioLibraryUiState,
+  normalizeAudioLibraryView,
+  normalizeAudioMixTrackBrowserView,
+  getAudioMixTrackBrowserPageForView,
+  setAudioMixTrackBrowserPageForView,
+  normalizeAudioLibraryRootPath,
+  getSelectedAudioLibraryTrackSelectionIds,
+  setSelectedAudioLibraryTrackSelectionIds,
+  getAudioLibraryCatalog,
+  buildAudioLibraryResults,
+  getSelectedAudioMixTrackSelectionIds,
+  setSelectedAudioMixTrackSelectionIds,
+  getSelectedAudioMixPreset,
+  buildAudioMixAssignedCandidates,
+  normalizeAudioLibraryFilters,
+  filterAudioMixTrackCandidates,
+  buildAudioMixCandidates,
+  scoreAudioTrackForMixPreset,
+  AUDIO_MIX_TRACK_BROWSER_VIEW_IDS,
+  buildAudioMixTrackBrowserPagination,
+  getAudioMixPresetById,
+  setSelectedAudioMixPresetId,
+  resetAudioMixTrackBrowserPages,
+  refreshLauncherAudioUi
+});
+const audioLibraryUiDraftActions = createAudioLibraryUiDraftActions({
+  audioLibraryUiState,
+  normalizeAudioLibrarySource,
+  normalizeAudioLibraryRootPath,
+  normalizeAudioLibraryPickerSelection
+});
+const audioLibraryUiPickerUploadActions = createAudioLibraryUiPickerUploadActions({
+  canAccessAllPlayerOps,
+  ui,
+  getAudioLibraryDraftState,
+  filePickerClass: FilePicker,
+  getAudioLibraryPickerCurrentPath,
+  audioLibraryUiDraftActions,
+  clearAudioLibraryError,
+  documentRef: document,
+  audioLibraryExtensions: AUDIO_LIBRARY_EXTENSIONS,
+  isUploadableAudioLibraryFile,
+  getAudioLibraryUploadRelativePath,
+  getAudioLibraryUploadSelectionError,
+  buildAudioLibraryUploadRootPath,
+  ensureAudioLibraryUploadDirectories,
+  getAudioLibraryUploadDirectoryPath,
+  normalizeAudioLibrarySource,
+  notifyUiInfoThrottled,
+  scanAudioLibraryCatalog,
+  pauseAudioLibraryUpload
+});
+const audioLibraryUiFilterActions = createAudioLibraryUiFilterActions({
+  audioLibraryUiState,
+  normalizeAudioLibraryFilters,
+  normalizeAudioLibrarySearch,
+  normalizeAudioLibraryKind,
+  normalizeAudioLibraryUsage,
+  normalizeAudioLibraryTag,
+  normalizeAudioLibraryTagList,
+  resetAudioMixTrackBrowserPages
+});
 
-  const files = await browseAudioLibraryTree(nextSource, nextRootPath);
-  if (files.length <= 0) {
-    throw new Error(`No audio files were found in "${nextRootPath}". Confirm this is a Foundry or Forge asset folder and not a local filesystem path.`);
-  }
-  const items = files.map((path) => {
-    const inferred = inferAudioLibraryClassification(path, nextRootPath);
-    const stableId = normalizeAudioLibraryRootPath(path);
-    return normalizeAudioLibraryItem({
-      id: stableId,
-      path,
-      ...inferred
+async function scanAudioLibraryCatalog({ source, rootPath, forceRescan = false } = {}) {
+  return perfTracker.time("audio-library-scan", async () => {
+    if (!canAccessAllPlayerOps()) {
+      throw new Error("GM permissions are required to scan audio libraries.");
+    }
+    const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
+    const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
+    const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
+    if (pathValidationMessage) throw new Error(pathValidationMessage);
+
+    const scanCacheKey = audioLibraryScanCache.buildKey(nextSource, nextRootPath);
+    let files = null;
+    if (!forceRescan) {
+      files = audioLibraryScanCache.get(scanCacheKey);
+    }
+    if (files) {
+      perfTracker.increment("audio-library-scan-cache-hit", 1, {
+        source: nextSource,
+        rootPath: nextRootPath
+      });
+    } else {
+      perfTracker.increment("audio-library-scan-cache-miss", 1, {
+        source: nextSource,
+        rootPath: nextRootPath,
+        forceRescan: Boolean(forceRescan)
+      });
+      files = await browseAudioLibraryTree(nextSource, nextRootPath);
+      audioLibraryScanCache.set(scanCacheKey, files);
+    }
+    perfTracker.record("audio-library-scan-files", files.length, {
+      source: nextSource,
+      rootPath: nextRootPath
     });
-  }).filter(Boolean);
+    if (files.length <= 0) {
+      throw new Error(`No audio files were found in "${nextRootPath}". Confirm this is a Foundry or Forge asset folder and not a local filesystem path.`);
+    }
+    const items = files.map((path) => {
+      const inferred = inferAudioLibraryClassification(path, nextRootPath);
+      const stableId = normalizeAudioLibraryRootPath(path);
+      return normalizeAudioLibraryItem({
+        id: stableId,
+        path,
+        ...inferred
+      });
+    }).filter(Boolean);
 
-  const catalog = normalizeAudioLibraryCatalog({
-    version: AUDIO_LIBRARY_VERSION,
-    source: nextSource,
-    rootPath: nextRootPath,
-    scannedAt: Date.now(),
-    scannedBy: String(game.user?.name ?? "GM"),
-    items
+    perfTracker.record("audio-library-scan-items", items.length, {
+      source: nextSource,
+      rootPath: nextRootPath
+    });
+
+    const catalog = normalizeAudioLibraryCatalog({
+      version: AUDIO_LIBRARY_VERSION,
+      source: nextSource,
+      rootPath: nextRootPath,
+      scannedAt: Date.now(),
+      scannedBy: String(game.user?.name ?? "GM"),
+      items
+    });
+
+    const catalogSignature = audioLibraryCatalogSignatureTools.buildCatalogSignature(catalog);
+    const existingCatalog = normalizeAudioLibraryCatalog(getStoredAudioLibraryCatalog());
+    const existingCatalogSignature = audioLibraryCatalogSignatureTools.buildStoredCatalogSignature(existingCatalog);
+    const catalogChanged = forceRescan || !Object.is(catalogSignature, existingCatalogSignature);
+
+    if (catalogChanged) {
+      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_SOURCE, catalog.source);
+      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_ROOT, catalog.rootPath);
+      await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
+      saveSharedAudioLibraryCatalog(catalog);
+      perfTracker.increment("audio-library-scan-settings-write", 1, {
+        source: nextSource,
+        rootPath: nextRootPath,
+        forceRescan: Boolean(forceRescan)
+      });
+    } else {
+      perfTracker.increment("audio-library-scan-settings-skip", 1, {
+        source: nextSource,
+        rootPath: nextRootPath
+      });
+    }
+
+    audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
+    setSelectedAudioLibraryTrackSelectionIds([]);
+    setSelectedAudioMixTrackSelectionIds([]);
+    audioLibraryUiDraftActions.setDraftFromCatalog({
+      source: catalog.source,
+      rootPath: catalog.rootPath
+    });
+    clearAudioLibraryError();
+    notifyUiInfoThrottled(`Audio library synced: ${catalog.items.length} track(s) indexed.`, {
+      key: "audio-library-scan-complete",
+      ttlMs: 1800
+    });
+    queueAudioLibraryMetadataWarmup({ catalog, delayMs: 120 });
+    refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
+    return catalog;
+  }, {
+    source: String(source ?? ""),
+    rootPath: String(rootPath ?? "")
   });
-
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_SOURCE, catalog.source);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_ROOT, catalog.rootPath);
-  await setModuleSettingWithLocalRefreshSuppressed(SETTINGS.AUDIO_LIBRARY_CATALOG, catalog);
-  saveSharedAudioLibraryCatalog(catalog);
-
-  audioLibraryUiState.selectedTrackId = catalog.items[0]?.id ?? "";
-  setSelectedAudioLibraryTrackSelectionIds([]);
-  setSelectedAudioMixTrackSelectionIds([]);
-  audioLibraryUiState.draft.source = catalog.source;
-  audioLibraryUiState.draft.rootPath = catalog.rootPath;
-  clearAudioLibraryError();
-  notifyUiInfoThrottled(`Audio library synced: ${catalog.items.length} track(s) indexed.`, {
-    key: "audio-library-scan-complete",
-    ttlMs: 1800
-  });
-  queueAudioLibraryMetadataWarmup({ catalog, delayMs: 120 });
-  refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  emitSocketRefresh({ scope: REFRESH_SCOPE_KEYS.LOOT });
-  return catalog;
 }
 
 async function clearAudioLibraryCatalog() {
@@ -13203,260 +12650,67 @@ async function clearAudioLibraryCatalog() {
 }
 
 function setAudioLibraryDraftField(actionElement) {
-  const field = String(actionElement?.dataset?.field ?? "").trim();
-  if (!field) return;
-  if (field === "source") audioLibraryUiState.draft.source = normalizeAudioLibrarySource(actionElement?.value);
-  if (field === "rootPath") audioLibraryUiState.draft.rootPath = normalizeAudioLibraryRootPath(actionElement?.value);
+  return audioLibraryUiDraftActions.setAudioLibraryDraftField(actionElement);
 }
 
 async function openAudioLibraryRootPicker() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can browse audio asset folders.");
-    return false;
-  }
-  const { source, rootPath } = getAudioLibraryDraftState();
-  return new Promise((resolve) => {
-    const picker = new FilePicker({
-      type: "folder",
-      activeSource: source,
-      current: getAudioLibraryPickerCurrentPath(rootPath),
-      callback: (selectedPath) => {
-        audioLibraryUiState.draft.source = normalizeAudioLibrarySource(picker.activeSource ?? source);
-        audioLibraryUiState.draft.rootPath = normalizeAudioLibraryPickerSelection(selectedPath);
-        clearAudioLibraryError();
-        resolve(true);
-      }
-    });
-    picker.render(true);
-  });
+  return audioLibraryUiPickerUploadActions.openAudioLibraryRootPicker();
 }
 
 async function uploadLocalAudioFolderToLibrary() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can upload audio asset folders.");
-    return false;
-  }
-
-  const { source, rootPath } = getAudioLibraryDraftState();
-  const activeSource = normalizeAudioLibrarySource(source);
-  return new Promise((resolve, reject) => {
-    const input = document.createElement("input");
-    let settled = false;
-    const finalize = (result, error = null) => {
-      if (settled) return;
-      settled = true;
-      input.remove();
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve(result);
-    };
-
-    input.type = "file";
-    input.multiple = true;
-    input.accept = AUDIO_LIBRARY_EXTENSIONS.map((extension) => `.${extension}`).join(",");
-    input.setAttribute("webkitdirectory", "");
-    input.setAttribute("directory", "");
-    input.style.display = "none";
-    document.body.appendChild(input);
-
-    input.addEventListener("change", () => {
-      void (async () => {
-        try {
-          const selectedFiles = Array.from(input.files ?? []).filter((file) => isUploadableAudioLibraryFile(file));
-          if (selectedFiles.length <= 0) {
-            finalize(false);
-            return;
-          }
-          const selectionError = getAudioLibraryUploadSelectionError(activeSource, selectedFiles);
-          if (selectionError) throw new Error(selectionError);
-
-          const localRootName = String(selectedFiles[0]?.webkitRelativePath ?? "")
-            .split(/[\\/]/)
-            .filter(Boolean)[0] ?? "";
-          const destinationRoot = buildAudioLibraryUploadRootPath(rootPath, localRootName);
-          const relativePaths = selectedFiles
-            .map((file) => getAudioLibraryUploadRelativePath(file))
-            .filter(Boolean);
-
-          await ensureAudioLibraryUploadDirectories(activeSource, destinationRoot, relativePaths);
-
-          let uploadedCount = 0;
-          for (const [index, file] of selectedFiles.entries()) {
-            const relativePath = getAudioLibraryUploadRelativePath(file);
-            const destinationDirectory = getAudioLibraryUploadDirectoryPath(destinationRoot, relativePath);
-            await FilePicker.upload(activeSource, destinationDirectory, file, {}, { notify: false });
-            uploadedCount += 1;
-            if (index < selectedFiles.length - 1) await pauseAudioLibraryUpload(activeSource);
-          }
-
-          audioLibraryUiState.draft.source = activeSource;
-          audioLibraryUiState.draft.rootPath = destinationRoot;
-          clearAudioLibraryError();
-          notifyUiInfoThrottled(`Uploaded ${uploadedCount} audio file(s) to ${destinationRoot}.`, {
-            key: "audio-library-upload-complete",
-            ttlMs: 2200
-          });
-          await scanAudioLibraryCatalog({ source: activeSource, rootPath: destinationRoot });
-          finalize(true);
-        } catch (error) {
-          finalize(false, error);
-        }
-      })();
-    }, { once: true });
-
-    input.addEventListener("cancel", () => {
-      finalize(false);
-    }, { once: true });
-
-    input.click();
-  });
+  return audioLibraryUiPickerUploadActions.uploadLocalAudioFolderToLibrary();
 }
 
 function setAudioLibraryFilterField(actionElement) {
-  const field = String(actionElement?.dataset?.field ?? "").trim();
-  if (!field) return;
-  if (field === "clearAll") {
-    clearAudioLibraryFilters();
-    return;
-  }
-  if (!audioLibraryUiState.filters || typeof audioLibraryUiState.filters !== "object") {
-    audioLibraryUiState.filters = normalizeAudioLibraryFilters({});
-  }
-  if (field === "search") audioLibraryUiState.filters.search = normalizeAudioLibrarySearch(actionElement?.value);
-  if (field === "kind") audioLibraryUiState.filters.kind = normalizeAudioLibraryKind(actionElement?.value);
-  if (field === "usage") audioLibraryUiState.filters.usage = normalizeAudioLibraryUsage(actionElement?.value);
-  if (field === "selectedTags") {
-    const tag = normalizeAudioLibraryTag(actionElement?.dataset?.tag ?? actionElement?.value);
-    const selectedTags = new Set(normalizeAudioLibraryTagList(audioLibraryUiState.filters.selectedTags ?? []));
-    if (tag) {
-      if (selectedTags.has(tag)) selectedTags.delete(tag);
-      else selectedTags.add(tag);
-    }
-    audioLibraryUiState.filters.selectedTags = [...selectedTags];
-  }
-  audioLibraryUiState.filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
-  resetAudioMixTrackBrowserPages();
+  return audioLibraryUiFilterActions.setAudioLibraryFilterField(actionElement);
 }
 
 function setAudioLibraryView(actionElement) {
-  const view = normalizeAudioLibraryView(actionElement?.dataset?.view);
-  audioLibraryUiState.view = view;
+  return audioLibraryUiSelectionActions.setAudioLibraryView(actionElement);
 }
 
 function setAudioMixTrackBrowserView(actionElement) {
-  const view = normalizeAudioMixTrackBrowserView(actionElement?.dataset?.view ?? actionElement?.value);
-  audioLibraryUiState.mixTrackBrowserView = view;
-  setAudioMixTrackBrowserPageForView(view, 0);
+  return audioLibraryUiSelectionActions.setAudioMixTrackBrowserView(actionElement);
 }
 
 function selectAudioLibraryTrack(actionElement) {
-  audioLibraryUiState.selectedTrackId = String(actionElement?.dataset?.trackId ?? "").trim();
+  return audioLibraryUiSelectionActions.selectAudioLibraryTrack(actionElement);
 }
 
 function toggleAudioLibraryTrackSelection(actionElement) {
-  const normalizedTrackId = normalizeAudioLibraryRootPath(actionElement?.dataset?.trackId);
-  if (!normalizedTrackId) return false;
-  const selected = new Set(getSelectedAudioLibraryTrackSelectionIds());
-  const shouldSelect = actionElement instanceof HTMLInputElement
-    ? Boolean(actionElement.checked)
-    : !selected.has(normalizedTrackId);
-  if (shouldSelect) selected.add(normalizedTrackId);
-  else selected.delete(normalizedTrackId);
-  setSelectedAudioLibraryTrackSelectionIds([...selected]);
-  return true;
+  return audioLibraryUiSelectionActions.toggleAudioLibraryTrackSelection(actionElement);
 }
 
 function selectVisibleAudioLibraryTracks() {
-  const catalog = getAudioLibraryCatalog();
-  const visibleTrackIds = buildAudioLibraryResults(catalog).tracks.map((item) => item.id);
-  setSelectedAudioLibraryTrackSelectionIds(visibleTrackIds);
-  return visibleTrackIds.length;
+  return audioLibraryUiSelectionActions.selectVisibleAudioLibraryTracks();
 }
 
 function clearAudioLibraryTrackSelections() {
-  setSelectedAudioLibraryTrackSelectionIds([]);
-  return true;
+  return audioLibraryUiSelectionActions.clearAudioLibraryTrackSelections();
 }
 
 function toggleAudioMixTrackSelection(actionElement) {
-  const normalizedTrackId = normalizeAudioLibraryRootPath(actionElement?.dataset?.trackId);
-  if (!normalizedTrackId) return false;
-  const selected = new Set(getSelectedAudioMixTrackSelectionIds());
-  const shouldSelect = actionElement instanceof HTMLInputElement
-    ? Boolean(actionElement.checked)
-    : !selected.has(normalizedTrackId);
-  if (shouldSelect) selected.add(normalizedTrackId);
-  else selected.delete(normalizedTrackId);
-  setSelectedAudioMixTrackSelectionIds([...selected]);
-  return true;
+  return audioLibraryUiSelectionActions.toggleAudioMixTrackSelection(actionElement);
 }
 
 function getVisibleAudioMixTrackBrowserCandidates(catalog, preset = getSelectedAudioMixPreset()) {
-  const assignedTrackIds = buildAudioMixAssignedCandidates(catalog, preset).map(({ item }) => item.id);
-  const filters = normalizeAudioLibraryFilters(audioLibraryUiState.filters);
-  const suggestedCandidates = filterAudioMixTrackCandidates(buildAudioMixCandidates(catalog, preset, {
-    excludeTrackIds: assignedTrackIds
-  }), filters);
-  const allCandidates = filterAudioMixTrackCandidates(catalog.items
-    .map((item) => ({
-      item,
-      score: scoreAudioTrackForMixPreset(item, preset)
-    }))
-    .sort((left, right) => {
-      const categoryCompare = String(left.item.category ?? "").localeCompare(String(right.item.category ?? ""));
-      if (categoryCompare !== 0) return categoryCompare;
-      const subcategoryCompare = String(left.item.subcategory ?? "").localeCompare(String(right.item.subcategory ?? ""));
-      if (subcategoryCompare !== 0) return subcategoryCompare;
-      return String(left.item.name ?? "").localeCompare(String(right.item.name ?? ""));
-    }), filters);
-  const view = normalizeAudioMixTrackBrowserView(audioLibraryUiState.mixTrackBrowserView);
-  return {
-    view,
-    suggestedCandidates,
-    allCandidates,
-    visibleCandidates: view === AUDIO_MIX_TRACK_BROWSER_VIEW_IDS.ALL ? allCandidates : suggestedCandidates
-  };
+  return audioLibraryUiSelectionActions.getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
 }
 
 function selectVisibleAudioMixTracks() {
-  const catalog = getAudioLibraryCatalog();
-  const preset = getSelectedAudioMixPreset();
-  const { view, visibleCandidates } = getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
-  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, view);
-  const visibleTrackIds = visibleCandidates
-    .slice(pagination.startIndex, pagination.endIndex)
-    .map(({ item }) => item.id);
-  setSelectedAudioMixTrackSelectionIds(visibleTrackIds);
-  return visibleTrackIds.length;
+  return audioLibraryUiSelectionActions.selectVisibleAudioMixTracks();
 }
 
 function clearAudioMixTrackSelections() {
-  setSelectedAudioMixTrackSelectionIds([]);
-  return true;
+  return audioLibraryUiSelectionActions.clearAudioMixTrackSelections();
 }
 
 function selectAudioMixPreset(actionElement) {
-  const preset = getAudioMixPresetById(actionElement?.dataset?.presetId ?? actionElement?.value);
-  setSelectedAudioMixPresetId(preset.id);
-  resetAudioMixTrackBrowserPages();
-  refreshLauncherAudioUi();
+  return audioLibraryUiSelectionActions.selectAudioMixPreset(actionElement);
 }
 
 function changeAudioMixTrackBrowserPage(actionElement) {
-  const catalog = getAudioLibraryCatalog();
-  const preset = getSelectedAudioMixPreset();
-  const { view, visibleCandidates } = getVisibleAudioMixTrackBrowserCandidates(catalog, preset);
-  const pagination = buildAudioMixTrackBrowserPagination(visibleCandidates.length, view);
-  const direction = String(actionElement?.dataset?.direction ?? "").trim().toLowerCase();
-  let nextPage = pagination.currentPage;
-  if (direction === "prev") nextPage -= 1;
-  if (direction === "next") nextPage += 1;
-  if (Object.is(nextPage, pagination.currentPage)) return pagination.currentPage;
-  nextPage = Math.max(0, Math.min(pagination.totalPages - 1, nextPage));
-  setAudioMixTrackBrowserPageForView(view, nextPage);
-  return nextPage;
+  return audioLibraryUiSelectionActions.changeAudioMixTrackBrowserPage(actionElement);
 }
 
 async function saveAudioMixPresetStore(store) {
@@ -29998,9 +29252,10 @@ function getMerchantShopAudienceSummary(sessionInput = {}) {
 }
 
 async function playMerchantShopBellSound() {
-  if (typeof AudioHelper?.play !== "function") return false;
+  const audioHelper = foundry?.audio?.AudioHelper ?? globalThis.AudioHelper;
+  if (typeof audioHelper?.play !== "function") return false;
   try {
-    const result = AudioHelper.play({
+    const result = audioHelper.play({
       src: MERCHANT_SHOP_BELL_SOUND_SRC,
       volume: 0.9,
       autoplay: true,
@@ -31974,78 +31229,22 @@ function buildReconContext(reconState = {}) {
   };
 }
 
-const WEATHER_PRESET_DEFINITIONS = [
-  { id: "clear", label: "Clear", visibilityModifier: 0, darkness: 0.1, note: "Clear skies and stable visibility." },
-  { id: "cloudy", label: "Cloudy", visibilityModifier: -1, darkness: 0.3, note: "Low cloud cover and muted light." },
-  { id: "rainy", label: "Rainy", visibilityModifier: -1, darkness: 0.4, note: "Rain interferes with spotting and footing." },
-  { id: "stormy", label: "Stormy", visibilityModifier: -3, darkness: 0.65, note: "Thunderstorm conditions reduce awareness." },
-  { id: "snowy", label: "Snowy", visibilityModifier: -2, darkness: 0.45, note: "Snowfall obscures distance and tracks." },
-  { id: "hail", label: "Hail", visibilityModifier: -2, darkness: 0.5, note: "Hail disrupts movement and ranged visibility." }
-];
-
-function normalizeWeatherDaeChange(entry = {}) {
-  const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
-  return {
-    id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-    key: String(entry?.key ?? "").trim(),
-    mode: validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
-    value: String(entry?.value ?? "").trim(),
-    label: String(entry?.label ?? "Weather Effect").trim() || "Weather Effect",
-    note: String(entry?.note ?? "")
-  };
-}
-
-function normalizeWeatherPreset(entry = {}, defaults = {}) {
-  const daeChanges = Array.isArray(entry?.daeChanges)
-    ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
-    : [];
-  return {
-    id: String(entry?.id ?? defaults?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-    label: String(entry?.label ?? defaults?.label ?? "Custom Weather").trim() || "Custom Weather",
-    visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier))
-      ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier))))
-      : Math.max(-5, Math.min(5, Math.floor(Number(defaults?.visibilityModifier ?? 0)))),
-    darkness: Number.isFinite(Number(entry?.darkness))
-      ? Math.max(0, Math.min(1, Number(entry.darkness)))
-      : Math.max(0, Math.min(1, Number(defaults?.darkness ?? 0))),
-    note: String(entry?.note ?? defaults?.note ?? ""),
-    isBuiltIn: Boolean(entry?.isBuiltIn ?? defaults?.isBuiltIn),
-    daeChanges
-  };
-}
-
-function getBuiltInWeatherPresets() {
-  return WEATHER_PRESET_DEFINITIONS.map((entry) => normalizeWeatherPreset({
-    ...entry,
-    isBuiltIn: true,
-    daeChanges: []
-  }, entry));
-}
-
-function getWeatherPresetCatalog(weatherState = {}) {
-  const builtIns = getBuiltInWeatherPresets();
-  const customPresets = Array.isArray(weatherState?.customPresets)
-    ? weatherState.customPresets
-      .map((entry) => normalizeWeatherPreset(entry, { isBuiltIn: false }))
-      .filter((entry) => !entry.isBuiltIn)
-    : [];
-  const seen = new Set();
-  return [...builtIns, ...customPresets].filter((entry) => {
-    const id = String(entry.id ?? "").trim().toLowerCase();
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-}
-
-function describeWeatherDaeChanges(changes = []) {
-  const rows = Array.isArray(changes) ? changes : [];
-  if (!rows.length) return "No additional global DAE changes.";
-  return rows
-    .map((entry) => `${entry.label || entry.key}: ${entry.value} (${getActiveEffectModeLabel(entry.mode)})`)
-    .join("; ");
-}
+const {
+  WEATHER_PRESET_DEFINITIONS,
+  buildWeatherSelectionCatalog,
+  computeWeatherVisibilityModifier,
+  describeWeatherDaeChanges,
+  getBuiltInWeatherPresets,
+  getWeatherEffectSummary,
+  getWeatherPresetCatalog,
+  normalizeWeatherDaeChange,
+  normalizeWeatherPreset,
+  resolveWeatherFxEffectIdForPreset,
+} = createWeatherPresetHelpers({
+  constRef: CONST,
+  randomIdFn: () => foundry.utils.randomID(),
+  getConfigWeatherEffects: () => CONFIG.weatherEffects ?? {},
+});
 
 function ensureWeatherState(ledger) {
   if (!ledger.weather || typeof ledger.weather !== "object") {
@@ -32097,80 +31296,6 @@ function ensureWeatherState(ledger) {
   }
 
   return ledger.weather;
-}
-
-function computeWeatherVisibilityModifier({ label = "", weatherId = "", darkness = 0 } = {}) {
-  const normalizedLabel = String(label ?? "").toLowerCase();
-  const normalizedId = String(weatherId ?? "").toLowerCase();
-  const normalizedDarkness = Number.isFinite(Number(darkness)) ? Math.max(0, Math.min(1, Number(darkness))) : 0;
-
-  const text = `${normalizedLabel} ${normalizedId}`;
-  let visibilityModifier = 0;
-  if (!normalizedId || text.includes("clear") || text.includes("sun")) visibilityModifier += 0;
-  if (text.includes("rain") || text.includes("wind") || text.includes("cloud")) visibilityModifier -= 1;
-  if (text.includes("heavy") || text.includes("storm") || text.includes("fog") || text.includes("mist") || text.includes("blizzard") || text.includes("smoke") || text.includes("snow")) {
-    visibilityModifier -= 2;
-  }
-
-  if (normalizedDarkness >= 0.75) visibilityModifier -= 2;
-  else if (normalizedDarkness >= 0.4) visibilityModifier -= 1;
-  else if (normalizedDarkness <= 0.15 && (!normalizedId || text.includes("clear"))) visibilityModifier += 1;
-
-  return Math.max(-5, Math.min(5, Math.floor(visibilityModifier)));
-}
-
-function getWeatherEffectSummary(visibilityModifier) {
-  const value = Math.max(-5, Math.min(5, Math.floor(Number(visibilityModifier) || 0)));
-  if (value > 0) return `Perception checks gain +${value}.`;
-  if (value < 0) return `Perception checks suffer ${value}.`;
-  return "No perception modifier from weather.";
-}
-
-function buildWeatherSelectionCatalog(weatherState = {}, sceneSnapshot = null) {
-  const sceneDarkness = Number.isFinite(Number(sceneSnapshot?.darkness))
-    ? Math.max(0, Math.min(1, Number(sceneSnapshot.darkness)))
-    : null;
-  return getWeatherPresetCatalog(weatherState)
-    .map((preset) => ({
-      key: String(preset.id ?? "").trim(),
-      label: String(preset.label ?? "Weather").trim() || "Weather",
-      weatherId: String(preset.id ?? "").trim(),
-      darkness: sceneDarkness ?? Math.max(0, Math.min(1, Number(preset.darkness ?? 0))),
-      visibilityModifier: Math.max(-5, Math.min(5, Math.floor(Number(preset.visibilityModifier ?? 0) || 0))),
-      note: String(preset.note ?? ""),
-      daeChanges: Array.isArray(preset.daeChanges) ? preset.daeChanges : [],
-      isBuiltIn: Boolean(preset.isBuiltIn)
-    }))
-    .filter((entry) => entry.key);
-}
-
-function resolveWeatherFxEffectIdForPreset(preset = {}) {
-  const presetKey = String(preset?.key ?? preset?.weatherId ?? "").trim().toLowerCase();
-  const presetLabel = String(preset?.label ?? "").trim().toLowerCase();
-  if (!presetKey || presetKey.includes("clear") || presetLabel.includes("clear")) return "";
-
-  const effects = Object.entries(CONFIG.weatherEffects ?? {})
-    .map(([id, cfg]) => ({
-      id: String(id ?? "").trim(),
-      text: `${String(id ?? "")} ${String(cfg?.label ?? cfg?.name ?? "")}`.toLowerCase()
-    }))
-    .filter((entry) => entry.id);
-  if (!effects.length) return "";
-
-  const keywordMap = {
-    rainy: ["rain", "drizzle", "shower"],
-    stormy: ["storm", "thunder", "lightning", "tempest"],
-    snowy: ["snow", "blizzard", "flurry"],
-    cloudy: ["cloud", "overcast", "fog", "mist"],
-    hail: ["hail", "sleet", "ice"]
-  };
-  const targetWords = keywordMap[presetKey]
-    ?? keywordMap[String(presetLabel).split(" ")[0]]
-    ?? Object.values(keywordMap).find((words) => words.some((word) => presetLabel.includes(word)))
-    ?? [];
-  if (!targetWords.length) return "";
-  const match = effects.find((entry) => targetWords.some((word) => entry.text.includes(word)));
-  return String(match?.id ?? "").trim();
 }
 
 function resolveSceneWeatherId(scene = game.scenes?.current) {
@@ -46159,8 +45284,7 @@ mainTabNavigator = createMainTabNavigator({
   MarchingOrderApp,
   getResponsiveWindowOptions,
   setActiveRestMainTab,
-  queueManagedAudioMixPlaybackResync,
-  writePoBrowserHistoryEntry
+  queueManagedAudioMixPlaybackResync
 });
 
 launcherUiController = createLauncherUiController({
@@ -46272,7 +45396,9 @@ function buildPartyOperationsApi() {
     normalizeAudioLibraryUsage,
     normalizeAudioLibrarySearch,
     getPlayerPermissionDebugEntries,
-    clearPlayerPermissionDebugEntries
+    clearPlayerPermissionDebugEntries,
+    getPerfState: () => getPartyOpsPerfState(globalThis),
+    getPerfSummary: () => summarizeCurrentPartyOpsPerfState(globalThis)
   });
 }
 
@@ -46540,7 +45666,6 @@ export function buildPartyOperationsReadyConfig() {
     registerPartyOperationsApi,
     ensureSettingsRegistered: ensurePartyOpsSettingsRegistered,
     validatePartyOperationsTemplates,
-    bindPoBrowserBackNavigation,
     setupPartyOperationsUI,
     ensureLauncherUi,
     forceLauncherRecovery,

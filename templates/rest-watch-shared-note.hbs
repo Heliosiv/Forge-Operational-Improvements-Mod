@@ -29,9 +29,10 @@
     <div class="po-note-label">
       {{#if entryStatus}}{{entryStatus}} - {{/if}}<span data-shared-note-count>{{noteLengthLabel}}</span>
     </div>
+    <div class="po-op-summary {{#if saveStatusWarn}}is-warn{{/if}}" data-shared-note-status aria-live="polite">{{saveStatusMessage}}</div>
     <div class="po-rest-shared-note-actions">
       {{#if canEdit}}
-      <button type="button" class="po-btn" data-action="save-shared-note">Save Shared Note</button>
+      <button type="button" class="po-btn" data-action="save-shared-note" {{#if isSaving}}disabled{{/if}}>{{#if isSaving}}Saving...{{else}}Save Shared Note{{/if}}</button>
       {{/if}}
       <button type="button" class="po-btn po-btn-sm" data-action="close-shared-note">Close</button>
     </div>

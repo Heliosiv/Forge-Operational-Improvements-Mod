@@ -1,3 +1,5 @@
+import { createModulePerfTracker } from "./perf.js";
+
 export function createOpenAppRefresher(options = {}) {
   const {
     normalizeRefreshScopeList,
@@ -14,7 +16,8 @@ export function createOpenAppRefresher(options = {}) {
     captureCanvasViewState,
     refreshLauncherAudioUi,
     queueCanvasViewRestore,
-    requestAnimationFrameFn = globalThis.requestAnimationFrame?.bind(globalThis)
+    requestAnimationFrameFn = globalThis.requestAnimationFrame?.bind(globalThis),
+    perfTracker = createModulePerfTracker("app-refresh")
   } = options;
 
   let refreshQueued = false;
@@ -23,20 +26,37 @@ export function createOpenAppRefresher(options = {}) {
 
   return function refreshOpenApps(refreshOptions = {}) {
     const scopes = normalizeRefreshScopeList(refreshOptions?.scopes ?? refreshOptions?.scope);
+    perfTracker.increment("refresh-request", 1, {
+      all: refreshOptions?.all === true,
+      scopeCount: scopes.length
+    });
     if (scopes.length <= 0 || refreshOptions?.all === true) {
       refreshAll = true;
     } else {
       for (const scope of scopes) scopeQueue.add(scope);
     }
 
-    if (refreshQueued) return;
+    if (refreshQueued) {
+      perfTracker.increment("refresh-request-coalesced", 1, {
+        all: refreshAll,
+        queuedScopeCount: scopeQueue.size
+      });
+      return;
+    }
     refreshQueued = true;
 
     requestAnimationFrameFn?.(() => {
       refreshQueued = false;
+      perfTracker.increment("refresh-batch", 1, {
+        all: refreshAll,
+        queuedScopeCount: scopeQueue.size
+      });
       const targetIds = refreshAll
         ? new Set(refreshableWindowIds)
         : getRefreshTargetWindowIds(Array.from(scopeQueue));
+      perfTracker.record("refresh-target-count", targetIds.size, {
+        all: refreshAll
+      });
       refreshAll = false;
       scopeQueue.clear();
 
@@ -47,6 +67,9 @@ export function createOpenAppRefresher(options = {}) {
       const apps = Object.values(getUiWindows() ?? {})
         .filter((app) => targetIds.has(getAppWindowId(app)));
       const unique = Array.from(new Set([...apps, ...knownInstances]));
+      perfTracker.record("refresh-render-count", unique.length, {
+        targetCount: targetIds.size
+      });
 
       for (const app of unique) {
         if (!app?.render) continue;

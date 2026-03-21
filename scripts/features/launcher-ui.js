@@ -1,6 +1,6 @@
 export const PARTY_OPERATIONS_SIDEBAR_VIEW_ITEMS = Object.freeze([
   { id: "rest-watch", action: "rest", label: "Rest", icon: "fas fa-moon", title: "Open Rest Watch", target: "po-panel-rest-watch" },
-  { id: "operations", action: "operations", label: "Ops", icon: "fas fa-clipboard-list", title: "Open Operations", target: "po-panel-operations" },
+  { id: "operations", action: "operations", label: "Operations", icon: "fas fa-clipboard-list", title: "Open Operations", target: "po-panel-operations" },
   { id: "marching-order", action: "march", label: "March", icon: "fas fa-arrow-up", title: "Open Marching Order", target: "po-march-overview" },
   { id: "gm", action: "gm", label: "GM", icon: "fas fa-user-shield", title: "Open GM Section", target: "po-panel-operations", gmOnly: true }
 ]);

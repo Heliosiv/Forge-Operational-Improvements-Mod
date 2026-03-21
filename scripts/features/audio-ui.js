@@ -412,7 +412,7 @@ export function createGmAudioPageApp(deps) {
     }
 
     _getActionHandlers() {
-      const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
+      const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
       const rerenderUnlessInput = (operation) => async (actionElement, event) => {
         await operation(actionElement, event);
         if (event?.type !== "input") rerender();
@@ -427,9 +427,7 @@ export function createGmAudioPageApp(deps) {
           rerender();
         },
         "gm-panel-tab": openPanelTab("audio", openGmPanelByKey),
-        "set-audio-library-view": rerenderAlways((actionElement) => {
-          setAudioLibraryView(actionElement);
-        }),
+        "set-audio-library-view": rerenderIfTruthy((actionElement) => setAudioLibraryView(actionElement)),
         "set-audio-library-draft-field": rerenderUnlessInput((actionElement) => {
           setAudioLibraryDraftField(actionElement);
         }),
@@ -446,36 +444,16 @@ export function createGmAudioPageApp(deps) {
         "set-audio-library-filter": rerenderUnlessInput((actionElement) => {
           setAudioLibraryFilterField(actionElement);
         }),
-        "select-audio-track": rerenderAlways((actionElement) => {
-          selectAudioLibraryTrack(actionElement);
-        }),
-        "toggle-audio-track-selection": rerenderAlways((actionElement) => {
-          toggleAudioLibraryTrackSelection(actionElement);
-        }),
-        "select-visible-audio-tracks": rerenderAlways(() => {
-          selectVisibleAudioLibraryTracks();
-        }),
-        "clear-selected-audio-tracks": rerenderAlways(() => {
-          clearAudioLibraryTrackSelections();
-        }),
-        "set-audio-mix-track-browser-view": rerenderAlways((actionElement) => {
-          setAudioMixTrackBrowserView(actionElement);
-        }),
-        "change-audio-mix-track-browser-page": rerenderAlways((actionElement) => {
-          changeAudioMixTrackBrowserPage(actionElement);
-        }),
-        "toggle-audio-mix-track-selection": rerenderAlways((actionElement) => {
-          toggleAudioMixTrackSelection(actionElement);
-        }),
-        "select-visible-audio-mix-tracks": rerenderAlways(() => {
-          selectVisibleAudioMixTracks();
-        }),
-        "clear-selected-audio-mix-tracks": rerenderAlways(() => {
-          clearAudioMixTrackSelections();
-        }),
-        "select-audio-mix-preset": rerenderAlways((actionElement) => {
-          selectAudioMixPreset(actionElement);
-        }),
+        "select-audio-track": rerenderIfTruthy((actionElement) => selectAudioLibraryTrack(actionElement)),
+        "toggle-audio-track-selection": rerenderIfTruthy((actionElement) => toggleAudioLibraryTrackSelection(actionElement)),
+        "select-visible-audio-tracks": rerenderIfTruthy(() => selectVisibleAudioLibraryTracks()),
+        "clear-selected-audio-tracks": rerenderIfTruthy(() => clearAudioLibraryTrackSelections()),
+        "set-audio-mix-track-browser-view": rerenderIfTruthy((actionElement) => setAudioMixTrackBrowserView(actionElement)),
+        "change-audio-mix-track-browser-page": rerenderIfTruthy((actionElement) => changeAudioMixTrackBrowserPage(actionElement)),
+        "toggle-audio-mix-track-selection": rerenderIfTruthy((actionElement) => toggleAudioMixTrackSelection(actionElement)),
+        "select-visible-audio-mix-tracks": rerenderIfTruthy(() => selectVisibleAudioMixTracks()),
+        "clear-selected-audio-mix-tracks": rerenderIfTruthy(() => clearAudioMixTrackSelections()),
+        "select-audio-mix-preset": rerenderIfTruthy((actionElement) => selectAudioMixPreset(actionElement)),
         "create-audio-mix-preset": rerenderAlways(() => {
           return createAudioMixPresetFromSelection();
         }),

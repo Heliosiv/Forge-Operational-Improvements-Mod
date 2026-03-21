@@ -64,7 +64,9 @@ export function buildPartyOperationsApi(options = {}) {
     normalizeAudioLibraryUsage,
     normalizeAudioLibrarySearch,
     getPlayerPermissionDebugEntries,
-    clearPlayerPermissionDebugEntries
+    clearPlayerPermissionDebugEntries,
+    getPerfState,
+    getPerfSummary
   } = options;
 
   const deepClone = (value) => foundryRef?.utils?.deepClone ? foundryRef.utils.deepClone(value) : value;
@@ -158,7 +160,13 @@ export function buildPartyOperationsApi(options = {}) {
       launcher: ensureLauncherUi()
     }),
     getPermissionDebugLog: () => deepClone(getPlayerPermissionDebugEntries?.() ?? []),
-    clearPermissionDebugLog: () => clearPlayerPermissionDebugEntries?.()
+    clearPermissionDebugLog: () => clearPlayerPermissionDebugEntries?.(),
+    getPerfState: () => deepClone(getPerfState?.() ?? {}),
+    getPerfSummary: () => deepClone(getPerfSummary?.() ?? {}),
+    perf: {
+      state: () => deepClone(getPerfState?.() ?? {}),
+      summary: () => deepClone(getPerfSummary?.() ?? {})
+    }
   };
 
   api.openRestWatch = api.restWatch;

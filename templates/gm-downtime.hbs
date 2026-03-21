@@ -21,6 +21,7 @@
           <div class="po-gm-page-eyebrow">GM Workspace</div>
           <div class="po-section-title">Downtime Control Board</div>
           <div class="po-hint">Tune downtime pacing, publish granted hours to players, then automate or manually resolve submitted actions from one queue.</div>
+          <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status aria-live="polite">{{uiActionStatusMessage}}</div>
         </div>
         <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
           <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Draft Hours</span><strong>{{downtime.draftHoursGranted}}</strong></div>
@@ -80,6 +81,9 @@
                 <div class="po-op-role-name">Submit Downtime Action</div>
                 <div class="po-op-role-status">Manual</div>
               </div>
+              <div class="po-op-summary"><strong>Ready to submit:</strong> {{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
+              <div class="po-op-summary"><strong>Selected action:</strong> {{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</div>
+              <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
               <label class="po-resource-row">
                 <span>Actor</span>
                 <select name="downtimeActorId" class="po-select" data-action="refresh-downtime-submit-selection">
@@ -102,7 +106,7 @@
               </label>
               <label class="po-resource-row po-notes-row-lg">
                 <span>Note</span>
-                <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional intent, location, contact, or item target">{{downtime.submit.note}}</textarea>
+                <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional context for your GM">{{downtime.submit.note}}</textarea>
               </label>
               <div class="po-op-summary"><strong>Area Settings:</strong> {{downtime.submit.areaSettingsLabel}}</div>
               {{#if downtime.submit.showBrowsingFields}}

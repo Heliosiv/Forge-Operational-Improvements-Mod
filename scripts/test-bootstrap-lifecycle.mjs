@@ -6,6 +6,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 {
   const callOrder = [];
   const refreshes = [];
+  const perfEvents = [];
   let onSettingsChanged = null;
   let dataSettingsConfig = null;
   let featureSettingsConfig = null;
@@ -49,6 +50,14 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
       callOrder.push("feature-settings");
       featureSettingsConfig = config;
     },
+    perfTracker: {
+      time(_metricName, operation) {
+        return operation();
+      },
+      increment(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta });
+      }
+    },
     featureSettingsConfig: {
       moduleId: "party-operations",
       settings: {}
@@ -74,6 +83,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   assert.deepEqual(refreshes, [
     { scopes: ["scope:lootConfig"] }
   ]);
+  assert.ok(perfEvents.some((entry) => entry.metricName === "settings.changed" && entry.meta?.key === "lootConfig"));
 }
 
 {
@@ -130,11 +140,11 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   const scheduledDelays = [];
   const socketRegistrations = [];
   const managedAudioSyncCalls = [];
+  const perfEvents = [];
   const calls = {
     api: 0,
     ensureSettingsRegistered: 0,
     validate: 0,
-    bindBackNav: 0,
     setupUi: 0,
     ensureLauncherUi: 0,
     forceLauncherRecovery: [],
@@ -159,9 +169,6 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     validatePartyOperationsTemplates() {
       calls.validate += 1;
       return Promise.resolve();
-    },
-    bindPoBrowserBackNavigation() {
-      calls.bindBackNav += 1;
     },
     setupPartyOperationsUI() {
       calls.setupUi += 1;
@@ -215,6 +222,17 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     registerPartyOpsHooks() {
       calls.registerHooks += 1;
     },
+    perfTracker: {
+      time(_metricName, operation) {
+        return operation();
+      },
+      increment(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta });
+      },
+      record(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta, type: "record" });
+      }
+    },
     setTimeoutFn(callback, delayMs) {
       scheduledDelays.push(delayMs);
       callback();
@@ -224,7 +242,6 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   assert.equal(calls.api, 1);
   assert.equal(calls.ensureSettingsRegistered, 1);
   assert.equal(calls.validate, 1);
-  assert.equal(calls.bindBackNav, 1);
   assert.equal(calls.setupUi, 1);
   assert.equal(calls.ensureLauncherUi, 4);
   assert.deepEqual(calls.forceLauncherRecovery, ["ready-self-heal"]);
@@ -247,6 +264,8 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   ]);
   assert.equal(calls.registerHooks, 1);
+  assert.ok(perfEvents.some((entry) => entry.metricName === "launcher.ensure" && entry.meta?.reason === "ready-initial"));
+  assert.ok(perfEvents.some((entry) => entry.metricName === "audio.managed-sync"));
 }
 
 {
@@ -267,7 +286,6 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     validatePartyOperationsTemplates() {
       return Promise.resolve();
     },
-    bindPoBrowserBackNavigation() {},
     setupPartyOperationsUI() {},
     ensureLauncherUi() {},
     forceLauncherRecovery() {
@@ -399,7 +417,6 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     validatePartyOperationsTemplates() {
       return Promise.resolve();
     },
-    bindPoBrowserBackNavigation() {},
     setupPartyOperationsUI() {},
     ensureLauncherUi() {},
     forceLauncherRecovery() {

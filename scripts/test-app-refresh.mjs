@@ -9,6 +9,7 @@ import { createOpenAppRefresher } from "./core/app-refresh.js";
   const restores = [];
   const refreshCalls = [];
   const debugLogs = [];
+  const perfEvents = [];
 
   const appA = {
     id: "a",
@@ -42,7 +43,15 @@ import { createOpenAppRefresher } from "./core/app-refresh.js";
     captureCanvasViewState: () => ({ x: 1 }),
     refreshLauncherAudioUi: () => restores.push("audio"),
     queueCanvasViewRestore: (snapshot, options) => restores.push({ snapshot, options }),
-    requestAnimationFrameFn: (callback) => frames.push(callback)
+    requestAnimationFrameFn: (callback) => frames.push(callback),
+    perfTracker: {
+      increment(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta });
+      },
+      record(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta, type: "record" });
+      }
+    }
   });
 
   refreshOpenApps({ scope: "rest" });
@@ -59,6 +68,9 @@ import { createOpenAppRefresher } from "./core/app-refresh.js";
     extra: { preserveCanvas: false }
   }]);
   assert.equal(debugLogs.length, 1);
+  assert.ok(perfEvents.some((entry) => entry.metricName === "refresh-request-coalesced"));
+  assert.ok(perfEvents.some((entry) => entry.metricName === "refresh-batch"));
+  assert.ok(perfEvents.some((entry) => entry.metricName === "refresh-target-count" && entry.value === 2));
   assert.deepEqual(restores, [
     "audio",
     {

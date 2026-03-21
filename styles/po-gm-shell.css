@@ -665,6 +665,20 @@
   flex: 1 1 180px;
 }
 
+@media (max-width: 1280px) {
+  .party-operations :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-audio"],
+    .po-window[data-tool="gm-loot"]
+  ) .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs,
+  .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 1180px) {
   .party-operations :is(
     .po-window[data-tool="global-modifiers"],
@@ -924,6 +938,12 @@
 
   .party-operations .po-window[data-tool="gm-factions"] .po-gm-page-intro {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1280px) {
+  .party-operations .po-window[data-tool="gm-factions"] .po-tabs.po-gm-panel-tabs.po-gm-ops-tabs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
 

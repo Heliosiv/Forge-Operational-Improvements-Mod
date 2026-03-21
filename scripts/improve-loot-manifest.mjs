@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { CURATED_ITEM_UPDATES_BY_ID, CURATED_ITEM_UPDATES_BY_IDENTIFIER, NEW_TREASURE } from "./data/loot-curation-data.mjs";
 
 const MODULE_ID = "party-operations";
 const DEFAULT_MANIFEST = path.resolve(process.cwd(), "packs", "party-operations-loot-manifest.db");
@@ -49,123 +50,7 @@ const ZERO_PRICE_OVERRIDES = Object.freeze({
   vpenjFjUyEBLLlUc: Object.freeze({ value: 1, denomination: "sp" }),
   Ij6x7481ch3Z0rff: Object.freeze({ value: 1, denomination: "cp" })
 });
-
-const NEW_TREASURE = Object.freeze([
-  Object.freeze({
-    kind: "gem",
-    identifier: "bloodstone-cabochon",
-    name: "Bloodstone Cabochon",
-    img: "icons/commodities/gems/gem-faceted-rounded-brown.webp",
-    weight: 0.05,
-    price: 50,
-    description: "A polished bloodstone cabochon flecked with deep red veins."
-  }),
-  Object.freeze({
-    kind: "gem",
-    identifier: "sunfire-citrine",
-    name: "Sunfire Citrine",
-    img: "icons/commodities/gems/gem-faceted-teardrop-yellow.webp",
-    weight: 0.08,
-    price: 100,
-    description: "A honey-gold citrine that flashes like embers in direct light."
-  }),
-  Object.freeze({
-    kind: "gem",
-    identifier: "imperial-topaz",
-    name: "Imperial Topaz",
-    img: "icons/commodities/gems/gem-faceted-hexagon-orange.webp",
-    weight: 0.07,
-    price: 500,
-    description: "A clear orange topaz commonly mounted in high ceremonial jewelry."
-  }),
-  Object.freeze({
-    kind: "gem",
-    identifier: "black-pearl-pair",
-    name: "Black Pearl Pair",
-    img: "icons/commodities/gems/pearl-black.webp",
-    weight: 0.06,
-    price: 500,
-    description: "A matched pair of black pearls selected for shape and luster."
-  }),
-  Object.freeze({
-    kind: "gem",
-    identifier: "dragon-garnet",
-    name: "Dragon Garnet",
-    img: "icons/commodities/gems/gem-faceted-round-red.webp",
-    weight: 0.12,
-    price: 1000,
-    description: "A rich crimson garnet cut with broad facets and sold as a noble stone."
-  }),
-  Object.freeze({
-    kind: "gem",
-    identifier: "star-sapphire-cabochon",
-    name: "Star Sapphire Cabochon",
-    img: "icons/commodities/gems/gem-oval-blue.webp",
-    weight: 0.08,
-    price: 1000,
-    description: "A sapphire cabochon that shows a six-rayed star under bright light."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "decorative-finery",
-    identifier: "silver-filigree-mask",
-    name: "Silver Filigree Mask",
-    img: "icons/equipment/head/mask-ornate-silver.webp",
-    weight: 3,
-    price: 250,
-    description: "A ceremonial silver mask chased with fine filigree knotwork."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "wall-art",
-    identifier: "cedar-war-chronicle-panel",
-    name: "Cedar War Chronicle Panel",
-    img: "icons/sundries/documents/document-sealed-brown.webp",
-    weight: 12,
-    price: 750,
-    description: "A carved cedar panel depicting banners and battle formations."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "decorative-finery",
-    identifier: "bronze-astral-orrery",
-    name: "Bronze Astral Orrery",
-    img: "icons/commodities/tech/astrolabe-brass.webp",
-    weight: 15,
-    price: 2500,
-    description: "A finely geared bronze orrery engraved with constellations."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "sculptures-idols",
-    identifier: "obsidian-shrine-idol",
-    name: "Obsidian Shrine Idol",
-    img: "icons/commodities/treasure/statue-carved-face.webp",
-    weight: 20,
-    price: 750,
-    description: "A glossy obsidian idol with stylized prayer markings."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "wall-art",
-    identifier: "gilded-battle-standard",
-    name: "Gilded Battle Standard",
-    img: "icons/sundries/flags/banner-symbol-sword-blue.webp",
-    weight: 8,
-    price: 500,
-    description: "A gilt-edged military standard preserved in costly cloth."
-  }),
-  Object.freeze({
-    kind: "art",
-    leaf: "decorative-finery",
-    identifier: "porcelain-phoenix-vase",
-    name: "Porcelain Phoenix Vase",
-    img: "icons/commodities/treasure/vase-ceramic-blue.webp",
-    weight: 6,
-    price: 1000,
-    description: "A cobalt-and-white porcelain vase painted with a phoenix motif."
-  })
-]);
+const TREASURE_SPEC_BY_IDENTIFIER = new Map(NEW_TREASURE.map((spec) => [normalizeLookupKey(spec?.identifier), spec]));
 
 function parseArgs(argv = []) {
   const args = { manifest: DEFAULT_MANIFEST, report: "", write: false };
@@ -195,6 +80,75 @@ function round(value, digits = 2) {
   return Math.round((toNumber(value) * factor)) / factor;
 }
 
+function normalizeLookupKey(value = "") {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function normalizeTextArtifacts(value = "") {
+  return String(value ?? "")
+    .replace(/\u00a0/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/Â(?=\s|<|$)/g, "");
+}
+
+function escapeHtml(value = "") {
+  return normalizeTextArtifacts(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function stripHtml(value = "") {
+  return normalizeTextArtifacts(value)
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeHtmlSnippet(value = "") {
+  return normalizeTextArtifacts(value)
+    .replace(/<p>\s*<\/p>/gi, "")
+    .replace(/(<br\s*\/?>\s*){2,}/gi, "<br>")
+    .trim();
+}
+
+function buildHtmlParagraphs(paragraphs = []) {
+  const rows = Array.isArray(paragraphs) ? paragraphs : [paragraphs];
+  return rows
+    .map((entry) => String(entry ?? "").trim())
+    .filter(Boolean)
+    .map((entry) => `<p>${escapeHtml(entry)}</p>`)
+    .join("");
+}
+
+function buildSummaryText(value = "", maxWords = 24) {
+  const text = stripHtml(value);
+  if (!text) return "";
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) return text;
+  return `${words.slice(0, maxWords).join(" ")}...`;
+}
+
+function formatWeightText(weight = 0) {
+  const value = round(Math.max(0, toNumber(weight)), 2);
+  return Number.isInteger(value) ? String(value) : String(value);
+}
+
+function buildNarrativeChat(name = "", summary = "") {
+  const headline = escapeHtml(name);
+  const body = escapeHtml(summary);
+  return body ? `<p><strong>${headline}</strong></p><p>${body}</p>` : `<p><strong>${headline}</strong></p>`;
+}
+
+function buildUnidentifiedDescription(summary = "", hint = "") {
+  const rows = [];
+  if (summary) rows.push(summary);
+  if (hint) rows.push(hint);
+  return buildHtmlParagraphs(rows);
+}
+
 function normalizeRarity(value = "") {
   const key = String(value ?? "").trim().toLowerCase().replace(/\s+/g, "").replace(/_/g, "-");
   if (key === "veryrare") return "very-rare";
@@ -217,6 +171,15 @@ function getTier(rarity = "") {
   if (rarity === "legendary" || rarity === "very-rare") return "tier.t4";
   if (rarity === "rare") return "tier.t3";
   if (rarity === "uncommon") return "tier.t2";
+  return "tier.t1";
+}
+
+function getArtTreasureTier(gp = 0, variableKind = "") {
+  if (String(variableKind ?? "").trim().toLowerCase() !== "art") return "";
+  const value = round(Math.max(0, toNumber(gp)), 2);
+  if (value >= 10000) return "tier.t4";
+  if (value >= 3000) return "tier.t3";
+  if (value >= 500) return "tier.t2";
   return "tier.t1";
 }
 
@@ -280,8 +243,8 @@ function detectVariableKind(item = {}, po = {}, tags = new Set()) {
   if (tags.has("merchant.gem") || tags.has("folder.leaf.gemstones")) return "gem";
   if (tags.has("merchant.art") || tags.has("folder.section.art-objects")) return "art";
   const name = String(item?.name ?? "").trim().toLowerCase();
-  if (/\b(amber|agate|amethyst|aquamarine|bloodstone|diamond|emerald|garnet|gem|jade|jasper|onyx|opal|pearl|quartz|ruby|sapphire|topaz|tourmaline)\b/.test(name)) return "gem";
-  if (/\b(art|painting|portrait|tapestry|statue|idol|vase|chalice|mask|bust|sculpture|carving)\b/.test(name)) return "art";
+  if (/\b(agate|alexandrite|amber|amethyst|aquamarine|azurite|bloodstone|citrine|diamond|emerald|garnet|gem|jade|jasper|moonstone|onyx|opal|pearl|quartz|ruby|sapphire|spinel|sunstone|topaz|tourmaline|turquoise)\b/.test(name)) return "gem";
+  if (/\b(art|banner|carving|chalice|coffer|diptych|effigy|icon|idol|lantern|mask|orrery|painting|panel|plaque|portrait|reliquary|screen|sculpture|standard|statue|tapestry|vase)\b/.test(name)) return "art";
   return "";
 }
 
@@ -302,8 +265,7 @@ function ensureDir(filePath) {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 }
 
-function createTreasureItem(spec = {}) {
-  const id = makeId(`party-operations:${spec.identifier}`);
+function getTreasureFolderProfile(spec = {}) {
   const isGem = spec.kind === "gem";
   const sectionKey = isGem ? "gems-jewelry" : "art-objects";
   const sectionLabel = isGem ? "Gems & Jewelry" : "Art Objects";
@@ -316,43 +278,164 @@ function createTreasureItem(spec = {}) {
   };
   const leafLabel = leafLabelMap[leafKey] ?? "General";
   const pathKey = `sundries/${sectionKey}/${leafKey}`;
-  const sourceId = `Compendium.party-operations.party-operations-loot-manifest.Item.${id}`;
-
   return {
+    schema: "po-loot-folder-v1",
+    familyKey: "sundries",
+    familyLabel: "Sundries",
+    sectionKey,
+    sectionLabel,
+    leafKey,
+    leafLabel,
+    path: [
+      { key: "sundries", label: "Sundries", sort: 6000 },
+      { key: sectionKey, label: sectionLabel, sort: isGem ? 6200 : 6250 },
+      { key: leafKey, label: leafLabel, sort: isGem ? 6210 : 6280 }
+    ],
+    pathLabels: ["Sundries", sectionLabel, leafLabel],
+    pathKeys: ["sundries", sectionKey, leafKey],
+    pathKey
+  };
+}
+
+function buildTreasureDescription(spec = {}) {
+  const rows = Array.isArray(spec.descriptionParagraphs) ? [...spec.descriptionParagraphs] : [];
+  if (rows.length <= 0 && spec.description) rows.push(spec.description);
+  const detailBits = [];
+  if (String(spec.displayNote ?? "").trim()) detailBits.push(`Display: ${String(spec.displayNote).trim()}.`);
+  if (toNumber(spec.weight) > 0) detailBits.push(`Weight: ${formatWeightText(spec.weight)} lb.`);
+  if (detailBits.length > 0) rows.push(detailBits.join(" "));
+  return buildHtmlParagraphs(rows);
+}
+
+function buildTreasureChatDescription(spec = {}) {
+  const summary = String(spec.chatSummary ?? "").trim()
+    || buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
+  return buildNarrativeChat(spec.name, summary);
+}
+
+function buildTreasureUnidentifiedDescription(spec = {}) {
+  const summary = String(spec.unidentifiedSummary ?? "").trim()
+    || String(spec.chatSummary ?? "").trim()
+    || buildSummaryText(Array.isArray(spec.descriptionParagraphs) ? spec.descriptionParagraphs[0] : spec.description);
+  const hint = String(spec.unidentifiedHint ?? "").trim() || "Its provenance and market value require closer inspection.";
+  return buildUnidentifiedDescription(summary, hint);
+}
+
+function buildTreasureMerchantCategories(spec = {}) {
+  return spec.kind === "gem"
+    ? ["gem", "loot", "luxury", "treasure"]
+    : ["art", "loot", "luxury", "treasure"];
+}
+
+function ensureUtilityActivity(item = {}, name = "") {
+  if (!item.system) item.system = {};
+  if (!item.system.activities || typeof item.system.activities !== "object" || Array.isArray(item.system.activities)) {
+    item.system.activities = {};
+  }
+  if (Object.keys(item.system.activities).length > 0) return;
+  item.system.activities.dnd5eactivity000 = {
+    _id: "dnd5eactivity000",
+    type: "utility",
+    activation: { type: "action", value: 1, condition: "", override: false },
+    consumption: { targets: [], scaling: { allowed: false, max: "" }, spellSlot: true },
+    description: { chatFlavor: `Use ${name}` },
+    duration: { concentration: false, value: "", units: "inst", special: "", override: false },
+    effects: [],
+    range: { units: "self", special: "", override: false },
+    target: { template: {}, affects: {}, prompt: true, override: false },
+    uses: { spent: 0, max: "", recovery: [] },
+    roll: { formula: "", name: "", prompt: false, visible: false },
+    sort: 0
+  };
+}
+
+function applyNarrativeUpdate(item = {}, update = {}) {
+  if (!update || typeof update !== "object") return;
+  if (!item.flags) item.flags = {};
+  if (!item.flags[MODULE_ID]) item.flags[MODULE_ID] = {};
+  if (!item.system) item.system = {};
+  if (update.img) item.img = update.img;
+  if (update.identifier) item.system.identifier = update.identifier;
+  if (Array.isArray(update.descriptionParagraphs) && update.descriptionParagraphs.length > 0) {
+    if (!item.system.description || typeof item.system.description !== "object") item.system.description = {};
+    item.system.description.value = buildHtmlParagraphs(update.descriptionParagraphs);
+    const summary = String(update.chatSummary ?? "").trim() || buildSummaryText(update.descriptionParagraphs[0]);
+    item.system.description.chat = buildNarrativeChat(item.name, summary);
+    if (!item.system.unidentified || typeof item.system.unidentified !== "object") item.system.unidentified = {};
+    item.system.unidentified.description = buildUnidentifiedDescription(
+      String(update.unidentifiedSummary ?? "").trim() || summary,
+      String(update.unidentifiedHint ?? "").trim() || "Its provenance and market value require closer inspection."
+    );
+  }
+  if (Array.isArray(update.merchantCategories) && update.merchantCategories.length > 0) {
+    item.flags[MODULE_ID].merchantCategories = update.merchantCategories.map((entry) => String(entry ?? "").trim().toLowerCase()).filter(Boolean);
+  }
+  if (update.lootType) item.flags[MODULE_ID].lootType = String(update.lootType).trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(update, "variableTreasureKind")) {
+    const variableKind = normalizeVariableKind(update.variableTreasureKind);
+    if (variableKind) {
+      item.flags[MODULE_ID].variableTreasureKind = variableKind;
+      item.variableTreasureKind = variableKind;
+    } else {
+      delete item.flags[MODULE_ID].variableTreasureKind;
+      delete item.variableTreasureKind;
+    }
+  }
+}
+
+function applyTreasureSpecToItem(item = {}, spec = {}) {
+  if (!item.flags) item.flags = {};
+  if (!item.flags[MODULE_ID]) item.flags[MODULE_ID] = {};
+  if (!item.flags.core) item.flags.core = {};
+  if (!item.system) item.system = {};
+  item.name = spec.name;
+  item.type = "loot";
+  item.img = spec.img;
+  item.folder = null;
+  item.system.description = {
+    value: buildTreasureDescription(spec),
+    chat: buildTreasureChatDescription(spec)
+  };
+  item.system.unidentified = {
+    ...(item.system.unidentified && typeof item.system.unidentified === "object" ? item.system.unidentified : {}),
+    description: buildTreasureUnidentifiedDescription(spec)
+  };
+  item.system.source = { rules: "2014", revision: 1, custom: "Party Operations Curated Treasure" };
+  item.system.quantity = 1;
+  item.system.weight = { value: spec.weight, units: "lb" };
+  item.system.price = { value: spec.price, denomination: "gp" };
+  item.system.rarity = "";
+  item.system.identified = true;
+  item.system.type = { value: "treasure", subtype: "" };
+  item.system.identifier = spec.identifier;
+  ensureUtilityActivity(item, spec.name);
+  item.flags[MODULE_ID].folder = getTreasureFolderProfile(spec);
+  item.flags[MODULE_ID].merchantCategories = buildTreasureMerchantCategories(spec);
+  item.flags[MODULE_ID].lootType = "loot.loot";
+  item.flags[MODULE_ID].variableTreasureKind = normalizeVariableKind(spec.kind);
+  item.variableTreasureKind = normalizeVariableKind(spec.kind);
+  if (!Array.isArray(item.effects)) item.effects = [];
+}
+
+function applyCuratedOverrides(item = {}) {
+  const identifier = normalizeLookupKey(item?.system?.identifier ?? "");
+  const treasureSpec = TREASURE_SPEC_BY_IDENTIFIER.get(identifier);
+  if (treasureSpec) applyTreasureSpecToItem(item, treasureSpec);
+  const identifierUpdate = CURATED_ITEM_UPDATES_BY_IDENTIFIER[identifier];
+  if (identifierUpdate) applyNarrativeUpdate(item, identifierUpdate);
+  const idUpdate = CURATED_ITEM_UPDATES_BY_ID[String(item?._id ?? "").trim()];
+  if (idUpdate) applyNarrativeUpdate(item, idUpdate);
+}
+
+function createTreasureItem(spec = {}) {
+  const id = makeId(`party-operations:${spec.identifier}`);
+  const sourceId = `Compendium.party-operations.party-operations-loot-manifest.Item.${id}`;
+  const item = {
     _id: id,
     name: spec.name,
     type: "loot",
     img: spec.img,
-    system: {
-      description: {
-        value: `<p>${spec.description}</p><p>Weight: ${spec.weight} lb.</p>`,
-        chat: `<p><strong>${spec.name}</strong></p><p>${spec.description}</p>`
-      },
-      source: { rules: "2014", revision: 1, custom: "Party Operations Curated Treasure" },
-      quantity: 1,
-      weight: { value: spec.weight, units: "lb" },
-      price: { value: spec.price, denomination: "gp" },
-      rarity: "",
-      identified: true,
-      type: { value: "treasure", subtype: "" },
-      identifier: spec.identifier,
-      activities: {
-        dnd5eactivity000: {
-          _id: "dnd5eactivity000",
-          type: "utility",
-          activation: { type: "action", value: 1, condition: "", override: false },
-          consumption: { targets: [], scaling: { allowed: false, max: "" }, spellSlot: true },
-          description: { chatFlavor: `Use ${spec.name}` },
-          duration: { concentration: false, value: "", units: "inst", special: "", override: false },
-          effects: [],
-          range: { units: "self", special: "", override: false },
-          target: { template: {}, affects: {}, prompt: true, override: false },
-          uses: { spent: 0, max: "", recovery: [] },
-          roll: { formula: "", name: "", prompt: false, visible: false },
-          sort: 0
-        }
-      }
-    },
+    system: {},
     effects: [],
     folder: null,
     flags: {
@@ -360,25 +443,7 @@ function createTreasureItem(spec = {}) {
       "midi-qol": { ...DEFAULT_MIDI_QOL },
       dae: { ...DEFAULT_DAE },
       midiProperties: { ...DEFAULT_MIDI_PROPERTIES },
-      [MODULE_ID]: {
-        folder: {
-          schema: "po-loot-folder-v1",
-          familyKey: "sundries",
-          familyLabel: "Sundries",
-          sectionKey,
-          sectionLabel,
-          leafKey,
-          leafLabel,
-          path: [
-            { key: "sundries", label: "Sundries", sort: 6000 },
-            { key: sectionKey, label: sectionLabel, sort: isGem ? 6200 : 6250 },
-            { key: leafKey, label: leafLabel, sort: isGem ? 6210 : 6280 }
-          ],
-          pathLabels: ["Sundries", sectionLabel, leafLabel],
-          pathKeys: ["sundries", sectionKey, leafKey],
-          pathKey
-        }
-      }
+      [MODULE_ID]: {}
     },
     _stats: {
       compendiumSource: sourceId,
@@ -396,6 +461,8 @@ function createTreasureItem(spec = {}) {
       [OWNER_ID]: 3
     }
   };
+  applyTreasureSpecToItem(item, spec);
+  return item;
 }
 
 function enrichItem(item = {}, nowIso = "") {
@@ -423,8 +490,16 @@ function enrichItem(item = {}, nowIso = "") {
   }
   if (!item.ownership || typeof item.ownership !== "object") item.ownership = { default: 0, [OWNER_ID]: 3 };
   if (item.sort === undefined || item.sort === null) item.sort = 0;
+  if (item.system?.description && typeof item.system.description === "object") {
+    if (item.system.description.value !== undefined) item.system.description.value = sanitizeHtmlSnippet(item.system.description.value);
+    if (item.system.description.chat !== undefined) item.system.description.chat = sanitizeHtmlSnippet(item.system.description.chat);
+  }
+  if (item.system?.unidentified && typeof item.system.unidentified === "object" && item.system.unidentified.description !== undefined) {
+    item.system.unidentified.description = sanitizeHtmlSnippet(item.system.unidentified.description);
+  }
 
   const po = item.flags[MODULE_ID];
+  applyCuratedOverrides(item);
   const override = ZERO_PRICE_OVERRIDES[String(item._id ?? "").trim()];
   if (override && po.lootEligible !== false && getGpValue(item) <= 0) {
     item.system.price.value = override.value;
@@ -435,7 +510,7 @@ function enrichItem(item = {}, nowIso = "") {
   const lootType = String(po.lootType ?? "").trim().toLowerCase() || classifyLootType(item, rarity);
   const gp = getGpValue(item);
   const denomination = getDenomination(item);
-  const tier = getTier(rarity);
+  let tier = getTier(rarity);
   const valueBand = getValueBand(gp);
   const weight = Math.max(0, toNumber(item?.system?.weight?.value ?? 0));
   const weightBand = weight <= 0 ? "none" : (weight <= 1 ? "light" : (weight <= 10 ? "medium" : (weight <= 40 ? "heavy" : "bulk")));
@@ -446,7 +521,7 @@ function enrichItem(item = {}, nowIso = "") {
     if (text) keywordMap.set(text.toLowerCase(), text);
   }
   for (const key of Array.from(keywordMap.keys())) {
-    if (key.startsWith("tier.") || key.startsWith("value.v") || key.startsWith("price.") || key.startsWith("rarity.") || key.startsWith("weight.") || key.startsWith("source.class.") || key.startsWith("source.policy.") || key.startsWith("curation.") || key.startsWith("economy.") || key.startsWith("loot.variable") || key === "source.curated" || key === "treasure.gem" || key === "treasure.art" || key === "value.high" || key === "loot.excluded") keywordMap.delete(key);
+    if (key.startsWith("tier.") || key.startsWith("value.v") || key.startsWith("price.") || key.startsWith("rarity.") || key.startsWith("weight.") || key.startsWith("source.class.") || key.startsWith("source.policy.") || key.startsWith("curation.") || key.startsWith("economy.") || key.startsWith("loot.variable") || key === "source.curated" || key === "treasure.gem" || key === "treasure.art" || key === "merchant.art" || key === "merchant.gem" || key === "merchant.luxury" || key === "merchant.treasure" || key === "value.high" || key === "loot.excluded") keywordMap.delete(key);
   }
 
   const addTag = (value) => {
@@ -458,7 +533,6 @@ function enrichItem(item = {}, nowIso = "") {
   addTag("loot");
   addTag(`foundryType.${String(item.type ?? "item").trim().toLowerCase()}`);
   addTag(lootType);
-  addTag(tier);
   addTag(valueBand);
   addTag(`price.${denomination}`);
   addTag(rarity ? `rarity.${rarity}` : "rarity.none");
@@ -482,6 +556,9 @@ function enrichItem(item = {}, nowIso = "") {
   }
 
   const variableKind = detectVariableKind(item, po, new Set(keywordMap.keys()));
+  const artTier = !rarity ? getArtTreasureTier(gp, variableKind) : "";
+  if (artTier) tier = artTier;
+  addTag(tier);
   if (variableKind) {
     addTag("loot.variable");
     addTag(`loot.variable.${variableKind}`);
@@ -499,6 +576,11 @@ function enrichItem(item = {}, nowIso = "") {
     if (!key.startsWith("merchant.")) continue;
     const category = key.slice("merchant.".length).trim().toLowerCase();
     if (category) categories.add(category);
+  }
+  if (!variableKind) {
+    categories.delete("art");
+    categories.delete("gem");
+    categories.delete("treasure");
   }
   const itemType = String(item.type ?? "").trim().toLowerCase();
   if (lootType.includes("weapon")) { categories.add("arms"); categories.add("weapon"); }

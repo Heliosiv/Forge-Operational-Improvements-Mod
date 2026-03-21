@@ -71,6 +71,7 @@ import {
   const audioResyncs = [];
   const pendingSyncReasons = [];
   const upkeepActions = [];
+  const perfEvents = [];
   const environmentMoves = new Map();
 
   const modules = buildPartyOpsRuntimeHookModules({
@@ -125,6 +126,14 @@ import {
     queueManagedAudioMixPlaybackResync(delayMs, payload) {
       audioResyncs.push({ delayMs, payload });
     },
+    perfTracker: {
+      increment(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta });
+      },
+      record(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta, type: "record" });
+      }
+    },
     gameRef: {
       user: {
         isGM: false
@@ -168,6 +177,9 @@ import {
       }
     }
   ]);
+  assert.ok(perfEvents.some((entry) => entry.metricName === "setting.updated" && entry.meta?.settingKey === "party-operations.restWatchState"));
+  assert.ok(perfEvents.some((entry) => entry.metricName === "refresh-open-apps"));
+  assert.ok(perfEvents.some((entry) => entry.metricName === "audio-playback-resync"));
 
   const userPresenceHandler = modules.find((module) => module.id === "user-presence").registrations[0][1];
   userPresenceHandler({ isGM: true, active: true }, { active: true });
@@ -220,6 +232,7 @@ import {
 
 {
   const integrationReasons = [];
+  const perfEvents = [];
 
   const modules = buildPartyOpsRuntimeHookModules({
     moduleId: "party-operations",
@@ -244,6 +257,11 @@ import {
     scheduleIntegrationSync(reason) {
       integrationReasons.push(reason);
     },
+    perfTracker: {
+      increment(metricName, value, meta) {
+        perfEvents.push({ metricName, value, meta });
+      }
+    },
     gameRef: {
       user: {
         isGM: true
@@ -258,6 +276,7 @@ import {
   integrationHandler();
 
   assert.deepEqual(integrationReasons, ["update-setting", "canvas-ready"]);
+  assert.ok(perfEvents.some((entry) => entry.metricName === "integration-sync" && entry.meta?.reason === "canvas-ready"));
 }
 
 {

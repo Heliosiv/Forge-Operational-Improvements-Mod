@@ -99,7 +99,9 @@ import {
     stopAudioMixPlayback: () => "stop-track",
     normalizeAudioLibraryKind: (value) => value,
     normalizeAudioLibraryUsage: (value) => value,
-    normalizeAudioLibrarySearch: (value) => String(value ?? "").trim().toLowerCase()
+    normalizeAudioLibrarySearch: (value) => String(value ?? "").trim().toLowerCase(),
+    getPerfState: () => ({ scopes: { raw: { counters: { foo: { count: 1 } } } } }),
+    getPerfSummary: () => ({ scopes: { summary: { counters: { foo: { avg: 1 } } } } })
   });
 
   api.restWatch();
@@ -120,6 +122,9 @@ import {
   });
   assert.equal(api.openRestWatch, api.restWatch);
   assert.equal(api.launcher, api.ensureLauncher);
+  assert.deepEqual(api.getPerfState(), { scopes: { raw: { counters: { foo: { count: 1 } } } } });
+  assert.deepEqual(api.getPerfSummary(), { scopes: { summary: { counters: { foo: { avg: 1 } } } } });
+  assert.deepEqual(api.perf.summary(), { scopes: { summary: { counters: { foo: { avg: 1 } } } } });
   assert.deepEqual(api.apiStatus(), {
     moduleActive: true,
     hasGameApi: true,

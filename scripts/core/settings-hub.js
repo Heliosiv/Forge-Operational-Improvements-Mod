@@ -1,5 +1,7 @@
 import { bindCanvasKeyboardSuppression } from "./ui-keyboard-guard.js";
 
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
 export function createPartyOperationsSettingsHub({
   moduleId,
   settings,
@@ -22,27 +24,29 @@ export function createPartyOperationsSettingsHub({
 } = {}) {
   let settingsHubAppInstance = null;
 
-  class PartyOperationsSettingsHub extends FormApplication {
-    static get defaultOptions() {
-      return foundry.utils.mergeObject(super.defaultOptions, {
-        id: "party-operations-settings-hub",
-        title: "Party Operations - Settings Hub",
-        template: "modules/party-operations/templates/settings-hub.hbs",
+  class PartyOperationsSettingsHub extends HandlebarsApplicationMixin(ApplicationV2) {
+    static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+      id: "party-operations-settings-hub",
+      tag: "section",
+      window: { title: "Party Operations - Settings Hub" },
+      position: {
         width: 760,
-        height: "auto",
-        resizable: true,
-        closeOnSubmit: false,
-        submitOnClose: false,
-        classes: ["party-operations"]
-      });
-    }
+        height: "auto"
+      },
+      resizable: true,
+      classes: ["party-operations"]
+    });
+
+    static PARTS = {
+      main: { template: "modules/party-operations/templates/settings-hub.hbs" }
+    };
 
     constructor(options = {}) {
       super(options);
       settingsHubAppInstance = this;
     }
 
-    getData() {
+    async _prepareContext() {
       const advancedEnabled = areAdvancedSettingsEnabled();
       const playerHubMode = normalizePlayerHubMode(game.settings.get(moduleId, settings.PLAYER_HUB_MODE));
       const lootScarcity = String(game.settings.get(moduleId, settings.LOOT_SCARCITY) ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
@@ -81,35 +85,71 @@ export function createPartyOperationsSettingsHub({
       };
     }
 
-    activateListeners(html) {
-      super.activateListeners(html);
-      bindCanvasKeyboardSuppression(html[0]);
-      html.find("[data-action='open-foundry-settings']").on("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        game.settings.sheet?.render(true);
-      });
+    async _onRender(context, options) {
+      await super._onRender(context, options);
+      const root = this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null);
+      if (!root) return;
+
+      bindCanvasKeyboardSuppression(root);
+
+      const form = root.querySelector("form");
+      const openSettingsButton = root.querySelector("[data-action='open-foundry-settings']");
+      const saveSettingsButton = root.querySelector("[data-action='save-settings-hub']");
+
+      if (openSettingsButton instanceof HTMLElement && openSettingsButton.dataset.poBoundClick !== "1") {
+        openSettingsButton.dataset.poBoundClick = "1";
+        openSettingsButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          game.settings.sheet?.render(true);
+        });
+      }
+
+      if (saveSettingsButton instanceof HTMLElement && saveSettingsButton.dataset.poBoundClick !== "1") {
+        saveSettingsButton.dataset.poBoundClick = "1";
+        saveSettingsButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          void this.#saveSettings();
+        });
+      }
+
+      if (form instanceof HTMLFormElement && form.dataset.poBoundSubmit !== "1") {
+        form.dataset.poBoundSubmit = "1";
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          void this.#saveSettings();
+        });
+      }
     }
 
-    async _updateObject(_event, formData) {
-      const data = foundry.utils.expandObject(formData ?? {});
-      const toBool = (value) => {
-        if (typeof value === "boolean") return value;
-        if (typeof value === "number") return value !== 0;
-        const text = String(value ?? "").trim().toLowerCase();
-        return text === "true" || text === "1" || text === "on" || text === "yes";
-      };
+    #toBool(value) {
+      if (typeof value === "boolean") return value;
+      if (typeof value === "number") return value !== 0;
+      const text = String(value ?? "").trim().toLowerCase();
+      return text === "true" || text === "1" || text === "on" || text === "yes";
+    }
+
+    #collectFormData() {
+      const root = this.element instanceof HTMLElement ? this.element : (this.element?.[0] ?? null);
+      const form = root?.querySelector?.("form");
+      if (!(form instanceof HTMLFormElement)) return {};
+      const entries = Object.fromEntries(new FormData(form).entries());
+      return foundry.utils.expandObject(entries ?? {});
+    }
+
+    async #saveSettings() {
+      const data = this.#collectFormData();
 
       const advancedBefore = areAdvancedSettingsEnabled();
       const updates = [
         [settings.PLAYER_HUB_MODE, normalizePlayerHubMode(data.playerHubMode)],
-        [settings.SHARED_GM_PERMISSIONS, toBool(data.sharedGmPermissions)],
-        [settings.REST_AUTOMATION_ENABLED, toBool(data.restAutomationEnabled)],
-        [settings.MARCHING_ORDER_LOCK_PLAYERS, toBool(data.marchingOrderLockPlayers)],
-        [settings.PLAYER_AUTO_OPEN_REST, toBool(data.playerAutoOpenRest)],
-        [settings.ADVANCED_SETTINGS_ENABLED, toBool(data.advancedEnabled)],
+        [settings.SHARED_GM_PERMISSIONS, this.#toBool(data.sharedGmPermissions)],
+        [settings.REST_AUTOMATION_ENABLED, this.#toBool(data.restAutomationEnabled)],
+        [settings.MARCHING_ORDER_LOCK_PLAYERS, this.#toBool(data.marchingOrderLockPlayers)],
+        [settings.PLAYER_AUTO_OPEN_REST, this.#toBool(data.playerAutoOpenRest)],
+        [settings.ADVANCED_SETTINGS_ENABLED, this.#toBool(data.advancedEnabled)],
         [settings.LAUNCHER_PLACEMENT, normalizeLauncherPlacement(data.launcherPlacement)],
-        [settings.FLOATING_LAUNCHER_LOCKED, toBool(data.launcherLocked)],
+        [settings.FLOATING_LAUNCHER_LOCKED, this.#toBool(data.launcherLocked)],
         [settings.LOOT_SCARCITY, (() => {
           const value = String(data.lootScarcity ?? lootScarcityLevels.NORMAL).trim().toLowerCase();
           if (value === lootScarcityLevels.ABUNDANT || value === lootScarcityLevels.SCARCE) return value;
@@ -144,7 +184,8 @@ export function createPartyOperationsSettingsHub({
         });
       }
       notifyUiInfoThrottled("Party Operations settings saved.", { key: "settings-hub-saved", ttlMs: 700 });
-      this.render(false);
+      await this.render({ force: true, parts: ["main"] });
+      this.bringToFront?.();
     }
 
     async close(options = {}) {
@@ -158,9 +199,7 @@ export function createPartyOperationsSettingsHub({
       notifyUiWarnThrottled("GM permissions are required for Party Operations settings.");
       return null;
     }
-    const app = settingsHubAppInstance?.rendered
-      ? settingsHubAppInstance
-      : new PartyOperationsSettingsHub();
+    const app = settingsHubAppInstance ?? new PartyOperationsSettingsHub();
     app.render(renderOptions);
     return app;
   }
