@@ -25,24 +25,46 @@ function randomIntInclusive(min = 1, max = 1, randomFn = Math.random) {
 function getChallengeQuantityBand(challenge = "mid", kind = "ammo") {
   const normalizedChallenge = normalizeText(challenge) || "mid";
   if (kind === "ammo") {
-    if (normalizedChallenge === "low") return [5, 16];
-    if (normalizedChallenge === "high") return [8, 28];
-    if (normalizedChallenge === "epic") return [12, 40];
+    if (normalizedChallenge === "low") return [4, 12];
+    if (normalizedChallenge === "high") return [10, 30];
+    if (normalizedChallenge === "epic") return [14, 45];
     return [6, 20];
   }
   if (kind === "treasure") {
-    if (normalizedChallenge === "low") return [2, 4];
-    if (normalizedChallenge === "high") return [3, 6];
-    if (normalizedChallenge === "epic") return [4, 8];
+    if (normalizedChallenge === "low") return [1, 2];
+    if (normalizedChallenge === "high") return [3, 7];
+    if (normalizedChallenge === "epic") return [5, 10];
     return [2, 5];
   }
   if (kind === "supply") {
-    if (normalizedChallenge === "low") return [2, 4];
-    if (normalizedChallenge === "high") return [3, 8];
-    if (normalizedChallenge === "epic") return [4, 10];
+    if (normalizedChallenge === "low") return [1, 3];
+    if (normalizedChallenge === "high") return [3, 9];
+    if (normalizedChallenge === "epic") return [5, 12];
     return [2, 6];
   }
   return [1, 1];
+}
+
+function applyChallengeStackScaling(quantity = 1, kind = "", draft = {}, entry = {}) {
+  const safeQuantity = Math.max(1, Math.floor(Number(quantity) || 1));
+  const challenge = normalizeText(draft?.challenge) || "mid";
+  const multipliers = {
+    low: { ammo: 0.65, treasure: 0.6, supply: 0.7 },
+    mid: { ammo: 1, treasure: 1, supply: 1 },
+    high: { ammo: 1.18, treasure: 1.15, supply: 1.12 },
+    epic: { ammo: 1.32, treasure: 1.28, supply: 1.2 }
+  };
+  const byChallenge = multipliers[challenge] ?? multipliers.mid;
+  const scaled = Math.max(1, Math.floor(safeQuantity * Number(byChallenge?.[kind] ?? 1)));
+
+  const magicLike = isMagicLike(entry);
+  if (magicLike && challenge === "low" && kind !== "ammo") {
+    return 1;
+  }
+  if (magicLike && challenge === "mid" && kind !== "ammo") {
+    return Math.max(1, Math.floor(scaled * 0.85));
+  }
+  return scaled;
 }
 
 function getPrimaryCategory(entry = {}) {
@@ -156,7 +178,8 @@ function resolvePrimaryQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, r
   
   const challenge = normalizeText(draft?.challenge) || "mid";
   const [minQty, maxQty] = getChallengeQuantityBand(challenge, bundleKind);
-  const quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  const rolledQuantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  const quantity = applyChallengeStackScaling(rolledQuantity, bundleKind, draft, entry);
   return capBundledQuantity(quantity, bundleKind, draft);
 }
 
@@ -264,12 +287,27 @@ function resolveAmmoQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, rand
   if (maxAffordable <= 1) return 1;
   
   const challenge = normalizeText(draft?.challenge) || "mid";
+  const random = typeof randomFn === "function" ? randomFn : Math.random;
+  const enchantmentLevel = getEnchantmentLevel(entry);
+
+  if (challenge === "low") {
+    if (enchantmentLevel >= 3) return 0;
+    if (enchantmentLevel === 2) {
+      if (random() >= 0.18) return 0;
+      return capBundledQuantity(1, "ammo", draft);
+    }
+    if (enchantmentLevel === 1) {
+      const lowMagicQty = Math.max(1, Math.min(maxAffordable, randomIntInclusive(1, 3, random)));
+      return capBundledQuantity(lowMagicQty, "ammo", draft);
+    }
+  }
+
   const [minQty, maxQty] = getChallengeQuantityBand(challenge, "ammo");
-  let quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  let quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, random)));
   
   // Apply enhancement-level penalty for magical ammo
-  const enchantmentLevel = getEnchantmentLevel(entry);
   quantity = applyEnchantmentStackPenalty(quantity, enchantmentLevel);
+  quantity = applyChallengeStackScaling(quantity, "ammo", draft, entry);
   
   // Cap final quantity per horde scale rules
   return capBundledQuantity(quantity, "ammo", draft);

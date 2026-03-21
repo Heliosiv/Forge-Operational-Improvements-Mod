@@ -178,6 +178,12 @@
       <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
     </div>
     <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+      {{#if hasQueuedEntries}}
+      <div class="po-op-summary">Queued: {{queueSummaryLabel}}</div>
+      {{#each queuedPreview}}
+      <div class="po-op-summary">- {{this}}</div>
+      {{/each}}
+      {{/if}}
     {{#if hasActionDetails}}
     {{#each actionDetails}}
     <div class="po-op-summary">{{this}}</div>
@@ -198,6 +204,9 @@
         {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
       </div>
     </details>
+    {{#if canCollect}}
+    <button type="button" class="po-btn po-btn-sm" data-action="collect-downtime-result" data-actor-id="{{actorId}}">Collect Result</button>
+    {{/if}}
     {{/if}}
     <div class="po-op-summary">Updated: {{updatedAtLabel}} by {{updatedBy}}</div>
   </div>

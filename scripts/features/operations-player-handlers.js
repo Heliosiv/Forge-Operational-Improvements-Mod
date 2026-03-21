@@ -240,7 +240,20 @@ export async function applyPlayerDowntimeClearRequest(message, requesterRef = nu
   await updateOperationsLedger((ledger) => {
     const downtime = ensureDowntimeState(ledger);
     if (!downtime.entries) return;
-    delete downtime.entries[actorId];
+    const current = downtime.entries[actorId];
+    if (!current) return;
+    const queue = Array.isArray(current.queue) ? current.queue : [];
+    if (queue.length > 0) {
+      const nextActive = queue.shift();
+      downtime.entries[actorId] = {
+        ...nextActive,
+        queue,
+        hoursInvested: Math.max(0, Number(current.hoursInvested ?? 0) || 0),
+        currentMilestone: Math.max(0, Number(current.currentMilestone ?? 0) || 0)
+      };
+    } else {
+      delete downtime.entries[actorId];
+    }
   });
 }
 

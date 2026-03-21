@@ -19144,25 +19144,81 @@ function getLootRarityBucket(rarity) {
   return normalizeLootRarity(rarity) || "common";
 }
 
+function isLootAmmoLikeEntry(entry = {}) {
+  const itemType = String(entry?.itemType ?? "").trim().toLowerCase();
+  if (itemType === "ammunition" || itemType === "ammo") return true;
+  const name = String(entry?.name ?? "").trim().toLowerCase();
+  return /\barrows?\b/.test(name)
+    || /\bbolts?\b/.test(name)
+    || /\bbullets?\b/.test(name)
+    || /\bsling stones?\b/.test(name);
+}
+
+function getLootEnchantmentTier(entry = {}) {
+  const name = String(entry?.name ?? "").trim().toLowerCase();
+  const plusMatch = /\+\s*([1-9]\d*)/.exec(name);
+  if (plusMatch?.[1]) {
+    return Math.max(0, Math.floor(Number(plusMatch[1]) || 0));
+  }
+  const bucket = getLootRarityBucket(entry?.rarity ?? entry?.rarityBucket ?? "");
+  if (bucket === "legendary") return 4;
+  if (bucket === "very-rare") return 3;
+  if (bucket === "rare") return 2;
+  if (bucket === "uncommon") return 1;
+  return 0;
+}
+
+function getLootChallengeAvailabilityWeight(draft = {}, entry = {}) {
+  const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
+  const enchantmentTier = getLootEnchantmentTier(entry);
+  if (enchantmentTier <= 0) return 1;
+  const isAmmo = isLootAmmoLikeEntry(entry);
+
+  if (challenge === "low") {
+    if (enchantmentTier === 1) return isAmmo ? 0.08 : 0.16;
+    if (enchantmentTier === 2) return isAmmo ? 0 : 0.02;
+    return 0;
+  }
+
+  if (challenge === "mid") {
+    if (enchantmentTier === 1) return isAmmo ? 0.45 : 0.55;
+    if (enchantmentTier === 2) return isAmmo ? 0.12 : 0.2;
+    if (enchantmentTier === 3) return isAmmo ? 0.01 : 0.03;
+    return 0;
+  }
+
+  if (challenge === "high") {
+    if (enchantmentTier === 1) return 0.95;
+    if (enchantmentTier === 2) return 0.55;
+    if (enchantmentTier === 3) return 0.18;
+    return 0.03;
+  }
+
+  if (enchantmentTier === 1) return 1.05;
+  if (enchantmentTier === 2) return 0.85;
+  if (enchantmentTier === 3) return 0.45;
+  return 0.16;
+}
+
 function getLootModeChallengeRarityWeight(draft = {}, rarity = "") {
   const mode = String(draft?.mode ?? "horde").trim().toLowerCase();
   const challenge = String(draft?.challenge ?? "mid").trim().toLowerCase();
   const bucket = getLootRarityBucket(rarity);
   const table = {
     defeated: {
-      low: { common: 24, uncommon: 2.2, rare: 0.15, "very-rare": 0.01, legendary: 0 },
+      low: { common: 30, uncommon: 1.4, rare: 0.02, "very-rare": 0, legendary: 0 },
       mid: { common: 22, uncommon: 3, rare: 0.35, "very-rare": 0.03, legendary: 0 },
       high: { common: 20, uncommon: 4.2, rare: 0.8, "very-rare": 0.1, legendary: 0.01 },
       epic: { common: 17, uncommon: 5.5, rare: 1.4, "very-rare": 0.25, legendary: 0.03 }
     },
     encounter: {
-      low: { common: 20, uncommon: 3.5, rare: 0.4, "very-rare": 0.03, legendary: 0 },
+      low: { common: 26, uncommon: 2, rare: 0.03, "very-rare": 0, legendary: 0 },
       mid: { common: 18, uncommon: 4.5, rare: 0.8, "very-rare": 0.08, legendary: 0.01 },
       high: { common: 16, uncommon: 5.8, rare: 1.5, "very-rare": 0.22, legendary: 0.02 },
       epic: { common: 14, uncommon: 6.5, rare: 2.4, "very-rare": 0.4, legendary: 0.05 }
     },
     horde: {
-      low: { common: 16, uncommon: 4.5, rare: 0.9, "very-rare": 0.08, legendary: 0 },
+      low: { common: 22, uncommon: 2.8, rare: 0.04, "very-rare": 0, legendary: 0 },
       mid: { common: 14, uncommon: 5.8, rare: 1.5, "very-rare": 0.18, legendary: 0.01 },
       high: { common: 12, uncommon: 6.8, rare: 2.6, "very-rare": 0.45, legendary: 0.03 },
       epic: { common: 10.5, uncommon: 7.2, rare: 3.8, "very-rare": 0.95, legendary: 0.08 }
@@ -19260,19 +19316,19 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
   const count = Math.max(0, Math.floor(Number(targetCount) || 0));
   const ratioTable = {
     defeated: {
-      low: { uncommon: 0.12, rare: 0, "very-rare": 0, legendary: 0 },
+      low: { uncommon: 0.09, rare: 0, "very-rare": 0, legendary: 0 },
       mid: { uncommon: 0.16, rare: 0.03, "very-rare": 0, legendary: 0 },
       high: { uncommon: 0.22, rare: 0.06, "very-rare": 0.01, legendary: 0 },
       epic: { uncommon: 0.28, rare: 0.1, "very-rare": 0.03, legendary: 0.005 }
     },
     encounter: {
-      low: { uncommon: 0.2, rare: 0.03, "very-rare": 0, legendary: 0 },
+      low: { uncommon: 0.14, rare: 0, "very-rare": 0, legendary: 0 },
       mid: { uncommon: 0.26, rare: 0.06, "very-rare": 0.01, legendary: 0 },
       high: { uncommon: 0.33, rare: 0.11, "very-rare": 0.03, legendary: 0.005 },
       epic: { uncommon: 0.38, rare: 0.15, "very-rare": 0.05, legendary: 0.01 }
     },
     horde: {
-      low: { uncommon: 0.3, rare: 0.08, "very-rare": 0.01, legendary: 0 },
+      low: { uncommon: 0.22, rare: 0, "very-rare": 0, legendary: 0 },
       mid: { uncommon: 0.36, rare: 0.12, "very-rare": 0.03, legendary: 0.002 },
       high: { uncommon: 0.42, rare: 0.18, "very-rare": 0.06, legendary: 0.01 },
       epic: { uncommon: 0.48, rare: 0.24, "very-rare": 0.1, legendary: 0.02 }
@@ -19317,7 +19373,7 @@ function getLootRaritySelectionCaps(draft = {}, targetCount = 0) {
     )
   };
 
-  if (mode === "horde" && count >= 4) {
+  if (mode === "horde" && challenge !== "low" && count >= 4) {
     caps.uncommon = Math.max(caps.uncommon, 1);
   } else if (mode === "encounter") {
     if ((challenge === "high" || challenge === "epic") && count >= 14) caps.rare = Math.max(caps.rare, 1);
@@ -20112,10 +20168,13 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   const treasureKindWeight = Math.max(0.01, Number(
     getLootTreasureKindWeightModifier(state?.draft ?? {}, entry, state?.selectionCategory ?? budgetContext?.selectionCategory ?? "")
   ) || 0.01);
+  const availabilityWeight = Math.max(0, Number(
+    getLootChallengeAvailabilityWeight(state?.draft ?? {}, entry)
+  ) || 0);
   const intelligenceWeight = Math.max(0.000001, Number(
     getLootSelectionIntelligenceWeight(entry, state, phase)
   ) || 0.000001);
-  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight * treasureKindWeight * intelligenceWeight;
+  return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * budgetWeight * treasureKindWeight * availabilityWeight * intelligenceWeight;
 }
 
 function chooseLootBudgetCandidate(selectionPool = [], state = {}, phase = "spend") {
@@ -20148,10 +20207,12 @@ function commitLootBudgetPick(state = {}, picked = null) {
     const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? state?.budgetContext?.targetCount ?? 1) || 1));
     const remainingSlots = Math.max(0, targetCount - selectedCount);
     if (remainingSlots <= 0) break;
-    const quantity = Math.max(1, Math.min(
+    const requestedQuantity = Math.min(
       remainingSlots,
       Math.floor(Number(row?.quantity ?? 1) || 1)
-    ));
+    );
+    if (requestedQuantity <= 0) continue;
+    const quantity = requestedQuantity;
     const sourceClass = normalizeLootSourceClass(candidate?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED);
     const sourcePolicy = normalizeLootSourcePolicy(candidate?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL);
     const curationScore = Math.max(0, Number(candidate?.curationScore ?? 0) || 0);
@@ -20470,10 +20531,13 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
         { entry }
       ) || 0));
       const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
+      const availabilityWeight = Math.max(0, Number(
+        getLootChallengeAvailabilityWeight(draft, entry)
+      ) || 0);
       const intelligenceWeight = Math.max(0.000001, Number(
         getLootSelectionIntelligenceWeight(entry, { selected, draft }, "spend")
       ) || 0.000001);
-      return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight * intelligenceWeight;
+      return sourceWeight * lootWeight * profileWeight * rarityWeight * combatantWeight * typeWeight * valueWeight * availabilityWeight * intelligenceWeight;
     });
     const pickedRow = chooseWeightedEntry(weightedPool, (entry) => Number(entry?.weight ?? 0));
     const picked = pickedRow?.item ?? null;
@@ -29937,6 +30001,51 @@ function normalizeDowntimeResult(result = {}) {
   };
 }
 
+function normalizeDowntimeEntryRecord(rawEntry, actorId, downtimeState, options = {}) {
+  const source = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+  const actor = game.actors.get(actorId);
+  const actionDef = getDowntimeActionDefinition(source?.actionKey);
+  const hoursFallback = options?.hoursFallback ?? downtimeState?.hoursGranted ?? 4;
+  const hours = clampDowntimeHours(source?.hours, hoursFallback);
+  const areaSettings = normalizePhase1AreaSettings(source?.areaSettings ?? downtimeState?.tuning ?? {}, downtimeState?.tuning ?? {});
+  const actionData = normalizePhase1ActionData(actionDef.key, source?.actionData ?? {}, {
+    actor,
+    moduleId: MODULE_ID,
+    areaSettings
+  });
+  const updatedAtRaw = Number(source?.updatedAt ?? source?.submittedAt ?? 0);
+  const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0;
+  const pending = source?.pending !== false;
+  const lastResult = source?.lastResult && typeof source.lastResult === "object"
+    ? normalizeDowntimeResult(source.lastResult)
+    : null;
+  const stagedResult = pending && source?.stagedResult && typeof source.stagedResult === "object"
+    ? normalizeDowntimeResult(source.stagedResult)
+    : null;
+  const stagedAtRaw = Number(source?.stagedAt ?? 0);
+  const stagedAt = stagedResult && Number.isFinite(stagedAtRaw) && stagedAtRaw > 0 ? stagedAtRaw : 0;
+  const stagedBy = stagedResult ? (String(source?.stagedBy ?? "").trim() || "GM") : "";
+  const actorName = String(source?.actorName ?? actor?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
+  return {
+    actorId,
+    actorName,
+    actionKey: actionDef.key,
+    areaSettings,
+    actionData,
+    submittedCheck: normalizeDowntimeSubmittedCheck(source?.submittedCheck),
+    hours,
+    note: String(source?.note ?? "").slice(0, 1000),
+    pending,
+    updatedAt,
+    updatedBy: String(source?.updatedBy ?? source?.submittedBy ?? "").trim() || "Player",
+    updatedByUserId: String(source?.updatedByUserId ?? source?.submittedByUserId ?? "").trim(),
+    lastResult,
+    stagedResult,
+    stagedAt,
+    stagedBy
+  };
+}
+
 /**
  * Multi-Track Progression Support
  * 
@@ -29994,55 +30103,34 @@ function ensureDowntimeState(ledger) {
   const normalizedEntries = {};
   const archivedCollectedEntries = [];
   for (const [rawActorId, rawEntry] of Object.entries(downtime.entries ?? {})) {
-    const actorId = String(rawEntry?.actorId ?? rawActorId ?? "").trim();
+    const actorId = String(rawEntry?.actorId ?? rawEntry?.active?.actorId ?? rawActorId ?? "").trim();
     if (!actorId) continue;
-    const actionDef = getDowntimeActionDefinition(rawEntry?.actionKey);
-    const hours = clampDowntimeHours(rawEntry?.hours, downtime.hoursGranted);
-    const areaSettings = normalizePhase1AreaSettings(rawEntry?.areaSettings ?? downtime.tuning, downtime.tuning);
-    const actionData = normalizePhase1ActionData(actionDef.key, rawEntry?.actionData ?? {}, {
-      actor: game.actors.get(actorId),
-      moduleId: MODULE_ID,
-      areaSettings
-    });
-    const updatedAtRaw = Number(rawEntry?.updatedAt ?? rawEntry?.submittedAt ?? 0);
-    const updatedAt = Number.isFinite(updatedAtRaw) ? updatedAtRaw : 0;
-    const pending = rawEntry?.pending !== false;
-    const lastResult = rawEntry?.lastResult && typeof rawEntry.lastResult === "object"
-      ? normalizeDowntimeResult(rawEntry.lastResult)
-      : null;
-    const stagedResult = pending && rawEntry?.stagedResult && typeof rawEntry.stagedResult === "object"
-      ? normalizeDowntimeResult(rawEntry.stagedResult)
-      : null;
-    const stagedAtRaw = Number(rawEntry?.stagedAt ?? 0);
-    const stagedAt = stagedResult && Number.isFinite(stagedAtRaw) && stagedAtRaw > 0 ? stagedAtRaw : 0;
-    const stagedBy = stagedResult ? (String(rawEntry?.stagedBy ?? "").trim() || "GM") : "";
-    const actorName = String(rawEntry?.actorName ?? game.actors.get(actorId)?.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
-    if (!pending && lastResult?.collected === true) {
+    const activeSource = rawEntry?.active && typeof rawEntry.active === "object" ? rawEntry.active : rawEntry;
+    const activeEntry = normalizeDowntimeEntryRecord(activeSource, actorId, downtime);
+    const queueEntries = Array.isArray(rawEntry?.queue)
+      ? rawEntry.queue
+        .map((queueEntry) => normalizeDowntimeEntryRecord(queueEntry, actorId, downtime, {
+          hoursFallback: queueEntry?.hours ?? activeEntry.hours ?? downtime.hoursGranted
+        }))
+      : [];
+
+    let currentEntry = activeEntry;
+    if (currentEntry.pending === false && currentEntry.lastResult?.collected === true) {
       archivedCollectedEntries.push({
-        ...lastResult,
+        ...currentEntry.lastResult,
         actorId,
-        actorName,
-        hours
+        actorName: currentEntry.actorName,
+        hours: currentEntry.hours
       });
-      continue;
+      if (queueEntries.length > 0) currentEntry = queueEntries.shift();
+      else continue;
     }
+
     normalizedEntries[actorId] = {
-      actorId,
-      actorName,
-      actionKey: actionDef.key,
-      areaSettings,
-      actionData,
-      submittedCheck: normalizeDowntimeSubmittedCheck(rawEntry?.submittedCheck),
-      hours,
-      note: String(rawEntry?.note ?? "").slice(0, 1000),
-      pending,
-      updatedAt,
-      updatedBy: String(rawEntry?.updatedBy ?? rawEntry?.submittedBy ?? "").trim() || "Player",
-      updatedByUserId: String(rawEntry?.updatedByUserId ?? rawEntry?.submittedByUserId ?? "").trim(),
-      lastResult,
-      stagedResult,
-      stagedAt,
-      stagedBy
+      ...currentEntry,
+      queue: queueEntries,
+      hoursInvested: Math.max(0, Number(rawEntry?.hoursInvested ?? 0) || 0),
+      currentMilestone: Math.max(0, Math.floor(Number(rawEntry?.currentMilestone ?? 0) || 0))
     };
   }
   downtime.entries = normalizedEntries;
@@ -30756,6 +30844,12 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     });
     const submittedCheck = normalizeDowntimeSubmittedCheck(entry?.submittedCheck);
     const submittedCheckLabel = canManageDowntime ? buildDowntimeSubmittedCheckLabel(submittedCheck) : "";
+    const queuedEntries = Array.isArray(entry?.queue) ? entry.queue : [];
+    const queueCount = queuedEntries.length;
+    const queuedPreview = queuedEntries.slice(0, 3).map((queuedEntry) => {
+      const queuedAction = getDowntimeActionDefinition(queuedEntry?.actionKey);
+      return `${queuedAction.label} (${clampDowntimeHours(queuedEntry?.hours, configuredHoursGranted)}h)`;
+    });
     const updatedAtRawValue = Number(entry?.updatedAt ?? 0);
     const updatedAtRaw = Number.isFinite(updatedAtRawValue) ? updatedAtRawValue : 0;
     const updatedAtDate = updatedAtRaw > 0 ? new Date(updatedAtRaw) : null;
@@ -30876,7 +30970,11 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       collectedBy: String(result?.collectedBy ?? ""),
       hasPreResolved: canManageDowntime && hasPreResolved,
       preResolvedAtLabel: canManageDowntime && hasPreResolved ? stagedAtLabel : "",
-      preResolvedBy: canManageDowntime && hasPreResolved ? String(entry?.stagedBy ?? "GM") : ""
+      preResolvedBy: canManageDowntime && hasPreResolved ? String(entry?.stagedBy ?? "GM") : "",
+      queueCount,
+      hasQueuedEntries: queueCount > 0,
+      queuedPreview,
+      queueSummaryLabel: queueCount > 0 ? `${queueCount} queued` : ""
     };
   });
 
@@ -32306,9 +32404,8 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
     const normalized = normalizeDowntimeSubmission(submission, downtime, {
       hoursCap: nextHoursCap
     });
-    const previous = downtime.entries?.[normalized.actorId] ?? {};
-    downtime.entries[normalized.actorId] = {
-      ...previous,
+    const previous = downtime.entries?.[normalized.actorId] ?? null;
+    const nextEntry = {
       actorId: normalized.actorId,
       actorName: String(actor.name ?? `Actor ${normalized.actorId}`),
       actionKey: normalized.actionKey,
@@ -32325,6 +32422,23 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
       stagedResult: null,
       stagedAt: 0,
       stagedBy: ""
+    };
+
+    if (previous && (previous.pending !== false || previous.lastResult)) {
+      const existingQueue = Array.isArray(previous.queue) ? previous.queue : [];
+      downtime.entries[normalized.actorId] = {
+        ...previous,
+        queue: [...existingQueue, nextEntry],
+        hoursInvested: Math.max(0, Number(previous.hoursInvested ?? 0) || 0) + nextEntry.hours
+      };
+      return;
+    }
+
+    downtime.entries[normalized.actorId] = {
+      ...(previous ?? {}),
+      ...nextEntry,
+      queue: Array.isArray(previous?.queue) ? previous.queue : [],
+      hoursInvested: Math.max(0, Number(previous?.hoursInvested ?? 0) || 0) + nextEntry.hours
     };
   });
   if (!isGMUser && submission.submittedCheck) {
@@ -32421,7 +32535,20 @@ async function clearDowntimeEntry(element) {
     await updateOperationsLedger((ledger) => {
       const downtime = ensureDowntimeState(ledger);
       if (!downtime.entries) return;
-      delete downtime.entries[actorId];
+      const current = downtime.entries[actorId];
+      if (!current) return;
+      const queue = Array.isArray(current.queue) ? current.queue : [];
+      if (queue.length > 0) {
+        const nextActive = queue.shift();
+        downtime.entries[actorId] = {
+          ...nextActive,
+          queue,
+          hoursInvested: Math.max(0, Number(current.hoursInvested ?? 0) || 0),
+          currentMilestone: Math.max(0, Number(current.currentMilestone ?? 0) || 0)
+        };
+      } else {
+        delete downtime.entries[actorId];
+      }
     });
     if (String(currentDraft?.resolution?.actorId ?? "").trim() === actorId) {
       clearDowntimeUiDraft("resolution");
@@ -32770,6 +32897,7 @@ function applyResolvedDowntimeToState(state, {
   if (!state.entries || typeof state.entries !== "object") state.entries = {};
   if (!Array.isArray(state.logs)) state.logs = [];
   const current = state.entries[actorId] ?? {};
+  const queue = Array.isArray(current.queue) ? current.queue : [];
   const hours = getDowntimeEntryResolvedHours(
     { hours: current.hours ?? fallbackEntry?.hours ?? state.hoursGranted },
     state.hoursGranted
@@ -32787,7 +32915,10 @@ function applyResolvedDowntimeToState(state, {
     lastResult: result,
     stagedResult: null,
     stagedAt: 0,
-    stagedBy: ""
+    stagedBy: "",
+    queue,
+    hoursInvested: Math.max(0, Number(current.hoursInvested ?? 0) || 0),
+    currentMilestone: Math.max(0, Number(current.currentMilestone ?? 0) || 0)
   };
   state.logs.unshift({
     ...result,
@@ -33300,7 +33431,18 @@ async function applyDowntimeCollectionForUser(user, actorId) {
       collectedAt: now,
       collectedBy: collectorName
     });
-    delete state.entries[actor.id];
+    const queue = Array.isArray(currentEntry.queue) ? currentEntry.queue : [];
+    if (queue.length > 0) {
+      const nextActive = queue.shift();
+      state.entries[actor.id] = {
+        ...nextActive,
+        queue,
+        hoursInvested: Math.max(0, Number(currentEntry.hoursInvested ?? 0) || 0),
+        currentMilestone: Math.max(0, Number(currentEntry.currentMilestone ?? 0) || 0)
+      };
+    } else {
+      delete state.entries[actor.id];
+    }
     if (Array.isArray(state.logs)) {
       let replaced = false;
       state.logs = state.logs.map((row) => {
@@ -33473,6 +33615,31 @@ async function unarchiveDowntimeLogEntry(element) {
     const state = ensureDowntimeState(nextLedger);
     const existingEntry = state.entries?.[actorId] ?? null;
     if (existingEntry) {
+      const queue = Array.isArray(existingEntry.queue) ? existingEntry.queue : [];
+      queue.push({
+        actorId,
+        actorName,
+        actionKey: actionDef.key,
+        hours: Math.max(1, Math.min(state.hoursGranted, requestedHours)),
+        note: "",
+        pending: true,
+        updatedAt: Date.now(),
+        updatedBy: String(game.user?.name ?? "GM"),
+        updatedByUserId: String(game.user?.id ?? ""),
+        lastResult: null,
+        stagedResult,
+        stagedAt: Date.now(),
+        stagedBy: String(game.user?.name ?? "GM")
+      });
+      state.entries[actorId] = {
+        ...existingEntry,
+        queue,
+        hoursInvested: Math.max(0, Number(existingEntry.hoursInvested ?? 0) || 0) + Math.max(1, Math.min(state.hoursGranted, requestedHours))
+      };
+      if (Array.isArray(state.logs)) {
+        state.logs = state.logs.filter((entry) => String(entry?.id ?? "").trim() !== logId);
+      }
+      moved = true;
       return;
     }
     const hours = Math.max(1, Math.min(state.hoursGranted, requestedHours));
@@ -33498,10 +33665,10 @@ async function unarchiveDowntimeLogEntry(element) {
   });
 
   if (!moved) {
-    ui.notifications?.warn(`${actorName} already has an active downtime entry. Resolve/clear it first before unarchiving.`);
+    ui.notifications?.warn(`${actorName} downtime log could not be restored.`);
     return;
   }
-  ui.notifications?.info(`Unarchived downtime log for ${actorName}. It is back in Pending Resolver for edits.`);
+  ui.notifications?.info(`Unarchived downtime log for ${actorName}.`);
 }
 
 async function clearDowntimeLogEntry(element) {

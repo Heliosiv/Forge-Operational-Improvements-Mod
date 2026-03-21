@@ -402,6 +402,12 @@
                   <div class="po-op-role-status {{#if pending}}is-warn{{else}}is-ready{{/if}}">{{statusLabel}}</div>
                 </div>
                 <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
+                {{#if hasQueuedEntries}}
+                <div class="po-op-summary">Queued: {{queueSummaryLabel}}</div>
+                {{#each queuedPreview}}
+                <div class="po-op-summary">- {{this}}</div>
+                {{/each}}
+                {{/if}}
                 {{#if hasActionDetails}}
                 {{#each actionDetails}}
                 <div class="po-op-summary">{{this}}</div>
