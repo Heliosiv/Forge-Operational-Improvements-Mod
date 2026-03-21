@@ -173,5 +173,8 @@ export const DOWNTIME_PROFESSIONS = Object.freeze([
   { id: "herbalist", name: "Herbalist", checkAbility: "wis", trainedRateGpPer4h: 4, untrainedRateGpPer4h: 1, difficulty: 13 },
   { id: "tinker", name: "Tinker", checkAbility: "int", trainedRateGpPer4h: 4, untrainedRateGpPer4h: 1, difficulty: 13 },
   { id: "healer", name: "Healer", checkAbility: "wis", trainedRateGpPer4h: 5, untrainedRateGpPer4h: 1, difficulty: 14 },
-  { id: "miner", name: "Miner", checkAbility: "con", trainedRateGpPer4h: 4, untrainedRateGpPer4h: 1, difficulty: 13 }
+  { id: "miner", name: "Miner", checkAbility: "con", trainedRateGpPer4h: 4, untrainedRateGpPer4h: 1, difficulty: 13 },
+  { id: "street-thief", name: "Street Thief", checkAbility: "dex", trainedRateGpPer4h: 5, untrainedRateGpPer4h: 2, difficulty: 13 },
+  { id: "performer", name: "Performer", checkAbility: "cha", trainedRateGpPer4h: 4, untrainedRateGpPer4h: 1, difficulty: 12 },
+  { id: "merchant-broker", name: "Merchant Broker", checkAbility: "cha", trainedRateGpPer4h: 5, untrainedRateGpPer4h: 2, difficulty: 14 }
 ]);

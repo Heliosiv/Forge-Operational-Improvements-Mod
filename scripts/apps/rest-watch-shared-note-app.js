@@ -4,6 +4,89 @@ const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
 
 export const REST_WATCH_SHARED_NOTE_APP_ID = "party-operations-rest-watch-shared-note";
 
+const SHARED_NOTE_ALLOWED_TAGS = new Set([
+  "p",
+  "br",
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "ul",
+  "ol",
+  "li",
+  "blockquote",
+  "code",
+  "pre",
+  "a",
+  "span"
+]);
+
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function normalizeLegacyTextToHtml(value) {
+  const source = String(value ?? "");
+  if (!source.trim()) return "";
+  if (source.includes("<") && source.includes(">")) return source;
+  const paragraphs = source
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+  if (paragraphs.length === 0) return "";
+  return paragraphs
+    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function sanitizeRichTextHtml(value) {
+  const rawHtml = normalizeLegacyTextToHtml(value);
+  if (!rawHtml) return "";
+  const scratch = document.createElement("div");
+  scratch.innerHTML = rawHtml;
+
+  const walker = document.createTreeWalker(scratch, NodeFilter.SHOW_ELEMENT);
+  const elements = [];
+  while (walker.nextNode()) elements.push(walker.currentNode);
+
+  for (const node of elements) {
+    const tag = String(node?.tagName ?? "").toLowerCase();
+    if (!tag) continue;
+    if (!SHARED_NOTE_ALLOWED_TAGS.has(tag)) {
+      node.replaceWith(...Array.from(node.childNodes));
+      continue;
+    }
+    if (tag === "a") {
+      const href = String(node.getAttribute("href") ?? "").trim();
+      const safeHref = /^(https?:|mailto:|#|\/)/i.test(href);
+      if (!safeHref) node.removeAttribute("href");
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer");
+      continue;
+    }
+    const attrs = Array.from(node.attributes ?? []);
+    for (const attr of attrs) {
+      if (String(attr?.name ?? "").toLowerCase() === "class") continue;
+      node.removeAttribute(attr.name);
+    }
+  }
+
+  return scratch.innerHTML.trim();
+}
+
+function getRichTextContentLength(value) {
+  const scratch = document.createElement("div");
+  scratch.innerHTML = String(value ?? "");
+  return String(scratch.textContent ?? "").trim().length;
+}
+
 export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
     id: REST_WATCH_SHARED_NOTE_APP_ID,
@@ -30,6 +113,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     actorId: ""
   };
   #draftText = null;
+  #lastSafeDraftHtml = "";
   #isSaving = false;
   #saveStatus = {
     message: "",
@@ -49,6 +133,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       actorId: String(target?.actorId ?? "").trim()
     };
     this.#draftText = null;
+    this.#lastSafeDraftHtml = "";
     this.#isSaving = false;
     this.#saveStatus = { message: "", tone: "info" };
     this.#focusInputOnRender = options.focus !== false;
@@ -70,18 +155,67 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     statusNode.classList.toggle("is-ready", this.#saveStatus.tone === "ready");
   }
 
+  #focusEditorAtEnd(editor) {
+    if (!(editor instanceof HTMLElement)) return;
+    const selection = window.getSelection?.();
+    if (!selection) return;
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  #applyRichTextCommand(command) {
+    if (!command) return;
+    document.execCommand(String(command), false, null);
+  }
+
+  async #promptForLinkUrl() {
+    const selection = window.getSelection?.();
+    const selectedText = selection?.toString?.() ?? "";
+    const currentUrl = this.#getSelectedLinkHref() ?? "";
+    const defaultUrl = currentUrl || "https://";
+
+    const result = await Dialog.prompt({
+      title: "Insert Link",
+      content: `
+        <div class="form-group">
+          <label>URL</label>
+          <input type="url" name="linkUrl" value="${defaultUrl}" placeholder="https://example.com" style="width: 100%; padding: 8px;" />
+        </div>
+        ${selectedText ? `<div class="form-group"><label>Text</label><input type="text" name="linkText" value="${selectedText}" disabled style="width: 100%; padding: 8px;" /></div>` : ""}
+      `,
+      rejectClose: false
+    });
+
+    return result;
+  }
+
+  #getSelectedLinkHref() {
+    const selection = window.getSelection?.();
+    const range = selection?.rangeCount > 0 ? selection?.getRangeAt?.(0) : null;
+    if (!range) return null;
+    const container = range?.commonAncestorContainer;
+    if (!container) return null;
+    const parentElement = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
+    const linkElement = parentElement?.closest?.("a");
+    return linkElement?.href ?? null;
+  }
+
   async _prepareContext() {
     const resolved = await this.#resolveContext(this.#target);
-    const noteText = this.#draftText ?? String(resolved?.noteText ?? "");
+    const noteHtml = sanitizeRichTextHtml(this.#draftText ?? String(resolved?.noteText ?? ""));
     const noteMaxLength = Math.max(0, Number(resolved?.noteMaxLength ?? 0) || 0);
+    const noteLength = getRichTextContentLength(noteHtml);
     return {
       actorId: String(resolved?.actorId ?? this.#target.actorId ?? ""),
       slotId: String(resolved?.slotId ?? this.#target.slotId ?? ""),
       actorName: String(resolved?.actorName ?? "Unknown Actor"),
       slotLabel: String(resolved?.slotLabel ?? "Rest Watch"),
-      noteText,
+      noteHtml,
       noteMaxLength,
-      noteLengthLabel: noteMaxLength > 0 ? `${noteText.length} / ${noteMaxLength}` : String(noteText.length),
+      noteLengthLabel: noteMaxLength > 0 ? `${noteLength} / ${noteMaxLength}` : String(noteLength),
       canEdit: Boolean(resolved?.canEdit),
       hasEntry: Boolean(resolved?.hasEntry),
       entryStatus: String(resolved?.entryStatus ?? ""),
@@ -102,7 +236,7 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     bindCanvasKeyboardSuppression(root);
     if (!root) return;
 
-    const textarea = root.querySelector("[data-shared-note-input]");
+    const editor = root.querySelector("[data-shared-note-input]");
     const saveButton = root.querySelector("[data-action='save-shared-note']");
     const closeButton = root.querySelector("[data-action='close-shared-note']");
 
@@ -110,24 +244,83 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       saveButton.toggleAttribute("disabled", this.#isSaving);
     }
 
-    if (textarea && textarea.dataset.poBoundInput !== "1") {
-      textarea.dataset.poBoundInput = "1";
-      textarea.addEventListener("input", () => {
-        this.#draftText = String(textarea.value ?? "");
+    if (editor instanceof HTMLElement && editor.dataset.poBoundInput !== "1") {
+      editor.dataset.poBoundInput = "1";
+      this.#lastSafeDraftHtml = sanitizeRichTextHtml(editor.innerHTML ?? "");
+      editor.addEventListener("input", () => {
+        const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
+        if (button.dataset.command === "createLink") {
+          void this.#promptForLinkUrl().then((url) => {
+            if (!url || !String(url ?? "").trim()) return;
+            document.execCommand("createLink", false, String(url).trim());
+            const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
+            editor.innerHTML = nextDraft;
+            this.#draftText = nextDraft;
+            this.#lastSafeDraftHtml = nextDraft;
+            this.#focusEditorAtEnd(editor);
+            const counter = root.querySelector("[data-shared-note-count]");
+            if (counter) {
+              const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
+              const length = getRichTextContentLength(nextDraft);
+              counter.textContent = maxLength > 0 ? `${length} / ${maxLength}` : String(length);
+            }
+            if (this.#saveStatus.message) this.#setSaveStatus("", "info");
+          });
+          return;
+        }
+        const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
+        const nextLength = getRichTextContentLength(nextDraft);
+        if (maxLength > 0 && nextLength > maxLength) {
+          editor.innerHTML = this.#lastSafeDraftHtml;
+          this.#focusEditorAtEnd(editor);
+          this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
+          return;
+        }
+
+        this.#draftText = nextDraft;
+        this.#lastSafeDraftHtml = nextDraft;
         const counter = root.querySelector("[data-shared-note-count]");
         if (counter) {
-          const maxLength = Number(textarea.getAttribute("maxlength") ?? 0) || 0;
-          counter.textContent = maxLength > 0 ? `${this.#draftText.length} / ${maxLength}` : String(this.#draftText.length);
+          counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
         }
         if (this.#saveStatus.message) this.#setSaveStatus("", "info");
       });
-      textarea.addEventListener("keydown", (event) => {
+      editor.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
           event.preventDefault();
-          if (!textarea.disabled) void this.#onSaveClick();
+          if (editor.getAttribute("contenteditable") === "true") void this.#onSaveClick();
         }
       });
     }
+
+    root.querySelectorAll("[data-action='shared-note-format']").forEach((button) => {
+      if (!(button instanceof HTMLElement) || button.dataset.poBoundClick === "1") return;
+      button.dataset.poBoundClick = "1";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (!(editor instanceof HTMLElement) || editor.getAttribute("contenteditable") !== "true") return;
+        editor.focus?.({ preventScroll: true });
+        this.#applyRichTextCommand(button.dataset.command ?? "");
+        const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
+        const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
+        const nextLength = getRichTextContentLength(nextDraft);
+        if (maxLength > 0 && nextLength > maxLength) {
+          editor.innerHTML = this.#lastSafeDraftHtml;
+          this.#focusEditorAtEnd(editor);
+          this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
+          return;
+        }
+        editor.innerHTML = nextDraft;
+        this.#draftText = nextDraft;
+        this.#lastSafeDraftHtml = nextDraft;
+        this.#focusEditorAtEnd(editor);
+        const counter = root.querySelector("[data-shared-note-count]");
+        if (counter) {
+          counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
+        }
+        if (this.#saveStatus.message) this.#setSaveStatus("", "info");
+      });
+    });
 
     if (saveButton && saveButton.dataset.poBoundClick !== "1") {
       saveButton.dataset.poBoundClick = "1";
@@ -145,10 +338,9 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       });
     }
 
-    if (this.#focusInputOnRender && textarea && !textarea.disabled) {
+    if (this.#focusInputOnRender && editor instanceof HTMLElement && editor.getAttribute("contenteditable") === "true") {
       this.#focusInputOnRender = false;
-      textarea.focus?.({ preventScroll: true });
-      textarea.setSelectionRange?.(textarea.value.length, textarea.value.length);
+      editor.focus?.({ preventScroll: true });
     }
   }
 
@@ -162,8 +354,8 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
   async #onSaveClick() {
     if (this.#isSaving) return;
     const root = this.element;
-    const textarea = root?.querySelector?.("[data-shared-note-input]");
-    const text = String(textarea?.value ?? this.#draftText ?? "");
+    const editor = root?.querySelector?.("[data-shared-note-input]");
+    const text = sanitizeRichTextHtml(editor?.innerHTML ?? this.#draftText ?? "");
     this.#isSaving = true;
     this.#setSaveStatus("Saving shared note...", "info");
 

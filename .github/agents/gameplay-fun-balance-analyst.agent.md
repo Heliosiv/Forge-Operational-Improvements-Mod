@@ -1,7 +1,7 @@
 ---
 name: Gameplay Fun & Balance Analyst
 description: "Use when analyzing gameplay features for fun, usefulness, balance, reward pacing, or whether horde loot stays meaningful across small chest rewards, medium dungeon puzzle or secret-room rewards, and major end-of-dungeon loot rolls."
-tools: [vscode, execute, read, agent, edit, search, web, browser, vscode.mermaid-chat-features/renderMermaidDiagram, ms-vscode.cpp-devtools/GetSymbolReferences_CppTools, ms-vscode.cpp-devtools/GetSymbolInfo_CppTools, ms-vscode.cpp-devtools/GetSymbolCallHierarchy_CppTools, todo]
+tools: [vscode, execute, read, agent, edit, search, web, browser, 'pylance-mcp-server/*', vscode.mermaid-chat-features/renderMermaidDiagram, ms-python.python/getPythonEnvironmentInfo, ms-python.python/getPythonExecutableCommand, ms-python.python/installPythonPackage, ms-python.python/configurePythonEnvironment, ms-vscode.cpp-devtools/GetSymbolReferences_CppTools, ms-vscode.cpp-devtools/GetSymbolInfo_CppTools, ms-vscode.cpp-devtools/GetSymbolCallHierarchy_CppTools, todo]
 argument-hint: "Describe target systems (e.g., horde loot, rest rewards, merchants, encounter rewards, player economy), intended play feel, and desired depth (quick/medium/deep)."
 user-invocable: true
 ---

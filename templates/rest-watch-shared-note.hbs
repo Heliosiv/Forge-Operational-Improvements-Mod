@@ -16,13 +16,23 @@
 
   <label class="po-resource-row po-notes-row-lg po-rest-shared-note-field">
     <span>{{#if canEdit}}Shared Note{{else}}Shared Note (Read Only){{/if}}</span>
-    <textarea
+    {{#if canEdit}}
+    <div class="po-rest-shared-note-toolbar" role="toolbar" aria-label="Shared note formatting">
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="bold" aria-label="Bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="italic" aria-label="Italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list"><i class="fa-solid fa-list-ul"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="insertOrderedList" aria-label="Numbered list" title="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="createLink" aria-label="Insert link" title="Insert link"><i class="fa-solid fa-link"></i></button>
+    </div>
+    {{/if}}
+    <div
       class="po-input po-rest-shared-note-input"
-      rows="8"
-      maxlength="{{noteMaxLength}}"
+      role="textbox"
+      aria-multiline="true"
       aria-label="Shared note for {{actorName}} in {{slotLabel}}"
       data-shared-note-input
-      {{#unless canEdit}}disabled{{/unless}}>{{noteText}}</textarea>
+      data-max-length="{{noteMaxLength}}"
+      {{#if canEdit}}contenteditable="true"{{else}}contenteditable="false"{{/if}}>{{{noteHtml}}}</div>
   </label>
 
   <div class="po-rest-shared-note-foot">

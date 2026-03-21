@@ -4254,6 +4254,49 @@
   padding: 12px 14px;
   line-height: 1.45;
   resize: vertical;
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+  background: color-mix(in srgb, var(--po-surface) 88%, transparent);
+  color: var(--po-text);
+}
+
+.party-operations .po-rest-shared-note-input[contenteditable="true"] {
+  cursor: text;
+}
+
+.party-operations .po-rest-shared-note-input[contenteditable="false"] {
+  opacity: 0.95;
+}
+
+.party-operations .po-rest-shared-note-input:focus-visible,
+.party-operations .po-rest-shared-note-input[contenteditable="true"]:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--po-accent) 62%, var(--po-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 24%, transparent);
+}
+
+.party-operations .po-rest-shared-note-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.party-operations .po-rest-shared-note-toolbar .po-icon-btn {
+  min-width: 34px;
+}
+
+.party-operations .po-rest-shared-note-input :is(p, ul, ol, blockquote, pre) {
+  margin: 0 0 0.45rem;
+}
+
+.party-operations .po-rest-shared-note-input :is(ul, ol) {
+  padding-left: 1.1rem;
+}
+
+.party-operations .po-rest-shared-note-input a {
+  color: var(--po-accent-contrast);
+  text-decoration: underline;
 }
 
 .party-operations .po-rest-shared-note-actions {

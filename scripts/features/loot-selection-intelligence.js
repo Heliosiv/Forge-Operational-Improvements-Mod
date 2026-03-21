@@ -1,3 +1,5 @@
+import { getRecentRollMalus, flushExpiredRecentRolls } from "./loot-recent-rolls-cache.js";
+
 function normalizeText(value = "") {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -196,6 +198,32 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
 
   const curationFactor = 0.9 + ((candidateCurationScore / 10) * 0.2);
   weight *= curationFactor;
+
+  // Apply recently-rolled item penalty to reduce repetition across multiple horde rolls in same scene
+  const recentRollMalus = getRecentRollMalus(entry);
+  weight *= recentRollMalus;
+
+  // Apply scale-based weight profiles for horde mode
+  // Small hordes: reduce high-weight items to favor cheaper/common treasures
+  // Major hordes: unlock full weight for rare/unique items
+  if (mode === "horde") {
+    const scale = normalizeText(state?.draft?.scale ?? state?.budgetContext?.scale ?? "medium");
+    if (scale === "small") {
+      // Small scale: penalize high-value or high-weight items
+      if (Number(entry?.lootWeight ?? 1) > 1.2) {
+        weight *= 0.85; // Reduce high-weight items by 15%
+      }
+      if (Number(entry?.gpValue ?? 0) > 100) {
+        weight *= 0.9; // Reduce 100gp+ items by 10%
+      }
+    } else if (scale === "medium") {
+      // Medium scale: gentle penalty on high-weight art to favor more variety
+      if (Number(entry?.lootWeight ?? 1) > 1.3 && candidateKind === "art") {
+        weight *= 0.88;
+      }
+    }
+    // Major scale: no adjustments, full weight power
+  }
 
   return Math.max(0.000001, Number(weight.toFixed(6)));
 }

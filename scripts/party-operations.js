@@ -20,6 +20,7 @@ import { createReputationDraftStorage } from "./features/reputation-draft-storag
 import { createWeatherPresetHelpers } from "./features/weather-preset-helpers.js";
 import { createAudioStore } from "./features/audio-store.js";
 import { getLootPreviewBaseTargetGp } from "./features/loot-budget.js";
+import { flushExpiredRecentRolls, recordHordeRollItems } from "./features/loot-recent-rolls-cache.js";
 import { createGmLootPageApp } from "./features/loot-ui.js";
 import { createLootUiState } from "./features/loot-ui-state.js";
 import { createNavigationUiState } from "./features/navigation-ui-state.js";
@@ -2049,6 +2050,21 @@ function clampSocketText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
   return String(value ?? "").slice(0, cap);
 }
 
+function clampRestWatchRichNoteText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
+  const cap = Number.isFinite(Number(maxLength)) ? Math.max(0, Math.floor(Number(maxLength))) : SOCKET_NOTE_MAX_LENGTH;
+  const raw = String(value ?? "");
+  if (!raw || cap <= 0) return "";
+  if (typeof document === "undefined" || typeof document.createElement !== "function") {
+    return clampSocketText(raw, cap);
+  }
+  const scratch = document.createElement("div");
+  scratch.innerHTML = raw;
+  const plainText = String(scratch.textContent ?? "");
+  if (plainText.length <= cap) return raw;
+  const truncated = plainText.slice(0, cap);
+  return `<p>${poEscapeHtml(truncated).replace(/\n/g, "<br>")}</p>`;
+}
+
 function normalizeRestNoteSaveSource(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized === "manual" ? "manual" : "autosave";
@@ -3226,7 +3242,7 @@ function normalizeSharedRestWatchNoteStore(value) {
       ? entry
       : { text: entry };
     store[normalizedSlotId] = {
-      text: clampSocketText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
+      text: clampRestWatchRichNoteText(record.text ?? "", SOCKET_NOTE_MAX_LENGTH),
       updatedAt: Math.max(0, Number(record.updatedAt ?? 0) || 0),
       updatedBy: String(record.updatedBy ?? "").trim(),
       source: normalizeRestNoteSaveSource(record.source)
@@ -3270,7 +3286,7 @@ async function publishRestWatchNoteForActor(actorOrActorId, slotIdInput, text, o
   if (!canUserPersistSharedActorNotes(actor, options.user ?? game.user)) return false;
   const store = normalizeSharedRestWatchNoteStore(getModuleActorFlag(actor, SHARED_ACTOR_NOTE_FLAGS.REST_WATCH));
   store[slotId] = {
-    text: clampSocketText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
+    text: clampRestWatchRichNoteText(text ?? "", SOCKET_NOTE_MAX_LENGTH),
     updatedAt: Date.now(),
     updatedBy: String(options.user?.name ?? game.user?.name ?? "").trim(),
     source: normalizeRestNoteSaveSource(options.source)
@@ -5650,7 +5666,7 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
   const actorId = String(context?.actorId ?? "").trim();
   if (!slotId || !actorId) return false;
   const source = normalizeRestNoteSaveSource(options?.source ?? "autosave");
-  const text = clampSocketText(context?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
+  const text = clampRestWatchRichNoteText(context?.text ?? "", SOCKET_NOTE_MAX_LENGTH);
   const cacheKey = getRestWatchNoteCacheKey(slotId, actorId);
   setNoteDraftCacheValue(cacheKey, text);
 
@@ -21103,6 +21119,8 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
 async function generateLootPreviewPayload(draftInput = {}) {
   try {
     const draft = normalizeLootPreviewDraft(draftInput);
+    // Flush expired rolls from recent-rolls cache to keep it fresh
+    flushExpiredRecentRolls();
     logLootBuilderDebug("generateLootPreviewPayload start", {
       mode: draft.mode,
       challenge: draft.challenge,
@@ -21214,6 +21232,10 @@ async function generateLootPreviewPayload(draftInput = {}) {
       deterministic: resolvedSelectionMeta.deterministic,
       seed: resolvedSelectionMeta.seed
     });
+    // Record horde items to recent-rolls cache for next roll in same scene
+    if (draft.mode === "horde") {
+      recordHordeRollItems(items);
+    }
     return {
       generatedAt: Date.now(),
       generatedBy: String(game.user?.name ?? "GM"),
@@ -29915,6 +29937,32 @@ function normalizeDowntimeResult(result = {}) {
   };
 }
 
+/**
+ * Multi-Track Progression Support
+ * 
+ * Current Data Model (v1.0) - Single Entry Per Actor:
+ *   entries[actorId] = { actionKey, hours, pending, lastResult, stagedResult, ... }
+ * 
+ * Future Multi-Track Model (v2.0) - Multiple Concurrent Activities:
+ *   entries[actorId] = {
+ *     active: entry,              // Currently visible/resolving entry
+ *     queue: [entry, entry, ...], // Additional pending or paused entries
+ *     completed: [entry, ...],    // Recently completed entries (for UI history)
+ *     hoursInvested: N,           // Total hours across all tracks this period
+ *     currentMilestone: N,        // Progress marker for multi-week projects
+ *     trackMetadata: { ... }      // Action-specific progression state
+ *   }
+ * 
+ * The system currently normalizes v1.0 format. Migration to v2.0 requires:
+ * 1. Update ensureDowntimeState to promote active entry and initialize queue
+ * 2. Update buildDowntimeContext to expose queue visualizations
+ * 3. Update submitDowntimeAction to support queue insertion
+ * 4. Add UI controls to switch between active and queued entries
+ * 5. Add collectDowntimeResult to support multi-result collection
+ * 
+ * For now, new submissions to a per-actor slot will queue/replace as they do currently,
+ * but the infrastructure is ready for queue-based UI in templates.
+ */
 function ensureDowntimeState(ledger) {
   if (!ledger.downtime || typeof ledger.downtime !== "object") {
     ledger.downtime = {};
@@ -30025,6 +30073,51 @@ function ensureDowntimeState(ledger) {
     .slice(0, 80);
 
   return downtime;
+}
+
+/**
+ * Multi-Track Accessor Functions
+ * These provide a forward-compatible API for accessing downtime entries,
+ * allowing migration to v2.0 multi-track model without changing call sites.
+ */
+function getDowntimeActiveEntry(downtime = {}, actorId = "") {
+  const entry = downtime.entries?.[actorId];
+  if (!entry) return null;
+  // In v1.0: entry is the active entry directly
+  // In v2.0: entry.active is the active entry
+  return entry.active ?? entry;
+}
+
+function getDowntimeEntryQueue(downtime = {}, actorId = "") {
+  const entry = downtime.entries?.[actorId];
+  if (!entry) return [];
+  // In v2.0, this would return the queue array
+  // For now, returns empty (single-track model)
+  return Array.isArray(entry.queue) ? entry.queue : [];
+}
+
+function setDowntimeActiveEntry(downtime = {}, actorId = "", newEntry = null) {
+  if (!downtime.entries) downtime.entries = {};
+  if (!downtime.entries[actorId]) downtime.entries[actorId] = {};
+  // Store as both direct entry (v1.0 compat) and active field (v2.0 ready)
+  const entry = downtime.entries[actorId];
+  if (newEntry === null) {
+    delete entry.active;
+    Object.keys(entry).forEach(k => {
+      if (k !== "queue" && k !== "completed" && k !== "hoursInvested" && k !== "currentMilestone") {
+        delete entry[k];
+      }
+    });
+  } else {
+    Object.assign(entry, newEntry);
+    entry.active = newEntry;
+  }
+}
+
+function getDowntimeEntryHoursInvested(downtime = {}, actorId = "") {
+  const entry = downtime.entries?.[actorId];
+  if (!entry) return 0;
+  return Number(entry.hoursInvested ?? 0) || 0;
 }
 
 function normalizeLootClaimCurrencyRecord(value = {}, fallback = {}) {
@@ -31179,8 +31272,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       showGpAward: selectedPendingIsProfession,
       showGpCost: selectedPendingIsProfession || selectedPendingIsCrafting,
       showRumorCount: selectedPendingIsBrowsing,
-      showSocialContract: false,
-      showItemRewards: false,
+      showSocialContract: selectedPendingIsBrowsing,
+      showItemRewards: selectedPendingIsBrowsing || selectedPendingIsCrafting,
       showItemRewardDrops: selectedPendingIsCrafting,
       showSubmittedMaterialDrops: selectedPendingIsCrafting,
       submittedMaterialsModeLabel: selectedPendingIsCrafting
@@ -31265,7 +31358,7 @@ function buildPlayerMarchQuickContext() {
   };
 }
 
-function getRandomDowntimeComplication(actionKey = "") {
+function getRandomDowntimeComplication(actionKey = "", riskLevel = "standard") {
   const catalog = {
     browsing: [
       "A rival social contact starts spreading false rumors.",
@@ -31322,6 +31415,9 @@ async function generateDowntimeResult(entry, downtimeState) {
     d20,
     moduleId: MODULE_ID
   });
+  const riskLevel = String(entry?.areaSettings?.risk ?? downtimeState?.tuning?.risk ?? "standard").toLowerCase();
+  const shouldRollComplication = riskLevel === "high" && resolved.tier !== "failure";
+  const complication = shouldRollComplication ? getRandomDowntimeComplication(resolved.actionKey, riskLevel) : "";
   return normalizeDowntimeResult({
     id: foundry.utils.randomID(),
     actionKey: resolved.actionKey,
@@ -31345,7 +31441,7 @@ async function generateDowntimeResult(entry, downtimeState) {
     crafting: resolved.crafting,
     profession: resolved.profession,
     performanceLabel: resolved.performanceLabel,
-    complication: "",
+    complication,
     resolvedAt: Date.now(),
     resolvedBy: String(game.user?.name ?? "GM")
   });

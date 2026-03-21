@@ -148,6 +148,12 @@ function resolvePrimaryQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, r
   if (!bundleKind || unitValueGp <= 0 || budgetRemainingGp < unitValueGp) return 1;
   const maxAffordable = Math.max(1, Math.floor(budgetRemainingGp / Math.max(0.0001, unitValueGp)));
   if (maxAffordable <= 1) return 1;
+  
+  // Use specialized ammo logic with enhancement-level stacking penalties
+  if (bundleKind === "ammo") {
+    return resolveAmmoQuantity(entry, budgetRemainingGp, draft, randomFn);
+  }
+  
   const challenge = normalizeText(draft?.challenge) || "mid";
   const [minQty, maxQty] = getChallengeQuantityBand(challenge, bundleKind);
   const quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
@@ -198,15 +204,82 @@ function shouldAddCompanion(anchor = {}, companion = {}, randomFn = Math.random)
   return random() < 0.22;
 }
 
+/**
+ * Detect enchantment/enhancement level from item.
+ * Returns 0 for non-magical, 1 for +1, 2 for +2, etc.
+ * Checks: name pattern (+1, +2), rarity, properties.
+ */
+function getEnchantmentLevel(entry = {}) {
+  // Check name for +1, +2, +3, etc. pattern
+  const name = normalizeText(entry?.name);
+  const match = String(name).match(/\+\s*([1-9]\d*)/);
+  if (match && match[1]) {
+    return Math.max(0, Math.floor(Number(match[1]) || 0));
+  }
+  
+  // Check rarity as proxy for enchantment
+  const rarity = normalizeText(entry?.rarity ?? entry?.rarityBucket ?? "");
+  if (rarity === "legendary") return 3;
+  if (rarity === "very-rare" || rarity === "veryrare") return 2;
+  if (rarity === "rare") return 1;
+  
+  // Check for magic property flags
+  const keywords = new Set(normalizeList(entry?.keywords));
+  const properties = new Set(normalizeList(entry?.properties));
+  if (keywords.has("loot.weapon.magic") || properties.has("mgc")) {
+    return 1; // Assume +1 if flagged as magical but no explicit level
+  }
+  
+  return 0; // Not enchanted
+}
+
+/**
+ * Apply ammo-specific stack bonus/penalty.
+ * - Base ammo stacks normally per challenge band
+ * - +1 ammo: 90% stack size (10% reduction)
+ * - +2 ammo: 75% stack size (25% reduction)
+ * - +3 ammo: 50% stack size (50% reduction)
+ * This keeps magical ammo useful but rarer in massive stacks.
+ */
+function applyEnchantmentStackPenalty(quantity = 1, enchantmentLevel = 0) {
+  if (enchantmentLevel <= 0) return quantity;
+  
+  const safeQty = Math.max(1, Math.floor(Number(quantity) || 1));
+  if (enchantmentLevel === 1) return Math.max(1, Math.floor(safeQty * 0.90));
+  if (enchantmentLevel === 2) return Math.max(1, Math.floor(safeQty * 0.75));
+  if (enchantmentLevel >= 3) return Math.max(1, Math.floor(safeQty * 0.50));
+  
+  return safeQty;
+}
+
+/**
+ * Resolve ammo-specific quantities with stack bonus for mundane ammo
+ * and stack penalty for enchanted ammo.
+ */
+function resolveAmmoQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, randomFn = Math.random) {
+  const unitValueGp = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  if (!isAmmoLike(entry) || unitValueGp <= 0 || budgetRemainingGp < unitValueGp) return 1;
+  
+  const maxAffordable = Math.max(1, Math.floor(budgetRemainingGp / Math.max(0.0001, unitValueGp)));
+  if (maxAffordable <= 1) return 1;
+  
+  const challenge = normalizeText(draft?.challenge) || "mid";
+  const [minQty, maxQty] = getChallengeQuantityBand(challenge, "ammo");
+  let quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
+  
+  // Apply enhancement-level penalty for magical ammo
+  const enchantmentLevel = getEnchantmentLevel(entry);
+  quantity = applyEnchantmentStackPenalty(quantity, enchantmentLevel);
+  
+  // Cap final quantity per horde scale rules
+  return capBundledQuantity(quantity, "ammo", draft);
+}
+
 function resolveCompanionQuantity(anchor = {}, companion = {}, budgetRemainingGp = 0, draft = {}, randomFn = Math.random) {
   const unitValueGp = Math.max(0, Number(companion?.itemValueGp ?? 0) || 0);
   if (unitValueGp <= 0 || budgetRemainingGp < unitValueGp) return 1;
   if (isAmmoLike(companion)) {
-    const maxAffordable = Math.max(1, Math.floor(budgetRemainingGp / Math.max(0.0001, unitValueGp)));
-    const challenge = normalizeText(draft?.challenge) || "mid";
-    const [minQty, maxQty] = getChallengeQuantityBand(challenge, "ammo");
-    const quantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
-    return capBundledQuantity(quantity, "ammo", draft);
+    return resolveAmmoQuantity(companion, budgetRemainingGp, draft, randomFn);
   }
   return 1;
 }

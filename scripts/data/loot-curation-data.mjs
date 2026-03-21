@@ -1057,7 +1057,8 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ring looks modest, but not cheap.",
     unidentifiedHint: "Its worth comes from silver purity and how cleanly the band was finished.",
     merchantCategories: ["art", "loot", "luxury", "treasure"],
-    variableTreasureKind: "art"
+    variableTreasureKind: "art",
+    weight: 1.15
   },
   "silver-ring-ruby": {
     img: "icons/equipment/finger/ring-cabochon-silver-gold-red.webp",
@@ -1069,7 +1070,99 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ring has the look of a personal gift with real resale value.",
     unidentifiedHint: "Both the stone and the band matter when judging its worth.",
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
-    variableTreasureKind: "gem"
+    variableTreasureKind: "gem",
+    weight: 1.20
+  },
+  "simple-copper-circlet": {
+    img: "icons/equipment/head/circlet-copper-simple.webp",
+    descriptionParagraphs: [
+      "A thin copper circlet polished to a soft luster, plain but well-made and suitable for daily wear.",
+      "Most owners treat it as a practical hair ornament or a modest display of taste rather than wealth."
+    ],
+    chatSummary: "A simple copper circlet, tidy and unadorned.",
+    unidentifiedSummary: "The circlet is too smooth and even to be rough craft.",
+    unidentifiedHint: "Its value rests in the copper itself and the evenness of the work.",
+    merchantCategories: ["art", "jewelry", "loot", "luxury", "treasure"],
+    variableTreasureKind: "art",
+    weight: 0.95
+  },
+  "bronze-torque": {
+    img: "icons/equipment/neck/torque-bronze-twisted.webp",
+    descriptionParagraphs: [
+      "A twisted bronze torque worn at the neck or wrist, with a modest clasp and enough heft to demonstrate the metalworker's hand.",
+      "It signals minor status or trade affiliation without demanding the notice of truly wealthy pieces."
+    ],
+    chatSummary: "A twisted bronze torque suitable for neck or wrist wear.",
+    unidentifiedSummary: "The twist is regular enough to be deliberate, not random hammering.",
+    unidentifiedHint: "Its value depends on bronze weight and the precision of the work.",
+    merchantCategories: ["art", "jewelry", "loot", "luxury", "treasure"],
+    variableTreasureKind: "art",
+    weight: 0.90
+  },
+  "pewter-brooch": {
+    img: "icons/equipment/accessories/brooch-silver-ornate.webp",
+    descriptionParagraphs: [
+      "A pewter brooch cast in a geometric pattern, suitable for fastening cloaks or surcoats.",
+      "It is honest work in an ordinary metal—useful and tidy without pretension."
+    ],
+    chatSummary: "A cast pewter brooch in a geometric pattern.",
+    unidentifiedSummary: "The casting is too uniform to be accidental.",
+    unidentifiedHint: "Its worth is the pewter and the skill of the casting work.",
+    merchantCategories: ["art", "jewelry", "loot", "tradegood"],
+    variableTreasureKind: "art",
+    weight: 0.85
+  },
+  "quartz-point": {
+    img: "icons/commodities/gems/gem-cluster-white.webp",
+    descriptionParagraphs: [
+      "A natural quartz point with clear coloring and solid termination, popular for minor jewelry and spell components.",
+      "Wizards and clerics appreciate pieces like this both for use and for the modest prestige of carrying natural stone."
+    ],
+    chatSummary: "A natural quartz crystal point, clear and well-formed.",
+    unidentifiedSummary: "The point is too perfect to be random—clearly worked or selected.",
+    unidentifiedHint: "Its value is straightforward: the weight and clarity of the quartz.",
+    merchantCategories: ["arcana", "gem", "ingredient", "loot", "treasure"],
+    variableTreasureKind: "gem",
+    weight: 0.88
+  },
+  "amethyst-chip": {
+    img: "icons/commodities/gems/gem-rough-purple.webp",
+    descriptionParagraphs: [
+      "A chip of polished amethyst with warm purple coloring, small but distinctly purple and suitable for talisman or ornament.",
+      "Minor gem traders keep stock like this for customers who want color without paying for larger, finer stones."
+    ],
+    chatSummary: "A small polished amethyst chip, purple and neat.",
+    unidentifiedSummary: "The color is too even to be common glass.",
+    unidentifiedHint: "A jeweler would place its weight and color and potentially find it useful for minor work.",
+    merchantCategories: ["gem", "loot", "luxury", "treasure"],
+    variableTreasureKind: "gem",
+    weight: 0.92
+  },
+  "tourmaline-pebble": {
+    img: "icons/commodities/gems/gem-faceted-round-black.webp",
+    descriptionParagraphs: [
+      "A small tourmaline pebble with distinctive coloring ranging from black to greenish-brown, naturally translucent.",
+      "Gem traders value pieces this small for talisman-work and minor jewelry, and mages occasionally collect them as curiosities."
+    ],
+    chatSummary: "A small tourmaline pebble with natural banding.",
+    unidentifiedSummary: "The stone's depth and color suggest quality well above ordinary pebbles.",
+    unidentifiedHint: "A gem expert would assess it quickly by color, weight, and any existing flaws.",
+    merchantCategories: ["gem", "loot", "luxury", "treasure"],
+    variableTreasureKind: "gem",
+    weight: 0.87
+  },
+  "rose-quartz-palm": {
+    img: "icons/commodities/gems/gem-rough-pink.webp",
+    descriptionParagraphs: [
+      "A small rose quartz palm stone polished smooth and flat enough to fit in a closed hand, pale pink throughout.",
+      "Adventurers and common folk alike appreciate pieces like this for both beauty and the way they sit comfortably when carried."
+    ],
+    chatSummary: "A small rose quartz palm stone, smooth and pale pink.",
+    unidentifiedSummary: "The polish is too regular to be weathered—clearly finished by hand.",
+    unidentifiedHint: "Its appeal is beauty as much as value—a gift or personal treasure as often as capital.",
+    merchantCategories: ["gem", "loot", "treasure"],
+    variableTreasureKind: "gem",
+    weight: 0.86
   },
   "spell-components": {
     img: "icons/containers/bags/pouch-gold-grey.webp",
