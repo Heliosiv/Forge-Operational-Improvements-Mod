@@ -11,6 +11,7 @@ import { createAudioLibraryUiPickerUploadActions } from "./features/audio-librar
 import { createAudioLibraryScanCacheStore } from "./features/audio-library-scan-cache.js";
 import { createAudioLibraryUiFilterActions } from "./features/audio-library-ui-filter-actions.js";
 import { createAudioLibraryUiSelectionActions } from "./features/audio-library-ui-selection-actions.js";
+import { createSyncEffectsSessionState } from "./features/sync-effects-session-state.js";
 import { createDowntimeUiDraftStorage } from "./features/downtime-ui-draft-storage.js";
 import { createGmQuickWeatherDraftStorage } from "./features/gm-quick-weather-draft.js";
 import { createLootPreviewDraftStorage } from "./features/loot-preview-draft-storage.js";
@@ -5358,26 +5359,16 @@ function normalizeEnvironmentCheckTrigger(trigger = "move") {
   return String(trigger ?? "").trim().toLowerCase() === "manual" ? "manual" : "move";
 }
 
-function getNonPartySyncFilterStorageKey() {
-  return `po-non-party-sync-filter-${game.user?.id ?? "anon"}`;
-}
-
-function normalizeNonPartySyncFilterKeyword(value) {
-  return String(value ?? "").slice(0, 120);
-}
-
-function getNonPartySyncFilterKeyword() {
-  return normalizeNonPartySyncFilterKeyword(sessionStorage.getItem(getNonPartySyncFilterStorageKey()));
-}
-
-function getActiveSyncEffectsTabStorageKey() {
-  return `po-active-sync-effects-tab-${game.user?.id ?? "anon"}`;
-}
-
-function getActiveSyncEffectsTab() {
-  const stored = String(sessionStorage.getItem(getActiveSyncEffectsTabStorageKey()) ?? "active").trim().toLowerCase();
-  return stored === "archived" ? "archived" : "active";
-}
+const {
+  getNonPartySyncFilterStorageKey,
+  normalizeNonPartySyncFilterKeyword,
+  getNonPartySyncFilterKeyword,
+  getActiveSyncEffectsTabStorageKey,
+  getActiveSyncEffectsTab
+} = createSyncEffectsSessionState({
+  gameRef: globalThis.game,
+  storage: globalThis.sessionStorage
+});
 
 let getGmQuickWeatherDraftStorageKey = () => `po-gm-quick-weather-draft-${game.user?.id ?? "anon"}`;
 

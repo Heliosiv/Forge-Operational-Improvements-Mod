@@ -95,8 +95,7 @@ export const PO_TEMPLATE_MAP = Object.freeze({
   "gm-loot": "modules/party-operations/templates/gm-loot.hbs",
   "gm-loot-claims-board": "modules/party-operations/templates/gm-loot-claims-board.hbs",
   "settings-hub": "modules/party-operations/templates/settings-hub.hbs",
-  "merchant-shop": "modules/party-operations/templates/merchant-shop.hbs",
-  "party-operations-app": "modules/party-operations/templates/party-operations-app.hbs"
+  "merchant-shop": "modules/party-operations/templates/merchant-shop.hbs"
 });
 
 export const LAUNCHER_RECOVERY_DELAYS_MS = Object.freeze([120, 500, 1400, 3200]);

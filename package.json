@@ -61,6 +61,9 @@
     "check:loot-entry-stacking": "node scripts/test-loot-entry-stacking.mjs",
     "check:loot-preview-display": "node scripts/test-loot-preview-display.mjs",
     "loot:improve-manifest": "node scripts/improve-loot-manifest.mjs --write",
+    "loot:audit-manifest": "python scripts/loot-manifest-audit.py --dedupe --report reports/loot-manifest-audit.json --duplicates-csv reports/loot-manifest-duplicates.csv",
+    "loot:audit-manifest:open": "npm run loot:audit-manifest && start \"\" reports\\loot-manifest-duplicates.csv",
+    "loot:dedupe-manifest": "python scripts/loot-manifest-audit.py --dedupe --write --report reports/loot-manifest-audit.json --duplicates-csv reports/loot-manifest-duplicates.csv",
     "prepare:package": "node scripts/prepare-package.mjs --output dist/staging-public",
     "prepare:release": "node scripts/build-release-package.mjs --output release"
   },

@@ -1,0 +1,2245 @@
+{
+  "manifest": "E:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+  "generatedAt": "2026-03-21T03:53:27Z",
+  "summary": {
+    "rows": 1456,
+    "parseErrors": 0,
+    "missing": {
+      "_id": 0,
+      "name": 0,
+      "type": 0,
+      "system.identifier": 0
+    },
+    "types": {
+      "consumable": 265,
+      "container": 57,
+      "equipment": 225,
+      "loot": 242,
+      "spell": 337,
+      "tool": 41,
+      "weapon": 289
+    }
+  },
+  "duplicates": {
+    "id": 0,
+    "identifier": 87,
+    "nameType": 82
+  },
+  "dedupe": {
+    "enabled": true,
+    "write": false,
+    "duplicatesCsv": "E:\\DND Stuff\\Modules\\party-operations\\reports\\loot-manifest-duplicates.csv",
+    "inputRows": 1456,
+    "outputRows": 1335,
+    "removedRows": 121,
+    "plannedActions": [
+      {
+        "category": "identifier",
+        "key": {
+          "id": "0nobbp3mmkvjlwzy",
+          "identifier": "candle",
+          "name": "Candle",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 8,
+          "score": 78,
+          "id": "0NoBBP3MMkvJlwZY",
+          "name": "Candle"
+        },
+        "drop": [
+          {
+            "line": 932,
+            "score": 78,
+            "id": "CNVsvqfTbtcoHiEo",
+            "name": "Candle"
+          },
+          {
+            "line": 937,
+            "score": 78,
+            "id": "HgFNy16VK0iJgpFx",
+            "name": "Candle"
+          },
+          {
+            "line": 968,
+            "score": 78,
+            "id": "oylFuuS3t1nqNKsM",
+            "name": "Candle"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "f5dowepxzhxfhtk8",
+          "identifier": "new-item",
+          "name": "Potion of Lucidity",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 208,
+          "score": 94,
+          "id": "F5DoWePxzhxfhtK8",
+          "name": "Potion of Lucidity"
+        },
+        "drop": [
+          {
+            "line": 9,
+            "score": 89,
+            "id": "0XXYnoWFf7Esxf8S",
+            "name": "Tarnished Ring"
+          },
+          {
+            "line": 98,
+            "score": 90,
+            "id": "6kbexHjBmnE0HAPG",
+            "name": "Powdered Silver"
+          },
+          {
+            "line": 124,
+            "score": 77,
+            "id": "8PEJqzl5KL6eaBUQ",
+            "name": "Jewelry"
+          },
+          {
+            "line": 279,
+            "score": 78,
+            "id": "J9jF3TW3E5nMyWPb",
+            "name": "Scrap Reagents"
+          },
+          {
+            "line": 296,
+            "score": 78,
+            "id": "KTvBW6HNAMAoqEN7",
+            "name": "Deer Hide"
+          },
+          {
+            "line": 346,
+            "score": 77,
+            "id": "Nlkp0wLiYvwQD0Q9",
+            "name": "Improvised Weapon"
+          },
+          {
+            "line": 487,
+            "score": 77,
+            "id": "Y0RmODqf7ZmekBPM",
+            "name": "Faded Ritual Herbs"
+          },
+          {
+            "line": 727,
+            "score": 76,
+            "id": "mcmslMRPq0C6m4ze",
+            "name": "Scarlet Token"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "0zbwwjfz3niaxmlw",
+          "identifier": "jug",
+          "name": "Jug",
+          "type": "container"
+        },
+        "keep": {
+          "line": 10,
+          "score": 77,
+          "id": "0ZBWwjFz3nIAXMLW",
+          "name": "Jug"
+        },
+        "drop": [
+          {
+            "line": 535,
+            "score": 77,
+            "id": "bBaH1NS1tQO0ODMk",
+            "name": "Jug"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "10zp2bu3vncuymib",
+          "identifier": "longsword",
+          "name": "Longsword",
+          "type": "weapon"
+        },
+        "keep": {
+          "line": 13,
+          "score": 74,
+          "id": "10ZP2Bu3vnCuYMIB",
+          "name": "Longsword"
+        },
+        "drop": [
+          {
+            "line": 602,
+            "score": 74,
+            "id": "ennPTzd70YVuAo8c",
+            "name": "Rusty Longsword"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "14pnrt4szy9rgvhb",
+          "identifier": "hammer",
+          "name": "Hammer",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 14,
+          "score": 73,
+          "id": "14pNRT4sZy9rgvhb",
+          "name": "Hammer"
+        },
+        "drop": [
+          {
+            "line": 966,
+            "score": 73,
+            "id": "nmuGH3OKdoMOwJqj",
+            "name": "Hammer"
+          },
+          {
+            "line": 978,
+            "score": 73,
+            "id": "xWQopgOHbS6LjsZm",
+            "name": "Hammer"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "2ybuclkfhdl0bu4u",
+          "identifier": "chest",
+          "name": "Chest",
+          "type": "container"
+        },
+        "keep": {
+          "line": 33,
+          "score": 77,
+          "id": "2YbuclKfhDL0bU4u",
+          "name": "Chest"
+        },
+        "drop": [
+          {
+            "line": 914,
+            "score": 77,
+            "id": "zrfwOCYJXj63KcIq",
+            "name": "Chest"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3oxueepvddcvfgfa",
+          "identifier": "fine-clothes",
+          "name": "Fine Clothes",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 45,
+          "score": 76,
+          "id": "3OXueEpvDDCVfGFA",
+          "name": "Fine Clothes"
+        },
+        "drop": [
+          {
+            "line": 936,
+            "score": 76,
+            "id": "FqFmdzIBUSxFKKfi",
+            "name": "Fine Clothes"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3ysuip4efo26yxjr",
+          "identifier": "ball-bearings",
+          "name": "Ball Bearings",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 50,
+          "score": 79,
+          "id": "3YSUIp4eFo26YxJr",
+          "name": "Ball Bearings"
+        },
+        "drop": [
+          {
+            "line": 923,
+            "score": 79,
+            "id": "79zrBwqEp2MCJ1Bl",
+            "name": "Ball Bearings"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3nvvahvfhsgwglkl",
+          "identifier": "small-knife",
+          "name": "Small Knife",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 56,
+          "score": 76,
+          "id": "3nVvaHVfHsgwGlkL",
+          "name": "Small Knife"
+        },
+        "drop": [
+          {
+            "line": 930,
+            "score": 76,
+            "id": "C05ytVXByOG8uBAc",
+            "name": "Small Knife"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3peb74sagpjrht0u",
+          "identifier": "pitcher",
+          "name": "Pitcher",
+          "type": "container"
+        },
+        "keep": {
+          "line": 57,
+          "score": 77,
+          "id": "3pEB74SAGPJrHT0U",
+          "name": "Pitcher"
+        },
+        "drop": [
+          {
+            "line": 741,
+            "score": 77,
+            "id": "nXWdGtzi8DXDLLsL",
+            "name": "Pitcher"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3ueyucfnazgkwan5",
+          "identifier": "sealing-wax",
+          "name": "Sealing Wax",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 59,
+          "score": 73,
+          "id": "3uEyuCfnAzGkwAn5",
+          "name": "Sealing Wax"
+        },
+        "drop": [
+          {
+            "line": 938,
+            "score": 73,
+            "id": "HqM7xtEgwV1l3HTZ",
+            "name": "Sealing Wax"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3vo6clax5kthb7sm",
+          "identifier": "handy-haversack",
+          "name": "Handy Haversack",
+          "type": "container"
+        },
+        "keep": {
+          "line": 60,
+          "score": 94,
+          "id": "3vo6ClAX5KTHb7Sm",
+          "name": "Handy Haversack"
+        },
+        "drop": [
+          {
+            "line": 111,
+            "score": 94,
+            "id": "7vqs5AqI4VCmuszx",
+            "name": "Handy Haversack"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "3xej1h2pjyhd6t81",
+          "identifier": "amethyst",
+          "name": "Amethyst",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 61,
+          "score": 76,
+          "id": "3xEj1h2pJyhd6t81",
+          "name": "Amethyst"
+        },
+        "drop": [
+          {
+            "line": 855,
+            "score": 76,
+            "id": "v3YmhCho5fvPiKdv",
+            "name": "Amethyst"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "419env7xp2p7xlo5",
+          "identifier": "blanket",
+          "name": "Blanket",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 62,
+          "score": 76,
+          "id": "419eNv7xp2p7Xlo5",
+          "name": "Blanket"
+        },
+        "drop": [
+          {
+            "line": 973,
+            "score": 76,
+            "id": "uYniEJCeAuwUC4JY",
+            "name": "Blanket"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "4mtqkpn9qmwcfjda",
+          "identifier": "quiver",
+          "name": "Quiver",
+          "type": "container"
+        },
+        "keep": {
+          "line": 70,
+          "score": 77,
+          "id": "4MtQKPn9qMWCFjDA",
+          "name": "Quiver"
+        },
+        "drop": [
+          {
+            "line": 106,
+            "score": 77,
+            "id": "7MGvVY3ddwS1CsCZ",
+            "name": "Quiver"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "4sdmmy2qhzgbyw6o",
+          "identifier": "potion-of-superior-healing",
+          "name": "Greater Healing Potion",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 74,
+          "score": 73,
+          "id": "4sdMmy2QhzgBYw6o",
+          "name": "Greater Healing Potion"
+        },
+        "drop": [
+          {
+            "line": 83,
+            "score": 73,
+            "id": "5m9ErO9In8Uc5yyf",
+            "name": "Potion of Superior Healing"
+          },
+          {
+            "line": 573,
+            "score": 73,
+            "id": "ddYB07GVz6m3nAiY",
+            "name": "Healing Potion"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "53f3ppoanjiptbth",
+          "identifier": "barrel",
+          "name": "Barrel",
+          "type": "container"
+        },
+        "keep": {
+          "line": 76,
+          "score": 77,
+          "id": "53f3ppOanjiptBTH",
+          "name": "Barrel"
+        },
+        "drop": [
+          {
+            "line": 107,
+            "score": 77,
+            "id": "7Yqbqg5EtVW16wfT",
+            "name": "Barrel"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "5miex824umklu3xq",
+          "identifier": "map-or-scroll-case",
+          "name": "Map or Scroll Case",
+          "type": "container"
+        },
+        "keep": {
+          "line": 84,
+          "score": 76,
+          "id": "5mIeX824uMklU3xq",
+          "name": "Map or Scroll Case"
+        },
+        "drop": [
+          {
+            "line": 812,
+            "score": 76,
+            "id": "sXTLr44Pt2LzUqTe",
+            "name": "Map or Scroll Case"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "7cpuxzhmyhoholim",
+          "identifier": "backpack",
+          "name": "Backpack",
+          "type": "container"
+        },
+        "keep": {
+          "line": 103,
+          "score": 74,
+          "id": "7CPuXZHmyhoHolIm",
+          "name": "Backpack"
+        },
+        "drop": [
+          {
+            "line": 245,
+            "score": 74,
+            "id": "H8YCd689ezlD26aT",
+            "name": "Backpack"
+          },
+          {
+            "line": 329,
+            "score": 74,
+            "id": "McTSTN1S19LyVinI",
+            "name": "Backpack"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "7ztvhyyjccooawmr",
+          "identifier": "censer",
+          "name": "Censer",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 113,
+          "score": 75,
+          "id": "7ztvHyYJCcOOAWmR",
+          "name": "Censer"
+        },
+        "drop": [
+          {
+            "line": 962,
+            "score": 75,
+            "id": "lg6oohwQndZT4Z0m",
+            "name": "Censer"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "asxyc0tpnyt59u96",
+          "identifier": "wheat",
+          "name": "Wheat",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 154,
+          "score": 76,
+          "id": "AsxYc0tPNYt59U96",
+          "name": "Wheat"
+        },
+        "drop": [
+          {
+            "line": 1316,
+            "score": 76,
+            "id": "WdPAGBRUWYaS0TNQ",
+            "name": "Wheat"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "bnoclunwhvvzhljl",
+          "identifier": "torch",
+          "name": "Torch",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 163,
+          "score": 75,
+          "id": "BnOCLuNWhVvzHLjl",
+          "name": "Torch"
+        },
+        "drop": [
+          {
+            "line": 918,
+            "score": 75,
+            "id": "29ZLE8PERtFVD3QU",
+            "name": "Torch"
+          },
+          {
+            "line": 963,
+            "score": 75,
+            "id": "ltbDV5OitV0yrDFU",
+            "name": "Torch"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "c97qx98svhnmswb4",
+          "identifier": "sheep",
+          "name": "Sheep",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 167,
+          "score": 82,
+          "id": "C97QX98SvHnMSwB4",
+          "name": "Sheep"
+        },
+        "drop": [
+          {
+            "line": 1310,
+            "score": 82,
+            "id": "P29EeDJQrJJXOIuK",
+            "name": "Sheep"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "cnddj8dsxvprvpxt",
+          "identifier": "sack",
+          "name": "Sack",
+          "type": "container"
+        },
+        "keep": {
+          "line": 170,
+          "score": 77,
+          "id": "CNdDj8dsXVpRVpXt",
+          "name": "Sack"
+        },
+        "drop": [
+          {
+            "line": 841,
+            "score": 77,
+            "id": "twUtA4KxIgssAaNU",
+            "name": "Sack"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "dnoseavf4oh1dlwy",
+          "identifier": "tinderbox",
+          "name": "Tinderbox",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 180,
+          "score": 77,
+          "id": "DNOSEAvF4Oh1DlWy",
+          "name": "Tinderbox"
+        },
+        "drop": [
+          {
+            "line": 916,
+            "score": 77,
+            "id": "1FSubnBpSTDmVaYV",
+            "name": "Tinderbox"
+          },
+          {
+            "line": 931,
+            "score": 77,
+            "id": "CG0LhGQtc3KOAeE1",
+            "name": "Tinderbox"
+          },
+          {
+            "line": 933,
+            "score": 77,
+            "id": "DSWvkerPQsusbqzJ",
+            "name": "Tinderbox"
+          },
+          {
+            "line": 964,
+            "score": 77,
+            "id": "m7I2KkwIWttQSElS",
+            "name": "Tinderbox"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "dvxmyetzuvxbzaww",
+          "identifier": "bedroll",
+          "name": "Bedroll",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 183,
+          "score": 76,
+          "id": "DVXmyetZuvxbzAwW",
+          "name": "Bedroll"
+        },
+        "drop": [
+          {
+            "line": 934,
+            "score": 76,
+            "id": "DxfCBU7uBoRNAnDm",
+            "name": "Bedroll"
+          },
+          {
+            "line": 939,
+            "score": 76,
+            "id": "IGg1yAvcOyhIqzBi",
+            "name": "Bedroll"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "e2h6see6fu2tnu96",
+          "identifier": "costume-clothes",
+          "name": "Costume Clothes",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 193,
+          "score": 74,
+          "id": "E2h6sEe6FU2tnU96",
+          "name": "Costume Clothes"
+        },
+        "drop": [
+          {
+            "line": 974,
+            "score": 74,
+            "id": "ug9bTGmTTEN7JwmP",
+            "name": "Costume Clothes"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "f6gwsqjerx1u35re",
+          "identifier": "bell",
+          "name": "Bell",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 210,
+          "score": 76,
+          "id": "F6GwSqjErX1u35Re",
+          "name": "Bell"
+        },
+        "drop": [
+          {
+            "line": 942,
+            "score": 76,
+            "id": "KyW8s4pCgPAkgTXI",
+            "name": "Bell"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "fhs1ylofcjczp1g9",
+          "identifier": "alms-box",
+          "name": "Alms Box",
+          "type": "container"
+        },
+        "keep": {
+          "line": 216,
+          "score": 77,
+          "id": "FHs1YLOFcjCzp1G9",
+          "name": "Alms Box"
+        },
+        "drop": [
+          {
+            "line": 623,
+            "score": 77,
+            "id": "g8fQZ1WyTz2bTtvA",
+            "name": "Alms Box"
+          },
+          {
+            "line": 954,
+            "score": 77,
+            "id": "ac8IamT5vDrH1ZT8",
+            "name": "Alms Box"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "fdvoaevqvutjitog",
+          "identifier": "belt-of-cloud-giant-strength",
+          "name": "Belt of Cloud Giant Strength",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 221,
+          "score": 76,
+          "id": "FdvoAEVQVUtJitOG",
+          "name": "Belt of Cloud Giant Strength"
+        },
+        "drop": [
+          {
+            "line": 341,
+            "score": 76,
+            "id": "NRj0lC3SM03s1YB3",
+            "name": "Belt of Cloud Giant Strength"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "gsmrwbzlijutvy1g",
+          "identifier": "tankard",
+          "name": "Tankard",
+          "type": "container"
+        },
+        "keep": {
+          "line": 241,
+          "score": 77,
+          "id": "GsmRWbZLijuTVy1g",
+          "name": "Tankard"
+        },
+        "drop": [
+          {
+            "line": 854,
+            "score": 77,
+            "id": "uw6fINSmZ2j2o57A",
+            "name": "Tankard"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "hj20epwp2dpkyreh",
+          "identifier": "vial",
+          "name": "Vial",
+          "type": "container"
+        },
+        "keep": {
+          "line": 248,
+          "score": 76,
+          "id": "HJ20EPWp2dpKyREH",
+          "name": "Vial"
+        },
+        "drop": [
+          {
+            "line": 728,
+            "score": 76,
+            "id": "meJEfX3gZgtMX4x2",
+            "name": "Vial"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "hw8oepnhixjba7ip",
+          "identifier": "bag-of-devouring",
+          "name": "Bag of Devouring",
+          "type": "container"
+        },
+        "keep": {
+          "line": 253,
+          "score": 94,
+          "id": "HW8oEpnhIXJBA7iP",
+          "name": "Bag of Devouring"
+        },
+        "drop": [
+          {
+            "line": 490,
+            "score": 94,
+            "id": "YG9QW0flem4SLL6A",
+            "name": "Bag of Devouring"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "hzp69hhynzuucipf",
+          "identifier": "glass-bottle",
+          "name": "Glass Bottle",
+          "type": "container"
+        },
+        "keep": {
+          "line": 255,
+          "score": 78,
+          "id": "HZp69hhyNZUUCipF",
+          "name": "Glass Bottle"
+        },
+        "drop": [
+          {
+            "line": 356,
+            "score": 78,
+            "id": "Og207R4yc92DZ5Ta",
+            "name": "Glass Bottle"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "ibhdar7wkhwpylvn",
+          "identifier": "disguise-kit",
+          "name": "Disguise Kit",
+          "type": "tool"
+        },
+        "keep": {
+          "line": 266,
+          "score": 77,
+          "id": "IBhDAr7WkhWPYLVn",
+          "name": "Disguise Kit"
+        },
+        "drop": [
+          {
+            "line": 959,
+            "score": 77,
+            "id": "kj5DNiBKasYWyuj6",
+            "name": "Disguise Kit"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "icbuh7rhzfltgk8m",
+          "identifier": "canvas",
+          "name": "Canvas",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 270,
+          "score": 79,
+          "id": "IcBuh7RHzFltgk8M",
+          "name": "Canvas"
+        },
+        "drop": [
+          {
+            "line": 1323,
+            "score": 79,
+            "id": "mFJkwdzb9IpLC3Ip",
+            "name": "Canvas"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "ix6oguafopyydfke",
+          "identifier": "copper",
+          "name": "Copper",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 277,
+          "score": 80,
+          "id": "Ix6OGUAfOPYYdFKE",
+          "name": "Copper"
+        },
+        "drop": [
+          {
+            "line": 1319,
+            "score": 80,
+            "id": "aXWzDW0huOa0WuIO",
+            "name": "Copper"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "jhdwykuxpfakuytw",
+          "identifier": "goat",
+          "name": "Goat",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 285,
+          "score": 78,
+          "id": "JhdWyKuXpFAKUYtW",
+          "name": "Goat"
+        },
+        "drop": [
+          {
+            "line": 1324,
+            "score": 78,
+            "id": "pMj0mA1wyEhoO6zP",
+            "name": "Goat"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "0ihvqrcbzs2s2dic",
+          "identifier": "gloves-of-thievery",
+          "name": "Gloves of Thievery",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 1327,
+          "score": 78,
+          "id": "0ihVqrcBZS2S2DIC",
+          "name": "Gloves of Thievery"
+        },
+        "drop": [
+          {
+            "line": 297,
+            "score": 77,
+            "id": "KfjmEEE55O83hQdy",
+            "name": "Gloves of Thievery"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "l55zjzm8wid19gnk",
+          "identifier": "silver",
+          "name": "Silver",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 302,
+          "score": 85,
+          "id": "L55zjzM8wiD19gnK",
+          "name": "Silver"
+        },
+        "drop": [
+          {
+            "line": 1304,
+            "score": 85,
+            "id": "9t5X9HG9ou6YMSdJ",
+            "name": "Silver"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "lgfk7okzamkkv4qk",
+          "identifier": "linen",
+          "name": "Linen",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 313,
+          "score": 80,
+          "id": "LgFk7OKZAmKkV4Qk",
+          "name": "Linen"
+        },
+        "drop": [
+          {
+            "line": 1307,
+            "score": 80,
+            "id": "Gh1JxTlM9aRGNrUH",
+            "name": "Linen"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "m2jq9hmzdqkdrmpj",
+          "identifier": "iron",
+          "name": "Iron",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 318,
+          "score": 78,
+          "id": "M2jQ9hMZdqKdrmpj",
+          "name": "Iron"
+        },
+        "drop": [
+          {
+            "line": 1312,
+            "score": 78,
+            "id": "V3uxNwciT4Ln7S4k",
+            "name": "Iron"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "m8xm8blk4tpuayee",
+          "identifier": "iron-pot",
+          "name": "Iron Pot",
+          "type": "container"
+        },
+        "keep": {
+          "line": 321,
+          "score": 77,
+          "id": "M8xM8BLK4tpUayEE",
+          "name": "Iron Pot"
+        },
+        "drop": [
+          {
+            "line": 882,
+            "score": 77,
+            "id": "xDhs75PeUft0q7Dx",
+            "name": "Iron Pot"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "mgrhnkiqro94vcn2",
+          "identifier": "efficient-quiver",
+          "name": "Efficient Quiver",
+          "type": "container"
+        },
+        "keep": {
+          "line": 325,
+          "score": 87,
+          "id": "MGrhNKiQRO94vCn2",
+          "name": "Efficient Quiver"
+        },
+        "drop": [
+          {
+            "line": 326,
+            "score": 87,
+            "id": "MLNzQUsVUi0PEV3i",
+            "name": "Efficient Quiver"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "pcxgyxebvqv0bs2z",
+          "identifier": "silk",
+          "name": "Silk",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 371,
+          "score": 80,
+          "id": "PcXGYXebvqv0BS2z",
+          "name": "Silk"
+        },
+        "drop": [
+          {
+            "line": 1321,
+            "score": 80,
+            "id": "jad5oFMDv21mPvJP",
+            "name": "Silk"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "qxmaarj4x8p0c1hv",
+          "identifier": "hempen-rope-50-ft",
+          "name": "Hempen Rope (50 ft.)",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 379,
+          "score": 77,
+          "id": "QXmaarJ4X8P0C1HV",
+          "name": "Hempen Rope (50 ft.)"
+        },
+        "drop": [
+          {
+            "line": 948,
+            "score": 77,
+            "id": "U5fRz04JWgNS1WvK",
+            "name": "Hempen Rope (50 ft.)"
+          },
+          {
+            "line": 955,
+            "score": 77,
+            "id": "bDZFQqLQE73cFB8c",
+            "name": "Hempen Rope (50 ft.)"
+          },
+          {
+            "line": 967,
+            "score": 77,
+            "id": "oRrNK2H2vcN4Kp74",
+            "name": "Hempen Rope (50 ft.)"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "qaqqc7v05hmih98y",
+          "identifier": "bucket",
+          "name": "Bucket",
+          "type": "container"
+        },
+        "keep": {
+          "line": 381,
+          "score": 76,
+          "id": "Qaqqc7v05hmih98y",
+          "name": "Bucket"
+        },
+        "drop": [
+          {
+            "line": 724,
+            "score": 76,
+            "id": "mQVYcHmMSoCUnBnM",
+            "name": "Bucket"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "r1j1w2xkhj5o004o",
+          "identifier": "salt",
+          "name": "Salt",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 384,
+          "score": 73,
+          "id": "R1J1W2xKHj5o004o",
+          "name": "Salt"
+        },
+        "drop": [
+          {
+            "line": 1320,
+            "score": 73,
+            "id": "eDVTXE3qv28DwvPl",
+            "name": "Salt"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "rebwktke6ljaikpn",
+          "identifier": "soap",
+          "name": "Soap",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 386,
+          "score": 76,
+          "id": "REBWkTKe6lJaIkpn",
+          "name": "Soap"
+        },
+        "drop": [
+          {
+            "line": 971,
+            "score": 76,
+            "id": "sJ9gfQnz2jdT6GAB",
+            "name": "Soap"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "tm9vmwpojbhqjzqk",
+          "identifier": "chicken",
+          "name": "Chicken",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 412,
+          "score": 76,
+          "id": "TM9VmwPoJBHqJzqK",
+          "name": "Chicken"
+        },
+        "drop": [
+          {
+            "line": 1322,
+            "score": 76,
+            "id": "l1YRv9sdhQPaSQop",
+            "name": "Chicken"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "tz9guwdkpz50ok9p",
+          "identifier": "bag-of-holding",
+          "name": "Bag of Holding",
+          "type": "container"
+        },
+        "keep": {
+          "line": 415,
+          "score": 94,
+          "id": "TZ9gUwDKpz50OK9P",
+          "name": "Bag of Holding"
+        },
+        "drop": [
+          {
+            "line": 520,
+            "score": 94,
+            "id": "aDHRuUs29SrumWfq",
+            "name": "Bag of Holding"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "tmfafuszjaotndn9",
+          "identifier": "saddlebags",
+          "name": "Saddlebags",
+          "type": "container"
+        },
+        "keep": {
+          "line": 419,
+          "score": 78,
+          "id": "TmfaFUSZJAotndn9",
+          "name": "Saddlebags"
+        },
+        "drop": [
+          {
+            "line": 694,
+            "score": 78,
+            "id": "kQHuP8Gmu0YrJDOf",
+            "name": "Saddlebags"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "jsr8i4hojatq1ewi",
+          "identifier": "incense",
+          "name": "Incense",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 685,
+          "score": 78,
+          "id": "jsR8i4HOjATQ1EwI",
+          "name": "Incense"
+        },
+        "drop": [
+          {
+            "line": 420,
+            "score": 76,
+            "id": "TniiNAWSasgVGZ5V",
+            "name": "Incense"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "tqyviglhdj5kfohr",
+          "identifier": "piton",
+          "name": "Piton",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 422,
+          "score": 74,
+          "id": "TqyvIglHDj5kfohR",
+          "name": "Piton"
+        },
+        "drop": [
+          {
+            "line": 945,
+            "score": 74,
+            "id": "P31t6tGgt9aLAdYt",
+            "name": "Piton"
+          },
+          {
+            "line": 977,
+            "score": 74,
+            "id": "wmedRPNenLVSUaT5",
+            "name": "Piton"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "ufeoj4jtiiy0vctf",
+          "identifier": "cinnamon",
+          "name": "Cinnamon",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 427,
+          "score": 75,
+          "id": "UFEoJ4JtIiY0VCtF",
+          "name": "Cinnamon"
+        },
+        "drop": [
+          {
+            "line": 1311,
+            "score": 75,
+            "id": "Pn04ySJYcG06Jc4a",
+            "name": "Cinnamon"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "uv0ilmzbwvqmlcvh",
+          "identifier": "waterskin",
+          "name": "Waterskin",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 437,
+          "score": 79,
+          "id": "Uv0ilmzbWvqmlCVH",
+          "name": "Waterskin"
+        },
+        "drop": [
+          {
+            "line": 917,
+            "score": 79,
+            "id": "1L5wkmbw0fmNAr38",
+            "name": "Waterskin"
+          },
+          {
+            "line": 919,
+            "score": 79,
+            "id": "2cKJTN5Ki77oCrQn",
+            "name": "Waterskin"
+          },
+          {
+            "line": 953,
+            "score": 79,
+            "id": "a8fe9d81BRW86cvP",
+            "name": "Waterskin"
+          },
+          {
+            "line": 960,
+            "score": 79,
+            "id": "kx8DGQizmR5UI21R",
+            "name": "Waterskin"
+          },
+          {
+            "line": 969,
+            "score": 79,
+            "id": "q4RcCLeKviqgckqt",
+            "name": "Waterskin"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "v13fjv5osmvbrdgp",
+          "identifier": "mess-kit",
+          "name": "Mess Kit",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 439,
+          "score": 74,
+          "id": "V13fjV5oSmvbRdgP",
+          "name": "Mess Kit"
+        },
+        "drop": [
+          {
+            "line": 961,
+            "score": 74,
+            "id": "lBg9CPRdpRhn4DO4",
+            "name": "Mess Kit"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "v5uajt3ed6sdntgm",
+          "identifier": "crowbar",
+          "name": "Crowbar",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 440,
+          "score": 77,
+          "id": "V5UAjT3ed6sDNtgm",
+          "name": "Crowbar"
+        },
+        "drop": [
+          {
+            "line": 928,
+            "score": 77,
+            "id": "AkyQyonZMVcvOrXU",
+            "name": "Crowbar"
+          },
+          {
+            "line": 981,
+            "score": 77,
+            "id": "yUGNrsXMfsUKwsUg",
+            "name": "Crowbar"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "veyhiaife3rifdht",
+          "identifier": "cow",
+          "name": "Cow",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 441,
+          "score": 82,
+          "id": "VEyHiaiFe3RIFDHT",
+          "name": "Cow"
+        },
+        "drop": [
+          {
+            "line": 1314,
+            "score": 82,
+            "id": "W6pJovmnVyjbk0fA",
+            "name": "Cow"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "wfqs2vt8ddrfjtjg",
+          "identifier": "parchment",
+          "name": "Parchment",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 454,
+          "score": 76,
+          "id": "WFQS2vT8ddrFjTJg",
+          "name": "Parchment"
+        },
+        "drop": [
+          {
+            "line": 927,
+            "score": 76,
+            "id": "9c0CHs90xqPw81iP",
+            "name": "Parchment"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "wrunjoqzmmgt9l58",
+          "identifier": "flask",
+          "name": "Flask",
+          "type": "container"
+        },
+        "keep": {
+          "line": 465,
+          "score": 76,
+          "id": "WrUnJoQZmmgt9l58",
+          "name": "Flask"
+        },
+        "drop": [
+          {
+            "line": 706,
+            "score": 76,
+            "id": "lHS63sC6bypENNlR",
+            "name": "Flask"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "wv7hzd6dv1p0q78n",
+          "identifier": "basket",
+          "name": "Basket",
+          "type": "container"
+        },
+        "keep": {
+          "line": 466,
+          "score": 77,
+          "id": "Wv7HzD6dv1P0q78N",
+          "name": "Basket"
+        },
+        "drop": [
+          {
+            "line": 846,
+            "score": 77,
+            "id": "uOzWQ8YXV3LpFnXG",
+            "name": "Basket"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "zfespo7zj7kp6ldz",
+          "identifier": "ox",
+          "name": "Ox",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 510,
+          "score": 81,
+          "id": "ZfESpO7Zj7Kp6Ldz",
+          "name": "Ox"
+        },
+        "drop": [
+          {
+            "line": 1315,
+            "score": 81,
+            "id": "WCbKUQcahzQQX0pL",
+            "name": "Ox"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "azckwa0t9k4z4sb9",
+          "identifier": "crossbow-bolt-case",
+          "name": "Crossbow Bolt Case",
+          "type": "container"
+        },
+        "keep": {
+          "line": 530,
+          "score": 77,
+          "id": "azCkWA0t9k4Z4Sb9",
+          "name": "Crossbow Bolt Case"
+        },
+        "drop": [
+          {
+            "line": 586,
+            "score": 77,
+            "id": "eJtPBiZtr2pp6ynt",
+            "name": "Crossbow Bolt Case"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "cfvycjincypvcdhn",
+          "identifier": "flour",
+          "name": "Flour",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 547,
+          "score": 76,
+          "id": "cFvYCJinCypVCDhN",
+          "name": "Flour"
+        },
+        "drop": [
+          {
+            "line": 1305,
+            "score": 76,
+            "id": "CrcfT5jwcJTPTsfQ",
+            "name": "Flour"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "dp7jmkyhttgvb3ii",
+          "identifier": "ink-bottle",
+          "name": "Ink Bottle",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 566,
+          "score": 75,
+          "id": "dP7jMKyHTTgVb3ii",
+          "name": "Ink Bottle"
+        },
+        "drop": [
+          {
+            "line": 949,
+            "score": 75,
+            "id": "UICmOXUKBmHp9o4y",
+            "name": "Ink Bottle"
+          },
+          {
+            "line": 970,
+            "score": 75,
+            "id": "qGfu1070HAllkO4W",
+            "name": "Ink Bottle"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "ejy20los3pokrdpl",
+          "identifier": "block-of-incense",
+          "name": "Block of Incense",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 585,
+          "score": 78,
+          "id": "eJY20LOs3pOkRDPl",
+          "name": "Block of Incense"
+        },
+        "drop": [
+          {
+            "line": 980,
+            "score": 78,
+            "id": "xxRC1qTIGzGEvmkg",
+            "name": "Block of Incense"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "f4w4gxbi0nyxmhx4",
+          "identifier": "rations",
+          "name": "Rations",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 607,
+          "score": 77,
+          "id": "f4w4GxBi0nYXmhX4",
+          "name": "Rations"
+        },
+        "drop": [
+          {
+            "line": 926,
+            "score": 77,
+            "id": "8d95YV1jHcxPygJ9",
+            "name": "Rations"
+          },
+          {
+            "line": 935,
+            "score": 77,
+            "id": "EC6ugXsfJZmjMNAj",
+            "name": "Rations"
+          },
+          {
+            "line": 941,
+            "score": 77,
+            "id": "JwJf6M6HCSSMgKx3",
+            "name": "Rations"
+          },
+          {
+            "line": 946,
+            "score": 77,
+            "id": "P5UuhUBZL59wZiCY",
+            "name": "Rations"
+          },
+          {
+            "line": 952,
+            "score": 77,
+            "id": "YM4QueTsF3DL77mH",
+            "name": "Rations"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "fnmkfcovmiw2rh3t",
+          "identifier": "paper",
+          "name": "Paper",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 612,
+          "score": 75,
+          "id": "fNMkFCOvMiW2Rh3t",
+          "name": "Paper"
+        },
+        "drop": [
+          {
+            "line": 915,
+            "score": 75,
+            "id": "0huCWvOncUsme84v",
+            "name": "Paper"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "hvan2a6ukt1npgu3",
+          "identifier": "gold",
+          "name": "Gold",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 653,
+          "score": 83,
+          "id": "hvAn2a6ukt1NpGU3",
+          "name": "Gold"
+        },
+        "drop": [
+          {
+            "line": 1308,
+            "score": 83,
+            "id": "HHh7Ihuk8ToxJzQX",
+            "name": "Gold"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "iahvvuzd5s0ltpsx",
+          "identifier": "cotton",
+          "name": "Cotton",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 661,
+          "score": 78,
+          "id": "iAhvVUZD5s0ltpSX",
+          "name": "Cotton"
+        },
+        "drop": [
+          {
+            "line": 1318,
+            "score": 78,
+            "id": "ZcAgZHJ1hhqbedLF",
+            "name": "Cotton"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "iomrrzfzfcfpgud6",
+          "identifier": "bag-of-sand",
+          "name": "Bag of Sand",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 666,
+          "score": 73,
+          "id": "iOMRrzfzFCfPGuD6",
+          "name": "Bag of Sand"
+        },
+        "drop": [
+          {
+            "line": 956,
+            "score": 73,
+            "id": "f3eF8EYq1rkqFwDP",
+            "name": "Bag of Sand"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "irtqrzauceshmtzp",
+          "identifier": "vestments",
+          "name": "Vestments",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 673,
+          "score": 77,
+          "id": "irtqrzaUCeshmTZp",
+          "name": "Vestments"
+        },
+        "drop": [
+          {
+            "line": 965,
+            "score": 77,
+            "id": "mE6rsbIJXAd4tr4e",
+            "name": "Vestments"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "l794iywhk8wc6uvi",
+          "identifier": "book-of-lore",
+          "name": "Book of Lore",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 703,
+          "score": 76,
+          "id": "l794iywHk8Wc6Uvi",
+          "name": "Book of Lore"
+        },
+        "drop": [
+          {
+            "line": 929,
+            "score": 76,
+            "id": "Bt7nIb37nU7Wxevx",
+            "name": "Book of Lore"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "mckdf0p09wo5hmqx",
+          "identifier": "cloves",
+          "name": "Cloves",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 721,
+          "score": 80,
+          "id": "mCKdF0P09Wo5hmqx",
+          "name": "Cloves"
+        },
+        "drop": [
+          {
+            "line": 1325,
+            "score": 80,
+            "id": "u753EokyA4vjksle",
+            "name": "Cloves"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "mxevblocdspn0to7",
+          "identifier": "pig",
+          "name": "Pig",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 725,
+          "score": 85,
+          "id": "mXeVbLoCdSpN0tO7",
+          "name": "Pig"
+        },
+        "drop": [
+          {
+            "line": 1317,
+            "score": 85,
+            "id": "YJ2pBio6uEg5vhgN",
+            "name": "Pig"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "nhjttimipva0yw0p",
+          "identifier": "saffron",
+          "name": "Saffron",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 745,
+          "score": 83,
+          "id": "nhJTtimIPVa0Yw0p",
+          "name": "Saffron"
+        },
+        "drop": [
+          {
+            "line": 1309,
+            "score": 83,
+            "id": "Mrmkw4uaWX6UKpbn",
+            "name": "Saffron"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "oin4zuci02b8nfdu",
+          "identifier": "ginger",
+          "name": "Ginger",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 753,
+          "score": 77,
+          "id": "oIn4ZUCI02B8NfdU",
+          "name": "Ginger"
+        },
+        "drop": [
+          {
+            "line": 1313,
+            "score": 77,
+            "id": "VcHmykfFBurKzCO6",
+            "name": "Ginger"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "puwukjk3wagiahnu",
+          "identifier": "pepper",
+          "name": "Pepper",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 770,
+          "score": 77,
+          "id": "pUwuKJk3wAgiAhNU",
+          "name": "Pepper"
+        },
+        "drop": [
+          {
+            "line": 1303,
+            "score": 77,
+            "id": "8SQ7vyE6gevpfJvn",
+            "name": "Pepper"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "pciwvfpeejxrpbje",
+          "identifier": "platinum",
+          "name": "Platinum",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 772,
+          "score": 76,
+          "id": "pcIwvfpEEjXRpBJe",
+          "name": "Platinum"
+        },
+        "drop": [
+          {
+            "line": 1306,
+            "score": 76,
+            "id": "Eyl9QYZcM9CYIqbA",
+            "name": "Platinum"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "psozaitkoscmvahl",
+          "identifier": "oil-flask",
+          "name": "Oil Flask",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 773,
+          "score": 94,
+          "id": "psoZaItkOScMVaHL",
+          "name": "Oil Flask"
+        },
+        "drop": [
+          {
+            "line": 957,
+            "score": 94,
+            "id": "j01YDOu2AolsRvdN",
+            "name": "Oil Flask"
+          },
+          {
+            "line": 958,
+            "score": 94,
+            "id": "jDTM1RjtZMu9YYL9",
+            "name": "Oil Flask"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "qbydtuuikv520dt7",
+          "identifier": "lute",
+          "name": "Lute",
+          "type": "tool"
+        },
+        "keep": {
+          "line": 777,
+          "score": 80,
+          "id": "qBydtUUIkv520DT7",
+          "name": "Lute"
+        },
+        "drop": [
+          {
+            "line": 860,
+            "score": 80,
+            "id": "vp4KpqdSfg3cvfCS",
+            "name": "Lute"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "qmzhmlmha8qmdnef",
+          "identifier": "lamp",
+          "name": "Lamp",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 781,
+          "score": 74,
+          "id": "qMzHmlmha8qMDnEF",
+          "name": "Lamp"
+        },
+        "drop": [
+          {
+            "line": 975,
+            "score": 74,
+            "id": "vmymwrmE730l3pKh",
+            "name": "Lamp"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "sss3hszkkbmnbgts",
+          "identifier": "shield",
+          "name": "Shield",
+          "type": "equipment"
+        },
+        "keep": {
+          "line": 810,
+          "score": 77,
+          "id": "sSs3hSzkKBMNBgTs",
+          "name": "Shield"
+        },
+        "drop": [
+          {
+            "line": 898,
+            "score": 77,
+            "id": "ypmzVapk7guDIqx4",
+            "name": "Shield"
+          },
+          {
+            "line": 1297,
+            "score": 77,
+            "id": "z1mx84ONwkXKUZd7",
+            "name": "Shield"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "trmwaduor6y2b7ra",
+          "identifier": "hooded-lantern",
+          "name": "Hooded Lantern",
+          "type": "consumable"
+        },
+        "keep": {
+          "line": 837,
+          "score": 77,
+          "id": "trmWAdUoR6Y2B7rA",
+          "name": "Hooded Lantern"
+        },
+        "drop": [
+          {
+            "line": 976,
+            "score": 77,
+            "id": "wjHtGnd05SPdURqE",
+            "name": "Hooded Lantern"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "uvm7mib71qblfnoy",
+          "identifier": "ink-pen",
+          "name": "Ink Pen",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 848,
+          "score": 75,
+          "id": "uVm7MiB71QblfnoY",
+          "name": "Ink Pen"
+        },
+        "drop": [
+          {
+            "line": 924,
+            "score": 75,
+            "id": "8Fe9YSSe4ymQq8UM",
+            "name": "Ink Pen"
+          },
+          {
+            "line": 982,
+            "score": 75,
+            "id": "ybeLtyIloDvKhDz8",
+            "name": "Ink Pen"
+          }
+        ]
+      },
+      {
+        "category": "identifier",
+        "key": {
+          "id": "uuh4uh3jx5csfjda",
+          "identifier": "perfume",
+          "name": "Perfume",
+          "type": "loot"
+        },
+        "keep": {
+          "line": 853,
+          "score": 76,
+          "id": "uuh4UH3Jx5CsFjdA",
+          "name": "Perfume"
+        },
+        "drop": [
+          {
+            "line": 944,
+            "score": 76,
+            "id": "LECtCKWa0mt0Vy1U",
+            "name": "Perfume"
+          }
+        ]
+      }
+    ],
+    "backup": ""
+  },
+  "parseErrors": []
+}

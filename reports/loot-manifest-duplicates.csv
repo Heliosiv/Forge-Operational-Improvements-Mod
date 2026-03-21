@@ -1,0 +1,209 @@
+category,key_id,key_identifier,key_name,key_type,decision,line,score,id,name
+identifier,0nobbp3mmkvjlwzy,candle,Candle,consumable,keep,8,78,0NoBBP3MMkvJlwZY,Candle
+identifier,0nobbp3mmkvjlwzy,candle,Candle,consumable,drop,932,78,CNVsvqfTbtcoHiEo,Candle
+identifier,0nobbp3mmkvjlwzy,candle,Candle,consumable,drop,937,78,HgFNy16VK0iJgpFx,Candle
+identifier,0nobbp3mmkvjlwzy,candle,Candle,consumable,drop,968,78,oylFuuS3t1nqNKsM,Candle
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,keep,208,94,F5DoWePxzhxfhtK8,Potion of Lucidity
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,9,89,0XXYnoWFf7Esxf8S,Tarnished Ring
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,98,90,6kbexHjBmnE0HAPG,Powdered Silver
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,124,77,8PEJqzl5KL6eaBUQ,Jewelry
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,279,78,J9jF3TW3E5nMyWPb,Scrap Reagents
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,296,78,KTvBW6HNAMAoqEN7,Deer Hide
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,346,77,Nlkp0wLiYvwQD0Q9,Improvised Weapon
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,487,77,Y0RmODqf7ZmekBPM,Faded Ritual Herbs
+identifier,f5dowepxzhxfhtk8,new-item,Potion of Lucidity,consumable,drop,727,76,mcmslMRPq0C6m4ze,Scarlet Token
+identifier,0zbwwjfz3niaxmlw,jug,Jug,container,keep,10,77,0ZBWwjFz3nIAXMLW,Jug
+identifier,0zbwwjfz3niaxmlw,jug,Jug,container,drop,535,77,bBaH1NS1tQO0ODMk,Jug
+identifier,10zp2bu3vncuymib,longsword,Longsword,weapon,keep,13,74,10ZP2Bu3vnCuYMIB,Longsword
+identifier,10zp2bu3vncuymib,longsword,Longsword,weapon,drop,602,74,ennPTzd70YVuAo8c,Rusty Longsword
+identifier,14pnrt4szy9rgvhb,hammer,Hammer,loot,keep,14,73,14pNRT4sZy9rgvhb,Hammer
+identifier,14pnrt4szy9rgvhb,hammer,Hammer,loot,drop,966,73,nmuGH3OKdoMOwJqj,Hammer
+identifier,14pnrt4szy9rgvhb,hammer,Hammer,loot,drop,978,73,xWQopgOHbS6LjsZm,Hammer
+identifier,2ybuclkfhdl0bu4u,chest,Chest,container,keep,33,77,2YbuclKfhDL0bU4u,Chest
+identifier,2ybuclkfhdl0bu4u,chest,Chest,container,drop,914,77,zrfwOCYJXj63KcIq,Chest
+identifier,3oxueepvddcvfgfa,fine-clothes,Fine Clothes,equipment,keep,45,76,3OXueEpvDDCVfGFA,Fine Clothes
+identifier,3oxueepvddcvfgfa,fine-clothes,Fine Clothes,equipment,drop,936,76,FqFmdzIBUSxFKKfi,Fine Clothes
+identifier,3ysuip4efo26yxjr,ball-bearings,Ball Bearings,consumable,keep,50,79,3YSUIp4eFo26YxJr,Ball Bearings
+identifier,3ysuip4efo26yxjr,ball-bearings,Ball Bearings,consumable,drop,923,79,79zrBwqEp2MCJ1Bl,Ball Bearings
+identifier,3nvvahvfhsgwglkl,small-knife,Small Knife,loot,keep,56,76,3nVvaHVfHsgwGlkL,Small Knife
+identifier,3nvvahvfhsgwglkl,small-knife,Small Knife,loot,drop,930,76,C05ytVXByOG8uBAc,Small Knife
+identifier,3peb74sagpjrht0u,pitcher,Pitcher,container,keep,57,77,3pEB74SAGPJrHT0U,Pitcher
+identifier,3peb74sagpjrht0u,pitcher,Pitcher,container,drop,741,77,nXWdGtzi8DXDLLsL,Pitcher
+identifier,3ueyucfnazgkwan5,sealing-wax,Sealing Wax,loot,keep,59,73,3uEyuCfnAzGkwAn5,Sealing Wax
+identifier,3ueyucfnazgkwan5,sealing-wax,Sealing Wax,loot,drop,938,73,HqM7xtEgwV1l3HTZ,Sealing Wax
+identifier,3vo6clax5kthb7sm,handy-haversack,Handy Haversack,container,keep,60,94,3vo6ClAX5KTHb7Sm,Handy Haversack
+identifier,3vo6clax5kthb7sm,handy-haversack,Handy Haversack,container,drop,111,94,7vqs5AqI4VCmuszx,Handy Haversack
+identifier,3xej1h2pjyhd6t81,amethyst,Amethyst,loot,keep,61,76,3xEj1h2pJyhd6t81,Amethyst
+identifier,3xej1h2pjyhd6t81,amethyst,Amethyst,loot,drop,855,76,v3YmhCho5fvPiKdv,Amethyst
+identifier,419env7xp2p7xlo5,blanket,Blanket,loot,keep,62,76,419eNv7xp2p7Xlo5,Blanket
+identifier,419env7xp2p7xlo5,blanket,Blanket,loot,drop,973,76,uYniEJCeAuwUC4JY,Blanket
+identifier,4mtqkpn9qmwcfjda,quiver,Quiver,container,keep,70,77,4MtQKPn9qMWCFjDA,Quiver
+identifier,4mtqkpn9qmwcfjda,quiver,Quiver,container,drop,106,77,7MGvVY3ddwS1CsCZ,Quiver
+identifier,4sdmmy2qhzgbyw6o,potion-of-superior-healing,Greater Healing Potion,consumable,keep,74,73,4sdMmy2QhzgBYw6o,Greater Healing Potion
+identifier,4sdmmy2qhzgbyw6o,potion-of-superior-healing,Greater Healing Potion,consumable,drop,83,73,5m9ErO9In8Uc5yyf,Potion of Superior Healing
+identifier,4sdmmy2qhzgbyw6o,potion-of-superior-healing,Greater Healing Potion,consumable,drop,573,73,ddYB07GVz6m3nAiY,Healing Potion
+identifier,53f3ppoanjiptbth,barrel,Barrel,container,keep,76,77,53f3ppOanjiptBTH,Barrel
+identifier,53f3ppoanjiptbth,barrel,Barrel,container,drop,107,77,7Yqbqg5EtVW16wfT,Barrel
+identifier,5miex824umklu3xq,map-or-scroll-case,Map or Scroll Case,container,keep,84,76,5mIeX824uMklU3xq,Map or Scroll Case
+identifier,5miex824umklu3xq,map-or-scroll-case,Map or Scroll Case,container,drop,812,76,sXTLr44Pt2LzUqTe,Map or Scroll Case
+identifier,7cpuxzhmyhoholim,backpack,Backpack,container,keep,103,74,7CPuXZHmyhoHolIm,Backpack
+identifier,7cpuxzhmyhoholim,backpack,Backpack,container,drop,245,74,H8YCd689ezlD26aT,Backpack
+identifier,7cpuxzhmyhoholim,backpack,Backpack,container,drop,329,74,McTSTN1S19LyVinI,Backpack
+identifier,7ztvhyyjccooawmr,censer,Censer,loot,keep,113,75,7ztvHyYJCcOOAWmR,Censer
+identifier,7ztvhyyjccooawmr,censer,Censer,loot,drop,962,75,lg6oohwQndZT4Z0m,Censer
+identifier,asxyc0tpnyt59u96,wheat,Wheat,loot,keep,154,76,AsxYc0tPNYt59U96,Wheat
+identifier,asxyc0tpnyt59u96,wheat,Wheat,loot,drop,1316,76,WdPAGBRUWYaS0TNQ,Wheat
+identifier,bnoclunwhvvzhljl,torch,Torch,consumable,keep,163,75,BnOCLuNWhVvzHLjl,Torch
+identifier,bnoclunwhvvzhljl,torch,Torch,consumable,drop,918,75,29ZLE8PERtFVD3QU,Torch
+identifier,bnoclunwhvvzhljl,torch,Torch,consumable,drop,963,75,ltbDV5OitV0yrDFU,Torch
+identifier,c97qx98svhnmswb4,sheep,Sheep,loot,keep,167,82,C97QX98SvHnMSwB4,Sheep
+identifier,c97qx98svhnmswb4,sheep,Sheep,loot,drop,1310,82,P29EeDJQrJJXOIuK,Sheep
+identifier,cnddj8dsxvprvpxt,sack,Sack,container,keep,170,77,CNdDj8dsXVpRVpXt,Sack
+identifier,cnddj8dsxvprvpxt,sack,Sack,container,drop,841,77,twUtA4KxIgssAaNU,Sack
+identifier,dnoseavf4oh1dlwy,tinderbox,Tinderbox,loot,keep,180,77,DNOSEAvF4Oh1DlWy,Tinderbox
+identifier,dnoseavf4oh1dlwy,tinderbox,Tinderbox,loot,drop,916,77,1FSubnBpSTDmVaYV,Tinderbox
+identifier,dnoseavf4oh1dlwy,tinderbox,Tinderbox,loot,drop,931,77,CG0LhGQtc3KOAeE1,Tinderbox
+identifier,dnoseavf4oh1dlwy,tinderbox,Tinderbox,loot,drop,933,77,DSWvkerPQsusbqzJ,Tinderbox
+identifier,dnoseavf4oh1dlwy,tinderbox,Tinderbox,loot,drop,964,77,m7I2KkwIWttQSElS,Tinderbox
+identifier,dvxmyetzuvxbzaww,bedroll,Bedroll,loot,keep,183,76,DVXmyetZuvxbzAwW,Bedroll
+identifier,dvxmyetzuvxbzaww,bedroll,Bedroll,loot,drop,934,76,DxfCBU7uBoRNAnDm,Bedroll
+identifier,dvxmyetzuvxbzaww,bedroll,Bedroll,loot,drop,939,76,IGg1yAvcOyhIqzBi,Bedroll
+identifier,e2h6see6fu2tnu96,costume-clothes,Costume Clothes,equipment,keep,193,74,E2h6sEe6FU2tnU96,Costume Clothes
+identifier,e2h6see6fu2tnu96,costume-clothes,Costume Clothes,equipment,drop,974,74,ug9bTGmTTEN7JwmP,Costume Clothes
+identifier,f6gwsqjerx1u35re,bell,Bell,loot,keep,210,76,F6GwSqjErX1u35Re,Bell
+identifier,f6gwsqjerx1u35re,bell,Bell,loot,drop,942,76,KyW8s4pCgPAkgTXI,Bell
+identifier,fhs1ylofcjczp1g9,alms-box,Alms Box,container,keep,216,77,FHs1YLOFcjCzp1G9,Alms Box
+identifier,fhs1ylofcjczp1g9,alms-box,Alms Box,container,drop,623,77,g8fQZ1WyTz2bTtvA,Alms Box
+identifier,fhs1ylofcjczp1g9,alms-box,Alms Box,container,drop,954,77,ac8IamT5vDrH1ZT8,Alms Box
+identifier,fdvoaevqvutjitog,belt-of-cloud-giant-strength,Belt of Cloud Giant Strength,equipment,keep,221,76,FdvoAEVQVUtJitOG,Belt of Cloud Giant Strength
+identifier,fdvoaevqvutjitog,belt-of-cloud-giant-strength,Belt of Cloud Giant Strength,equipment,drop,341,76,NRj0lC3SM03s1YB3,Belt of Cloud Giant Strength
+identifier,gsmrwbzlijutvy1g,tankard,Tankard,container,keep,241,77,GsmRWbZLijuTVy1g,Tankard
+identifier,gsmrwbzlijutvy1g,tankard,Tankard,container,drop,854,77,uw6fINSmZ2j2o57A,Tankard
+identifier,hj20epwp2dpkyreh,vial,Vial,container,keep,248,76,HJ20EPWp2dpKyREH,Vial
+identifier,hj20epwp2dpkyreh,vial,Vial,container,drop,728,76,meJEfX3gZgtMX4x2,Vial
+identifier,hw8oepnhixjba7ip,bag-of-devouring,Bag of Devouring,container,keep,253,94,HW8oEpnhIXJBA7iP,Bag of Devouring
+identifier,hw8oepnhixjba7ip,bag-of-devouring,Bag of Devouring,container,drop,490,94,YG9QW0flem4SLL6A,Bag of Devouring
+identifier,hzp69hhynzuucipf,glass-bottle,Glass Bottle,container,keep,255,78,HZp69hhyNZUUCipF,Glass Bottle
+identifier,hzp69hhynzuucipf,glass-bottle,Glass Bottle,container,drop,356,78,Og207R4yc92DZ5Ta,Glass Bottle
+identifier,ibhdar7wkhwpylvn,disguise-kit,Disguise Kit,tool,keep,266,77,IBhDAr7WkhWPYLVn,Disguise Kit
+identifier,ibhdar7wkhwpylvn,disguise-kit,Disguise Kit,tool,drop,959,77,kj5DNiBKasYWyuj6,Disguise Kit
+identifier,icbuh7rhzfltgk8m,canvas,Canvas,loot,keep,270,79,IcBuh7RHzFltgk8M,Canvas
+identifier,icbuh7rhzfltgk8m,canvas,Canvas,loot,drop,1323,79,mFJkwdzb9IpLC3Ip,Canvas
+identifier,ix6oguafopyydfke,copper,Copper,loot,keep,277,80,Ix6OGUAfOPYYdFKE,Copper
+identifier,ix6oguafopyydfke,copper,Copper,loot,drop,1319,80,aXWzDW0huOa0WuIO,Copper
+identifier,jhdwykuxpfakuytw,goat,Goat,loot,keep,285,78,JhdWyKuXpFAKUYtW,Goat
+identifier,jhdwykuxpfakuytw,goat,Goat,loot,drop,1324,78,pMj0mA1wyEhoO6zP,Goat
+identifier,0ihvqrcbzs2s2dic,gloves-of-thievery,Gloves of Thievery,equipment,keep,1327,78,0ihVqrcBZS2S2DIC,Gloves of Thievery
+identifier,0ihvqrcbzs2s2dic,gloves-of-thievery,Gloves of Thievery,equipment,drop,297,77,KfjmEEE55O83hQdy,Gloves of Thievery
+identifier,l55zjzm8wid19gnk,silver,Silver,loot,keep,302,85,L55zjzM8wiD19gnK,Silver
+identifier,l55zjzm8wid19gnk,silver,Silver,loot,drop,1304,85,9t5X9HG9ou6YMSdJ,Silver
+identifier,lgfk7okzamkkv4qk,linen,Linen,loot,keep,313,80,LgFk7OKZAmKkV4Qk,Linen
+identifier,lgfk7okzamkkv4qk,linen,Linen,loot,drop,1307,80,Gh1JxTlM9aRGNrUH,Linen
+identifier,m2jq9hmzdqkdrmpj,iron,Iron,loot,keep,318,78,M2jQ9hMZdqKdrmpj,Iron
+identifier,m2jq9hmzdqkdrmpj,iron,Iron,loot,drop,1312,78,V3uxNwciT4Ln7S4k,Iron
+identifier,m8xm8blk4tpuayee,iron-pot,Iron Pot,container,keep,321,77,M8xM8BLK4tpUayEE,Iron Pot
+identifier,m8xm8blk4tpuayee,iron-pot,Iron Pot,container,drop,882,77,xDhs75PeUft0q7Dx,Iron Pot
+identifier,mgrhnkiqro94vcn2,efficient-quiver,Efficient Quiver,container,keep,325,87,MGrhNKiQRO94vCn2,Efficient Quiver
+identifier,mgrhnkiqro94vcn2,efficient-quiver,Efficient Quiver,container,drop,326,87,MLNzQUsVUi0PEV3i,Efficient Quiver
+identifier,pcxgyxebvqv0bs2z,silk,Silk,loot,keep,371,80,PcXGYXebvqv0BS2z,Silk
+identifier,pcxgyxebvqv0bs2z,silk,Silk,loot,drop,1321,80,jad5oFMDv21mPvJP,Silk
+identifier,qxmaarj4x8p0c1hv,hempen-rope-50-ft,Hempen Rope (50 ft.),consumable,keep,379,77,QXmaarJ4X8P0C1HV,Hempen Rope (50 ft.)
+identifier,qxmaarj4x8p0c1hv,hempen-rope-50-ft,Hempen Rope (50 ft.),consumable,drop,948,77,U5fRz04JWgNS1WvK,Hempen Rope (50 ft.)
+identifier,qxmaarj4x8p0c1hv,hempen-rope-50-ft,Hempen Rope (50 ft.),consumable,drop,955,77,bDZFQqLQE73cFB8c,Hempen Rope (50 ft.)
+identifier,qxmaarj4x8p0c1hv,hempen-rope-50-ft,Hempen Rope (50 ft.),consumable,drop,967,77,oRrNK2H2vcN4Kp74,Hempen Rope (50 ft.)
+identifier,qaqqc7v05hmih98y,bucket,Bucket,container,keep,381,76,Qaqqc7v05hmih98y,Bucket
+identifier,qaqqc7v05hmih98y,bucket,Bucket,container,drop,724,76,mQVYcHmMSoCUnBnM,Bucket
+identifier,r1j1w2xkhj5o004o,salt,Salt,loot,keep,384,73,R1J1W2xKHj5o004o,Salt
+identifier,r1j1w2xkhj5o004o,salt,Salt,loot,drop,1320,73,eDVTXE3qv28DwvPl,Salt
+identifier,rebwktke6ljaikpn,soap,Soap,loot,keep,386,76,REBWkTKe6lJaIkpn,Soap
+identifier,rebwktke6ljaikpn,soap,Soap,loot,drop,971,76,sJ9gfQnz2jdT6GAB,Soap
+identifier,tm9vmwpojbhqjzqk,chicken,Chicken,loot,keep,412,76,TM9VmwPoJBHqJzqK,Chicken
+identifier,tm9vmwpojbhqjzqk,chicken,Chicken,loot,drop,1322,76,l1YRv9sdhQPaSQop,Chicken
+identifier,tz9guwdkpz50ok9p,bag-of-holding,Bag of Holding,container,keep,415,94,TZ9gUwDKpz50OK9P,Bag of Holding
+identifier,tz9guwdkpz50ok9p,bag-of-holding,Bag of Holding,container,drop,520,94,aDHRuUs29SrumWfq,Bag of Holding
+identifier,tmfafuszjaotndn9,saddlebags,Saddlebags,container,keep,419,78,TmfaFUSZJAotndn9,Saddlebags
+identifier,tmfafuszjaotndn9,saddlebags,Saddlebags,container,drop,694,78,kQHuP8Gmu0YrJDOf,Saddlebags
+identifier,jsr8i4hojatq1ewi,incense,Incense,loot,keep,685,78,jsR8i4HOjATQ1EwI,Incense
+identifier,jsr8i4hojatq1ewi,incense,Incense,loot,drop,420,76,TniiNAWSasgVGZ5V,Incense
+identifier,tqyviglhdj5kfohr,piton,Piton,consumable,keep,422,74,TqyvIglHDj5kfohR,Piton
+identifier,tqyviglhdj5kfohr,piton,Piton,consumable,drop,945,74,P31t6tGgt9aLAdYt,Piton
+identifier,tqyviglhdj5kfohr,piton,Piton,consumable,drop,977,74,wmedRPNenLVSUaT5,Piton
+identifier,ufeoj4jtiiy0vctf,cinnamon,Cinnamon,loot,keep,427,75,UFEoJ4JtIiY0VCtF,Cinnamon
+identifier,ufeoj4jtiiy0vctf,cinnamon,Cinnamon,loot,drop,1311,75,Pn04ySJYcG06Jc4a,Cinnamon
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,keep,437,79,Uv0ilmzbWvqmlCVH,Waterskin
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,drop,917,79,1L5wkmbw0fmNAr38,Waterskin
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,drop,919,79,2cKJTN5Ki77oCrQn,Waterskin
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,drop,953,79,a8fe9d81BRW86cvP,Waterskin
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,drop,960,79,kx8DGQizmR5UI21R,Waterskin
+identifier,uv0ilmzbwvqmlcvh,waterskin,Waterskin,consumable,drop,969,79,q4RcCLeKviqgckqt,Waterskin
+identifier,v13fjv5osmvbrdgp,mess-kit,Mess Kit,loot,keep,439,74,V13fjV5oSmvbRdgP,Mess Kit
+identifier,v13fjv5osmvbrdgp,mess-kit,Mess Kit,loot,drop,961,74,lBg9CPRdpRhn4DO4,Mess Kit
+identifier,v5uajt3ed6sdntgm,crowbar,Crowbar,loot,keep,440,77,V5UAjT3ed6sDNtgm,Crowbar
+identifier,v5uajt3ed6sdntgm,crowbar,Crowbar,loot,drop,928,77,AkyQyonZMVcvOrXU,Crowbar
+identifier,v5uajt3ed6sdntgm,crowbar,Crowbar,loot,drop,981,77,yUGNrsXMfsUKwsUg,Crowbar
+identifier,veyhiaife3rifdht,cow,Cow,loot,keep,441,82,VEyHiaiFe3RIFDHT,Cow
+identifier,veyhiaife3rifdht,cow,Cow,loot,drop,1314,82,W6pJovmnVyjbk0fA,Cow
+identifier,wfqs2vt8ddrfjtjg,parchment,Parchment,loot,keep,454,76,WFQS2vT8ddrFjTJg,Parchment
+identifier,wfqs2vt8ddrfjtjg,parchment,Parchment,loot,drop,927,76,9c0CHs90xqPw81iP,Parchment
+identifier,wrunjoqzmmgt9l58,flask,Flask,container,keep,465,76,WrUnJoQZmmgt9l58,Flask
+identifier,wrunjoqzmmgt9l58,flask,Flask,container,drop,706,76,lHS63sC6bypENNlR,Flask
+identifier,wv7hzd6dv1p0q78n,basket,Basket,container,keep,466,77,Wv7HzD6dv1P0q78N,Basket
+identifier,wv7hzd6dv1p0q78n,basket,Basket,container,drop,846,77,uOzWQ8YXV3LpFnXG,Basket
+identifier,zfespo7zj7kp6ldz,ox,Ox,loot,keep,510,81,ZfESpO7Zj7Kp6Ldz,Ox
+identifier,zfespo7zj7kp6ldz,ox,Ox,loot,drop,1315,81,WCbKUQcahzQQX0pL,Ox
+identifier,azckwa0t9k4z4sb9,crossbow-bolt-case,Crossbow Bolt Case,container,keep,530,77,azCkWA0t9k4Z4Sb9,Crossbow Bolt Case
+identifier,azckwa0t9k4z4sb9,crossbow-bolt-case,Crossbow Bolt Case,container,drop,586,77,eJtPBiZtr2pp6ynt,Crossbow Bolt Case
+identifier,cfvycjincypvcdhn,flour,Flour,loot,keep,547,76,cFvYCJinCypVCDhN,Flour
+identifier,cfvycjincypvcdhn,flour,Flour,loot,drop,1305,76,CrcfT5jwcJTPTsfQ,Flour
+identifier,dp7jmkyhttgvb3ii,ink-bottle,Ink Bottle,loot,keep,566,75,dP7jMKyHTTgVb3ii,Ink Bottle
+identifier,dp7jmkyhttgvb3ii,ink-bottle,Ink Bottle,loot,drop,949,75,UICmOXUKBmHp9o4y,Ink Bottle
+identifier,dp7jmkyhttgvb3ii,ink-bottle,Ink Bottle,loot,drop,970,75,qGfu1070HAllkO4W,Ink Bottle
+identifier,ejy20los3pokrdpl,block-of-incense,Block of Incense,loot,keep,585,78,eJY20LOs3pOkRDPl,Block of Incense
+identifier,ejy20los3pokrdpl,block-of-incense,Block of Incense,loot,drop,980,78,xxRC1qTIGzGEvmkg,Block of Incense
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,keep,607,77,f4w4GxBi0nYXmhX4,Rations
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,drop,926,77,8d95YV1jHcxPygJ9,Rations
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,drop,935,77,EC6ugXsfJZmjMNAj,Rations
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,drop,941,77,JwJf6M6HCSSMgKx3,Rations
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,drop,946,77,P5UuhUBZL59wZiCY,Rations
+identifier,f4w4gxbi0nyxmhx4,rations,Rations,consumable,drop,952,77,YM4QueTsF3DL77mH,Rations
+identifier,fnmkfcovmiw2rh3t,paper,Paper,loot,keep,612,75,fNMkFCOvMiW2Rh3t,Paper
+identifier,fnmkfcovmiw2rh3t,paper,Paper,loot,drop,915,75,0huCWvOncUsme84v,Paper
+identifier,hvan2a6ukt1npgu3,gold,Gold,loot,keep,653,83,hvAn2a6ukt1NpGU3,Gold
+identifier,hvan2a6ukt1npgu3,gold,Gold,loot,drop,1308,83,HHh7Ihuk8ToxJzQX,Gold
+identifier,iahvvuzd5s0ltpsx,cotton,Cotton,loot,keep,661,78,iAhvVUZD5s0ltpSX,Cotton
+identifier,iahvvuzd5s0ltpsx,cotton,Cotton,loot,drop,1318,78,ZcAgZHJ1hhqbedLF,Cotton
+identifier,iomrrzfzfcfpgud6,bag-of-sand,Bag of Sand,loot,keep,666,73,iOMRrzfzFCfPGuD6,Bag of Sand
+identifier,iomrrzfzfcfpgud6,bag-of-sand,Bag of Sand,loot,drop,956,73,f3eF8EYq1rkqFwDP,Bag of Sand
+identifier,irtqrzauceshmtzp,vestments,Vestments,equipment,keep,673,77,irtqrzaUCeshmTZp,Vestments
+identifier,irtqrzauceshmtzp,vestments,Vestments,equipment,drop,965,77,mE6rsbIJXAd4tr4e,Vestments
+identifier,l794iywhk8wc6uvi,book-of-lore,Book of Lore,loot,keep,703,76,l794iywHk8Wc6Uvi,Book of Lore
+identifier,l794iywhk8wc6uvi,book-of-lore,Book of Lore,loot,drop,929,76,Bt7nIb37nU7Wxevx,Book of Lore
+identifier,mckdf0p09wo5hmqx,cloves,Cloves,loot,keep,721,80,mCKdF0P09Wo5hmqx,Cloves
+identifier,mckdf0p09wo5hmqx,cloves,Cloves,loot,drop,1325,80,u753EokyA4vjksle,Cloves
+identifier,mxevblocdspn0to7,pig,Pig,loot,keep,725,85,mXeVbLoCdSpN0tO7,Pig
+identifier,mxevblocdspn0to7,pig,Pig,loot,drop,1317,85,YJ2pBio6uEg5vhgN,Pig
+identifier,nhjttimipva0yw0p,saffron,Saffron,loot,keep,745,83,nhJTtimIPVa0Yw0p,Saffron
+identifier,nhjttimipva0yw0p,saffron,Saffron,loot,drop,1309,83,Mrmkw4uaWX6UKpbn,Saffron
+identifier,oin4zuci02b8nfdu,ginger,Ginger,loot,keep,753,77,oIn4ZUCI02B8NfdU,Ginger
+identifier,oin4zuci02b8nfdu,ginger,Ginger,loot,drop,1313,77,VcHmykfFBurKzCO6,Ginger
+identifier,puwukjk3wagiahnu,pepper,Pepper,loot,keep,770,77,pUwuKJk3wAgiAhNU,Pepper
+identifier,puwukjk3wagiahnu,pepper,Pepper,loot,drop,1303,77,8SQ7vyE6gevpfJvn,Pepper
+identifier,pciwvfpeejxrpbje,platinum,Platinum,loot,keep,772,76,pcIwvfpEEjXRpBJe,Platinum
+identifier,pciwvfpeejxrpbje,platinum,Platinum,loot,drop,1306,76,Eyl9QYZcM9CYIqbA,Platinum
+identifier,psozaitkoscmvahl,oil-flask,Oil Flask,consumable,keep,773,94,psoZaItkOScMVaHL,Oil Flask
+identifier,psozaitkoscmvahl,oil-flask,Oil Flask,consumable,drop,957,94,j01YDOu2AolsRvdN,Oil Flask
+identifier,psozaitkoscmvahl,oil-flask,Oil Flask,consumable,drop,958,94,jDTM1RjtZMu9YYL9,Oil Flask
+identifier,qbydtuuikv520dt7,lute,Lute,tool,keep,777,80,qBydtUUIkv520DT7,Lute
+identifier,qbydtuuikv520dt7,lute,Lute,tool,drop,860,80,vp4KpqdSfg3cvfCS,Lute
+identifier,qmzhmlmha8qmdnef,lamp,Lamp,consumable,keep,781,74,qMzHmlmha8qMDnEF,Lamp
+identifier,qmzhmlmha8qmdnef,lamp,Lamp,consumable,drop,975,74,vmymwrmE730l3pKh,Lamp
+identifier,sss3hszkkbmnbgts,shield,Shield,equipment,keep,810,77,sSs3hSzkKBMNBgTs,Shield
+identifier,sss3hszkkbmnbgts,shield,Shield,equipment,drop,898,77,ypmzVapk7guDIqx4,Shield
+identifier,sss3hszkkbmnbgts,shield,Shield,equipment,drop,1297,77,z1mx84ONwkXKUZd7,Shield
+identifier,trmwaduor6y2b7ra,hooded-lantern,Hooded Lantern,consumable,keep,837,77,trmWAdUoR6Y2B7rA,Hooded Lantern
+identifier,trmwaduor6y2b7ra,hooded-lantern,Hooded Lantern,consumable,drop,976,77,wjHtGnd05SPdURqE,Hooded Lantern
+identifier,uvm7mib71qblfnoy,ink-pen,Ink Pen,loot,keep,848,75,uVm7MiB71QblfnoY,Ink Pen
+identifier,uvm7mib71qblfnoy,ink-pen,Ink Pen,loot,drop,924,75,8Fe9YSSe4ymQq8UM,Ink Pen
+identifier,uvm7mib71qblfnoy,ink-pen,Ink Pen,loot,drop,982,75,ybeLtyIloDvKhDz8,Ink Pen
+identifier,uuh4uh3jx5csfjda,perfume,Perfume,loot,keep,853,76,uuh4UH3Jx5CsFjdA,Perfume
+identifier,uuh4uh3jx5csfjda,perfume,Perfume,loot,drop,944,76,LECtCKWa0mt0Vy1U,Perfume

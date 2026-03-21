@@ -40,6 +40,18 @@ export function registerPartyOperationsUiHooks({
     ensureLauncherUi?.();
   }
 
+  function registerEnsureHook(eventName) {
+    if (!eventName) return;
+    HooksRef.on(eventName, () => {
+      requestLauncherEnsure(eventName, { family: "ui-render" });
+      setTimeoutFn?.(() => requestLauncherEnsure(eventName, {
+        family: "ui-render",
+        deferred: true,
+        delayMs: 30
+      }), 30);
+    });
+  }
+
   HooksRef.on("getSceneControlButtons", (controls) => {
     if (!Array.isArray(controls)) return;
     if (controls.some((control) => control?.name === "party-operations")) return;
@@ -115,12 +127,6 @@ export function registerPartyOperationsUiHooks({
     }, 30);
   });
 
-  HooksRef.on("renderNavigation", () => {
-    requestLauncherEnsure("renderNavigation", { family: "ui-render" });
-    setTimeoutFn?.(() => requestLauncherEnsure("renderNavigation", {
-      family: "ui-render",
-      deferred: true,
-      delayMs: 30
-    }), 30);
-  });
+  registerEnsureHook("renderNavigation");
+  registerEnsureHook("renderSceneNavigation");
 }

@@ -29,7 +29,6 @@
                       "templates/rest-watch-shared-note.hbs",
                       "templates/settings-hub.hbs",
                       "templates/marching-order.hbs",
-                      "templates/party-operations-app.hbs",
                       "templates/rest-watch-player.hbs",
                       "templates/global-modifiers.hbs",
                       "templates/gm-factions.hbs",
