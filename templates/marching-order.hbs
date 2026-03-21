@@ -223,6 +223,7 @@
 
               <div class="po-march-formation-detail-card">
                 <div class="po-watch-total-label">Active Effects</div>
+                <div class="po-op-summary"><strong>Applied Now:</strong> Current formation + doctrine state</div>
                 <div class="po-op-summary">
                   {{#each formationSummary.effectSummaries}}
                   {{this}}{{#unless @last}}; {{/unless}}
@@ -297,11 +298,11 @@
                 <div class="po-op-summary po-formation-card-summary">{{summary}}</div>
                 <div class="po-formation-card-effects">
                   <div class="po-formation-card-effect-line">
-                    <span class="po-formation-card-effect-label is-positive">Passive +</span>
+                    <span class="po-formation-card-effect-label is-positive">{{passivePositiveLabel}}</span>
                     <span class="po-formation-card-effect-value">{{passivePositiveSummary}}</span>
                   </div>
                   <div class="po-formation-card-effect-line">
-                    <span class="po-formation-card-effect-label is-negative">Passive -</span>
+                    <span class="po-formation-card-effect-label is-negative">{{passiveNegativeLabel}}</span>
                     <span class="po-formation-card-effect-value">{{passiveNegativeSummary}}</span>
                   </div>
                 </div>

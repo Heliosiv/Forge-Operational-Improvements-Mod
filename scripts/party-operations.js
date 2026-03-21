@@ -43029,6 +43029,7 @@ async function applyMarchingFormation({ front, middle, type }) {
     if (nextFormation === "free") clearDoctrineTriggerPending(state);
     else markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
   });
+  await flushIntegrationSyncQueue("marching-formation-set");
 }
 
 async function syncMarchingOrderFromRestWatch() {
@@ -44079,6 +44080,7 @@ async function runDoctrineCheckPrompt() {
     tracker.lastCheckDc = Number(checkPayload.dc ?? 0);
     clearDoctrineTriggerPending(draft);
   });
+  await flushIntegrationSyncQueue("march-doctrine-check");
   const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
 
   const doctrinePartySummary = doctrineRows.length > 0
@@ -44940,6 +44942,8 @@ function buildMarchFormationChoiceCards(currentFormationId) {
       category: definition.category,
       categoryLabel: getMarchFormationCategoryLabel(definition.category),
       summary: definition.summary,
+      passivePositiveLabel: "Potential (Stable) +",
+      passiveNegativeLabel: "Potential (Stable) -",
       passivePositiveSummary: passiveEffects.positiveSummary,
       passiveNegativeSummary: passiveEffects.negativeSummary,
       active: definition.id === currentId,
