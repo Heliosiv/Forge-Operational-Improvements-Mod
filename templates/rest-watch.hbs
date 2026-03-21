@@ -65,6 +65,12 @@
           <div class="po-rest-settings-body">
             <div class="po-rest-settings-group">
               <div class="po-section-title">Auto-Fill</div>
+              <div class="po-op-summary {{#if autofillSummary.hasOverflow}}is-warn{{/if}}">
+                Roster {{autofillSummary.rosterCount}} | Visible Slots {{autofillSummary.visibleCapacity}}{{#if autofillSummary.hasOverflow}} | Overflow {{autofillSummary.overflowCount}}{{/if}}
+              </div>
+              {{#if autofillSummary.hasOverflow}}
+              <div class="po-op-summary is-warn">Add slots or assign manually for remaining actors.</div>
+              {{/if}}
               <button type="button" class="po-btn" data-action="autofill-party"><i class="fa-solid fa-users"></i> Fill from Active Party</button>
               <button type="button" class="po-btn" data-action="autofill-last"><i class="fa-solid fa-clock-rotate-left"></i> Fill from Last Session</button>
             </div>

@@ -14,7 +14,7 @@
 </section>
 
 <section class="po-content">
-  <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor.</div>
+  <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor. Watch planning covers assignments/coverage; downtime and loot rewards are managed in their own sections.</div>
   <div class="po-op-divider"></div>
   <section class="po-loot-claims-panel" aria-label="Loot claims">
     <div class="po-section-head-row">
@@ -157,6 +157,8 @@
           <div class="po-empty-text">Assign character(s)...</div>
         </div>
         {{/unless}}
+
+        <div class="po-slot-chip {{playerCoverageStateClass}}">Coverage: {{playerCoverageLabel}}</div>
 
         <div class="po-assign-actions">
           {{#if canAssignMe}}

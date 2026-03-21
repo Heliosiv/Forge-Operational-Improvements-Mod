@@ -13,7 +13,7 @@
       <strong>{{overview.lowDarkvisionSlots}}</strong>
     </article>
   </section>
-  <div class="po-hint">Core flow: claim your watch slot with <strong>Assign Me</strong>, then save a short note.</div>
+  <div class="po-hint">Core flow: claim your watch slot with <strong>Assign Me</strong>, then save a short note. Watch planning tracks coverage and communication; downtime and loot rewards are resolved in their own tabs.</div>
   <div class="po-op-divider"></div>
   <div class="po-cards">
     {{#each slots}}
@@ -50,6 +50,7 @@
         {{else}}
         <div class="po-empty"><div class="po-empty-text">No assignments in this slot yet.</div></div>
         {{/if}}
+        <div class="po-slot-chip {{playerCoverageStateClass}}">Coverage: {{playerCoverageLabel}}</div>
         <div class="po-assign-actions">
           {{#if canAssignMe}}
           <button type="button" class="po-btn is-primary" data-action="assign-me">Assign Me</button>
