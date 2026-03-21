@@ -45,6 +45,19 @@
       {{/each}}
     </select>
   </label>
+  {{#if downtime.submit.showSubtypeFields}}
+  <label class="po-resource-row">
+    <span>Subtype</span>
+    <select name="downtimeSubtypeKey" class="po-select" data-action="refresh-downtime-submit-selection">
+      {{#each downtime.submit.subtypeOptions}}
+      <option value="{{key}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+      {{/each}}
+    </select>
+  </label>
+  {{#if downtime.submit.selectedSubtype.guidance}}
+  <div class="po-op-summary">{{downtime.submit.selectedSubtype.guidance}}</div>
+  {{/if}}
+  {{/if}}
   <label class="po-resource-row">
     <span>Hours</span>
     <input name="downtimeHours" type="number" min="1" max="{{downtime.submit.hoursMax}}" step="1" class="po-input" value="{{downtime.submit.hours}}" />
@@ -54,6 +67,7 @@
     <textarea name="downtimeNote" rows="3" class="po-input" placeholder="Optional context for your GM">{{downtime.submit.note}}</textarea>
   </label>
   <div class="po-op-summary"><strong>Area Settings:</strong> {{downtime.submit.areaSettingsLabel}}</div>
+  <div class="po-op-summary"><strong>Stored Effects:</strong> {{downtime.submit.activeRewardEffectsSummary}}</div>
   {{#if downtime.submit.showBrowsingFields}}
   <label class="po-resource-row">
     <span>Browsing Ability</span>
@@ -200,6 +214,10 @@
         {{#if resultTierLabel}}<div class="po-op-summary">Tier: {{resultTierLabel}}</div>{{/if}}
         {{#if hasExpectedQuality}}<div class="po-op-summary">Expected Quality: {{expectedQuality}}</div>{{/if}}
         {{#if hasSuggestedTags}}<div class="po-op-summary">Suggested Tags: {{#each suggestedTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
+        {{#if hasRewardTags}}<div class="po-op-summary">Reward Tags: {{#each rewardTags}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>{{/if}}
+        {{#if hasRewardEffects}}
+        <div class="po-op-summary">Reward Effects:{{#if rewardEffects.discountPercent}} Discount {{rewardEffects.discountPercent}}%{{/if}}{{#if rewardEffects.materialsCreditGp}} | Materials Credit {{rewardEffects.materialsCreditGp}} gp{{/if}}{{#if rewardEffects.heatDelta}} | Heat +{{rewardEffects.heatDelta}}{{/if}}{{#if rewardEffects.contactTier}} | Contact {{rewardEffects.contactTier}}{{/if}}{{#if rewardEffects.reputationDelta}} | Reputation {{rewardEffects.reputationDelta}}{{/if}}</div>
+        {{/if}}
         {{#if hasPerformanceLabel}}<div class="po-op-summary">Performance: {{performanceLabel}}</div>{{/if}}
         {{#if hasCraftingStatus}}<div class="po-op-summary">{{craftingStatus}}</div>{{/if}}
       </div>

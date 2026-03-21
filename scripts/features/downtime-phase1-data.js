@@ -13,8 +13,59 @@ export const DOWNTIME_PHASE1_ACTIONS = Object.freeze([
     key: "profession",
     label: "Practicing A Profession",
     guidance: "Take paid work using a chosen profession and resolve trained or untrained performance."
+  },
+  {
+    key: "rougery",
+    label: "Rougery",
+    guidance: "Run illicit side-work for fast value at elevated social and legal risk."
+  },
+  {
+    key: "commerce",
+    label: "Commerce",
+    guidance: "Buy, sell, and broker local opportunities to secure practical deals and supply advantages."
+  },
+  {
+    key: "performing",
+    label: "Performing",
+    guidance: "Earn through public performance while building local reputation and audience ties."
+  },
+  {
+    key: "carousing",
+    label: "Carousing",
+    guidance: "Spend social downtime building contacts, rumors, and favor-based opportunities."
   }
 ]);
+
+export const DOWNTIME_PHASE1_ACTION_SUBTYPES = Object.freeze({
+  rougery: Object.freeze([
+    { key: "pickpocketing", label: "Pickpocketing", ability: "dex", guidance: "Quick thefts in crowded streets and markets." },
+    { key: "burglary", label: "Burglary", ability: "dex", guidance: "Riskier break-ins with higher upside and legal exposure." },
+    { key: "fencing", label: "Fencing", ability: "cha", guidance: "Move goods through gray-market buyers and fixers." },
+    { key: "smuggling", label: "Smuggling", ability: "cha", guidance: "Transport restricted cargo through guarded routes." },
+    { key: "confidence-scam", label: "Confidence Scam", ability: "cha", guidance: "Social deception for short-term profit." }
+  ]),
+  commerce: Object.freeze([
+    { key: "local-materials-buying", label: "Local Materials Buying", ability: "int", guidance: "Source crafting materials and negotiate local prices." },
+    { key: "trade-arbitrage", label: "Trade Arbitrage", ability: "int", guidance: "Exploit short-term market price differences." },
+    { key: "contract-brokering", label: "Contract Brokering", ability: "cha", guidance: "Connect buyers and sellers for broker margins." },
+    { key: "bulk-procurement", label: "Bulk Procurement", ability: "int", guidance: "Secure volume deals for party supply needs." },
+    { key: "auction-flipping", label: "Auction Flipping", ability: "cha", guidance: "Bid and resell high-turnover lot opportunities." }
+  ]),
+  performing: Object.freeze([
+    { key: "street-busking", label: "Street Busking", ability: "cha", guidance: "Public performances for tips and local awareness." },
+    { key: "tavern-set", label: "Tavern Set", ability: "cha", guidance: "Steady tavern crowds for coin and social leads." },
+    { key: "court-recital", label: "Court Recital", ability: "cha", guidance: "Formal performances for prestige and elite access." },
+    { key: "festival-act", label: "Festival Act", ability: "cha", guidance: "Large audience events with variable turnout." },
+    { key: "ceremonial-performance", label: "Ceremonial Performance", ability: "wis", guidance: "Ritual and solemn performances for favor and trust." }
+  ]),
+  carousing: Object.freeze([
+    { key: "common-taverns", label: "Common Taverns", ability: "con", guidance: "Grassroots socializing for rumors and local contacts." },
+    { key: "guild-halls", label: "Guild Halls", ability: "cha", guidance: "Trade networking for procurement and work leads." },
+    { key: "noble-salons", label: "Noble Salons", ability: "cha", guidance: "High-society networking with etiquette pressure." },
+    { key: "underworld-circles", label: "Underworld Circles", ability: "cha", guidance: "Criminal social circuits for risky opportunities." },
+    { key: "temple-gatherings", label: "Temple Gatherings", ability: "wis", guidance: "Faith-community ties for favors and support." }
+  ])
+});
 
 export const DOWNTIME_PHASE1_RESULT_TIERS = Object.freeze([
   "failure",

@@ -183,4 +183,21 @@ assert.equal(submittedProfessionResult.rollTotal, 13);
 assert.equal(submittedProfessionResult.tier, "success");
 assert.ok(submittedProfessionResult.gpAward > 0);
 
+const commerceResult = resolvePhase1DowntimeEntry({
+  actor: browsingActor,
+  entry: {
+    actionKey: "commerce",
+    hours: 8,
+    areaSettings: { economy: "standard", risk: "standard", discovery: "standard" },
+    actionData: { subtypeKey: "local-materials-buying" }
+  },
+  d20: 16
+});
+
+assert.equal(commerceResult.actionKey, "commerce");
+assert.equal(commerceResult.subtype?.key, "local-materials-buying");
+assert.ok(Array.isArray(commerceResult.rewardTags));
+assert.ok(commerceResult.rewardTags.includes("discount"));
+assert.ok(commerceResult.rewardEffects.discountPercent > 0);
+
 process.stdout.write("downtime phase 1 service validation passed\n");

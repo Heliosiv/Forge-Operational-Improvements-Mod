@@ -3,11 +3,13 @@ const DEFAULT_DOWNTIME_ACTION_KEY = "browsing";
 const DOWNTIME_ACTION_KEYS = new Set([
   "browsing",
   "crafting",
-  "profession"
+  "profession",
+  "rougery",
+  "commerce",
+  "performing",
+  "carousing"
 ]);
-const LEGACY_DOWNTIME_ACTION_ALIASES = Object.freeze({
-  carousing: "browsing"
-});
+const LEGACY_DOWNTIME_ACTION_ALIASES = Object.freeze({});
 
 export function clampDowntimeHours(value, fallback = DEFAULT_DOWNTIME_HOURS) {
   const fallbackHours = Number.isFinite(Number(fallback))

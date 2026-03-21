@@ -95,6 +95,13 @@ import {
   resolveDowntimeVisibleHours
 } from "./core/downtime-policy.js";
 import {
+  applyDowntimeRewardEffectsToLedger,
+  consumeDowntimeRewardEffectsForCraftingCost,
+  normalizeDowntimeRewardEffectsLedger,
+  normalizeDowntimeRewardEffectsRecord,
+  summarizeDowntimeRewardEffectsRecord
+} from "./core/downtime-effects-ledger.js";
+import {
   addCalendarDays as addCalendarDaysBridge,
   formatCalendarDateTimeLabel as formatCalendarDateTimeLabelBridge,
   getCalendarClockContext as getCalendarClockContextBridge,
@@ -244,6 +251,7 @@ import {
   getActorProficiencyBonus,
   getCraftableById,
   getDowntimePhase1ActionDefinition,
+  getPhase1ActionSubtypeDefinition,
   getProfessionById,
   normalizeBrowsingAbility,
   normalizeDowntimeResultTier,
@@ -1684,7 +1692,7 @@ const REST_WATCH_MAX_ENTRIES = 5;
 const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
 const SOCKET_ACTIVITY_TYPES = new Set(["rested", "light", "heavy", "strenuous"]);
-const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes"]);
+const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes", "moveSlot"]);
 const SOCKET_MARCH_OPS = new Set(["joinRank", "setNote"]);
 const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
 const restWatchSelectOptionsCache = new Map();
@@ -9703,7 +9711,7 @@ function bindTabListKeyboardNavigation(root) {
 }
 
 const REST_WATCH_ACTION_CONTROL_SELECTOR = "select[data-action], input[data-action], textarea[data-action]";
-const REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR = "select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']";
+const REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR = "select[name='downtimeActorId'], select[name='downtimeActionKey'], select[name='downtimeSubtypeKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']";
 const REST_WATCH_DOWNTIME_DRAFT_SELECTOR = `${REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR}, select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']`;
 
 function runRestWatchDelegatedHandlers(event, handlers = []) {
@@ -29927,6 +29935,19 @@ function normalizeDowntimeResult(result = {}) {
   const suggestedTags = Array.isArray(result?.suggestedTags)
     ? result.suggestedTags.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 8)
     : [];
+  const rewardTags = Array.isArray(result?.rewardTags)
+    ? result.rewardTags.map((entry) => String(entry ?? "").trim()).filter(Boolean).slice(0, 8)
+    : [];
+  const rewardEffectsSource = result?.rewardEffects && typeof result.rewardEffects === "object"
+    ? result.rewardEffects
+    : {};
+  const rewardEffects = {
+    discountPercent: Math.max(0, Math.floor(Number(rewardEffectsSource.discountPercent ?? 0) || 0)),
+    materialsCreditGp: Math.max(0, Math.floor(Number(rewardEffectsSource.materialsCreditGp ?? 0) || 0)),
+    heatDelta: Math.max(0, Math.floor(Number(rewardEffectsSource.heatDelta ?? 0) || 0)),
+    reputationDelta: Number.isFinite(Number(rewardEffectsSource.reputationDelta)) ? Math.floor(Number(rewardEffectsSource.reputationDelta)) : 0,
+    contactTier: String(rewardEffectsSource.contactTier ?? "").trim().toLowerCase()
+  };
   const browsing = result?.browsing && typeof result.browsing === "object"
     ? {
         ability: normalizeBrowsingAbility(result.browsing.ability ?? actionData.browsingAbility),
@@ -29958,6 +29979,14 @@ function normalizeDowntimeResult(result = {}) {
         performanceLabel: String(professionSource.performanceLabel ?? result?.performanceLabel ?? "").trim()
       }
     : null;
+  const subtypeSource = result?.subtype && typeof result.subtype === "object" ? result.subtype : {};
+  const subtype = String(subtypeSource.key ?? "").trim()
+    ? {
+        key: String(subtypeSource.key ?? "").trim(),
+        label: String(subtypeSource.label ?? "").trim(),
+        ability: normalizeDowntimeCheckAbilityKey(subtypeSource.ability, "cha")
+      }
+    : null;
   const hasClaimableRewards = gpAward > 0
     || gpCost > 0
     || rumorCount > 0
@@ -29965,6 +29994,12 @@ function normalizeDowntimeResult(result = {}) {
     || itemRewardDrops.length > 0
     || gmNotes.length > 0
     || socialContract.hasContract
+    || rewardTags.length > 0
+    || rewardEffects.discountPercent > 0
+    || rewardEffects.materialsCreditGp > 0
+    || rewardEffects.heatDelta > 0
+    || rewardEffects.reputationDelta !== 0
+    || rewardEffects.contactTier.length > 0
     || Boolean(crafting);
   return {
     id: String(result?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
@@ -29990,9 +30025,12 @@ function normalizeDowntimeResult(result = {}) {
     socialContract,
     expectedQuality,
     suggestedTags,
+    rewardTags,
+    rewardEffects,
     browsing,
     crafting,
     profession,
+    subtype,
     performanceLabel: String(result?.performanceLabel ?? profession?.performanceLabel ?? "").trim(),
     hasClaimableRewards,
     collected,
@@ -30159,6 +30197,8 @@ function ensureDowntimeState(ledger) {
     })
     .sort((a, b) => Number(b.resolvedAt ?? 0) - Number(a.resolvedAt ?? 0))
     .slice(0, 80);
+
+  downtime.rewardEffectsLedger = normalizeDowntimeRewardEffectsLedger(downtime.rewardEffectsLedger);
 
   return downtime;
 }
@@ -30549,20 +30589,39 @@ function buildDowntimeSubmissionCheckRequest(submission = {}, actor = null) {
     };
   }
 
-  const profession = getProfessionById(actionData?.professionId);
-  if (!profession) return null;
-  const abilityKey = normalizeDowntimeCheckAbilityKey(profession.checkAbility, "wis");
-  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Wisdom");
-  const trained = actorKnowsProfession(actor, profession.id, { moduleId: MODULE_ID });
+  if (actionDef.key === "profession") {
+    const profession = getProfessionById(actionData?.professionId);
+    if (!profession) return null;
+    const abilityKey = normalizeDowntimeCheckAbilityKey(profession.checkAbility, "wis");
+    const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Wisdom");
+    const trained = actorKnowsProfession(actor, profession.id, { moduleId: MODULE_ID });
+    return {
+      actionKey: actionDef.key,
+      actorId: String(actor.id ?? "").trim(),
+      actorName,
+      checkLabel: `${profession.name} Profession Check`,
+      abilityKey,
+      abilityLabel,
+      abilityMod: getActorAbilityMod(actor, abilityKey),
+      proficiencyBonus: trained ? getActorProficiencyBonus(actor) : 0,
+      actionSummary,
+      hours
+    };
+  }
+
+  const subtype = getPhase1ActionSubtypeDefinition(actionDef.key, actionData?.subtypeKey);
+  if (!subtype) return null;
+  const abilityKey = normalizeDowntimeCheckAbilityKey(subtype.ability, "cha");
+  const abilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[abilityKey] ?? "Charisma");
   return {
     actionKey: actionDef.key,
     actorId: String(actor.id ?? "").trim(),
     actorName,
-    checkLabel: `${profession.name} Profession Check`,
+    checkLabel: `${subtype.label} ${actionDef.label} Check`,
     abilityKey,
     abilityLabel,
     abilityMod: getActorAbilityMod(actor, abilityKey),
-    proficiencyBonus: trained ? getActorProficiencyBonus(actor) : 0,
+    proficiencyBonus: 0,
     actionSummary,
     hours
   };
@@ -30707,6 +30766,14 @@ function getDowntimeResolutionBase(entry = {}, downtimeState = {}) {
     hint = profession
       ? `Resolve ${profession.name} using trained or untrained logic from actor-known professions.`
       : "Select a profession before resolving.";
+  } else {
+    const subtype = getPhase1ActionSubtypeDefinition(actionDef.key, actionData?.subtypeKey);
+    summary = subtype
+      ? `${subtype.label} ${actionDef.label.toLowerCase()} will resolve subtype-based rewards.`
+      : `${actionDef.label} requires a subtype selection.`;
+    hint = subtype
+      ? `${subtype.guidance || "Resolve subtype-based rewards and tags."} Use ${String(subtype.ability ?? "cha").toUpperCase()} for check context.`
+      : "Select a subtype before resolving.";
   }
 
   return {
@@ -30867,6 +30934,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const itemRewardDrops = normalizeDowntimeItemRewardDrops(result?.itemRewardDrops ?? []);
     const gmNotes = String(result?.gmNotes ?? "");
     const socialContract = normalizeDowntimeSocialContract(result?.socialContract ?? {}, actionDef.key);
+    const rewardTags = Array.isArray(result?.rewardTags) ? result.rewardTags : [];
+    const rewardEffects = result?.rewardEffects && typeof result.rewardEffects === "object"
+      ? result.rewardEffects
+      : { discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0, contactTier: "" };
     const isCollected = result?.collected === true;
     const collectedAt = Number(result?.collectedAt ?? 0);
     const collectedAtLabel = collectedAt > 0 ? new Date(collectedAt).toLocaleString() : "";
@@ -30880,6 +30951,11 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
     if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
     if (itemRewardDrops.length > 0) rewardParts.push(`${itemRewardDrops.length} crafted item drop(s)`);
+    if (rewardEffects.discountPercent > 0) rewardParts.push(`Discount ${rewardEffects.discountPercent}%`);
+    if (rewardEffects.materialsCreditGp > 0) rewardParts.push(`Materials credit ${rewardEffects.materialsCreditGp} gp`);
+    if (rewardEffects.heatDelta > 0) rewardParts.push(`Heat +${rewardEffects.heatDelta}`);
+    if (rewardEffects.reputationDelta !== 0) rewardParts.push(`Reputation ${rewardEffects.reputationDelta > 0 ? "+" : ""}${rewardEffects.reputationDelta}`);
+    if (String(rewardEffects.contactTier ?? "").trim()) rewardParts.push(`Contact ${rewardEffects.contactTier}`);
     if (socialContract.hasContract) rewardParts.push(`Connection: ${socialContract.label}`);
     if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
     return {
@@ -30937,6 +31013,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       hasExpectedQuality: String(result?.expectedQuality ?? "").trim().length > 0,
       suggestedTags: Array.isArray(result?.suggestedTags) ? result.suggestedTags : [],
       hasSuggestedTags: Array.isArray(result?.suggestedTags) && result.suggestedTags.length > 0,
+      rewardTags,
+      hasRewardTags: rewardTags.length > 0,
+      rewardEffects,
+      hasRewardEffects: rewardEffects.discountPercent > 0
+        || rewardEffects.materialsCreditGp > 0
+        || rewardEffects.heatDelta > 0
+        || rewardEffects.reputationDelta !== 0
+        || String(rewardEffects.contactTier ?? "").trim().length > 0,
       performanceLabel: String(result?.performanceLabel ?? ""),
       hasPerformanceLabel: String(result?.performanceLabel ?? "").trim().length > 0,
       craftingStatus: result?.crafting
@@ -31026,6 +31110,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         const itemRewardDrops = normalizeDowntimeItemRewardDrops(normalized.itemRewardDrops ?? []);
         const gmNotes = String(normalized.gmNotes ?? "");
         const socialContract = normalizeDowntimeSocialContract(normalized.socialContract ?? {}, normalized.actionKey);
+        const rewardTags = Array.isArray(normalized.rewardTags) ? normalized.rewardTags : [];
+        const rewardEffects = normalized?.rewardEffects && typeof normalized.rewardEffects === "object"
+          ? normalized.rewardEffects
+          : { discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0, contactTier: "" };
         const collectedAt = Number(normalized.collectedAt ?? 0);
         const rewardParts = [];
         if (gpAward > 0) rewardParts.push(`+${gpAward} gp`);
@@ -31033,6 +31121,11 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         if (rumorCount > 0) rewardParts.push(`${rumorCount} rumor/lead`);
         if (itemRewards.length > 0) rewardParts.push(`${itemRewards.length} item reward(s)`);
         if (itemRewardDrops.length > 0) rewardParts.push(`${itemRewardDrops.length} crafted item drop(s)`);
+        if (rewardEffects.discountPercent > 0) rewardParts.push(`Discount ${rewardEffects.discountPercent}%`);
+        if (rewardEffects.materialsCreditGp > 0) rewardParts.push(`Materials credit ${rewardEffects.materialsCreditGp} gp`);
+        if (rewardEffects.heatDelta > 0) rewardParts.push(`Heat +${rewardEffects.heatDelta}`);
+        if (rewardEffects.reputationDelta !== 0) rewardParts.push(`Reputation ${rewardEffects.reputationDelta > 0 ? "+" : ""}${rewardEffects.reputationDelta}`);
+        if (String(rewardEffects.contactTier ?? "").trim()) rewardParts.push(`Contact ${rewardEffects.contactTier}`);
         if (socialContract.hasContract) rewardParts.push(`Connection: ${socialContract.label}`);
         if (gmNotes.trim().length > 0) rewardParts.push("GM notes");
         return {
@@ -31069,6 +31162,14 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
           hasExpectedQuality: String(normalized.expectedQuality ?? "").trim().length > 0,
           suggestedTags: Array.isArray(normalized.suggestedTags) ? normalized.suggestedTags : [],
           hasSuggestedTags: Array.isArray(normalized.suggestedTags) && normalized.suggestedTags.length > 0,
+          rewardTags,
+          hasRewardTags: rewardTags.length > 0,
+          rewardEffects,
+          hasRewardEffects: rewardEffects.discountPercent > 0
+            || rewardEffects.materialsCreditGp > 0
+            || rewardEffects.heatDelta > 0
+            || rewardEffects.reputationDelta !== 0
+            || String(rewardEffects.contactTier ?? "").trim().length > 0,
           performanceLabel: String(normalized.performanceLabel ?? ""),
           hasPerformanceLabel: String(normalized.performanceLabel ?? "").trim().length > 0,
           craftingStatus: normalized?.crafting
@@ -31211,6 +31312,10 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     moduleId: MODULE_ID
   });
   const selectedCraftable = submitActionDetails.selectedCraftable;
+  const selectedActorRewardEffectsRecord = normalizeDowntimeRewardEffectsRecord(
+    downtimeState?.rewardEffectsLedger?.byActor?.[resolvedSubmitActorId]
+  );
+  const selectedActorRewardEffectsSummary = summarizeDowntimeRewardEffectsRecord(selectedActorRewardEffectsRecord);
   const activeCraftingProject = submitActionDetails.craftingProject;
   const selectedProfession = submitActionDetails.selectedProfession;
   const hasCraftingOptions = submitActionDetails.craftingCategoryViews.some((category) => Array.isArray(category.items) && category.items.length > 0);
@@ -31306,6 +31411,9 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       showBrowsingFields: submitActionDetails.showBrowsingFields,
       showCraftingFields: submitActionDetails.showCraftingFields,
       showProfessionFields: submitActionDetails.showProfessionFields,
+      showSubtypeFields: submitActionDetails.showSubtypeFields,
+      subtypeOptions: submitActionDetails.subtypeOptions,
+      selectedSubtype: submitActionDetails.selectedSubtype,
       browsingAbilityOptions: submitActionDetails.browsingAbilityOptions,
       craftingCategoryViews: submitActionDetails.craftingCategoryViews,
       craftingCatalogCategoryViews: submitActionDetails.craftingCatalogCategoryViews,
@@ -31331,6 +31439,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         : "",
       selectedProfessionName: String(selectedProfession?.name ?? ""),
       selectedProfessionKnown: selectedProfession ? actorKnowsProfession(submitActor, selectedProfession.id, { moduleId: MODULE_ID }) : false,
+      activeRewardEffects: selectedActorRewardEffectsRecord,
+      activeRewardEffectsSummary: selectedActorRewardEffectsSummary,
       disabledReason: canSubmit
         ? ""
         : "Waiting for GM to publish granted downtime hours."
@@ -32367,6 +32477,7 @@ function readDowntimeSubmissionFromUi(element) {
   return {
     actorId,
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
+    subtypeKey: String(root.querySelector("select[name='downtimeSubtypeKey']")?.value ?? "").trim(),
     hours: Number(root.querySelector("input[name='downtimeHours']")?.value ?? 0),
     note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? ""),
     browsingAbility: String(root.querySelector("select[name='downtimeBrowsingAbility']")?.value ?? "").trim(),
@@ -33349,7 +33460,34 @@ async function applyDowntimeCollectionForUser(user, actorId) {
   if (result.collected) return { ok: false, message: "This downtime reward was already collected." };
 
   const gpAward = Math.max(0, Math.floor(Number(result.gpAward ?? Math.max(0, Number(result.gpDelta ?? 0) || 0)) || 0));
-  const gpCost = Math.max(0, Math.floor(Number(result.gpCost ?? Math.max(0, -(Number(result.gpDelta ?? 0) || 0))) || 0));
+  const baseGpCost = Math.max(0, Math.floor(Number(result.gpCost ?? Math.max(0, -(Number(result.gpDelta ?? 0) || 0))) || 0));
+  let gpCost = baseGpCost;
+  let rewardEffectsConsumed = {
+    discountPercent: 0,
+    discountGp: 0,
+    materialsCreditGp: 0,
+    baseGpCost,
+    effectiveGpCost: baseGpCost
+  };
+  if (result.actionKey === "crafting" && baseGpCost > 0) {
+    const consumptionPreview = consumeDowntimeRewardEffectsForCraftingCost(
+      downtime.rewardEffectsLedger,
+      actor.id,
+      {
+        baseGpCost,
+        allowDiscount: true,
+        allowMaterialsCredit: true,
+        now: Date.now()
+      }
+    );
+    gpCost = Math.max(0, Number(consumptionPreview.effectiveGpCost ?? baseGpCost) || baseGpCost);
+    rewardEffectsConsumed = {
+      ...rewardEffectsConsumed,
+      ...consumptionPreview.consumed,
+      baseGpCost: consumptionPreview.baseGpCost,
+      effectiveGpCost: consumptionPreview.effectiveGpCost
+    };
+  }
   const itemRewardDrops = normalizeDowntimeItemRewardDrops(result.itemRewardDrops ?? []);
   const gpBefore = getActorCurrentGp(actor);
   if (gpCost > gpBefore) {
@@ -33360,12 +33498,18 @@ async function applyDowntimeCollectionForUser(user, actorId) {
   }
 
   const socialContract = normalizeDowntimeSocialContract(result.socialContract ?? {}, result.actionKey);
+  const rewardEffects = result?.rewardEffects && typeof result.rewardEffects === "object"
+    ? result.rewardEffects
+    : { discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0, contactTier: "" };
   const now = Date.now();
   const collectorName = String(user?.name ?? "Player");
   const gpAfter = Math.max(0, gpBefore - gpCost + gpAward);
   let gpUpdated = false;
   let featureOutcome = { ok: true, created: false, item: null, contract: socialContract };
   let itemDropOutcome = { ok: true, createdItems: [], itemNames: [] };
+  let effectLedgerRecord = normalizeDowntimeRewardEffectsRecord({});
+  let effectDelta = { discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0, contactTier: "" };
+  let consumedEffects = { ...rewardEffectsConsumed };
 
   try {
     if (gpAfter !== gpBefore) {
@@ -33431,6 +33575,34 @@ async function applyDowntimeCollectionForUser(user, actorId) {
       collectedAt: now,
       collectedBy: collectorName
     });
+    if (normalizedResult.actionKey === "crafting" && baseGpCost > 0) {
+      const consumeApply = consumeDowntimeRewardEffectsForCraftingCost(
+        state.rewardEffectsLedger,
+        actor.id,
+        {
+          baseGpCost,
+          allowDiscount: true,
+          allowMaterialsCredit: true,
+          now
+        }
+      );
+      state.rewardEffectsLedger = consumeApply.ledger;
+      consumedEffects = {
+        ...consumedEffects,
+        ...consumeApply.consumed,
+        baseGpCost: consumeApply.baseGpCost,
+        effectiveGpCost: consumeApply.effectiveGpCost
+      };
+    }
+    const effectApply = applyDowntimeRewardEffectsToLedger(
+      state.rewardEffectsLedger,
+      actor.id,
+      normalizedResult.rewardEffects,
+      now
+    );
+    state.rewardEffectsLedger = effectApply.ledger;
+    effectLedgerRecord = effectApply.record;
+    effectDelta = effectApply.appliedDelta;
     const queue = Array.isArray(currentEntry.queue) ? currentEntry.queue : [];
     if (queue.length > 0) {
       const nextActive = queue.shift();
@@ -33481,6 +33653,7 @@ async function applyDowntimeCollectionForUser(user, actorId) {
     ok: true,
     actorName: String(actor.name ?? "Actor"),
     gpAwarded: gpAward,
+    gpCostBase: baseGpCost,
     gpSpent: gpCost,
     gpNet: gpAward - gpCost,
     gpBefore,
@@ -33499,7 +33672,11 @@ async function applyDowntimeCollectionForUser(user, actorId) {
       notes: socialContract.notes,
       featureItemId: connectionFeatureId,
       featureItemName: connectionFeatureName
-    }
+    },
+    rewardEffectsApplied: effectDelta,
+    rewardEffectsConsumed: consumedEffects,
+    rewardEffectsLedger: effectLedgerRecord,
+    rewardEffectsLedgerSummary: summarizeDowntimeRewardEffectsRecord(effectLedgerRecord)
   };
 }
 
@@ -33523,6 +33700,31 @@ function getDowntimeCollectionSummary(outcome = {}) {
   if (items.length > 0) parts.push(`${items.length} item reward(s)`);
   if (craftedItems.length > 0) parts.push(`${craftedItems.length} crafted item(s) added`);
   if (socialContract?.hasContract) parts.push(socialContractFeatureName || `connection added: ${socialContractLabel || "Social Contract"}`);
+  const consumedEffects = outcome?.rewardEffectsConsumed && typeof outcome.rewardEffectsConsumed === "object"
+    ? outcome.rewardEffectsConsumed
+    : null;
+  if (consumedEffects) {
+    const consumeParts = [];
+    if (Number(consumedEffects.discountGp ?? 0) > 0) {
+      consumeParts.push(`discount used ${Math.floor(Number(consumedEffects.discountGp) || 0)} gp (${Math.floor(Number(consumedEffects.discountPercent) || 0)}%)`);
+    }
+    if (Number(consumedEffects.materialsCreditGp ?? 0) > 0) {
+      consumeParts.push(`materials credit used ${Math.floor(Number(consumedEffects.materialsCreditGp) || 0)} gp`);
+    }
+    if (consumeParts.length > 0) parts.push(consumeParts.join(" | "));
+  }
+  const appliedEffects = outcome?.rewardEffectsApplied && typeof outcome.rewardEffectsApplied === "object"
+    ? outcome.rewardEffectsApplied
+    : null;
+  if (appliedEffects) {
+    const appliedParts = [];
+    if (Number(appliedEffects.discountPercent ?? 0) > 0) appliedParts.push(`discount +${Math.floor(Number(appliedEffects.discountPercent) || 0)}%`);
+    if (Number(appliedEffects.materialsCreditGp ?? 0) > 0) appliedParts.push(`materials credit +${Math.floor(Number(appliedEffects.materialsCreditGp) || 0)} gp`);
+    if (Number(appliedEffects.heatDelta ?? 0) > 0) appliedParts.push(`heat +${Math.floor(Number(appliedEffects.heatDelta) || 0)}`);
+    if (Number(appliedEffects.reputationDelta ?? 0) !== 0) appliedParts.push(`reputation ${Number(appliedEffects.reputationDelta) > 0 ? "+" : ""}${Math.floor(Number(appliedEffects.reputationDelta) || 0)}`);
+    if (String(appliedEffects.contactTier ?? "").trim()) appliedParts.push(`contact ${String(appliedEffects.contactTier).trim()}`);
+    if (appliedParts.length > 0) parts.push(`effects: ${appliedParts.join(", ")}`);
+  }
   if (hasNotes) parts.push("GM notes reviewed");
   if (parts.length === 0) return "Rewards marked as collected.";
   return parts.join(" | ");
@@ -45628,7 +45830,6 @@ function canUserControlActor(actor, user = game.user) {
 }
 
 function canDragEntry(actorId, isGM, locked) {
-  if (!isGM) return false;
   return true;
 }
 

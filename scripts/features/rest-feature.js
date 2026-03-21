@@ -83,6 +83,12 @@ export function normalizeSocketRestRequest(request, deps = {}) {
     };
   }
 
+  if (op === "moveSlot") {
+    const fromSlotId = sanitizeSocketIdentifier(request.fromSlotId, { maxLength: 64 });
+    if (!fromSlotId) return null;
+    return { op, actorId, slotId, fromSlotId };
+  }
+
   return { op, slotId, actorId };
 }
 
@@ -194,6 +200,32 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
+    return;
+  }
+
+  if (request.op === "moveSlot") {
+    if (!requesterCanControlActor) return;
+    const sourceSlot = state.slots.find((s) => s.id === request.fromSlotId);
+    if (!sourceSlot) return;
+    ensureRestSlotEntries(sourceSlot);
+    const entryIndex = sourceSlot.entries.findIndex((e) => e.actorId === request.actorId);
+    if (entryIndex === -1) return;
+    const [movedEntry] = sourceSlot.entries.splice(entryIndex, 1);
+    normalizeRestSlotEntries(sourceSlot);
+    const targetSlot = state.slots.find((s) => s.id === request.slotId);
+    if (!targetSlot) return;
+    ensureRestSlotEntries(targetSlot);
+    if (restSlotHasActor(targetSlot, request.actorId)) return;
+    if ((targetSlot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES) return;
+    const position = getNextOpenRestSlotPosition(targetSlot);
+    if (position === -1) return;
+    targetSlot.entries.push({ actorId: request.actorId, notes: movedEntry?.notes ?? "", position });
+    normalizeRestSlotEntries(targetSlot);
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.REST });
+    emitSocketRefresh({ scope: refreshScopeKeys.REST });
   }
 }
 
@@ -203,14 +235,12 @@ export function setupRestWatchDragAndDrop(html, deps = {}) {
     canAccessAllPlayerOps,
     isLockedForUser,
     updateRestWatchState,
-    ensureRestSlotEntriesList,
-    addActorToRestSlot,
     refreshRestWatchAppsImmediately
   } = deps;
 
   const state = getRestWatchState();
   const isGM = canAccessAllPlayerOps();
-  if (!isGM || isLockedForUser(state, isGM)) return;
+  if (isLockedForUser(state, isGM)) return;
 
   html.querySelectorAll(".po-watch-entry").forEach((entry) => {
     const actorId = entry.dataset.actorId;
@@ -259,18 +289,7 @@ export function setupRestWatchDragAndDrop(html, deps = {}) {
       if (!actorId || !fromSlotId || !targetSlotId) return;
       if (fromSlotId === targetSlotId) return;
 
-      await updateRestWatchState((state) => {
-        const slots = state.slots ?? [];
-        const source = slots.find((slot) => slot.id === fromSlotId);
-        if (source) {
-          ensureRestSlotEntriesList(source);
-          source.entries = source.entries.filter((entry) => entry.actorId !== actorId);
-        }
-
-        const target = slots.find((slot) => slot.id === targetSlotId);
-        if (!target) return;
-        addActorToRestSlot(target, actorId);
-      }, { skipLocalRefresh: true });
+      await updateRestWatchState({ op: "moveSlot", actorId, fromSlotId, slotId: targetSlotId }, { skipLocalRefresh: true });
 
       refreshRestWatchAppsImmediately();
     });

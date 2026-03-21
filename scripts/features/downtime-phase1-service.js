@@ -2,6 +2,7 @@ import {
   DOWNTIME_AREA_DISCOVERY_OPTIONS,
   DOWNTIME_AREA_ECONOMY_OPTIONS,
   DOWNTIME_AREA_RISK_OPTIONS,
+  DOWNTIME_PHASE1_ACTION_SUBTYPES,
   DOWNTIME_BROWSING_ABILITY_OPTIONS,
   DOWNTIME_CRAFTING_CATEGORIES,
   DOWNTIME_CRAFTABLES,
@@ -26,6 +27,92 @@ const ABILITY_KEYS = new Set(["str", "dex", "con", "int", "wis", "cha"]);
 
 const CRAFTABLES_BY_ID = new Map(DOWNTIME_CRAFTABLES.map((entry) => [entry.id, entry]));
 const PROFESSIONS_BY_ID = new Map(DOWNTIME_PROFESSIONS.map((entry) => [entry.id, entry]));
+const ACTION_SUBTYPES_BY_ACTION = new Map(
+  Object.entries(DOWNTIME_PHASE1_ACTION_SUBTYPES ?? {}).map(([actionKey, entries]) => [
+    String(actionKey ?? "").trim().toLowerCase(),
+    Array.isArray(entries) ? entries : []
+  ])
+);
+const SUBTYPE_ENTRY_LOOKUP = new Map(
+  Array.from(ACTION_SUBTYPES_BY_ACTION.entries()).flatMap(([actionKey, entries]) =>
+    entries.map((entry) => [`${actionKey}.${String(entry?.key ?? "").trim().toLowerCase()}`, entry])
+  )
+);
+const ACTION_OUTCOME_PROFILES = Object.freeze({
+  rougery: Object.freeze({
+    baseDc: 13,
+    tierGp: Object.freeze({ failure: 1, success: 3, "strong-success": 5, "exceptional-success": 8 }),
+    tierRumors: Object.freeze({ failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }),
+    quality: Object.freeze({
+      failure: "The attempt attracts trouble with limited immediate payoff.",
+      success: "The job lands a usable return with manageable fallout.",
+      "strong-success": "The run pays well and opens a profitable angle.",
+      "exceptional-success": "A standout score with high-value momentum."
+    }),
+    baseTags: Object.freeze(["illicit opportunity", "heat"])
+  }),
+  commerce: Object.freeze({
+    baseDc: 12,
+    tierGp: Object.freeze({ failure: 1, success: 2, "strong-success": 4, "exceptional-success": 6 }),
+    tierRumors: Object.freeze({ failure: 0, success: 0, "strong-success": 0, "exceptional-success": 1 }),
+    quality: Object.freeze({
+      failure: "The market move underperforms and mostly preserves position.",
+      success: "A practical deal closes with modest value.",
+      "strong-success": "A strong commercial window produces above-average value.",
+      "exceptional-success": "An exceptional deal secures premium margins and supply leverage."
+    }),
+    baseTags: Object.freeze(["deal", "materials edge"])
+  }),
+  performing: Object.freeze({
+    baseDc: 11,
+    tierGp: Object.freeze({ failure: 1, success: 3, "strong-success": 5, "exceptional-success": 7 }),
+    tierRumors: Object.freeze({ failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }),
+    quality: Object.freeze({
+      failure: "The performance has limited reception and weak audience carryover.",
+      success: "The set earns steady coin and a useful local lead.",
+      "strong-success": "The show lands strongly with visible social traction.",
+      "exceptional-success": "A breakout performance draws major attention and opportunities."
+    }),
+    baseTags: Object.freeze(["audience", "reputation"])
+  }),
+  carousing: Object.freeze({
+    baseDc: 12,
+    tierGp: Object.freeze({ failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }),
+    tierRumors: Object.freeze({ failure: 0, success: 1, "strong-success": 2, "exceptional-success": 2 }),
+    quality: Object.freeze({
+      failure: "The social effort burns time without meaningful leverage.",
+      success: "You secure a modest lead and one actionable social angle.",
+      "strong-success": "You gain multiple useful links and rumor leverage.",
+      "exceptional-success": "You build high-value social momentum with repeatable access."
+    }),
+    baseTags: Object.freeze(["contact", "social lead"])
+  })
+});
+const SUBTYPE_OUTCOME_RULES = Object.freeze({
+  "rougery.pickpocketing": { dc: 13, gp: { failure: 1, success: 3, "strong-success": 5, "exceptional-success": 8 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["heat"], success: ["coin"], "strong-success": ["coin", "underworld-lead"], "exceptional-success": ["coin", "contact", "underworld-lead"] }, effects: { failure: { heatDelta: 1 }, success: {}, "strong-success": { heatDelta: 1 }, "exceptional-success": { contactTier: "minor", heatDelta: 1 } } },
+  "rougery.burglary": { dc: 14, gp: { failure: 0, success: 4, "strong-success": 6, "exceptional-success": 9 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["legal-risk"], success: ["coin"], "strong-success": ["coin", "item-opportunity"], "exceptional-success": ["coin", "item-opportunity", "heat"] }, effects: { failure: { heatDelta: 2 }, success: { heatDelta: 1 }, "strong-success": { heatDelta: 1 }, "exceptional-success": { heatDelta: 2 } } },
+  "rougery.fencing": { dc: 12, gp: { failure: 1, success: 3, "strong-success": 5, "exceptional-success": 7 }, rumors: { failure: 0, success: 0, "strong-success": 0, "exceptional-success": 1 }, tags: { failure: ["bad-buyer"], success: ["coin"], "strong-success": ["coin", "underworld-contact"], "exceptional-success": ["coin", "underworld-contact"] }, effects: { failure: { reputationDelta: -1 }, success: {}, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "medium" } } },
+  "rougery.smuggling": { dc: 13, gp: { failure: 1, success: 3, "strong-success": 5, "exceptional-success": 7 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["heat"], success: ["coin", "materials-credit"], "strong-success": ["coin", "materials-credit"], "exceptional-success": ["coin", "materials-credit", "lead"] }, effects: { failure: { heatDelta: 1 }, success: { materialsCreditGp: 2 }, "strong-success": { materialsCreditGp: 3, heatDelta: 1 }, "exceptional-success": { materialsCreditGp: 5, heatDelta: 1 } } },
+  "rougery.confidence-scam": { dc: 12, gp: { failure: 1, success: 4, "strong-success": 6, "exceptional-success": 8 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["reputation-risk"], success: ["coin"], "strong-success": ["coin", "social-lead"], "exceptional-success": ["coin", "social-lead", "contact"] }, effects: { failure: { reputationDelta: -1 }, success: {}, "strong-success": {}, "exceptional-success": { contactTier: "minor" } } },
+
+  "commerce.local-materials-buying": { dc: 12, gp: { failure: 1, success: 2, "strong-success": 3, "exceptional-success": 4 }, rumors: { failure: 0, success: 0, "strong-success": 0, "exceptional-success": 1 }, tags: { failure: ["price-pressure"], success: ["materials-credit", "discount"], "strong-success": ["materials-credit", "discount"], "exceptional-success": ["materials-credit", "discount", "procurement-lead"] }, effects: { failure: {}, success: { discountPercent: 5, materialsCreditGp: 1 }, "strong-success": { discountPercent: 10, materialsCreditGp: 2 }, "exceptional-success": { discountPercent: 15, materialsCreditGp: 2 } } },
+  "commerce.trade-arbitrage": { dc: 12, gp: { failure: 1, success: 3, "strong-success": 4, "exceptional-success": 6 }, rumors: { failure: 0, success: 0, "strong-success": 0, "exceptional-success": 0 }, tags: { failure: ["market-shift"], success: ["coin"], "strong-success": ["coin"], "exceptional-success": ["coin", "trade-lead"] }, effects: { failure: {}, success: {}, "strong-success": {}, "exceptional-success": {} } },
+  "commerce.contract-brokering": { dc: 13, gp: { failure: 1, success: 2, "strong-success": 4, "exceptional-success": 5 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["rival-broker"], success: ["contact"], "strong-success": ["coin", "contact"], "exceptional-success": ["coin", "contact", "recurring-lead"] }, effects: { failure: {}, success: { contactTier: "minor" }, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "medium" } } },
+  "commerce.bulk-procurement": { dc: 11, gp: { failure: 1, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 0, "strong-success": 0, "exceptional-success": 0 }, tags: { failure: ["stock-delay"], success: ["materials-credit"], "strong-success": ["materials-credit", "discount"], "exceptional-success": ["materials-credit", "discount"] }, effects: { failure: {}, success: { materialsCreditGp: 2 }, "strong-success": { materialsCreditGp: 4, discountPercent: 5 }, "exceptional-success": { materialsCreditGp: 6, discountPercent: 10 } } },
+  "commerce.auction-flipping": { dc: 13, gp: { failure: 0, success: 3, "strong-success": 5, "exceptional-success": 8 }, rumors: { failure: 0, success: 0, "strong-success": 0, "exceptional-success": 1 }, tags: { failure: ["overbid"], success: ["coin"], "strong-success": ["coin"], "exceptional-success": ["coin", "collector-lead"] }, effects: { failure: {}, success: {}, "strong-success": {}, "exceptional-success": {} } },
+
+  "performing.street-busking": { dc: 11, gp: { failure: 1, success: 3, "strong-success": 4, "exceptional-success": 6 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["fatigue"], success: ["coin", "lead"], "strong-success": ["coin", "lead"], "exceptional-success": ["coin", "lead", "contact"] }, effects: { failure: {}, success: {}, "strong-success": {}, "exceptional-success": { contactTier: "minor" } } },
+  "performing.tavern-set": { dc: 11, gp: { failure: 1, success: 3, "strong-success": 5, "exceptional-success": 7 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["rowdy-crowd"], success: ["coin", "contact"], "strong-success": ["coin", "contact"], "exceptional-success": ["coin", "contact", "lodging"] }, effects: { failure: {}, success: { contactTier: "minor" }, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "minor" } } },
+  "performing.court-recital": { dc: 13, gp: { failure: 0, success: 2, "strong-success": 4, "exceptional-success": 5 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["etiquette-risk"], success: ["prestige"], "strong-success": ["prestige", "contact"], "exceptional-success": ["prestige", "contact", "invitation"] }, effects: { failure: { reputationDelta: -1 }, success: { reputationDelta: 1 }, "strong-success": { reputationDelta: 1, contactTier: "minor" }, "exceptional-success": { reputationDelta: 2, contactTier: "medium" } } },
+  "performing.festival-act": { dc: 12, gp: { failure: 1, success: 3, "strong-success": 5, "exceptional-success": 8 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["schedule-slip"], success: ["coin"], "strong-success": ["coin", "reputation"], "exceptional-success": ["coin", "reputation", "event-contact"] }, effects: { failure: {}, success: {}, "strong-success": { reputationDelta: 1 }, "exceptional-success": { reputationDelta: 2, contactTier: "minor" } } },
+  "performing.ceremonial-performance": { dc: 12, gp: { failure: 1, success: 2, "strong-success": 3, "exceptional-success": 4 }, rumors: { failure: 0, success: 0, "strong-success": 1, "exceptional-success": 1 }, tags: { failure: ["obligation"], success: ["favor"], "strong-success": ["favor", "lead"], "exceptional-success": ["favor", "contact"] }, effects: { failure: {}, success: {}, "strong-success": {}, "exceptional-success": { contactTier: "minor" } } },
+
+  "carousing.common-taverns": { dc: 11, gp: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 2 }, tags: { failure: ["minor-debt"], success: ["lead"], "strong-success": ["lead", "contact"], "exceptional-success": ["lead", "contact", "network"] }, effects: { failure: {}, success: {}, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "minor" } } },
+  "carousing.guild-halls": { dc: 12, gp: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["dues"], success: ["trade-lead"], "strong-success": ["trade-lead", "contact"], "exceptional-success": ["trade-lead", "contact", "procurement-lead"] }, effects: { failure: {}, success: {}, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "medium" } } },
+  "carousing.noble-salons": { dc: 13, gp: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["social-gaffe"], success: ["noble-lead"], "strong-success": ["noble-lead", "contact"], "exceptional-success": ["noble-lead", "contact", "invitation"] }, effects: { failure: { reputationDelta: -1 }, success: {}, "strong-success": { contactTier: "minor" }, "exceptional-success": { contactTier: "medium" } } },
+  "carousing.underworld-circles": { dc: 13, gp: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 2 }, tags: { failure: ["heat"], success: ["underworld-lead"], "strong-success": ["underworld-lead", "contact"], "exceptional-success": ["underworld-lead", "contact", "opportunity"] }, effects: { failure: { heatDelta: 1 }, success: { heatDelta: 1 }, "strong-success": { heatDelta: 1, contactTier: "minor" }, "exceptional-success": { heatDelta: 1, contactTier: "medium" } } },
+  "carousing.temple-gatherings": { dc: 11, gp: { failure: 0, success: 1, "strong-success": 2, "exceptional-success": 3 }, rumors: { failure: 0, success: 1, "strong-success": 1, "exceptional-success": 2 }, tags: { failure: ["obligation"], success: ["community-lead"], "strong-success": ["community-lead", "favor"], "exceptional-success": ["community-lead", "favor", "contact"] }, effects: { failure: {}, success: {}, "strong-success": {}, "exceptional-success": { contactTier: "minor" } } }
+});
 
 function slugify(value) {
   return String(value ?? "")
@@ -86,6 +173,30 @@ export function normalizeDowntimeResultTier(value, fallback = "success") {
 export function getDowntimePhase1ActionDefinition(actionKey = "") {
   const key = normalizePhase1ActionKey(actionKey);
   return DOWNTIME_PHASE1_ACTIONS.find((entry) => entry.key === key) ?? DOWNTIME_PHASE1_ACTIONS[0];
+}
+
+export function getDowntimePhase1ActionSubtypeDefinitions(actionKey = "") {
+  const key = normalizePhase1ActionKey(actionKey);
+  return ACTION_SUBTYPES_BY_ACTION.get(key) ?? [];
+}
+
+export function normalizePhase1ActionSubtypeKey(actionKey = "", value = "", fallback = "") {
+  const normalizedActionKey = normalizePhase1ActionKey(actionKey);
+  const entries = getDowntimePhase1ActionSubtypeDefinitions(normalizedActionKey);
+  if (entries.length <= 0) return "";
+  const defaultKey = String(entries[0]?.key ?? "").trim().toLowerCase();
+  const fallbackKey = String(fallback ?? "").trim().toLowerCase() || defaultKey;
+  const normalizedValue = String(value ?? "").trim().toLowerCase();
+  const validKeys = new Set(entries.map((entry) => String(entry?.key ?? "").trim().toLowerCase()).filter(Boolean));
+  if (validKeys.has(normalizedValue)) return normalizedValue;
+  if (validKeys.has(fallbackKey)) return fallbackKey;
+  return defaultKey;
+}
+
+export function getPhase1ActionSubtypeDefinition(actionKey = "", subtypeKey = "") {
+  const normalizedActionKey = normalizePhase1ActionKey(actionKey);
+  const normalizedSubtypeKey = normalizePhase1ActionSubtypeKey(normalizedActionKey, subtypeKey);
+  return SUBTYPE_ENTRY_LOOKUP.get(`${normalizedActionKey}.${normalizedSubtypeKey}`) ?? null;
 }
 
 export function normalizePhase1AreaSettings(raw = {}, fallback = {}) {
@@ -373,11 +484,26 @@ export function normalizePhase1ActionData(actionKey, raw = {}, options = {}) {
     };
   }
 
-  const profession = getProfessionById(source.professionId ?? source.id ?? source.professionKey);
+  if (normalizedAction === "profession") {
+    const profession = getProfessionById(source.professionId ?? source.id ?? source.professionKey);
+    return {
+      professionId: String(profession?.id ?? "").trim(),
+      professionName: String(profession?.name ?? source.professionName ?? "").trim(),
+      knownProfession: profession ? actorKnowsProfession(actor, profession.id, { moduleId }) : false,
+      areaSettings
+    };
+  }
+
+  const subtypeKey = normalizePhase1ActionSubtypeKey(
+    normalizedAction,
+    source.subtypeKey ?? source.actionSubtypeKey ?? source.subtype
+  );
+  const subtypeDef = getPhase1ActionSubtypeDefinition(normalizedAction, subtypeKey);
   return {
-    professionId: String(profession?.id ?? "").trim(),
-    professionName: String(profession?.name ?? source.professionName ?? "").trim(),
-    knownProfession: profession ? actorKnowsProfession(actor, profession.id, { moduleId }) : false,
+    subtypeKey,
+    subtypeLabel: String(subtypeDef?.label ?? "").trim(),
+    subtypeAbility: String(subtypeDef?.ability ?? "").trim().toLowerCase(),
+    subtypeGuidance: String(subtypeDef?.guidance ?? "").trim(),
     areaSettings
   };
 }
@@ -422,12 +548,21 @@ export function buildPhase1SubmitOptions({
     ?? availableProfessionEntries[0]
     ?? null;
   const materialDrops = normalizePhase1MaterialDrops(normalizedActionData.materialDrops ?? []);
+  const subtypeDefinitions = getDowntimePhase1ActionSubtypeDefinitions(normalizedAction);
+  const selectedSubtypeKey = normalizePhase1ActionSubtypeKey(normalizedAction, normalizedActionData.subtypeKey);
+  const selectedSubtype = getPhase1ActionSubtypeDefinition(normalizedAction, selectedSubtypeKey);
 
   return {
     actionKey: normalizedAction,
     showBrowsingFields: normalizedAction === "browsing",
     showCraftingFields: normalizedAction === "crafting",
     showProfessionFields: normalizedAction === "profession",
+    showSubtypeFields: subtypeDefinitions.length > 0,
+    subtypeOptions: subtypeDefinitions.map((entry) => ({
+      ...entry,
+      selected: String(entry?.key ?? "").trim().toLowerCase() === selectedSubtypeKey
+    })),
+    selectedSubtype,
     areaSettings: normalizePhase1AreaSettings(areaSettings),
     browsingAbilityOptions: DOWNTIME_BROWSING_ABILITY_OPTIONS.map((entry) => ({
       ...entry,
@@ -800,6 +935,105 @@ function resolveProfessionEntry({ actor, entry, actionData, d20, hours, moduleId
   };
 }
 
+function resolveSubtypeEntry({ actor, entry, actionData, d20, hours, actionKey }) {
+  const profile = ACTION_OUTCOME_PROFILES[actionKey] ?? ACTION_OUTCOME_PROFILES.carousing;
+  const subtypeDef = getPhase1ActionSubtypeDefinition(actionKey, actionData?.subtypeKey);
+  const subtypeLabel = String(subtypeDef?.label ?? "Standard").trim() || "Standard";
+  const subtypeAbility = String(subtypeDef?.ability ?? "cha").trim().toLowerCase();
+  const subtypeKey = String(subtypeDef?.key ?? "").trim().toLowerCase();
+  const subtypeRule = SUBTYPE_OUTCOME_RULES[`${actionKey}.${subtypeKey}`] ?? null;
+  const normalizedArea = normalizePhase1AreaSettings(actionData?.areaSettings ?? entry?.areaSettings ?? {});
+  const units = Math.max(1, Math.ceil(Math.max(1, hours) / 4));
+  const check = buildDowntimeCheckSnapshot({
+    entry,
+    actionData,
+    fallbackAbility: subtypeAbility,
+    abilityMod: getActorAbilityMod(actor, subtypeAbility),
+    proficiencyBonus: 0,
+    d20
+  });
+  const dc = Math.max(
+    8,
+    Math.min(
+      22,
+      (Number(subtypeRule?.dc ?? profile.baseDc ?? 12) || 12)
+      + (normalizedArea.economy === "stingy" ? 1 : normalizedArea.economy === "generous" ? -1 : 0)
+      + (normalizedArea.risk === "high" ? 1 : normalizedArea.risk === "low" ? -1 : 0)
+      - Math.max(0, Math.floor(hours / 8))
+    )
+  );
+  const tier = getTierFromMargin(check.total - dc);
+  const tierGp = Math.max(0, Number(subtypeRule?.gp?.[tier] ?? profile.tierGp?.[tier] ?? 0) || 0);
+  const tierRumors = Math.max(0, Number(subtypeRule?.rumors?.[tier] ?? profile.tierRumors?.[tier] ?? 0) || 0);
+  const baseTierTags = Array.isArray(subtypeRule?.tags?.[tier])
+    ? subtypeRule.tags[tier]
+    : [];
+  const baseEffects = subtypeRule?.effects?.[tier] && typeof subtypeRule.effects[tier] === "object"
+    ? subtypeRule.effects[tier]
+    : {};
+  const economyMultiplier = normalizedArea.economy === "stingy" ? 0.9 : normalizedArea.economy === "generous" ? 1.1 : 1;
+  const gpAward = clampNonNegativeInteger(Math.floor(tierGp * units * economyMultiplier));
+  const rumorCount = clampNonNegativeInteger(tierRumors + (normalizedArea.discovery === "rich" ? 1 : 0));
+  const expectedQuality = String(profile.quality?.[tier] ?? "A workable result is generated.").trim();
+  const rewardEffects = {
+    discountPercent: clampNonNegativeInteger(baseEffects.discountPercent),
+    materialsCreditGp: clampNonNegativeInteger(baseEffects.materialsCreditGp),
+    heatDelta: clampNonNegativeInteger(baseEffects.heatDelta),
+    reputationDelta: Number.isFinite(Number(baseEffects.reputationDelta)) ? Math.floor(Number(baseEffects.reputationDelta)) : 0,
+    contactTier: String(baseEffects.contactTier ?? "").trim().toLowerCase()
+  };
+  const rewardTags = [
+    ...baseTierTags,
+    rewardEffects.discountPercent > 0 ? "discount" : "",
+    rewardEffects.materialsCreditGp > 0 ? "materials-credit" : "",
+    rewardEffects.heatDelta > 0 ? "heat" : "",
+    rewardEffects.contactTier ? `contact-${rewardEffects.contactTier}` : ""
+  ].filter(Boolean).slice(0, 8);
+  const suggestedTags = [
+    ...((Array.isArray(profile.baseTags) ? profile.baseTags : [])),
+    ...rewardTags,
+    subtypeLabel.toLowerCase()
+  ].slice(0, 6);
+  const effectSummaryParts = [
+    rewardEffects.discountPercent > 0 ? `Discount ${rewardEffects.discountPercent}%` : "",
+    rewardEffects.materialsCreditGp > 0 ? `Materials credit ${rewardEffects.materialsCreditGp} gp` : "",
+    rewardEffects.heatDelta > 0 ? `Heat +${rewardEffects.heatDelta}` : "",
+    rewardEffects.reputationDelta !== 0 ? `Reputation ${rewardEffects.reputationDelta > 0 ? "+" : ""}${rewardEffects.reputationDelta}` : "",
+    rewardEffects.contactTier ? `Contact tier ${rewardEffects.contactTier}` : ""
+  ].filter(Boolean);
+
+  return {
+    tier,
+    summary: `${subtypeLabel} resolved as ${getTierLabel(tier).toLowerCase()}.`,
+    details: [
+      `${subtypeLabel} check ${check.total} vs DC ${dc} (${check.d20} on d20, ${subtypeAbility.toUpperCase()} mod ${check.abilityMod >= 0 ? "+" : ""}${check.abilityMod}).`,
+      `Estimated payout: ${gpAward} gp over ${units} downtime block(s).`,
+      effectSummaryParts.length > 0 ? `Effects: ${effectSummaryParts.join(", ")}.` : "",
+      expectedQuality
+    ].filter(Boolean),
+    rollTotal: check.total,
+    dc,
+    gpAward,
+    gpCost: 0,
+    progress: units,
+    rumorCount,
+    itemRewards: [],
+    itemRewardDrops: [],
+    expectedQuality,
+    suggestedTags,
+    rewardTags,
+    rewardEffects,
+    subtype: {
+      key: subtypeKey,
+      label: subtypeLabel,
+      ability: subtypeAbility
+    },
+    performanceLabel: actionKey === "performing"
+      ? (tier === "exceptional-success" ? "Crowd favorite" : tier === "strong-success" ? "Strong reception" : tier === "success" ? "Steady reception" : "Muted reception")
+      : ""
+  };
+}
+
 export function resolvePhase1DowntimeEntry({
   actor = null,
   entry = {},
@@ -831,8 +1065,10 @@ export function resolvePhase1DowntimeEntry({
       d20,
       moduleId
     });
-  } else {
+  } else if (actionKey === "profession") {
     resolved = resolveProfessionEntry({ actor, entry, actionData, d20, hours, moduleId });
+  } else {
+    resolved = resolveSubtypeEntry({ actor, entry, actionData, d20, hours, actionKey });
   }
 
   return {
@@ -852,11 +1088,28 @@ export function resolvePhase1DowntimeEntry({
     itemRewardDrops: Array.isArray(resolved?.itemRewardDrops) ? resolved.itemRewardDrops : [],
     expectedQuality: String(resolved?.expectedQuality ?? "").trim(),
     suggestedTags: normalizeStringList(resolved?.suggestedTags ?? [], 8),
+    rewardTags: normalizeStringList(resolved?.rewardTags ?? [], 8),
+    rewardEffects: resolved?.rewardEffects && typeof resolved.rewardEffects === "object"
+      ? {
+          discountPercent: clampNonNegativeInteger(resolved.rewardEffects.discountPercent),
+          materialsCreditGp: clampNonNegativeInteger(resolved.rewardEffects.materialsCreditGp),
+          heatDelta: clampNonNegativeInteger(resolved.rewardEffects.heatDelta),
+          reputationDelta: Number.isFinite(Number(resolved.rewardEffects.reputationDelta)) ? Math.floor(Number(resolved.rewardEffects.reputationDelta)) : 0,
+          contactTier: String(resolved.rewardEffects.contactTier ?? "").trim().toLowerCase()
+        }
+      : {
+          discountPercent: 0,
+          materialsCreditGp: 0,
+          heatDelta: 0,
+          reputationDelta: 0,
+          contactTier: ""
+        },
     actionData,
     areaSettings: normalizePhase1AreaSettings(actionData.areaSettings),
     browsing: resolved?.browsing ?? null,
     crafting: resolved?.crafting ?? null,
     profession: resolved?.profession ?? null,
+    subtype: resolved?.subtype ?? null,
     performanceLabel: String(resolved?.performanceLabel ?? "").trim()
   };
 }
@@ -878,9 +1131,15 @@ export function buildDowntimeEntryActionSummary(entry = {}, { moduleId = "party-
     parts.push(actionData.materialsOwned === true || actionData.materialsSecured === true ? "Materials secured" : "Buy materials if needed");
     if (Array.isArray(actionData.materialDrops) && actionData.materialDrops.length > 0) parts.push(`Materials offered: ${actionData.materialDrops.length}`);
   } else {
-    const profession = getProfessionById(actionData.professionId);
-    if (profession) parts.push(`Profession: ${profession.name}`);
-    parts.push(actionData.knownProfession === true ? "Profession known" : "Profession untrained");
+    if (actionKey === "profession") {
+      const profession = getProfessionById(actionData.professionId);
+      if (profession) parts.push(`Profession: ${profession.name}`);
+      parts.push(actionData.knownProfession === true ? "Profession known" : "Profession untrained");
+    } else {
+      const subtype = getPhase1ActionSubtypeDefinition(actionKey, actionData.subtypeKey);
+      if (subtype) parts.push(`Subtype: ${subtype.label}`);
+      if (subtype?.ability) parts.push(`Check ability: ${String(subtype.ability).toUpperCase()}`);
+    }
   }
   return parts;
 }

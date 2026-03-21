@@ -100,9 +100,27 @@ class FakeElement {
     entries.push({ actorId, notes: "" });
   }
 
-  async function updateRestWatchState(mutator) {
+  async function updateRestWatchState(mutatorOrRequest) {
     updateCalls += 1;
-    await mutator(state);
+    if (typeof mutatorOrRequest === "function") {
+      await mutatorOrRequest(state);
+    } else if (mutatorOrRequest?.op === "moveSlot") {
+      const { actorId, fromSlotId, slotId: toSlotId } = mutatorOrRequest;
+      const source = state.slots.find((s) => s.id === fromSlotId);
+      if (source) {
+        if (!source.entries) {
+          source.entries = source.actorId ? [{ actorId: source.actorId, notes: source.notes ?? "" }] : [];
+          source.actorId = null;
+          source.notes = "";
+        }
+        source.entries = source.entries.filter((e) => e.actorId !== actorId);
+      }
+      const target = state.slots.find((s) => s.id === toSlotId);
+      if (target) {
+        if (!target.entries) target.entries = [];
+        target.entries.push({ actorId, notes: "" });
+      }
+    }
   }
 
   setupRestWatchDragAndDrop(html, {

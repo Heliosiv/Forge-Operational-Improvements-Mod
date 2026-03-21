@@ -84,6 +84,7 @@ export function createDowntimeUiDraftStorage({
     return setDowntimeUiDraftSection("submission", {
       actorId: String(root.querySelector("select[name='downtimeActorId']")?.value ?? "").trim(),
       actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
+      subtypeKey: String(root.querySelector("select[name='downtimeSubtypeKey']")?.value ?? "").trim(),
       hours: String(root.querySelector("input[name='downtimeHours']")?.value ?? ""),
       note: String(root.querySelector("textarea[name='downtimeNote']")?.value ?? ""),
       browsingAbility: String(root.querySelector("select[name='downtimeBrowsingAbility']")?.value ?? "").trim(),

@@ -30,10 +30,16 @@ assert.match(
   "GM downtime template should only show the crafting catalog while crafting is selected."
 );
 
-assert.match(
+assert.doesNotMatch(
   restWatchTemplate,
-  /\{\{#if operations\.downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
-  "Rest watch downtime template should only show the crafting catalog while crafting is selected."
+  /data-page="downtime"/,
+  "Operations tab strip should not expose a downtime page button."
+);
+
+assert.doesNotMatch(
+  restWatchTemplate,
+  /\{\{#if operationsPageDowntime\}\}/,
+  "Rest watch operations template should not include an embedded downtime section."
 );
 
 assert.match(

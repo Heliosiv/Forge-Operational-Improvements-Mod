@@ -99,8 +99,31 @@ class FakeElement {
     }
   };
 
-  async function updateMarchingOrderState(mutator) {
-    await mutator(state);
+  async function updateMarchingOrderState(mutatorOrRequest) {
+    if (typeof mutatorOrRequest === "function") {
+      await mutatorOrRequest(state);
+    } else if (mutatorOrRequest?.op === "joinRank") {
+      const { actorId, rankId, insertIndex: rawInsert, cellIndex: rawCell } = mutatorOrRequest;
+      for (const key of Object.keys(state.ranks)) {
+        state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
+      }
+      for (const key of Object.keys(state.rankPlacements)) {
+        if (state.rankPlacements[key]) delete state.rankPlacements[key][actorId];
+      }
+      if (!state.ranks[rankId]) state.ranks[rankId] = [];
+      const target = state.ranks[rankId];
+      const safeIndex = Number.isInteger(rawInsert) && rawInsert >= 0
+        ? Math.max(0, Math.min(rawInsert, target.length))
+        : target.length;
+      target.splice(safeIndex, 0, actorId);
+      if (Number.isInteger(rawCell) && rawCell >= 0) {
+        for (const key of Object.keys(state.rankPlacements)) {
+          if (state.rankPlacements[key]) delete state.rankPlacements[key][actorId];
+        }
+        if (!state.rankPlacements[rankId]) state.rankPlacements[rankId] = {};
+        state.rankPlacements[rankId][actorId] = rawCell;
+      }
+    }
   }
 
   setupMarchingDragAndDrop(html, {
@@ -218,9 +241,33 @@ class FakeElement {
     canDragEntry: () => true,
     isLockedForUser: () => false,
     notifyUiWarnThrottled: () => {},
-    updateMarchingOrderState: async (mutator) => {
-      await mutator(state);
+    updateMarchingOrderState: async (mutatorOrRequest) => {
+      if (typeof mutatorOrRequest === "function") {
+        await mutatorOrRequest(state);
+      } else if (mutatorOrRequest?.op === "joinRank") {
+        const { actorId, rankId, insertIndex: rawInsert, cellIndex: rawCell } = mutatorOrRequest;
+        for (const key of Object.keys(state.ranks)) {
+          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
+        }
+        for (const key of Object.keys(state.rankPlacements)) {
+          if (state.rankPlacements[key]) delete state.rankPlacements[key][actorId];
+        }
+        if (!state.ranks[rankId]) state.ranks[rankId] = [];
+        const target = state.ranks[rankId];
+        const safeIndex = Number.isInteger(rawInsert) && rawInsert >= 0
+          ? Math.max(0, Math.min(rawInsert, target.length))
+          : target.length;
+        target.splice(safeIndex, 0, actorId);
+        if (Number.isInteger(rawCell) && rawCell >= 0) {
+          for (const key of Object.keys(state.rankPlacements)) {
+            if (state.rankPlacements[key]) delete state.rankPlacements[key][actorId];
+          }
+          if (!state.rankPlacements[rankId]) state.rankPlacements[rankId] = {};
+          state.rankPlacements[rankId][actorId] = rawCell;
+        }
+      }
     },
+    refreshSingleAppPreservingView: (value) => refreshes.push(value),
     refreshSingleAppPreservingView: (value) => refreshes.push(value),
     getAppInstance: () => "march-app",
     appInstanceKeys: { MARCHING_ORDER: "march" }

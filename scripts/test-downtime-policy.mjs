@@ -13,7 +13,10 @@ assert.equal(clampDowntimeHours(0), 1);
 assert.equal(clampDowntimeHours(29), 24);
 
 assert.equal(normalizeDowntimeActionKey("browsing"), "browsing");
-assert.equal(normalizeDowntimeActionKey("carousing"), "browsing");
+assert.equal(normalizeDowntimeActionKey("carousing"), "carousing");
+assert.equal(normalizeDowntimeActionKey("commerce"), "commerce");
+assert.equal(normalizeDowntimeActionKey("performing"), "performing");
+assert.equal(normalizeDowntimeActionKey("rougery"), "rougery");
 assert.equal(normalizeDowntimeActionKey("invalid"), "browsing");
 
 assert.deepEqual(
