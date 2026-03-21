@@ -1,29 +1,11 @@
+import {
+  getCurrentUserId,
+  readSessionValue,
+  writeSessionValue
+} from "../core/browser-session-state.js";
+
 function getGame() {
   return globalThis.game ?? {};
-}
-
-function getCurrentUserId() {
-  return String(getGame().user?.id ?? "anon").trim() || "anon";
-}
-
-function getSessionStorage() {
-  return globalThis.sessionStorage ?? null;
-}
-
-function readSessionValue(key) {
-  try {
-    return getSessionStorage()?.getItem?.(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionValue(key, value) {
-  try {
-    getSessionStorage()?.setItem?.(key, value);
-  } catch {
-    // Ignore transient browser storage failures for UI-only state.
-  }
 }
 
 // Encapsulate operations-journal view state and context building behind a small feature boundary.

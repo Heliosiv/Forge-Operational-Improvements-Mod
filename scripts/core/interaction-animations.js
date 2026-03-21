@@ -1,3 +1,5 @@
+import { isDisabledInteractionElement } from "./ui-interaction-state.js";
+
 const INTERACTIVE_SELECTOR = [
   ".po-btn",
   ".po-icon-btn",
@@ -19,16 +21,10 @@ function prefersReducedMotion() {
   return globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
 }
 
-function isDisabled(element) {
-  if (!element) return true;
-  if (element.matches?.(":disabled, [disabled], [aria-disabled='true']")) return true;
-  return element.closest?.("[disabled], [aria-disabled='true']") != null;
-}
-
 function getInteractiveTarget(target) {
   if (!(target instanceof Element)) return null;
   const interactiveElement = target.closest(INTERACTIVE_SELECTOR);
-  if (!interactiveElement || isDisabled(interactiveElement)) return null;
+  if (!interactiveElement || isDisabledInteractionElement(interactiveElement)) return null;
   if (!interactiveElement.closest(WINDOW_SELECTOR)) return null;
   return interactiveElement;
 }

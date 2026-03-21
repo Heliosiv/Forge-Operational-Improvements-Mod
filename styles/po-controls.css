@@ -23,7 +23,7 @@
 .party-operations .po-window select,
 .party-operations .po-window .po-select,
 .party-operations .po-window .po-activity-select {
-  min-height: clamp(30px, 2.1vw, 36px);
+  min-height: clamp(36px, 2.3vw, 40px);
   color: var(--po-select-ink);
   color-scheme: light;
   font-family: var(--po-fantasy-font);
@@ -163,8 +163,8 @@
   .po-input:not([type="range"]),
   .po-time-range-input
 ) {
-  min-height: clamp(30px, 2.1vw, 36px);
-  padding: 4px 10px;
+  min-height: clamp(36px, 2.3vw, 40px);
+  padding: 6px 10px;
 }
 
 .party-operations .po-window :is(textarea, .po-notes-input) {
@@ -239,8 +239,8 @@
   -webkit-appearance: none;
   display: inline-grid;
   place-content: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 82%, var(--po-border));
   border-radius: 5px;
@@ -264,8 +264,8 @@
 
 .party-operations .po-window input[type="checkbox"]::before {
   content: "";
-  width: 8px;
-  height: 5px;
+  width: 10px;
+  height: 6px;
   border: solid color-mix(in srgb, white 88%, var(--po-select-bg-light) 12%);
   border-width: 0 0 2px 2px;
   transform: rotate(-45deg) scale(0);

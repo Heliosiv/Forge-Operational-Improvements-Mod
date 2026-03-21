@@ -9,41 +9,12 @@ export const LOOT_SETTINGS_TABS = Object.freeze({
   FILTERS: "filters"
 });
 
-function getGame() {
-  return globalThis.game ?? {};
-}
-
-function getCurrentUserId() {
-  return String(getGame().user?.id ?? "anon").trim() || "anon";
-}
-
-function getSessionStorage() {
-  return globalThis.sessionStorage ?? null;
-}
-
-function readSessionValue(key) {
-  try {
-    return getSessionStorage()?.getItem?.(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionValue(key, value) {
-  try {
-    getSessionStorage()?.setItem?.(key, value);
-  } catch {
-    // Ignore transient browser storage failures for UI-only state.
-  }
-}
-
-function removeSessionValue(key) {
-  try {
-    getSessionStorage()?.removeItem?.(key);
-  } catch {
-    // Ignore transient browser storage failures for UI-only state.
-  }
-}
+import {
+  getCurrentUserId,
+  readSessionValue,
+  removeSessionValue,
+  writeSessionValue
+} from "../core/browser-session-state.js";
 
 // Encapsulate browser-scoped loot UI state behind a small feature boundary.
 export function createLootUiState({

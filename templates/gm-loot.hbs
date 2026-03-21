@@ -31,13 +31,13 @@
         </div>
       </section>
 
-      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-gm-subtabs" aria-label="Loot workspace tabs">
-        <button type="button" class="po-tab {{#if operations.lootSources.registryTabPreview}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="preview">Builder</button>
-        <button type="button" class="po-tab {{#if operations.lootSources.registryTabSettings}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="settings">Settings</button>
+      <div class="po-tabs po-tabs-sub po-loot-mode-tabs po-gm-subtabs" role="tablist" aria-label="Loot workspace tabs">
+        <button type="button" role="tab" aria-controls="po-loot-registry-preview-panel" tabindex="{{#if operations.lootSources.registryTabPreview}}0{{else}}-1{{/if}}" class="po-tab {{#if operations.lootSources.registryTabPreview}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="preview" aria-selected="{{#if operations.lootSources.registryTabPreview}}true{{else}}false{{/if}}">Builder</button>
+        <button type="button" role="tab" aria-controls="po-loot-registry-settings-panel" tabindex="{{#if operations.lootSources.registryTabSettings}}0{{else}}-1{{/if}}" class="po-tab {{#if operations.lootSources.registryTabSettings}}is-active{{/if}}" data-action="set-loot-registry-tab" data-tab="settings" aria-selected="{{#if operations.lootSources.registryTabSettings}}true{{else}}false{{/if}}">Settings</button>
       </div>
 
       {{#if operations.lootSources.registryTabPreview}}
-      <div class="po-loot-workspace po-loot-preview-panel">
+      <div id="po-loot-registry-preview-panel" class="po-loot-workspace po-loot-preview-panel" role="tabpanel" aria-label="Loot builder panel">
         <div class="po-loot-workspace-main">
           <section class="po-gm-section po-loot-builder-deck">
             <div class="po-loot-section-head">
@@ -302,7 +302,7 @@
       {{/if}}
 
       {{#if operations.lootSources.registryTabSettings}}
-      <div class="po-gm-loot-settings-shell">
+      <div id="po-loot-registry-settings-panel" class="po-gm-loot-settings-shell" role="tabpanel" aria-label="Loot settings panel">
         <section class="po-gm-section po-loot-settings-overview">
           <div class="po-loot-section-head">
             <div>
@@ -318,14 +318,14 @@
           </div>
         </section>
 
-        <div class="po-tabs po-tabs-sub po-loot-settings-tabs po-gm-subtabs" aria-label="Loot settings tabs">
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabSources}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="sources">Sources <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemPacks}}/{{sourceSummary.totalItemPacks}}</span></button>
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabTables}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="tables">Tables <span class="po-loot-settings-tab-count">{{sourceSummary.enabledTables}}/{{sourceSummary.totalTables}}</span></button>
-          <button type="button" class="po-tab {{#if operations.lootSources.settingsTabFilters}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="filters">Filters <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemTypes}}/{{sourceSummary.totalItemTypes}}</span></button>
+        <div class="po-tabs po-tabs-sub po-loot-settings-tabs po-gm-subtabs" role="tablist" aria-label="Loot settings tabs">
+          <button type="button" role="tab" aria-controls="po-loot-settings-sources-panel" tabindex="{{#if operations.lootSources.settingsTabSources}}0{{else}}-1{{/if}}" class="po-tab {{#if operations.lootSources.settingsTabSources}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="sources" aria-selected="{{#if operations.lootSources.settingsTabSources}}true{{else}}false{{/if}}">Sources <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemPacks}}/{{sourceSummary.totalItemPacks}}</span></button>
+          <button type="button" role="tab" aria-controls="po-loot-settings-tables-panel" tabindex="{{#if operations.lootSources.settingsTabTables}}0{{else}}-1{{/if}}" class="po-tab {{#if operations.lootSources.settingsTabTables}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="tables" aria-selected="{{#if operations.lootSources.settingsTabTables}}true{{else}}false{{/if}}">Tables <span class="po-loot-settings-tab-count">{{sourceSummary.enabledTables}}/{{sourceSummary.totalTables}}</span></button>
+          <button type="button" role="tab" aria-controls="po-loot-settings-filters-panel" tabindex="{{#if operations.lootSources.settingsTabFilters}}0{{else}}-1{{/if}}" class="po-tab {{#if operations.lootSources.settingsTabFilters}}is-active{{/if}}" data-action="set-loot-settings-tab" data-tab="filters" aria-selected="{{#if operations.lootSources.settingsTabFilters}}true{{else}}false{{/if}}">Filters <span class="po-loot-settings-tab-count">{{sourceSummary.enabledItemTypes}}/{{sourceSummary.totalItemTypes}}</span></button>
         </div>
 
         {{#if operations.lootSources.settingsTabSources}}
-        <div class="po-gm-loot-settings-pane">
+        <div id="po-loot-settings-sources-panel" class="po-gm-loot-settings-pane" role="tabpanel" aria-label="Loot source settings">
           <details class="po-panel-disclosure po-gm-loot-disclosure" open>
             <summary class="po-panel-disclosure-summary"><span class="po-section-title">Item Pack Sources</span><span class="po-op-summary">Showing {{operations.lootSources.itemPackVisibleCount}} of {{operations.lootSources.itemPackOptions.length}}</span></summary>
             <div class="po-panel-disclosure-body">
@@ -379,7 +379,7 @@
         {{/if}}
 
         {{#if operations.lootSources.settingsTabTables}}
-        <div class="po-gm-loot-settings-pane">
+        <div id="po-loot-settings-tables-panel" class="po-gm-loot-settings-pane" role="tabpanel" aria-label="Loot table settings">
           <details class="po-panel-disclosure po-gm-loot-disclosure" open>
             <summary class="po-panel-disclosure-summary"><span class="po-section-title">Roll-Table Sources</span><span class="po-op-summary">{{sourceSummary.enabledTables}} enabled of {{sourceSummary.totalTables}}</span></summary>
             <div class="po-panel-disclosure-body">
@@ -414,7 +414,7 @@
         {{/if}}
 
         {{#if operations.lootSources.settingsTabFilters}}
-        <div class="po-gm-loot-settings-pane">
+        <div id="po-loot-settings-filters-panel" class="po-gm-loot-settings-pane" role="tabpanel" aria-label="Loot filter settings">
           <details class="po-panel-disclosure po-gm-loot-disclosure" open>
             <summary class="po-panel-disclosure-summary"><span class="po-section-title">Item Filters</span><span class="po-op-summary">{{sourceSummary.enabledItemTypes}} enabled of {{sourceSummary.totalItemTypes}}</span></summary>
             <div class="po-panel-disclosure-body">

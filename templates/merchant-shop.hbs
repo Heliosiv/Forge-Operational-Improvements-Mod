@@ -73,6 +73,7 @@
           <div>
             <div class="po-merchant-trade-section-label">Buy</div>
             <h3>Merchant Stock</h3>
+            <div class="po-op-summary">Double-click a row or use Inspect to open item details.</div>
           </div>
           <div class="po-op-summary">{{buyCountLabel}}</div>
         </header>
@@ -92,9 +93,9 @@
               <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}">
                 <td>
                   <div class="po-merchant-trade-item">
-                    <img src="{{img}}" alt="{{itemName}}" />
+                    <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
                     <div class="po-merchant-trade-item-copy">
-                      <span class="po-merchant-trade-item-name">{{itemName}}</span>
+                      <span class="po-merchant-trade-item-name" title="{{itemName}}">{{itemName}}</span>
                       {{#if hasMetaPills}}
                       <div class="po-merchant-trade-item-meta">
                         {{#each metaPills}}
@@ -104,6 +105,9 @@
                       {{/if}}
                       {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
                     </div>
+                    <button type="button" class="po-icon-btn po-merchant-trade-open-btn" data-po-merchant-open-item="true" aria-label="Inspect {{itemName}}" title="Inspect {{itemName}}">
+                      <i class="fa-solid fa-up-right-from-square"></i>
+                    </button>
                   </div>
                 </td>
                 <td>{{qty}}</td>
@@ -136,6 +140,7 @@
           <div>
             <div class="po-merchant-trade-section-label">Sell</div>
             <h3>Player Inventory</h3>
+            <div class="po-op-summary">Double-click a row or use Inspect to open item details.</div>
           </div>
           <div class="po-op-summary">{{sellCountLabel}}</div>
         </header>
@@ -157,9 +162,9 @@
               <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}" data-price-kind="sell" data-base-gp="{{baseGp}}">
                 <td>
                   <div class="po-merchant-trade-item">
-                    <img src="{{img}}" alt="{{itemName}}" />
+                    <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
                     <div class="po-merchant-trade-item-copy">
-                      <span class="po-merchant-trade-item-name">{{itemName}}</span>
+                      <span class="po-merchant-trade-item-name" title="{{itemName}}">{{itemName}}</span>
                       {{#if hasMetaPills}}
                       <div class="po-merchant-trade-item-meta">
                         {{#each metaPills}}
@@ -169,6 +174,9 @@
                       {{/if}}
                       {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
                     </div>
+                    <button type="button" class="po-icon-btn po-merchant-trade-open-btn" data-po-merchant-open-item="true" aria-label="Inspect {{itemName}}" title="Inspect {{itemName}}">
+                      <i class="fa-solid fa-up-right-from-square"></i>
+                    </button>
                   </div>
                 </td>
                 <td>{{itemTypeLabel}}</td>

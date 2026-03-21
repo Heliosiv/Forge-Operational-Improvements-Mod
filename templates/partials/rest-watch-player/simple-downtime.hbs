@@ -1,11 +1,29 @@
-<section class="po-player-hub-panel po-downtime-panel" aria-label="Downtime">
+<section id="po-player-hub-panel-downtime" class="po-player-hub-panel po-downtime-panel" role="tabpanel" aria-label="Downtime">
   <div class="po-section-title">Submit Downtime Action</div>
-  <div class="po-op-summary"><strong>Status:</strong> {{downtime.publication.statusLabel}}</div>
-  <div class="po-op-summary"><strong>Published:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</div>
-  <div class="po-hint">{{downtime.publication.submitHint}}</div>
-  <div class="po-op-summary"><strong>Ready to submit:</strong> {{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
-  <div class="po-op-summary"><strong>Selected action:</strong> {{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</div>
-  <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
+  <div class="po-downtime-status-strip" aria-label="Downtime publication summary">
+    <div class="po-downtime-status-card">
+      <span class="po-downtime-status-label">Status</span>
+      <strong class="po-downtime-status-value">{{downtime.publication.statusLabel}}</strong>
+    </div>
+    <div class="po-downtime-status-card {{#if downtime.submit.canSubmit}}is-ready{{else}}is-blocked{{/if}}">
+      <span class="po-downtime-status-label">Ready</span>
+      <strong class="po-downtime-status-value">{{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</strong>
+    </div>
+    <div class="po-downtime-status-card po-downtime-status-card-wide">
+      <span class="po-downtime-status-label">Selection</span>
+      <strong class="po-downtime-status-value">{{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</strong>
+    </div>
+  </div>
+  <details class="po-panel-disclosure po-downtime-status-details">
+    <summary class="po-panel-disclosure-summary">
+      <span class="po-section-title">Publication Details</span>
+      <span class="po-op-summary">Published {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</span>
+    </summary>
+    <div class="po-panel-disclosure-body">
+      <div class="po-hint">{{downtime.publication.submitHint}}</div>
+      <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
+    </div>
+  </details>
   {{#if downtime.submit.canSubmit}}
   {{#if downtime.submit.canChooseActor}}
   <label class="po-resource-row">

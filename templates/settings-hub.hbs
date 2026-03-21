@@ -7,8 +7,9 @@
         <div class="po-subtitle">Guided configuration for the most important module behaviors.</div>
       </div>
       <div class="po-controls">
+        <div class="po-op-summary {{#if saveStatusWarn}}is-warn{{/if}} {{#if saveStatusGood}}is-good{{/if}}" data-settings-save-status aria-live="polite">{{saveStatusMessage}}</div>
         <button type="button" class="po-btn po-btn-sm" data-action="open-foundry-settings"><i class="fa-solid fa-cog"></i> Configure Settings</button>
-        <button type="button" class="po-btn po-btn-sm" data-action="save-settings-hub"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        <button type="button" class="po-btn po-btn-sm" data-action="save-settings-hub" {{#if isSaving}}disabled{{/if}}><i class="fa-solid fa-floppy-disk"></i> {{#if isSaving}}Saving...{{else}}Save{{/if}}</button>
       </div>
     </header>
 

@@ -7589,104 +7589,84 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     setAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
+    bindTabListKeyboardNavigation(this.element);
     syncApplicationWindowTitle(this, getRestMainWindowTitle(getActiveRestMainTab()));
-    
-    if (this.element && !this.element.dataset.poBoundRest) {
-      this.element.dataset.poBoundRest = "1";
-
-      // Use event delegation on the app element
-      this.element.addEventListener("click", (event) => {
-        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
-        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
-
-        const actionElement = event.target?.closest("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        const action = actionElement?.dataset?.action;
-        if (action) {
-          logUiDebug("rest-watch", "click action", {
-            action,
-            target: summarizeClickTarget(event.target)
-          });
-        }
-        if (action) this.#onAction(event);
-      });
-
-      if (isModuleDebugEnabled()) {
-        this.element.addEventListener("click", (event) => {
-          const target = event.target instanceof Element ? event.target : null;
-          if (!target) return;
-          if (target.closest('[data-action="switch-tab"]')) return;
-          const computed = getComputedStyle(target);
-          const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
-          const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
-          if (!suspicious) return;
-          logUiDebug("rest-watch", "capture-click suspicious overlay", {
-            target: summarizeClickTarget(target),
-            zIndex: computed.zIndex,
-            position: computed.position,
-            pointerEvents: computed.pointerEvents
-          });
-        }, true);
-      }
-      
-      this.element.addEventListener("change", (event) => {
-        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
-          this.#onAction(event);
-        } else if (event.target?.matches("textarea.po-notes-input")) {
+    bindRestWatchDelegatedListeners({
+      app: this,
+      boundDatasetKey: "poBoundRest",
+      debugScope: "rest-watch",
+      onSwitchTabClick: (event, tabSwitch) => this.#onSwitchTabClick(event, tabSwitch),
+      onAction: (event) => this.#onAction(event),
+      changeHandlers: [
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_ACTION_CONTROL_SELECTOR)) return false;
+          void this.#onAction(event);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea.po-notes-input")) return false;
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
-        } else if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[name='merchantCityCatalog']")) return false;
           setMerchantCityCatalogDraftValue(event.target?.value ?? "");
+          return true;
         }
-      });
-
-      this.element.addEventListener("input", (event) => {
-        if (event.target?.matches("input[data-merchant-pack-filter]")) {
+      ],
+      inputHandlers: [
+        (event) => {
+          if (!event.target?.matches("input[data-merchant-pack-filter]")) return false;
           setMerchantEditorPackFilter(event.target?.value ?? "");
           applyMerchantEditorFilters(this.element);
-          return;
-        }
-        if (event.target?.matches("input[data-merchant-item-filter]")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-merchant-item-filter]")) return false;
           setMerchantEditorItemFilter(event.target?.value ?? "");
           applyMerchantEditorFilters(this.element);
-          return;
-        }
-        if (event.target?.matches("input[data-action='set-loot-pack-filter']")) {
-          this.#onAction(event);
-          return;
-        }
-        if (event.target?.matches("textarea[data-action='set-sop-note']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-action='set-loot-pack-filter']")) return false;
+          void this.#onAction(event);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea[data-action='set-sop-note']")) return false;
           cacheOperationalSopNoteDraftFromElement(event.target);
-          return;
-        }
-        if (event.target?.matches("input[data-action='set-journal-filter']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[data-action='set-journal-filter']")) return false;
           scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           });
-          return;
-        }
-        if (event.target?.matches("textarea.po-notes-input")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea.po-notes-input")) return false;
           cacheRestWatchNoteDraftFromElement(event.target);
-          return;
-        }
-        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId'], select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
-          return;
-        }
-        if (event.target?.matches("input[name='merchantCityCatalog']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("input[name='merchantCityCatalog']")) return false;
           setMerchantCityCatalogDraftValue(event.target?.value ?? "");
-          return;
+          return true;
         }
-      });
-
-      this.element.addEventListener("dblclick", (event) => {
-        const portrait = event.target?.closest(".po-portrait");
-        if (portrait) openActorSheetFromElement(portrait);
-      });
-
-      this.element.addEventListener("dragstart", (event) => {
+      ],
+      dragStartHandler: (event) => {
         const curatedRow = event.target?.closest?.("[data-merchant-curated-row]");
         if (curatedRow) {
           const itemUuid = String(curatedRow?.dataset?.itemUuid ?? "").trim();
@@ -7704,9 +7684,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.dataTransfer.effectAllowed = "copy";
         event.dataTransfer.setData("application/x-po-merchant-candidate", candidateUuid);
         event.dataTransfer.setData("text/plain", candidateUuid);
-      });
-
-      this.element.addEventListener("dragover", (event) => {
+      },
+      dragOverHandler: (event) => {
         const merchantDropTarget = event.target?.closest?.("[data-merchant-curated-dropzone], [data-merchant-curated-list], [data-merchant-curated-row]");
         if (merchantDropTarget) {
           event.preventDefault();
@@ -7721,15 +7700,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         const dropZone = event.target?.closest?.("[data-loot-preview-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
-      });
-
-      this.element.addEventListener("dragleave", (event) => {
+      },
+      dragLeaveHandler: (event) => {
         const merchantDropRow = event.target?.closest?.("[data-merchant-curated-row]");
         if (!merchantDropRow) return;
         merchantDropRow.classList.remove("is-drop-target");
-      });
-
-      this.element.addEventListener("drop", async (event) => {
+      },
+      dropHandler: async (event) => {
         this.element.querySelectorAll?.("[data-merchant-curated-row].is-drop-target").forEach((node) => node.classList.remove("is-drop-target"));
         const merchantDropZone = event.target?.closest?.("[data-merchant-curated-dropzone]");
         if (merchantDropZone) {
@@ -7782,8 +7759,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         event.preventDefault();
         const added = await addLootPreviewItemFromDropEvent(event);
         if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-    }
+      }
+    });
 
     // Update activity UI state
     this.#updateActivityUI();
@@ -7824,25 +7801,13 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
       this._openedPlayers = true;
     }
 
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    hydrateCachedNoteDraftInputs(this.element);
-    syncNotesDisclosureState(this.element);
-    restorePendingScrollState(this);
+    finalizeRestWatchRender(this, "rest-watch");
 
     if (DEBUG_LOG) console.log("RestWatchApp: event delegation attached", this.element);
   }
 
   #updateActivityUI() {
-    const root = getAppRootElement(this);
-    if (!root) return;
-    root.querySelectorAll(".po-exhaustion-controls").forEach((container) => {
-      const current = Number(container.dataset.exhaustion ?? 0);
-      container.querySelectorAll(".po-exh-btn").forEach((button) => {
-        const level = Number(button.dataset.level ?? 0);
-        button.classList.toggle("is-active", level === current);
-      });
-    });
+    updateRestWatchActivityUi(getAppRootElement(this));
   }
 
   #applyOperationsHoverHints() {
@@ -9153,6 +9118,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
     await super._onRender(context, options);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
+    bindTabListKeyboardNavigation(this.element);
     if (this.element) {
       const bindClickOnce = (selector, handler) => {
         const elements = Array.from(this.element.querySelectorAll(selector));
@@ -9620,6 +9586,209 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
     : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
   app.render(renderOptions);
   return app;
+}
+
+function getEnabledTabsForList(tabList) {
+  if (!(tabList instanceof HTMLElement)) return [];
+  return Array.from(tabList.querySelectorAll('[role="tab"]')).filter((tab) => {
+    if (!(tab instanceof HTMLElement)) return false;
+    if (tab.getAttribute("aria-disabled") === "true") return false;
+    if ("disabled" in tab && tab.disabled) return false;
+    return true;
+  });
+}
+
+function getActiveTabForList(tabList, tabs = null) {
+  const resolvedTabs = Array.isArray(tabs) ? tabs : getEnabledTabsForList(tabList);
+  if (!resolvedTabs.length) return null;
+  return resolvedTabs.find((tab) => tab.getAttribute("aria-selected") === "true")
+    ?? resolvedTabs.find((tab) => tab.classList?.contains("is-active"))
+    ?? resolvedTabs[0]
+    ?? null;
+}
+
+function syncTabListRovingTabIndex(tabList) {
+  const tabs = getEnabledTabsForList(tabList);
+  const activeTab = getActiveTabForList(tabList, tabs);
+  for (const tab of tabs) {
+    tab.setAttribute("tabindex", tab === activeTab ? "0" : "-1");
+  }
+}
+
+function bindTabListKeyboardNavigation(root) {
+  if (!(root instanceof HTMLElement)) return;
+
+  const syncAllTabLists = () => {
+    for (const tabList of root.querySelectorAll('[role="tablist"]')) {
+      syncTabListRovingTabIndex(tabList);
+    }
+  };
+
+  syncAllTabLists();
+
+  if (root.dataset.poBoundTablistKeyboard === "1") return;
+  root.dataset.poBoundTablistKeyboard = "1";
+
+  root.addEventListener("keydown", (event) => {
+    const tab = event.target?.closest?.('[role="tab"]');
+    if (!(tab instanceof HTMLElement)) return;
+    const tabList = tab.closest?.('[role="tablist"]');
+    if (!(tabList instanceof HTMLElement) || !root.contains(tabList)) return;
+
+    const tabs = getEnabledTabsForList(tabList);
+    if (!tabs.length) return;
+
+    const currentIndex = tabs.indexOf(tab);
+    if (currentIndex < 0) return;
+
+    const key = String(event.key ?? "");
+    const isPrev = key === "ArrowLeft" || key === "ArrowUp";
+    const isNext = key === "ArrowRight" || key === "ArrowDown";
+    const isBoundary = key === "Home" || key === "End";
+    const isActivate = key === "Enter" || key === " ";
+    if (!isPrev && !isNext && !isBoundary && !isActivate) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isActivate) {
+      tab.click();
+      syncTabListRovingTabIndex(tabList);
+      return;
+    }
+
+    let nextIndex = currentIndex;
+    if (isPrev) nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (isNext) nextIndex = (currentIndex + 1) % tabs.length;
+    else if (key === "Home") nextIndex = 0;
+    else if (key === "End") nextIndex = tabs.length - 1;
+
+    const nextTab = tabs[nextIndex] ?? tab;
+    if (!(nextTab instanceof HTMLElement)) return;
+    nextTab.focus();
+    if (nextTab !== tab) nextTab.click();
+    syncTabListRovingTabIndex(tabList);
+  });
+}
+
+const REST_WATCH_ACTION_CONTROL_SELECTOR = "select[data-action], input[data-action], textarea[data-action]";
+const REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR = "select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']";
+const REST_WATCH_DOWNTIME_DRAFT_SELECTOR = `${REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR}, select[name='resolveDowntimeActorId'], input[name='resolveDowntimeSummary'], input[name='resolveDowntimeGp'], input[name='resolveDowntimeCost'], input[name='resolveDowntimeRumors'], select[name='resolveDowntimeContractKey'], textarea[name='resolveDowntimeContractNotes'], textarea[name='resolveDowntimeItems'], input[name='resolveDowntimeItemDrops'], textarea[name='resolveDowntimeNotes']`;
+
+function runRestWatchDelegatedHandlers(event, handlers = []) {
+  for (const handler of handlers) {
+    if (typeof handler !== "function") continue;
+    if (handler(event) === true) return true;
+  }
+  return false;
+}
+
+function bindRestWatchDelegatedListeners({
+  app,
+  boundDatasetKey,
+  debugScope,
+  onSwitchTabClick,
+  onAction,
+  changeHandlers = [],
+  inputHandlers = [],
+  dragStartHandler = null,
+  dragOverHandler = null,
+  dragLeaveHandler = null,
+  dropHandler = null
+} = {}) {
+  const root = app?.element;
+  if (!root || root.dataset?.[boundDatasetKey] === "1") return;
+  root.dataset[boundDatasetKey] = "1";
+
+  root.addEventListener("click", (event) => {
+    const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
+    if (tabSwitch) return onSwitchTabClick?.(event, tabSwitch);
+
+    const actionElement = event.target?.closest("[data-action]");
+    if (isFormActionElement(actionElement)) return;
+    const action = actionElement?.dataset?.action;
+    if (action) {
+      logUiDebug(debugScope, "click action", {
+        action,
+        target: summarizeClickTarget(event.target)
+      });
+    }
+    if (action) void onAction?.(event);
+  });
+
+  if (isModuleDebugEnabled()) {
+    root.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+      if (target.closest('[data-action="switch-tab"]')) return;
+      const computed = getComputedStyle(target);
+      const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
+      const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
+      if (!suspicious) return;
+      logUiDebug(debugScope, "capture-click suspicious overlay", {
+        target: summarizeClickTarget(target),
+        zIndex: computed.zIndex,
+        position: computed.position,
+        pointerEvents: computed.pointerEvents
+      });
+    }, true);
+  }
+
+  root.addEventListener("change", (event) => {
+    runRestWatchDelegatedHandlers(event, changeHandlers);
+  });
+
+  root.addEventListener("input", (event) => {
+    runRestWatchDelegatedHandlers(event, inputHandlers);
+  });
+
+  root.addEventListener("dblclick", (event) => {
+    const portrait = event.target?.closest(".po-portrait");
+    if (portrait) openActorSheetFromElement(portrait);
+  });
+
+  if (typeof dragStartHandler === "function") {
+    root.addEventListener("dragstart", (event) => {
+      dragStartHandler(event);
+    });
+  }
+  if (typeof dragOverHandler === "function") {
+    root.addEventListener("dragover", (event) => {
+      dragOverHandler(event);
+    });
+  }
+  if (typeof dragLeaveHandler === "function") {
+    root.addEventListener("dragleave", (event) => {
+      dragLeaveHandler(event);
+    });
+  }
+  if (typeof dropHandler === "function") {
+    root.addEventListener("drop", async (event) => {
+      await dropHandler(event);
+    });
+  }
+}
+
+function updateRestWatchActivityUi(root) {
+  if (!root) return;
+  root.querySelectorAll(".po-exhaustion-controls").forEach((container) => {
+    const current = Number(container.dataset.exhaustion ?? 0);
+    container.querySelectorAll(".po-exh-btn").forEach((button) => {
+      const level = Number(button.dataset.level ?? 0);
+      button.classList.toggle("is-active", level === current);
+    });
+  });
+}
+
+function finalizeRestWatchRender(app, scope) {
+  updateRestWatchActivityUi(app?.element);
+  renderDowntimeSubmissionMaterialDropLists(app?.element);
+  diagnoseRenderedMainTabs(app?.element, scope);
+  restorePendingWindowState(app);
+  restorePendingUiState(app);
+  hydrateCachedNoteDraftInputs(app?.element);
+  syncNotesDisclosureState(app?.element);
+  restorePendingScrollState(app);
 }
 
 class BaseStatefulPageApp extends HandlebarsApplicationMixin(ApplicationV2) {
@@ -10400,111 +10569,70 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
     setAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
-
-    if (this.element && !this.element.dataset.poBoundRestPlayer) {
-      this.element.dataset.poBoundRestPlayer = "1";
-
-      this.element.addEventListener("click", (event) => {
-        const tabSwitch = event.target?.closest('[data-action="switch-tab"][data-tab]');
-        if (tabSwitch) return this.#onSwitchTabClick(event, tabSwitch);
-        const actionElement = event.target?.closest("[data-action]");
-        if (isFormActionElement(actionElement)) return;
-        const action = actionElement?.dataset?.action;
-        if (action) {
-          logUiDebug("rest-watch-player", "click action", {
-            action,
-            target: summarizeClickTarget(event.target)
-          });
-        }
-        if (action) this.#onAction(event);
-      });
-
-      if (isModuleDebugEnabled()) {
-        this.element.addEventListener("click", (event) => {
-          const target = event.target instanceof Element ? event.target : null;
-          if (!target) return;
-          if (target.closest('[data-action="switch-tab"]')) return;
-          const computed = getComputedStyle(target);
-          const zIndexValue = Number.parseInt(computed.zIndex ?? "0", 10);
-          const suspicious = (computed.position === "fixed" || computed.position === "absolute") && Number.isFinite(zIndexValue) && zIndexValue >= 900;
-          if (!suspicious) return;
-          logUiDebug("rest-watch-player", "capture-click suspicious overlay", {
-            target: summarizeClickTarget(target),
-            zIndex: computed.zIndex,
-            position: computed.position,
-            pointerEvents: computed.pointerEvents
-          });
-        }, true);
-      }
-
-      this.element.addEventListener("change", (event) => {
-        if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
-          this.#onAction(event);
-        } else if (event.target?.matches("textarea.po-notes-input")) {
+    bindTabListKeyboardNavigation(this.element);
+    bindRestWatchDelegatedListeners({
+      app: this,
+      boundDatasetKey: "poBoundRestPlayer",
+      debugScope: "rest-watch-player",
+      onSwitchTabClick: (event, tabSwitch) => this.#onSwitchTabClick(event, tabSwitch),
+      onAction: (event) => this.#onAction(event),
+      changeHandlers: [
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_ACTION_CONTROL_SELECTOR)) return false;
+          void this.#onAction(event);
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea.po-notes-input")) return false;
           cacheRestWatchNoteDraftFromElement(event.target);
           scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-        } else if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
+          return true;
         }
-      });
-
-      this.element.addEventListener("input", (event) => {
-        if (event.target?.matches("input[data-action='set-journal-filter']")) {
+      ],
+      inputHandlers: [
+        (event) => {
+          if (!event.target?.matches("input[data-action='set-journal-filter']")) return false;
           scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           });
-          return;
-        }
-        if (event.target?.matches("textarea.po-notes-input")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches("textarea.po-notes-input")) return false;
           cacheRestWatchNoteDraftFromElement(event.target);
-          return;
-        }
-        if (event.target?.matches("select[name='downtimeActorId'], select[name='downtimeActionKey'], input[name='downtimeHours'], textarea[name='downtimeNote'], select[name='downtimeBrowsingAbility'], select[name='downtimeCraftItemId'], select[name='downtimeCraftMaterialsOwned'], select[name='downtimeProfessionId']")) {
+          return true;
+        },
+        (event) => {
+          if (!event.target?.matches(REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
-          return;
+          return true;
         }
-      });
-
-      this.element.addEventListener("dragover", (event) => {
+      ],
+      dragOverHandler: (event) => {
         const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
         if (!materialDropZone) return;
         event.preventDefault();
-      });
-
-      this.element.addEventListener("drop", async (event) => {
+      },
+      dropHandler: async (event) => {
         const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
         if (!materialDropZone) return;
         event.preventDefault();
         const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
         if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      this.element.addEventListener("dblclick", (event) => {
-        const portrait = event.target?.closest(".po-portrait");
-        if (portrait) openActorSheetFromElement(portrait);
-      });
-    }
+      }
+    });
 
     this.#updateActivityUI();
-    renderDowntimeSubmissionMaterialDropLists(this.element);
-    diagnoseRenderedMainTabs(this.element, "rest-watch-player");
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    hydrateCachedNoteDraftInputs(this.element);
-    syncNotesDisclosureState(this.element);
-    restorePendingScrollState(this);
+    finalizeRestWatchRender(this, "rest-watch-player");
   }
 
   #updateActivityUI() {
-    const root = getAppRootElement(this);
-    if (!root) return;
-    root.querySelectorAll(".po-exhaustion-controls").forEach((container) => {
-      const current = Number(container.dataset.exhaustion ?? 0);
-      container.querySelectorAll(".po-exh-btn").forEach((button) => {
-        const level = Number(button.dataset.level ?? 0);
-        button.classList.toggle("is-active", level === current);
-      });
-    });
+    updateRestWatchActivityUi(getAppRootElement(this));
   }
 
   #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
@@ -10802,6 +10930,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
+    bindTabListKeyboardNavigation(this.element);
     
     if (this.element && !this.element.dataset.poBoundMarch) {
       this.element.dataset.poBoundMarch = "1";
@@ -28044,6 +28173,19 @@ function bindMerchantTradeDialogItemOpeners(html) {
   const root = getMerchantTradeDialogRoot(html);
   if (!root || root.dataset.poMerchantTradeItemOpenBound === "1") return;
   root.dataset.poMerchantTradeItemOpenBound = "1";
+  root.addEventListener("click", (event) => {
+    const target = event?.target instanceof Element ? event.target : null;
+    if (!target) return;
+    const openButton = target.closest("[data-po-merchant-open-item]");
+    if (!(openButton instanceof HTMLElement) || !root.contains(openButton)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openMerchantSupplyItemFromElement(openButton).catch((error) => {
+      if (isModuleDebugEnabled()) {
+        console.warn(`${MODULE_ID}: failed opening merchant trade item from inspect button`, error);
+      }
+    });
+  });
   root.addEventListener("dblclick", (event) => {
     const target = event?.target instanceof Element ? event.target : null;
     if (!target) return;

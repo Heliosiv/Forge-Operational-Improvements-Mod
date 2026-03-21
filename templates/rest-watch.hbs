@@ -5,11 +5,11 @@
       <div class="po-subtitle" aria-live="polite">{{mainSubtitleLabel}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
     </div>
     <nav class="po-tabs po-tabs-main po-tabs-main-header" role="tablist" aria-label="Party Operations views">
-      <button type="button" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
-      <button type="button" class="po-tab" data-action="switch-tab" data-tab="march" aria-selected="false" aria-current="false">Marching Order</button>
-      <button type="button" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="switch-tab" data-tab="operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
+      <button type="button" role="tab" tabindex="{{#if mainTabRestWatch}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabRestWatch}}is-active{{/if}}" data-action="switch-tab" data-tab="rest" aria-selected="{{#if mainTabRestWatch}}true{{else}}false{{/if}}" aria-current="{{#if mainTabRestWatch}}page{{else}}false{{/if}}">Rest Watch</button>
+      <button type="button" role="tab" tabindex="-1" class="po-tab" data-action="switch-tab" data-tab="march" aria-selected="false" aria-current="false">Marching Order</button>
+      <button type="button" role="tab" tabindex="{{#if mainTabOperations}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabOperations}}is-active{{/if}}" data-action="switch-tab" data-tab="operations" aria-selected="{{#if mainTabOperations}}true{{else}}false{{/if}}" aria-current="{{#if mainTabOperations}}page{{else}}false{{/if}}">Operations</button>
       {{#if showGmPageTab}}
-      <button type="button" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="switch-tab" data-tab="gm" aria-selected="{{#if mainTabGm}}true{{else}}false{{/if}}" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
+      <button type="button" role="tab" tabindex="{{#if mainTabGm}}0{{else}}-1{{/if}}" class="po-tab {{#if mainTabGm}}is-active{{/if}}" data-action="switch-tab" data-tab="gm" aria-selected="{{#if mainTabGm}}true{{else}}false{{/if}}" aria-current="{{#if mainTabGm}}page{{else}}false{{/if}}">GM</button>
       {{/if}}
     </nav>
     <div class="po-controls">
@@ -1061,13 +1061,36 @@
                   <div class="po-op-role-name">Submit Downtime Action</div>
                   <div class="po-op-role-status">Per actor</div>
                 </div>
-                <div class="po-op-summary"><strong>Status:</strong> {{operations.downtime.publication.statusLabel}}</div>
-                <div class="po-op-summary"><strong>Published:</strong> {{operations.downtime.publication.publishedAtLabel}} by {{operations.downtime.publication.publishedBy}}</div>
-                <div class="po-op-summary"><strong>Ready to submit:</strong> {{#if operations.downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
-                <div class="po-op-summary"><strong>Selected action:</strong> {{#each operations.downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{operations.downtime.submit.hours}} hour(s)</div>
-                <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
+                <div class="po-downtime-status-strip" aria-label="Downtime publication summary">
+                  <div class="po-downtime-status-card">
+                    <span class="po-downtime-status-label">Status</span>
+                    <strong class="po-downtime-status-value">{{operations.downtime.publication.statusLabel}}</strong>
+                  </div>
+                  <div class="po-downtime-status-card {{#if operations.downtime.submit.canSubmit}}is-ready{{else}}is-blocked{{/if}}">
+                    <span class="po-downtime-status-label">Ready</span>
+                    <strong class="po-downtime-status-value">{{#if operations.downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</strong>
+                  </div>
+                  <div class="po-downtime-status-card po-downtime-status-card-wide">
+                    <span class="po-downtime-status-label">Selection</span>
+                    <strong class="po-downtime-status-value">{{#each operations.downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{operations.downtime.submit.hours}} hour(s)</strong>
+                  </div>
+                  {{#if @root.isGM}}
+                  <div class="po-downtime-status-card">
+                    <span class="po-downtime-status-label">Draft Hours</span>
+                    <strong class="po-downtime-status-value">{{operations.downtime.draftHoursGranted}}</strong>
+                  </div>
+                  {{/if}}
+                </div>
+                <details class="po-panel-disclosure po-downtime-status-details">
+                  <summary class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Publication Details</span>
+                    <span class="po-op-summary">Published {{operations.downtime.publication.publishedAtLabel}} by {{operations.downtime.publication.publishedBy}}</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
+                    <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
+                  </div>
+                </details>
                 {{#if @root.isGM}}
-                <div class="po-op-summary"><strong>Draft Hours:</strong> {{operations.downtime.draftHoursGranted}}</div>
                 <div class="po-op-action-row">
                   <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-downtime-hours">{{operations.downtime.publication.buttonLabel}}</button>
                 </div>

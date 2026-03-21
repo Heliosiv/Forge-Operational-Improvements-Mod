@@ -1,4 +1,5 @@
 import { MODULE_ID } from "./constants.js";
+import { isDisabledInteractionElement } from "./ui-interaction-state.js";
 
 const INTERACTIVE_SELECTOR = [
   ".po-btn",
@@ -27,16 +28,10 @@ const SOUND_COOLDOWN_MS = 90;
 let buttonSoundsRegistered = false;
 let lastSoundTimestamp = 0;
 
-function isDisabled(element) {
-  if (!element) return true;
-  if (element.matches?.(":disabled, [disabled], [aria-disabled='true']")) return true;
-  return element.closest?.("[disabled], [aria-disabled='true']") != null;
-}
-
 function getInteractiveTarget(target) {
   if (!(target instanceof Element)) return null;
   const interactiveElement = target.closest(INTERACTIVE_SELECTOR);
-  if (!interactiveElement || isDisabled(interactiveElement)) return null;
+  if (!interactiveElement || isDisabledInteractionElement(interactiveElement)) return null;
   if (!interactiveElement.closest(ROOT_SELECTOR)) return null;
   return interactiveElement;
 }

@@ -16,10 +16,10 @@
     {{#if playerHubSimpleMode}}
     <section class="po-content po-player-hub-shell">
       <nav class="po-tabs po-tabs-sub po-player-hub-tabs" role="tablist" aria-label="Player Hub Tabs">
-        <button type="button" class="po-tab {{#if playerHubWatch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="watch" aria-selected="{{#if playerHubWatch}}true{{else}}false{{/if}}">Watch</button>
-        <button type="button" class="po-tab {{#if playerHubMarch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="march" aria-selected="{{#if playerHubMarch}}true{{else}}false{{/if}}">March</button>
-        <button type="button" class="po-tab {{#if playerHubLoot}}is-active{{/if}}" data-action="player-hub-tab" data-tab="loot" aria-selected="{{#if playerHubLoot}}true{{else}}false{{/if}}">Loot</button>
-        <button type="button" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-watch" tabindex="{{#if playerHubWatch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubWatch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="watch" aria-selected="{{#if playerHubWatch}}true{{else}}false{{/if}}">Watch</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-march" tabindex="{{#if playerHubMarch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubMarch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="march" aria-selected="{{#if playerHubMarch}}true{{else}}false{{/if}}">March</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-loot" tabindex="{{#if playerHubLoot}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubLoot}}is-active{{/if}}" data-action="player-hub-tab" data-tab="loot" aria-selected="{{#if playerHubLoot}}true{{else}}false{{/if}}">Loot</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-downtime" tabindex="{{#if playerHubDowntime}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
       </nav>
 
       {{#if playerHubWatch}}

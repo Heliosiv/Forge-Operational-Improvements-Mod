@@ -1,30 +1,8 @@
-function getGame() {
-  return globalThis.game ?? {};
-}
-
-function getCurrentUserId() {
-  return String(getGame().user?.id ?? "anon").trim() || "anon";
-}
-
-function getSessionStorage() {
-  return globalThis.sessionStorage ?? null;
-}
-
-function readSessionValue(key) {
-  try {
-    return getSessionStorage()?.getItem?.(key) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function writeSessionValue(key, value) {
-  try {
-    getSessionStorage()?.setItem?.(key, value);
-  } catch {
-    // Ignore transient browser storage failures for UI-only state.
-  }
-}
+import {
+  getCurrentUserId,
+  readSessionValue,
+  writeSessionValue
+} from "../core/browser-session-state.js";
 
 const OPERATIONS_PAGE_VALUES = new Set(["planning", "reputation", "base", "merchants", "downtime", "recovery", "gm"]);
 const PLAYER_HUB_TAB_VALUES = new Set(["watch", "march", "loot", "downtime"]);

@@ -241,8 +241,8 @@
 
 .party-operations .po-window[data-tool="settings-hub"] .po-resource-row > input[type="checkbox"] {
   justify-self: start;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
 }
 
 @media (max-width: 980px) {
