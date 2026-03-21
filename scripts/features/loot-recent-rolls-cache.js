@@ -12,7 +12,7 @@ const MAX_RECENT_ROLLS = 2;
 const RECENT_ROLL_DECAY_MS = 5 * 60 * 1000; // 5 minute decay per roll
 
 function getRolledItemsCacheKey() {
-  const sceneId = game?.scenes?.active?.id ?? "unknown";
+  const sceneId = globalThis?.game?.scenes?.active?.id ?? "unknown";
   return `${RECENT_ROLLS_CACHE_KEY}:${sceneId}`;
 }
 
@@ -130,9 +130,11 @@ export function clearRecentRollsCache() {
 /**
  * Hook to clear cache when scene changes.
  */
-Hooks.on("canvasReady", () => {
-  clearRecentRollsCache();
-});
+if (globalThis?.Hooks?.on) {
+  globalThis.Hooks.on("canvasReady", () => {
+    clearRecentRollsCache();
+  });
+}
 
 // Helper to build item identity
 function buildItemIdentity(entry = {}) {
