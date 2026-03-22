@@ -381,6 +381,14 @@ function applyNarrativeUpdate(item = {}, update = {}) {
       delete item.variableTreasureKind;
     }
   }
+  if (Object.prototype.hasOwnProperty.call(update, "weight")) {
+    const weightValue = toNumber(update.weight);
+    if (weightValue >= 0) {
+      if (!item.system.weight || typeof item.system.weight !== "object") item.system.weight = { value: 0, units: "lb" };
+      item.system.weight.value = weightValue;
+      if (!item.system.weight.units) item.system.weight.units = "lb";
+    }
+  }
 }
 
 function applyTreasureSpecToItem(item = {}, spec = {}) {
