@@ -4,7 +4,8 @@ import {
   MERCHANT_DEFAULTS,
   buildMerchantDefinitionPatchFromEditorForm,
   buildStarterMerchantPatch,
-  normalizeMerchantAutoRefreshConfig
+  normalizeMerchantAutoRefreshConfig,
+  selectMerchantStockRows
 } from "./features/merchant-domain.js";
 
 assert.deepEqual(
@@ -81,5 +82,47 @@ assert.equal(barterPatch.pricing.barterSuccessBuyModifier, -0.15);
 assert.equal(barterPatch.pricing.barterSuccessSellModifier, 0.2);
 assert.equal(barterPatch.pricing.barterFailureBuyModifier, 0.15);
 assert.equal(barterPatch.pricing.barterFailureSellModifier, -0.3);
+
+const ammoCandidates = [
+  {
+    key: "Item.ammo.arrow",
+    name: "Arrow",
+    gpValue: 0.05,
+    rarityBucket: "common",
+    data: { name: "Arrow", type: "ammunition" }
+  }
+];
+
+const ammoMerchant = {
+  stock: {
+    maxItems: 20,
+    targetValueGp: 200,
+    valueStrictness: 180,
+    duplicateChance: 100,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 100,
+      uncommon: 45,
+      rare: 16,
+      "very-rare": 5,
+      legendary: 1
+    }
+  }
+};
+
+const ammoSelection = selectMerchantStockRows(ammoCandidates, ammoMerchant, {
+  randomFn: () => 0.5,
+  shuffleRows: (rows) => rows
+});
+
+const ammoTotalQuantity = ammoSelection.reduce(
+  (sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)),
+  0
+);
+assert.ok(ammoTotalQuantity > 20, "Expected budgeted ammo merchants to exceed old 20-unit cap.");
+assert.ok(
+  ammoSelection.some((entry) => String(entry?.key ?? "").includes("::stack-")),
+  "Expected additional ammo stacks once a stack reaches max size."
+);
 
 process.stdout.write("merchant domain validation passed\n");

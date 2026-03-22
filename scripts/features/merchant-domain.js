@@ -1251,12 +1251,27 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   const selected = [];
   const selectedByKey = new Map();
+  const selectedBaseKeys = new Set();
+  const selectedStacksByBaseKey = new Map();
   let totalUnits = 0;
   let runningValue = 0;
   const budgetEnabled = targetValueGp > 0;
   const budgetTolerance = budgetEnabled ? valueTolerance.toleranceGp : Infinity;
   const budgetHardCap = budgetEnabled ? valueTolerance.maxGp : Infinity;
-  const canAddUnits = () => totalUnits < targetCount;
+  const maxGeneratedRows = MERCHANT_MAX_GENERATED_ITEM_COUNT;
+  const canAddRows = () => selected.length < targetCount;
+  const canAddRowsBeyondTarget = () => budgetEnabled && runningValue < targetValueGp && selected.length < maxGeneratedRows;
+
+  const resolveBaseKey = (entry) => String(entry?.sourceKey ?? entry?.key ?? "").trim();
+  const getStacksForBaseKey = (baseKey) => selectedStacksByBaseKey.get(baseKey) ?? [];
+  const canDuplicateBaseKey = (baseKey) => {
+    const stacks = getStacksForBaseKey(baseKey);
+    if (stacks.length <= 0) return false;
+    if (stacks.some((entry) => Number(entry?.quantity ?? 1) < maxStackSize)) return true;
+    return selected.length < maxGeneratedRows;
+  };
+  const canDuplicateAnySelected = () => selected.some((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
+  const shouldContinueSelection = () => canAddRows() || canAddRowsBeyondTarget() || (budgetEnabled && runningValue < targetValueGp && canDuplicateAnySelected());
 
   const getCandidateBudgetValue = (candidate) => {
     const base = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
@@ -1278,11 +1293,12 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   };
 
   const addSelection = (candidate, quantity = 1, addOptions = {}) => {
-    const key = String(candidate?.key ?? "").trim();
-    if (!key || quantity <= 0) return false;
+    const baseKey = String(candidate?.key ?? "").trim();
+    if (!baseKey || quantity <= 0) return false;
     const bypassBudget = addOptions?.bypassBudget === true;
     if (!canAffordCandidate(candidate, quantity, bypassBudget)) return false;
-    const entry = selectedByKey.get(key);
+    const stacks = getStacksForBaseKey(baseKey);
+    const entry = stacks.find((stack) => Number(stack?.quantity ?? 1) < maxStackSize) ?? null;
     const budgetValue = getCandidateBudgetValue(candidate);
     if (entry) {
       const nextQuantity = Math.max(1, Number(entry.quantity ?? 1) + quantity);
@@ -1291,12 +1307,18 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       runningValue += budgetValue * quantity;
       return true;
     }
+    if (selected.length >= maxGeneratedRows) return false;
+    const stackKey = stacks.length <= 0 ? baseKey : `${baseKey}::stack-${stacks.length + 1}`;
     const created = {
       ...candidate,
+      key: stackKey,
+      sourceKey: baseKey,
       quantity: Math.max(1, quantity)
     };
     selected.push(created);
-    selectedByKey.set(key, created);
+    selectedByKey.set(stackKey, created);
+    selectedBaseKeys.add(baseKey);
+    selectedStacksByBaseKey.set(baseKey, [...stacks, created]);
     totalUnits += created.quantity;
     runningValue += budgetValue * created.quantity;
     return true;
@@ -1346,7 +1368,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   if (curatedOrder.length > 0) {
     for (const uuid of curatedOrder) {
-      if (!canAddUnits()) break;
+      if (!canAddRows() && !canAddRowsBeyondTarget()) break;
       const match = candidateByKey.get(String(uuid ?? "").trim());
       if (!match) continue;
       addSelection(match, 1, { bypassBudget: true });
@@ -1354,13 +1376,18 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   }
 
   let safety = 0;
-  while (canAddUnits() && safety < (targetCount * 30)) {
+  const budgetSafetyFloor = budgetEnabled ? Math.max(120, Math.ceil(targetValueGp * 25)) : 0;
+  const safetyLimit = Math.max(targetCount * 30, Math.min(5000, budgetSafetyFloor));
+  while (shouldContinueSelection() && safety < safetyLimit) {
     safety += 1;
+    const canAddNewCandidate = canAddRows() || canAddRowsBeyondTarget();
     const remainingCandidates = shuffled
-      .filter((entry) => !selectedByKey.has(String(entry?.key ?? "").trim()));
+      .filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()));
     const duplicatePool = selected
-      .filter((entry) => Number(entry?.quantity ?? 1) < maxStackSize);
-    const affordableCandidates = remainingCandidates.filter((entry) => canAffordCandidate(entry, 1));
+      .filter((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
+    const affordableCandidates = canAddNewCandidate
+      ? remainingCandidates.filter((entry) => canAffordCandidate(entry, 1))
+      : [];
     const affordableDuplicates = duplicatePool.filter((entry) => canAffordCandidate(entry, 1));
 
     const canDuplicate = affordableDuplicates.length > 0;

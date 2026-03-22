@@ -2685,11 +2685,15 @@ function ensurePartyOperationsClass(appOrElement) {
     ? root
     : root.closest(".window-app, .application");
   if (!frame?.classList) return;
+  const hasPartyOpsWindow = Boolean(
+    frame.querySelector?.(".po-window[data-tool], .po-window[data-main-tab]")
+  );
+  if (!hasPartyOpsWindow) return;
   frame.classList.add("party-operations");
 }
 
 function applyNonGmOperationsReadonly(appOrElement) {
-  if (canAccessAllPlayerOps()) return;
+  if (game.user?.isGM) return;  // Only actual GMs bypass readonly restrictions; shared-perm players still need restrictions
   const root = getAppRootElement(appOrElement);
   if (!root) return;
   const operationsWindow = root.querySelector(".po-window[data-main-tab='operations'], .po-window[data-main-tab='gm']");
@@ -5679,6 +5683,32 @@ async function saveRestWatchEntryNoteByContext(context = {}, options = {}) {
   setNoteDraftCacheValue(cacheKey, text);
 
   if (!game.user?.isGM) {
+    // Pre-transmission validation for players
+    const actor = game.actors?.get(actorId);
+    if (!actor) {
+      if (options?.notify) ui.notifications?.error("Actor not found.");
+      return false;
+    }
+    
+    if (!canUserControlActor(actor, game.user)) {
+      if (options?.notify) ui.notifications?.warn("You don't have permission to edit notes for this character.");
+      return false;
+    }
+    
+    const state = getRestWatchState();
+    const slot = state.slots?.find((entry) => entry.id === slotId);
+    if (!slot) {
+      if (options?.notify) ui.notifications?.error("Rest watch slot not found.");
+      return false;
+    }
+    
+    const hasEntry = slot.actorId === actorId || 
+      (Array.isArray(slot.entries) && slot.entries.some((row) => String(row?.actorId ?? "") === actorId));
+    if (!hasEntry) {
+      if (options?.notify) ui.notifications?.warn("This character is not assigned to this rest slot.");
+      return false;
+    }
+
     if (!hasActiveGmClient()) {
       const published = await publishRestWatchNoteForActor(actorId, slotId, text, {
         source,
@@ -5895,6 +5925,32 @@ async function saveMarchingNoteByContext(context = {}, options = {}) {
   setNoteDraftCacheValue(cacheKey, text);
 
   if (!game.user?.isGM) {
+    // Pre-transmission validation for players
+    if (isMarchingOrderPlayerLocked(game.user)) {
+      if (options?.notify) ui.notifications?.warn("Marching order is locked. You cannot edit notes.");
+      return false;
+    }
+    
+    const actor = game.actors?.get(actorId);
+    if (!actor) {
+      if (options?.notify) ui.notifications?.error("Actor not found.");
+      return false;
+    }
+    
+    if (!canUserControlActor(actor, game.user)) {
+      if (options?.notify) ui.notifications?.warn("You don't have permission to edit notes for this character.");
+      return false;
+    }
+    
+    const state = getMarchingOrderState();
+    const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
+      Array.isArray(actorIds) && actorIds.includes(actorId)
+    ));
+    if (!inFormation) {
+      if (options?.notify) ui.notifications?.warn("This character is not in the marching order formation.");
+      return false;
+    }
+
     if (!hasActiveGmClient()) {
       const published = await publishMarchingNoteForActor(actorId, text, {
         user: game.user
@@ -7836,7 +7892,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
     // Setup drag-and-drop for rest watch entries
     setupRestWatchDragAndDropFeature(this.element, {
       getRestWatchState,
-      canAccessAllPlayerOps,
+      isActualGM: game.user?.isGM,  // Pass actual GM status, not shared permissions
       isLockedForUser,
       updateRestWatchState,
       ensureRestSlotEntriesList,
@@ -11055,7 +11111,8 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       markDoctrineTriggerPending,
       doctrineTriggers: MARCH_DOCTRINE_TRIGGERS,
       normalizeMarchingFormation,
-      appInstanceKeys: APP_INSTANCE_KEYS
+      appInstanceKeys: APP_INSTANCE_KEYS,
+      isActualGM: game.user?.isGM
     });
     refreshTabAccessibility(this.element);
     diagnoseRenderedMainTabs(this.element, "marching-order");
@@ -21912,7 +21969,8 @@ function buildLootClaimsContext(user = game.user) {
   const publishedAt = Number(displayRun?.publishedAt ?? claims.publishedAt ?? 0);
   const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
   const selectableActors = getLootClaimSelectableActorsForUser(user);
-  const canChooseActor = canAccessAllPlayerOps(user);
+  const canManageClaims = canAccessAllPlayerOps(user);
+  const canChooseActor = canManageClaims;
   const actorOptions = selectableActors.map((actor) => ({
     id: String(actor.id),
     name: String(actor.name ?? `Actor ${actor.id}`),
@@ -22049,7 +22107,9 @@ function buildLootClaimsContext(user = game.user) {
       canVouch: !displayRunIsArchived && Boolean(selectedActorId) && voucherEligibleActorIds.has(selectedActorId),
       requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
       canRunRollOff: !displayRunIsArchived && Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
-      canClaimDirect: !displayRunIsArchived && Boolean(selectedActorId) && !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1),
+      canClaimDirect: !displayRunIsArchived
+        && Boolean(selectedActorId)
+        && (canManageClaims || !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1)),
       vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
         .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
         .filter(Boolean)
@@ -39970,7 +40030,8 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
   const voucherActorIds = Array.isArray(claimItem.vouchedByActorIds)
     ? claimItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
     : [];
-  if (voucherActorIds.length > 1) {
+  const canManageClaims = canAccessAllPlayerOps(user);
+  if (voucherActorIds.length > 1 && !canManageClaims) {
     return { ok: false, message: "This item has multiple vouchers. Run a roll-off first." };
   }
   const itemData = await buildLootClaimItemDocumentData(claimItem);

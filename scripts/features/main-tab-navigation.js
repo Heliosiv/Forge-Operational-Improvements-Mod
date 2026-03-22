@@ -22,7 +22,7 @@ export function createMainTabNavigator({
       tabId,
       normalized,
       template: getTemplateForMainTab?.(normalized),
-      isGM: Boolean(canAccessAllPlayerOps?.()),
+      isActualGM: Boolean(typeof game !== "undefined" && game.user?.isGM),  // Actual GM status; canAccessGmPage for permissions
       canAccessGmPage: Boolean(canAccessGmPage?.())
     });
 

@@ -232,15 +232,14 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
 export function setupRestWatchDragAndDrop(html, deps = {}) {
   const {
     getRestWatchState,
-    canAccessAllPlayerOps,
+    isActualGM = false,  // Actual GM status for drag-and-drop interaction permissions
     isLockedForUser,
     updateRestWatchState,
     refreshRestWatchAppsImmediately
   } = deps;
 
   const state = getRestWatchState();
-  const isGM = canAccessAllPlayerOps();
-  if (isLockedForUser(state, isGM)) return;
+  if (isLockedForUser(state, isActualGM)) return;
 
   html.querySelectorAll(".po-watch-entry").forEach((entry) => {
     const actorId = entry.dataset.actorId;

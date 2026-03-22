@@ -165,7 +165,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
 export function setupMarchingDragAndDrop(html, deps = {}) {
   const {
     getMarchingOrderState,
-    canAccessAllPlayerOps,
+    isActualGM = false,  // Actual GM status for drag-and-drop interaction permissions
     canDragEntry,
     isLockedForUser,
     notifyUiWarnThrottled,
@@ -179,9 +179,8 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
   } = deps;
 
   const state = getMarchingOrderState();
-  const isGM = canAccessAllPlayerOps();
   const locked = state.locked;
-  const playerLocked = !isGM && isLockedForUser(state, isGM);
+  const playerLocked = !isActualGM && isLockedForUser(state, isActualGM);
 
   const draggableEntries = [
     ...Array.from(html.querySelectorAll(".po-entry")),
@@ -192,7 +191,7 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
   draggableEntries.forEach((entry) => {
     const actorId = entry.dataset.actorId;
     if (!actorId) return;
-    const draggable = canDragEntry(actorId, isGM, locked) && !playerLocked;
+    const draggable = canDragEntry(actorId, isActualGM, locked) && !playerLocked;
     entry.setAttribute("draggable", draggable ? "true" : "false");
     entry.classList.toggle("is-draggable", draggable);
     if (!draggable) return;
@@ -233,7 +232,7 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     column.addEventListener("drop", async (event) => {
       event.preventDefault();
       const liveState = getMarchingOrderState();
-      if (isLockedForUser(liveState, isGM)) {
+      if (isLockedForUser(liveState, isActualGM)) {
         notifyUiWarnThrottled("Marching order is locked by the GM.", {
           key: "marching-order-locked",
           ttlMs: 1500

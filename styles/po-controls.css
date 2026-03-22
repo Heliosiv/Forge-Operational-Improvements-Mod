@@ -234,7 +234,7 @@
   opacity: 1;
 }
 
-.party-operations .po-window input[type="checkbox"] {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   display: inline-grid;
@@ -262,7 +262,7 @@
     transform 140ms ease;
 }
 
-.party-operations .po-window input[type="checkbox"]::before {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]::before {
   content: "";
   width: 10px;
   height: 6px;
@@ -274,14 +274,14 @@
   margin-top: -1px;
 }
 
-.party-operations .po-window input[type="checkbox"]:hover {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:hover {
   border-color: color-mix(in srgb, var(--po-select-border) 65%, var(--po-accent));
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, white 46%, transparent),
     0 2px 6px color-mix(in srgb, #5d3b16 14%, transparent);
 }
 
-.party-operations .po-window input[type="checkbox"]:checked {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:checked {
   border-color: color-mix(in srgb, #7c5624 72%, var(--po-select-border));
   background:
     linear-gradient(
@@ -291,11 +291,11 @@
     );
 }
 
-.party-operations .po-window input[type="checkbox"]:checked::before {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:checked::before {
   transform: rotate(-45deg) scale(1);
 }
 
-.party-operations .po-window input[type="checkbox"]:is(:focus, :focus-visible) {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:is(:focus, :focus-visible) {
   outline: none;
   border-color: color-mix(in srgb, var(--po-neon-green) 52%, var(--po-select-border));
   box-shadow:
@@ -303,18 +303,18 @@
     0 0 0 2px color-mix(in srgb, var(--po-accent) 22%, transparent);
 }
 
-.party-operations .po-window input[type="checkbox"]:disabled {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="checkbox"]:disabled {
   cursor: default;
   opacity: 0.62;
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 26%, transparent);
 }
 
-.party-operations .po-window :is(.po-resource-row, .po-switch) > input[type="checkbox"] {
+.party-operations .po-window:is([data-tool], [data-main-tab]) :is(.po-resource-row, .po-switch) > input[type="checkbox"] {
   justify-self: start;
   align-self: center;
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider) {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider) {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
@@ -326,7 +326,7 @@
   cursor: pointer;
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-runnable-track {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-runnable-track {
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 78%, var(--po-border));
   border-radius: 999px;
@@ -341,7 +341,7 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-thumb {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-webkit-slider-thumb {
   appearance: none;
   -webkit-appearance: none;
   width: 16px;
@@ -358,7 +358,7 @@
   box-shadow: 0 1px 4px color-mix(in srgb, #241814 28%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-track {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-track {
   height: 10px;
   border: 1px solid color-mix(in srgb, var(--po-select-border) 78%, var(--po-border));
   border-radius: 999px;
@@ -373,7 +373,7 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-thumb {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider)::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border: 2px solid color-mix(in srgb, white 84%, var(--po-select-bg-light) 16%);
@@ -387,11 +387,11 @@
   box-shadow: 0 1px 4px color-mix(in srgb, #241814 28%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible) {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible) {
   outline: none;
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-webkit-slider-runnable-track {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-webkit-slider-runnable-track {
   border-color: color-mix(in srgb, var(--po-neon-green) 52%, var(--po-select-border));
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--po-accent) 16%, transparent),
@@ -399,7 +399,7 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-moz-range-track {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):is(:focus, :focus-visible)::-moz-range-track {
   border-color: color-mix(in srgb, var(--po-neon-green) 52%, var(--po-select-border));
   box-shadow:
     0 0 0 2px color-mix(in srgb, var(--po-accent) 16%, transparent),
@@ -407,7 +407,7 @@
     inset 0 -1px 0 color-mix(in srgb, #7c5624 10%, transparent);
 }
 
-.party-operations .po-window input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):disabled {
+.party-operations .po-window:is([data-tool], [data-main-tab]) input[type="range"]:not(.po-audio-preview-seek):not(.po-audio-preview-volume-slider):not(.po-audio-live-volume-slider):disabled {
   cursor: default;
   opacity: 0.58;
 }
