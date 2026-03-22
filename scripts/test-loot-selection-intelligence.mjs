@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import { getLootSelectionIntelligenceWeight } from "./features/loot-selection-intelligence.js";
+import { clearRecentRollsCache, recordRecentlyRolledItem } from "./features/loot-recent-rolls-cache.js";
 
 const state = {
   draft: { mode: "encounter" },
@@ -104,6 +105,38 @@ const sourceState = {
     }
   ]
 };
+
+clearRecentRollsCache();
+recordRecentlyRolledItem({
+  name: "Silver Ring",
+  itemType: "loot",
+  rarity: "common",
+  sourceId: "party-operations-loot-manifest"
+});
+
+const repeatedFirstPickWeight = getLootSelectionIntelligenceWeight({
+  name: "Silver Ring",
+  itemType: "loot",
+  rarity: "common",
+  sourceId: "party-operations-loot-manifest"
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+const freshFirstPickWeight = getLootSelectionIntelligenceWeight({
+  name: "Baroque Brooch",
+  itemType: "loot",
+  rarity: "common",
+  sourceId: "party-operations-loot-manifest"
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+assert.ok(
+  repeatedFirstPickWeight < 0.5,
+  "Recently rolled entries should be strongly penalized even for the first pick in a new roll."
+);
+assert.ok(
+  freshFirstPickWeight > repeatedFirstPickWeight,
+  "A fresh entry should outrank a recently repeated entry during first-pick selection."
+);
+clearRecentRollsCache();
 
 const curatedHighScore = getLootSelectionIntelligenceWeight({
   uuid: "Item.curated-1",

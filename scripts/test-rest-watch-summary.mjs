@@ -111,14 +111,14 @@ assert.equal(
 
 assert.equal(
   buildRestWatchDetailSummary(
-    { visibleEntryCount: 4, slotNoDarkvision: true, campfireActive: false },
+    { visibleEntryCount: 4, slotNoDarkvision: false, campfireActive: false },
     [
       { actor: { darkvision: 60, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
       { actor: { darkvision: null, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
     ]
   ).coverageLabel,
-  "Missing Darkvision",
-  "Mixed watches should still warn when any assigned actor lacks darkvision."
+  "Darkvision 60 ft",
+  "Mixed watches should be covered when at least one assigned actor has darkvision."
 );
 
 assert.equal(

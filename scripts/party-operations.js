@@ -19877,15 +19877,14 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
   let enabledSources = (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false);
   if (manifestPackId) {
     const selectedSourceId = manifestFolderId ? LOOT_WORLD_ITEMS_SOURCE_ID : manifestPackId;
-    const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === selectedSourceId)
-      ?? normalizeLootSourcePackEntry({
-        id: selectedSourceId,
-        label: selectedSourceId,
-        sourceKind: selectedSourceId === LOOT_WORLD_ITEMS_SOURCE_ID ? "world-items" : "compendium-pack",
-        enabled: true,
-        weight: 1
-      });
+    const source = enabledSources.find((entry) => String(entry?.id ?? "").trim() === selectedSourceId);
     enabledSources = source ? [source] : [];
+    if (!source) {
+      const selectedSourceLabel = manifestFolderId
+        ? `${LOOT_WORLD_ITEMS_SOURCE_LABEL}: ${manifestFolderLabel || manifestFolderId}`
+        : selectedSourceId;
+      warnings.push(`Selected source is currently disabled: ${selectedSourceLabel}`);
+    }
   }
   metrics.sourceCount = enabledSources.length;
   const candidateCacheKey = buildCandidatesCacheKey(sourceConfig, draft, {
@@ -23446,6 +23445,7 @@ function buildOperationsContext() {
 
 function getOperationalEffects(ledger, roles, sops) {
   const roleCoverage = roles.filter((role) => role.hasActor).length;
+  const activeSops = Array.isArray(sops) ? sops.filter((sop) => sop?.active).length : 0;
   const hasQuartermaster = Boolean(ledger.roles?.quartermaster);
   const hasCartographer = Boolean(ledger.roles?.cartographer);
   const hasChronicler = Boolean(ledger.roles?.chronicler);
@@ -45794,20 +45794,29 @@ function computePassiveRangeForEntries(entries, key) {
 function computeNoDarkvision(slots) {
   for (const slot of slots) {
     const entries = slot.entries ?? [];
+    let hasAssignedActor = false;
+    let hasDarkvisionCoverage = false;
     for (const entry of entries) {
-      if (entry.actor && !entry.actor.darkvision) {
-        return slot.label;
+      if (!entry.actor) continue;
+      hasAssignedActor = true;
+      if (entry.actor.darkvision) {
+        hasDarkvisionCoverage = true;
+        break;
       }
     }
+    if (hasAssignedActor && !hasDarkvisionCoverage) return slot.label;
   }
   return "";
 }
 
 function computeNoDarkvisionForEntries(entries) {
+  let hasAssignedActor = false;
   for (const entry of entries ?? []) {
-    if (entry.actor && !entry.actor.darkvision) return true;
+    if (!entry.actor) continue;
+    hasAssignedActor = true;
+    if (entry.actor.darkvision) return false;
   }
-  return false;
+  return hasAssignedActor;
 }
 
 function buildQuickNotes(state) {

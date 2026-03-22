@@ -76,7 +76,8 @@ export function flushExpiredRecentRolls() {
 
 /**
  * Check if an item was recently rolled. Returns malus weight (0.0-1.0).
- * Items rolled in the last 2 outputs get 0.5x penalty, older items return 1.0.
+ * Repeats that occurred very recently receive a strong malus to prevent
+ * the same item from anchoring consecutive rolls.
  */
 export function getRecentRollMalus(entry = {}) {
   if (!entry || typeof entry !== "object") return 1.0;
@@ -87,22 +88,24 @@ export function getRecentRollMalus(entry = {}) {
   const cache = getRecentItemsCache();
   const now = Date.now();
   
-  // Check how many recent entries match this item
-  let matchCount = 0;
+  // Accumulate recency pressure for matching entries.
+  // Fresh repeats are penalized strongly; older repeats decay quickly.
+  let repeatPressure = 0;
   for (const record of cache) {
     if (record.identity === identity) {
-      const ageSec = (now - record.timestamp) / 1000;
-      // Apply penalty for items rolled in last 2 minutes
-      if (ageSec < 120) {
-        matchCount += 1;
+      const ageMs = Math.max(0, now - Number(record.timestamp ?? now));
+      if (ageMs <= 30_000) {
+        repeatPressure += 1.25;
+      } else if (ageMs <= 120_000) {
+        repeatPressure += 0.9;
+      } else if (ageMs <= RECENT_ROLL_DECAY_MS) {
+        repeatPressure += 0.4;
       }
     }
   }
-  
-  if (matchCount === 0) return 1.0;
-  if (matchCount === 1) return 0.6; // First repeat: 60% weight
-  if (matchCount === 2) return 0.4; // Second repeat: 40% weight
-  return 0.3; // Third+ repeat: 30% weight
+
+  if (repeatPressure <= 0) return 1.0;
+  return Math.max(0.04, Number((1 / (1 + (repeatPressure * 2.25))).toFixed(6)));
 }
 
 /**

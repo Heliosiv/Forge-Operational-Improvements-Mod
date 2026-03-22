@@ -1,4 +1,4 @@
-import { getRecentRollMalus, flushExpiredRecentRolls } from "./loot-recent-rolls-cache.js";
+import { getRecentRollMalus } from "./loot-recent-rolls-cache.js";
 
 function normalizeText(value = "") {
   return String(value ?? "").trim().toLowerCase();
@@ -76,7 +76,8 @@ function countCategoryOverlap(candidateCategories = [], selectedEntry = {}) {
 
 export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase = "spend") {
   const selected = Array.isArray(state?.selected) ? state.selected : [];
-  if (!selected.length) return 1;
+  const recentRollMalus = getRecentRollMalus(entry);
+  if (!selected.length) return Math.max(0.000001, Number(recentRollMalus.toFixed(6)));
 
   const mode = normalizeText(state?.draft?.mode ?? state?.budgetContext?.mode ?? "horde") || "horde";
   const phaseKey = normalizeText(phase) === "fill" ? "fill" : "spend";
@@ -200,7 +201,6 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   weight *= curationFactor;
 
   // Apply recently-rolled item penalty to reduce repetition across multiple horde rolls in same scene
-  const recentRollMalus = getRecentRollMalus(entry);
   weight *= recentRollMalus;
 
   // Apply scale-based weight profiles for horde mode

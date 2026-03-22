@@ -123,4 +123,26 @@ assert.equal(
   "Keyword include mode should flow into candidate filtering as 'any' when configured."
 );
 
+const disabledManifestWarnings = [];
+const disabledManifestCandidates = await buildLootItemCandidates({
+  packs: [
+    { id: "__world_items__", label: "World Item Directory", enabled: true, weight: 1 },
+    { id: "pack.magic", label: "Magic Pack", enabled: false, weight: 2 }
+  ],
+  filters: {
+    manifestPackId: "pack.magic"
+  }
+}, {}, disabledManifestWarnings);
+
+assert.equal(
+  disabledManifestCandidates.length,
+  0,
+  "A disabled manifest-selected source should not contribute candidates."
+);
+assert.equal(
+  disabledManifestWarnings.some((entry) => String(entry).includes("Selected source is currently disabled: pack.magic")),
+  true,
+  "A disabled manifest-selected source should emit a warning to explain missing candidates."
+);
+
 process.stdout.write("loot item candidate source validation passed\n");
