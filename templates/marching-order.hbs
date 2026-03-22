@@ -139,7 +139,7 @@
                         <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
                           <i class="fa-solid fa-location-dot"></i>
                         </button>
-                        {{#if @root.isGM}}
+                        {{#if entry.canRemove}}
                         <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{entry.actorId}}" aria-label="Remove">
                           <i class="fa-solid fa-xmark"></i>
                         </button>

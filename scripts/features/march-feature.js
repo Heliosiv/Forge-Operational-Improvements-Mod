@@ -63,6 +63,10 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
     return normalized;
   }
 
+  if (op === "leaveRank") {
+    return { op, actorId };
+  }
+
   return {
     op,
     actorId,
@@ -128,6 +132,34 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
       request.actorId,
       Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0 ? requestedCellIndex : null
     );
+    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
+    }
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
+
+  if (request.op === "leaveRank") {
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject leaveRank (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    for (const key of Object.keys(state.ranks ?? {})) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
+    }
+    clearActorPlacement(state, request.actorId);
+    if (state.notes) delete state.notes[request.actorId];
+    if (state.light) delete state.light[request.actorId];
+    if (state.lightRanges) delete state.lightRanges[request.actorId];
     if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
       markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
     }

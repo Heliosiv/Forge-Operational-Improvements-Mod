@@ -42955,7 +42955,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
 
     if (mutatorOrRequest && typeof mutatorOrRequest === "object") {
       const requestedOp = String(mutatorOrRequest.op ?? "").trim();
-      if (requestedOp === "joinRank") {
+      if (requestedOp === "joinRank" || requestedOp === "leaveRank") {
         const actorId = String(mutatorOrRequest.actorId ?? "").trim();
         const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
         if (!actor) {
@@ -43955,52 +43955,46 @@ async function runDoctrineCheckPrompt() {
   });
 }
 
-function refreshSingleAppPreservingView(app) {
-        <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
-      `
-    });
-  }
+async function onMarchSceneEntry() {
+  if (!game.user?.isGM) return;
+  await updateMarchingOrderState((state) => {
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId !== "free") {
+      markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY);
+    }
+  });
+}
 
-  async function onMarchSceneEntry() {
-    if (!game.user?.isGM) return;
-    await updateMarchingOrderState((state) => {
-      const formationId = normalizeMarchingFormation(state.formation ?? "loose");
-      if (formationId !== "free") {
-        markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY);
-      }
-    });
-  }
+let marchSpacingCheckTimeout = null;
 
-  let marchSpacingCheckTimeout = null;
-
-  function scheduleSpacingViolationCheck() {
-    if (!game.user?.isGM) return;
-    if (marchSpacingCheckTimeout) clearTimeout(marchSpacingCheckTimeout);
-    marchSpacingCheckTimeout = setTimeout(async () => {
-      marchSpacingCheckTimeout = null;
-      const state = getMarchingOrderState();
-      const formationId = normalizeMarchingFormation(state.formation ?? "loose");
-      if (formationId === "free") return;
-      const snapshot = getMarchingFormationSnapshot(state);
-      const validityState = snapshot.validity?.state;
-      if (!validityState || validityState === MARCH_DOCTRINE_STATES.STABLE) return;
-      await updateMarchingOrderState((draft) => {
-        markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION);
-      });
-    }, 500);
-  }
-
-  function onMarchTokenMoved(tokenDoc) {
-    if (!game.user?.isGM) return;
-    const actorId = String(tokenDoc?.actorId ?? tokenDoc?.actor?.id ?? "").trim();
-    if (!actorId) return;
+function scheduleSpacingViolationCheck() {
+  if (!game.user?.isGM) return;
+  if (marchSpacingCheckTimeout) clearTimeout(marchSpacingCheckTimeout);
+  marchSpacingCheckTimeout = setTimeout(async () => {
+    marchSpacingCheckTimeout = null;
     const state = getMarchingOrderState();
-    const ordered = getOrderedMarchingActors(state);
-    if (!ordered.includes(actorId)) return;
-    scheduleSpacingViolationCheck();
-  }
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    const snapshot = getMarchingFormationSnapshot(state);
+    const validityState = snapshot.validity?.state;
+    if (!validityState || validityState === MARCH_DOCTRINE_STATES.STABLE) return;
+    await updateMarchingOrderState((draft) => {
+      markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION);
+    });
+  }, 500);
+}
 
-  function refreshSingleAppPreservingView(app) {
+function onMarchTokenMoved(tokenDoc) {
+  if (!game.user?.isGM) return;
+  const actorId = String(tokenDoc?.actorId ?? tokenDoc?.actor?.id ?? "").trim();
+  if (!actorId) return;
+  const state = getMarchingOrderState();
+  const ordered = getOrderedMarchingActors(state);
+  if (!ordered.includes(actorId)) return;
+  scheduleSpacingViolationCheck();
+}
+
+function refreshSingleAppPreservingView(app) {
   if (!app?.render) return;
   const windowState = captureWindowState(app);
   if (windowState) pendingWindowRestore.set(app, windowState);
@@ -44594,6 +44588,7 @@ async function resetAllActivities() {
 function buildWatchSlotsView(state, isGM, visibility) {
   const lockedForUser = isRestWatchLockedForUser(state, isGM);
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
+  const hasSelectablePlayerActor = !isGM && getSelectablePlayerActorsForUser(game.user).length > 0;
   const activities = getRestActivities();
   const sourceSlots = getRestWatchSourceSlots(state);
   const playerActorOptions = isGM ? buildRestWatchPlayerActorOptions() : [];
@@ -44692,7 +44687,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
       isFull: visibleEntryCount >= REST_WATCH_MAX_ENTRIES,
       canAddVisibleSlot: visibleEntryCount < REST_WATCH_MAX_ENTRIES,
       canAssign: isGM,
-      canAssignMe: !isGM && !lockedForUser
+      canAssignMe: hasSelectablePlayerActor && !lockedForUser
     };
   });
 }

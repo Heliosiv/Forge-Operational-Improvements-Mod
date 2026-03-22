@@ -1,11 +1,11 @@
-{
+﻿{
     "id":  "party-operations",
     "title":  "Party Operations",
     "description":  "Rest Watch and Marching Order tools.",
     "url":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
     "manifest":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
     "download":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
-    "version":  "2.2.7-test.20",
+    "version":  "2.2.7-test.21",
     "authors":  [
                     {
                         "name":  "Heliosiv"
@@ -50,22 +50,24 @@
                       "system":  "dnd5e",
                       "private":  false
                   }
-                 ],
-         "relationships":  {
-                               "recommends":  [
-                                                 {
-                                                     "id":  "dae",
-                                                     "type":  "module",
-                                                     "compatibility":  { "minimum":  "11" }
-                                                 },
-                                                 {
-                                                     "id":  "midi-qol",
-                                                     "type":  "module"
-                                                 },
-                                                 {
-                                                     "id":  "monks-tokenbar",
-                                                     "type":  "module"
-                                                 }
-                                             ]
-                           }
+              ],
+    "relationships":  {
+                          "recommends":  [
+                                             {
+                                                 "id":  "dae",
+                                                 "type":  "module",
+                                                 "compatibility":  {
+                                                                       "minimum":  "11"
+                                                                   }
+                                             },
+                                             {
+                                                 "id":  "midi-qol",
+                                                 "type":  "module"
+                                             },
+                                             {
+                                                 "id":  "monks-tokenbar",
+                                                 "type":  "module"
+                                             }
+                                         ]
+                      }
 }

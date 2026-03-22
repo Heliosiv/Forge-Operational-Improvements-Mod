@@ -78,6 +78,13 @@
               </div>
             </div>
           </div>
+          {{#if canClear}}
+          <div class="po-entry-actions">
+            <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          {{/if}}
         </div>
         {{/each}}
         {{else}}
