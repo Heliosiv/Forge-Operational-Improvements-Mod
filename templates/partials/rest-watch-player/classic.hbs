@@ -178,9 +178,6 @@
           {{/if}}
 
           <div class="po-entry-actions">
-            <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="open-shared-note" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
-              <i class="fa-solid fa-note-sticky"></i>
-            </button>
             {{#if canClear}}
             <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
               <i class="fa-solid fa-xmark"></i>

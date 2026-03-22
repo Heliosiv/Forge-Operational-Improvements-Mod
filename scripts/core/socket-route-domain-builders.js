@@ -161,6 +161,7 @@ export function buildSettingsSocketRouteDeps({
 export function buildOperationsSocketRouteDeps({
   applyPlayerSopNoteRequestFeature,
   resolveRequester,
+  canAccessAllPlayerOps,
   sopKeys,
   clampSocketText,
   socketNoteMaxLength,
@@ -179,6 +180,7 @@ export function buildOperationsSocketRouteDeps({
   return {
     applyPlayerSopNoteRequest: (message, requesterRef) => applyPlayerSopNoteRequestFeature(message, requesterRef, {
       resolveRequester,
+      canAccessAllPlayerOps,
       sopKeys,
       clampSocketText,
       noteMaxLength: socketNoteMaxLength,
@@ -187,6 +189,7 @@ export function buildOperationsSocketRouteDeps({
     }),
     applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
       resolveRequester,
+      canAccessAllPlayerOps,
       buildDefaultOperationsLedger,
       foundry,
       setModuleSettingWithLocalRefreshSuppressed,

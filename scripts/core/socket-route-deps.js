@@ -177,6 +177,7 @@ export function buildPartyOperationsSocketRouteDeps({
     ...buildOperationsSocketRouteDeps({
       applyPlayerSopNoteRequestFeature,
       resolveRequester,
+      canAccessAllPlayerOps,
       sopKeys,
       clampSocketText,
       socketNoteMaxLength,

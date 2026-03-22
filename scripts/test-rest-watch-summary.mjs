@@ -121,6 +121,18 @@ assert.equal(
   "Mixed watches should still warn when any assigned actor lacks darkvision."
 );
 
+assert.equal(
+  buildRestWatchDetailSummary(
+    { visibleEntryCount: 4, slotNoDarkvision: false, slotDarkvisionRange: 120, campfireActive: false },
+    [
+      { actor: { darkvision: null, passivePerception: 15, passiveInvestigation: 12, languageList: ["Common"] } },
+      { actor: { darkvision: null, passivePerception: 11, passiveInvestigation: 8, languageList: ["Elvish"] } }
+    ]
+  ).coverageLabel,
+  "Darkvision 120 ft",
+  "Coverage labels should respect computed slot darkvision range even when rendered entries are redacted."
+);
+
 assert.match(
   stylesheet,
   /\.po-watch-card-shell\s*\{[\s\S]*grid-template-columns:\s*minmax\(500px,\s*0\.95fr\)\s+minmax\(760px,\s*1\.75fr\);/,

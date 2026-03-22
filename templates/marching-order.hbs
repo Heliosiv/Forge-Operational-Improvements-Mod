@@ -33,11 +33,6 @@
               <div class="po-section-title">Plan</div>
               <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
             </div>
-            <div class="po-rest-settings-group">
-              <div class="po-section-title">GM Marching Notes</div>
-              <label class="po-sr-only" for="po-gm-march-notes">Global marching notes</label>
-              <textarea id="po-gm-march-notes" class="po-gm-notes" rows="4" placeholder="Global notes" aria-label="Global marching notes">{{gmNotes}}</textarea>
-            </div>
           </div>
         </div>
       </details>
@@ -144,17 +139,6 @@
                         <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
                           <i class="fa-solid fa-location-dot"></i>
                         </button>
-                        {{#if entry.canEditNote}}
-                        <button type="button" class="po-icon-btn po-march-board-note-btn" data-action="open-entry-notes" aria-label="Open notes">
-                          <i class="fa-solid fa-note-sticky"></i>
-                        </button>
-                        {{else}}
-                        {{#if entry.notes}}
-                        <button type="button" class="po-icon-btn po-march-board-note-btn" data-action="open-entry-notes" aria-label="Open notes">
-                          <i class="fa-solid fa-note-sticky"></i>
-                        </button>
-                        {{/if}}
-                        {{/if}}
                         {{#if @root.isGM}}
                         <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{entry.actorId}}" aria-label="Remove">
                           <i class="fa-solid fa-xmark"></i>
@@ -162,12 +146,6 @@
                         {{/if}}
                       </div>
                     </div>
-                    {{#if entry.notes}}
-                    <div class="po-march-board-card-note" title="{{entry.notes}}">
-                      <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
-                      Note saved
-                    </div>
-                    {{/if}}
                   </article>
                   {{else}}
                   <button type="button" class="po-march-board-slot" data-action="{{action}}" data-rank-id="{{../id}}" data-cell-index="{{column}}" data-insert-index="{{insertIndex}}" {{#if actionDisabled}}disabled{{/if}}>

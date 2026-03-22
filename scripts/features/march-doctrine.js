@@ -67,7 +67,7 @@ const EFFECT_DEFINITIONS = Object.freeze({
   passivePerception: Object.freeze({
     key: "passivePerception",
     label: "Passive Perception",
-    path: "system.skills.prc.passive",
+    path: "system.skills.prc.bonuses.passive",
     unit: ""
   }),
   perceptionCheck: Object.freeze({

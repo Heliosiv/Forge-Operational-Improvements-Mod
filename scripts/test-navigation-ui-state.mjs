@@ -61,7 +61,9 @@ uiState.setActiveRestMainTab("gm");
 assert.equal(uiState.getActiveRestMainTab(), "gm");
 
 uiState.setActiveOperationsPage("supply");
-assert.equal(uiState.getActiveOperationsPage(), "base");
+assert.equal(uiState.getActiveOperationsPage(), "planning");
+uiState.setActiveOperationsPage("base");
+assert.equal(uiState.getActiveOperationsPage(), "planning");
 uiState.setActiveOperationsPage("comms");
 assert.equal(uiState.getActiveOperationsPage(), "planning");
 accessState.gm = false;
@@ -94,6 +96,8 @@ assert.equal(uiState.normalizeGmOperationsTab("invalid", "environment"), "enviro
 assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
 uiState.setActiveOperationsPlanningTab("loot");
 assert.equal(uiState.getActiveOperationsPlanningTab(), "loot");
+uiState.setActiveOperationsPlanningTab("sops");
+assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
 uiState.setActiveOperationsPlanningTab("invalid");
 assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
 

@@ -92,6 +92,16 @@ import {
       return { message, requesterRef, options };
     },
     canAccessAllPlayerOps: "can-access-player-ops",
+    applyPlayerSopNoteRequestFeature(message, requesterRef, options) {
+      return { message, requesterRef, options };
+    },
+    sopKeys: ["watch"],
+    updateOperationsLedger: "update-operations-ledger",
+    setSharedSopNoteText: "set-shared-sop-note-text",
+    applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, options) {
+      return { message, requesterRef, options };
+    },
+    buildDefaultOperationsLedger: "build-default-operations-ledger",
     isWritableModuleSettingKey: "is-writable-setting",
     foundry,
     moduleId: "party-operations",
@@ -168,6 +178,35 @@ import {
       refreshScopeKeys,
       emitSocketRefresh: "emit-refresh",
       moduleId: "party-operations"
+    }
+  });
+  assert.deepEqual(routeDeps.applyPlayerSopNoteRequest("message", "player-1"), {
+    message: "message",
+    requesterRef: "player-1",
+    options: {
+      resolveRequester: "resolve-requester",
+      canAccessAllPlayerOps: "can-access-player-ops",
+      sopKeys: ["watch"],
+      clampSocketText: "clamp",
+      noteMaxLength: 80,
+      updateOperationsLedger: "update-operations-ledger",
+      setSharedSopNoteText: "set-shared-sop-note-text"
+    }
+  });
+  assert.deepEqual(routeDeps.applyPlayerOperationsLedgerWriteRequest("message", "player-1"), {
+    message: "message",
+    requesterRef: "player-1",
+    options: {
+      resolveRequester: "resolve-requester",
+      canAccessAllPlayerOps: "can-access-player-ops",
+      buildDefaultOperationsLedger: "build-default-operations-ledger",
+      foundry,
+      setModuleSettingWithLocalRefreshSuppressed: "set-setting",
+      settings,
+      scheduleIntegrationSync: "schedule-sync",
+      refreshOpenApps: "refresh-open-apps",
+      refreshScopeKeys,
+      emitSocketRefresh: "emit-refresh"
     }
   });
 }

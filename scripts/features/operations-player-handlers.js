@@ -200,6 +200,7 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
 export async function applyPlayerSopNoteRequest(message, requesterRef = null, deps = {}) {
   const {
     resolveRequester,
+    canAccessAllPlayerOps,
     sopKeys,
     clampSocketText,
     noteMaxLength,
@@ -209,6 +210,7 @@ export async function applyPlayerSopNoteRequest(message, requesterRef = null, de
 
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
+  if (!canAccessAllPlayerOps?.(requester)) return;
 
   const sopKey = String(message?.sopKey ?? "").trim();
   if (!sopKeys.includes(sopKey)) return;
@@ -222,6 +224,7 @@ export async function applyPlayerSopNoteRequest(message, requesterRef = null, de
 export async function applyPlayerOperationsLedgerWriteRequest(message, requesterRef = null, deps = {}) {
   const {
     resolveRequester,
+    canAccessAllPlayerOps,
     buildDefaultOperationsLedger,
     foundry,
     setModuleSettingWithLocalRefreshSuppressed,
@@ -234,6 +237,7 @@ export async function applyPlayerOperationsLedgerWriteRequest(message, requester
 
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
   if (!requester) return;
+  if (!canAccessAllPlayerOps?.(requester)) return;
   const incomingLedger = message?.ledger;
   if (!incomingLedger || typeof incomingLedger !== "object" || Array.isArray(incomingLedger)) return;
 

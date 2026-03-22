@@ -1424,6 +1424,10 @@ const {
   getJournalFolderParentId,
   findOperationsJournalRootFolder,
   journalFolderIsUnderRoot,
+  canViewJournalEntry: (entry, user = game.user) => {
+    if (typeof entry?.testUserPermission !== "function") return true;
+    return Boolean(entry.testUserPermission(user, "OBSERVER"));
+  },
   openJournalEntryFromElement
 });
 const GATHER_HISTORY_SORT_OPTIONS = [
@@ -1570,10 +1574,6 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "remove-reputation-builder-impact",
   "clear-reputation-builder",
   "remove-reputation-faction",
-  "set-base-ops-config",
-  "upsert-base-site",
-  "clear-base-site",
-  "open-base-site-storage",
   "set-injury-config",
   "upsert-injury",
   "roll-injury-table",
@@ -1693,7 +1693,7 @@ const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
 const SOCKET_ACTIVITY_TYPES = new Set(["rested", "light", "heavy", "strenuous"]);
 const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes", "moveSlot"]);
-const SOCKET_MARCH_OPS = new Set(["joinRank", "setNote"]);
+const SOCKET_MARCH_OPS = new Set(["joinRank", "leaveRank", "setNote"]);
 const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
 const restWatchSelectOptionsCache = new Map();
 let restWatchActorOptionsCache = { key: "", options: [] };
@@ -2558,7 +2558,7 @@ function ensureOperationalResourceConfig(resources) {
         requesterUserId: String(source.requesterUserId ?? "").trim(),
         requesterName: String(source.requesterName ?? "").trim(),
         approvedBy: String(source.approvedBy ?? "").trim(),
-        rationDieTotal: Number.isFinite(Number(source.rationDieTotal)) ? clampGatherInteger(source.rationDieTotal, 1, 6, 1) : null,
+        rationDieTotal: Number.isFinite(Number(source.rationDieTotal)) ? Math.max(0, Math.floor(Number(source.rationDieTotal) || 0)) : null,
         yieldRollSource: String(source.yieldRollSource ?? "").trim(),
         yieldRolledBy: String(source.yieldRolledBy ?? "").trim()
       };
@@ -3405,13 +3405,6 @@ function isActorInImmediateDanger(actor) {
   });
 }
 
-function mapGatherRationsFromD6(total) {
-  const value = clampGatherInteger(total, 1, 6, 1);
-  if (value <= 3) return 1;
-  if (value <= 5) return 2;
-  return 3;
-}
-
 function resolveGatherResourceOutcome(input = {}) {
   const resourceType = normalizeGatherResourceType(input.resourceType);
   const checkTotal = Math.floor(Number(input.checkTotal ?? 0) || 0);
@@ -3431,14 +3424,11 @@ function resolveGatherResourceOutcome(input = {}) {
   const waterAutoFound = Boolean(input.waterAutoFound) && resourceType === "water";
   const hasManualYieldDie = Number.isFinite(Number(input.rationDieTotal));
   if (success) {
-    if (waterAutoFound && !hasManualYieldDie) {
-      baseRations = 1;
-      notes.push("Water auto-found near obvious source.");
-    } else {
-      rationDieTotal = clampGatherInteger(input.rationDieTotal, 1, 6, 1);
-      baseRations = mapGatherRationsFromD6(rationDieTotal);
-      if (waterAutoFound) notes.push("Water auto-found near obvious source; player rolled yield.");
-    }
+    rationDieTotal = hasManualYieldDie
+      ? Math.max(0, Math.floor(Number(input.rationDieTotal) || 0))
+      : (waterAutoFound ? 1 : 0);
+    baseRations = Math.max(0, rationDieTotal);
+    if (waterAutoFound && !hasManualYieldDie) notes.push("Water auto-found near obvious source.");
 
     if (Boolean(input.successBy5DoubleEnabled) && successBy >= 5) {
       baseRations *= 2;
@@ -5118,13 +5108,19 @@ async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, o
   let cleared = 0;
   const managedActorIds = new Set();
 
-  for (const target of targets) {
+  const nonPartyResults = await Promise.all(targets.map(async (target) => {
     const actor = target?.actor;
-    if (!actor) continue;
+    if (!actor) return null;
     const result = await syncSingleSceneNonPartyActor(actor, config.context, mode, {
       includeEnvironment: target.isSceneTarget === true,
       nonParty: true
     });
+    return { actor, result };
+  }));
+
+  for (const item of nonPartyResults) {
+    if (!item) continue;
+    const { actor, result } = item;
     if (result.synced) synced += 1;
     if (result.cleared) cleared += 1;
     if (result.synced) {
@@ -5160,9 +5156,7 @@ async function syncIntegrationState() {
       const hasEnvironmentEffect = Boolean(getEnvironmentStatusEffect(actor));
       return hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect;
     });
-    for (const actor of actorsToClear) {
-      await clearActorIntegrationPayload(actor);
-    }
+    await Promise.all(actorsToClear.map((actor) => clearActorIntegrationPayload(actor)));
     await syncSceneNonPartyIntegrationActors(null, resolvedMode);
     return;
   }
@@ -5172,10 +5166,10 @@ async function syncIntegrationState() {
   const nonPartyManagedActorIds = new Set(
     Array.isArray(nonPartySyncResult?.managedActorIds) ? nonPartySyncResult.managedActorIds : []
   );
-  for (const actor of trackedActors) {
+  await Promise.all(trackedActors.map(async (actor) => {
     const payload = buildActorIntegrationPayload(actor.id, globalContext);
     await applyActorIntegrationPayload(actor, payload, resolvedMode);
-  }
+  }));
 
   const staleActors = game.actors.contents.filter((actor) => {
     if (!isTrackableCharacter(actor)) return false;
@@ -5188,9 +5182,7 @@ async function syncIntegrationState() {
     return hasSync || hasEffect || hasInjuryEffect || hasEnvironmentEffect;
   });
 
-  for (const actor of staleActors) {
-    await clearActorIntegrationPayload(actor);
-  }
+  await Promise.all(staleActors.map((actor) => clearActorIntegrationPayload(actor)));
 }
 
 function scheduleIntegrationSync(reason = "") {
@@ -5202,7 +5194,7 @@ function scheduleIntegrationSync(reason = "") {
   integrationSyncTimeoutId = setTimeout(() => {
     integrationSyncTimeoutId = null;
     void flushIntegrationSyncQueue(reason);
-  }, 100);
+  }, 750);
 }
 
 function resolveIntegrationSyncWaiters() {
@@ -5233,7 +5225,10 @@ async function flushIntegrationSyncQueue(reason = "") {
 
   integrationSyncInFlight = true;
   try {
-    do {
+      const MAX_SYNC_PASSES = 3;
+      let syncPassCount = 0;
+      do {
+        syncPassCount += 1;
       const runReason = integrationSyncQueuedReason || requestedReason;
       integrationSyncQueuedReason = "";
       integrationSyncQueued = false;
@@ -5243,7 +5238,15 @@ async function flushIntegrationSyncQueue(reason = "") {
       } catch (error) {
         console.warn(`${MODULE_ID}: integration sync failed (${runReason})`, error);
       }
-    } while (integrationSyncQueued);
+        if (syncPassCount >= MAX_SYNC_PASSES && integrationSyncQueued) {
+          // Too many consecutive passes. Yield to avoid locking the GM client during
+          // heavy play; deferred catchup ensures any pending state flush still occurs.
+          logIntegrationEffectDebug("Integration sync hit pass cap; deferring catchup.", { passCount: syncPassCount });
+          setTimeout(() => scheduleIntegrationSync("sync-catchup"), 1500);
+          integrationSyncQueued = false;
+          break;
+        }
+      } while (integrationSyncQueued);
   } finally {
     integrationSyncInFlight = false;
     logIntegrationEffectDebug("Integration sync queue drained.");
@@ -5878,11 +5881,8 @@ async function openRestWatchSharedNoteEditorFromElement(element) {
     ?? ""
   ).trim();
   if (!slotId || !actorId) return null;
-  const app = getOrCreateRestWatchSharedNoteApp();
-  app.setTarget({ slotId, actorId }, { focus: true });
-  await app.render({ force: true });
-  app.bringToFront?.();
-  return app;
+  ui.notifications?.info("Shared notes have been removed from Rest Watch.");
+  return null;
 }
 
 function scheduleRestWatchNoteSave(app, element, options = {}) {
@@ -6999,28 +6999,9 @@ function buildOperationsContextFallback() {
       actorOptions: buildRoleActorOptions(actorId)
     };
   });
-  const sopMeta = [
-    { key: "campSetup", label: "Camp setup" },
-    { key: "watchRotation", label: "Watch rotation" },
-    { key: "dungeonBreach", label: "Dungeon breach protocol" },
-    { key: "urbanEntry", label: "Urban entry protocol" },
-    { key: "prisonerHandling", label: "Prisoner handling" },
-    { key: "retreatProtocol", label: "Retreat protocol" }
-  ];
-  const sops = sopMeta.map((sop) => {
-    const sharedNote = getSharedSopNoteText(ledger, sop.key);
-    const resolved = resolveSopDraftForView(sop.key, sharedNote);
-    return {
-      key: sop.key,
-      label: sop.label,
-      active: Boolean(ledger.sops?.[sop.key]),
-      draftNote: resolved.note,
-      pendingLocalSync: resolved.pendingSync
-    };
-  });
-  schedulePendingSopNoteSync("operations-fallback-context");
+  const sops = [];
   const roleCoverage = roles.filter((role) => role.hasActor).length;
-  const activeSops = sops.filter((sop) => sop.active).length;
+  const activeSops = 0;
   const fallbackEffects = (() => {
     try {
       return getOperationalEffects(ledger, roles, sops);
@@ -7561,7 +7542,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPagePlanning: operationsPageValue === "planning",
         operationsPageReputation: operationsPageValue === "reputation",
         operationsPageSupply: false,
-        operationsPageBase: operationsPageValue === "base",
         operationsPageMerchants: operationsPageValue === "merchants",
         operationsPageDowntime: operationsPageValue === "downtime",
         operationsPageRecovery: operationsPageValue === "recovery",
@@ -7569,7 +7549,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmOpsTabEnvironment: gmOperationsTab === "environment",
         gmOpsTabLootSources: gmOperationsTab === "loot-sources",
         operationsPlanningRoles: operationsPlanningTab === "roles",
-        operationsPlanningSops: operationsPlanningTab === "sops",
+        operationsPlanningSops: false,
         operationsPlanningResources: operationsPlanningTab === "resources",
         operationsPlanningLoot: operationsPlanningTab === "loot",
         operationsPlanningBonuses: operationsPlanningTab === "bonuses",
@@ -7666,7 +7646,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPagePlanning: fallbackOpsPage === "planning",
         operationsPageReputation: fallbackOpsPage === "reputation",
         operationsPageSupply: false,
-        operationsPageBase: fallbackOpsPage === "base",
         operationsPageMerchants: fallbackOpsPage === "merchants",
         operationsPageDowntime: fallbackOpsPage === "downtime",
         operationsPageRecovery: fallbackOpsPage === "recovery",
@@ -7674,7 +7653,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         gmOpsTabEnvironment: fallbackGmOpsTab === "environment",
         gmOpsTabLootSources: fallbackGmOpsTab === "loot-sources",
         operationsPlanningRoles: fallbackPlanningTab === "roles",
-        operationsPlanningSops: fallbackPlanningTab === "sops",
+        operationsPlanningSops: false,
         operationsPlanningResources: fallbackPlanningTab === "resources",
         operationsPlanningLoot: fallbackPlanningTab === "loot",
         operationsPlanningBonuses: fallbackPlanningTab === "bonuses",
@@ -7720,12 +7699,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           return true;
         },
         (event) => {
-          if (!event.target?.matches("textarea.po-notes-input")) return false;
-          cacheRestWatchNoteDraftFromElement(event.target);
-          scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-          return true;
-        },
-        (event) => {
           if (!event.target?.matches(REST_WATCH_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
           return true;
@@ -7764,11 +7737,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           });
-          return true;
-        },
-        (event) => {
-          if (!event.target?.matches("textarea.po-notes-input")) return false;
-          cacheRestWatchNoteDraftFromElement(event.target);
           return true;
         },
         (event) => {
@@ -8097,14 +8065,8 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "swap": async () => {
           await swapSlots(element);
         },
-        "toggle-notes": async () => {
-          await openRestWatchSharedNoteEditorFromElement(element);
-        },
         "open-shared-note": async () => {
           await openRestWatchSharedNoteEditorFromElement(element);
-        },
-        "save-entry-notes": async () => {
-          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
         },
         "visibility": async () => {
           await updateVisibility(element);
@@ -8850,21 +8812,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await gmQuickDeleteWeatherPreset(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "set-base-ops-config": async () => {
-          await setBaseOperationsConfig(element);
-        },
-        "upsert-base-site": async () => {
-          await upsertBaseOperationsSite(element);
-        },
-        "clear-base-site": async () => {
-          await clearBaseOperationsSite(element);
-        },
-        "open-base-site-storage": async () => {
-          await showBaseSiteStorageManager(element);
-        },
-        "show-base-ops-brief": async () => {
-          await showBaseOperationsBrief();
-        },
         "set-injury-config": async () => {
           await setInjuryRecoveryConfig(element);
         },
@@ -9043,16 +8990,13 @@ function buildGlobalModifierSummaryContext() {
   const operations = getStandaloneOpsContext();
   const ledger = getOperationsLedger();
   const roleKeys = ["quartermaster", "cartographer", "chronicler", "steward"];
-  const sopKeys = ["campSetup", "watchRotation", "dungeonBreach", "urbanEntry", "prisonerHandling", "retreatProtocol"];
   const roles = roleKeys.map((key) => {
     const actorId = String(ledger.roles?.[key] ?? "").trim();
     return {
       hasActor: Boolean(actorId && game.actors?.get(actorId))
     };
   });
-  const sops = sopKeys.map((key) => ({
-    active: Boolean(ledger.sops?.[key])
-  }));
+  const sops = [];
   const effects = getOperationalEffects(ledger, roles, sops);
   const partyHealth = ensurePartyHealthState(ledger);
   const customModifierById = new Map((partyHealth.customModifiers ?? []).map((entry) => [String(entry?.id ?? ""), entry]));
@@ -9893,8 +9837,6 @@ function finalizeRestWatchRender(app, scope) {
   diagnoseRenderedMainTabs(app?.element, scope);
   restorePendingWindowState(app);
   restorePendingUiState(app);
-  hydrateCachedNoteDraftInputs(app?.element);
-  syncNotesDisclosureState(app?.element);
   restorePendingScrollState(app);
 }
 
@@ -10690,12 +10632,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           return true;
         },
         (event) => {
-          if (!event.target?.matches("textarea.po-notes-input")) return false;
-          cacheRestWatchNoteDraftFromElement(event.target);
-          scheduleRestWatchNoteSave(this, event.target, { source: "autosave" });
-          return true;
-        },
-        (event) => {
           if (!event.target?.matches(REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR)) return false;
           syncDowntimeUiDraftFromElement(event.target);
           return true;
@@ -10707,11 +10643,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           });
-          return true;
-        },
-        (event) => {
-          if (!event.target?.matches("textarea.po-notes-input")) return false;
-          cacheRestWatchNoteDraftFromElement(event.target);
           return true;
         },
         (event) => {
@@ -10826,18 +10757,8 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         case "clear":
           await clearSlotEntry(element);
           break;
-        case "toggle-notes":
         case "open-shared-note":
           await openRestWatchSharedNoteEditorFromElement(element);
-          break;
-        case "save-entry-notes":
-          {
-            const context = getRestWatchNoteContextFromElement(element);
-            if (context?.slotId && context?.actorId) {
-              clearScheduledRestWatchNoteSave(this, context.slotId, context.actorId);
-            }
-          }
-          await saveRestWatchEntryNoteFromElement(element, { source: "manual", notify: true });
           break;
         case "ping":
           await pingActorFromElement(element);
@@ -11087,11 +11008,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       this.element.addEventListener("change", (event) => {
         if (event.target?.matches("select[data-action], input[data-action], textarea[data-action]")) {
           this.#onAction(event);
-        } else if (event.target?.matches("textarea.po-notes-input")) {
-          cacheMarchingNoteDraftFromElement(event.target);
-          scheduleMarchingNoteSave(this, event.target, { source: "autosave" });
-        } else if (event.target?.matches("textarea.po-gm-notes")) {
-          this.#onGMNotesChange(event);
         }
       });
 
@@ -11100,15 +11016,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         if (portrait) openActorSheetFromElement(portrait);
       });
 
-      this.element.addEventListener("input", (event) => {
-        if (event.target?.matches("textarea.po-notes-input")) {
-          cacheMarchingNoteDraftFromElement(event.target);
-          return;
-        } else if (event.target?.matches("textarea.po-gm-notes")) {
-          // Save on change/blur only to avoid typing jitter.
-          return;
-        }
-      });
     }
     
     setupMarchingDragAndDropFeature(this.element, {
@@ -11142,7 +11049,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     }
     restorePendingWindowState(this);
     restorePendingUiState(this);
-    hydrateCachedNoteDraftInputs(this.element);
     restorePendingScrollState(this);
     
     if (DEBUG_LOG) console.log("MarchingOrderApp: event delegation attached", this.element);
@@ -11268,9 +11174,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         case "doctrine-check":
           await runDoctrineCheckPrompt();
           break;
-        case "open-entry-notes":
-          await openMarchingNoteDialogFromElement(element);
-          break;
         default:
           break;
       }
@@ -11282,48 +11185,6 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         });
       }
     }
-  }
-
-  async #onNotesChange(event) {
-    if (event?.type === "input") return;
-    const state = getMarchingOrderState();
-    if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      notifyUiWarnThrottled("Marching order is locked by the GM.", {
-        key: "marching-order-locked",
-        ttlMs: 1500
-      });
-      return;
-    }
-    const text = event.target.value ?? "";
-
-    if (!game.user?.isGM) {
-      const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId || getActiveActorForUser()?.id;
-      if (!actorId) return;
-      await saveMarchingNoteByContext({ actorId, text }, { notify: false });
-      return;
-    }
-
-    // GM: apply per-actor notes directly
-    const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId;
-    if (!actorId) return;
-    await saveMarchingNoteByContext({ actorId, text }, { notify: false });
-  }
-
-  async #onGMNotesChange(event) {
-    if (event?.type === "input") return;
-    const state = getMarchingOrderState();
-    if (isLockedForUser(state, canAccessAllPlayerOps())) {
-      notifyUiWarnThrottled("Marching order is locked by the GM.", {
-        key: "marching-order-locked",
-        ttlMs: 1500
-      });
-      return;
-    }
-    if (!canAccessGmPage()) return; // GM notes are GM-only
-    const text = event.target.value ?? "";
-    await updateMarchingOrderState((state) => {
-      state.gmNotes = text;
-    });
   }
 
   async close(options = {}) {
@@ -22856,34 +22717,12 @@ function buildOperationsContext() {
     };
   });
 
-  const sopMeta = [
-    { key: "campSetup", label: "Camp setup" },
-    { key: "watchRotation", label: "Watch rotation" },
-    { key: "dungeonBreach", label: "Dungeon breach protocol" },
-    { key: "urbanEntry", label: "Urban entry protocol" },
-    { key: "prisonerHandling", label: "Prisoner handling" },
-    { key: "retreatProtocol", label: "Retreat protocol" }
-  ];
-
-  const sops = sopMeta.map((sop) => ({
-    key: sop.key,
-    label: sop.label,
-    active: Boolean(ledger.sops?.[sop.key]),
-    ...(() => {
-      const sharedNote = getSharedSopNoteText(ledger, sop.key);
-      const resolved = resolveSopDraftForView(sop.key, sharedNote);
-      return {
-        draftNote: resolved.note,
-        pendingLocalSync: resolved.pendingSync
-      };
-    })()
-  }));
-  schedulePendingSopNoteSync("operations-context");
+  const sops = [];
 
   const roleCoverage = roles.filter((role) => role.hasActor).length;
   const missingRoles = Math.max(0, roles.length - roleCoverage);
-  const activeSops = sops.filter((sop) => sop.active).length;
-  const disorderRisk = missingRoles + Math.max(0, 3 - activeSops);
+  const activeSops = 0;
+  const disorderRisk = missingRoles;
   const effects = getOperationalEffects(ledger, roles, sops);
   const reconState = ensureReconState(ledger);
   const recon = buildReconContext(reconState);
@@ -23591,8 +23430,8 @@ function buildOperationsContext() {
       roleCoverage,
       roleTotal: roles.length,
       activeSops,
-      sopTotal: sops.length,
-      prepEdge: roleCoverage >= 3 && activeSops >= 3,
+      sopTotal: 0,
+      prepEdge: roleCoverage >= 3,
       disorderRisk,
       reconReadiness: recon.readinessLabel,
       maintenancePressure: baseOperations.maintenancePressure,
@@ -23600,14 +23439,13 @@ function buildOperationsContext() {
     },
     diagnostics: {
       missingRoles: roles.filter((role) => !role.hasActor).map((role) => role.label),
-      inactiveSops: sops.filter((sop) => !sop.active).map((sop) => sop.label)
+      inactiveSops: []
     }
   };
 }
 
 function getOperationalEffects(ledger, roles, sops) {
   const roleCoverage = roles.filter((role) => role.hasActor).length;
-  const activeSops = sops.filter((sop) => sop.active).length;
   const hasQuartermaster = Boolean(ledger.roles?.quartermaster);
   const hasCartographer = Boolean(ledger.roles?.cartographer);
   const hasChronicler = Boolean(ledger.roles?.chronicler);
@@ -23623,7 +23461,7 @@ function getOperationalEffects(ledger, roles, sops) {
   const weatherDaeChanges = Array.isArray(weatherState.current?.daeChanges)
     ? weatherState.current.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
     : [];
-  const prepEdge = roleCoverage >= 3 && activeSops >= 3;
+  const prepEdge = roleCoverage >= 3;
 
   const bonuses = [];
   const globalMinorBonuses = [];
@@ -23675,8 +23513,6 @@ function getOperationalEffects(ledger, roles, sops) {
   };
 
   if (prepEdge) bonuses.push("Preparation edge active: grant advantage on one operational check this session.");
-  if (hasQuartermaster && ledger.sops?.campSetup) bonuses.push("Supply discipline active: reduce one supply-tracking error this rest cycle.");
-  if (hasCartographer && ledger.sops?.urbanEntry) bonuses.push("Route discipline active: reduce one navigation uncertainty this session.");
   if (hasChronicler) bonuses.push("Operational recall active: clarify one unknown clue or timeline detail once per session.");
   if (hasSteward) bonuses.push("Stewardship active: reduce one lifestyle/logistics cost friction once per session.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
@@ -23685,10 +23521,6 @@ function getOperationalEffects(ledger, roles, sops) {
   if (roleCoverage >= 2) {
     const modifier = addGlobalModifier("team-rhythm", "initiative", 1, "Team rhythm (2+ roles)", "Initiative rolls");
     if (modifier.enabled) globalMinorBonuses.push("Team rhythm: all player actors gain +1 initiative while 2+ operations roles are assigned.");
-  }
-  if (activeSops >= 2) {
-    const modifier = addGlobalModifier("briefed-procedures", "abilityChecks", 1, "Briefed procedures (2+ SOPs)", "All ability checks");
-    if (modifier.enabled) globalMinorBonuses.push("Briefed procedures: all player actors gain +1 to ability checks while 2+ SOPs are active.");
   }
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
@@ -23717,14 +23549,11 @@ function getOperationalEffects(ledger, roles, sops) {
   }
 
   if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
-  if (!ledger.sops?.retreatProtocol) risks.push("No retreat protocol: escalate retreat complication by one step.");
-  if (activeSops <= 2) risks.push("Low SOP coverage: apply disadvantage on one unplanned operation check.");
   if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
 
   if (roleCoverage <= 1) addGlobalModifier("poor-role-coverage", "initiative", -1, "Poor role coverage", "Initiative rolls");
-  if (activeSops <= 1) addGlobalModifier("insufficient-sop-coverage", "abilityChecks", -1, "Insufficient SOP coverage", "All ability checks");
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const customDaeChanges = [];
@@ -35540,7 +35369,7 @@ function buildGatherResourceChatCard(result) {
   const yieldDieTotal = Number(outcome?.rationDieTotal);
   const yieldRolledBy = String(result?.yieldRolledBy ?? "").trim();
   const yieldDieRow = Number.isFinite(yieldDieTotal)
-    ? `<p><strong>Yield D6:</strong> ${Math.max(1, Math.floor(yieldDieTotal))}${yieldRolledBy ? ` (${poEscapeHtml(yieldRolledBy)})` : ""}</p>`
+    ? `<p><strong>Yield (1d6 + WIS):</strong> ${Math.max(0, Math.floor(yieldDieTotal))}${yieldRolledBy ? ` (${poEscapeHtml(yieldRolledBy)})` : ""}</p>`
     : "";
   return `
     <div class="po-chat-card po-chat-card-gather">
@@ -35593,7 +35422,7 @@ function buildGatherHistoryEntryFromResult(result = {}) {
     requesterUserId: String(result?.requesterUserId ?? "").trim(),
     requesterName: String(result?.requesterName ?? "").trim(),
     approvedBy: String(result?.approvedBy ?? "").trim(),
-    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? clampGatherInteger(outcome.rationDieTotal, 1, 6, 1) : null,
+    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? Math.max(0, Math.floor(Number(outcome.rationDieTotal) || 0)) : null,
     yieldRollSource: String(result?.yieldRollSource ?? "").trim(),
     yieldRolledBy: String(result?.yieldRolledBy ?? "").trim()
   };
@@ -36076,32 +35905,11 @@ async function executeGatherResourcesAction(options = {}) {
   const waterAutoFound = Boolean(config.waterAutoFoundEnabled && options?.waterAutoFound && resourceType === "water");
   const success = checkTotal >= effectiveDc;
   if (success) {
-    if (options?.promptYieldRoll === true && requesterUserId) {
-      const yieldResponse = await requestGatherYieldRollFromPlayer({
-        targetUserId: requesterUserId,
-        actorId: actor.id,
-        actorName: String(actor.name ?? "Unknown Actor").trim() || "Unknown Actor",
-        resourceType
-      });
-      if (Number.isFinite(Number(yieldResponse?.total))) {
-        rationDieTotal = clampGatherInteger(yieldResponse.total, 1, 6, 1);
-        yieldRollSource = "player";
-        yieldRolledBy = String(yieldResponse?.userName ?? requesterName).trim();
-      } else if (!waterAutoFound) {
-        if (yieldResponse?.timedOut) {
-          ui.notifications?.warn("Gather yield prompt timed out; using GM fallback d6.");
-        }
-        const rationRoll = await (new Roll("1d6")).evaluate();
-        rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
-        yieldRollSource = "gm-fallback";
-        yieldRolledBy = approvedBy;
-      }
-    } else if (!waterAutoFound) {
-      const rationRoll = await (new Roll("1d6")).evaluate();
-      rationDieTotal = clampGatherInteger(rationRoll.total, 1, 6, 1);
-      yieldRollSource = "system";
-      yieldRolledBy = approvedBy;
-    }
+    const wisMod = Math.floor(Number(actor?.system?.abilities?.wis?.mod ?? 0) || 0);
+    const yieldRoll = await (new Roll("1d6 + @mod", { mod: wisMod })).evaluate();
+    rationDieTotal = Math.max(0, Math.floor(Number(yieldRoll.total ?? 0) || 0));
+    yieldRollSource = promptCheckRoll ? "player-success" : "system-success";
+    yieldRolledBy = promptCheckRoll ? (requesterName || String(game.users?.get?.(requesterUserId)?.name ?? "Player").trim()) : approvedBy;
   }
   if (success && config.nat20BonusEnabled && natural === 20) {
     const nat20Roll = await (new Roll("1d4")).evaluate();
@@ -36150,8 +35958,7 @@ async function executeGatherResourcesAction(options = {}) {
     travelTradeoff,
     travelConSavePassed: travelConSave ? Boolean(travelConSave.passed) : true
   });
-  if (success && yieldRollSource === "gm-fallback") outcome.notes.push("Player yield roll unavailable; GM fallback d6 used.");
-  if (success && yieldRollSource === "player" && yieldRolledBy) outcome.notes.push(`Yield d6 rolled by ${yieldRolledBy}.`);
+  if (success && yieldRolledBy) outcome.notes.push(`Yield (1d6 + WIS mod) rolled by ${yieldRolledBy}.`);
   if (herbalismAdvantage) outcome.notes.push("Herbalism advantage applied for plant gathering mode.");
 
   const applyToLedgerRequested = options?.applyToLedger !== false;
@@ -36166,10 +35973,22 @@ async function executeGatherResourcesAction(options = {}) {
   let inventoryGainAmount = 0;
   let pendingPoolGain = 0;
   if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
-    pendingPoolGain = Math.max(0, Number(outcome.finalRations ?? 0) || 0);
-    inventoryGainSource = resourceType === "water" ? "Pending gathered water pool" : "Pending gathered food pool";
-    inventoryGainAmount = pendingPoolGain;
-    outcome.notes.push(`Queued ${pendingPoolGain} ${resourceType} ration(s) for upkeep-first allocation.`);
+    const requestedGain = Math.max(0, Number(outcome.finalRations ?? 0) || 0);
+    const inventoryAllocation = await applyGatherInventoryAllocation(resourceType, requestedGain);
+    const addedDirectly = Math.max(0, Number(inventoryAllocation?.added ?? 0) || 0);
+    const remaining = Math.max(0, Number(inventoryAllocation?.remaining ?? 0) || 0);
+    pendingPoolGain = remaining;
+    inventoryGainAmount = addedDirectly;
+    inventoryGainSource = String(inventoryAllocation?.source ?? "").trim();
+    appliedToLedger = addedDirectly > 0;
+    if (addedDirectly > 0 && inventoryGainSource) {
+      outcome.notes.push(`Added ${addedDirectly} ${resourceType} ration(s) to ${inventoryGainSource}.`);
+    } else if (addedDirectly > 0) {
+      outcome.notes.push(`Added ${addedDirectly} ${resourceType} ration(s) to configured resource target.`);
+    }
+    if (remaining > 0) {
+      outcome.notes.push(`Queued ${remaining} ${resourceType} ration(s) for upkeep-first allocation.`);
+    }
   }
 
   const historyEntryBase = {
@@ -36193,7 +36012,7 @@ async function executeGatherResourcesAction(options = {}) {
     requesterUserId,
     requesterName,
     approvedBy,
-    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? clampGatherInteger(outcome.rationDieTotal, 1, 6, 1) : null,
+    rationDieTotal: Number.isFinite(Number(outcome?.rationDieTotal)) ? Math.max(0, Math.floor(Number(outcome.rationDieTotal) || 0)) : null,
     yieldRollSource,
     yieldRolledBy
   };
@@ -36202,7 +36021,7 @@ async function executeGatherResourcesAction(options = {}) {
     await updateOperationsLedger((nextLedger) => {
       if (!nextLedger.resources) nextLedger.resources = {};
       ensureOperationalResourceConfig(nextLedger.resources);
-      if (outcome.success && outcome.finalRations > 0 && applyToLedger) {
+      if (outcome.success && pendingPoolGain > 0 && applyToLedger) {
         nextLedger.resources.gather.pendingPools[resourceType] = Math.max(
           0,
           Number(nextLedger.resources.gather.pendingPools?.[resourceType] ?? 0) + pendingPoolGain
@@ -36214,7 +36033,6 @@ async function executeGatherResourcesAction(options = {}) {
           nextLedger.resources.gather.foodCoverageDueKey = null;
           nextLedger.resources.gather.foodCoveredNextUpkeep = nextLedger.resources.gather.pendingPools[resourceType] > 0;
         }
-        appliedToLedger = pendingPoolGain > 0;
       }
 
       nextLedger.resources.gather.history.unshift({
@@ -36805,9 +36623,56 @@ function triggerGatherResourceButtonAnimation(element) {
 
 async function runGatherResourceCheck() {
   if (!canAccessAllPlayerOps()) {
-    return promptPlayerGatherRequestDialog();
+    return submitQuickPlayerGatherRequest();
   }
   return runGatherResourcesAction({ showDialog: true });
+}
+
+async function submitQuickPlayerGatherRequest(options = {}) {
+  const actors = getGatherSelectableActorsForUser(game.user);
+  if (actors.length <= 0) {
+    ui.notifications?.warn("You do not have an eligible character for gather requests.");
+    return { ok: false, blocked: true, reason: "No eligible actor." };
+  }
+  if (!hasActiveGmClient()) {
+    ui.notifications?.warn("No active GM client is available to approve a gather request.");
+    return { ok: false, blocked: true, reason: "No active GM client." };
+  }
+
+  const config = getGatherResourceConfig();
+  if (!config.enabled) {
+    ui.notifications?.warn("Gather resources is disabled in module settings.");
+    return { ok: false, blocked: true, reason: "Gather resources disabled." };
+  }
+
+  const preferredActorId = String(options?.actorId ?? game.user?.character?.id ?? "").trim();
+  const actor = actors.find((entry) => String(entry?.id ?? "").trim() === preferredActorId) ?? actors[0] ?? null;
+  if (!actor || !canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only request gather checks for a character you manage.");
+    return { ok: false, blocked: true, reason: "Invalid actor." };
+  }
+
+  const request = normalizeGatherRequestPayload({
+    id: foundry.utils.randomID(),
+    actorId: String(actor.id ?? "").trim(),
+    actorName: String(actor.name ?? "").trim() || "Unknown Actor",
+    requesterUserId: String(game.user?.id ?? "").trim(),
+    requesterName: String(game.user?.name ?? "Player").trim() || "Player",
+    requestedAt: Date.now(),
+    resourceType: normalizeGatherResourceType(options?.resourceType),
+    gatherMode: "standard",
+    duringTravel: false,
+    travelTradeoff: normalizeGatherTravelTradeoff(config.travelTradeoffDefault),
+    applyToLedger: true
+  });
+
+  emitModuleSocket({
+    type: "ops:gather-request",
+    userId: String(game.user?.id ?? "").trim(),
+    request
+  }, { channel: SOCKET_CHANNEL });
+  ui.notifications?.info(`Gather request sent for ${request.actorName}.`);
+  return { ok: true, blocked: false, requested: true };
 }
 
 async function promptPlayerGatherRequestDialog(options = {}) {
@@ -36949,7 +36814,6 @@ async function approveGatherRequestAction(element) {
     requestId,
     requesterUserId: String(request.requesterUserId ?? "").trim(),
     requesterName: String(request.requesterName ?? "").trim(),
-    promptYieldRoll: true,
     approvedBy: String(game.user?.name ?? "GM").trim() || "GM",
     onResolved: async (result) => {
       if (!result?.ok) return;
@@ -37133,10 +36997,17 @@ async function promptGatherResourceDialog(options = {}) {
   const content = isRequestResolution ? `
     <div class="po-help">
       <p><strong>Gathering Actor:</strong> ${poEscapeHtml(requestedActorName)}</p>
-      <p><strong>Resource Type:</strong> ${poEscapeHtml(requestedResourceLabel)}</p>
+      <p><strong>Requested Resource Type:</strong> ${poEscapeHtml(requestedResourceLabel)}</p>
       <p><strong>Gather Mode:</strong> ${poEscapeHtml(requestedGatherModeLabel)}</p>
       <p><strong>Travel Mode:</strong> ${poEscapeHtml(requestedTravelLabel)}</p>
       <p>The player will receive the final Wisdom (Survival) roll request after you confirm the hidden setup below.</p>
+    </div>
+    <div class="form-group">
+      <label>Resource Type</label>
+      <select name="resourceType">
+        <option value="food" ${resourceType === "food" ? "selected" : ""}>Food</option>
+        <option value="water" ${resourceType === "water" ? "selected" : ""}>Water</option>
+      </select>
     </div>
     <div class="form-group">
       <label>Gather Environment</label>
@@ -37238,9 +37109,7 @@ async function promptGatherResourceDialog(options = {}) {
             : String(html.find("select[name=actorId]").val() ?? "").trim();
           const payload = {
             actorId,
-            resourceType: isRequestResolution
-              ? resourceType
-              : String(html.find("select[name=resourceType]").val() ?? "food"),
+            resourceType: String(html.find("select[name=resourceType]").val() ?? resourceType),
             environment: String(html.find("select[name=environment]").val() ?? GATHER_ENVIRONMENT_KEYS[0]),
             gatherMode: isRequestResolution
               ? gatherMode
@@ -41031,380 +40900,6 @@ async function removeWeatherLogById(logId) {
   return removed;
 }
 
-async function setBaseOperationsConfig(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can manage base operations.");
-    return;
-  }
-  const key = element?.dataset?.baseConfig;
-  if (!key) return;
-  await updateOperationsLedger((ledger) => {
-    const baseOperations = ensureBaseOperationsState(ledger);
-    if (key === "maintenanceRisk") {
-      baseOperations.maintenanceRisk = String(element?.value ?? "moderate");
-    }
-  });
-}
-
-async function upsertBaseOperationsSite(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can manage base operations.");
-    return;
-  }
-  const root = element?.closest(".po-base-site-editor");
-  if (!root) return;
-  const type = String(root.querySelector("select[name='baseSiteType']")?.value ?? "safehouse");
-  const name = String(root.querySelector("input[name='baseSiteName']")?.value ?? "").trim();
-  const status = String(root.querySelector("select[name='baseSiteStatus']")?.value ?? "secure");
-  const pressureRaw = Number(root.querySelector("input[name='baseSitePressure']")?.value ?? 0);
-  const risk = String(root.querySelector("select[name='baseSiteRisk']")?.value ?? "moderate");
-  const note = String(root.querySelector("input[name='baseSiteNote']")?.value ?? "").trim();
-  const maxWeightRaw = Number(root.querySelector("input[name='baseSiteMaxWeight']")?.value ?? 0);
-  const maxSpaceRaw = Number(root.querySelector("input[name='baseSiteMaxSpace']")?.value ?? 0);
-  if (!name) {
-    ui.notifications?.warn("Base site name is required.");
-    return;
-  }
-  const pressure = Number.isFinite(pressureRaw) ? Math.max(0, Math.floor(pressureRaw)) : 0;
-  const maxWeight = Number.isFinite(maxWeightRaw) ? Math.max(0, maxWeightRaw) : 0;
-  const maxSpace = Number.isFinite(maxSpaceRaw) ? Math.max(0, Math.floor(maxSpaceRaw)) : 0;
-
-  await updateOperationsLedger((ledger) => {
-    const baseOperations = ensureBaseOperationsState(ledger);
-    const existing = baseOperations.sites.find((site) => {
-      const siteName = String(site?.name ?? "").trim().toLowerCase();
-      const siteType = String(site?.type ?? "").trim().toLowerCase();
-      return siteName === name.toLowerCase() && siteType === type.toLowerCase();
-    });
-    if (existing) {
-      existing.status = status;
-      existing.pressure = pressure;
-      existing.risk = risk;
-      existing.note = note;
-      if (!existing.storage || typeof existing.storage !== "object") existing.storage = { maxWeight: 0, maxSpace: 0, items: [] };
-      existing.storage.maxWeight = maxWeight;
-      existing.storage.maxSpace = maxSpace;
-      if (!Array.isArray(existing.storage.items)) existing.storage.items = [];
-      if (!existing.id) existing.id = foundry.utils.randomID();
-      return;
-    }
-    baseOperations.sites.push({
-      id: foundry.utils.randomID(),
-      type,
-      name,
-      status,
-      pressure,
-      risk,
-      note,
-      storage: {
-        maxWeight,
-        maxSpace,
-        items: []
-      }
-    });
-  });
-}
-
-async function clearBaseOperationsSite(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can manage base operations.");
-    return;
-  }
-  const id = element?.dataset?.baseSiteId;
-  if (!id) return;
-  await updateOperationsLedger((ledger) => {
-    const baseOperations = ensureBaseOperationsState(ledger);
-    if (id.startsWith("legacy-base-site-")) {
-      const index = Number(id.replace("legacy-base-site-", ""));
-      if (Number.isInteger(index) && index >= 0 && index < baseOperations.sites.length) {
-        baseOperations.sites.splice(index, 1);
-      }
-      return;
-    }
-    baseOperations.sites = baseOperations.sites.filter((site) => site.id !== id);
-  });
-}
-
-function buildBaseSiteStorageDialogContent(site) {
-  const storage = site?.storage ?? { maxWeight: 0, maxSpace: 0, items: [] };
-  const items = Array.isArray(storage.items) ? storage.items : [];
-  const weightUsed = items.reduce((sum, entry) => {
-    const quantity = Math.max(0, Number(entry.quantity ?? 0) || 0);
-    const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
-    return sum + (quantity * weight);
-  }, 0);
-  const spaceUsed = items.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity ?? 0) || 0), 0);
-
-  const itemRows = items.map((entry) => {
-    const icon = poEscapeHtml(String(entry.img ?? "icons/svg/item-bag.svg"));
-    const name = poEscapeHtml(String(entry.name ?? "Stored Item"));
-    const note = poEscapeHtml(String(entry.note ?? ""));
-    const qty = Math.max(1, Number(entry.quantity ?? 1) || 1);
-    const weight = Math.max(0, Number(entry.weight ?? 0) || 0);
-    return `
-      <div class="po-op-role-row" data-storage-item-id="${poEscapeHtml(entry.id)}">
-        <div class="po-op-role-head">
-          <div class="po-op-role-name"><img src="${icon}" width="18" height="18" /> ${name}</div>
-          <div class="po-op-role-status">Qty ${qty} - ${weight.toFixed(1)} wt each</div>
-        </div>
-        ${note ? `<div class="po-op-summary">${note}</div>` : ""}
-        <div class="po-op-action-row">
-          <button type="button" class="po-btn po-btn-sm" data-storage-action="dec" data-item-id="${poEscapeHtml(entry.id)}">-1</button>
-          <button type="button" class="po-btn po-btn-sm" data-storage-action="inc" data-item-id="${poEscapeHtml(entry.id)}">+1</button>
-          <button type="button" class="po-btn po-btn-sm is-danger" data-storage-action="remove" data-item-id="${poEscapeHtml(entry.id)}">Remove</button>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  return `
-    <div class="po-help po-base-storage-dialog">
-      <div class="po-op-summary"><strong>${poEscapeHtml(String(site.name ?? "Storage Site"))}</strong> - ${poEscapeHtml(getBaseSiteTypeLabel(String(site.type ?? "safehouse")))}</div>
-      <div class="po-op-summary">Weight: ${weightUsed.toFixed(1)} / ${Math.max(0, Number(storage.maxWeight ?? 0) || 0).toFixed(1)} - Space: ${spaceUsed} / ${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}</div>
-
-      <label class="po-resource-row">
-        <span>Max Weight Capacity</span>
-        <input type="number" min="0" step="0.1" class="po-input" data-storage-config="maxWeight" value="${Math.max(0, Number(storage.maxWeight ?? 0) || 0)}" />
-      </label>
-      <label class="po-resource-row">
-        <span>Max Space Capacity</span>
-        <input type="number" min="0" step="1" class="po-input" data-storage-config="maxSpace" value="${Math.max(0, Number(storage.maxSpace ?? 0) || 0)}" />
-      </label>
-
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Add Item</div>
-      <div class="po-hint">Drag and drop an Item onto this window or add manually below.</div>
-      <div class="po-op-role-row">
-        <label class="po-resource-row"><span>Name</span><input type="text" class="po-input" data-storage-add="name" placeholder="e.g. Healing Potion" /></label>
-        <label class="po-resource-row"><span>Qty</span><input type="number" min="1" step="1" class="po-input" data-storage-add="quantity" value="1" /></label>
-        <label class="po-resource-row"><span>Weight Each</span><input type="number" min="0" step="0.1" class="po-input" data-storage-add="weight" value="0" /></label>
-        <label class="po-resource-row"><span>Notes</span><input type="text" class="po-input" data-storage-add="note" placeholder="optional" /></label>
-        <button type="button" class="po-btn po-btn-sm" data-storage-action="add-manual">Add Item</button>
-      </div>
-
-      <div class="po-op-divider"></div>
-      <div class="po-section-title">Stored Inventory</div>
-      <div class="po-storage-drop-zone" data-storage-drop-zone>
-        ${itemRows || '<div class="po-op-summary">No stored items yet.</div>'}
-      </div>
-    </div>
-  `;
-}
-
-async function updateBaseSiteStorage(siteId, mutator) {
-  const id = String(siteId ?? "").trim();
-  if (!id || typeof mutator !== "function") return;
-  await updateOperationsLedger((ledger) => {
-    const baseOperations = ensureBaseOperationsState(ledger);
-    const site = baseOperations.sites.find((entry) => entry.id === id);
-    if (!site) return;
-    if (!site.storage || typeof site.storage !== "object") site.storage = { maxWeight: 0, maxSpace: 0, items: [] };
-    if (!Array.isArray(site.storage.items)) site.storage.items = [];
-    mutator(site);
-    site.storage.items = site.storage.items.map((entry) => normalizeBaseSiteStorageItem(entry));
-  });
-}
-
-function buildStorageItemFromDocument(itemDoc, quantity = 1) {
-  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
-  const weight = Math.max(0, Number(getItemWeightValue(itemDoc) || 0));
-  return {
-    id: foundry.utils.randomID(),
-    name: String(itemDoc?.name ?? "Stored Item").trim() || "Stored Item",
-    type: String(itemDoc?.type ?? "item").trim() || "item",
-    quantity: qty,
-    weight,
-    note: "",
-    img: String(itemDoc?.img ?? "icons/svg/item-bag.svg"),
-    uuid: String(itemDoc?.uuid ?? "")
-  };
-}
-
-async function showBaseSiteStorageManager(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can manage base site storage.");
-    return;
-  }
-  const siteId = String(element?.dataset?.baseSiteId ?? "").trim();
-  if (!siteId) return;
-
-  const getCurrentSite = () => {
-    const ledger = getOperationsLedger();
-    const baseOperations = ensureBaseOperationsState(ledger);
-    return baseOperations.sites.find((site) => site.id === siteId) ?? null;
-  };
-
-  let site = getCurrentSite();
-  if (!site) {
-    ui.notifications?.warn("Base site not found.");
-    return;
-  }
-
-  const dialog = new Dialog({
-    title: `Storage Inventory - ${String(site.name ?? "Site")}`,
-    content: buildBaseSiteStorageDialogContent(site),
-    buttons: {
-      close: {
-        label: "Close"
-      }
-    },
-    render: (html) => {
-      const root = html?.[0] ?? html;
-      if (!root) return;
-
-      const rerenderStorage = () => {
-        site = getCurrentSite();
-        if (!site) return;
-        const contentRoot = root.querySelector(".po-base-storage-dialog");
-        if (!contentRoot) return;
-        contentRoot.outerHTML = buildBaseSiteStorageDialogContent(site);
-      };
-
-      const onStorageClick = async (event) => {
-        const actionEl = event.target.closest("[data-storage-action]");
-        if (!actionEl) return;
-        const action = String(actionEl.dataset.storageAction ?? "").trim();
-        const itemId = String(actionEl.dataset.itemId ?? "").trim();
-
-        if (action === "add-manual") {
-          const name = String(root.querySelector("[data-storage-add='name']")?.value ?? "").trim();
-          const quantityRaw = Number(root.querySelector("[data-storage-add='quantity']")?.value ?? 1);
-          const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
-          const weightRaw = Number(root.querySelector("[data-storage-add='weight']")?.value ?? 0);
-          const weight = Number.isFinite(weightRaw) ? Math.max(0, weightRaw) : 0;
-          const note = String(root.querySelector("[data-storage-add='note']")?.value ?? "");
-          if (!name) {
-            ui.notifications?.warn("Item name is required.");
-            return;
-          }
-          await updateBaseSiteStorage(siteId, (targetSite) => {
-            targetSite.storage.items.push(normalizeBaseSiteStorageItem({
-              id: foundry.utils.randomID(),
-              name,
-              quantity,
-              weight,
-              note,
-              img: "icons/svg/item-bag.svg",
-              type: "item"
-            }));
-          });
-          rerenderStorage();
-          return;
-        }
-
-        if (!itemId) return;
-        if (action === "remove") {
-          await updateBaseSiteStorage(siteId, (targetSite) => {
-            targetSite.storage.items = targetSite.storage.items.filter((entry) => entry.id !== itemId);
-          });
-          rerenderStorage();
-          return;
-        }
-
-        if (action === "inc" || action === "dec") {
-          await updateBaseSiteStorage(siteId, (targetSite) => {
-            const row = targetSite.storage.items.find((entry) => entry.id === itemId);
-            if (!row) return;
-            const delta = action === "inc" ? 1 : -1;
-            row.quantity = Math.max(0, Math.floor(Number(row.quantity ?? 0) || 0) + delta);
-            if (row.quantity <= 0) {
-              targetSite.storage.items = targetSite.storage.items.filter((entry) => entry.id !== itemId);
-            }
-          });
-          rerenderStorage();
-        }
-      };
-
-      const onStorageChange = async (event) => {
-        const configEl = event.target.closest("[data-storage-config]");
-        if (!configEl) return;
-        const configKey = String(configEl.dataset.storageConfig ?? "").trim();
-        if (!configKey) return;
-        await updateBaseSiteStorage(siteId, (targetSite) => {
-          if (configKey === "maxWeight") {
-            const raw = Number(configEl.value ?? 0);
-            targetSite.storage.maxWeight = Number.isFinite(raw) ? Math.max(0, raw) : 0;
-          }
-          if (configKey === "maxSpace") {
-            const raw = Number(configEl.value ?? 0);
-            targetSite.storage.maxSpace = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
-          }
-        });
-        rerenderStorage();
-      };
-
-      const onStorageDrop = async (event) => {
-        const dropZone = event.target.closest("[data-storage-drop-zone]");
-        if (!dropZone) return;
-        event.preventDefault();
-
-        let itemDoc = null;
-        const data = TextEditor.getDragEventData(event);
-        if (data?.uuid && typeof fromUuid === "function") {
-          itemDoc = await fromUuid(data.uuid);
-        } else if (data?.type === "Item" && data?.data) {
-          itemDoc = data.data;
-        }
-
-        if (!itemDoc) {
-          ui.notifications?.warn("Could not read dropped item data.");
-          return;
-        }
-
-        const nextItem = buildStorageItemFromDocument(itemDoc, 1);
-        await updateBaseSiteStorage(siteId, (targetSite) => {
-          const same = targetSite.storage.items.find((entry) => {
-            const entryUuid = String(entry.uuid ?? "").trim();
-            const nextUuid = String(nextItem.uuid ?? "").trim();
-            if (entryUuid && nextUuid) return entryUuid === nextUuid;
-            return String(entry.name ?? "").trim().toLowerCase() === String(nextItem.name ?? "").trim().toLowerCase()
-              && Number(entry.weight ?? 0) === Number(nextItem.weight ?? 0);
-          });
-          if (same) same.quantity = Math.max(1, Math.floor(Number(same.quantity ?? 0) || 0) + 1);
-          else targetSite.storage.items.push(normalizeBaseSiteStorageItem(nextItem));
-        });
-        rerenderStorage();
-      };
-
-      root.addEventListener("click", onStorageClick);
-      root.addEventListener("change", onStorageChange);
-      root.addEventListener("drop", onStorageDrop);
-      root.addEventListener("dragover", (event) => {
-        if (event.target.closest("[data-storage-drop-zone]")) event.preventDefault();
-      });
-    }
-  });
-
-  dialog.render(true);
-}
-
-async function showBaseOperationsBrief() {
-  const baseOperations = buildOperationsContext().baseOperations;
-  const sites = baseOperations.sites
-    .map((site) => `<li>${site.typeLabel}: ${site.name} - ${site.statusLabel} - Pressure ${site.pressure} - Risk ${site.risk} - Storage ${site.storageItemCount} items (${site.storageWeightSummary} wt, ${site.storageSpaceSummary} space)${site.note ? ` - ${site.note}` : ""}</li>`)
-    .join("");
-
-  const content = `
-    <div class="po-help">
-      <p><strong>Maintenance Risk:</strong> ${baseOperations.maintenanceRisk}</p>
-      <p><strong>Active Sites:</strong> ${baseOperations.activeSites}</p>
-      <p><strong>Contested Sites:</strong> ${baseOperations.contestedSites}</p>
-      <p><strong>Pressure Pool:</strong> ${baseOperations.pressureSum}</p>
-      <p><strong>Maintenance Pressure:</strong> ${baseOperations.maintenancePressure}</p>
-      <p><strong>Network Readiness:</strong> ${baseOperations.readiness ? "Stable" : "At Risk"}</p>
-      <p><strong>Sites</strong></p>
-      <ul>${sites || "<li>No base sites tracked.</li>"}</ul>
-    </div>
-  `;
-
-  await Dialog.prompt({
-    title: "Base of Operations Brief",
-    content,
-    rejectClose: false,
-    callback: () => {}
-  });
-}
-
 function buildAutomaticUpkeepPromptChatCard(promptState, resourcesState = null) {
   const resources = foundry.utils.deepClone(resourcesState ?? getOperationsLedger().resources ?? {});
   ensureOperationalResourceConfig(resources);
@@ -43264,6 +42759,55 @@ function getActiveActorForUser(user = game.user) {
   return getSelectablePlayerActorsForUser(user)[0] ?? null;
 }
 
+async function promptPlayerActorSelection(actors = [], options = {}) {
+  const candidates = Array.isArray(actors) ? actors.filter(Boolean) : [];
+  if (candidates.length <= 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const preferredActorId = String(options?.preferredActorId ?? "").trim();
+  const preferred = preferredActorId
+    ? candidates.find((actor) => String(actor?.id ?? "").trim() === preferredActorId) ?? null
+    : null;
+  if (preferred) return preferred;
+
+  const title = String(options?.title ?? "Select Character").trim() || "Select Character";
+  const label = String(options?.label ?? "Character").trim() || "Character";
+  const optionRows = candidates
+    .map((actor) => `<option value="${poEscapeHtml(String(actor.id ?? ""))}">${poEscapeHtml(String(actor.name ?? "Unknown"))}</option>`)
+    .join("");
+  const content = `<div class="form-group"><label>${poEscapeHtml(label)}</label><select name="actorId">${optionRows}</select></div>`;
+
+  return new Promise((resolve) => {
+    let resolved = false;
+    const finish = (value) => {
+      if (resolved) return;
+      resolved = true;
+      resolve(value ?? null);
+    };
+
+    const dialog = new Dialog({
+      title,
+      content,
+      buttons: {
+        choose: {
+          label: "Choose",
+          callback: (html) => {
+            const actorId = String(html.find("select[name=actorId]").val() ?? "").trim();
+            finish(candidates.find((actor) => String(actor?.id ?? "").trim() === actorId) ?? null);
+          }
+        },
+        cancel: {
+          label: "Cancel",
+          callback: () => finish(null)
+        }
+      },
+      default: "choose",
+      close: () => finish(null)
+    });
+    dialog.render(true);
+  });
+}
+
 function getOrderedMarchingActors(state) {
   const ordered = [
     ...(state.ranks?.front ?? []),
@@ -43776,7 +43320,9 @@ function buildRestWatchDetailSummary(slot, entriesView) {
   const pivRange = slot?.slotPivRange ?? computePassiveRangeForEntries(entriesView, "passiveInvestigation");
   const languages = summarizeRestWatchLanguages(entriesView);
   const hasCoverageWarning = activeCount > 0 && Boolean(slot?.slotNoDarkvision);
-  const darkvisionRange = computeHighestNumericValue((entriesView ?? []).map((entry) => entry?.actor?.darkvision));
+  const darkvisionRange = Number.isFinite(Number(slot?.slotDarkvisionRange))
+    ? Number(slot.slotDarkvisionRange)
+    : computeHighestNumericValue((entriesView ?? []).map((entry) => entry?.actor?.darkvision));
   const coverageLabel = activeCount === 0
     ? "Coverage Pending"
     : (hasCoverageWarning
@@ -43851,13 +43397,17 @@ async function assignSlotToUser(element) {
     });
     return;
   }
-  const actor = getActiveActorForUser();
-  if (!actor) {
-    ui.notifications?.warn("No assigned character for this user.");
-    return;
-  }
-  
   if (!game.user?.isGM) {
+    const selectableActors = getSelectablePlayerActorsForUser(game.user);
+    if (selectableActors.length <= 0) {
+      ui.notifications?.warn("No assigned character for this user.");
+      return;
+    }
+    const actor = await promptPlayerActorSelection(selectableActors, {
+      title: "Assign Character to Rest Watch",
+      label: "Character"
+    });
+    if (!actor) return;
     const slotId = element?.closest(".po-card")?.dataset?.slotId;
     const clicked = state.slots.find((s) => s.id === slotId);
     if (!clicked) return;
@@ -43870,6 +43420,11 @@ async function assignSlotToUser(element) {
       return;
     }
     await updateRestWatchState({ op: "assignMe", slotId: clicked.id, actorId: actor.id });
+    return;
+  }
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
     return;
   }
   const slotId = element?.closest(".po-card")?.dataset?.slotId;
@@ -44272,18 +43827,17 @@ async function copyRestWatchText(asMarkdown) {
       const timeRange = slot.timeRange || "-";
       const slotNumber = getRestWatchSlotNumber(slot?.id, index) ?? index + 1;
       if (entries.length === 0) {
-        rows.push(`| ${slotNumber} | (empty) | - | ${timeRange} | - |`);
+        rows.push(`| ${slotNumber} | (empty) | - | ${timeRange} |`);
       } else {
         entries.forEach((entry) => {
           const actor = game.actors.get(entry.actorId);
           const name = actor?.name ?? "(unknown)";
           const pp = actor ? getPassive(actor, "prc") ?? "-" : "-";
-          const notes = entry.notes ? `${entry.notes.substring(0, 30)}...` : "-";
-          rows.push(`| ${slotNumber} | ${name} | ${pp} | ${timeRange} | ${notes} |`);
+          rows.push(`| ${slotNumber} | ${name} | ${pp} | ${timeRange} |`);
         });
       }
     });
-    text = `| Watch | Actor | PP | Time | Notes |\n| --- | --- | --- | --- | --- |\n${rows.join("\n")}`;
+    text = `| Watch | Actor | PP | Time |\n| --- | --- | --- | --- |\n${rows.join("\n")}`;
   } else {
     const lines = [];
     state.slots.forEach((slot, index) => {
@@ -44402,6 +43956,51 @@ async function runDoctrineCheckPrompt() {
 }
 
 function refreshSingleAppPreservingView(app) {
+        <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
+      `
+    });
+  }
+
+  async function onMarchSceneEntry() {
+    if (!game.user?.isGM) return;
+    await updateMarchingOrderState((state) => {
+      const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+      if (formationId !== "free") {
+        markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY);
+      }
+    });
+  }
+
+  let marchSpacingCheckTimeout = null;
+
+  function scheduleSpacingViolationCheck() {
+    if (!game.user?.isGM) return;
+    if (marchSpacingCheckTimeout) clearTimeout(marchSpacingCheckTimeout);
+    marchSpacingCheckTimeout = setTimeout(async () => {
+      marchSpacingCheckTimeout = null;
+      const state = getMarchingOrderState();
+      const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+      if (formationId === "free") return;
+      const snapshot = getMarchingFormationSnapshot(state);
+      const validityState = snapshot.validity?.state;
+      if (!validityState || validityState === MARCH_DOCTRINE_STATES.STABLE) return;
+      await updateMarchingOrderState((draft) => {
+        markDoctrineTriggerPending(draft, MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION);
+      });
+    }, 500);
+  }
+
+  function onMarchTokenMoved(tokenDoc) {
+    if (!game.user?.isGM) return;
+    const actorId = String(tokenDoc?.actorId ?? tokenDoc?.actor?.id ?? "").trim();
+    if (!actorId) return;
+    const state = getMarchingOrderState();
+    const ordered = getOrderedMarchingActors(state);
+    if (!ordered.includes(actorId)) return;
+    scheduleSpacingViolationCheck();
+  }
+
+  function refreshSingleAppPreservingView(app) {
   if (!app?.render) return;
   const windowState = captureWindowState(app);
   if (windowState) pendingWindowRestore.set(app, windowState);
@@ -44505,7 +44104,30 @@ async function assignActorToRank(element) {
 }
 
 async function removeActorFromRanks(element) {
-  if (!canAccessAllPlayerOps()) return;
+  const actorId = String(element?.dataset?.actorId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor) return;
+
+  if (!canAccessAllPlayerOps()) {
+    const state = getMarchingOrderState();
+    if (isLockedForUser(state, false)) {
+      notifyUiWarnThrottled("Marching order is locked by the GM.", {
+        key: "marching-order-locked",
+        ttlMs: 1500
+      });
+      return;
+    }
+    if (!canUserControlActor(actor, game.user)) {
+      ui.notifications?.warn("You don't have permission to remove this actor from marching order.");
+      return;
+    }
+    const updated = await updateMarchingOrderState({ op: "leaveRank", actorId });
+    if (!updated) return;
+    clearNoteDraftCacheValue(getMarchingNoteCacheKey(actorId));
+    return;
+  }
+
   const state = getMarchingOrderState();
   if (isLockedForUser(state, true)) {
     notifyUiWarnThrottled("Marching order is locked by the GM.", {
@@ -44514,9 +44136,6 @@ async function removeActorFromRanks(element) {
     });
     return;
   }
-  const actorId = element?.dataset?.actorId;
-  if (!actorId) return;
-
   const updated = await updateMarchingOrderState((state) => {
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
@@ -44554,17 +44173,26 @@ async function joinRank(element) {
     rankId = "middle";
   }
   
-  const actor = getActiveActorForUser();
-  if (!actor) {
-    ui.notifications?.warn("No assigned character for this user.");
-    return;
-  }
-  
   if (!game.user?.isGM) {
+    const selectableActors = getSelectablePlayerActorsForUser(game.user);
+    if (selectableActors.length <= 0) {
+      ui.notifications?.warn("No assigned character for this user.");
+      return;
+    }
+    const actor = await promptPlayerActorSelection(selectableActors, {
+      title: "Move Character in Marching Order",
+      label: "Character"
+    });
+    if (!actor) return;
     const request = { op: "joinRank", rankId, actorId: actor.id };
     if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
     if (hasRequestedCellIndex) request.cellIndex = requestedCellIndex;
     await updateMarchingOrderState(request);
+    return;
+  }
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
     return;
   }
   await updateMarchingOrderState((state) => {
@@ -44701,7 +44329,7 @@ function openMarchingOrderHelpDialog() {
       <ul class="po-help-list">
         <li>Click an <strong>Open</strong> or <strong>Suggested</strong> slot to place an actor directly from the formation board.</li>
         <li>Drag cards between lanes to adjust the party's marching order.</li>
-        <li>Use the card actions for notes or quick removal.</li>
+        <li>Use the card actions for token ping and quick removal.</li>
         <li>Rest Watch actors that are not placed yet can be dragged in from the roster below the board.</li>
       </ul>
     </div>
@@ -45006,12 +44634,24 @@ function buildWatchSlotsView(state, isGM, visibility) {
       };
     }).filter(Boolean);
 
+    const coverageEntries = entries.map((entry) => {
+      const actor = game.actors.get(entry.actorId);
+      if (!actor) return null;
+      return {
+        actor: {
+          darkvision: getDarkvision(actor)
+        }
+      };
+    }).filter(Boolean);
+
     const slotHighestPP = computeHighestPPForEntries(entriesView);
     const slotPpRange = computePassiveRangeForEntries(entriesView, "passivePerception");
     const slotPivRange = computePassiveRangeForEntries(entriesView, "passiveInvestigation");
-    const slotNoDarkvision = computeNoDarkvisionForEntries(entriesView);
+    const slotNoDarkvision = computeNoDarkvisionForEntries(coverageEntries);
+    const slotDarkvisionRange = computeHighestNumericValue(coverageEntries.map((entry) => entry?.actor?.darkvision));
     const detailSummary = buildRestWatchDetailSummary({
       slotNoDarkvision,
+      slotDarkvisionRange,
       campfireActive,
       slotPpRange,
       slotPivRange,
@@ -45094,7 +44734,7 @@ function buildRanksView(state, isGM) {
         const lightTooltip = hasLight
           ? `Torch active: Bright ${lightRange.bright} ft, Dim ${lightRange.dim} ft.`
           : "";
-        const canEditNote = !lockedForUser && !isMarchingOrderPlayerLocked(game.user) && (isGM || userOwnsActor(actor));
+        const canRemove = !lockedForUser && (isGM || userOwnsActor(actor));
         return {
           actorId,
           actor: buildActorView(actor, isGM, "names-passives"),
@@ -45102,8 +44742,7 @@ function buildRanksView(state, isGM) {
           lightBright: lightRange.bright,
           lightDim: lightRange.dim,
           lightTooltip,
-          notes: state.notes?.[actorId] ?? "",
-          canEditNote
+          canRemove
         };
       })
       .filter(Boolean);
@@ -45257,8 +44896,9 @@ function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks =
     { id: "rear", label: "Rear Lane" }
   ];
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "").trim() : "";
+  const selectableActorCount = !isGM ? getSelectablePlayerActorsForUser(game.user).length : 0;
   const lockedForUser = isLockedForUser(state, isGM);
-  const canQuickPlace = isGM || (Boolean(activeActorId) && !lockedForUser);
+  const canQuickPlace = isGM || (selectableActorCount > 0 && !lockedForUser);
   const actualCounts = rankRows.map((row) => rankViewById.get(row.id)?.entries?.length ?? 0);
   const recommendedCounts = rankRows.map((row) => {
     const recommended = Number(formationSnapshot?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
@@ -46535,6 +46175,8 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   applyAutoInventoryToUnlinkedToken,
   environmentMoveOriginByToken,
   maybePromptEnvironmentMovementCheck,
+  onMarchTokenMoved,
+  onMarchSceneEntry,
   hasInventoryDelta,
   queueInventoryRefresh,
   consumeSuppressedSettingRefresh,

@@ -230,7 +230,7 @@ import {
   assert.deepEqual(environmentMoves.get("token-1"), { x: 3, y: 9 });
 }
 
-{
+await (async () => {
   const integrationReasons = [];
   const perfEvents = [];
 
@@ -273,11 +273,11 @@ import {
   settingsHandler({ key: "party-operations.integrationMode" });
 
   const integrationHandler = modules.find((module) => module.id === "integration").registrations[0][1];
-  integrationHandler();
+  await integrationHandler();
 
   assert.deepEqual(integrationReasons, ["update-setting", "canvas-ready"]);
   assert.ok(perfEvents.some((entry) => entry.metricName === "integration-sync" && entry.meta?.reason === "canvas-ready"));
-}
+})();
 
 {
   const audioResyncs = [];

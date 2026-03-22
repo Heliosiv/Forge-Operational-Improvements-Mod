@@ -50,5 +50,22 @@
                       "system":  "dnd5e",
                       "private":  false
                   }
-              ]
+                 ],
+         "relationships":  {
+                               "recommends":  [
+                                                 {
+                                                     "id":  "dae",
+                                                     "type":  "module",
+                                                     "compatibility":  { "minimum":  "11" }
+                                                 },
+                                                 {
+                                                     "id":  "midi-qol",
+                                                     "type":  "module"
+                                                 },
+                                                 {
+                                                     "id":  "monks-tokenbar",
+                                                     "type":  "module"
+                                                 }
+                                             ]
+                           }
 }

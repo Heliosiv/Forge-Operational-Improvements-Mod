@@ -4,11 +4,11 @@ import {
   writeSessionValue
 } from "../core/browser-session-state.js";
 
-const OPERATIONS_PAGE_VALUES = new Set(["planning", "reputation", "base", "merchants", "recovery", "gm"]);
+const OPERATIONS_PAGE_VALUES = new Set(["planning", "reputation", "merchants", "recovery", "gm"]);
 const PLAYER_HUB_TAB_VALUES = new Set(["watch", "march", "loot", "downtime"]);
 const GM_QUICK_PANEL_VALUES = new Set(["none", "faction", "modifier", "weather"]);
 const GM_OPERATIONS_TAB_VALUES = new Set(["environment", "loot-sources"]);
-const OPERATIONS_PLANNING_TAB_VALUES = new Set(["roles", "sops", "resources", "loot", "bonuses"]);
+const OPERATIONS_PLANNING_TAB_VALUES = new Set(["roles", "resources", "loot", "bonuses"]);
 
 // Group the app-wide navigation/session preferences behind a single browser-state boundary.
 export function createNavigationUiState({
@@ -59,7 +59,7 @@ export function createNavigationUiState({
 
   function normalizeOperationsPage(page) {
     let normalized = String(page ?? "planning").trim().toLowerCase();
-    if (normalized === "supply") normalized = "base";
+    if (normalized === "supply" || normalized === "base") normalized = "planning";
     if (normalized === "readiness" || normalized === "comms") normalized = "planning";
     if (normalized === "downtime") normalized = "planning";
     if (normalized === "gm" && !hasGmAccess()) normalized = "planning";

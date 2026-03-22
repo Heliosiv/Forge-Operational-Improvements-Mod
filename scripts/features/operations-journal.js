@@ -17,6 +17,7 @@ export function createOperationsJournalFeature({
   getJournalFolderParentId = () => "",
   findOperationsJournalRootFolder = () => null,
   journalFolderIsUnderRoot = () => false,
+  canViewJournalEntry = () => true,
   openJournalEntryFromElement = null,
   setTimeoutFn = globalThis.window?.setTimeout?.bind(globalThis.window) ?? globalThis.setTimeout?.bind(globalThis),
   clearTimeoutFn = globalThis.window?.clearTimeout?.bind(globalThis.window) ?? globalThis.clearTimeout?.bind(globalThis)
@@ -191,7 +192,8 @@ export function createOperationsJournalFeature({
         if (!entry || !rootFolderId) return false;
         const entryFolder = resolveEntryFolder(entry);
         const entryFolderId = String(entryFolder?.id ?? "").trim();
-        return journalFolderIsUnderRoot(entryFolderId, rootFolderId);
+        if (!journalFolderIsUnderRoot(entryFolderId, rootFolderId)) return false;
+        return Boolean(canViewJournalEntry(entry, gameRef.user ?? null));
       })
       .map((entry) => {
         const name = String(entry?.name ?? "Untitled").trim() || "Untitled";

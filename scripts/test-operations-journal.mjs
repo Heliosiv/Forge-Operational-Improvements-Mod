@@ -85,6 +85,9 @@ const journalFeature = createOperationsJournalFeature({
     }
     return false;
   },
+  canViewJournalEntry(entry) {
+    return entry?.visible !== false;
+  },
   async openJournalEntryFromElement(element) {
     openedEntries.push(String(element?.dataset?.entryId ?? ""));
   },
@@ -191,6 +194,13 @@ globalThis.game.journal = {
       name: "Outside Root",
       folder: "other-root",
       _stats: { modifiedTime: 500, createdTime: 30 }
+    },
+    {
+      id: "entry-4",
+      name: "Hidden Log",
+      folder: "downtime-folder",
+      visible: false,
+      _stats: { modifiedTime: 600, createdTime: 40 }
     }
   ]
 };

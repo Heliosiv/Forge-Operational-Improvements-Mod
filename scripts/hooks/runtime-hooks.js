@@ -103,7 +103,8 @@ function buildUserPresenceHookModule({
 function buildTokenHookModule({
   applyAutoInventoryToUnlinkedToken,
   environmentMoveOriginByToken,
-  maybePromptEnvironmentMovementCheck
+  maybePromptEnvironmentMovementCheck,
+  onMarchTokenMoved
 } = {}) {
   return {
     id: "tokens",
@@ -122,6 +123,9 @@ function buildTokenHookModule({
       }],
       ["updateToken", async (tokenDoc, changed, options) => {
         await maybePromptEnvironmentMovementCheck?.(tokenDoc, changed, options ?? {});
+        if (changed && (changed.x !== undefined || changed.y !== undefined)) {
+          onMarchTokenMoved?.(tokenDoc);
+        }
       }]
     ]
   };
@@ -221,6 +225,7 @@ function buildSettingHookModule({
 
 function buildIntegrationHookModule({
   scheduleIntegrationSync,
+  onMarchSceneEntry,
   bindFolderOwnershipProxySubmit,
   gameRef,
   perfTracker
@@ -228,8 +233,9 @@ function buildIntegrationHookModule({
   return {
     id: "integration",
     registrations: [
-      ["canvasReady", () => {
+      ["canvasReady", async () => {
         if (!gameRef?.user?.isGM) return;
+        await onMarchSceneEntry?.();
         perfTracker?.increment?.("integration-sync", 1, { reason: "canvas-ready" });
         scheduleIntegrationSync?.("canvas-ready");
       }],
@@ -293,6 +299,8 @@ export function buildPartyOpsRuntimeHookModules({
   applyAutoInventoryToUnlinkedToken,
   environmentMoveOriginByToken,
   maybePromptEnvironmentMovementCheck,
+  onMarchTokenMoved,
+  onMarchSceneEntry,
   hasInventoryDelta,
   queueInventoryRefresh,
   consumeSuppressedSettingRefresh,
@@ -325,7 +333,8 @@ export function buildPartyOpsRuntimeHookModules({
     buildTokenHookModule({
       applyAutoInventoryToUnlinkedToken,
       environmentMoveOriginByToken,
-      maybePromptEnvironmentMovementCheck
+      maybePromptEnvironmentMovementCheck,
+      onMarchTokenMoved
     }),
     buildInventoryHookModule({
       hasInventoryDelta,
@@ -344,6 +353,7 @@ export function buildPartyOpsRuntimeHookModules({
     }),
     buildIntegrationHookModule({
       scheduleIntegrationSync,
+      onMarchSceneEntry,
       bindFolderOwnershipProxySubmit,
       gameRef,
       perfTracker

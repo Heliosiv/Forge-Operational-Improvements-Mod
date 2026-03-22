@@ -148,17 +148,6 @@
                   </div>
                   <span class="po-slot-chip po-watch-mini-stat {{#unless hasActorDetails}}is-muted{{/unless}}">PP {{#if hasPassivePerception}}{{actor.passivePerception}}{{else}}-{{/if}}</span>
                   <span class="po-slot-chip po-watch-mini-stat {{#unless hasActorDetails}}is-muted{{/unless}}">PI {{#if hasPassiveInvestigation}}{{actor.passiveInvestigation}}{{else}}-{{/if}}</span>
-                  <div class="po-watch-assignment-inline">
-                    {{#if actorId}}
-                    <button type="button" class="po-icon-btn po-note-toggle {{#if hasSavedNote}}has-saved-note{{/if}}" data-action="open-shared-note" data-slot-id="{{../id}}" data-actor-id="{{actorId}}" aria-label="{{noteButtonAriaLabel}}" title="{{noteButtonTitle}}">
-                      <i class="fa-solid fa-note-sticky"></i>
-                    </button>
-                    {{else}}
-                    <button type="button" class="po-icon-btn" disabled aria-label="Notes unavailable">
-                      <i class="fa-solid fa-note-sticky"></i>
-                    </button>
-                    {{/if}}
-                  </div>
                 </div>
                 {{/each}}
               </div>
@@ -257,9 +246,8 @@
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
-          <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, SOPs, resources, and Party Health modifiers">Planning</button>
+          <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, resources, loot, and Party Health modifiers">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
-          <button type="button" class="po-tab {{#if operationsPageBase}}is-active{{/if}}" data-action="operations-page" data-page="base" title="Manage safehouses, pressure, and operational sites">Base</button>
           <button type="button" class="po-tab {{#if operationsPageMerchants}}is-active{{/if}}" data-action="operations-page" data-page="merchants" title="Track merchant contacts, routes, and procurement priorities">Merchants</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
         </nav>
@@ -269,9 +257,8 @@
 
         <div id="po-ops-summary" class="po-gm-section po-gm-section-compact">
           <div class="po-info-strip">
-            <div class="po-info-chip" title="Overall operational risk from role coverage, SOP activation, and base pressure"><span>Risk</span><strong>{{operations.summary.effects.riskTier}}</strong></div>
+            <div class="po-info-chip" title="Overall operational risk from role coverage and base pressure"><span>Risk</span><strong>{{operations.summary.effects.riskTier}}</strong></div>
             <div class="po-info-chip" title="Assigned leadership roles out of total available roles"><span>Roles</span><strong>{{operations.summary.roleCoverage}} / {{operations.summary.roleTotal}}</strong></div>
-            <div class="po-info-chip" title="Active SOPs currently briefed and in use"><span>SOPs</span><strong>{{operations.summary.activeSops}} / {{operations.summary.sopTotal}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before food is depleted"><span>Food Cycles</span><strong>{{operations.resources.summary.foodCyclesLeft}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before water is depleted"><span>Water Cycles</span><strong>{{operations.resources.summary.waterCyclesLeft}}</strong></div>
             <div class="po-info-chip" title="Inventory bindings linked to owned player-character items"><span>Bindings</span><strong>{{operations.resources.summary.selectedBindingCount}} / 3</strong></div>
@@ -282,7 +269,6 @@
 
         <nav class="po-tabs po-tabs-sub po-planning-tabs" role="tablist" aria-label="Planning Sections">
           <button type="button" class="po-tab {{#if operationsPlanningRoles}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="roles" title="Assign operational leadership roles">Roles</button>
-          <button type="button" class="po-tab {{#if operationsPlanningSops}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="sops" title="Enable and maintain SOP coverage">SOPs</button>
           <button type="button" class="po-tab {{#if operationsPlanningResources}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="resources" title="Track supplies, drains, and inventory bindings">Resources</button>
           <button type="button" class="po-tab {{#if operationsPlanningLoot}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="loot" title="Claim, vouch, and collect published loot">Loot</button>
           <button type="button" class="po-tab {{#if operationsPlanningBonuses}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="bonuses" title="Review Party Health global modifiers for player actors">Party Health</button>
@@ -311,39 +297,6 @@
           </div>
           {{/each}}
           </div>
-        </div>
-        {{/if}}
-
-        {{#if operationsPlanningSops}}
-        <div id="po-ops-sops" class="po-gm-section">
-          <div class="po-section-title">SOP Status</div>
-          <div class="po-hint">Toggle procedures currently briefed and active. Each SOP uses one shared note that anyone with Operations access can update.</div>
-          {{#each operations.sops}}
-          <div class="po-op-role-row po-sop-row" data-sop-row="{{key}}">
-            <label class="po-switch" title="Enable or disable SOP: {{label}}">
-              <input id="po-sop-toggle-{{key}}" name="poSopToggle_{{key}}" type="checkbox" data-action="toggle-sop" data-sop="{{key}}" {{#if active}}checked{{/if}} />
-              <span>{{label}}</span>
-            </label>
-            <div class="po-sop-note-grid po-sop-note-block" data-sop-note-block="{{key}}">
-              <div class="po-sop-note-editor">
-                <label class="po-resource-row po-notes-row-lg">
-                  <span>Shared Note</span>
-                  <textarea id="po-sop-note-{{key}}" name="poSopNote_{{key}}" class="po-input" rows="4" data-action="set-sop-note" data-sop="{{key}}" placeholder="Shared note for {{label}}">{{draftNote}}</textarea>
-                </label>
-                <div class="po-notes-actions">
-                  <button type="button" class="po-btn po-btn-sm" data-action="save-sop-note" data-sop="{{key}}">Save Shared Note</button>
-                  <button type="button" class="po-btn po-btn-sm" data-action="clear-sop-note" data-sop="{{key}}">Clear Note</button>
-                </div>
-                {{#if pendingLocalSync}}
-                <div class="po-note-label">Pending GM sync...</div>
-                {{/if}}
-                {{#if @root.notesDebugHint}}
-                <div class="po-note-label">{{@root.notesDebugHint}}</div>
-                {{/if}}
-              </div>
-            </div>
-          </div>
-          {{/each}}
         </div>
         {{/if}}
 
@@ -797,101 +750,6 @@
             {{/if}}
           </div>
           {{/if}}
-        </div>
-
-        {{/if}}
-
-        {{#if operationsPageBase}}
-
-        <div id="po-ops-base" class="po-gm-section">
-          <div class="po-section-title">Base of Operations</div>
-          <div class="po-hint">Track safehouse network nodes and maintenance pressure.</div>
-          <label class="po-resource-row">
-            <span>Maintenance Risk</span>
-            <select class="po-select" data-action="set-base-ops-config" data-base-config="maintenanceRisk">
-              {{#each operations.baseOperations.riskOptions}}
-              <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-
-          <div class="po-op-divider"></div>
-
-          <div class="po-op-role-row po-base-site-editor">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">Add Base Site</div>
-            </div>
-            <label class="po-resource-row">
-              <span>Type</span>
-              <select name="baseSiteType" class="po-select">
-                {{#each operations.baseOperations.siteTypeOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Name</span>
-              <input type="text" name="baseSiteName" class="po-input" placeholder="e.g., Bellford Watchtower" />
-            </label>
-            <label class="po-resource-row">
-              <span>Status</span>
-              <select name="baseSiteStatus" class="po-select">
-                {{#each operations.baseOperations.statusOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Maintenance Load</span>
-              <input type="number" min="0" step="1" name="baseSitePressure" class="po-input" value="0" />
-            </label>
-            <label class="po-resource-row">
-              <span>Discovery Risk</span>
-              <select name="baseSiteRisk" class="po-select">
-                {{#each operations.baseOperations.siteRiskOptions}}
-                <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                {{/each}}
-              </select>
-            </label>
-            <label class="po-resource-row">
-              <span>Notes</span>
-              <input type="text" name="baseSiteNote" class="po-input" placeholder="Wardens loyal, crypt route unstable" />
-            </label>
-            <label class="po-resource-row">
-              <span>Storage Weight Capacity</span>
-              <input type="number" min="0" step="0.1" name="baseSiteMaxWeight" class="po-input" value="0" />
-            </label>
-            <label class="po-resource-row">
-              <span>Storage Space Capacity</span>
-              <input type="number" min="0" step="1" name="baseSiteMaxSpace" class="po-input" value="0" />
-            </label>
-            <button type="button" class="po-btn" data-action="upsert-base-site">Add Site</button>
-          </div>
-
-          {{#each operations.baseOperations.sites}}
-          <div class="po-op-role-row" data-base-site-id="{{id}}">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{typeLabel}}: {{name}}</div>
-              <div class="po-op-role-status">{{statusLabel}}</div>
-            </div>
-            <div class="po-op-summary">Maintenance Load: {{pressure}}</div>
-            <div class="po-op-summary">Discovery Risk: {{risk}}</div>
-            <div class="po-op-summary">Storage Weight: {{storageWeightSummary}}</div>
-            <div class="po-op-summary">Storage Space: {{storageSpaceSummary}}</div>
-            <div class="po-op-summary">Stored Items: {{storageItemCount}}</div>
-            {{#if note}}
-            <div class="po-op-summary">Note: {{note}}</div>
-            {{/if}}
-            <button type="button" class="po-btn po-btn-sm" data-action="open-base-site-storage" data-base-site-id="{{id}}">Open Storage</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="clear-base-site" data-base-site-id="{{id}}">Remove site</button>
-          </div>
-          {{/each}}
-
-          <div class="po-op-summary">Active sites: {{operations.baseOperations.activeSites}}</div>
-          <div class="po-op-summary">Contested sites: {{operations.baseOperations.contestedSites}}</div>
-          <div class="po-op-summary">Maintenance pressure: {{operations.baseOperations.maintenancePressure}}</div>
-          <div class="po-op-summary">Base readiness: {{#if operations.baseOperations.readiness}}Stable{{else}}At Risk{{/if}}</div>
-          <button type="button" class="po-btn po-btn-sm" data-action="show-base-ops-brief">Show Base Operations Brief</button>
         </div>
 
         {{/if}}
