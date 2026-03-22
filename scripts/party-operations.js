@@ -27895,8 +27895,6 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
 
   const refreshedAt = Date.now();
   const refreshedBy = String(game.user?.name ?? "GM").trim() || "GM";
-  const claimedAt = Date.now();
-  const claimedAt = Date.now();
   await updateOperationsLedger((nextLedger) => {
     const merchants = ensureMerchantsState(nextLedger);
     const entry = merchants.definitions.find((row) => String(row?.id ?? "") === merchantId);
