@@ -19,12 +19,18 @@ import {
 // Encapsulate browser-scoped loot UI state behind a small feature boundary.
 export function createLootUiState({
   lootClaimsArchiveSortOptions = [],
+  lootClaimsLiveSortOptions = [],
   lootRegistryTabs = LOOT_REGISTRY_TABS,
   lootSettingsTabs = LOOT_SETTINGS_TABS
 } = {}) {
   const allowedArchiveSorts = new Set(
     Array.isArray(lootClaimsArchiveSortOptions)
       ? lootClaimsArchiveSortOptions.map((entry) => String(entry?.value ?? "").trim().toLowerCase()).filter(Boolean)
+      : []
+  );
+  const allowedLiveSorts = new Set(
+    Array.isArray(lootClaimsLiveSortOptions)
+      ? lootClaimsLiveSortOptions.map((entry) => String(entry?.value ?? "").trim().toLowerCase()).filter(Boolean)
       : []
   );
   const allowedLootSettingsTabs = new Set(Object.values(lootSettingsTabs));
@@ -73,6 +79,14 @@ export function createLootUiState({
     return `po-loot-claim-archive-sort-${getCurrentUserId()}`;
   }
 
+  function getLootClaimsLiveSortStorageKey() {
+    return `po-loot-claim-live-sort-${getCurrentUserId()}`;
+  }
+
+  function getLootClaimsLiveSearchStorageKey() {
+    return `po-loot-claim-live-search-${getCurrentUserId()}`;
+  }
+
   function normalizeLootClaimActorId(value) {
     return String(value ?? "").trim();
   }
@@ -86,6 +100,15 @@ export function createLootUiState({
     return allowedArchiveSorts.has(normalized) ? normalized : "archived-desc";
   }
 
+  function normalizeLootClaimsLiveSort(value) {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    return allowedLiveSorts.has(normalized) ? normalized : "value-desc";
+  }
+
+  function normalizeLootClaimsLiveSearch(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 80);
+  }
+
   function getLootClaimActorSelection() {
     return normalizeLootClaimActorId(readSessionValue(getLootClaimActorStorageKey()));
   }
@@ -96,6 +119,14 @@ export function createLootUiState({
 
   function getLootClaimsArchiveSort() {
     return normalizeLootClaimsArchiveSort(readSessionValue(getLootClaimsArchiveSortStorageKey()));
+  }
+
+  function getLootClaimsLiveSort() {
+    return normalizeLootClaimsLiveSort(readSessionValue(getLootClaimsLiveSortStorageKey()));
+  }
+
+  function getLootClaimsLiveSearch() {
+    return normalizeLootClaimsLiveSearch(readSessionValue(getLootClaimsLiveSearchStorageKey()));
   }
 
   function setLootClaimActorSelection(actorIdInput) {
@@ -124,8 +155,24 @@ export function createLootUiState({
     return sort;
   }
 
+  function setLootClaimsLiveSort(sortInput) {
+    const sort = normalizeLootClaimsLiveSort(sortInput);
+    writeSessionValue(getLootClaimsLiveSortStorageKey(), sort);
+    return sort;
+  }
+
+  function setLootClaimsLiveSearch(searchInput) {
+    const search = normalizeLootClaimsLiveSearch(searchInput);
+    if (!search) {
+      removeSessionValue(getLootClaimsLiveSearchStorageKey());
+      return "";
+    }
+    writeSessionValue(getLootClaimsLiveSearchStorageKey(), search);
+    return search;
+  }
+
   function setLootClaimActorSelectionFromElement(element) {
-    const nextActorId = normalizeLootClaimActorId(element?.value);
+    const nextActorId = normalizeLootClaimActorId(element?.dataset?.actorId ?? element?.value);
     const currentActorId = getLootClaimActorSelection();
     if (nextActorId === currentActorId) return false;
     setLootClaimActorSelection(nextActorId);
@@ -137,6 +184,22 @@ export function createLootUiState({
     const currentRunId = getLootClaimRunSelection();
     if (nextRunId === currentRunId) return false;
     setLootClaimRunSelection(nextRunId);
+    return true;
+  }
+
+  function setLootClaimsLiveSortFromElement(element) {
+    const nextSort = normalizeLootClaimsLiveSort(element?.value);
+    const currentSort = getLootClaimsLiveSort();
+    if (nextSort === currentSort) return false;
+    setLootClaimsLiveSort(nextSort);
+    return true;
+  }
+
+  function setLootClaimsLiveSearchFromElement(element) {
+    const nextSearch = normalizeLootClaimsLiveSearch(element?.value);
+    const currentSearch = getLootClaimsLiveSearch();
+    if (nextSearch === currentSearch) return false;
+    setLootClaimsLiveSearch(nextSearch);
     return true;
   }
 
@@ -193,11 +256,17 @@ export function createLootUiState({
     getLootClaimActorSelection,
     getLootClaimRunSelection,
     getLootClaimsArchiveSort,
+    getLootClaimsLiveSort,
+    getLootClaimsLiveSearch,
     setLootClaimActorSelection,
     setLootClaimRunSelection,
     setLootClaimsArchiveSort,
+    setLootClaimsLiveSort,
+    setLootClaimsLiveSearch,
     setLootClaimActorSelectionFromElement,
     setLootClaimRunSelectionFromElement,
+    setLootClaimsLiveSortFromElement,
+    setLootClaimsLiveSearchFromElement,
     normalizeLootRegistryTab,
     getActiveLootRegistryTab,
     setActiveLootRegistryTab,

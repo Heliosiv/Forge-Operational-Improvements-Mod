@@ -1321,6 +1321,16 @@ const LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS = [
   { value: "items-desc", label: "Most Items" },
   { value: "items-asc", label: "Fewest Items" }
 ];
+const LOOT_CLAIMS_LIVE_SORT_OPTIONS = [
+  { value: "value-desc", label: "Value High-Low" },
+  { value: "value-asc", label: "Value Low-High" },
+  { value: "weight-desc", label: "Weight High-Low" },
+  { value: "weight-asc", label: "Weight Low-High" },
+  { value: "quantity-desc", label: "Quantity High-Low" },
+  { value: "quantity-asc", label: "Quantity Low-High" },
+  { value: "name-asc", label: "Name A-Z" },
+  { value: "name-desc", label: "Name Z-A" }
+];
 const {
   getActiveGmPanelTab,
   setActiveGmPanelTab,
@@ -1359,18 +1369,25 @@ const {
   getLootClaimActorSelection,
   getLootClaimRunSelection,
   getLootClaimsArchiveSort,
+  getLootClaimsLiveSort,
+  getLootClaimsLiveSearch,
   setLootClaimActorSelection,
   setLootClaimRunSelection,
   setLootClaimsArchiveSort,
+  setLootClaimsLiveSort,
+  setLootClaimsLiveSearch,
   setLootClaimActorSelectionFromElement,
   setLootClaimRunSelectionFromElement,
+  setLootClaimsLiveSortFromElement,
+  setLootClaimsLiveSearchFromElement,
   normalizeLootRegistryTab,
   getActiveLootRegistryTab,
   setActiveLootRegistryTab,
   getActiveLootSettingsTab,
   setActiveLootSettingsTab
 } = createLootUiState({
-  lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS
+  lootClaimsArchiveSortOptions: LOOT_CLAIMS_ARCHIVE_SORT_OPTIONS,
+  lootClaimsLiveSortOptions: LOOT_CLAIMS_LIVE_SORT_OPTIONS
 });
 const {
   getJournalVisibilityMode,
@@ -8683,12 +8700,18 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await claimLootItemForPlayer(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "toggle-loot-vouch": async () => {
-          await toggleLootItemVouchForPlayer(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
         "set-loot-claim-actor": async () => {
           if (setLootClaimActorSelectionFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "set-loot-claims-live-sort": async () => {
+          if (setLootClaimsLiveSortFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "set-loot-claims-live-search": async () => {
+          if (setLootClaimsLiveSearchFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
@@ -8696,12 +8719,28 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await claimLootCurrencyForPlayer(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "set-loot-major-item": async () => {
-          await setLootItemMajorFromElement(element);
+        "split-loot-currency": async () => {
+          await splitLootCurrencyForPlayer(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "run-loot-rolloff": async () => {
-          await runLootRollOffFromElement(element);
+        "claim-all-loot-items": async () => {
+          await claimAllLootItemsForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "claim-all-loot": async () => {
+          await claimAllLootForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "undo-loot-claim": async () => {
+          await undoLootClaimFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "unlock-loot-claim-run": async () => {
+          await unlockLootClaimRunFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+        },
+        "set-loot-major-item": async () => {
+          await setLootItemMajorFromElement(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "open-gm-loot-claims-board": async () => {
@@ -10378,16 +10417,6 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
-        if (action === "toggle-loot-vouch") {
-          await toggleLootItemVouchForPlayer(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
-        if (action === "run-loot-rolloff") {
-          await runLootRollOffFromElement(actionElement);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          return;
-        }
         if (action === "open-loot-item") {
           await openLootItemFromElement(actionElement);
           return;
@@ -10402,6 +10431,43 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
             element: actionElement,
             claimVariant: PLAYER_HUB_CLAIM_VARIANTS.CURRENCY
           });
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "split-loot-currency") {
+          await splitLootCurrencyForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "claim-all-loot-items") {
+          await claimAllLootItemsForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "set-loot-claims-live-sort") {
+          if (setLootClaimsLiveSortFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "set-loot-claims-live-search") {
+          if (setLootClaimsLiveSearchFromElement(actionElement)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          return;
+        }
+        if (action === "claim-all-loot") {
+          await claimAllLootForPlayer(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "undo-loot-claim") {
+          await undoLootClaimFromElement(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "unlock-loot-claim-run") {
+          await unlockLootClaimRunFromElement(actionElement);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
@@ -10763,9 +10829,6 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
         case "ping":
           await pingActorFromElement(element);
           break;
-        case "toggle-loot-vouch":
-          await toggleLootItemVouchForPlayer(element);
-          break;
         case "set-loot-claim-run":
           if (setLootClaimRunSelectionFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -10784,6 +10847,28 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
           if (setLootClaimActorSelectionFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
+          break;
+        case "set-loot-claims-live-sort":
+          if (setLootClaimsLiveSortFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "set-loot-claims-live-search":
+          if (setLootClaimsLiveSearchFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+          break;
+        case "split-loot-currency":
+          await splitLootCurrencyForPlayer(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "undo-loot-claim":
+          await undoLootClaimFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          break;
+        case "unlock-loot-claim-run":
+          await unlockLootClaimRunFromElement(element);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
           break;
         case "open-gm-loot-claims-board":
           openGmLootClaimsBoard({
@@ -21339,6 +21424,260 @@ async function generateLootPreviewPayload(draftInput = {}) {
   }
 }
 
+function buildBoardReadyLootItemRecord(entry = {}, options = {}) {
+  const source = entry && typeof entry === "object" ? entry : {};
+  const runId = normalizeLootClaimRunId(options?.runId) || foundry.utils.randomID();
+  const createdAt = Math.max(0, Number(options?.createdAt ?? Date.now()) || Date.now());
+  const resetClaimState = options?.resetClaimState === true;
+  const quantity = Math.max(1, Math.floor(Number(source?.quantity ?? 1) || 1));
+  const sourceClass = normalizeLootSourceClass(source?.sourceClass, LOOT_SOURCE_CLASSES.GENERATED);
+  const sourcePolicy = normalizeLootSourcePolicy(source?.sourcePolicy, LOOT_SOURCE_POLICIES.NORMAL);
+  const displayName = String(source?.name ?? source?.displayName ?? "Item").trim() || "Item";
+  const sourceId = String(
+    source?.sourceId
+    ?? source?.uuid
+    ?? source?.sourceLabel
+    ?? `${sourceClass}:${displayName.toLowerCase()}`
+  ).trim() || `${sourceClass}:${displayName.toLowerCase()}`;
+  const itemId = String(source?.itemId ?? source?.id ?? source?.uuid ?? `${runId}:${sourceId}`).trim() || `${runId}:${sourceId}`;
+  const estimatedValueGp = Math.max(0, Number(source?.estimatedValueGp ?? source?.itemValueGp ?? 0) || 0);
+  const itemWeightLb = roundLootWeightLb(Math.max(0, Number(source?.itemWeightLb ?? 0) || 0));
+  const baseItemValueGp = Math.max(0, Number(source?.baseItemValueGp ?? estimatedValueGp) || 0);
+  const baseItemWeightLb = roundLootWeightLb(Math.max(0, Number(source?.baseItemWeightLb ?? itemWeightLb) || 0));
+  return {
+    id: String(source?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    itemId,
+    sourceId,
+    uuid: String(source?.uuid ?? "").trim(),
+    displayName,
+    name: displayName,
+    image: String(source?.image ?? source?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    img: String(source?.img ?? source?.image ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    rarity: String(source?.rarity ?? "").trim(),
+    estimatedValueGp,
+    itemValueGp: estimatedValueGp,
+    quantity,
+    quantityRemaining: resetClaimState
+      ? quantity
+      : Math.max(quantity, Math.floor(Number(source?.quantityRemaining ?? quantity) || quantity)),
+    runId,
+    lockState: resetClaimState
+      ? "open"
+      : (String(source?.lockState ?? "open").trim().toLowerCase() || "open"),
+    lockExpiresAt: resetClaimState ? 0 : Math.max(0, Number(source?.lockExpiresAt ?? 0) || 0),
+    createdAt,
+    isClaimed: resetClaimState ? false : Boolean(source?.isClaimed),
+    eligibleActorIds: normalizeLootClaimActorIdList(source?.eligibleActorIds ?? source?.eligibilityActorIds),
+    itemWeightLb,
+    baseItemValueGp,
+    baseItemWeightLb,
+    variableTreasureKind: normalizeLootVariableTreasureKind(source?.variableTreasureKind),
+    itemType: String(source?.itemType ?? "").trim(),
+    sourceClass,
+    sourcePolicy,
+    curationScore: Math.max(0, Math.min(10, Number(source?.curationScore ?? 0) || 0)),
+    isCurated: Boolean(source?.isCurated) || sourceClass === LOOT_SOURCE_CLASSES.CURATED,
+    sourceLabel: String(source?.sourceLabel ?? "").trim(),
+    majorItem: Boolean(source?.majorItem),
+    vouchedByActorIds: normalizeLootClaimActorIdList(source?.vouchedByActorIds)
+  };
+}
+
+function validateBoardReadyLootBundle(bundle = {}) {
+  const errors = [];
+  const source = bundle && typeof bundle === "object" ? bundle : null;
+  if (!source) return { ok: false, errors: ["Bundle must be an object."] };
+
+  const status = String(source?.status ?? "").trim().toLowerCase();
+  if (!status || !["ok", "failed"].includes(status)) {
+    errors.push("Bundle status must be 'ok' or 'failed'.");
+  }
+
+  const runId = normalizeLootClaimRunId(source?.runId);
+  if (!runId) errors.push("Bundle runId is required.");
+
+  const generatedAt = Number(source?.generatedAt ?? 0);
+  if (!Number.isFinite(generatedAt) || generatedAt <= 0) {
+    errors.push("Bundle generatedAt must be a positive timestamp.");
+  }
+
+  if (!Array.isArray(source?.warnings)) errors.push("Bundle warnings must be an array.");
+  if (!Array.isArray(source?.items)) errors.push("Bundle items must be an array.");
+  if (!Array.isArray(source?.claimsLog)) errors.push("Bundle claimsLog must be an array.");
+
+  const sourceSummary = source?.sourceSummary;
+  if (!sourceSummary || typeof sourceSummary !== "object") {
+    errors.push("Bundle sourceSummary is required.");
+  } else if (!Array.isArray(sourceSummary?.precedence) || sourceSummary.precedence.length <= 0) {
+    errors.push("Bundle sourceSummary.precedence must be a non-empty array.");
+  }
+
+  const claimMetadata = source?.claimMetadata;
+  if (!claimMetadata || typeof claimMetadata !== "object") {
+    errors.push("Bundle claimMetadata is required.");
+  }
+
+  const audit = source?.audit;
+  if (!audit || typeof audit !== "object") {
+    errors.push("Bundle audit is required.");
+  } else {
+    if (!Array.isArray(audit?.constraintChecks)) errors.push("Bundle audit.constraintChecks must be an array.");
+    if (!Array.isArray(audit?.relaxationSteps)) errors.push("Bundle audit.relaxationSteps must be an array.");
+    if (!Array.isArray(audit?.sourceSelections)) errors.push("Bundle audit.sourceSelections must be an array.");
+    if (!Array.isArray(audit?.warnings)) errors.push("Bundle audit.warnings must be an array.");
+  }
+
+  const currency = source?.currency;
+  const currencyRemaining = source?.currencyRemaining;
+  for (const [label, value] of [["currency", currency], ["currencyRemaining", currencyRemaining]]) {
+    if (!value || typeof value !== "object") {
+      errors.push(`Bundle ${label} is required.`);
+      continue;
+    }
+    for (const denom of ["pp", "gp", "sp", "cp"]) {
+      const amount = Number(value?.[denom] ?? 0);
+      if (!Number.isFinite(amount) || amount < 0) {
+        errors.push(`Bundle ${label}.${denom} must be a non-negative number.`);
+      }
+    }
+  }
+
+  const items = Array.isArray(source?.items) ? source.items : [];
+  items.forEach((item, index) => {
+    if (!item || typeof item !== "object") {
+      errors.push(`Bundle item ${index} must be an object.`);
+      return;
+    }
+    const requiredStringFields = ["itemId", "sourceId", "displayName", "image", "runId", "lockState"];
+    for (const field of requiredStringFields) {
+      if (!String(item?.[field] ?? "").trim()) {
+        errors.push(`Bundle item ${index} is missing ${field}.`);
+      }
+    }
+    if (!String(item?.rarity ?? "").trim() && status === "ok") {
+      errors.push(`Bundle item ${index} is missing rarity.`);
+    }
+    const requiredNumberFields = ["estimatedValueGp", "quantity", "quantityRemaining", "lockExpiresAt", "createdAt"];
+    for (const field of requiredNumberFields) {
+      const value = Number(item?.[field] ?? NaN);
+      if (!Number.isFinite(value) || value < 0) {
+        errors.push(`Bundle item ${index} has invalid ${field}.`);
+      }
+    }
+    if (runId && String(item?.runId ?? "").trim() !== runId) {
+      errors.push(`Bundle item ${index} runId does not match bundle runId.`);
+    }
+    if (typeof item?.isClaimed !== "boolean") {
+      errors.push(`Bundle item ${index} must include boolean isClaimed.`);
+    }
+  });
+
+  const hasCurrency = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Number(currency?.[denom] ?? 0) || 0) > 0);
+  if (status === "ok" && items.length <= 0 && !hasCurrency) {
+    errors.push("Successful bundle must contain items or currency.");
+  }
+
+  return { ok: errors.length <= 0, errors };
+}
+
+function buildBoardReadyLootBundleFromPreviewPayload(preview = {}, options = {}) {
+  const generatedAt = Math.max(0, Number(preview?.generatedAt ?? Date.now()) || Date.now());
+  const publishedAt = Math.max(0, Number(preview?.publishedAt ?? 0) || 0);
+  const resetClaimState = publishedAt <= 0;
+  const runId = normalizeLootClaimRunId(options?.runId ?? preview?.runId) || foundry.utils.randomID();
+  const sourceConfig = getLootSourceConfig();
+  const currency = normalizeLootClaimCurrencyRecord(preview?.currency, { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 });
+  const currencyRemaining = resetClaimState
+    ? normalizeLootClaimCurrencyRecord(currency, currency)
+    : normalizeLootClaimCurrencyRecord(preview?.currencyRemaining, currency);
+  const warnings = Array.from(new Set((Array.isArray(preview?.warnings) ? preview.warnings : [])
+    .map((entry) => String(entry ?? "").trim())
+    .filter(Boolean)));
+  const items = (Array.isArray(preview?.items) ? preview.items : []).map((entry) => buildBoardReadyLootItemRecord(entry, {
+    runId,
+    createdAt: generatedAt,
+    resetClaimState
+  }));
+  const tableRolls = normalizeLootClaimTableRolls(preview?.tableRolls);
+  const draft = normalizeLootPreviewDraft(preview?.draft ?? {});
+  const hasCurrency = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Number(currency?.[denom] ?? 0) || 0) > 0);
+  const status = items.length > 0 || hasCurrency ? "ok" : "failed";
+  const bundle = {
+    status,
+    runId,
+    generatedAt,
+    generatedBy: String(preview?.generatedBy ?? game.user?.name ?? "GM"),
+    publishedAt,
+    publishedBy: String(preview?.publishedBy ?? ""),
+    draft,
+    sourceSummary: {
+      precedence: ["module", "world", "compendium"],
+      enabledItemSources: (sourceConfig?.packs ?? []).filter((entry) => entry?.enabled !== false).length,
+      enabledTableSources: (sourceConfig?.tables ?? []).filter((entry) => entry?.enabled !== false).length
+    },
+    currency,
+    currencyRemaining,
+    items,
+    tableRolls,
+    claimsLog: resetClaimState ? [] : (Array.isArray(preview?.claimsLog) ? preview.claimsLog : []),
+    claimMetadata: {
+      boardReady: true,
+      autoOpenPlayers: true,
+      defaultSort: "value-desc",
+      ...(preview?.claimMetadata && typeof preview.claimMetadata === "object" ? preview.claimMetadata : {})
+    },
+    stats: {
+      ...(preview?.stats && typeof preview.stats === "object" ? preview.stats : {}),
+      deterministic: Boolean(preview?.stats?.deterministic ?? draft?.deterministic),
+      seed: String(preview?.stats?.seed ?? draft?.seed ?? "")
+    },
+    audit: {
+      normalizedInputs: foundry.utils.deepClone(draft),
+      constraintChecks: [
+        {
+          name: "has-items-or-currency",
+          ok: status === "ok",
+          itemCount: items.length,
+          hasCurrency
+        }
+      ],
+      relaxationSteps: [],
+      sourceSelections: [],
+      warnings: [...warnings],
+      generatedFromPreview: true,
+      ...(preview?.audit && typeof preview.audit === "object" ? preview.audit : {})
+    },
+    warnings
+  };
+  const validation = validateBoardReadyLootBundle(bundle);
+  if (validation.ok) return bundle;
+  const validationWarnings = validation.errors.map((entry) => `Board-ready validation: ${entry}`);
+  return {
+    ...bundle,
+    status: "failed",
+    items: [],
+    claimsLog: [],
+    warnings: [...warnings, ...validationWarnings],
+    audit: {
+      ...bundle.audit,
+      constraintChecks: [
+        ...(Array.isArray(bundle.audit?.constraintChecks) ? bundle.audit.constraintChecks : []),
+        {
+          name: "board-ready-validation",
+          ok: false,
+          errorCount: validation.errors.length
+        }
+      ],
+      warnings: [...(Array.isArray(bundle.audit?.warnings) ? bundle.audit.warnings : []), ...validationWarnings]
+    }
+  };
+}
+
+async function generateBoardReadyLootBundle(draftInput = {}, options = {}) {
+  const preview = await generateLootPreviewPayload(draftInput);
+  return buildBoardReadyLootBundleFromPreviewPayload(preview, options);
+}
+
 function getLootEngineRarityWeights() {
   const config = getPartyOpsConfigSetting();
   const rarityWeights = config?.rarityWeights ?? {};
@@ -21762,11 +22101,15 @@ function buildLootClaimsContext(user = game.user) {
     .filter((entry) => String(entry?.status ?? "open") === "archived");
   const boardById = new Map(boards.map((entry) => [String(entry?.id ?? ""), entry]));
   const storedRunId = getLootClaimRunSelection();
-  const fallbackRunId = normalizeLootClaimRunId(claims.activeBoardId) || String(openBoards[0]?.id ?? "") || String(archivedBoards[0]?.id ?? "");
+  const activeRunId = normalizeLootClaimRunId(claims.activeBoardId);
+  const activeRun = activeRunId ? boardById.get(activeRunId) : null;
+  const fallbackRunId = activeRun && String(activeRun?.status ?? "open") !== "archived"
+    ? String(activeRun.id ?? "")
+    : String(openBoards[0]?.id ?? "");
   const selectedRunId = boardById.has(storedRunId) ? storedRunId : fallbackRunId;
   if (storedRunId !== selectedRunId) setLootClaimRunSelection(selectedRunId);
   const selectedRun = boardById.get(selectedRunId) ?? null;
-  const displayRun = selectedRun ?? openBoards[0] ?? archivedBoards[0] ?? null;
+  const displayRun = selectedRun ?? (openBoards[0] ?? null);
   const displayRunId = normalizeLootClaimRunId(displayRun?.id);
   const displayRunStatus = String(displayRun?.status ?? "open");
   const displayRunIsArchived = displayRunStatus === "archived";
@@ -21775,6 +22118,29 @@ function buildLootClaimsContext(user = game.user) {
   const formatTimestampLabel = (timestampInput, fallbackLabel = "-") => {
     const timestamp = Math.max(0, Number(timestampInput ?? 0) || 0);
     return timestamp > 0 ? new Date(timestamp).toLocaleString() : fallbackLabel;
+  };
+
+  const now = Date.now();
+  const mapClaimLogEntry = (entry = {}) => {
+    const claimedAt = Math.max(0, Number(entry?.claimedAt ?? 0) || 0);
+    const undoExpiresAt = Math.max(0, Number(entry?.undoExpiresAt ?? 0) || 0);
+    const undoneAt = Math.max(0, Number(entry?.undoneAt ?? 0) || 0);
+    const canUndo = undoExpiresAt > now && undoneAt <= 0;
+    return {
+      id: String(entry?.id ?? "").trim(),
+      itemName: String(entry?.itemName ?? "Item").trim() || "Item",
+      actorName: String(entry?.actorName ?? "-").trim() || "-",
+      claimedByName: String(entry?.claimedByName ?? "Player").trim() || "Player",
+      claimedAt,
+      claimedAtLabel: formatTimestampLabel(claimedAt),
+      canUndo,
+      undoExpiresAt,
+      undoRemainingSeconds: canUndo ? Math.max(1, Math.ceil((undoExpiresAt - now) / 1000)) : 0,
+      undoneAt,
+      undoneAtLabel: undoneAt > 0 ? formatTimestampLabel(undoneAt) : "",
+      undoneByName: String(entry?.undoneByName ?? "").trim(),
+      isUndone: undoneAt > 0
+    };
   };
 
   const mapRunCard = (run) => {
@@ -21794,6 +22160,9 @@ function buildLootClaimsContext(user = game.user) {
     const majorItemCount = Array.isArray(run?.items)
       ? run.items.filter((item) => Boolean(item?.majorItem)).length
       : 0;
+    const claimsLogEntries = Array.isArray(run?.claimsLog)
+      ? [...run.claimsLog].map((entry) => mapClaimLogEntry(entry)).sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+      : [];
     return {
       id,
       selected: id === displayRunId,
@@ -21809,6 +22178,7 @@ function buildLootClaimsContext(user = game.user) {
       archivedBy: String(run?.archivedBy ?? "").trim() || "GM",
       itemCount,
       claimsLogCount,
+      claimsLogEntries,
       contestedItemCount,
       majorItemCount,
       hasContestedItems: contestedItemCount > 0,
@@ -21858,25 +22228,37 @@ function buildLootClaimsContext(user = game.user) {
   const publishedAtLabel = publishedAt > 0 ? new Date(publishedAt).toLocaleString() : "-";
   const selectableActors = getLootClaimSelectableActorsForUser(user);
   const canManageClaims = canAccessAllPlayerOps(user);
-  const canChooseActor = canManageClaims;
-  const actorOptions = selectableActors.map((actor) => ({
-    id: String(actor.id),
-    name: String(actor.name ?? `Actor ${actor.id}`),
-    selected: false
-  }));
-  const storedActorId = canChooseActor ? getLootClaimActorSelection() : "";
-  const preferredActorId = canChooseActor
-    ? (storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim())
-    : String(getActiveActorForUser(user)?.id ?? "").trim();
+  const storedActorId = getLootClaimActorSelection();
+  const actorOptions = selectableActors.map((actor) => {
+    const actorId = String(actor.id ?? "").trim();
+    const actorName = String(actor.name ?? `Actor ${actorId}`).trim() || `Actor ${actorId}`;
+    const actorType = String(actor.type ?? "npc").trim() || "npc";
+    const actorTypeLabel = actorType.charAt(0).toUpperCase() + actorType.slice(1);
+    const actorImage = String(actor.img ?? actor.prototypeToken?.texture?.src ?? "icons/svg/mystery-man.svg").trim() || "icons/svg/mystery-man.svg";
+    const isStashLike = actorType !== "character";
+    return {
+      id: actorId,
+      name: actorName,
+      type: actorType,
+      typeLabel: actorTypeLabel,
+      img: actorImage,
+      isStashLike,
+      isLastUsed: actorId.length > 0 && actorId === storedActorId,
+      selected: false
+    };
+  });
+  const canChooseActor = actorOptions.length > 1;
+  const preferredActorId = storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim();
   const fallbackActorId = actorOptions[0]?.id ?? "";
   const selectedActorId = actorOptions.find((entry) => entry.id === preferredActorId)?.id ?? fallbackActorId;
   for (const option of actorOptions) option.selected = option.id === selectedActorId;
-  if (canChooseActor && (!storedActorId || storedActorId !== selectedActorId)) {
+  if (!storedActorId || storedActorId !== selectedActorId) {
     setLootClaimActorSelection(selectedActorId);
   }
   const selectedActorName = actorOptions.find((entry) => entry.id === selectedActorId)?.name ?? "";
+  const selectedActorIsStashLike = Boolean(actorOptions.find((entry) => entry.id === selectedActorId)?.isStashLike);
   const voucherEligibleActorIds = new Set(selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
-  const currencyEligibleActorIds = new Set(getOwnedPcActors().map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const currencyEligibleActorIds = new Set(selectableActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
   const actorNameById = new Map(
     (game.actors?.contents ?? [])
       .filter((actor) => actor?.type === "character" && actor?.id)
@@ -21889,6 +22271,9 @@ function buildLootClaimsContext(user = game.user) {
   const selectedActorClaimedCurrency = claimedActorIds.has(selectedActorId);
   const displayCurrency = displayRun?.currency ?? { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 };
   const displayCurrencyRemaining = displayRun?.currencyRemaining ?? displayCurrency;
+  const liveSearch = getLootClaimsLiveSearch();
+  const liveSearchNeedle = liveSearch.toLowerCase();
+  const liveSort = getLootClaimsLiveSort();
   const currencyRemaining = {
     pp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.pp ?? displayCurrency?.pp ?? 0) || 0)),
     gp: Math.max(0, Math.floor(Number(displayCurrencyRemaining?.gp ?? displayCurrency?.gp ?? 0) || 0)),
@@ -21900,10 +22285,14 @@ function buildLootClaimsContext(user = game.user) {
   const displayItems = Array.isArray(displayRun?.items) ? displayRun.items : [];
   const displayTableRolls = Array.isArray(displayRun?.tableRolls) ? displayRun.tableRolls : [];
   const displayClaimsLog = Array.isArray(displayRun?.claimsLog) ? displayRun.claimsLog : [];
+  const displayClaimsLogEntries = displayClaimsLog
+    .map((entry) => mapClaimLogEntry(entry))
+    .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0));
+  const undoEntries = displayClaimsLogEntries.filter((entry) => entry.canUndo).slice(0, 6);
   const openRunCards = openBoards.map((run) => mapRunCard(run));
   const archivedRunCards = sortedArchivedBoards.map((run) => mapRunCard(run));
   const selectedRunCard = displayRun ? mapRunCard(displayRun) : null;
-  const runOptions = [...openBoards, ...sortedArchivedBoards].map((run) => {
+  const runOptions = [...openBoards].map((run) => {
     const status = String(run?.status ?? "open") === "archived" ? "archived" : "open";
     const statusLabel = status === "archived" ? "Archived" : "Open";
     const publishedLabel = formatTimestampLabel(run?.publishedAt);
@@ -21923,17 +22312,34 @@ function buildLootClaimsContext(user = game.user) {
     label: entry.label,
     selected: entry.value === archiveSort
   }));
+  const liveSortOptions = LOOT_CLAIMS_LIVE_SORT_OPTIONS.map((entry) => ({
+    value: entry.value,
+    label: entry.label,
+    selected: entry.value === liveSort
+  }));
   const hasSelectedRun = Boolean(displayRun);
   const selectedRunHasItems = displayItems.length > 0;
   const selectedRunItemCount = displayItems.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
   const selectedRunClaimsLogCount = displayClaimsLog.length;
   const selectedRunContestedItemCount = displayItems.filter((entry) => Array.isArray(entry?.vouchedByActorIds) && entry.vouchedByActorIds.length > 1).length;
+  const canDepositAllItems = hasSelectedRun
+    && !displayRunIsArchived
+    && Boolean(selectedActorId)
+    && selectedRunHasItems;
   const canClaimCurrency = hasSelectedRun
     && !displayRunIsArchived
     && Boolean(selectedActorId)
     && currencyEligibleActorIds.has(selectedActorId)
-    && hasCurrencyRemaining
-    && !selectedActorClaimedCurrency;
+    && hasCurrencyRemaining;
+  const splitEligibleActors = selectableActors.filter((actor) => String(actor?.type ?? "") === "character");
+  const canSplitCurrency = hasSelectedRun
+    && !displayRunIsArchived
+    && splitEligibleActors.length > 0
+    && hasCurrencyRemaining;
+  const canSendEverything = hasSelectedRun
+    && !displayRunIsArchived
+    && Boolean(selectedActorId)
+    && (selectedRunHasItems || hasCurrencyRemaining);
   return {
     selectedRunId: displayRunId,
     selectedRunStatus: displayRunStatus,
@@ -21950,23 +22356,37 @@ function buildLootClaimsContext(user = game.user) {
     archiveSort,
     archiveSortOptions,
     runOptions,
+    hasMultipleOpenRuns: runOptions.length > 1,
     publishedAtLabel,
     publishedBy: String(displayRun?.publishedBy ?? claims.publishedBy ?? "").trim() || "GM",
     hasPublished: publishedAt > 0,
     hasItems: selectedRunHasItems,
     itemCount: selectedRunItemCount,
     claimsLogCount: selectedRunClaimsLogCount,
+    claimsLogEntries: displayClaimsLogEntries,
+    undoEntries,
+    hasUndoEntries: undoEntries.length > 0,
     currency: foundry.utils.deepClone(displayCurrency),
     currencyRemaining,
+    currencyRemainingLabel: formatLootCurrencyRemainingLabel(currencyRemaining),
     hasCurrencyRemaining,
     selectedActorClaimedCurrency,
     canClaimCurrency,
+    canSplitCurrency,
+    splitEligibleActorCount: splitEligibleActors.length,
+    canDepositAllItems,
+    canSendEverything,
     currencyClaimedCount: claimedActorIds.size,
     tableRolls: foundry.utils.deepClone(displayTableRolls),
     canChooseActor,
     actorOptions,
     selectedActorId,
     selectedActorName,
+    selectedActorIsStashLike,
+    liveSearch,
+    hasLiveSearch: liveSearch.length > 0,
+    liveSort,
+    liveSortOptions,
     items: displayItems.map((entry) => ({
       ...entry,
       claimRunId: displayRunId,
@@ -21996,13 +22416,37 @@ function buildLootClaimsContext(user = game.user) {
       requiresRollOff: Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
       canRunRollOff: !displayRunIsArchived && Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1,
       canClaimDirect: !displayRunIsArchived
-        && Boolean(selectedActorId)
-        && (canManageClaims || !(Array.isArray(entry.vouchedByActorIds) && entry.vouchedByActorIds.length > 1)),
+        && Boolean(selectedActorId),
       vouchedByNamesText: (Array.isArray(entry.vouchedByActorIds) ? entry.vouchedByActorIds : [])
         .map((actorId) => actorNameById.get(String(actorId ?? "").trim()))
         .filter(Boolean)
         .join(", ")
-    })),
+    }))
+      .filter((entry) => !liveSearchNeedle || String(entry?.name ?? "").toLowerCase().includes(liveSearchNeedle))
+      .sort((left, right) => {
+        switch (liveSort) {
+          case "value-asc":
+            return Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0);
+          case "value-desc":
+            return Number(right?.itemValueGp ?? 0) - Number(left?.itemValueGp ?? 0);
+          case "weight-asc":
+            return Number(left?.itemWeightLb ?? 0) - Number(right?.itemWeightLb ?? 0);
+          case "weight-desc":
+            return Number(right?.itemWeightLb ?? 0) - Number(left?.itemWeightLb ?? 0);
+          case "quantity-asc":
+            return Number(left?.quantity ?? 0) - Number(right?.quantity ?? 0);
+          case "quantity-desc":
+            return Number(right?.quantity ?? 0) - Number(left?.quantity ?? 0);
+          case "name-desc":
+            return String(right?.name ?? "").localeCompare(String(left?.name ?? ""));
+          case "name-asc":
+          default:
+            return String(left?.name ?? "").localeCompare(String(right?.name ?? ""));
+        }
+      }),
+    hasVisibleItems: displayItems
+      .map((entry) => ({ name: String(entry?.name ?? "") }))
+      .some((entry) => !liveSearchNeedle || entry.name.toLowerCase().includes(liveSearchNeedle)),
     contestedItemCount: selectedRunContestedItemCount
   };
 }
@@ -22365,16 +22809,26 @@ function getLootClaimSelectableActorsForUser(user = game.user) {
   if (!user) return [];
   const unique = new Map();
   const addActor = (actor) => {
-    if (!actor || actor.type !== "character" || !actor.id) return;
+    if (!actor || !actor.id) return;
     if (!canUserManageDowntimeActor(user, actor)) return;
     unique.set(String(actor.id), actor);
   };
 
-  if (user.character?.type === "character") addActor(user.character);
+  if (user.character?.id) addActor(user.character);
   for (const actor of getOwnedPcActors()) addActor(actor);
   for (const actor of game.actors?.contents ?? []) addActor(actor);
 
-  return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+  return Array.from(unique.values()).sort((left, right) => {
+    const leftIsCharacter = String(left?.type ?? "") === "character";
+    const rightIsCharacter = String(right?.type ?? "") === "character";
+    if (leftIsCharacter !== rightIsCharacter) return leftIsCharacter ? -1 : 1;
+    return (left?.name ?? "").localeCompare(right?.name ?? "");
+  });
+}
+
+function getLootCurrencySplitEligibleActorsForUser(user = game.user) {
+  return getLootClaimSelectableActorsForUser(user)
+    .filter((actor) => String(actor?.type ?? "") === "character");
 }
 
 function getNeutralFriendlyActors() {
@@ -27441,6 +27895,8 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
 
   const refreshedAt = Date.now();
   const refreshedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const claimedAt = Date.now();
+  const claimedAt = Date.now();
   await updateOperationsLedger((nextLedger) => {
     const merchants = ensureMerchantsState(nextLedger);
     const entry = merchants.definitions.find((row) => String(row?.id ?? "") === merchantId);
@@ -30221,10 +30677,16 @@ function normalizeLootClaimItemsList(values = []) {
 function normalizeLootClaimTableRolls(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
+        itemId: String(entry?.itemId ?? entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        sourceId: String(entry?.sourceId ?? entry?.uuid ?? entry?.sourceLabel ?? "").trim(),
     .map((entry) => ({
+        displayName: String(entry?.displayName ?? entry?.name ?? "Item").trim() || "Item",
       sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
+        image: String(entry?.image ?? entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
       tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
+        quantityRemaining: Math.max(0, Math.floor(Number(entry?.quantityRemaining ?? entry?.quantity ?? 1) || 1)),
+        estimatedValueGp: Math.max(0, Number(entry?.estimatedValueGp ?? entry?.itemValueGp ?? 0) || 0),
       formula: String(entry?.formula ?? "").trim(),
       total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
       result: String(entry?.result ?? "No result").trim() || "No result"
@@ -30232,6 +30694,12 @@ function normalizeLootClaimTableRolls(values = []) {
     .slice(0, 40);
 }
 
+        runId: normalizeLootClaimRunId(entry?.runId),
+        lockState: String(entry?.lockState ?? "open").trim() || "open",
+        lockExpiresAt: Math.max(0, Number(entry?.lockExpiresAt ?? 0) || 0),
+        createdAt: Math.max(0, Number(entry?.createdAt ?? 0) || 0),
+        isClaimed: Boolean(entry?.isClaimed),
+        eligibleActorIds: normalizeLootClaimActorIdList(entry?.eligibleActorIds ?? entry?.eligibilityActorIds),
 function normalizeLootClaimLogEntries(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
@@ -38302,6 +38770,30 @@ async function awardCurrencyBundleToActor(actor, bundle = {}) {
   return awarded;
 }
 
+async function removeCurrencyBundleFromActor(actor, bundle = {}) {
+  if (!actor) return { pp: 0, gp: 0, sp: 0, cp: 0 };
+  const removed = {
+    pp: Math.max(0, Math.floor(Number(bundle?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(bundle?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(bundle?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(bundle?.cp ?? 0) || 0))
+  };
+  if (removed.pp <= 0 && removed.gp <= 0 && removed.sp <= 0 && removed.cp <= 0) return removed;
+  const next = {
+    pp: Math.max(0, getActorCurrentCurrencyValue(actor, "pp") - removed.pp),
+    gp: Math.max(0, getActorCurrentCurrencyValue(actor, "gp") - removed.gp),
+    sp: Math.max(0, getActorCurrentCurrencyValue(actor, "sp") - removed.sp),
+    cp: Math.max(0, getActorCurrentCurrencyValue(actor, "cp") - removed.cp)
+  };
+  const updates = {};
+  for (const denom of ["pp", "gp", "sp", "cp"]) {
+    if (typeof actor.system?.currency?.[denom] === "object") updates[`system.currency.${denom}.value`] = next[denom];
+    else updates[`system.currency.${denom}`] = next[denom];
+  }
+  await actor.update(updates);
+  return removed;
+}
+
 function readLootPreviewDraftFromUi(element) {
   const root = getLootPreviewPanelRoot(element);
   if (!root) return null;
@@ -39414,56 +39906,6 @@ function openOperationsLootClaimsTabForPlayer(options = {}) {
   });
 }
 
-async function promptLootClaimsDialogForPlayer(options = {}) {
-  if (game.user?.isGM) return true;
-  const lootClaims = options?.lootClaims && typeof options.lootClaims === "object"
-    ? options.lootClaims
-    : buildLootClaimsContext(game.user);
-  const itemCount = Math.max(0, Number(options?.itemCount ?? lootClaims?.itemCount ?? 0) || 0);
-  const currencyRemaining = options?.currencyRemaining && typeof options.currencyRemaining === "object"
-    ? options.currencyRemaining
-    : (lootClaims?.currencyRemaining ?? {});
-  const publishedBy = String(options?.publishedBy ?? lootClaims?.publishedBy ?? "GM").trim() || "GM";
-  const publishedAt = Math.max(0, Number(options?.publishedAt ?? 0) || 0);
-  const publishedAtLabel = publishedAt > 0
-    ? new Date(publishedAt).toLocaleString()
-    : String(lootClaims?.publishedAtLabel ?? "-");
-  const content = `
-    <div class="po-help">
-      <p><strong>New loot is ready to claim.</strong></p>
-      <p><strong>Published:</strong> ${poEscapeHtml(publishedAtLabel)} by ${poEscapeHtml(publishedBy)}</p>
-      <p><strong>Items:</strong> ${itemCount}</p>
-      <p><strong>Currency:</strong> ${poEscapeHtml(formatLootCurrencyRemainingLabel(currencyRemaining))}</p>
-      <p>Open the <strong>Live Claim Board</strong> now?</p>
-    </div>
-  `;
-  return await new Promise((resolve) => {
-    let settled = false;
-    const finish = (value) => {
-      if (settled) return;
-      settled = true;
-      resolve(Boolean(value));
-    };
-    const dialog = new Dialog({
-      title: "Loot Ready To Claim",
-      content,
-      buttons: {
-        open: {
-          label: "Open Claim Board",
-          callback: () => finish(true)
-        },
-        later: {
-          label: "Later",
-          callback: () => finish(false)
-        }
-      },
-      default: "open",
-      close: () => finish(false)
-    });
-    dialog.render(true);
-  });
-}
-
 async function waitForLootClaimsPublished(expectedPublishedAtInput, timeoutMs = 1800) {
   const expectedPublishedAt = Math.max(0, Number(expectedPublishedAtInput ?? 0) || 0);
   if (expectedPublishedAt <= 0) return;
@@ -39672,17 +40114,134 @@ async function clearLootClaimsPool(runIdInput = "") {
   ui.notifications?.info(`Archived loot claim board (${archivedItemCount} item(s)).`);
 }
 
-function getLootClaimActorIdFromElement(element) {
+async function unlockLootClaimRunForEditing(runIdInput = "") {
   if (!canAccessAllPlayerOps()) {
-    return normalizeLootClaimActorId(String(getActiveActorForUser(game.user)?.id ?? ""));
+    ui.notifications?.warn("Only the GM can unlock archived loot claims.");
+    return { ok: false, message: "Only the GM can unlock archived loot claims." };
   }
+  const runId = normalizeLootClaimRunId(runIdInput);
+  let unlockedRunId = "";
+  await updateOperationsLedger((ledger) => {
+    const claims = ensureLootClaimsState(ledger);
+    const board = getLootClaimBoardFromState(claims, runId);
+    if (!board) return;
+    board.status = "open";
+    board.archivedAt = 0;
+    board.archivedBy = "";
+    claims.activeBoardId = String(board.id ?? "");
+    unlockedRunId = String(board.id ?? "");
+  });
+  if (!unlockedRunId) return { ok: false, message: "Loot claim run not found." };
+  setLootClaimRunSelection(unlockedRunId);
+  return { ok: true, runId: unlockedRunId };
+}
+
+async function finalizeLootClaimRunIfComplete(runIdInput = "") {
+  const runId = normalizeLootClaimRunId(runIdInput);
+  if (!runId) return { completed: false };
+  let summary = null;
+  await updateOperationsLedger((ledger) => {
+    const claims = ensureLootClaimsState(ledger);
+    const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+    if (!board) return;
+    const remainingItems = Array.isArray(board.items) ? board.items.length : 0;
+    const remainingCurrency = normalizeLootClaimCurrencyRecord(board.currencyRemaining ?? board.currency ?? {});
+    const hasCurrency = remainingCurrency.pp > 0 || remainingCurrency.gp > 0 || remainingCurrency.sp > 0 || remainingCurrency.cp > 0;
+    if (remainingItems > 0 || hasCurrency) return;
+
+    const claimsLog = Array.isArray(board.claimsLog) ? board.claimsLog : [];
+    const itemAssignmentCount = claimsLog.filter((entry) => String(entry?.undoType ?? "") === "item").length;
+    const currencyActionCount = claimsLog.filter((entry) => {
+      const type = String(entry?.undoType ?? "");
+      return type === "currency" || type === "currency-split";
+    }).length;
+    const recipients = new Set(
+      claimsLog
+        .map((entry) => String(entry?.actorName ?? "").trim())
+        .filter((entry) => entry.length > 0 && entry !== "Party Split")
+    );
+
+    board.status = "archived";
+    board.archivedAt = Date.now();
+    board.archivedBy = String(game.user?.name ?? "GM");
+    if (String(claims.activeBoardId ?? "") === String(board.id ?? "")) {
+      const nextOpenBoard = Array.isArray(claims.boards)
+        ? claims.boards.find((entry) => String(entry?.status ?? "open") !== "archived")
+        : null;
+      claims.activeBoardId = String(nextOpenBoard?.id ?? "");
+    }
+
+    summary = {
+      runId: String(board.id ?? ""),
+      recipients: Array.from(recipients.values()),
+      itemAssignmentCount,
+      currencyActionCount,
+      completedAtLabel: new Date(board.archivedAt).toLocaleString()
+    };
+  });
+  if (!summary) return { completed: false };
+  return { completed: true, summary };
+}
+
+async function showLootRunCompletionSummary(summary = null) {
+  if (!summary || typeof summary !== "object") return;
+  const recipientsText = Array.isArray(summary.recipients) && summary.recipients.length > 0
+    ? summary.recipients.join(", ")
+    : "No recipients recorded";
+  await new Promise((resolve) => {
+    const dialog = new Dialog({
+      title: "Loot Run Completed",
+      content: `
+        <div class="po-help">
+          <p><strong>Distribution complete.</strong></p>
+          <p><strong>Completed:</strong> ${poEscapeHtml(String(summary.completedAtLabel ?? "-"))}</p>
+          <p><strong>Recipients:</strong> ${poEscapeHtml(recipientsText)}</p>
+          <p><strong>Items Assigned:</strong> ${Math.max(0, Number(summary.itemAssignmentCount ?? 0) || 0)}</p>
+          <p><strong>Currency Actions:</strong> ${Math.max(0, Number(summary.currencyActionCount ?? 0) || 0)}</p>
+          <p>See archived details in the Party Operations Loot history section.</p>
+        </div>
+      `,
+      buttons: {
+        ok: {
+          label: "Close",
+          callback: () => resolve()
+        }
+      },
+      default: "ok",
+      close: () => resolve()
+    });
+    dialog.render(true);
+  });
+
+  for (const app of Object.values(ui.windows ?? {})) {
+    const tool = String(app?.options?.poTool ?? app?.options?.tool ?? "").trim();
+    if (tool === "gm-loot-claims-board") {
+      app.close({ force: true });
+    }
+  }
+}
+
+function getLootClaimActorIdFromElement(element) {
   const root = element?.closest(".po-loot-claims-panel");
-  const actorId = normalizeLootClaimActorId(root?.querySelector("select[name='lootClaimActorId']")?.value);
-  if (actorId) {
-    setLootClaimActorSelection(actorId);
-    return actorId;
+  const selectedActorId = normalizeLootClaimActorId(
+    root?.querySelector("input[name='lootClaimActorId']:checked")?.value
+    ?? root?.querySelector("select[name='lootClaimActorId']")?.value
+    ?? element?.dataset?.actorId
+  );
+  const isAccessibleActor = (actorId) => {
+    if (!actorId) return false;
+    const actor = game.actors.get(actorId);
+    return Boolean(actor) && canUserManageDowntimeActor(game.user, actor);
+  };
+  if (selectedActorId && isAccessibleActor(selectedActorId)) {
+    setLootClaimActorSelection(selectedActorId);
+    return selectedActorId;
   }
-  return getLootClaimActorSelection();
+  const storedActorId = normalizeLootClaimActorId(getLootClaimActorSelection());
+  if (storedActorId && isAccessibleActor(storedActorId)) {
+    return storedActorId;
+  }
+  return normalizeLootClaimActorId(String(getActiveActorForUser(game.user)?.id ?? ""));
 }
 
 function getLootClaimRunIdFromElement(element) {
@@ -39698,13 +40257,6 @@ function getLootClaimRunIdFromElement(element) {
     return selectedRunId;
   }
   return getLootClaimRunSelection();
-}
-
-function getLootClaimVouchIntentFromElement(element) {
-  const explicit = String(element?.dataset?.shouldVouch ?? "").trim().toLowerCase();
-  if (explicit === "true") return true;
-  if (explicit === "false") return false;
-  return true;
 }
 
 async function setLootClaimItemMajor(itemIdInput, majorItemInput, runIdInput = "") {
@@ -39727,123 +40279,6 @@ async function setLootClaimItemMajor(itemIdInput, majorItemInput, runIdInput = "
   });
   if (!updated) return { ok: false, message: "Loot item no longer exists." };
   return { ok: true };
-}
-
-async function applyLootVouchForUser(user, actorIdInput, itemIdInput, shouldVouchInput = true, runIdInput = "") {
-  const actorId = String(actorIdInput ?? "").trim();
-  const itemId = String(itemIdInput ?? "").trim();
-  const runId = normalizeLootClaimRunId(runIdInput);
-  const shouldVouch = Boolean(shouldVouchInput);
-  const actor = game.actors.get(actorId);
-  if (!actor) return { ok: false, message: "Actor not found." };
-  if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
-  const eligibleActorIds = new Set(getLootClaimSelectableActorsForUser(user).map((entry) => String(entry?.id ?? "").trim()).filter(Boolean));
-  if (!eligibleActorIds.has(actorId)) return { ok: false, message: "Actor is not eligible for claim vouchers." };
-
-  const ledger = getOperationsLedger();
-  const claims = ensureLootClaimsState(ledger);
-  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
-  if (!board) return { ok: false, message: "No open loot claim board is selected." };
-  const claimItem = Array.isArray(board.items)
-    ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
-    : null;
-  if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
-
-  await updateOperationsLedger((nextLedger) => {
-    const nextClaims = ensureLootClaimsState(nextLedger);
-    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
-    const nextItem = Array.isArray(nextBoard?.items)
-      ? nextBoard.items.find((entry) => String(entry?.id ?? "") === itemId)
-      : null;
-    if (!nextItem) return;
-    if (!Array.isArray(nextItem.vouchedByActorIds)) nextItem.vouchedByActorIds = [];
-    const filtered = nextItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean);
-    const hasActor = filtered.includes(actorId);
-    if (shouldVouch && !hasActor) filtered.push(actorId);
-    if (!shouldVouch && hasActor) {
-      const index = filtered.indexOf(actorId);
-      if (index >= 0) filtered.splice(index, 1);
-    }
-    nextItem.vouchedByActorIds = filtered;
-  });
-
-  return {
-    ok: true,
-    actorName: String(actor.name ?? "Actor"),
-    itemName: String(claimItem.name ?? "Item"),
-    runId: String(board.id ?? ""),
-    shouldVouch
-  };
-}
-
-async function postLootRollOffToChat(itemName, winnerActorName, rollRows = [], tieNote = "") {
-  const rows = Array.isArray(rollRows) ? rollRows : [];
-  const rowsHtml = rows.map((row) => {
-    const actorName = poEscapeHtml(String(row?.actorName ?? "Actor"));
-    const total = Number.isFinite(Number(row?.total)) ? Math.floor(Number(row.total)) : 0;
-    return `<li><strong>${actorName}</strong>: ${total}</li>`;
-  }).join("");
-  const tieHtml = tieNote ? `<p><em>${poEscapeHtml(String(tieNote))}</em></p>` : "";
-  await ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-    content: `
-      <div class="po-chat-claim">
-        <p><strong>Loot Roll-Off</strong></p>
-        <p><strong>${poEscapeHtml(String(itemName ?? "Item"))}</strong> winner: ${poEscapeHtml(String(winnerActorName ?? "Actor"))}</p>
-        <ul>${rowsHtml}</ul>
-        ${tieHtml}
-      </div>
-    `
-  });
-}
-
-async function runLootItemRollOff(itemIdInput, runIdInput = "") {
-  const itemId = String(itemIdInput ?? "").trim();
-  const runId = normalizeLootClaimRunId(runIdInput);
-  if (!itemId) return { ok: false, message: "Missing item id." };
-  if (!canAccessAllPlayerOps()) return { ok: false, message: "Only the GM can run roll-offs." };
-  const ledger = getOperationsLedger();
-  const claims = ensureLootClaimsState(ledger);
-  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
-  if (!board) return { ok: false, message: "No open loot claim board is selected." };
-  const item = Array.isArray(board.items)
-    ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
-    : null;
-  if (!item) return { ok: false, message: "Loot item no longer exists." };
-  const voucherActorIds = Array.isArray(item.vouchedByActorIds)
-    ? item.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
-    : [];
-  const contenders = voucherActorIds
-    .map((actorId) => game.actors.get(actorId))
-    .filter((actor) => actor && actor.type === "character");
-  if (contenders.length < 2) return { ok: false, message: "At least two vouchers are required for a roll-off." };
-
-  const rollRows = [];
-  for (const actor of contenders) {
-    const roll = await (new Roll("1d100")).evaluate({ async: true });
-    rollRows.push({ actorId: String(actor.id), actorName: String(actor.name ?? `Actor ${actor.id}`), total: Number(roll?.total ?? 0) });
-  }
-
-  const sorted = [...rollRows].sort((a, b) => Number(b.total ?? 0) - Number(a.total ?? 0));
-  const topTotal = Number(sorted[0]?.total ?? 0);
-  const tiedTop = sorted.filter((entry) => Number(entry.total ?? 0) === topTotal);
-  const winner = tiedTop.length > 1
-    ? tiedTop[Math.floor(Math.random() * tiedTop.length)]
-    : sorted[0];
-  const tieNote = tiedTop.length > 1
-    ? `Tie at ${topTotal}; winner selected by tiebreak among tied contenders.`
-    : "";
-
-  const claimOutcome = await applyLootClaimForUser(game.user, winner.actorId, itemId, board.id);
-  if (!claimOutcome.ok) return { ok: false, message: claimOutcome.message ?? "Failed to apply roll-off claim." };
-
-  await postLootRollOffToChat(item.name, winner.actorName, rollRows, tieNote);
-  await postLootItemClaimToChat({ ...claimOutcome, claimedByName: "Roll-Off" });
-  return {
-    ok: true,
-    itemName: String(item.name ?? "Item"),
-    winnerName: String(winner.actorName ?? "Actor")
-  };
 }
 
 async function buildLootClaimItemDocumentData(itemEntry = {}) {
@@ -39927,23 +40362,21 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
     ? board.items.find((entry) => String(entry?.id ?? "") === itemId)
     : null;
   if (!claimItem) return { ok: false, message: "That loot item is no longer available." };
-  const voucherActorIds = Array.isArray(claimItem.vouchedByActorIds)
-    ? claimItem.vouchedByActorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
-    : [];
-  const canManageClaims = canAccessAllPlayerOps(user);
-  if (voucherActorIds.length > 1 && !canManageClaims) {
-    return { ok: false, message: "This item has multiple vouchers. Run a roll-off first." };
-  }
   const itemData = await buildLootClaimItemDocumentData(claimItem);
   if (!itemData) return { ok: false, message: "The source item could not be resolved. Ask GM to reroll/publish again." };
 
+  let createdItemIds = [];
   try {
-    await actor.createEmbeddedDocuments("Item", [itemData]);
+    const createdDocs = await actor.createEmbeddedDocuments("Item", [itemData]);
+    createdItemIds = Array.isArray(createdDocs)
+      ? createdDocs.map((doc) => String(doc?.id ?? "").trim()).filter(Boolean)
+      : [];
   } catch (error) {
     console.warn(`${MODULE_ID}: failed to grant claimed loot`, error);
     return { ok: false, message: "Failed to add the item to actor inventory." };
   }
 
+  const claimedAt = Date.now();
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
     const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
@@ -39955,6 +40388,13 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
     if (!Array.isArray(nextBoard.claimsLog)) nextBoard.claimsLog = [];
     nextBoard.claimsLog.unshift({
       id: foundry.utils.randomID(),
+      undoType: "item",
+      undoExpiresAt: claimedAt + 5000,
+      undoneAt: 0,
+      undoData: {
+        createdItemIds,
+        restoredItem: foundry.utils.deepClone(claimItem)
+      },
       itemId,
       itemName: String(claimItem.name ?? "Item"),
       quantity: Math.max(1, Math.floor(Number(claimItem?.quantity ?? 1) || 1)),
@@ -39962,12 +40402,14 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
       actorName: String(actor.name ?? "Actor"),
       claimedByUserId: String(user?.id ?? ""),
       claimedByName: String(user?.name ?? "Player"),
-      claimedAt: Date.now()
+      claimedAt
     });
     nextBoard.claimsLog = nextBoard.claimsLog
       .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
       .slice(0, 120);
   });
+
+  const completion = await finalizeLootClaimRunIfComplete(board.id);
 
   return {
     ok: true,
@@ -39979,7 +40421,8 @@ async function applyLootClaimForUser(user, actorIdInput, itemIdInput, runIdInput
     actorUuid: String(actor.uuid ?? ""),
     itemUuid: String(claimItem.uuid ?? ""),
     claimedByName: String(user?.name ?? "Player"),
-    claimedByUserId: String(user?.id ?? "")
+    claimedByUserId: String(user?.id ?? ""),
+    completion
   };
 }
 
@@ -40003,30 +40446,75 @@ function computeCurrencyShareForActor(remaining = {}, actorId = "", unclaimedAct
   return { ...share, gpEquivalent };
 }
 
+function computeLootCurrencySplitPlan(currency = {}, actorIds = [], stashActorId = "") {
+  const normalizedIds = Array.isArray(actorIds)
+    ? actorIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  const uniqueActorIds = normalizedIds.filter((entry, index, list) => list.indexOf(entry) === index);
+  if (uniqueActorIds.length === 0) {
+    return { actorShares: [], stashShare: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 }, stashActorId: "" };
+  }
+
+  const totals = normalizeLootClaimCurrencyRecord(currency);
+  const baseShare = { pp: 0, gp: 0, sp: 0, cp: 0 };
+  for (const denom of ["pp", "gp", "sp", "cp"]) {
+    baseShare[denom] = Math.floor(Math.max(0, Number(totals?.[denom] ?? 0) || 0) / uniqueActorIds.length);
+  }
+
+  const actorShares = uniqueActorIds.map((actorId) => ({
+    actorId,
+    share: { ...baseShare, gpEquivalent: (baseShare.pp * 10) + baseShare.gp + (baseShare.sp * 0.1) + (baseShare.cp * 0.01) }
+  }));
+
+  const distributed = actorShares.reduce((accumulator, entry) => ({
+    pp: accumulator.pp + Math.max(0, Number(entry?.share?.pp ?? 0) || 0),
+    gp: accumulator.gp + Math.max(0, Number(entry?.share?.gp ?? 0) || 0),
+    sp: accumulator.sp + Math.max(0, Number(entry?.share?.sp ?? 0) || 0),
+    cp: accumulator.cp + Math.max(0, Number(entry?.share?.cp ?? 0) || 0)
+  }), { pp: 0, gp: 0, sp: 0, cp: 0 });
+
+  const stashShare = {
+    pp: Math.max(0, totals.pp - distributed.pp),
+    gp: Math.max(0, totals.gp - distributed.gp),
+    sp: Math.max(0, totals.sp - distributed.sp),
+    cp: Math.max(0, totals.cp - distributed.cp),
+    gpEquivalent: 0
+  };
+  stashShare.gpEquivalent = (stashShare.pp * 10) + stashShare.gp + (stashShare.sp * 0.1) + (stashShare.cp * 0.01);
+
+  const stashTarget = String(stashActorId ?? "").trim();
+  return {
+    actorShares,
+    stashShare,
+    stashActorId: stashTarget
+  };
+}
+
 async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = "") {
   const actorId = String(actorIdInput ?? "").trim();
   const runId = normalizeLootClaimRunId(runIdInput);
   const actor = game.actors.get(actorId);
   if (!actor) return { ok: false, message: "Actor not found." };
   if (!canUserManageDowntimeActor(user, actor)) return { ok: false, message: "You cannot access that actor." };
-  const eligibleActorIds = getOwnedPcActors().map((entry) => String(entry?.id ?? "").trim()).filter(Boolean);
-  if (!eligibleActorIds.includes(actorId)) return { ok: false, message: "Actor is not in the player-character claim pool." };
+  const eligibleActorIds = getLootClaimSelectableActorsForUser(user).map((entry) => String(entry?.id ?? "").trim()).filter(Boolean);
+  if (!eligibleActorIds.includes(actorId)) return { ok: false, message: "Actor is not eligible to receive loot deposits." };
 
   const ledger = getOperationsLedger();
   const claims = ensureLootClaimsState(ledger);
   const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
   if (!board) return { ok: false, message: "No open loot claim board is selected." };
-  const claimedSet = new Set((board.currencyClaimedActorIds ?? []).map((entry) => String(entry ?? "").trim()).filter(Boolean));
-  if (claimedSet.has(actorId)) return { ok: false, message: "This actor already claimed a currency share from this board." };
   const remaining = board.currencyRemaining ?? board.currency ?? {};
   const hasRemaining = ["pp", "gp", "sp", "cp"].some((denom) => Math.max(0, Math.floor(Number(remaining?.[denom] ?? 0) || 0)) > 0);
   if (!hasRemaining) return { ok: false, message: "No currency remains to claim." };
-  const unclaimed = eligibleActorIds.filter((id) => !claimedSet.has(id));
-  if (unclaimed.length <= 0) return { ok: false, message: "No claim slots remain." };
-  if (!unclaimed.includes(actorId)) return { ok: false, message: "Actor cannot claim from remaining slots." };
-  const share = computeCurrencyShareForActor(remaining, actorId, unclaimed);
+  const share = {
+    pp: Math.max(0, Math.floor(Number(remaining?.pp ?? 0) || 0)),
+    gp: Math.max(0, Math.floor(Number(remaining?.gp ?? 0) || 0)),
+    sp: Math.max(0, Math.floor(Number(remaining?.sp ?? 0) || 0)),
+    cp: Math.max(0, Math.floor(Number(remaining?.cp ?? 0) || 0)),
+    gpEquivalent: Math.max(0, Number(remaining?.gpEquivalent ?? 0) || 0)
+  };
   if (share.pp <= 0 && share.gp <= 0 && share.sp <= 0 && share.cp <= 0) {
-    return { ok: false, message: "No currency share is available for this actor." };
+    return { ok: false, message: "No currency is available to deposit." };
   }
 
   try {
@@ -40054,18 +40542,26 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = ""
     if (!Array.isArray(nextBoard.claimsLog)) nextBoard.claimsLog = [];
     nextBoard.claimsLog.unshift({
       id: foundry.utils.randomID(),
+      undoType: "currency",
+      undoExpiresAt: claimedAt + 5000,
+      undoneAt: 0,
+      undoData: {
+        share: foundry.utils.deepClone(share)
+      },
       itemId: `currency:${Date.now()}`,
-      itemName: `Currency Share (${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp)`,
+      itemName: `Currency Deposit (${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp)`,
       actorId: String(actor.id),
       actorName: String(actor.name ?? "Actor"),
       claimedByUserId: String(user?.id ?? ""),
       claimedByName: String(user?.name ?? "Player"),
-      claimedAt: Date.now()
+      claimedAt
     });
     nextBoard.claimsLog = nextBoard.claimsLog
       .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
       .slice(0, 120);
   });
+
+  const completion = await finalizeLootClaimRunIfComplete(board.id);
 
   return {
     ok: true,
@@ -40075,71 +40571,137 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = ""
     actorUuid: String(actor.uuid ?? ""),
     claimedByName: String(user?.name ?? "Player"),
     claimedByUserId: String(user?.id ?? ""),
-    share
+    share,
+    completion
   };
 }
 
-async function claimLootItemForPlayer(element) {
-  const itemId = String(element?.dataset?.itemId ?? "").trim();
-  const runId = getLootClaimRunIdFromElement(element);
-  if (!itemId) return;
-  const actorId = getLootClaimActorIdFromElement(element);
-  if (!actorId) {
-    ui.notifications?.warn("Select a character to receive the claimed item.");
-    return;
+async function applyLootCurrencySplitForUser(user, actorIdsInput = [], runIdInput = "", stashActorIdInput = "") {
+  const runId = normalizeLootClaimRunId(runIdInput);
+  const selectedActorIds = Array.isArray(actorIdsInput)
+    ? actorIdsInput.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  const uniqueSelectedActorIds = selectedActorIds.filter((entry, index, list) => list.indexOf(entry) === index);
+  if (uniqueSelectedActorIds.length <= 0) {
+    return { ok: false, message: "Select at least one destination for split." };
   }
 
-  if (canAccessAllPlayerOps()) {
-    const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
-    if (!outcome.ok) {
-      ui.notifications?.warn(outcome.message ?? "Loot claim failed.");
-      return;
+  const eligibleCharacterActors = getLootCurrencySplitEligibleActorsForUser(user);
+  const eligibleCharacterActorIds = new Set(eligibleCharacterActors.map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  if (uniqueSelectedActorIds.some((actorId) => !eligibleCharacterActorIds.has(actorId))) {
+    return { ok: false, message: "One or more selected actors cannot receive split currency." };
+  }
+
+  const selectableActorIds = new Set(getLootClaimSelectableActorsForUser(user).map((actor) => String(actor?.id ?? "").trim()).filter(Boolean));
+  const stashActorId = String(stashActorIdInput ?? "").trim();
+  const stashTargetActorId = stashActorId && selectableActorIds.has(stashActorId) ? stashActorId : "";
+
+  const ledger = getOperationsLedger();
+  const claims = ensureLootClaimsState(ledger);
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) return { ok: false, message: "No open loot claim board is selected." };
+  const remaining = normalizeLootClaimCurrencyRecord(board.currencyRemaining ?? board.currency ?? {});
+  const hasRemaining = remaining.pp > 0 || remaining.gp > 0 || remaining.sp > 0 || remaining.cp > 0;
+  if (!hasRemaining) return { ok: false, message: "No currency remains to split." };
+
+  const splitPlan = computeLootCurrencySplitPlan(remaining, uniqueSelectedActorIds, stashTargetActorId);
+  const actorById = new Map((game.actors?.contents ?? []).map((actor) => [String(actor?.id ?? "").trim(), actor]));
+  const actorShareRows = [];
+  for (const row of splitPlan.actorShares) {
+    const actor = actorById.get(String(row?.actorId ?? "").trim());
+    if (!actor) return { ok: false, message: "A selected actor is no longer available." };
+    const share = normalizeLootClaimCurrencyRecord(row?.share ?? {});
+    if (share.pp <= 0 && share.gp <= 0 && share.sp <= 0 && share.cp <= 0) continue;
+    try {
+      await awardCurrencyBundleToActor(actor, share);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to split loot currency to actor`, error);
+      return { ok: false, message: `Failed to add split currency to ${String(actor?.name ?? "actor")}.` };
     }
-    await postLootItemClaimToChat(outcome);
-    ui.notifications?.info(`${outcome.itemName} added to ${outcome.actorName}.`);
-    return;
+    actorShareRows.push({
+      actorId: String(actor.id ?? ""),
+      actorName: String(actor.name ?? "Actor"),
+      actorUuid: String(actor.uuid ?? ""),
+      share
+    });
   }
 
-  game.socket.emit(SOCKET_CHANNEL, {
-    type: "ops:loot-claim",
-    userId: game.user.id,
-    actorId,
-    itemId,
-    runId
-  });
-  ui.notifications?.info("Loot claim request sent to GM.");
-}
-
-async function toggleLootItemVouchForPlayer(element) {
-  const itemId = String(element?.dataset?.itemId ?? "").trim();
-  const runId = getLootClaimRunIdFromElement(element);
-  if (!itemId) return;
-  const actorId = getLootClaimActorIdFromElement(element);
-  if (!actorId) {
-    ui.notifications?.warn("Select a character first.");
-    return;
-  }
-  const shouldVouch = getLootClaimVouchIntentFromElement(element);
-
-  if (canAccessAllPlayerOps()) {
-    const outcome = await applyLootVouchForUser(game.user, actorId, itemId, shouldVouch, runId);
-    if (!outcome.ok) {
-      ui.notifications?.warn(outcome.message ?? "Vouch update failed.");
-      return;
+  let stashShareRow = null;
+  const stashShare = normalizeLootClaimCurrencyRecord(splitPlan.stashShare ?? {});
+  const stashHasShare = stashShare.pp > 0 || stashShare.gp > 0 || stashShare.sp > 0 || stashShare.cp > 0;
+  const stashRecipientId = String(splitPlan.stashActorId ?? "").trim();
+  if (stashHasShare && stashRecipientId) {
+    const stashActor = actorById.get(stashRecipientId);
+    if (!stashActor) return { ok: false, message: "Stash destination is no longer available." };
+    try {
+      await awardCurrencyBundleToActor(stashActor, stashShare);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to deposit leftover split currency`, error);
+      return { ok: false, message: `Failed to add leftover currency to ${String(stashActor?.name ?? "stash")}.` };
     }
-    ui.notifications?.info(`${outcome.actorName} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
-    return;
+    stashShareRow = {
+      actorId: String(stashActor.id ?? ""),
+      actorName: String(stashActor.name ?? "Actor"),
+      actorUuid: String(stashActor.uuid ?? ""),
+      share: stashShare
+    };
   }
 
-  game.socket.emit(SOCKET_CHANNEL, {
-    type: "ops:loot-vouch",
-    userId: game.user.id,
-    actorId,
-    itemId,
-    runId,
-    shouldVouch
+  await updateOperationsLedger((nextLedger) => {
+    const nextClaims = ensureLootClaimsState(nextLedger);
+    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
+    if (!nextBoard) return;
+
+    nextBoard.currencyRemaining = {
+      pp: 0,
+      gp: 0,
+      sp: 0,
+      cp: 0,
+      gpEquivalent: 0
+    };
+
+    if (!Array.isArray(nextBoard.currencyClaimedActorIds)) nextBoard.currencyClaimedActorIds = [];
+    for (const row of [...actorShareRows, ...(stashShareRow ? [stashShareRow] : [])]) {
+      const actorId = String(row?.actorId ?? "").trim();
+      if (!actorId) continue;
+      if (!nextBoard.currencyClaimedActorIds.includes(actorId)) nextBoard.currencyClaimedActorIds.push(actorId);
+    }
+
+    if (!Array.isArray(nextBoard.claimsLog)) nextBoard.claimsLog = [];
+    nextBoard.claimsLog.unshift({
+      id: foundry.utils.randomID(),
+      undoType: "currency-split",
+      undoExpiresAt: claimedAt + 5000,
+      undoneAt: 0,
+      undoData: {
+        actorShares: foundry.utils.deepClone(actorShareRows),
+        stashShare: stashShareRow ? foundry.utils.deepClone(stashShareRow) : null
+      },
+      itemId: `currency-split:${claimedAt}`,
+      itemName: `Currency Split (${actorShareRows.length} destination(s)${stashShareRow ? ", stash leftovers applied" : ""})`,
+      actorId: "",
+      actorName: "Party Split",
+      claimedByUserId: String(user?.id ?? ""),
+      claimedByName: String(user?.name ?? "Player"),
+      claimedAt
+    });
+    nextBoard.claimsLog = nextBoard.claimsLog
+      .sort((a, b) => Number(b.claimedAt ?? 0) - Number(a.claimedAt ?? 0))
+      .slice(0, 120);
   });
-  ui.notifications?.info(shouldVouch ? "Voucher request sent to GM." : "Voucher removal request sent to GM.");
+
+  const completion = await finalizeLootClaimRunIfComplete(board.id);
+
+  return {
+    ok: true,
+    runId: String(board.id ?? ""),
+    claimedByName: String(user?.name ?? "Player"),
+    claimedByUserId: String(user?.id ?? ""),
+    total: remaining,
+    actorShares: actorShareRows,
+    stashShare: stashShareRow,
+    completion
+  };
 }
 
 async function setLootItemMajorFromElement(element) {
@@ -40151,24 +40713,23 @@ async function setLootItemMajorFromElement(element) {
   if (!outcome.ok) ui.notifications?.warn(outcome.message ?? "Unable to update major-item status.");
 }
 
-async function runLootRollOffFromElement(element) {
+async function unlockLootClaimRunFromElement(element) {
   if (!canAccessAllPlayerOps()) return;
-  const itemId = String(element?.dataset?.itemId ?? "").trim();
   const runId = getLootClaimRunIdFromElement(element);
-  if (!itemId) return;
-  const outcome = await runLootItemRollOff(itemId, runId);
+  const outcome = await unlockLootClaimRunForEditing(runId);
   if (!outcome.ok) {
-    ui.notifications?.warn(outcome.message ?? "Roll-off failed.");
+    ui.notifications?.warn(outcome.message ?? "Unable to unlock run.");
     return;
   }
-  ui.notifications?.info(`Roll-off resolved: ${outcome.winnerName} receives ${outcome.itemName}.`);
+  ui.notifications?.info("Archived run unlocked for editing.");
 }
+
 
 async function claimLootCurrencyForPlayer(element) {
   const runId = getLootClaimRunIdFromElement(element);
   const actorId = getLootClaimActorIdFromElement(element);
   if (!actorId) {
-    ui.notifications?.warn("Select a character to receive currency.");
+    ui.notifications?.warn("Select a destination to receive currency.");
     return;
   }
   if (canAccessAllPlayerOps()) {
@@ -40179,7 +40740,8 @@ async function claimLootCurrencyForPlayer(element) {
     }
     await postLootCurrencyClaimToChat(outcome);
     const s = outcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
-    ui.notifications?.info(`${outcome.actorName} claimed ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
+    ui.notifications?.info(`${outcome.actorName} received ${s.pp}pp ${s.gp}gp ${s.sp}sp ${s.cp}cp.`);
+    if (outcome?.completion?.completed) await showLootRunCompletionSummary(outcome?.completion?.summary ?? null);
     return;
   }
   game.socket.emit(SOCKET_CHANNEL, {
@@ -40188,7 +40750,377 @@ async function claimLootCurrencyForPlayer(element) {
     actorId,
     runId
   });
-  ui.notifications?.info("Currency claim request sent to GM.");
+  ui.notifications?.info("Currency deposit request sent to GM.");
+}
+
+async function splitLootCurrencyForPlayer(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const stashActorId = getLootClaimActorIdFromElement(element);
+  const eligibleActors = getLootCurrencySplitEligibleActorsForUser(game.user);
+  if (eligibleActors.length <= 0) {
+    ui.notifications?.warn("No eligible character destinations are available for split currency.");
+    return;
+  }
+
+  const selectedActorIds = await new Promise((resolve) => {
+    const content = `
+      <form class="po-help" data-po-currency-split-select="true">
+        <p><strong>Choose destinations to split currency evenly.</strong></p>
+        <div class="po-resource-stack">
+          ${eligibleActors.map((actor) => {
+            const actorId = poEscapeHtml(String(actor?.id ?? "").trim());
+            const actorName = poEscapeHtml(String(actor?.name ?? "Actor").trim() || "Actor");
+            return `<label class="po-resource-row"><input type="checkbox" name="splitActorId" value="${actorId}" checked /> <span>${actorName}</span></label>`;
+          }).join("")}
+        </div>
+      </form>
+    `;
+    const dialog = new Dialog({
+      title: "Split Currency",
+      content,
+      buttons: {
+        cancel: {
+          label: "Cancel",
+          callback: () => resolve(null)
+        },
+        next: {
+          label: "Preview Split",
+          callback: (html) => {
+            const checked = Array.from(html?.[0]?.querySelectorAll("input[name='splitActorId']:checked") ?? [])
+              .map((input) => String(input?.value ?? "").trim())
+              .filter(Boolean);
+            resolve(checked);
+          }
+        }
+      },
+      default: "next",
+      close: () => resolve(null)
+    });
+    dialog.render(true);
+  });
+
+  if (!Array.isArray(selectedActorIds) || selectedActorIds.length <= 0) {
+    ui.notifications?.warn("Select at least one destination to split currency.");
+    return;
+  }
+
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) {
+    ui.notifications?.warn("No open loot claim board is selected.");
+    return;
+  }
+  const remaining = normalizeLootClaimCurrencyRecord(board.currencyRemaining ?? board.currency ?? {});
+  const splitPlan = computeLootCurrencySplitPlan(remaining, selectedActorIds, stashActorId);
+  const actorNameById = new Map((game.actors?.contents ?? []).map((actor) => [String(actor?.id ?? "").trim(), String(actor?.name ?? "Actor").trim() || "Actor"]));
+
+  const previewRows = splitPlan.actorShares.map((row) => {
+    const actorName = poEscapeHtml(actorNameById.get(String(row?.actorId ?? "").trim()) ?? "Actor");
+    const share = normalizeLootClaimCurrencyRecord(row?.share ?? {});
+    return `<li><strong>${actorName}</strong>: ${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp</li>`;
+  }).join("");
+  const stashPreview = splitPlan.stashActorId
+    ? (() => {
+      const share = normalizeLootClaimCurrencyRecord(splitPlan.stashShare ?? {});
+      const hasShare = share.pp > 0 || share.gp > 0 || share.sp > 0 || share.cp > 0;
+      if (!hasShare) return "";
+      const actorName = poEscapeHtml(actorNameById.get(splitPlan.stashActorId) ?? "Stash");
+      return `<p><strong>Leftovers to Stash:</strong> ${actorName} receives ${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp</p>`;
+    })()
+    : "";
+
+  const confirmed = await new Promise((resolve) => {
+    const content = `
+      <div class="po-help">
+        <p><strong>Split Preview</strong></p>
+        <p>Total: ${remaining.pp}pp ${remaining.gp}gp ${remaining.sp}sp ${remaining.cp}cp</p>
+        <ul>${previewRows}</ul>
+        ${stashPreview}
+      </div>
+    `;
+    const dialog = new Dialog({
+      title: "Confirm Currency Split",
+      content,
+      buttons: {
+        cancel: {
+          label: "Cancel",
+          callback: () => resolve(false)
+        },
+        apply: {
+          label: "Apply Split",
+          callback: () => resolve(true)
+        }
+      },
+      default: "apply",
+      close: () => resolve(false)
+    });
+    dialog.render(true);
+  });
+  if (!confirmed) return;
+
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootCurrencySplitForUser(game.user, selectedActorIds, runId, stashActorId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Currency split failed.");
+      return;
+    }
+    ui.notifications?.info(`Split currency across ${outcome.actorShares.length} destination(s).`);
+    if (outcome?.completion?.completed) await showLootRunCompletionSummary(outcome?.completion?.summary ?? null);
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-split-currency",
+    userId: game.user.id,
+    actorIds: selectedActorIds,
+    stashActorId,
+    runId
+  });
+  ui.notifications?.info("Currency split request sent to GM.");
+}
+
+async function claimAllLootItemsForPlayer(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    ui.notifications?.warn("Select a destination to receive items.");
+    return;
+  }
+
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  const itemIds = Array.isArray(board?.items)
+    ? board.items.map((entry) => String(entry?.id ?? "").trim()).filter(Boolean)
+    : [];
+  if (itemIds.length === 0) {
+    ui.notifications?.warn("No claimable items remain in this run.");
+    return;
+  }
+
+  if (canAccessAllPlayerOps()) {
+    let claimedCount = 0;
+    let completionSummary = null;
+    for (const itemId of itemIds) {
+      const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
+      if (!outcome.ok) continue;
+      claimedCount += 1;
+      await postLootItemClaimToChat(outcome);
+      if (outcome?.completion?.completed) completionSummary = outcome?.completion?.summary ?? completionSummary;
+    }
+    if (claimedCount <= 0) {
+      ui.notifications?.warn("No items were deposited.");
+      return;
+    }
+    ui.notifications?.info(`Deposited ${claimedCount} item(s) to the selected destination.`);
+    if (completionSummary) await showLootRunCompletionSummary(completionSummary);
+    return;
+  }
+
+  for (const itemId of itemIds) {
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "ops:loot-claim",
+      userId: game.user.id,
+      actorId,
+      itemId,
+      runId
+    });
+  }
+  ui.notifications?.info(`Sent ${itemIds.length} item claim request(s) to GM.`);
+}
+
+async function claimAllLootForPlayer(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const actorId = getLootClaimActorIdFromElement(element);
+  if (!actorId) {
+    ui.notifications?.warn("Select a destination before sending everything.");
+    return;
+  }
+
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) {
+    ui.notifications?.warn("No open loot claim board is selected.");
+    return;
+  }
+
+  const hasItems = Array.isArray(board.items) && board.items.length > 0;
+  const remainingCurrency = normalizeLootClaimCurrencyRecord(board.currencyRemaining ?? board.currency ?? {});
+  const hasCurrency = remainingCurrency.pp > 0 || remainingCurrency.gp > 0 || remainingCurrency.sp > 0 || remainingCurrency.cp > 0;
+  if (!hasItems && !hasCurrency) {
+    ui.notifications?.warn("This run has no remaining items or currency.");
+    return;
+  }
+
+  if (hasItems) await claimAllLootItemsForPlayer(element);
+  if (hasCurrency) await claimLootCurrencyForPlayer(element);
+}
+
+async function applyLootClaimUndoForUser(user, logIdInput = "", runIdInput = "") {
+  const logId = String(logIdInput ?? "").trim();
+  const runId = normalizeLootClaimRunId(runIdInput);
+  if (!logId) return { ok: false, message: "Missing undo log reference." };
+
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId);
+  if (!board) return { ok: false, message: "No loot claim board is selected." };
+  const logEntry = Array.isArray(board.claimsLog)
+    ? board.claimsLog.find((entry) => String(entry?.id ?? "") === logId)
+    : null;
+  if (!logEntry) return { ok: false, message: "Undo target no longer exists." };
+
+  const now = Date.now();
+  const undoExpiresAt = Math.max(0, Number(logEntry?.undoExpiresAt ?? 0) || 0);
+  if (undoExpiresAt <= 0 || now > undoExpiresAt) return { ok: false, message: "Undo window has expired." };
+  if (Math.max(0, Number(logEntry?.undoneAt ?? 0) || 0) > 0) return { ok: false, message: "This action was already undone." };
+
+  const requesterId = String(user?.id ?? "").trim();
+  const claimedByUserId = String(logEntry?.claimedByUserId ?? "").trim();
+  const requesterCanOverride = canAccessAllPlayerOps(user);
+  if (!requesterCanOverride && requesterId && claimedByUserId && requesterId !== claimedByUserId) {
+    return { ok: false, message: "Only the original assigner can undo this action." };
+  }
+
+  const actorById = new Map((game.actors?.contents ?? []).map((actor) => [String(actor?.id ?? "").trim(), actor]));
+  const undoType = String(logEntry?.undoType ?? "").trim();
+  const undoData = logEntry?.undoData && typeof logEntry.undoData === "object" ? logEntry.undoData : {};
+
+  if (undoType === "item") {
+    const actorId = String(logEntry?.actorId ?? "").trim();
+    const actor = actorById.get(actorId);
+    if (!actor) return { ok: false, message: "Destination actor is no longer available." };
+    const createdItemIds = Array.isArray(undoData?.createdItemIds)
+      ? undoData.createdItemIds.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+      : [];
+    if (createdItemIds.length > 0) {
+      const removableIds = createdItemIds.filter((itemId) => Boolean(actor.items?.get?.(itemId)));
+      if (removableIds.length > 0) {
+        try {
+          await actor.deleteEmbeddedDocuments("Item", removableIds);
+        } catch (error) {
+          console.warn(`${MODULE_ID}: failed to remove claimed item during undo`, error);
+          return { ok: false, message: "Unable to remove assigned item from destination." };
+        }
+      }
+    }
+  }
+
+  if (undoType === "currency") {
+    const actorId = String(logEntry?.actorId ?? "").trim();
+    const actor = actorById.get(actorId);
+    if (!actor) return { ok: false, message: "Destination actor is no longer available." };
+    const share = normalizeLootClaimCurrencyRecord(undoData?.share ?? {});
+    try {
+      await removeCurrencyBundleFromActor(actor, share);
+    } catch (error) {
+      console.warn(`${MODULE_ID}: failed to undo currency deposit`, error);
+      return { ok: false, message: "Unable to remove deposited currency from destination." };
+    }
+  }
+
+  if (undoType === "currency-split") {
+    const actorShares = Array.isArray(undoData?.actorShares) ? undoData.actorShares : [];
+    const stashShare = undoData?.stashShare && typeof undoData.stashShare === "object" ? undoData.stashShare : null;
+    for (const row of [...actorShares, ...(stashShare ? [stashShare] : [])]) {
+      const actorId = String(row?.actorId ?? "").trim();
+      if (!actorId) continue;
+      const actor = actorById.get(actorId);
+      if (!actor) continue;
+      const share = normalizeLootClaimCurrencyRecord(row?.share ?? {});
+      try {
+        await removeCurrencyBundleFromActor(actor, share);
+      } catch (error) {
+        console.warn(`${MODULE_ID}: failed to undo split currency`, error);
+        return { ok: false, message: "Unable to undo currency split from destination." };
+      }
+    }
+  }
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextClaims = ensureLootClaimsState(nextLedger);
+    const nextBoard = getLootClaimBoardFromState(nextClaims, board.id);
+    if (!nextBoard) return;
+    const nextLog = Array.isArray(nextBoard.claimsLog)
+      ? nextBoard.claimsLog.find((entry) => String(entry?.id ?? "") === logId)
+      : null;
+    if (!nextLog) return;
+    const nextUndoType = String(nextLog?.undoType ?? "").trim();
+    const nextUndoData = nextLog?.undoData && typeof nextLog.undoData === "object" ? nextLog.undoData : {};
+
+    if (nextUndoType === "item") {
+      if (!Array.isArray(nextBoard.items)) nextBoard.items = [];
+      const restoredItem = nextUndoData?.restoredItem && typeof nextUndoData.restoredItem === "object"
+        ? foundry.utils.deepClone(nextUndoData.restoredItem)
+        : null;
+      if (restoredItem?.id) {
+        const exists = nextBoard.items.some((entry) => String(entry?.id ?? "") === String(restoredItem.id ?? ""));
+        if (!exists) nextBoard.items.unshift(restoredItem);
+      }
+    }
+
+    if (nextUndoType === "currency") {
+      const currentRemaining = normalizeLootClaimCurrencyRecord(nextBoard.currencyRemaining ?? nextBoard.currency ?? {});
+      const share = normalizeLootClaimCurrencyRecord(nextUndoData?.share ?? {});
+      nextBoard.currencyRemaining = {
+        pp: currentRemaining.pp + share.pp,
+        gp: currentRemaining.gp + share.gp,
+        sp: currentRemaining.sp + share.sp,
+        cp: currentRemaining.cp + share.cp,
+        gpEquivalent: currentRemaining.gpEquivalent + share.gpEquivalent
+      };
+    }
+
+    if (nextUndoType === "currency-split") {
+      const currentRemaining = normalizeLootClaimCurrencyRecord(nextBoard.currencyRemaining ?? nextBoard.currency ?? {});
+      const actorShares = Array.isArray(nextUndoData?.actorShares) ? nextUndoData.actorShares : [];
+      const stashShare = nextUndoData?.stashShare && typeof nextUndoData.stashShare === "object" ? nextUndoData.stashShare : null;
+      const refundTotal = [...actorShares, ...(stashShare ? [stashShare] : [])].reduce((acc, row) => {
+        const share = normalizeLootClaimCurrencyRecord(row?.share ?? {});
+        return {
+          pp: acc.pp + share.pp,
+          gp: acc.gp + share.gp,
+          sp: acc.sp + share.sp,
+          cp: acc.cp + share.cp,
+          gpEquivalent: acc.gpEquivalent + share.gpEquivalent
+        };
+      }, { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 });
+      nextBoard.currencyRemaining = {
+        pp: currentRemaining.pp + refundTotal.pp,
+        gp: currentRemaining.gp + refundTotal.gp,
+        sp: currentRemaining.sp + refundTotal.sp,
+        cp: currentRemaining.cp + refundTotal.cp,
+        gpEquivalent: currentRemaining.gpEquivalent + refundTotal.gpEquivalent
+      };
+    }
+
+    nextLog.undoneAt = Date.now();
+    nextLog.undoneByUserId = String(user?.id ?? "");
+    nextLog.undoneByName = String(user?.name ?? "Player");
+  });
+
+  return { ok: true, runId: String(board.id ?? "") };
+}
+
+async function undoLootClaimFromElement(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const logId = String(element?.dataset?.logId ?? "").trim();
+  if (!logId) return;
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootClaimUndoForUser(game.user, logId, runId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Undo failed.");
+      return;
+    }
+    ui.notifications?.info("Undo completed.");
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-undo-claim",
+    userId: game.user.id,
+    logId,
+    runId
+  });
+  ui.notifications?.info("Undo request sent to GM.");
 }
 
 function formatLootCurrencyBundleLabel(bundle = {}) {
@@ -40244,7 +41176,7 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
       <div class="po-chat-claim">
-        <p><strong>Currency Claimed</strong></p>
+        <p><strong>Currency Deposited</strong></p>
         <p><img src="${actorImg}" width="24" height="24" style="vertical-align:middle; margin-right:6px;" />${poEscapeHtml(actorName)} received <strong>${poEscapeHtml(shareLabel)}</strong>.</p>
         <p><em>Claimed by ${poEscapeHtml(claimedBy)}</em></p>
       </div>
@@ -40252,7 +41184,7 @@ async function postLootCurrencyClaimToChat(outcome = {}) {
   });
   await createOperationsJournalEntry({
     category: "loot-claims",
-    title: `Currency Claimed - ${actorName}`,
+    title: `Currency Deposited - ${actorName}`,
     summary: `${actorName} received ${shareLabel}`,
     body: `
       <p><strong>Actor:</strong> ${buildUuidJournalLink(actorUuid, actorName)}</p>
@@ -45980,6 +46912,7 @@ function buildPartyOperationsApi() {
     rollHoardTreasure,
     applyLootTweakers,
     summarizeLoot,
+    generateBoardReadyLootBundle,
     generateLootPreviewPayload,
     generateLootFromPackIds,
     getLootPreviewResult,
@@ -46314,7 +47247,8 @@ const {
   applyPlayerMerchantTradeRequest,
   applyPlayerLootClaimRequest,
   applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootVouchRequest
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest
 } = createPlayerRequestHandlers({
   resolveRequester,
   sanitizeSocketIdentifier,
@@ -46331,10 +47265,11 @@ const {
   applyMerchantTradeForUser,
   clearMerchantBarterResolutionEntryByKey,
   applyLootClaimForUser,
+  applyLootClaimUndoForUser,
   postLootItemClaimToChat,
   applyLootCurrencyClaimForUser,
+  applyLootCurrencySplitForUser,
   postLootCurrencyClaimToChat,
-  applyLootVouchForUser,
   uiRef: ui
 });
 
@@ -46355,7 +47290,6 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
   waitForLootClaimsPublished,
   buildLootClaimsContext,
   logUiDebug,
-  promptLootClaimsDialogForPlayer,
   openOperationsLootClaimsTabForPlayer,
   openRestWatchUiForCurrentUser,
     refreshOpenApps,
@@ -46418,7 +47352,8 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
   applyPlayerMerchantTradeRequest,
   applyPlayerLootClaimRequest,
   applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootVouchRequest
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest
 });
 
 function toggleCardNotes(element) {

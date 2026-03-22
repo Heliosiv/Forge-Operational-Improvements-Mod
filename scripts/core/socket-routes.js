@@ -16,7 +16,6 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     waitForLootClaimsPublished,
     buildLootClaimsContext,
     logUiDebug,
-    promptLootClaimsDialogForPlayer,
     openOperationsLootClaimsTabForPlayer,
     openRestWatchUiForCurrentUser,
     refreshOpenApps,
@@ -39,7 +38,8 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   } = deps;
 
   const currentUser = game?.user ?? null;
@@ -59,7 +59,6 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     waitForLootClaimsPublished,
     buildLootClaimsContext,
     logUiDebug,
-    promptLootClaimsDialogForPlayer,
     openOperationsLootClaimsTabForPlayer,
     openRestWatchUiForCurrentUser
   });
@@ -84,6 +83,7 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   });
 }

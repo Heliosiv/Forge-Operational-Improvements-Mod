@@ -1256,8 +1256,117 @@
   margin: 0;
 }
 
+.party-operations .po-loot-claim-currency-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.party-operations .po-loot-claim-currency-total {
+  font-weight: 800;
+  font-size: 1.04rem;
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--po-accent) 76%, var(--po-text));
+}
+
 .party-operations .po-loot-claims-actor-row {
   margin-bottom: var(--po-space-1);
+}
+
+.party-operations .po-loot-claims-quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.party-operations .po-loot-claims-live-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(180px, 0.8fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.party-operations .po-loot-claims-actor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.party-operations .po-loot-claims-actor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px;
+}
+
+.party-operations .po-loot-claim-actor-card {
+  position: relative;
+  appearance: none;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 10px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 92%, white 8%), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.party-operations .po-loot-claim-actor-card:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--po-accent) 45%, var(--po-border-strong));
+  box-shadow: 0 10px 20px color-mix(in srgb, black 14%, transparent);
+}
+
+.party-operations .po-loot-claim-actor-card.is-selected {
+  border-color: color-mix(in srgb, var(--po-accent) 72%, var(--po-border-strong));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 22%, transparent), 0 12px 24px color-mix(in srgb, black 16%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 10%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 92%, transparent));
+}
+
+.party-operations .po-loot-claim-actor-card.is-stash {
+  background: linear-gradient(180deg, color-mix(in srgb, #c58a2a 14%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
+}
+
+.party-operations .po-loot-claim-actor-card input[name='lootClaimActorId'] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.party-operations .po-loot-claim-actor-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 48%, var(--po-border));
+}
+
+.party-operations .po-loot-claim-actor-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.party-operations .po-loot-claim-actor-name {
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+.party-operations .po-loot-claim-actor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
 .party-operations .po-loot-claim-items-grid {

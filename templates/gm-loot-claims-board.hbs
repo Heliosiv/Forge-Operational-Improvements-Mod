@@ -22,6 +22,7 @@
       </div>
 
       {{#if lootClaims.hasSelectedRun}}
+      {{#if lootClaims.hasMultipleOpenRuns}}
       <label class="po-resource-row po-loot-claims-run-row">
         <span>Claim Run</span>
         <select name="lootClaimRunId" class="po-select" data-action="set-loot-claim-run">
@@ -30,13 +31,16 @@
           {{/each}}
         </select>
       </label>
+      {{/if}}
 
       <div class="po-loot-claims-summary-grid">
         <div class="po-op-summary"><strong>Status:</strong> {{lootClaims.selectedRunCard.statusLabel}}</div>
         <div class="po-op-summary"><strong>Published:</strong> {{lootClaims.selectedRunCard.publishedAtLabel}} by {{lootClaims.selectedRunCard.publishedBy}}</div>
         <div class="po-op-summary"><strong>Items:</strong> {{lootClaims.itemCount}} | <strong>Claims:</strong> {{lootClaims.claimsLogCount}}</div>
-        <div class="po-op-summary"><strong>Currency:</strong> {{lootClaims.currencyRemaining.pp}} pp - {{lootClaims.currencyRemaining.gp}} gp - {{lootClaims.currencyRemaining.sp}} sp - {{lootClaims.currencyRemaining.cp}} cp</div>
-        <div class="po-op-summary"><strong>Contested:</strong> {{lootClaims.contestedItemCount}} item(s)</div>
+        <div class="po-op-summary po-loot-claim-currency-card">
+          <strong>Currency Remaining</strong>
+          <div class="po-loot-claim-currency-total">{{lootClaims.currencyRemainingLabel}}</div>
+        </div>
         {{#if lootClaims.selectedRunIsArchived}}
         <div class="po-op-summary"><strong>Archived:</strong> {{lootClaims.selectedRunCard.archivedAtLabel}} by {{lootClaims.selectedRunCard.archivedBy}}</div>
         {{/if}}
@@ -44,28 +48,84 @@
 
       {{#if lootClaims.selectedRunIsArchived}}
       <div class="po-op-summary">This run is archived. Open run actions are disabled.</div>
+      {{#if canManageClaims}}
+      <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="unlock-loot-claim-run" data-claim-run-id="{{lootClaims.selectedRunId}}">Unlock Archived Run</button>
+      </div>
+      {{/if}}
       {{else}}
       {{#if lootClaims.selectedActorClaimedCurrency}}
       <div class="po-op-summary">Selected actor already claimed a currency share.</div>
       {{/if}}
-      {{#if lootClaims.canChooseActor}}
-      <label class="po-resource-row po-loot-claims-actor-row">
-        <span>Claim As</span>
-        <select name="lootClaimActorId" class="po-select" data-action="set-loot-claim-actor">
+      <div class="po-loot-claims-actor-row">
+        <div class="po-loot-claims-actor-header">
+          <span>Deposit To</span>
+          {{#if lootClaims.selectedActorIsStashLike}}
+          <span class="po-pill is-accent">Selected Destination: Stash</span>
+          {{/if}}
+        </div>
+        <div class="po-loot-claims-actor-grid" role="radiogroup" aria-label="Deposit destination">
           {{#each lootClaims.actorOptions}}
-          <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+          <button
+            type="button"
+            class="po-loot-claim-actor-card {{#if selected}}is-selected{{/if}} {{#if isStashLike}}is-stash{{/if}}"
+            data-action="set-loot-claim-actor"
+            data-actor-id="{{id}}"
+            role="radio"
+            aria-checked="{{#if selected}}true{{else}}false{{/if}}"
+            aria-label="Deposit to {{name}}"
+          >
+            <input type="radio" name="lootClaimActorId" value="{{id}}" {{#if selected}}checked{{/if}} tabindex="-1" aria-hidden="true" />
+            <img class="po-loot-claim-actor-thumb" src="{{img}}" alt="{{name}}" loading="lazy" />
+            <span class="po-loot-claim-actor-copy">
+              <span class="po-loot-claim-actor-name">{{name}}</span>
+              <span class="po-loot-claim-actor-meta">
+                <span class="po-pill">{{typeLabel}}</span>
+                {{#if isLastUsed}}<span class="po-pill is-success">Last Used</span>{{/if}}
+                {{#if isStashLike}}<span class="po-pill is-accent">Stash</span>{{/if}}
+              </span>
+            </span>
+          </button>
           {{/each}}
-        </select>
-      </label>
-      {{else}}
-      <div class="po-op-summary"><strong>Claim As:</strong> {{lootClaims.selectedActorName}}</div>
-      {{/if}}
-      <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Claim Currency Share</button>
+        </div>
       </div>
+      <div class="po-loot-claims-quick-actions">
+        <div class="po-op-summary"><strong>Quick Actions:</strong> Use the selected destination for every button below.</div>
+        <div class="po-op-action-row">
+        <button type="button" class="po-btn po-btn-sm" data-action="split-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSplitCurrency}}disabled{{/unless}}>Split Currency</button>
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Deposit Currency</button>
+        <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot-items" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canDepositAllItems}}disabled{{/unless}}>Deposit All Items</button>
+        <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSendEverything}}disabled{{/unless}}>Send Everything</button>
+        </div>
+      </div>
+      {{#if lootClaims.hasUndoEntries}}
+      <div class="po-loot-claims-undo-panel">
+        <div class="po-op-summary"><strong>Undo Window (5s)</strong></div>
+        <div class="po-op-action-row">
+          {{#each lootClaims.undoEntries}}
+          <button type="button" class="po-btn po-btn-sm" data-action="undo-loot-claim" data-claim-run-id="{{@root.lootClaims.selectedRunId}}" data-log-id="{{id}}">Undo {{itemName}} ({{undoRemainingSeconds}}s)</button>
+          {{/each}}
+        </div>
+      </div>
+      {{/if}}
       {{/if}}
 
       {{#if lootClaims.hasItems}}
+      <div class="po-loot-claims-live-controls">
+        <label class="po-resource-row">
+          <span>Search Items</span>
+          <input type="search" class="po-text-input" value="{{lootClaims.liveSearch}}" placeholder="Search by item name" data-action="set-loot-claims-live-search" />
+        </label>
+        <label class="po-resource-row">
+          <span>Sort</span>
+          <select class="po-select" data-action="set-loot-claims-live-sort">
+            {{#each lootClaims.liveSortOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+      </div>
+      {{#if lootClaims.hasVisibleItems}}
       <div class="po-loot-claim-items-grid">
       {{#each lootClaims.items}}
       <article class="po-op-role-row po-loot-claim-card {{#if requiresRollOff}}is-contested{{/if}}" data-po-item-card="loot-claim-item" data-item-id="{{id}}" data-uuid="{{uuid}}">
@@ -76,7 +136,6 @@
               <div class="po-op-role-name">{{name}}</div>
               {{#if hasQuantity}}<span class="po-pill">x{{quantity}}</span>{{/if}}
               {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
-              {{#if selectedActorVouched}}<span class="po-pill po-loot-vouch-state">Selected actor vouched</span>{{/if}}
             </div>
 
             <div class="po-loot-claim-tags">
@@ -86,26 +145,10 @@
               {{#if hasItemWeight}}<span class="po-pill">Weight: {{itemWeightLabel}}</span>{{/if}}
               <span class="po-pill">Source: {{sourceLabel}}</span>
             </div>
-
-            <div class="po-loot-claim-vouched-row">
-              <span class="po-loot-claim-vouched-label">Vouched By</span>
-              {{#if hasVouchers}}
-              <div class="po-loot-claim-vouch-list">
-                {{#each vouchedByNames}}
-                <span class="po-pill po-loot-vouch-chip">{{this}}</span>
-                {{/each}}
-              </div>
-              {{else}}
-              <span class="po-op-summary">No vouchers yet</span>
-              {{/if}}
-            </div>
           </div>
 
           <div class="po-loot-claim-side">
             <div class="po-op-role-status">{{itemType}}{{#if hasQuantity}} x{{quantity}}{{/if}}</div>
-            {{#if requiresRollOff}}
-            <div class="po-pill is-warn">Roll-Off</div>
-            {{/if}}
             {{#if @root.canManageClaims}}
             <label class="po-switch po-loot-claim-major-toggle">
               <input id="po-loot-major-item-{{id}}" name="poLootMajorItem_{{id}}" type="checkbox" data-action="set-loot-major-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#if isMajorItem}}checked{{/if}} {{#if ../lootClaims.selectedRunIsArchived}}disabled{{/if}} />
@@ -116,17 +159,34 @@
         </div>
 
         <div class="po-op-action-row po-loot-claim-actions">
-          <button type="button" class="po-btn po-btn-sm" data-action="toggle-loot-vouch" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" data-should-vouch="{{#if selectedActorVouched}}false{{else}}true{{/if}}" {{#unless canVouch}}disabled{{/unless}}>{{#if selectedActorVouched}}Unvouch{{else}}Vouch{{/if}}</button>
-          <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canClaimDirect}}disabled{{/unless}}>Claim</button>
-          {{#if @root.canManageClaims}}
-          <button type="button" class="po-btn po-btn-sm" data-action="run-loot-rolloff" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canRunRollOff}}disabled{{/unless}}>Run Roll-Off</button>
-          {{/if}}
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-item" data-item-id="{{id}}" data-claim-run-id="{{claimRunId}}" {{#unless canClaimDirect}}disabled{{/unless}}>Assign Item</button>
         </div>
       </article>
       {{/each}}
       </div>
       {{else}}
+      <div class="po-op-summary">No items match the current search.</div>
+      {{/if}}
+      {{else}}
       <div class="po-op-summary">No active claim items in this run.</div>
+      {{/if}}
+
+      {{#if lootClaims.claimsLogEntries.length}}
+      <details class="po-panel-disclosure po-loot-claim-history-panel" open>
+        <summary class="po-panel-disclosure-summary">
+          <span class="po-section-title">Run Claim History</span>
+          <span class="po-op-summary">{{lootClaims.claimsLogCount}} entries</span>
+        </summary>
+        <div class="po-panel-disclosure-body">
+          <div class="po-op-stack">
+            {{#each lootClaims.claimsLogEntries}}
+            <div class="po-op-summary {{#if isUndone}}is-muted{{/if}}">
+              <strong>{{claimedAtLabel}}</strong> — {{itemName}} → {{actorName}} (by {{claimedByName}}){{#if isUndone}} • Undone {{undoneAtLabel}} by {{undoneByName}}{{/if}}
+            </div>
+            {{/each}}
+          </div>
+        </div>
+      </details>
       {{/if}}
       {{else}}
       <div class="po-op-summary">No loot claim runs are available yet.</div>

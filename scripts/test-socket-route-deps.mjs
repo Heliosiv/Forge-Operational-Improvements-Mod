@@ -20,7 +20,6 @@ import {
     waitForLootClaimsPublished: "wait",
     buildLootClaimsContext: "build-claims",
     logUiDebug: "log-debug",
-    promptLootClaimsDialogForPlayer: "prompt-claims",
     openOperationsLootClaimsTabForPlayer: "open-claims",
     openRestWatchUiForCurrentUser: "open-rest",
     refreshOpenApps: "refresh-open-apps",

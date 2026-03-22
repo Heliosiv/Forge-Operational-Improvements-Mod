@@ -14,7 +14,8 @@ const handlers = {
   applyPlayerMerchantTradeRequest: () => "trade",
   applyPlayerLootClaimRequest: () => "claim",
   applyPlayerLootCurrencyClaimRequest: () => "claim-currency",
-  applyPlayerLootVouchRequest: () => "vouch"
+  applyPlayerLootCurrencySplitRequest: () => "split-currency",
+  applyPlayerLootUndoClaimRequest: () => "undo-claim"
 };
 
 const routes = buildGmRequesterRoutes(handlers);
@@ -30,7 +31,8 @@ assert.equal(routes["ops:merchant-barter-request"], handlers.applyPlayerMerchant
 assert.equal(routes["ops:merchant-trade"], handlers.applyPlayerMerchantTradeRequest);
 assert.equal(routes["ops:loot-claim"], handlers.applyPlayerLootClaimRequest);
 assert.equal(routes["ops:loot-claim-currency"], handlers.applyPlayerLootCurrencyClaimRequest);
-assert.equal(routes["ops:loot-vouch"], handlers.applyPlayerLootVouchRequest);
+assert.equal(routes["ops:loot-split-currency"], handlers.applyPlayerLootCurrencySplitRequest);
+assert.equal(routes["ops:loot-undo-claim"], handlers.applyPlayerLootUndoClaimRequest);
 assert.equal(routes["ops:unknown"], undefined);
 
 process.stdout.write("socket gm requester routes validation passed\n");

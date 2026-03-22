@@ -11,7 +11,8 @@ function buildBaseHandlers(overrides = {}) {
     tradeRequests: [],
     lootClaims: [],
     lootCurrencyClaims: [],
-    lootVouches: [],
+    lootCurrencySplits: [],
+    lootUndos: [],
     postedItemClaims: [],
     postedCurrencyClaims: [],
     clearedBarterKeys: []
@@ -46,16 +47,20 @@ function buildBaseHandlers(overrides = {}) {
       calls.lootClaims.push({ actorId, itemId, runId });
       return { ok: true, actorName: "Borin", itemName: "Rope" };
     },
+    applyLootClaimUndoForUser: async (_requester, logId, runId) => {
+      calls.lootUndos.push({ logId, runId });
+      return { ok: true };
+    },
     postLootItemClaimToChat: async (payload) => calls.postedItemClaims.push(payload),
     applyLootCurrencyClaimForUser: async (_requester, actorId, runId) => {
       calls.lootCurrencyClaims.push({ actorId, runId });
       return { ok: true, actorName: "Borin", share: { pp: 1, gp: 2, sp: 3, cp: 4 } };
     },
-    postLootCurrencyClaimToChat: async (payload) => calls.postedCurrencyClaims.push(payload),
-    applyLootVouchForUser: async (_requester, actorId, itemId, shouldVouch, runId) => {
-      calls.lootVouches.push({ actorId, itemId, shouldVouch, runId });
-      return { ok: true, itemName: "Rope" };
+    applyLootCurrencySplitForUser: async (_requester, actorIds, runId, stashActorId) => {
+      calls.lootCurrencySplits.push({ actorIds, runId, stashActorId });
+      return { ok: true, actorShares: [{ actorId: "actor-1" }, { actorId: "actor-2" }] };
     },
+    postLootCurrencyClaimToChat: async (payload) => calls.postedCurrencyClaims.push(payload),
     uiRef: {
       notifications: {
         warn: (message) => calls.warns.push(message),
@@ -110,14 +115,21 @@ function buildBaseHandlers(overrides = {}) {
   const { handlers, calls } = buildBaseHandlers();
   await handlers.applyPlayerLootClaimRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1" });
   await handlers.applyPlayerLootCurrencyClaimRequest({ userId: "user-1", actorId: "actor-1", runId: "run-1" });
-  await handlers.applyPlayerLootVouchRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1", shouldVouch: false });
+  await handlers.applyPlayerLootCurrencySplitRequest({
+    userId: "user-1",
+    actorIds: ["actor-1", "actor-2"],
+    stashActorId: "stash-1",
+    runId: "run-1"
+  });
+  await handlers.applyPlayerLootUndoClaimRequest({ userId: "user-1", logId: "log-1", runId: "run-1" });
 
   assert.deepEqual(calls.lootClaims, [{ actorId: "actor-1", itemId: "item-1", runId: "run-1" }]);
   assert.equal(calls.postedItemClaims.length, 1);
   assert.deepEqual(calls.lootCurrencyClaims, [{ actorId: "actor-1", runId: "run-1" }]);
   assert.equal(calls.postedCurrencyClaims.length, 1);
-  assert.deepEqual(calls.lootVouches, [{ actorId: "actor-1", itemId: "item-1", shouldVouch: false, runId: "run-1" }]);
-  assert.match(calls.infos.at(-1), /removed voucher from Rope/);
+  assert.deepEqual(calls.lootCurrencySplits, [{ actorIds: ["actor-1", "actor-2"], runId: "run-1", stashActorId: "stash-1" }]);
+  assert.deepEqual(calls.lootUndos, [{ logId: "log-1", runId: "run-1" }]);
+  assert.match(calls.infos.at(-1), /undid a recent loot assignment/);
 }
 
 {

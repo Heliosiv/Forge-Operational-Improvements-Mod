@@ -10,7 +10,8 @@ export function buildGmRequesterRoutes({
   applyPlayerMerchantTradeRequest,
   applyPlayerLootClaimRequest,
   applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootVouchRequest
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest
 } = {}) {
   return {
     "ops:setting-write": applyPlayerSettingWriteRequest,
@@ -24,6 +25,7 @@ export function buildGmRequesterRoutes({
     "ops:merchant-trade": applyPlayerMerchantTradeRequest,
     "ops:loot-claim": applyPlayerLootClaimRequest,
     "ops:loot-claim-currency": applyPlayerLootCurrencyClaimRequest,
-    "ops:loot-vouch": applyPlayerLootVouchRequest
+    "ops:loot-split-currency": applyPlayerLootCurrencySplitRequest,
+    "ops:loot-undo-claim": applyPlayerLootUndoClaimRequest
   };
 }

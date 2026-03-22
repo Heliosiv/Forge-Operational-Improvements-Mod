@@ -15,10 +15,11 @@ export function createPlayerRequestHandlers(options = {}) {
     applyMerchantTradeForUser,
     clearMerchantBarterResolutionEntryByKey,
     applyLootClaimForUser,
+    applyLootClaimUndoForUser,
     postLootItemClaimToChat,
     applyLootCurrencyClaimForUser,
+    applyLootCurrencySplitForUser,
     postLootCurrencyClaimToChat,
-    applyLootVouchForUser,
     uiRef = globalThis.ui
   } = options;
 
@@ -131,6 +132,12 @@ export function createPlayerRequestHandlers(options = {}) {
     }
     await postLootItemClaimToChat(outcome);
     uiRef?.notifications?.info?.(`${requester.name} claimed ${outcome.itemName} for ${outcome.actorName}.`);
+    if (outcome?.completion?.completed && outcome?.completion?.summary) {
+      const summary = outcome.completion.summary;
+      uiRef?.notifications?.info?.(
+        `Loot run completed: ${summary.itemAssignmentCount ?? 0} item assignment(s), ${summary.currencyActionCount ?? 0} currency action(s).`
+      );
+    }
   }
 
   async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null) {
@@ -149,22 +156,50 @@ export function createPlayerRequestHandlers(options = {}) {
     uiRef?.notifications?.info?.(
       `${requester.name} claimed currency for ${outcome.actorName}: ${share.pp}pp ${share.gp}gp ${share.sp}sp ${share.cp}cp.`
     );
+    if (outcome?.completion?.completed && outcome?.completion?.summary) {
+      const summary = outcome.completion.summary;
+      uiRef?.notifications?.info?.(
+        `Loot run completed: ${summary.itemAssignmentCount ?? 0} item assignment(s), ${summary.currencyActionCount ?? 0} currency action(s).`
+      );
+    }
   }
 
-  async function applyPlayerLootVouchRequest(message, requesterRef = null) {
+  async function applyPlayerLootCurrencySplitRequest(message, requesterRef = null) {
     const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
     if (!requester) return;
-    const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-    const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
+    const actorIdsRaw = Array.isArray(message?.actorIds) ? message.actorIds : [];
+    const actorIds = actorIdsRaw
+      .map((entry) => sanitizeSocketIdentifier(entry, { maxLength: 64 }))
+      .filter(Boolean);
+    const stashActorId = sanitizeSocketIdentifier(message?.stashActorId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-    if (!actorId || !itemId) return;
-    const shouldVouch = message?.shouldVouch !== false;
-    const outcome = await applyLootVouchForUser(requester, actorId, itemId, shouldVouch, runId);
+    if (actorIds.length <= 0) return;
+    const outcome = await applyLootCurrencySplitForUser(requester, actorIds, runId, stashActorId);
     if (!outcome.ok) {
-      uiRef?.notifications?.warn?.(`Loot voucher failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+      uiRef?.notifications?.warn?.(`Currency split failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
       return;
     }
-    uiRef?.notifications?.info?.(`${requester.name} ${shouldVouch ? "vouched for" : "removed voucher from"} ${outcome.itemName}.`);
+    uiRef?.notifications?.info?.(`${requester.name} split currency across ${outcome.actorShares?.length ?? 0} destination(s).`);
+    if (outcome?.completion?.completed && outcome?.completion?.summary) {
+      const summary = outcome.completion.summary;
+      uiRef?.notifications?.info?.(
+        `Loot run completed: ${summary.itemAssignmentCount ?? 0} item assignment(s), ${summary.currencyActionCount ?? 0} currency action(s).`
+      );
+    }
+  }
+
+  async function applyPlayerLootUndoClaimRequest(message, requesterRef = null) {
+    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    if (!requester) return;
+    const logId = sanitizeSocketIdentifier(message?.logId, { maxLength: 64 });
+    const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
+    if (!logId) return;
+    const outcome = await applyLootClaimUndoForUser(requester, logId, runId);
+    if (!outcome.ok) {
+      uiRef?.notifications?.warn?.(`Loot undo failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
+      return;
+    }
+    uiRef?.notifications?.info?.(`${requester.name} undid a recent loot assignment.`);
   }
 
   return {
@@ -172,6 +207,7 @@ export function createPlayerRequestHandlers(options = {}) {
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   };
 }

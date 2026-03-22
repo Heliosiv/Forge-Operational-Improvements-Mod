@@ -251,13 +251,15 @@ export function buildCommerceSocketRouteDeps({
   applyPlayerMerchantTradeRequest,
   applyPlayerLootClaimRequest,
   applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootVouchRequest
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest
 } = {}) {
   return {
     applyPlayerMerchantBarterRequest,
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   };
 }

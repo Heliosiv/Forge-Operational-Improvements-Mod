@@ -115,6 +115,18 @@
             </div>
             <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
             <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+            {{#if claimsLogEntries.length}}
+            <details class="po-panel-disclosure">
+              <summary class="po-panel-disclosure-summary">Audit Log ({{claimsLogCount}})</summary>
+              <div class="po-panel-disclosure-body">
+                <div class="po-op-stack">
+                  {{#each claimsLogEntries}}
+                  <div class="po-op-summary {{#if isUndone}}is-muted{{/if}}"><strong>{{claimedAtLabel}}</strong> — {{itemName}} → {{actorName}} (by {{claimedByName}}){{#if isUndone}} • Undone {{undoneAtLabel}} by {{undoneByName}}{{/if}}</div>
+                  {{/each}}
+                </div>
+              </div>
+            </details>
+            {{/if}}
             <div class="po-op-action-row">
               <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Board Snapshot</button>
             </div>

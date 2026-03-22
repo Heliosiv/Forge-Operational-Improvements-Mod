@@ -132,6 +132,44 @@ assert.equal(identityRoll?.sourceId, "party-operations-loot-manifest");
 assert.equal(identityRoll?.sourceLabel, "Party Operations Loot Manifest");
 assert.equal(identityRoll?.uuid, "Compendium.party-operations.party-operations-loot-manifest.Item.Xub6At70zWnrEAek");
 
+const singleEntryArtPool = buildVariableTreasureRollPools([
+  {
+    variableTreasureKind: "art",
+    itemValueGp: 30,
+    itemWeightLb: 0.01,
+    name: "Silver Ring",
+    img: "icons/equipment/finger/ring-band-engraved-scrolls-silver.webp",
+    itemType: "loot",
+    rarity: "common",
+    sourceId: "party-operations-loot-manifest",
+    sourceLabel: "Party Operations Loot Manifest",
+    uuid: "Compendium.party-operations.party-operations-loot-manifest.Item.BYkgCthEmzwE1sN6"
+  }
+]);
+
+const singlePoolEstimate = estimateVariableTreasureOutcome({
+  variableTreasureKind: "art",
+  itemValueGp: 60,
+  itemWeightLb: 0.02
+}, singleEntryArtPool);
+
+const singlePoolRoll = rollVariableTreasureOutcome({
+  variableTreasureKind: "art",
+  itemValueGp: 60,
+  itemWeightLb: 0.02
+}, singleEntryArtPool, () => 0.5);
+
+assert.equal(
+  singlePoolEstimate,
+  null,
+  "Single-entry variable treasure pools should not override candidates and anchor every roll to one item."
+);
+assert.equal(
+  singlePoolRoll,
+  null,
+  "Single-entry variable treasure pools should not force deterministic replacement outcomes."
+);
+
 assert.equal(estimateVariableTreasureOutcome({
   variableTreasureKind: "",
   itemValueGp: 50,

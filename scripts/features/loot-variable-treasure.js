@@ -64,7 +64,7 @@ function buildWeightedVariableTreasurePool(entry = {}, pools = {}) {
     ?? 0
   );
   const sourcePool = Array.isArray(pools?.[kind]) ? pools[kind] : [];
-  if (!sourcePool.length) return [];
+  if (sourcePool.length < 2) return [];
   return sourcePool
     .map((option) => ({
       ...option,

@@ -15,7 +15,6 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     waitForLootClaimsPublished,
     buildLootClaimsContext,
     logUiDebug,
-    promptLootClaimsDialogForPlayer,
     openOperationsLootClaimsTabForPlayer,
     openRestWatchUiForCurrentUser
   } = context;
@@ -47,14 +46,6 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
       itemCount: Math.max(0, Number(message?.itemCount ?? lootClaims?.itemCount ?? 0) || 0),
       publishedAt: Math.max(0, Number(message?.publishedAt ?? 0) || 0)
     });
-    const shouldOpen = await promptLootClaimsDialogForPlayer({
-      itemCount: message?.itemCount,
-      publishedBy: message?.publishedBy,
-      publishedAt: message?.publishedAt,
-      currencyRemaining: message?.currencyRemaining,
-      lootClaims
-    });
-    if (!shouldOpen) return true;
     openOperationsLootClaimsTabForPlayer({
       force: true,
       openBoard: true,
@@ -104,7 +95,8 @@ export async function routeGmSocketMessage(message, context = {}) {
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   } = context;
 
   if (!currentUser?.isGM) return false;
@@ -150,7 +142,8 @@ export async function routeGmSocketMessage(message, context = {}) {
     applyPlayerMerchantTradeRequest,
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
-    applyPlayerLootVouchRequest
+    applyPlayerLootCurrencySplitRequest,
+    applyPlayerLootUndoClaimRequest
   });
 
   const routeHandler = requesterRoutes[message.type];

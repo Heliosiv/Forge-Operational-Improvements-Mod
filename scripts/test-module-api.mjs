@@ -58,6 +58,7 @@ import {
     rollHoardTreasure: () => ({ kind: "hoard" }),
     applyLootTweakers: (result) => result,
     summarizeLoot: () => "summary",
+    generateBoardReadyLootBundle: (draft, options = {}) => ({ draft, options, boardReady: true }),
     generateLootPreviewPayload: (draft) => ({ draft }),
     generateLootFromPackIds: (packIds) => packIds,
     getLootPreviewResult: () => ({ preview: true }),
@@ -108,6 +109,11 @@ import {
   assert.deepEqual(calls.openTabs.at(-1), { tabId: "rest-watch", options: { force: true } });
   assert.deepEqual(api.getOperations(), { entries: [1] });
   assert.deepEqual(api.getTypedConfig(), { mode: "typed" });
+  assert.deepEqual(api.generateLootBundle({ seed: "abc" }, { runId: "run-1" }), {
+    draft: { seed: "abc" },
+    options: { runId: "run-1" },
+    boardReady: true
+  });
   assert.equal(api.audio.queueTrackNext("track-9"), "track-9");
   api.audio.playMix();
   assert.deepEqual(calls.playedMixes, ["preset-selected"]);

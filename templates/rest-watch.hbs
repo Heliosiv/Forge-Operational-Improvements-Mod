@@ -270,7 +270,7 @@
         <nav class="po-tabs po-tabs-sub po-planning-tabs" role="tablist" aria-label="Planning Sections">
           <button type="button" class="po-tab {{#if operationsPlanningRoles}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="roles" title="Assign operational leadership roles">Roles</button>
           <button type="button" class="po-tab {{#if operationsPlanningResources}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="resources" title="Track supplies, drains, and inventory bindings">Resources</button>
-          <button type="button" class="po-tab {{#if operationsPlanningLoot}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="loot" title="Claim, vouch, and collect published loot">Loot</button>
+          <button type="button" class="po-tab {{#if operationsPlanningLoot}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="loot" title="Assign and collect published loot">Loot</button>
           <button type="button" class="po-tab {{#if operationsPlanningBonuses}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="bonuses" title="Review Party Health global modifiers for player actors">Party Health</button>
         </nav>
 
@@ -578,7 +578,7 @@
             <div class="po-section-title">Loot Claims</div>
             <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{operations.lootClaims.selectedRunId}}" {{#unless operations.lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
           </div>
-          <div class="po-hint">Recent loot disbursements are condensed here. All claim, vouch, and collection actions are handled in the Live Claim Board.</div>
+          <div class="po-hint">Recent loot disbursements are condensed here. All assignment and collection actions are handled in the Live Claim Board.</div>
           {{#if operations.lootClaims.hasOpenRuns}}
           <div class="po-loot-claims-run-grid">
             {{#each operations.lootClaims.openRuns}}
@@ -633,6 +633,18 @@
                   </div>
                   <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
                   <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+                  {{#if claimsLogEntries.length}}
+                  <details class="po-panel-disclosure">
+                    <summary class="po-panel-disclosure-summary">Audit Log ({{claimsLogCount}})</summary>
+                    <div class="po-panel-disclosure-body">
+                      <div class="po-op-stack">
+                        {{#each claimsLogEntries}}
+                        <div class="po-op-summary {{#if isUndone}}is-muted{{/if}}"><strong>{{claimedAtLabel}}</strong> — {{itemName}} → {{actorName}} (by {{claimedByName}}){{#if isUndone}} • Undone {{undoneAtLabel}} by {{undoneByName}}{{/if}}</div>
+                        {{/each}}
+                      </div>
+                    </div>
+                  </details>
+                  {{/if}}
                   <div class="po-op-action-row">
                     <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Board Snapshot</button>
                   </div>

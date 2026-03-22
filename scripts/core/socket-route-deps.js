@@ -19,7 +19,6 @@ export function buildPartyOperationsSocketRouteDeps({
   waitForLootClaimsPublished,
   buildLootClaimsContext,
   logUiDebug,
-  promptLootClaimsDialogForPlayer,
   openOperationsLootClaimsTabForPlayer,
   openRestWatchUiForCurrentUser,
   refreshOpenApps,
@@ -82,7 +81,8 @@ export function buildPartyOperationsSocketRouteDeps({
   applyPlayerMerchantTradeRequest,
   applyPlayerLootClaimRequest,
   applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootVouchRequest
+  applyPlayerLootCurrencySplitRequest,
+  applyPlayerLootUndoClaimRequest,
 } = {}) {
   return {
     settings,
@@ -95,7 +95,6 @@ export function buildPartyOperationsSocketRouteDeps({
     waitForLootClaimsPublished,
     buildLootClaimsContext,
     logUiDebug,
-    promptLootClaimsDialogForPlayer,
     openOperationsLootClaimsTabForPlayer,
     openRestWatchUiForCurrentUser,
     refreshOpenApps,
@@ -215,7 +214,8 @@ export function buildPartyOperationsSocketRouteDeps({
       applyPlayerMerchantTradeRequest,
       applyPlayerLootClaimRequest,
       applyPlayerLootCurrencyClaimRequest,
-      applyPlayerLootVouchRequest
+      applyPlayerLootCurrencySplitRequest,
+      applyPlayerLootUndoClaimRequest
     })
   };
 }

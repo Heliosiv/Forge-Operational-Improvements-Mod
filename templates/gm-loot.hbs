@@ -592,6 +592,18 @@
           <div class="po-loot-claims-summary-card"><span>Contested</span><strong>{{lootClaims.contestedItemCount}}</strong></div>
         </div>
         <div class="po-op-summary">Selected run published by {{lootClaims.selectedRunCard.publishedBy}}{{#if lootClaims.selectedRunCard.isArchived}} and archived {{lootClaims.selectedRunCard.archivedAtLabel}} by {{lootClaims.selectedRunCard.archivedBy}}{{/if}}.</div>
+        {{#if lootClaims.selectedRunCard.claimsLogEntries.length}}
+        <details class="po-panel-disclosure">
+          <summary class="po-panel-disclosure-summary">Run Audit Log ({{lootClaims.selectedRunCard.claimsLogCount}})</summary>
+          <div class="po-panel-disclosure-body">
+            <div class="po-op-stack">
+              {{#each lootClaims.selectedRunCard.claimsLogEntries}}
+              <div class="po-op-summary {{#if isUndone}}is-muted{{/if}}"><strong>{{claimedAtLabel}}</strong> — {{itemName}} → {{actorName}} (by {{claimedByName}}){{#if isUndone}} • Undone {{undoneAtLabel}} by {{undoneByName}}{{/if}}</div>
+              {{/each}}
+            </div>
+          </div>
+        </details>
+        {{/if}}
         {{else}}
         <div class="po-loot-empty-state">
           <div class="po-section-title">No claim run is currently selected</div>

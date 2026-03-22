@@ -1,0 +1,109 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+
+const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
+
+function extractFunctionBlock(source, functionName, nextFunctionName) {
+  const start = source.indexOf(`function ${functionName}(`);
+  assert.notEqual(start, -1, `${functionName} should exist in party-operations.js`);
+  const end = source.indexOf(`async function ${nextFunctionName}(`, start);
+  assert.notEqual(end, -1, `${nextFunctionName} should exist after ${functionName} in party-operations.js`);
+  return source.slice(start, end).trim();
+}
+
+const functionBlock = extractFunctionBlock(moduleSource, "validateBoardReadyLootBundle", "generateBoardReadyLootBundle");
+
+const context = vm.createContext({
+  normalizeLootClaimRunId: (value) => String(value ?? "").trim(),
+  result: {}
+});
+
+vm.runInContext(`${functionBlock}\nresult.validateBoardReadyLootBundle = validateBoardReadyLootBundle;`, context);
+
+const { validateBoardReadyLootBundle } = context.result;
+
+const validBundle = {
+  status: "ok",
+  runId: "run-1",
+  generatedAt: Date.now(),
+  generatedBy: "GM",
+  sourceSummary: { precedence: ["module", "world", "compendium"] },
+  currency: { pp: 0, gp: 10, sp: 0, cp: 0 },
+  currencyRemaining: { pp: 0, gp: 10, sp: 0, cp: 0 },
+  items: [
+    {
+      itemId: "item-1",
+      sourceId: "source-1",
+      displayName: "Potion of Healing",
+      image: "icons/potion.webp",
+      rarity: "common",
+      estimatedValueGp: 50,
+      quantity: 1,
+      quantityRemaining: 1,
+      runId: "run-1",
+      lockState: "open",
+      lockExpiresAt: 0,
+      createdAt: Date.now(),
+      isClaimed: false
+    }
+  ],
+  claimsLog: [],
+  claimMetadata: { boardReady: true },
+  audit: {
+    constraintChecks: [],
+    relaxationSteps: [],
+    sourceSelections: [],
+    warnings: []
+  },
+  warnings: []
+};
+
+const validResult = validateBoardReadyLootBundle(validBundle);
+assert.equal(validResult.ok, true);
+assert.equal(Array.isArray(validResult.errors), true);
+assert.equal(validResult.errors.length, 0);
+
+const invalidBundle = {
+  status: "ok",
+  runId: "",
+  generatedAt: 0,
+  generatedBy: "GM",
+  sourceSummary: { precedence: [] },
+  currency: { pp: 0, gp: 0, sp: 0, cp: 0 },
+  currencyRemaining: { pp: 0, gp: 0, sp: 0, cp: 0 },
+  items: [
+    {
+      itemId: "",
+      sourceId: "",
+      displayName: "",
+      image: "",
+      rarity: "",
+      estimatedValueGp: -1,
+      quantity: -1,
+      quantityRemaining: -1,
+      runId: "other-run",
+      lockState: "",
+      lockExpiresAt: -1,
+      createdAt: -1,
+      isClaimed: "no"
+    }
+  ],
+  claimsLog: {},
+  claimMetadata: null,
+  audit: {
+    constraintChecks: "bad",
+    relaxationSteps: [],
+    sourceSelections: [],
+    warnings: []
+  },
+  warnings: []
+};
+
+const invalidResult = validateBoardReadyLootBundle(invalidBundle);
+assert.equal(invalidResult.ok, false);
+assert.equal(invalidResult.errors.some((entry) => entry.includes("runId")), true);
+assert.equal(invalidResult.errors.some((entry) => entry.includes("claimsLog must be an array")), true);
+assert.equal(invalidResult.errors.some((entry) => entry.includes("claimMetadata is required")), true);
+
+process.stdout.write("board-ready loot bundle validation passed\n");
