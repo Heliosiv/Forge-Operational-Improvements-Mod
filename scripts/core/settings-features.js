@@ -277,7 +277,7 @@ export function registerPartyOpsFeatureSettings({
     scope: "world",
     config: true,
     type: Boolean,
-    default: true,
+    default: false,
     onChange: () => refreshOpenApps({ scope: refreshScopeKeys.SETTINGS })
   });
 

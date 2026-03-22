@@ -82,7 +82,9 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
     refreshOpenApps,
     refreshScopeKeys,
     emitSocketRefresh,
-    moduleId
+    moduleId,
+    findOperationsJournalRootFolder,
+    journalFolderIsUnderRoot
   } = deps;
 
   const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
@@ -110,9 +112,57 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
   const folder = game.folders?.get?.(folderId) ?? null;
   if (!folder) return;
 
-  const documents = Array.from(folder.contents ?? []).filter((document) => document && typeof document.update === "function");
+  if (String(folder?.type ?? "") !== "JournalEntry") {
+    ui.notifications?.warn("Only journal folders can be updated through Party Operations permissions.");
+    return;
+  }
+
+  const rootFolder = findOperationsJournalRootFolder?.() ?? null;
+  const rootFolderId = String(rootFolder?.id ?? "").trim();
+  if (!rootFolderId) {
+    ui.notifications?.warn("Party Operations journal root is not available.");
+    return;
+  }
+
+  const folderWithinOperationsRoot = folderId === rootFolderId
+    || Boolean(journalFolderIsUnderRoot?.(folderId, rootFolderId));
+  if (!folderWithinOperationsRoot) {
+    ui.notifications?.warn("That folder is outside Party Operations journal logs.");
+    return;
+  }
+
+  const allJournalFolders = Array.from(game.folders?.contents ?? []).filter(
+    (entry) => entry && String(entry.type ?? "") === "JournalEntry"
+  );
+  const targetFolderIds = new Set([folderId]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const candidate of allJournalFolders) {
+      const candidateId = String(candidate?.id ?? "").trim();
+      if (!candidateId || targetFolderIds.has(candidateId)) continue;
+      const parentId = String(candidate?.folder?.id ?? candidate?.folder ?? candidate?.parent?.id ?? "").trim();
+      if (!parentId || !targetFolderIds.has(parentId)) continue;
+      targetFolderIds.add(candidateId);
+      expanded = true;
+    }
+  }
+
+  const seenDocumentIds = new Set();
+  const documents = [];
+  for (const targetFolderId of targetFolderIds) {
+    const targetFolder = game.folders?.get?.(targetFolderId) ?? null;
+    for (const document of Array.from(targetFolder?.contents ?? [])) {
+      if (!document || String(document?.documentName ?? "") !== "JournalEntry" || typeof document.update !== "function") continue;
+      const documentId = String(document?.id ?? "").trim();
+      if (!documentId || seenDocumentIds.has(documentId)) continue;
+      seenDocumentIds.add(documentId);
+      documents.push(document);
+    }
+  }
+
   if (documents.length <= 0) {
-    ui.notifications?.info(`No documents found in folder "${String(folder?.name ?? "Folder")}".`);
+    ui.notifications?.info(`No journal entries found in folder "${String(folder?.name ?? "Folder")}".`);
     return;
   }
 

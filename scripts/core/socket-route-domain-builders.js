@@ -3,6 +3,7 @@ export function buildRestSocketRouteDeps({
   restOps,
   sanitizeSocketIdentifier,
   clampSocketText,
+  clampRestWatchRichNoteText,
   socketNoteMaxLength,
   normalizeRestNoteSaveSource,
   applyRestRequest,
@@ -28,6 +29,7 @@ export function buildRestSocketRouteDeps({
       restOps,
       sanitizeSocketIdentifier,
       clampSocketText,
+      clampRestWatchRichNoteText,
       noteMaxLength: socketNoteMaxLength,
       normalizeRestNoteSaveSource
     }),

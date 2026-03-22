@@ -118,6 +118,13 @@
             {{else}}
             <div class="po-op-summary">Enable advanced settings to edit inventory hook behavior.</div>
             {{/if}}
+
+            <div class="po-op-summary {{#if journalVisibilityIsGmPrivate}}is-warn{{/if}}">
+              Operations Journal Visibility: {{journalVisibilityLabel}}
+            </div>
+            {{#if journalVisibilityIsGmPrivate}}
+            <div class="po-op-summary is-warn">GM Only mode blocks players from opening GM-sensitive operations logs.</div>
+            {{/if}}
           </div>
         </div>
       </section>

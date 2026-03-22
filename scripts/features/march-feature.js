@@ -101,7 +101,14 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
   );
 
   if (request.op === "joinRank") {
-    if (!requesterCanControlActor) return;
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject joinRank (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
     if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
@@ -258,9 +265,11 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
       const request = { op: "joinRank", actorId, rankId };
       if (Number.isInteger(insertIndex) && insertIndex >= 0) request.insertIndex = insertIndex;
       if (Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0) request.cellIndex = requestedCellIndex;
-      await updateMarchingOrderState(request, { skipLocalRefresh: true });
+      const saved = await updateMarchingOrderState(request, { skipLocalRefresh: true });
 
-      refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+      if (saved !== false) {
+        refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+      }
     });
   });
 }

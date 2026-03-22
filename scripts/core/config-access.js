@@ -16,7 +16,7 @@ export function createPartyOperationsConfigAccess({
   getIntegrationModeSetting = () => "auto",
   resolveIntegrationMode = () => "auto",
   isDaeAvailable = () => false,
-  getJournalVisibilityMode = () => "public",
+  getJournalVisibilityMode = () => "redacted",
   getJournalFilterDebounceMs = () => 180,
   getSessionSummaryRangeSetting = () => "last-24h",
   getGatherRollModeSetting = () => "prefer-monks",

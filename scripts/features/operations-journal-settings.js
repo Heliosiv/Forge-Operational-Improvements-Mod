@@ -7,13 +7,15 @@ export function createOperationsJournalSettings({
   gameRef = globalThis.game ?? {}
 } = {}) {
   function getJournalVisibilityMode() {
+    const fallbackMode = String(journalVisibilityModes.REDACTED ?? "redacted").trim().toLowerCase() || "redacted";
     const raw = String(
       gameRef.settings?.get?.(moduleId, settings.JOURNAL_ENTRY_VISIBILITY)
-      ?? journalVisibilityModes.PUBLIC
+      ?? fallbackMode
     ).trim().toLowerCase();
     if (raw === journalVisibilityModes.GM_PRIVATE) return journalVisibilityModes.GM_PRIVATE;
+    if (raw === journalVisibilityModes.PUBLIC) return journalVisibilityModes.PUBLIC;
     if (raw === journalVisibilityModes.REDACTED) return journalVisibilityModes.REDACTED;
-    return journalVisibilityModes.PUBLIC;
+    return fallbackMode;
   }
 
   function getJournalFilterDebounceMs() {

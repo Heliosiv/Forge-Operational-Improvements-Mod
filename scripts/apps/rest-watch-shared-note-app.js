@@ -171,6 +171,20 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     document.execCommand(String(command), false, null);
   }
 
+  async #applyLinkCommand(editor) {
+    if (!(editor instanceof HTMLElement)) return;
+    const result = await this.#promptForLinkUrl();
+    if (!result) return;
+
+    const scratch = document.createElement("div");
+    scratch.innerHTML = String(result ?? "");
+    const input = scratch.querySelector("input[name='linkUrl']");
+    const url = String(input?.value ?? "").trim();
+    if (!url) return;
+
+    document.execCommand("createLink", false, url);
+  }
+
   async #promptForLinkUrl() {
     const selection = window.getSelection?.();
     const selectedText = selection?.toString?.() ?? "";
@@ -248,42 +262,28 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
       editor.dataset.poBoundInput = "1";
       this.#lastSafeDraftHtml = sanitizeRichTextHtml(editor.innerHTML ?? "");
       editor.addEventListener("input", () => {
-        const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
-        if (button.dataset.command === "createLink") {
-          void this.#promptForLinkUrl().then((url) => {
-            if (!url || !String(url ?? "").trim()) return;
-            document.execCommand("createLink", false, String(url).trim());
-            const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
-            editor.innerHTML = nextDraft;
-            this.#draftText = nextDraft;
-            this.#lastSafeDraftHtml = nextDraft;
+        try {
+          const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
+          const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
+          const nextLength = getRichTextContentLength(nextDraft);
+          if (maxLength > 0 && nextLength > maxLength) {
+            editor.innerHTML = this.#lastSafeDraftHtml;
             this.#focusEditorAtEnd(editor);
-            const counter = root.querySelector("[data-shared-note-count]");
-            if (counter) {
-              const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
-              const length = getRichTextContentLength(nextDraft);
-              counter.textContent = maxLength > 0 ? `${length} / ${maxLength}` : String(length);
-            }
-            if (this.#saveStatus.message) this.#setSaveStatus("", "info");
-          });
-          return;
-        }
-        const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
-        const nextLength = getRichTextContentLength(nextDraft);
-        if (maxLength > 0 && nextLength > maxLength) {
-          editor.innerHTML = this.#lastSafeDraftHtml;
-          this.#focusEditorAtEnd(editor);
-          this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
-          return;
-        }
+            this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
+            return;
+          }
 
-        this.#draftText = nextDraft;
-        this.#lastSafeDraftHtml = nextDraft;
-        const counter = root.querySelector("[data-shared-note-count]");
-        if (counter) {
-          counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
+          this.#draftText = nextDraft;
+          this.#lastSafeDraftHtml = nextDraft;
+          const counter = root.querySelector("[data-shared-note-count]");
+          if (counter) {
+            counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
+          }
+          if (this.#saveStatus.message) this.#setSaveStatus("", "info");
+        } catch (error) {
+          console.warn("party-operations: shared-note input handler failed", error);
+          this.#setSaveStatus("Editor error encountered. Please retry.", "warn");
         }
-        if (this.#saveStatus.message) this.#setSaveStatus("", "info");
       });
       editor.addEventListener("keydown", (event) => {
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
@@ -296,29 +296,39 @@ export class RestWatchSharedNoteApp extends HandlebarsApplicationMixin(Applicati
     root.querySelectorAll("[data-action='shared-note-format']").forEach((button) => {
       if (!(button instanceof HTMLElement) || button.dataset.poBoundClick === "1") return;
       button.dataset.poBoundClick = "1";
-      button.addEventListener("click", (event) => {
+      button.addEventListener("click", async (event) => {
         event.preventDefault();
         if (!(editor instanceof HTMLElement) || editor.getAttribute("contenteditable") !== "true") return;
-        editor.focus?.({ preventScroll: true });
-        this.#applyRichTextCommand(button.dataset.command ?? "");
-        const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
-        const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
-        const nextLength = getRichTextContentLength(nextDraft);
-        if (maxLength > 0 && nextLength > maxLength) {
-          editor.innerHTML = this.#lastSafeDraftHtml;
+        try {
+          editor.focus?.({ preventScroll: true });
+          const command = String(button.dataset.command ?? "").trim();
+          if (command === "createLink") {
+            await this.#applyLinkCommand(editor);
+          } else {
+            this.#applyRichTextCommand(command);
+          }
+          const nextDraft = sanitizeRichTextHtml(editor.innerHTML ?? "");
+          const maxLength = Number(editor.getAttribute("data-max-length") ?? 0) || 0;
+          const nextLength = getRichTextContentLength(nextDraft);
+          if (maxLength > 0 && nextLength > maxLength) {
+            editor.innerHTML = this.#lastSafeDraftHtml;
+            this.#focusEditorAtEnd(editor);
+            this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
+            return;
+          }
+          editor.innerHTML = nextDraft;
+          this.#draftText = nextDraft;
+          this.#lastSafeDraftHtml = nextDraft;
           this.#focusEditorAtEnd(editor);
-          this.#setSaveStatus(`Shared note is limited to ${maxLength} characters.`, "warn");
-          return;
+          const counter = root.querySelector("[data-shared-note-count]");
+          if (counter) {
+            counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
+          }
+          if (this.#saveStatus.message) this.#setSaveStatus("", "info");
+        } catch (error) {
+          console.warn("party-operations: shared-note format handler failed", error);
+          this.#setSaveStatus("Formatting failed. Please retry.", "warn");
         }
-        editor.innerHTML = nextDraft;
-        this.#draftText = nextDraft;
-        this.#lastSafeDraftHtml = nextDraft;
-        this.#focusEditorAtEnd(editor);
-        const counter = root.querySelector("[data-shared-note-count]");
-        if (counter) {
-          counter.textContent = maxLength > 0 ? `${nextLength} / ${maxLength}` : String(nextLength);
-        }
-        if (this.#saveStatus.message) this.#setSaveStatus("", "info");
       });
     });
 

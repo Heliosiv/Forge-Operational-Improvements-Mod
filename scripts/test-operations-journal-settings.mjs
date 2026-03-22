@@ -41,7 +41,10 @@ assert.equal(settingsFeature.getJournalVisibilityMode(), "redacted");
 settingValues.journalVisibility = "gm-private";
 assert.equal(settingsFeature.getJournalVisibilityMode(), "gm-private");
 settingValues.journalVisibility = "invalid";
-assert.equal(settingsFeature.getJournalVisibilityMode(), "public");
+assert.equal(settingsFeature.getJournalVisibilityMode(), "redacted");
+delete settingValues.journalVisibility;
+assert.equal(settingsFeature.getJournalVisibilityMode(), "redacted");
+settingValues.journalVisibility = "public";
 
 settingValues.journalFilterDebounceMs = 245.9;
 assert.equal(settingsFeature.getJournalFilterDebounceMs(), 245);

@@ -2284,8 +2284,15 @@ function bindFolderOwnershipProxySubmit(app, html) {
   if (!canAccessAllPlayerOps()) return;
   const document = app?.document ?? null;
   if (!document || String(document?.documentName ?? "").trim() !== "Folder") return;
+  if (String(document?.type ?? "").trim() !== "JournalEntry") return;
   const folderId = String(document?.id ?? "").trim();
   if (!folderId) return;
+  const rootFolder = findOperationsJournalRootFolder?.() ?? null;
+  const rootFolderId = String(rootFolder?.id ?? "").trim();
+  if (!rootFolderId) return;
+  const isOperationsJournalFolder = folderId === rootFolderId
+    || Boolean(journalFolderIsUnderRoot?.(folderId, rootFolderId));
+  if (!isOperationsJournalFolder) return;
   const root = getRenderableElementRoot(html);
   const form = root?.querySelector?.("form");
   if (!(form instanceof HTMLFormElement)) return;
@@ -5417,6 +5424,11 @@ function isMarchingOrderPlayerLocked(user = game.user) {
   }
 }
 
+function isRestWatchLockedForUser(state, isGM) {
+  if (isGM) return false;
+  return Boolean(state?.locked);
+}
+
 function getSelectablePlayerActorsForUser(user = game.user) {
   if (!user) return [];
   const unique = new Map();
@@ -5794,7 +5806,7 @@ function buildRestWatchSharedNoteEditorContext(target = {}) {
   const canEdit = Boolean(
     entry
     && actor
-    && !isLockedForUser(state, isGM)
+    && !isRestWatchLockedForUser(state, isGM)
     && (isGM || userOwnsActor(actor))
   );
   const updatedAt = Number(publishedRecord?.updatedAt ?? 0) || 0;
@@ -8906,7 +8918,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async #onNotesChange(event) {
     if (event?.type === "input") return;
     const state = getRestWatchState();
-    if (isLockedForUser(state, canAccessAllPlayerOps())) {
+    if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
       notifyUiWarnThrottled("Rest watch is locked by the GM.", {
         key: "rest-watch-locked",
         ttlMs: 1500
@@ -10877,7 +10889,7 @@ export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2
   async #onNotesChange(event) {
     if (event?.type === "input") return;
     const state = getRestWatchState();
-    if (isLockedForUser(state, canAccessAllPlayerOps())) {
+    if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
       notifyUiWarnThrottled("Rest watch is locked by the GM.", {
         key: "rest-watch-locked",
         ttlMs: 1500
@@ -43347,6 +43359,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
       restOps: SOCKET_REST_OPS,
       sanitizeSocketIdentifier,
       clampSocketText,
+      clampRestWatchRichNoteText,
       noteMaxLength: SOCKET_NOTE_MAX_LENGTH,
       normalizeRestNoteSaveSource
     });
@@ -43395,6 +43408,23 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
       ui.notifications?.warn("Marching order is locked for players.");
       return false;
     }
+
+    if (mutatorOrRequest && typeof mutatorOrRequest === "object") {
+      const requestedOp = String(mutatorOrRequest.op ?? "").trim();
+      if (requestedOp === "joinRank") {
+        const actorId = String(mutatorOrRequest.actorId ?? "").trim();
+        const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
+        if (!actor) {
+          ui.notifications?.warn("Actor not found for marching order move.");
+          return false;
+        }
+        if (!canUserControlActor(actor, game.user)) {
+          ui.notifications?.warn("You don't have permission to move this actor in marching order.");
+          return false;
+        }
+      }
+    }
+
     const normalizedRequest = normalizeSocketMarchRequest(mutatorOrRequest, {
       marchOps: SOCKET_MARCH_OPS,
       marchRanks: SOCKET_MARCH_RANKS,
@@ -43420,7 +43450,10 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
   } else {
     await applyMarchRequest(mutatorOrRequest, game.user.id, {
       getMarchingOrderState,
+      game,
       resolveRequester,
+      canUserControlActor,
+      isMarchingOrderPlayerLocked,
       stampUpdate,
       setModuleSettingWithLocalRefreshSuppressed,
       settings: SETTINGS,
@@ -43811,7 +43844,7 @@ function bindActorSearchDialog(dialog, actors) {
 
 async function assignSlotToUser(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
     notifyUiWarnThrottled("Rest watch is locked by the GM.", {
       key: "rest-watch-locked",
       ttlMs: 1500
@@ -44016,7 +44049,7 @@ function revealRestWatchAssignmentRow(element, slotIdInput, entryIndexInput) {
 
 async function clearSlotEntry(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
     notifyUiWarnThrottled("Rest watch is locked by the GM.", {
       key: "rest-watch-locked",
       ttlMs: 1500
@@ -44061,7 +44094,7 @@ async function clearSlotEntry(element) {
 
 async function swapSlots(element) {
   const state = getRestWatchState();
-  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
     notifyUiWarnThrottled("Rest watch is locked by the GM.", {
       key: "rest-watch-locked",
       ttlMs: 1500
@@ -44148,7 +44181,7 @@ function getRestWatchAutofillEligibleActors() {
 
 async function autofillFromParty() {
   const state = getRestWatchState();
-  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
     notifyUiWarnThrottled("Rest watch is locked by the GM.", {
       key: "rest-watch-locked",
       ttlMs: 1500
@@ -44282,7 +44315,7 @@ async function copyRestWatchText(asMarkdown) {
 
 async function clearRestWatchAll() {
   const state = getRestWatchState();
-  if (isLockedForUser(state, canAccessAllPlayerOps())) {
+  if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
     notifyUiWarnThrottled("Rest watch is locked by the GM.", {
       key: "rest-watch-locked",
       ttlMs: 1500
@@ -44931,7 +44964,7 @@ async function resetAllActivities() {
 
 
 function buildWatchSlotsView(state, isGM, visibility) {
-  const lockedForUser = isLockedForUser(state, isGM);
+  const lockedForUser = isRestWatchLockedForUser(state, isGM);
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "") : null;
   const activities = getRestActivities();
   const sourceSlots = getRestWatchSourceSlots(state);
@@ -45891,7 +45924,13 @@ function canUserControlActor(actor, user = game.user) {
 }
 
 function canDragEntry(actorId, isGM, locked) {
-  return true;
+  if (locked) return false;
+  if (isGM) return true;
+  const actorIdText = String(actorId ?? "").trim();
+  if (!actorIdText) return false;
+  const actor = game?.actors?.get?.(actorIdText) ?? null;
+  if (!actor) return false;
+  return canUserControlActor(actor, game.user);
 }
 
 function isLockedForUser(state, isGM) {
@@ -46692,6 +46731,8 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
   applyPlayerFolderOwnershipWriteRequestFeature,
   constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
   ui,
+  findOperationsJournalRootFolder,
+  journalFolderIsUnderRoot,
   applyPlayerSopNoteRequestFeature,
   sopKeys: SOP_KEYS,
   updateOperationsLedger,

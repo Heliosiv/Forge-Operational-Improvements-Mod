@@ -57,6 +57,14 @@ export function createPartyOperationsSettingsHub({
       const integrationMode = String(game.settings.get(moduleId, settings.INTEGRATION_MODE) ?? "auto").trim().toLowerCase();
       const inventoryHookMode = normalizeInventoryHookMode(game.settings.get(moduleId, settings.INVENTORY_HOOK_MODE));
       const launcherPlacement = normalizeLauncherPlacement(game.settings.get(moduleId, settings.LAUNCHER_PLACEMENT));
+      const journalVisibilityMode = String(
+        game.settings.get(moduleId, settings.JOURNAL_ENTRY_VISIBILITY) ?? "public"
+      ).trim().toLowerCase();
+      const journalVisibilityLabel = journalVisibilityMode === "gm-private"
+        ? "GM Only"
+        : journalVisibilityMode === "redacted"
+          ? "Redacted"
+          : "Public";
       return {
         saveStatusMessage: String(this._saveStatus?.message ?? ""),
         saveStatusWarn: this._saveStatus?.tone === "warn",
@@ -84,6 +92,8 @@ export function createPartyOperationsSettingsHub({
         integrationModeOff: integrationMode === "off",
         integrationModeFlags: integrationMode === "flags",
         integrationModeDae: integrationMode === "dae",
+        journalVisibilityLabel,
+        journalVisibilityIsGmPrivate: journalVisibilityMode === "gm-private",
         inventoryHookModeOff: inventoryHookMode === inventoryHookModes.OFF,
         inventoryHookModeRefresh: inventoryHookMode === inventoryHookModes.REFRESH,
         inventoryHookModeSync: inventoryHookMode === inventoryHookModes.SYNC

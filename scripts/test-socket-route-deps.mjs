@@ -37,6 +37,7 @@ import {
     },
     restOps,
     clampSocketText: "clamp",
+    clampRestWatchRichNoteText: "clamp-rest-rich",
     socketNoteMaxLength: 120,
     normalizeRestNoteSaveSource: "normalize-rest-note-source"
   });
@@ -49,6 +50,7 @@ import {
       restOps,
       sanitizeSocketIdentifier: "sanitize",
       clampSocketText: "clamp",
+      clampRestWatchRichNoteText: "clamp-rest-rich",
       noteMaxLength: 120,
       normalizeRestNoteSaveSource: "normalize-rest-note-source"
     }
@@ -100,7 +102,9 @@ import {
       return { message, requesterRef, options };
     },
     constDocOwnershipLevels: { OWNER: 3 },
-    ui
+    ui,
+    findOperationsJournalRootFolder: "find-journal-root",
+    journalFolderIsUnderRoot: "journal-folder-is-under-root"
   });
 
   assert.deepEqual(routeDeps.normalizeSocketMarchRequest("march-request"), {

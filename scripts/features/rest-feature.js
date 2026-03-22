@@ -62,6 +62,7 @@ export function normalizeSocketRestRequest(request, deps = {}) {
     restOps,
     sanitizeSocketIdentifier,
     clampSocketText,
+    clampRestWatchRichNoteText,
     noteMaxLength,
     normalizeRestNoteSaveSource
   } = deps;
@@ -74,11 +75,14 @@ export function normalizeSocketRestRequest(request, deps = {}) {
   if (!slotId || !actorId) return null;
 
   if (op === "setEntryNotes") {
+    const clampNoteText = typeof clampRestWatchRichNoteText === "function"
+      ? clampRestWatchRichNoteText
+      : clampSocketText;
     return {
       op,
       slotId,
       actorId,
-      text: clampSocketText(request.text, noteMaxLength),
+      text: clampNoteText(request.text, noteMaxLength),
       source: normalizeRestNoteSaveSource(request.source)
     };
   }
