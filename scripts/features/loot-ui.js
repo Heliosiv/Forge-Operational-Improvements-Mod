@@ -19,6 +19,19 @@ function bindLootItemCardIconOpeners(root, openLootItemFromElement) {
   });
 }
 
+function createDebouncedAction(callback, delayMs = 160) {
+  let timeoutId = null;
+  return (...args) => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      timeoutId = null;
+      callback(...args);
+    }, Math.max(0, Number(delayMs) || 0));
+  };
+}
+
 export function createGmLootPageApp(deps) {
   const {
     BaseStatefulPageApp,
@@ -127,6 +140,10 @@ export function createGmLootPageApp(deps) {
 
     _getActionHandlers() {
       const { rerender, rerenderAlways, rerenderIfTruthy, openPanelTab } = createPageActionHelpers(this);
+      const applyLootPackFilterDebounced = createDebouncedAction((value) => {
+        setLootPackSourcesUiState({ filter: String(value ?? "") });
+        rerender();
+      });
       const withActionStatus = (operation, {
         pending = "Working…",
         success = "Update complete.",
@@ -170,8 +187,7 @@ export function createGmLootPageApp(deps) {
           rerender();
         },
         "set-loot-pack-filter": async (actionElement) => {
-          setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-          rerender();
+          applyLootPackFilterDebounced(String(actionElement?.value ?? ""));
         },
         "clear-loot-pack-filter": async () => {
           setLootPackSourcesUiState({ filter: "" });

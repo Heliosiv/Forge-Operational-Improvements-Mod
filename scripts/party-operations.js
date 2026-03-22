@@ -39511,9 +39511,12 @@ async function publishLootPreviewToClaims() {
     items,
     stats: result?.stats ?? {}
   });
-  if (publishContractCheck.applies && publishContractCheck.status !== "pass") {
-    const severityLabel = publishContractCheck.status === "fail" ? "failed" : "warning";
-    ui.notifications?.warn(`Horde scale contract ${severityLabel} (${publishContractCheck.scale}): ${publishContractCheck.messages[0] ?? publishContractCheck.summary}`);
+  if (publishContractCheck.applies && publishContractCheck.status === "fail") {
+    ui.notifications?.error(`Horde scale contract failed (${publishContractCheck.scale}): ${publishContractCheck.messages[0] ?? publishContractCheck.summary} — Re-roll before publishing.`);
+    return;
+  }
+  if (publishContractCheck.applies && publishContractCheck.status === "warning") {
+    ui.notifications?.warn(`Horde scale contract warning (${publishContractCheck.scale}): ${publishContractCheck.messages[0] ?? publishContractCheck.summary}`);
   }
   const publishedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
 
