@@ -169,9 +169,10 @@ export function createGmLootPageApp(deps) {
           setActiveLootSettingsTab(String(actionElement?.dataset?.tab ?? "sources"));
           rerender();
         },
-        "set-loot-pack-filter": rerenderUnlessInput((actionElement) => {
+        "set-loot-pack-filter": async (actionElement) => {
           setLootPackSourcesUiState({ filter: String(actionElement?.value ?? "") });
-        }),
+          rerender();
+        },
         "clear-loot-pack-filter": async () => {
           setLootPackSourcesUiState({ filter: "" });
           rerender();

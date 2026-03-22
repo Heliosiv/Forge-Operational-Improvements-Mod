@@ -1,73 +1,73 @@
 {
-  "id": "party-operations",
-  "title": "Party Operations",
-  "description": "Rest Watch and Marching Order tools.",
-  "url": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
-  "manifest": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
-  "download": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
-  "version": "2.2.7-test.22",
-  "authors": [
-    {
-      "name": "Heliosiv"
-    }
-  ],
-  "compatibility": {
-    "minimum": "12",
-    "verified": "12",
-    "maximum": "12"
-  },
-  "esmodules": [
-    "scripts/module.js"
-  ],
-  "styles": [
-    "styles/party-operations.css",
-    "styles/po-gm-shell.css",
-    "styles/po-controls.css"
-  ],
-  "templates": [
-    "templates/party-operations-app.hbs",
-    "templates/rest-watch.hbs",
-    "templates/rest-watch-shared-note.hbs",
-    "templates/settings-hub.hbs",
-    "templates/marching-order.hbs",
-    "templates/rest-watch-player.hbs",
-    "templates/global-modifiers.hbs",
-    "templates/gm-factions.hbs",
-    "templates/merchant-shop.hbs",
-    "templates/gm-environment.hbs",
-    "templates/gm-downtime.hbs",
-    "templates/gm-merchants.hbs",
-    "templates/gm-audio.hbs",
-    "templates/gm-loot.hbs",
-    "templates/gm-loot-claims-board.hbs"
-  ],
-  "packs": [
-    {
-      "name": "party-operations-loot-manifest",
-      "label": "Party Operations Built Items",
-      "path": "packs/party-operations-loot-manifest.db",
-      "type": "Item",
-      "system": "dnd5e",
-      "private": false
-    }
-  ],
-  "relationships": {
-    "recommends": [
-      {
-        "id": "dae",
-        "type": "module",
-        "compatibility": {
-          "minimum": "11"
-        }
-      },
-      {
-        "id": "midi-qol",
-        "type": "module"
-      },
-      {
-        "id": "monks-tokenbar",
-        "type": "module"
-      }
-    ]
-  }
+    "id":  "party-operations",
+    "title":  "Party Operations",
+    "description":  "Rest Watch and Marching Order tools.",
+    "url":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
+    "manifest":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
+    "download":  "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
+    "version":  "2.2.7-test.24",
+    "authors":  [
+                    {
+                        "name":  "Heliosiv"
+                    }
+                ],
+    "compatibility":  {
+                          "minimum":  "12",
+                          "verified":  "12",
+                          "maximum":  "12"
+                      },
+    "esmodules":  [
+                      "scripts/module.js"
+                  ],
+    "styles":  [
+                   "styles/party-operations.css",
+                   "styles/po-gm-shell.css",
+                   "styles/po-controls.css"
+               ],
+    "templates":  [
+                      "templates/party-operations-app.hbs",
+                      "templates/rest-watch.hbs",
+                      "templates/rest-watch-shared-note.hbs",
+                      "templates/settings-hub.hbs",
+                      "templates/marching-order.hbs",
+                      "templates/rest-watch-player.hbs",
+                      "templates/global-modifiers.hbs",
+                      "templates/gm-factions.hbs",
+                      "templates/merchant-shop.hbs",
+                      "templates/gm-environment.hbs",
+                      "templates/gm-downtime.hbs",
+                      "templates/gm-merchants.hbs",
+                      "templates/gm-audio.hbs",
+                      "templates/gm-loot.hbs",
+                      "templates/gm-loot-claims-board.hbs"
+                  ],
+    "packs":  [
+                  {
+                      "name":  "party-operations-loot-manifest",
+                      "label":  "Party Operations Built Items",
+                      "path":  "packs/party-operations-loot-manifest.db",
+                      "type":  "Item",
+                      "system":  "dnd5e",
+                      "private":  false
+                  }
+              ],
+    "relationships":  {
+                          "recommends":  [
+                                             {
+                                                 "id":  "dae",
+                                                 "type":  "module",
+                                                 "compatibility":  {
+                                                                       "minimum":  "11"
+                                                                   }
+                                             },
+                                             {
+                                                 "id":  "midi-qol",
+                                                 "type":  "module"
+                                             },
+                                             {
+                                                 "id":  "monks-tokenbar",
+                                                 "type":  "module"
+                                             }
+                                         ]
+                      }
 }

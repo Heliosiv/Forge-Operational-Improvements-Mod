@@ -2297,6 +2297,10 @@
   opacity: 0.62;
 }
 
+.party-operations [data-tool="gm-merchants"] .po-merchant-source-option.is-hidden {
+  display: none;
+}
+
 @media (max-width: 980px) {
   .party-operations [data-tool="gm-merchants"] .po-merchant-source-filter-bar {
     align-items: stretch;

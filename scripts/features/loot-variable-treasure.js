@@ -32,7 +32,18 @@ function normalizeVariableTreasurePoolEntry(entry = {}) {
     ?? 0
   );
   if (!kind || valueGp <= 0 || weightLb <= 0) return null;
-  return { kind, valueGp, weightLb };
+  return {
+    kind,
+    valueGp,
+    weightLb,
+    name: String(entry?.name ?? "").trim(),
+    img: String(entry?.img ?? "").trim(),
+    itemType: String(entry?.itemType ?? "").trim(),
+    rarity: String(entry?.rarity ?? entry?.rarityBucket ?? "").trim(),
+    sourceId: String(entry?.sourceId ?? "").trim(),
+    sourceLabel: String(entry?.sourceLabel ?? "").trim(),
+    uuid: String(entry?.uuid ?? "").trim()
+  };
 }
 
 function getVariableTreasureWeightMatchWeight(targetWeightLb = 0, candidateWeightLb = 0) {
@@ -77,6 +88,27 @@ function toOutcome(kind = "", valueGp = 0, weightLb = 0) {
   };
 }
 
+function toOutcomeWithIdentity(option = {}) {
+  const kind = String(option?.kind ?? "").trim().toLowerCase();
+  const base = toOutcome(kind, option?.valueGp, option?.weightLb);
+  if (!base) return null;
+  const name = String(option?.name ?? "").trim();
+  const img = String(option?.img ?? "").trim();
+  const itemType = String(option?.itemType ?? "").trim();
+  const rarity = String(option?.rarity ?? "").trim();
+  const sourceId = String(option?.sourceId ?? "").trim();
+  const sourceLabel = String(option?.sourceLabel ?? "").trim();
+  const uuid = String(option?.uuid ?? "").trim();
+  if (name) base.name = name;
+  if (img) base.img = img;
+  if (itemType) base.itemType = itemType;
+  if (rarity) base.rarity = rarity;
+  if (sourceId) base.sourceId = sourceId;
+  if (sourceLabel) base.sourceLabel = sourceLabel;
+  if (uuid) base.uuid = uuid;
+  return base;
+}
+
 export function buildVariableTreasureRollPools(entries = []) {
   const pools = { gem: [], art: [] };
   for (const raw of (Array.isArray(entries) ? entries : [])) {
@@ -106,8 +138,8 @@ export function rollVariableTreasureOutcome(entry = {}, pools = {}, rng = Math.r
   let roll = Math.max(0, Math.min(0.999999999999, Number.isFinite(rawRandom) ? rawRandom : Math.random())) * totalWeight;
   for (const option of weightedPool) {
     roll -= option.matchWeight;
-    if (roll <= 0) return toOutcome(option.kind, option.valueGp, option.weightLb);
+    if (roll <= 0) return toOutcomeWithIdentity(option);
   }
   const fallback = weightedPool[weightedPool.length - 1];
-  return toOutcome(fallback?.kind ?? "", fallback?.valueGp ?? 0, fallback?.weightLb ?? 0);
+  return toOutcomeWithIdentity(fallback ?? {});
 }

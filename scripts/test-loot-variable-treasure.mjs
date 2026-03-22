@@ -91,6 +91,47 @@ assert.deepEqual(artHighRoll, {
   baseItemWeightLb: 6
 });
 
+const identityPools = buildVariableTreasureRollPools([
+  {
+    variableTreasureKind: "art",
+    itemValueGp: 30,
+    itemWeightLb: 0.01,
+    name: "Silver Ring",
+    img: "icons/equipment/finger/ring-band-engraved-scrolls-silver.webp",
+    itemType: "loot",
+    rarity: "common",
+    sourceId: "party-operations-loot-manifest",
+    sourceLabel: "Party Operations Loot Manifest",
+    uuid: "Compendium.party-operations.party-operations-loot-manifest.Item.BYkgCthEmzwE1sN6"
+  },
+  {
+    variableTreasureKind: "art",
+    itemValueGp: 75,
+    itemWeightLb: 0.01,
+    name: "Silver Ring - Ruby",
+    img: "icons/equipment/finger/ring-cabochon-silver-gold-red.webp",
+    itemType: "loot",
+    rarity: "common",
+    sourceId: "party-operations-loot-manifest",
+    sourceLabel: "Party Operations Loot Manifest",
+    uuid: "Compendium.party-operations.party-operations-loot-manifest.Item.Xub6At70zWnrEAek"
+  }
+]);
+
+const identityRoll = rollVariableTreasureOutcome({
+  variableTreasureKind: "art",
+  itemValueGp: 30,
+  itemWeightLb: 0.01
+}, identityPools, () => 0.999999);
+
+assert.equal(identityRoll?.name, "Silver Ring - Ruby");
+assert.equal(identityRoll?.img, "icons/equipment/finger/ring-cabochon-silver-gold-red.webp");
+assert.equal(identityRoll?.itemType, "loot");
+assert.equal(identityRoll?.rarity, "common");
+assert.equal(identityRoll?.sourceId, "party-operations-loot-manifest");
+assert.equal(identityRoll?.sourceLabel, "Party Operations Loot Manifest");
+assert.equal(identityRoll?.uuid, "Compendium.party-operations.party-operations-loot-manifest.Item.Xub6At70zWnrEAek");
+
 assert.equal(estimateVariableTreasureOutcome({
   variableTreasureKind: "",
   itemValueGp: 50,

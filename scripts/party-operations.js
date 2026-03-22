@@ -20160,6 +20160,13 @@ function commitLootBudgetPick(state = {}, picked = null) {
       state?.variableTreasurePools ?? {},
       state?.random ?? Math.random
     );
+    const resolvedName = String(rolledVariableTreasure?.name ?? candidate?.name ?? "Item").trim() || "Item";
+    const resolvedImg = String(rolledVariableTreasure?.img ?? candidate?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+    const resolvedItemType = String(rolledVariableTreasure?.itemType ?? candidate?.itemType ?? "").trim();
+    const resolvedRarity = String(rolledVariableTreasure?.rarity ?? candidate?.rarity ?? "").trim();
+    const resolvedSourceId = String(rolledVariableTreasure?.sourceId ?? candidate?.sourceId ?? "").trim();
+    const resolvedSourceLabel = String(rolledVariableTreasure?.sourceLabel ?? candidate?.sourceLabel ?? resolvedSourceId).trim() || resolvedSourceId;
+    const resolvedUuid = String(rolledVariableTreasure?.uuid ?? candidate?.uuid ?? "").trim();
     const resolvedUnitValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? candidate?.itemValueGp ?? 0) || 0);
     const resolvedUnitWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? candidate?.itemWeightLb ?? 0) || 0));
     const resolvedUnitBaseValueGp = Math.max(0, Number(
@@ -20178,16 +20185,17 @@ function commitLootBudgetPick(state = {}, picked = null) {
     const resolvedItemWeightLb = roundLootWeightLb(resolvedUnitWeightLb * quantity);
     const resolvedBaseItemValueGp = Math.max(0, Number((resolvedUnitBaseValueGp * quantity).toFixed(2)));
     const resolvedBaseItemWeightLb = roundLootWeightLb(resolvedUnitBaseWeightLb * quantity);
-    state.selectedByRarity[rarityBucket] = Math.max(0, Number(state.selectedByRarity[rarityBucket] ?? 0) || 0) + quantity;
+    const resolvedRarityBucket = getLootRarityBucket(resolvedRarity || rarityBucket);
+    state.selectedByRarity[resolvedRarityBucket] = Math.max(0, Number(state.selectedByRarity[resolvedRarityBucket] ?? 0) || 0) + quantity;
     state.selected.push({
-      name: candidate.name,
-      img: candidate.img,
-      itemType: candidate.itemType,
-      rarity: candidate.rarity || "",
-      rarityBucket,
-      sourceId: candidate.sourceId,
-      sourceLabel: candidate.sourceLabel,
-      uuid: candidate.uuid,
+      name: resolvedName,
+      img: resolvedImg,
+      itemType: resolvedItemType,
+      rarity: resolvedRarity,
+      rarityBucket: resolvedRarityBucket,
+      sourceId: resolvedSourceId,
+      sourceLabel: resolvedSourceLabel,
+      uuid: resolvedUuid,
       quantity,
       sourceClass,
       sourcePolicy,
@@ -20490,6 +20498,13 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
     const isCurated = sourceClass === LOOT_SOURCE_CLASSES.CURATED;
     const rarityBucket = getLootRarityBucket(picked.rarity);
     const rolledVariableTreasure = rollLootVariableTreasureSelection(picked, variableTreasurePools, Math.random);
+    const resolvedName = String(rolledVariableTreasure?.name ?? picked?.name ?? "Item").trim() || "Item";
+    const resolvedImg = String(rolledVariableTreasure?.img ?? picked?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+    const resolvedItemType = String(rolledVariableTreasure?.itemType ?? picked?.itemType ?? "").trim();
+    const resolvedRarity = String(rolledVariableTreasure?.rarity ?? picked?.rarity ?? "").trim();
+    const resolvedSourceId = String(rolledVariableTreasure?.sourceId ?? picked?.sourceId ?? "").trim();
+    const resolvedSourceLabel = String(rolledVariableTreasure?.sourceLabel ?? picked?.sourceLabel ?? resolvedSourceId).trim() || resolvedSourceId;
+    const resolvedUuid = String(rolledVariableTreasure?.uuid ?? picked?.uuid ?? "").trim();
     const resolvedUnitValueGp = Math.max(0, Number(rolledVariableTreasure?.itemValueGp ?? picked?.itemValueGp ?? 0) || 0);
     const resolvedUnitWeightLb = roundLootWeightLb(Math.max(0, Number(rolledVariableTreasure?.itemWeightLb ?? picked?.itemWeightLb ?? 0) || 0));
     const resolvedUnitBaseValueGp = Math.max(0, Number(
@@ -20508,16 +20523,17 @@ function pickLootItemsFromCandidatesLegacy(candidates, count = 0, draft = {}) {
     const resolvedItemWeightLb = roundLootWeightLb(resolvedUnitWeightLb * quantity);
     const resolvedBaseItemValueGp = Math.max(0, Number((resolvedUnitBaseValueGp * quantity).toFixed(2)));
     const resolvedBaseItemWeightLb = roundLootWeightLb(resolvedUnitBaseWeightLb * quantity);
-    selectedByRarity[rarityBucket] = Math.max(0, Number(selectedByRarity[rarityBucket] ?? 0) || 0) + quantity;
+    const resolvedRarityBucket = getLootRarityBucket(resolvedRarity || rarityBucket);
+    selectedByRarity[resolvedRarityBucket] = Math.max(0, Number(selectedByRarity[resolvedRarityBucket] ?? 0) || 0) + quantity;
     selected.push({
-      name: picked.name,
-      img: picked.img,
-      itemType: picked.itemType,
-      rarity: picked.rarity || "",
-      rarityBucket,
-      sourceId: picked.sourceId,
-      sourceLabel: picked.sourceLabel,
-      uuid: picked.uuid,
+      name: resolvedName,
+      img: resolvedImg,
+      itemType: resolvedItemType,
+      rarity: resolvedRarity,
+      rarityBucket: resolvedRarityBucket,
+      sourceId: resolvedSourceId,
+      sourceLabel: resolvedSourceLabel,
+      uuid: resolvedUuid,
       quantity,
       sourceClass,
       sourcePolicy,
