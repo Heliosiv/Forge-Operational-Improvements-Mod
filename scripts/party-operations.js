@@ -30666,7 +30666,19 @@ function normalizeLootClaimItemsList(values = []) {
         isCurated: sourceClass === LOOT_SOURCE_CLASSES.CURATED || entry?.isCurated === true,
         sourceLabel: String(entry?.sourceLabel ?? "").trim(),
         majorItem: Boolean(entry?.majorItem),
-        vouchedByActorIds: normalizeLootClaimActorIdList(entry?.vouchedByActorIds)
+        vouchedByActorIds: normalizeLootClaimActorIdList(entry?.vouchedByActorIds),
+        itemId: String(entry?.itemId ?? entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+        sourceId: String(entry?.sourceId ?? entry?.uuid ?? entry?.sourceLabel ?? "").trim(),
+        displayName: String(entry?.displayName ?? entry?.name ?? "Item").trim() || "Item",
+        image: String(entry?.image ?? entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        quantityRemaining: Math.max(0, Math.floor(Number(entry?.quantityRemaining ?? entry?.quantity ?? 1) || 1)),
+        estimatedValueGp: Math.max(0, Number(entry?.estimatedValueGp ?? entry?.itemValueGp ?? 0) || 0),
+        runId: normalizeLootClaimRunId(entry?.runId),
+        lockState: String(entry?.lockState ?? "open").trim() || "open",
+        lockExpiresAt: Math.max(0, Number(entry?.lockExpiresAt ?? 0) || 0),
+        createdAt: Math.max(0, Number(entry?.createdAt ?? 0) || 0),
+        isClaimed: Boolean(entry?.isClaimed),
+        eligibleActorIds: normalizeLootClaimActorIdList(entry?.eligibleActorIds ?? entry?.eligibilityActorIds)
       };
     })
     .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
@@ -30675,16 +30687,10 @@ function normalizeLootClaimItemsList(values = []) {
 function normalizeLootClaimTableRolls(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
-        itemId: String(entry?.itemId ?? entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-        sourceId: String(entry?.sourceId ?? entry?.uuid ?? entry?.sourceLabel ?? "").trim(),
     .map((entry) => ({
-        displayName: String(entry?.displayName ?? entry?.name ?? "Item").trim() || "Item",
       sourceLabel: String(entry?.sourceLabel ?? "Source").trim() || "Source",
-        image: String(entry?.image ?? entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
       sourceType: String(entry?.sourceType ?? "currency").trim() || "currency",
       tableName: String(entry?.tableName ?? "Roll Table").trim() || "Roll Table",
-        quantityRemaining: Math.max(0, Math.floor(Number(entry?.quantityRemaining ?? entry?.quantity ?? 1) || 1)),
-        estimatedValueGp: Math.max(0, Number(entry?.estimatedValueGp ?? entry?.itemValueGp ?? 0) || 0),
       formula: String(entry?.formula ?? "").trim(),
       total: Math.max(0, Math.floor(Number(entry?.total ?? 0) || 0)),
       result: String(entry?.result ?? "No result").trim() || "No result"
@@ -30692,12 +30698,6 @@ function normalizeLootClaimTableRolls(values = []) {
     .slice(0, 40);
 }
 
-        runId: normalizeLootClaimRunId(entry?.runId),
-        lockState: String(entry?.lockState ?? "open").trim() || "open",
-        lockExpiresAt: Math.max(0, Number(entry?.lockExpiresAt ?? 0) || 0),
-        createdAt: Math.max(0, Number(entry?.createdAt ?? 0) || 0),
-        isClaimed: Boolean(entry?.isClaimed),
-        eligibleActorIds: normalizeLootClaimActorIdList(entry?.eligibleActorIds ?? entry?.eligibilityActorIds),
 function normalizeLootClaimLogEntries(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
