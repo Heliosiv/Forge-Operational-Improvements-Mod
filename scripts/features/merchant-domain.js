@@ -44,6 +44,49 @@ export const MERCHANT_ALLOWED_ITEM_TYPES = new Set([
 ]);
 
 export const MERCHANT_ALLOWED_ITEM_TYPE_LIST = Object.freeze(Array.from(MERCHANT_ALLOWED_ITEM_TYPES));
+
+// Rarity-based price multipliers applied on top of the base buyMarkup / sellRate.
+// C 1.0 | U 1.2 | R 1.5 | VR 2.0 | L 3.0
+export const MERCHANT_RARITY_PRICE_MULTIPLIERS = Object.freeze({
+  common: 1.0,
+  uncommon: 1.2,
+  rare: 1.5,
+  "very-rare": 2.0,
+  legendary: 3.0
+});
+
+// Stock pressure: relative fill ratio triggers price adjustments on the buy side.
+export const MERCHANT_STOCK_PRESSURE = Object.freeze({
+  LOW_THRESHOLD: 0.33,  // below 33% of target stock → merchant scarce → buy price up
+  HIGH_THRESHOLD: 0.67, // above 67% of target stock → merchant flush → buy price down
+  LOW_BUY_MODIFIER: 0.20,
+  HIGH_BUY_MODIFIER: -0.15
+});
+
+// Merchant type/tag options (v1).
+export const MERCHANT_TYPE_OPTIONS = Object.freeze([
+  Object.freeze({ value: "general", label: "General Goods" }),
+  Object.freeze({ value: "magic", label: "Magic Items" }),
+  Object.freeze({ value: "black-market", label: "Black Market" }),
+  Object.freeze({ value: "faction", label: "Faction Vendor" }),
+  Object.freeze({ value: "traveling", label: "Traveling Vendor" }),
+  Object.freeze({ value: "quest", label: "Quest / Event Vendor" })
+]);
+
+export const MERCHANT_DISPOSITION_OPTIONS = Object.freeze([
+  Object.freeze({ value: "hostile", label: "Hostile" }),
+  Object.freeze({ value: "unfriendly", label: "Unfriendly" }),
+  Object.freeze({ value: "neutral", label: "Neutral" }),
+  Object.freeze({ value: "friendly", label: "Friendly" }),
+  Object.freeze({ value: "helpful", label: "Helpful" })
+]);
+
+// Maximum fractional price deviation that barter/haggling may produce (±10% of base).
+export const MERCHANT_HAGGLE_CAP_PERCENT = 0.10;
+
+// Restock partial-reroll: retain 60% of existing slots, reroll 40%.
+export const MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.60;
+
 export const MERCHANT_EDITOR_MAX_CURATED_ITEMS = 200;
 export const MERCHANT_EDITOR_CANDIDATE_LIMIT = 400;
 export const MERCHANT_PREVIEW_ITEM_LIMIT = 240;
@@ -277,19 +320,46 @@ const MERCHANT_OFFER_TAG_DEFINITIONS = Object.freeze([
 
 export const MERCHANT_DEFAULTS = Object.freeze({
   settlement: "",
+  // Identity metadata
+  type: "general",
+  faction: "",
+  location: "",
+  disposition: "neutral",
+  liquidationMode: false,
+  permissions: Object.freeze({
+    player: Object.freeze({
+      buy: true,
+      sell: true
+    }),
+    assistant: Object.freeze({
+      edit: true,
+      override: true
+    }),
+    gm: Object.freeze({
+      edit: true,
+      override: true
+    })
+  }),
   pricing: Object.freeze({
-    buyMarkup: 1,
+    // 0.25 = 25% markup over base value → player pays 125% of item base price
+    buyMarkup: 0.25,
     sellRate: 0.5,
     sellEnabled: true,
     cashOnHandGp: 500,
     buybackAllowedTypes: Object.freeze([...MERCHANT_ALLOWED_ITEM_TYPE_LIST]),
+    // Tax/fee appended on top of base × markup × rarityMult × stockPressure
+    taxFeePercent: 0,
+    // Whether rarity multipliers and stock pressure are applied to prices
+    rarityPricingEnabled: true,
+    stockPressureEnabled: true,
     barterEnabled: true,
     barterDc: 15,
     barterAbility: "cha",
-    barterSuccessBuyModifier: -0.05,
-    barterSuccessSellModifier: 0.05,
-    barterFailureBuyModifier: 0.05,
-    barterFailureSellModifier: -0.05
+    // ±10% of buy/sell base is the maximum haggle effect (MERCHANT_HAGGLE_CAP_PERCENT)
+    barterSuccessBuyModifier: -0.10,
+    barterSuccessSellModifier: 0.10,
+    barterFailureBuyModifier: 0.10,
+    barterFailureSellModifier: -0.10
   }),
   stock: Object.freeze({
     sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
@@ -747,6 +817,12 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     race,
     img,
     settlement: "",
+    type: normalizeMerchantType(blueprint?.type ?? MERCHANT_DEFAULTS.type),
+    faction: normalizeMerchantFaction(blueprint?.faction ?? MERCHANT_DEFAULTS.faction),
+    location: normalizeMerchantLocation(blueprint?.location ?? MERCHANT_DEFAULTS.location),
+    disposition: normalizeMerchantDisposition(blueprint?.disposition ?? MERCHANT_DEFAULTS.disposition),
+    liquidationMode: Boolean(blueprint?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode),
+    permissions: foundry.utils.deepClone(MERCHANT_DEFAULTS.permissions),
     accessMode: "all",
     isHidden: false,
     requiresContract: false,
@@ -759,24 +835,27 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled,
       cashOnHandGp: MERCHANT_DEFAULTS.pricing.cashOnHandGp,
       buybackAllowedTypes: normalizeMerchantAllowedItemTypes(MERCHANT_DEFAULTS.pricing.buybackAllowedTypes),
+      taxFeePercent: normalizeMerchantTaxFeePercent(blueprint?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent),
+      rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
+      stockPressureEnabled: Boolean(MERCHANT_DEFAULTS.pricing.stockPressureEnabled),
       barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled,
       barterDc: MERCHANT_DEFAULTS.pricing.barterDc,
       barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
       barterSuccessBuyModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier,
-        -0.05
+        -0.10
       ),
       barterSuccessSellModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier,
-        0.05
+        0.10
       ),
       barterFailureBuyModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier,
-        0.05
+        0.10
       ),
       barterFailureSellModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterFailureSellModifier,
-        -0.05
+        -0.10
       )
     },
     stock: {
@@ -959,6 +1038,18 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     },
     existingStock?.autoRefresh ?? MERCHANT_DEFAULTS.stock.autoRefresh
   );
+  const taxFeePercent = normalizeMerchantTaxFeePercent(
+    source?.taxFeePercent ?? existingPricing?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent
+  );
+  const rarityPricingEnabled = source?.rarityPricingEnabled === undefined
+    ? Boolean(existingPricing?.rarityPricingEnabled ?? MERCHANT_DEFAULTS.pricing.rarityPricingEnabled)
+    : Boolean(source?.rarityPricingEnabled);
+  const stockPressureEnabled = source?.stockPressureEnabled === undefined
+    ? Boolean(existingPricing?.stockPressureEnabled ?? MERCHANT_DEFAULTS.pricing.stockPressureEnabled)
+    : Boolean(source?.stockPressureEnabled);
+  const permissionsSource = source?.permissions && typeof source.permissions === "object"
+    ? source.permissions
+    : {};
   return {
     id: String(source?.id ?? "").trim(),
     name: String(source?.name ?? "").trim(),
@@ -966,6 +1057,37 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     race: normalizeMerchantRace(source?.race ?? ""),
     img: String(source?.img ?? "").trim(),
     settlement: String(source?.settlement ?? "").trim(),
+    type: normalizeMerchantType(source?.type ?? MERCHANT_DEFAULTS.type),
+    faction: normalizeMerchantFaction(source?.faction ?? MERCHANT_DEFAULTS.faction),
+    location: normalizeMerchantLocation(source?.location ?? MERCHANT_DEFAULTS.location),
+    disposition: normalizeMerchantDisposition(source?.disposition ?? MERCHANT_DEFAULTS.disposition),
+    liquidationMode: Boolean(source?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode),
+    permissions: {
+      player: {
+        buy: permissionsSource?.player?.buy === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.player.buy)
+          : Boolean(permissionsSource.player.buy),
+        sell: permissionsSource?.player?.sell === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.player.sell)
+          : Boolean(permissionsSource.player.sell)
+      },
+      assistant: {
+        edit: permissionsSource?.assistant?.edit === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.edit)
+          : Boolean(permissionsSource.assistant.edit),
+        override: permissionsSource?.assistant?.override === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.override)
+          : Boolean(permissionsSource.assistant.override)
+      },
+      gm: {
+        edit: permissionsSource?.gm?.edit === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.gm.edit)
+          : Boolean(permissionsSource.gm.edit),
+        override: permissionsSource?.gm?.override === undefined
+          ? Boolean(MERCHANT_DEFAULTS.permissions.gm.override)
+          : Boolean(permissionsSource.gm.override)
+      }
+    },
     accessMode,
     isHidden: false,
     requiresContract: false,
@@ -978,6 +1100,9 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       sellEnabled,
       cashOnHandGp,
       buybackAllowedTypes,
+      taxFeePercent,
+      rarityPricingEnabled,
+      stockPressureEnabled,
       barterEnabled,
       barterDc,
       barterAbility,
@@ -1490,4 +1615,144 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
     });
   }
   return rows;
+}
+
+// ─── Merchant Rework v1 helpers ──────────────────────────────────────────────
+
+/** Returns the rarity price multiplier for an item: C 1.0 | U 1.2 | R 1.5 | VR 2.0 | L 3.0 */
+export function getMerchantRarityPriceMultiplier(rarityInput = "") {
+  const rarity = normalizeMerchantRarity(rarityInput) || "common";
+  return Number(MERCHANT_RARITY_PRICE_MULTIPLIERS[rarity] ?? MERCHANT_RARITY_PRICE_MULTIPLIERS.common);
+}
+
+/**
+ * Returns a stock-pressure buy-price multiplier:
+ * - Below LOW_THRESHOLD fill ratio → +20% (merchant holds fewer items → scarcity premium)
+ * - Above HIGH_THRESHOLD fill ratio → -15% (merchant overstocked → clearance discount)
+ * - Between thresholds → 1.0 (no effect)
+ */
+export function getMerchantStockPressureMultiplier(currentCount = 0, targetMax = 20) {
+  const current = Math.max(0, Number(currentCount ?? 0) || 0);
+  const max = Math.max(1, Number(targetMax ?? 20) || 20);
+  const ratio = current / max;
+  if (ratio < MERCHANT_STOCK_PRESSURE.LOW_THRESHOLD) {
+    return 1 + MERCHANT_STOCK_PRESSURE.LOW_BUY_MODIFIER;
+  }
+  if (ratio > MERCHANT_STOCK_PRESSURE.HIGH_THRESHOLD) {
+    return 1 + MERCHANT_STOCK_PRESSURE.HIGH_BUY_MODIFIER;
+  }
+  return 1.0;
+}
+
+/** Normalizes a merchant type to a known value or "general". */
+export function normalizeMerchantType(value = "") {
+  const type = String(value ?? "").trim().toLowerCase();
+  if (MERCHANT_TYPE_OPTIONS.some((opt) => opt.value === type)) return type;
+  return "general";
+}
+
+/** Normalizes merchant disposition. */
+export function normalizeMerchantDisposition(value = "") {
+  const disp = String(value ?? "").trim().toLowerCase();
+  if (MERCHANT_DISPOSITION_OPTIONS.some((opt) => opt.value === disp)) return disp;
+  return "neutral";
+}
+
+export function normalizeMerchantFaction(value = "") {
+  return String(value ?? "").trim().slice(0, 80);
+}
+
+export function normalizeMerchantLocation(value = "") {
+  return String(value ?? "").trim().slice(0, 120);
+}
+
+export function normalizeMerchantTaxFeePercent(value = 0, fallback = 0) {
+  const raw = Number(value ?? fallback);
+  if (!Number.isFinite(raw)) return Math.max(0, Math.min(100, Number(fallback) || 0));
+  return Math.max(0, Math.min(100, Number(raw.toFixed(2))));
+}
+
+/**
+ * Computes the final effective buy-price multiplier for a single item.
+ * buy price (cp) = base × effectiveMultiplier × (1 + taxFeePercent/100)
+ *
+ * Barter delta is clamped so the adjusted base never strays more than
+ * MERCHANT_HAGGLE_CAP_PERCENT (10%) away from baseBuyMarkup.
+ */
+export function computeMerchantEffectiveBuyMultiplier(options = {}) {
+  const {
+    baseBuyMarkup = 1.25,
+    rarityMultiplier = 1.0,
+    stockPressureMultiplier = 1.0,
+    taxFeePercent = 0,
+    barterBuyDelta = 0,
+    haggleCapPercent = MERCHANT_HAGGLE_CAP_PERCENT
+  } = options;
+  const base = Math.max(0, Number(baseBuyMarkup) || 1.25);
+  const cap = Math.max(0, Number(haggleCapPercent) || MERCHANT_HAGGLE_CAP_PERCENT);
+  const minBase = base * (1 - cap);
+  const maxBase = base * (1 + cap);
+  const adjustedBase = Math.max(minBase, Math.min(maxBase, base + Number(barterBuyDelta || 0)));
+  const taxFactor = 1 + Math.max(0, Math.min(1, Number(taxFeePercent || 0) / 100));
+  const effective = adjustedBase
+    * Math.max(0.01, Number(rarityMultiplier || 1))
+    * Math.max(0.01, Number(stockPressureMultiplier || 1))
+    * taxFactor;
+  return Math.max(0, Math.min(50, Number(effective.toFixed(4))));
+}
+
+/**
+ * Computes effective sell-rate multiplier (what player receives).
+ * Barter delta is capped at haggleCapPercent from the base sell rate.
+ */
+export function computeMerchantEffectiveSellMultiplier(options = {}) {
+  const {
+    baseSellRate = 0.5,
+    barterSellDelta = 0,
+    haggleCapPercent = MERCHANT_HAGGLE_CAP_PERCENT
+  } = options;
+  const base = Math.max(0, Number(baseSellRate) || 0.5);
+  const cap = Math.max(0, Number(haggleCapPercent) || MERCHANT_HAGGLE_CAP_PERCENT);
+  const minRate = base * (1 - cap);
+  const maxRate = base * (1 + cap);
+  return Math.max(0, Math.min(10, Number(
+    Math.max(minRate, Math.min(maxRate, base + Number(barterSellDelta || 0))).toFixed(4)
+  )));
+}
+
+export function getMerchantTypeOptions(selectedTypeInput = "") {
+  const selected = normalizeMerchantType(selectedTypeInput);
+  return MERCHANT_TYPE_OPTIONS.map((opt) => ({
+    ...opt,
+    selected: opt.value === selected
+  }));
+}
+
+export function getMerchantDispositionOptions(selectedInput = "") {
+  const selected = normalizeMerchantDisposition(selectedInput);
+  return MERCHANT_DISPOSITION_OPTIONS.map((opt) => ({
+    ...opt,
+    selected: opt.value === selected
+  }));
+}
+
+/**
+ * Selects items to RETAIN when performing a partial restock.
+ * @param {Array} currentItems - current stock item rows (each with unique key)
+ * @param {number} retainRate - fraction to keep (default: MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.60)
+ * @returns {{ retainedKeys: Set<string>, rerollCount: number }}
+ */
+export function computeMerchantPartialRestockPlan(currentItems = [], retainRate = MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) {
+  const items = Array.isArray(currentItems) ? currentItems : [];
+  const rate = Math.max(0, Math.min(1, Number(retainRate ?? MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) || MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE));
+  const totalCount = items.length;
+  const retainCount = Math.round(totalCount * rate);
+  const shuffled = [...items].sort(() => Math.random() - 0.5);
+  const retained = shuffled.slice(0, retainCount);
+  const retainedKeys = new Set(retained.map((entry) => String(entry?.key ?? entry?.id ?? "")).filter(Boolean));
+  return {
+    retainedKeys,
+    retainCount: retainedKeys.size,
+    rerollCount: Math.max(0, totalCount - retainedKeys.size)
+  };
 }

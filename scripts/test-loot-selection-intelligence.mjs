@@ -215,4 +215,38 @@ assert.ok(
   "Outside-budget policy should be more attractive during fill than spend."
 );
 
+const strictHordeFirstPickState = {
+  draft: {
+    mode: "horde",
+    scale: "major",
+    valueStrictness: 280
+  },
+  selected: []
+};
+
+const strictFirstPickCurated = getLootSelectionIntelligenceWeight({
+  uuid: "Item.strict-curated-1",
+  name: "Curated Masterwork",
+  itemType: "loot",
+  rarity: "uncommon",
+  sourceClass: "curated",
+  sourcePolicy: "normal",
+  curationScore: 9
+}, strictHordeFirstPickState, "spend");
+
+const strictFirstPickGeneratedLow = getLootSelectionIntelligenceWeight({
+  uuid: "Item.strict-generated-1",
+  name: "Generated Trinket",
+  itemType: "loot",
+  rarity: "common",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 1
+}, strictHordeFirstPickState, "spend");
+
+assert.ok(
+  strictFirstPickCurated > strictFirstPickGeneratedLow,
+  "Strict horde first-pick weighting should prefer high-curation curated entries over low-curation generated entries."
+);
+
 process.stdout.write("loot selection intelligence validation passed\n");

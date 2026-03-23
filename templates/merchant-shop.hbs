@@ -6,6 +6,8 @@
   data-barter-key="{{barterResolutionKey}}"
   data-base-buy-markup="{{baseBuyMarkup}}"
   data-base-sell-rate="{{baseSellRate}}"
+  data-stock-pressure-multiplier="{{stockPressureMultiplier}}"
+  data-tax-fee-factor="{{taxFeeFactor}}"
 >
   <div class="po-merchant-trade-shell">
     <section class="po-merchant-trade-hero">
@@ -19,6 +21,11 @@
           {{#if merchantTitle}}
           <div class="po-merchant-trade-subtitle">{{merchantTitle}}</div>
           {{/if}}
+          <div class="po-merchant-trade-item-meta">
+            <span class="po-pill">{{merchantTypeLabel}}</span>
+            <span class="po-pill">{{merchantDispositionLabel}}</span>
+            {{#if merchantFactionLabel}}<span class="po-pill">{{merchantFactionLabel}}</span>{{/if}}
+          </div>
           <p class="po-merchant-trade-description">
             <strong>{{actorName}}</strong> is shopping at <strong>{{settlementLabel}}</strong>.
           </p>
@@ -42,6 +49,24 @@
           <span>Sell Rate</span>
           <strong>{{sellRateLabel}}</strong>
         </div>
+        {{#if stockPressureLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Stock</span>
+          <strong>{{stockPressureLabel}}</strong>
+        </div>
+        {{/if}}
+        {{#if taxFeeLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Tax</span>
+          <strong>{{taxFeeLabel}}</strong>
+        </div>
+        {{/if}}
+        {{#if liquidationModeLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Mode</span>
+          <strong>{{liquidationModeLabel}}</strong>
+        </div>
+        {{/if}}
       </div>
     </section>
 
@@ -77,6 +102,15 @@
           </div>
           <div class="po-op-summary">{{buyCountLabel}}</div>
         </header>
+        <div class="po-merchant-trade-search-wrap">
+          <input
+            class="po-input po-merchant-trade-search"
+            type="search"
+            placeholder="Filter wares…"
+            aria-label="Filter merchant wares"
+            data-merchant-search
+          />
+        </div>
         <div class="po-merchant-trade-table-wrap">
           <table class="po-table po-table-sm po-merchant-trade-table">
             <thead>
@@ -90,7 +124,7 @@
             <tbody>
               {{#if hasBuyRows}}
               {{#each buyRows}}
-              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}">
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}" data-rarity-mult="{{rarityMult}}" data-search="{{itemName}}">
                 <td>
                   <div class="po-merchant-trade-item">
                     <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
@@ -220,5 +254,36 @@
         <strong data-merchant-net-total>0.00 gp</strong>
       </div>
     </section>
+
+    {{#if hasRecentTrades}}
+    <section class="po-merchant-trade-panel">
+      <header class="po-merchant-trade-panel-head">
+        <div>
+          <div class="po-merchant-trade-section-label">Recent</div>
+          <h3>Recent Transactions</h3>
+        </div>
+      </header>
+      <div class="po-merchant-trade-table-wrap">
+        <table class="po-table po-table-sm po-merchant-trade-table">
+          <thead>
+            <tr>
+              <th>Actor</th>
+              <th>When</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each recentTrades}}
+            <tr>
+              <td>{{actorName}}</td>
+              <td>{{whenLabel}}</td>
+              <td>{{netLabel}}</td>
+            </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {{/if}}
   </div>
 </div>

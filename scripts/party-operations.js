@@ -214,7 +214,25 @@ import {
   getMerchantTargetStockCount as getMerchantTargetStockCountDomain,
   shuffleMerchantRows as shuffleMerchantRowsDomain,
   selectMerchantStockRows as selectMerchantStockRowsDomain,
-  buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain
+  buildMerchantStockCandidateRows as buildMerchantStockCandidateRowsDomain,
+  getMerchantRarityPriceMultiplier,
+  getMerchantStockPressureMultiplier,
+  normalizeMerchantType,
+  normalizeMerchantDisposition,
+  normalizeMerchantFaction,
+  normalizeMerchantLocation,
+  normalizeMerchantTaxFeePercent,
+  computeMerchantEffectiveBuyMultiplier,
+  computeMerchantEffectiveSellMultiplier,
+  getMerchantTypeOptions as getMerchantTypeOptionsDomain,
+  getMerchantDispositionOptions as getMerchantDispositionOptionsDomain,
+  computeMerchantPartialRestockPlan,
+  MERCHANT_HAGGLE_CAP_PERCENT,
+  MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE,
+  MERCHANT_TYPE_OPTIONS,
+  MERCHANT_DISPOSITION_OPTIONS,
+  MERCHANT_RARITY_PRICE_MULTIPLIERS,
+  MERCHANT_STOCK_PRESSURE
 } from "./features/merchant-domain.js";
 import { createMerchantUiState } from "./features/merchant-ui-state.js";
 import {
@@ -24834,6 +24852,12 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const contractKey = "";
   const socialGateEnabled = false;
   const minSocialScore = 0;
+  // Identity metadata (v1 rework)
+  const type = normalizeMerchantType(source?.type ?? MERCHANT_DEFAULTS.type);
+  const faction = normalizeMerchantFaction(source?.faction ?? MERCHANT_DEFAULTS.faction);
+  const location = normalizeMerchantLocation(source?.location ?? MERCHANT_DEFAULTS.location);
+  const disposition = normalizeMerchantDisposition(source?.disposition ?? MERCHANT_DEFAULTS.disposition);
+  const liquidationMode = Boolean(source?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode);
   const buyMarkupRaw = Number(source?.pricing?.buyMarkup ?? source.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup);
   const sellRateRaw = Number(source?.pricing?.sellRate ?? source.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
   const sellEnabled = source?.pricing?.sellEnabled === undefined
@@ -24860,19 +24884,19 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   );
   const barterSuccessBuyModifier = normalizeMerchantBarterModifier(
     source?.pricing?.barterSuccessBuyModifier ?? source?.barterSuccessBuyModifier,
-    MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05
+    MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.10
   );
   const barterSuccessSellModifier = normalizeMerchantBarterModifier(
     source?.pricing?.barterSuccessSellModifier ?? source?.barterSuccessSellModifier,
-    MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05
+    MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.10
   );
   const barterFailureBuyModifier = normalizeMerchantBarterModifier(
     source?.pricing?.barterFailureBuyModifier ?? source?.barterFailureBuyModifier,
-    MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05
+    MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.10
   );
   const barterFailureSellModifier = normalizeMerchantBarterModifier(
     source?.pricing?.barterFailureSellModifier ?? source?.barterFailureSellModifier,
-    MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05
+    MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.10
   );
   const buyMarkup = Number.isFinite(buyMarkupRaw) ? Math.max(0, Math.min(10, Number(buyMarkupRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.buyMarkup;
   const sellRate = Number.isFinite(sellRateRaw) ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2)))) : MERCHANT_DEFAULTS.pricing.sellRate;
@@ -24935,6 +24959,12 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     race,
     img,
     settlement,
+    type,
+    faction,
+    location,
+    disposition,
+    liquidationMode,
+    permissions: normalizeMerchantPermissionMatrix(source?.permissions ?? {}),
     accessMode,
     shopTradable,
     isHidden,
@@ -24948,6 +24978,15 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
       sellEnabled,
       cashOnHandGp,
       buybackAllowedTypes,
+      taxFeePercent: normalizeMerchantTaxFeePercent(
+        source?.pricing?.taxFeePercent ?? source?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent
+      ),
+      rarityPricingEnabled: source?.pricing?.rarityPricingEnabled === undefined
+        ? Boolean(source?.rarityPricingEnabled ?? MERCHANT_DEFAULTS.pricing.rarityPricingEnabled)
+        : Boolean(source?.pricing?.rarityPricingEnabled),
+      stockPressureEnabled: source?.pricing?.stockPressureEnabled === undefined
+        ? Boolean(source?.stockPressureEnabled ?? MERCHANT_DEFAULTS.pricing.stockPressureEnabled)
+        : Boolean(source?.pricing?.stockPressureEnabled),
       barterEnabled,
       barterDc,
       barterAbility,
@@ -25019,6 +25058,122 @@ function normalizeMerchantAccessLogEntry(raw = {}) {
     merchantId: String(source.merchantId ?? "").trim(),
     merchantName: String(source.merchantName ?? "").trim()
   };
+}
+
+function normalizeMerchantPermissionMatrix(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const defaults = MERCHANT_DEFAULTS.permissions ?? {};
+  return {
+    player: {
+      buy: source?.player?.buy === undefined
+        ? Boolean(defaults?.player?.buy)
+        : Boolean(source.player.buy),
+      sell: source?.player?.sell === undefined
+        ? Boolean(defaults?.player?.sell)
+        : Boolean(source.player.sell)
+    },
+    assistant: {
+      edit: source?.assistant?.edit === undefined
+        ? Boolean(defaults?.assistant?.edit)
+        : Boolean(source.assistant.edit),
+      override: source?.assistant?.override === undefined
+        ? Boolean(defaults?.assistant?.override)
+        : Boolean(source.assistant.override)
+    },
+    gm: {
+      edit: source?.gm?.edit === undefined
+        ? Boolean(defaults?.gm?.edit)
+        : Boolean(source.gm.edit),
+      override: source?.gm?.override === undefined
+        ? Boolean(defaults?.gm?.override)
+        : Boolean(source.gm.override)
+    }
+  };
+}
+
+function canUserPerformMerchantAction(user, merchant, actionInput = "") {
+  const action = String(actionInput ?? "").trim().toLowerCase();
+  const permissions = normalizeMerchantPermissionMatrix(merchant?.permissions ?? {});
+  if (Boolean(user?.isGM)) {
+    if (action === "edit" || action === "override") return Boolean(permissions?.gm?.[action]);
+    return true;
+  }
+  if (canAccessAllPlayerOps(user) && (action === "edit" || action === "override")) {
+    return Boolean(permissions?.assistant?.[action]);
+  }
+  if (action === "buy" || action === "sell") return Boolean(permissions?.player?.[action]);
+  return false;
+}
+
+function normalizeMerchantTradeLogEntry(raw = {}) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const tradedAtRaw = Number(source.tradedAt ?? source.createdAt ?? Date.now());
+  const tradedAt = Number.isFinite(tradedAtRaw) ? Math.max(0, Math.floor(tradedAtRaw)) : Date.now();
+  const buyLines = Array.isArray(source.buyLines) ? source.buyLines : [];
+  const sellLines = Array.isArray(source.sellLines) ? source.sellLines : [];
+  return {
+    id: String(source.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
+    tradedAt,
+    userId: String(source.userId ?? "").trim(),
+    userName: String(source.userName ?? source.viewer ?? "Player").trim() || "Player",
+    actorId: String(source.actorId ?? "").trim(),
+    actorName: String(source.actorName ?? "").trim() || "Actor",
+    merchantId: String(source.merchantId ?? "").trim(),
+    merchantName: String(source.merchantName ?? "").trim() || "Merchant",
+    settlement: normalizeMerchantSettlementSelection(source.settlement ?? ""),
+    totalBuyCp: Math.max(0, Math.floor(Number(source.totalBuyCp ?? 0) || 0)),
+    totalSellCp: Math.max(0, Math.floor(Number(source.totalSellCp ?? 0) || 0)),
+    netCp: Math.floor(Number(source.netCp ?? 0) || 0),
+    stockPressureMult: Number(source.stockPressureMult ?? 1) || 1,
+    taxFeePercent: Number(source.taxFeePercent ?? 0) || 0,
+    liquidationMode: Boolean(source.liquidationMode),
+    barterApplied: Boolean(source?.barter?.applied),
+    buyLines: buyLines.map((row) => ({
+      itemName: String(row?.itemName ?? "Item").trim() || "Item",
+      qty: Math.max(0, Math.floor(Number(row?.qty ?? 0) || 0)),
+      unitCp: Math.max(0, Math.floor(Number(row?.unitCp ?? 0) || 0))
+    })).filter((row) => row.qty > 0),
+    sellLines: sellLines.map((row) => ({
+      itemName: String(row?.itemName ?? "Item").trim() || "Item",
+      qty: Math.max(0, Math.floor(Number(row?.qty ?? 0) || 0)),
+      unitCp: Math.max(0, Math.floor(Number(row?.unitCp ?? 0) || 0))
+    })).filter((row) => row.qty > 0)
+  };
+}
+
+function getMerchantHaggleCooldownKey({ userId, actorId, merchantId } = {}) {
+  return [userId, actorId, merchantId]
+    .map((entry) => String(entry ?? "").trim())
+    .filter(Boolean)
+    .join("|");
+}
+
+async function appendMerchantTradeLogEntry(entry = {}, options = {}) {
+  const normalized = normalizeMerchantTradeLogEntry(entry);
+  await updateOperationsLedger((ledger) => {
+    const merchants = ensureMerchantsState(ledger);
+    if (!Array.isArray(merchants.tradeLog)) merchants.tradeLog = [];
+    merchants.tradeLog.unshift(normalized);
+    merchants.tradeLog = merchants.tradeLog
+      .map((row) => normalizeMerchantTradeLogEntry(row))
+      .sort((left, right) => Number(right?.tradedAt ?? 0) - Number(left?.tradedAt ?? 0))
+      .slice(0, 500);
+  }, {
+    skipLocalRefresh: Boolean(options?.skipLocalRefresh),
+    skipSocketRefresh: Boolean(options?.skipSocketRefresh)
+  });
+  return normalized;
+}
+
+function getMerchantTradeLogPreview(merchantIdInput = "", limit = 3, ledger = getOperationsLedger()) {
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return [];
+  const merchants = ensureMerchantsState(ledger);
+  return (Array.isArray(merchants.tradeLog) ? merchants.tradeLog : [])
+    .map((entry) => normalizeMerchantTradeLogEntry(entry))
+    .filter((entry) => String(entry?.merchantId ?? "") === merchantId)
+    .sort((left, right) => Number(right?.tradedAt ?? 0) - Number(left?.tradedAt ?? 0))
+    .slice(0, Math.max(0, Math.floor(Number(limit) || 0)));
 }
 
 function getMerchantShopPlayerUsers() {
@@ -25163,6 +25318,34 @@ function getMerchantShopSessionState(ledger = getOperationsLedger()) {
   return normalizeMerchantShopSession(merchants?.shopSession ?? {});
 }
 
+async function runMerchantDataMigration() {
+  try {
+    await updateOperationsLedger((ledger) => {
+      const merchants = ledger.merchants ?? {};
+      // Snapshot existing data before migration (if not already backed up)
+      if (!merchants.merchantsMigrationBackup && merchants.definitions?.length > 0) {
+        merchants.merchantsMigrationBackup = foundry.utils.deepClone({
+          definitions: merchants.definitions,
+          stockStateById: merchants.stockStateById,
+          timestamp: Date.now()
+        });
+      }
+      // Re-normalize all definitions through the updated normalizer
+      // This automatically applies any new defaults from MERCHANT_DEFAULTS
+      if (Array.isArray(merchants.definitions)) {
+        merchants.definitions = merchants.definitions.map((def, idx) =>
+          normalizeMerchantDefinition(def, idx)
+        );
+      }
+      // Set migration version
+      merchants.merchantsMigrationVersion = "1.0.0";
+    });
+  } catch (error) {
+    console.error(`${MODULE_ID}: failed to run merchant data migration`, error);
+    throw error;
+  }
+}
+
 function ensureMerchantsState(ledger) {
   if (!ledger || typeof ledger !== "object") return {
     currentSettlement: "",
@@ -25185,6 +25368,15 @@ function ensureMerchantsState(ledger) {
   }
   if (!Array.isArray(merchants.accessLog)) merchants.accessLog = [];
   merchants.shopSession = normalizeMerchantShopSession(merchants.shopSession ?? {});
+  // Rework v1: scaffold tradeLog and haggleCooldowns
+  if (!Array.isArray(merchants.tradeLog)) merchants.tradeLog = [];
+  merchants.tradeLog = merchants.tradeLog
+    .map((entry) => normalizeMerchantTradeLogEntry(entry))
+    .sort((left, right) => Number(right?.tradedAt ?? 0) - Number(left?.tradedAt ?? 0))
+    .slice(0, 500);
+  if (!merchants.haggleCooldowns || typeof merchants.haggleCooldowns !== "object" || Array.isArray(merchants.haggleCooldowns)) {
+    merchants.haggleCooldowns = {};
+  }
   const seenIds = new Set();
   merchants.definitions = merchants.definitions
     .map((entry, index) => normalizeMerchantDefinition(entry, index))
@@ -26513,13 +26705,28 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
   const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
   const merchantActorId = String(merchantActor?.id ?? "").trim();
   const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const pricing = merchant?.pricing ?? {};
+  const rarityPricingEnabled = pricing?.rarityPricingEnabled !== false;
+  const stockPressureEnabled = pricing?.stockPressureEnabled !== false;
+  const taxFeePercent = Number(pricing?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent) || 0;
+  const taxFactor = 1 + Math.max(0, Math.min(1, taxFeePercent / 100));
+  const liquidationMode = Boolean(merchant?.liquidationMode);
+  const currentStockCount = (merchantActor?.items?.contents ?? [])
+    .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()) && getItemTrackedQuantity(item) > 0)
+    .length;
+  const stockPressureMult = stockPressureEnabled
+    ? getMerchantStockPressureMultiplier(currentStockCount, merchant?.stock?.maxItems ?? 20)
+    : 1;
   const rows = (merchantActor?.items?.contents ?? [])
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
     .map((item) => {
       const itemData = getMerchantItemData(item);
       const quantity = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
       const baseCp = getMerchantItemUnitPriceCp(itemData, 1);
-      const buyCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
+      const rarityMult = liquidationMode && String(itemData?.type ?? "").trim().toLowerCase() === "loot"
+        ? 1
+        : (rarityPricingEnabled ? getMerchantRarityPriceMultiplier(getLootRarityFromData(itemData)) : 1);
+      const buyCp = getMerchantItemUnitPriceCp(itemData, buyMarkup * rarityMult * stockPressureMult * taxFactor);
       const weight = Math.max(0, Number(getItemWeightValue(itemData) || getItemWeightValue(item) || 0));
       const weightLabel = weight > 0
         ? `${weight % 1 === 0 ? weight.toFixed(0) : weight.toFixed(1)} lb`
@@ -26541,7 +26748,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
         basePriceLabel: formatMerchantCp(baseCp),
         buyPriceLabel: formatMerchantCp(buyCp),
-        markupLabel: buyMarkup.toFixed(2)
+        markupLabel: (buyMarkup * rarityMult * stockPressureMult * taxFactor).toFixed(2)
       };
     })
     .filter((entry) => entry.quantity > 0)
@@ -27864,11 +28071,31 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
   const candidates = buildMerchantCandidateRows(sourceDocuments, merchant);
   const selected = selectMerchantStockRows(candidates, merchant);
   const budgetedSelection = constrainMerchantStockSelectionByBudget(selected, merchant);
-  const selectedRows = Array.isArray(budgetedSelection?.rows) ? budgetedSelection.rows : selected;
-  const generatedItemIds = (merchantActor.items?.contents ?? [])
-    .filter((item) => item?.flags?.[MODULE_ID]?.merchantGenerated === true)
+  let selectedRows = Array.isArray(budgetedSelection?.rows) ? budgetedSelection.rows : selected;
+  const generatedItems = (merchantActor.items?.contents ?? [])
+    .filter((item) => item?.flags?.[MODULE_ID]?.merchantGenerated === true);
+  let retainedCount = 0;
+  let rerollCount = 0;
+  let partialRestock = false;
+  let generatedItemIds = generatedItems
     .map((item) => String(item?.id ?? ""))
     .filter(Boolean);
+  if (options?.partialRestock === true && generatedItems.length > 0) {
+    partialRestock = true;
+    const restockPlan = computeMerchantPartialRestockPlan(
+      generatedItems.map((item) => ({ key: String(item?.id ?? "") })),
+      MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE
+    );
+    const retainedItemIdSet = restockPlan.retainedKeys;
+    retainedCount = Number(restockPlan.retainCount ?? 0) || 0;
+    rerollCount = Number(restockPlan.rerollCount ?? 0) || 0;
+    generatedItemIds = generatedItems
+      .filter((item) => !retainedItemIdSet.has(String(item?.id ?? "")))
+      .map((item) => String(item?.id ?? ""))
+      .filter(Boolean);
+    const desiredCreateCount = Math.max(0, Number(merchant?.stock?.maxItems ?? 20) - retainedCount);
+    selectedRows = selectedRows.slice(0, desiredCreateCount);
+  }
   if (generatedItemIds.length > 0) {
     await merchantActor.deleteEmbeddedDocuments("Item", generatedItemIds);
   }
@@ -27926,6 +28153,9 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     merchantName: String(merchant.name ?? "Merchant"),
     actorId: String(merchantActor.id ?? ""),
     createdCount,
+    retainedCount,
+    rerollCount,
+    partialRestock,
     generatedStockValueGp: Math.max(0, Number(budgetedSelection?.totalValueGp ?? 0) || 0),
     targetStockValueGp: Math.max(0, Number(budgetedSelection?.targetValueGp ?? 0) || 0),
     stockConstrainedToBudget: Boolean(budgetedSelection?.constrained),
@@ -28019,7 +28249,8 @@ async function handleAutomaticMerchantAutoRefreshTick() {
           silent: true,
           skipLocalRefresh: true,
           skipSocketRefresh: true,
-          currentWorldTimestamp: currentTimestamp
+          currentWorldTimestamp: currentTimestamp,
+          partialRestock: true
         });
         results.push(result);
       } catch (error) {
@@ -28205,19 +28436,19 @@ function getMerchantBarterPricingModifiers(pricing = {}) {
   return {
     successBuyModifier: normalizeMerchantBarterModifier(
       pricing?.barterSuccessBuyModifier,
-      MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05
+      MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.10
     ),
     successSellModifier: normalizeMerchantBarterModifier(
       pricing?.barterSuccessSellModifier,
-      MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05
+      MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.10
     ),
     failureBuyModifier: normalizeMerchantBarterModifier(
       pricing?.barterFailureBuyModifier,
-      MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05
+      MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.10
     ),
     failureSellModifier: normalizeMerchantBarterModifier(
       pricing?.barterFailureSellModifier,
-      MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05
+      MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.10
     )
   };
 }
@@ -28302,6 +28533,19 @@ async function postMerchantTradeToChat(outcome = {}) {
   const barterHtml = barter?.applied
     ? `<p><strong>Barter:</strong> ${poEscapeHtml(getMerchantBarterUiSummaryText(barter))}</p>`
     : "";
+  // Rework v1: include pricing modifiers in chat log
+  const stockPressureMult = Number(outcome?.stockPressureMult ?? 1) || 1;
+  const taxFeePercent = Number(outcome?.taxFeePercent ?? 0) || 0;
+  const liquidationMode = Boolean(outcome?.liquidationMode);
+  const stockPressurePct = Math.round((stockPressureMult - 1) * 100);
+  const modifierParts = [];
+  if (stockPressurePct > 0) modifierParts.push(`+${stockPressurePct}% low-stock`);
+  else if (stockPressurePct < 0) modifierParts.push(`${stockPressurePct}% stocked`);
+  if (taxFeePercent > 0) modifierParts.push(`+${taxFeePercent}% tax`);
+  if (liquidationMode) modifierParts.push("liquidation");
+  const modifierHtml = modifierParts.length > 0
+    ? `<p><em>Pricing: ${poEscapeHtml(modifierParts.join(", "))}</em></p>`
+    : "";
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
@@ -28309,6 +28553,7 @@ async function postMerchantTradeToChat(outcome = {}) {
         <p><strong>Merchant Trade</strong></p>
         <p>${poEscapeHtml(actorName)} traded with ${poEscapeHtml(merchantName)}.</p>
         ${barterHtml}
+        ${modifierHtml}
         ${buyHtml}
         ${sellHtml}
         <p><strong>Net:</strong> ${poEscapeHtml(netLabel)}</p>
@@ -28489,19 +28734,40 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     }
     return { ok: false, message: "No items selected for trade." };
   }
+  if (buyLinesRequested.length > 0 && !canUserPerformMerchantAction(user, merchant, "buy")) {
+    return { ok: false, message: "You do not have permission to buy from this merchant." };
+  }
+  if (sellLinesRequested.length > 0 && !canUserPerformMerchantAction(user, merchant, "sell")) {
+    return { ok: false, message: "You do not have permission to sell to this merchant." };
+  }
 
   let barter = normalizeMerchantTradeBarterResolution(payload?.barterResolution, merchant);
   if (!barter?.applied && payload?.autoResolveBarter === true) {
     barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
   }
-  const effectiveBuyMarkup = Math.max(
-    0,
-    Math.min(10, Number((baseBuyMarkup + Number(barter?.buyMarkupDelta ?? 0)).toFixed(2)))
-  );
   const effectiveSellRate = Math.max(
     0,
     Math.min(10, Number((baseSellRate + Number(barter?.sellRateDelta ?? 0)).toFixed(2)))
   );
+  // Rework v1: compute authoritative per-item rarity/stock/tax pricing context
+  const rarityPricingEnabled = pricing?.rarityPricingEnabled !== false;
+  const stockPressureEnabled = pricing?.stockPressureEnabled !== false;
+  const taxFeePercent = Number(pricing?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent) || 0;
+  const liquidationMode = Boolean(merchant?.liquidationMode ?? false);
+  const tradableStockCount = (merchantActor?.items?.contents ?? [])
+    .filter((i) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(i?.type ?? "").trim().toLowerCase()) && getItemTrackedQuantity(i) > 0)
+    .length;
+  const targetMaxItems = Math.max(1, Number(merchant?.stock?.maxItems ?? 20) || 20);
+  const stockPressureMult = stockPressureEnabled
+    ? getMerchantStockPressureMultiplier(tradableStockCount, targetMaxItems)
+    : 1.0;
+  const barterBuyDelta = Number(barter?.buyMarkupDelta ?? 0);
+  const barterSellDelta = Number(barter?.sellRateDelta ?? 0);
+  const resolvedSellRate = computeMerchantEffectiveSellMultiplier({
+    baseSellRate,
+    barterSellDelta,
+    haggleCapPercent: MERCHANT_HAGGLE_CAP_PERCENT
+  });
 
   const buyLines = [];
   for (const request of buyLinesRequested) {
@@ -28512,11 +28778,26 @@ async function applyMerchantTradeForUser(user, payload = {}) {
     const qty = Math.min(availableQty, Math.max(0, Math.floor(Number(request.qty ?? 0) || 0)));
     if (qty <= 0) continue;
     const itemData = getMerchantItemData(item);
+    const itemIsLiquidation = liquidationMode && String(itemData?.type ?? "").trim().toLowerCase() === "loot";
+    const rarity = getLootRarityFromData(itemData);
+    const rarityMult = (!itemIsLiquidation && rarityPricingEnabled) ? getMerchantRarityPriceMultiplier(rarity) : 1.0;
+    const effectiveBuyMult = itemIsLiquidation
+      ? 1.0
+      : computeMerchantEffectiveBuyMultiplier({
+          baseBuyMarkup,
+          rarityMultiplier: rarityMult,
+          stockPressureMultiplier: stockPressureMult,
+          taxFeePercent,
+          barterBuyDelta,
+          haggleCapPercent: MERCHANT_HAGGLE_CAP_PERCENT
+        });
     buyLines.push({
       itemId: String(item.id ?? ""),
       itemName: String(item.name ?? "Item"),
       qty,
-      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveBuyMarkup),
+      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveBuyMult),
+      rarityMult,
+      effectiveMult: effectiveBuyMult,
       sourceItem: item
     });
   }
@@ -28536,7 +28817,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       itemId: String(item.id ?? ""),
       itemName: String(item.name ?? "Item"),
       qty,
-      unitCp: getMerchantItemUnitPriceCp(itemData, effectiveSellRate),
+      unitCp: getMerchantItemUnitPriceCp(itemData, resolvedSellRate),
       sourceItem: item
     });
   }
@@ -28603,6 +28884,8 @@ async function applyMerchantTradeForUser(user, payload = {}) {
 
     const outcome = {
       ok: true,
+      userId: String(user?.id ?? ""),
+      userName: String(user?.name ?? "Player").trim() || "Player",
       actorId: String(actor.id ?? ""),
       actorName: String(actor.name ?? "Actor"),
       merchantId,
@@ -28611,8 +28894,11 @@ async function applyMerchantTradeForUser(user, payload = {}) {
       totalBuyCp,
       totalSellCp,
       netCp,
-      effectiveBuyMarkup,
-      effectiveSellRate,
+      baseBuyMarkup,
+      effectiveSellRate: resolvedSellRate,
+      stockPressureMult,
+      taxFeePercent,
+      liquidationMode,
       barter: barter?.applied
         ? {
           applied: true,
@@ -28631,7 +28917,8 @@ async function applyMerchantTradeForUser(user, payload = {}) {
         itemId: row.itemId,
         itemName: row.itemName,
         qty: row.qty,
-        unitCp: row.unitCp
+        unitCp: row.unitCp,
+        rarityMult: row.rarityMult ?? 1.0
       })),
       sellLines: sellLines.map((row) => ({
         itemId: row.itemId,
@@ -28640,6 +28927,10 @@ async function applyMerchantTradeForUser(user, payload = {}) {
         unitCp: row.unitCp
       }))
     };
+    await appendMerchantTradeLogEntry(outcome, {
+      skipLocalRefresh: true,
+      skipSocketRefresh: true
+    });
     await postMerchantTradeToChat(outcome);
     return outcome;
   } catch (error) {
@@ -28672,23 +28963,38 @@ async function applyMerchantTradeForUser(user, payload = {}) {
 }
 
 async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
-  const buyMarkup = 1 + Math.max(0, Number(merchant?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
-  const sellRateRaw = Number(merchant?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const pricing = merchant?.pricing ?? {};
+  const buyMarkup = 1 + Math.max(0, Number(pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
+  const sellRateRaw = Number(pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
   const sellRate = Number.isFinite(sellRateRaw)
     ? Math.max(0, Math.min(10, Number(sellRateRaw.toFixed(2))))
     : Number(MERCHANT_DEFAULTS.pricing.sellRate);
-  const sellEnabled = merchant?.pricing?.sellEnabled !== false;
-  const cashOnHandGpRaw = Number(merchant?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const sellEnabled = pricing?.sellEnabled !== false;
+  const cashOnHandGpRaw = Number(pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
   const configuredCashCp = Number.isFinite(cashOnHandGpRaw)
     ? Math.max(0, Math.floor(Number(cashOnHandGpRaw.toFixed(2)) * 100))
     : 0;
   const buybackAllowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(
-    merchant?.pricing?.buybackAllowedTypes
+    pricing?.buybackAllowedTypes
     ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
     ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
   ));
-  const barterEnabled = merchant?.pricing?.barterEnabled !== false;
-  const barterAbility = normalizeMerchantBarterAbility(merchant?.pricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
+  // Rework v1: rarity pricing, stock pressure, tax/fee
+  const rarityPricingEnabled = pricing?.rarityPricingEnabled !== false;
+  const stockPressureEnabled = pricing?.stockPressureEnabled !== false;
+  const taxFeePercent = Number(pricing?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent) || 0;
+  const taxFeeFactor = 1 + Math.max(0, Math.min(1, taxFeePercent / 100));
+  const stockedItems = (merchantActor?.items?.contents ?? [])
+    .filter((i) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(i?.type ?? "").trim().toLowerCase()) && getItemTrackedQuantity(i) > 0);
+  const currentStockCount = stockedItems.length;
+  const targetMaxItems = Math.max(1, Number(merchant?.stock?.maxItems ?? 20) || 20);
+  const stockPressureMult = stockPressureEnabled
+    ? getMerchantStockPressureMultiplier(currentStockCount, targetMaxItems)
+    : 1.0;
+  // liquidationMode: art/gem items (loot type with no rarity) trade at base value — no markup
+  const liquidationMode = Boolean(merchant?.liquidationMode ?? false);
+  const barterEnabled = pricing?.barterEnabled !== false;
+  const barterAbility = normalizeMerchantBarterAbility(pricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
   const barterAbilityLabel = String(MERCHANT_BARTER_ABILITY_LABELS[barterAbility] ?? "Charisma");
   const settlement = normalizeMerchantSettlementSelection(settlementInput);
   const currentUserId = String(game.user?.id ?? "").trim();
@@ -28715,7 +29021,13 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
       const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
       const itemData = getMerchantItemData(item);
       const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
-      const unitCp = getMerchantItemUnitPriceCp(itemData, buyMarkup);
+      const rarity = getLootRarityFromData(itemData);
+      const itemIsLiquidation = liquidationMode && String(itemData?.type ?? "").trim().toLowerCase() === "loot";
+      const rarityMult = (!itemIsLiquidation && rarityPricingEnabled) ? getMerchantRarityPriceMultiplier(rarity) : 1.0;
+      const effectiveBuyMult = itemIsLiquidation
+        ? 1.0
+        : buyMarkup * rarityMult * stockPressureMult * taxFeeFactor;
+      const unitCp = getMerchantItemUnitPriceCp(itemData, effectiveBuyMult);
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
@@ -28723,6 +29035,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
         qty,
         baseGp,
         unitCp,
+        rarityMult: Number(rarityMult.toFixed(4)),
         unitLabel: formatMerchantCp(unitCp),
         metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
         hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
@@ -28772,6 +29085,37 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
   const buybackTypeSummary = buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
     ? "All item types"
     : (Array.from(buybackAllowedTypeSet).map((itemType) => String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType)).join(", ") || "None");
+  const formatRecentTradeAge = (timestampInput) => {
+    const timestamp = Number(timestampInput ?? 0);
+    const deltaMs = Math.max(0, Date.now() - (Number.isFinite(timestamp) ? timestamp : 0));
+    const deltaMinutes = Math.floor(deltaMs / 60000);
+    if (deltaMinutes < 1) return "just now";
+    if (deltaMinutes < 60) return `${deltaMinutes}m ago`;
+    const deltaHours = Math.floor(deltaMinutes / 60);
+    if (deltaHours < 24) return `${deltaHours}h ago`;
+    const deltaDays = Math.floor(deltaHours / 24);
+    return `${deltaDays}d ago`;
+  };
+  const recentTrades = getMerchantTradeLogPreview(String(merchant?.id ?? ""), 3).map((entry) => ({
+    actorName: String(entry?.actorName ?? "Actor").trim() || "Actor",
+    whenLabel: formatRecentTradeAge(entry?.tradedAt ?? Date.now()),
+    netLabel: entry?.netCp > 0
+      ? `${formatMerchantCp(entry.netCp)} paid`
+      : (entry?.netCp < 0 ? `${formatMerchantCp(Math.abs(entry.netCp))} received` : "Even trade")
+  }));
+  const merchantTypeLabel = getMerchantTypeOptionsDomain(merchant?.type)
+    .find((entry) => entry.selected)?.label ?? "General";
+  const merchantDispositionLabel = getMerchantDispositionOptionsDomain(merchant?.disposition)
+    .find((entry) => entry.selected)?.label ?? "Neutral";
+  const merchantFactionLabel = String(merchant?.faction ?? "").trim();
+  // Rework v1: build display labels for pricing modifiers
+  const stockPressurePct = Math.round((stockPressureMult - 1) * 100);
+  const stockPressureLabel = stockPressurePct > 0
+    ? `+${stockPressurePct}% (low stock)`
+    : stockPressurePct < 0
+      ? `${stockPressurePct}% (well stocked)`
+      : "";
+  const taxFeeLabel = taxFeePercent > 0 ? `+${taxFeePercent}% tax` : "";
   return renderTemplate("modules/party-operations/templates/merchant-shop.hbs", {
     merchantId: String(merchant?.id ?? ""),
     actorId: String(actor?.id ?? ""),
@@ -28780,15 +29124,25 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     barterResolutionKey,
     baseBuyMarkup: buyMarkup,
     baseSellRate: sellRate,
+    stockPressureMultiplier: Number(stockPressureMult.toFixed(4)),
+    taxFeeFactor: Number(taxFeeFactor.toFixed(4)),
+    taxFeePercent,
+    liquidationMode,
     merchantName: String(merchant?.name ?? "Merchant"),
     merchantTitle: String(merchant?.title ?? "").trim(),
     merchantImg: String(merchant?.img ?? merchantActor?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    merchantTypeLabel,
+    merchantDispositionLabel,
+    merchantFactionLabel,
     actorName: String(actor?.name ?? "Actor"),
     settlementLabel,
     actorFunds,
     merchantFunds,
     buyMarkupLabel: `x${buyMarkup.toFixed(2)}`,
     sellRateLabel: `${Math.round(sellRate * 100)}%`,
+    stockPressureLabel,
+    taxFeeLabel,
+    liquidationModeLabel: liquidationMode ? "Liquidation mode" : "",
     barterEnabled,
     barterAbilityLabel,
     barterButtonLabel,
@@ -28804,6 +29158,8 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
       ? "Selling disabled"
       : (actorSellItems.length > 0 ? `${actorSellItems.length} sellable items` : "Nothing eligible to sell"),
     buybackTypeSummary,
+    hasRecentTrades: recentTrades.length > 0,
+    recentTrades,
     hasBuyRows: merchantItems.length > 0,
     buyRows: merchantItems,
     buyEmptyLabel: "No wares available.",
@@ -28904,20 +29260,34 @@ function refreshMerchantTradeDialogPricing(root) {
   const barter = barterKey ? getMerchantBarterResolutionEntryByKey(barterKey) : null;
   const baseBuyMarkup = Math.max(0, Number(root.dataset?.baseBuyMarkup ?? 1) || 1);
   const baseSellRate = Math.max(0, Number(root.dataset?.baseSellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) || MERCHANT_DEFAULTS.pricing.sellRate);
+  // Rework v1: read merchant-level pricing modifiers from the root element
+  const stockPressureMult = Math.max(0.01, Number(root.dataset?.stockPressureMultiplier ?? 1) || 1);
+  const taxFeeFactor = Math.max(1, Number(root.dataset?.taxFeeFactor ?? 1) || 1);
+  const barterBuyDelta = Number(barter?.buyMarkupDelta ?? 0);
+  const barterSellDelta = Number(barter?.sellRateDelta ?? 0);
+  // Enforce ±10% barter cap relative to base (per spec)
+  const haggleCap = MERCHANT_HAGGLE_CAP_PERCENT;
   const effectiveBuyMarkup = Math.max(
-    0,
-    Math.min(10, Number((baseBuyMarkup + Number(barter?.buyMarkupDelta ?? 0)).toFixed(2)))
+    baseBuyMarkup * (1 - haggleCap),
+    Math.min(baseBuyMarkup * (1 + haggleCap), baseBuyMarkup + barterBuyDelta)
   );
   const effectiveSellRate = Math.max(
     0,
-    Math.min(10, Number((baseSellRate + Number(barter?.sellRateDelta ?? 0)).toFixed(2)))
+    Math.min(10, Number((baseSellRate + barterSellDelta).toFixed(2)))
   );
   const priceRows = Array.from(root.querySelectorAll("tr[data-price-kind][data-base-gp]"));
   for (const row of priceRows) {
     if (!(row instanceof HTMLElement)) continue;
     const rateKind = String(row.dataset?.priceKind ?? "").trim().toLowerCase();
     const baseGp = Math.max(0, Number(row.dataset?.baseGp ?? 0) || 0);
-    const rate = rateKind === "sell" ? effectiveSellRate : effectiveBuyMarkup;
+    let rate;
+    if (rateKind === "sell") {
+      rate = effectiveSellRate;
+    } else {
+      // per-item rarity multiplier stored as data attribute on the row
+      const rarityMult = Math.max(0.01, Number(row.dataset?.rarityMult ?? 1) || 1);
+      rate = effectiveBuyMarkup * rarityMult * stockPressureMult * taxFeeFactor;
+    }
     const unitCp = Math.max(0, Math.round(baseGp * rate * 100));
     const unitLabelNode = row.querySelector("[data-merchant-unit-label]");
     if (unitLabelNode) unitLabelNode.textContent = formatMerchantCp(unitCp);
@@ -28941,6 +29311,30 @@ function bindMerchantTradeDialogTotals(html) {
   refreshMerchantTradeDialogPricing(root);
 }
 
+function bindMerchantTradeDialogSearch(html) {
+  const root = getMerchantTradeDialogRoot(html);
+  if (!root || root.dataset.poMerchantSearchBound === "1") return;
+  root.dataset.poMerchantSearchBound = "1";
+  const searchInput = root.querySelector("input[data-merchant-search]");
+  if (!(searchInput instanceof HTMLInputElement)) return;
+  let debounceTimer = null;
+  const applyFilter = () => {
+    const needle = searchInput.value.trim().toLowerCase();
+    const buyRows = Array.from(root.querySelectorAll("tr[data-price-kind='buy'][data-search]"));
+    for (const row of buyRows) {
+      if (!(row instanceof HTMLElement)) continue;
+      const searchText = String(row.dataset?.search ?? "").toLowerCase();
+      const visible = !needle || searchText.includes(needle);
+      row.hidden = !visible;
+    }
+  };
+  searchInput.addEventListener("input", () => {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(applyFilter, 120);
+  });
+  searchInput.addEventListener("search", applyFilter);
+}
+
 async function resolveMerchantBarterForUser(user, payload = {}) {
   const userId = String(user?.id ?? "").trim();
   const actorId = String(payload?.actorId ?? "").trim();
@@ -28961,14 +29355,36 @@ async function resolveMerchantBarterForUser(user, payload = {}) {
   if (!isMerchantAvailableToActor(merchant, actor, settlement, { isGM: false })) {
     return { ok: false, message: "Merchant is not currently available to this actor." };
   }
+  if (!canUserPerformMerchantAction(user, merchant, "buy") && !canUserPerformMerchantAction(user, merchant, "sell")) {
+    return { ok: false, message: "You do not have permission to barter with this merchant." };
+  }
   if (merchant?.pricing?.barterEnabled === false) {
     return { ok: false, message: "Barter is disabled for this merchant." };
+  }
+  const haggleCooldownKey = getMerchantHaggleCooldownKey({ userId, actorId, merchantId });
+  const currentWorldTimestamp = getCurrentWorldTimestamp();
+  const currentDayKey = getGatherDayKey(currentWorldTimestamp);
+  const currentCooldown = merchants?.haggleCooldowns?.[haggleCooldownKey];
+  const currentCooldownDayKey = String(currentCooldown?.dayKey ?? "").trim();
+  if (currentCooldownDayKey && currentCooldownDayKey === currentDayKey) {
+    return { ok: false, message: "Barter has already been used for this merchant today. Try again next in-game day." };
   }
 
   const barter = await rollMerchantBarterCheck(actor, merchant, { showDc: false });
   if (!barter?.applied || !Number.isFinite(Number(barter?.checkTotal))) {
     return { ok: false, message: "Barter check could not be resolved." };
   }
+
+  await updateOperationsLedger((nextLedger) => {
+    const nextMerchants = ensureMerchantsState(nextLedger);
+    nextMerchants.haggleCooldowns[haggleCooldownKey] = {
+      dayKey: currentDayKey,
+      worldTs: currentWorldTimestamp,
+      userId,
+      actorId,
+      merchantId
+    };
+  }, { skipLocalRefresh: true, skipSocketRefresh: true });
 
   const stored = {
     userId,
@@ -29196,6 +29612,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
       bindMerchantTradeDialogTotals(html);
       bindMerchantTradeDialogBarterButton(html);
       bindMerchantTradeDialogItemOpeners(html);
+      bindMerchantTradeDialogSearch(html);
     }
   }, {
     classes: ["party-operations", "po-merchant-shop-dialog-app"],
@@ -40522,6 +40939,8 @@ async function applyLootCurrencyClaimForUser(user, actorIdInput, runIdInput = ""
     return { ok: false, message: "Failed to add currency to actor." };
   }
 
+  const claimedAt = Date.now();
+
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
     const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
@@ -40645,6 +41064,8 @@ async function applyLootCurrencySplitForUser(user, actorIdsInput = [], runIdInpu
     };
   }
 
+  const claimedAt = Date.now();
+
   await updateOperationsLedger((nextLedger) => {
     const nextClaims = ensureLootClaimsState(nextLedger);
     const nextBoard = getLootClaimBoardFromState(nextClaims, board.id, { requireOpen: true });
@@ -40749,6 +41170,41 @@ async function claimLootCurrencyForPlayer(element) {
     runId
   });
   ui.notifications?.info("Currency deposit request sent to GM.");
+}
+
+async function claimLootItemForPlayer(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const actorId = getLootClaimActorIdFromElement(element);
+  const itemId = String(element?.dataset?.itemId ?? "").trim();
+  if (!actorId) {
+    ui.notifications?.warn("Select a destination to receive the item.");
+    return;
+  }
+  if (!itemId) {
+    ui.notifications?.warn("That loot item could not be identified.");
+    return;
+  }
+
+  if (canAccessAllPlayerOps()) {
+    const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
+    if (!outcome.ok) {
+      ui.notifications?.warn(outcome.message ?? "Item claim failed.");
+      return;
+    }
+    await postLootItemClaimToChat(outcome);
+    ui.notifications?.info(`${outcome.actorName} received ${outcome.quantity}x ${outcome.itemName}.`);
+    if (outcome?.completion?.completed) await showLootRunCompletionSummary(outcome?.completion?.summary ?? null);
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:loot-claim",
+    userId: game.user.id,
+    actorId,
+    itemId,
+    runId
+  });
+  ui.notifications?.info("Loot claim request sent to GM.");
 }
 
 async function splitLootCurrencyForPlayer(element) {
@@ -47238,6 +47694,12 @@ export function buildPartyOperationsReadyConfig() {
 
 export function onPartyOperationsReady() {
   runPartyOperationsReady(buildPartyOperationsReadyConfig());
+  // Rework v1: run merchant data migration on ready
+  void runMerchantDataMigration().catch((error) => {
+    if (isModuleDebugEnabled()) {
+      console.warn(`${MODULE_ID}: merchant data migration error`, error);
+    }
+  });
 }
 
 const {

@@ -36,6 +36,13 @@ function normalizeCurationScore(value = 0) {
   return Math.max(0, Math.min(10, numeric));
 }
 
+function normalizeStrictnessValue(value = 100) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  const normalized = numeric > 10 ? (numeric / 100) : numeric;
+  return Math.max(0.5, Math.min(3, normalized));
+}
+
 function getEntryIdentity(entry = {}) {
   const uuid = normalizeText(entry?.uuid);
   if (uuid) return `uuid:${uuid}`;
@@ -77,7 +84,6 @@ function countCategoryOverlap(candidateCategories = [], selectedEntry = {}) {
 export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase = "spend") {
   const selected = Array.isArray(state?.selected) ? state.selected : [];
   const recentRollMalus = getRecentRollMalus(entry);
-  if (!selected.length) return Math.max(0.000001, Number(recentRollMalus.toFixed(6)));
 
   const mode = normalizeText(state?.draft?.mode ?? state?.budgetContext?.mode ?? "horde") || "horde";
   const phaseKey = normalizeText(phase) === "fill" ? "fill" : "spend";
@@ -208,6 +214,27 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   // Major hordes: unlock full weight for rare/unique items
   if (mode === "horde") {
     const scale = normalizeText(state?.draft?.scale ?? state?.budgetContext?.scale ?? "medium");
+    const strictness = normalizeStrictnessValue(
+      state?.draft?.valueStrictness ?? state?.budgetContext?.valueStrictness ?? 100
+    );
+    const strictnessPressure = Math.max(0, Math.min(1, (strictness - 1) / 2));
+    if (strictnessPressure > 0) {
+      const lowCurationGap = Math.max(0, 5 - candidateCurationScore);
+      if (candidateSourceClass === "generated" && lowCurationGap > 0) {
+        const penaltyStrength = (lowCurationGap / 5) * (0.42 * strictnessPressure);
+        weight *= Math.max(0.45, 1 - penaltyStrength);
+      }
+      if (candidateSourceClass === "curated") {
+        weight *= 1 + (0.1 * strictnessPressure);
+      }
+      if (candidateSourcePolicy === "anchor") {
+        weight *= 1 + (0.12 * strictnessPressure);
+      }
+      if (candidateSourcePolicy === "outside-budget" && phaseKey === "spend") {
+        weight *= Math.max(0.6, 1 - (0.22 * strictnessPressure));
+      }
+    }
+
     if (scale === "small") {
       // Small scale: penalize high-value or high-weight items
       if (Number(entry?.lootWeight ?? 1) > 1.2) {
