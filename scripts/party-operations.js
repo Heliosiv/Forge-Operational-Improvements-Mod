@@ -44412,12 +44412,13 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
+    return true;
+  }
+  const state = getRestWatchState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
+  } else {
     await applyRestRequest(mutatorOrRequest, game.user.id, {
-      if (!normalizedRequest) return;
-      game.socket.emit(SOCKET_CHANNEL, {
-        type: "march:mutate",
-        request: normalizedRequest
-      });
       getRestWatchState,
       game,
       resolveRequester,
@@ -44481,12 +44482,14 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     if (!options.skipLocalRefresh) {
       // Refresh immediately for player to avoid stale lag
       refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
+    }
+    return true;
+  }
+
+  const state = getMarchingOrderState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
   } else {
-      if (!normalizedRequest) return;
-      game.socket.emit(SOCKET_CHANNEL, {
-        type: "rest:mutate",
-        request: normalizedRequest
-      });
     await applyMarchRequest(mutatorOrRequest, game.user.id, {
       getMarchingOrderState,
       game,
