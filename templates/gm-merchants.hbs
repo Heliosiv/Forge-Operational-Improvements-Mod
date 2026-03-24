@@ -335,7 +335,33 @@
               />
             </label>
             <div class="po-op-summary">{{merchants.gm.editor.autoRefreshSummaryLabel}}</div>
-            <div class="po-op-summary">Stock amount is scarcity-driven. Max stack size is fixed at 20.</div>
+            <label class="po-resource-row">
+              <span>Mundane Ammo Weight Boost</span>
+              <input
+                type="number"
+                min="1"
+                max="10"
+                step="0.1"
+                name="merchantMundaneAmmoWeightBoost"
+                class="po-input"
+                data-action="merchant-editor-draft-change"
+                value="{{merchants.gm.editor.mundaneAmmoWeightBoost}}"
+              />
+            </label>
+            <label class="po-resource-row">
+              <span>Mundane Ammo Stack Size</span>
+              <input
+                type="number"
+                min="1"
+                max="200"
+                step="1"
+                name="merchantMundaneAmmoStackSize"
+                class="po-input"
+                data-action="merchant-editor-draft-change"
+                value="{{merchants.gm.editor.mundaneAmmoStackSize}}"
+              />
+            </label>
+            <div class="po-op-summary">Mundane ammo uses this weight boost and rolls in this stack size when selected.</div>
           </div>
         </div>
         {{/if}}

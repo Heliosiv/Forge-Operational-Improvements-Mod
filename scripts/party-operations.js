@@ -7277,6 +7277,8 @@ function buildOperationsContextFallback() {
           autoRefreshSummaryLabel: "Stock refresh remains manual until auto-refresh is enabled.",
           duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
           maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
+          mundaneAmmoWeightBoost: Number(MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost ?? 3),
+          mundaneAmmoStackSize: Number(MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize ?? 20),
           rarityWeightCommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100),
           rarityWeightUncommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45),
           rarityWeightRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16),
@@ -25923,6 +25925,76 @@ function setMerchantItemDataQuantity(itemData = {}, quantity = 1) {
   return data;
 }
 
+function getMerchantSpellLevelFromData(itemData = {}) {
+  const direct = Number(itemData?.system?.level);
+  if (Number.isFinite(direct)) return Math.max(0, Math.floor(direct));
+  const legacy = Number(itemData?.level);
+  if (Number.isFinite(legacy)) return Math.max(0, Math.floor(legacy));
+  return 0;
+}
+
+function getMerchantSpellScrollName(sourceName = "", level = 0) {
+  const baseName = String(sourceName ?? "").trim() || "Spell";
+  if (/^spell\s*scroll/i.test(baseName)) return baseName;
+  const normalizedLevel = Math.max(0, Math.floor(Number(level) || 0));
+  const levelLabel = normalizedLevel <= 0 ? "Cantrip" : `Level ${normalizedLevel}`;
+  return `Spell Scroll (${levelLabel}) - ${baseName}`;
+}
+
+function coerceMerchantCandidateDataToStockItemData(itemData = {}) {
+  const data = foundry.utils.deepClone(itemData ?? {});
+  const itemType = String(data?.type ?? "").trim().toLowerCase();
+  if (itemType !== "spell") return data;
+
+  const quantity = Math.max(1, Math.floor(Number(getMerchantItemDataQuantity(data) || 1)));
+  const level = getMerchantSpellLevelFromData(data);
+  const sourceName = String(data?.name ?? "Spell").trim() || "Spell";
+  const existingSystem = data.system && typeof data.system === "object"
+    ? foundry.utils.deepClone(data.system)
+    : {};
+  const existingDescription = existingSystem.description && typeof existingSystem.description === "object"
+    ? foundry.utils.deepClone(existingSystem.description)
+    : {};
+  const existingUses = existingSystem.uses && typeof existingSystem.uses === "object"
+    ? foundry.utils.deepClone(existingSystem.uses)
+    : {};
+  const existingType = existingSystem.type && typeof existingSystem.type === "object"
+    ? foundry.utils.deepClone(existingSystem.type)
+    : {};
+
+  data.type = "consumable";
+  data.name = getMerchantSpellScrollName(sourceName, level);
+  data.system = {
+    ...existingSystem,
+    description: {
+      ...existingDescription,
+      value: String(existingDescription?.value ?? "").trim(),
+      chat: String(existingDescription?.chat ?? "").trim()
+    },
+    type: {
+      ...existingType,
+      value: "scroll",
+      subtype: String(existingType?.subtype ?? "").trim()
+    },
+    uses: {
+      ...existingUses,
+      max: String(existingUses?.max ?? "1").trim() || "1",
+      spent: Math.max(0, Math.floor(Number(existingUses?.spent ?? 0) || 0)),
+      recovery: Array.isArray(existingUses?.recovery) ? existingUses.recovery : [],
+      autoDestroy: existingUses?.autoDestroy !== false
+    }
+  };
+
+  setMerchantItemDataQuantity(data, quantity);
+  if (!data.flags || typeof data.flags !== "object") data.flags = {};
+  if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
+  data.flags[MODULE_ID].merchantSourceSpell = {
+    name: sourceName,
+    level
+  };
+  return data;
+}
+
 function getMerchantItemTagsFromData(itemData = {}) {
   const explicitTags = normalizeMerchantTagList(
     itemData?.flags?.[MODULE_ID]?.tags
@@ -27069,7 +27141,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       offerTagLabels,
       offerTagSummary: offerTagLabels.join(", ") || "All",
       curatedItemCount: normalizeMerchantCuratedItemUuids(merchant?.stock?.curatedItemUuids ?? []).length,
-      maxStackSize: 20,
+      maxStackSize: Math.max(1, Number(merchant?.stock?.maxStackSize ?? MERCHANT_DEFAULTS.stock.maxStackSize) || MERCHANT_DEFAULTS.stock.maxStackSize),
+      mundaneAmmoWeightBoost: Math.max(1, Number(merchant?.stock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost) || MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost),
+      mundaneAmmoStackSize: Math.max(1, Number(merchant?.stock?.mundaneAmmoStackSize ?? MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize) || MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize),
       targetStockValueGp,
       targetStockValueGpLabel: `${targetStockValueGp.toLocaleString(undefined, { maximumFractionDigits: 0 })} gp`,
       valueStrictness,
@@ -27377,6 +27451,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorAutoRefreshSummaryLabel = editorAutoRefreshEnabled
     ? `Stock refreshes automatically every ${editorAutoRefreshIntervalDays} day${editorAutoRefreshIntervalDays === 1 ? "" : "s"} as the calendar advances.`
     : "Stock refresh remains manual until auto-refresh is enabled.";
+  const editorMundaneAmmoWeightBoost = Math.max(
+    1,
+    Math.min(10, Number(editorDraft?.stock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost) || MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost)
+  );
+  const editorMundaneAmmoStackSize = Math.max(
+    1,
+    Math.min(200, Math.floor(Number(editorDraft?.stock?.mundaneAmmoStackSize ?? MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize) || MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize))
+  );
   const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
   const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
   const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
@@ -27551,6 +27633,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         autoRefreshSummaryLabel: editorAutoRefreshSummaryLabel,
         duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
         maxStackSize: 20,
+        mundaneAmmoWeightBoost: editorMundaneAmmoWeightBoost,
+        mundaneAmmoStackSize: editorMundaneAmmoStackSize,
         rarityWeightCommon: Number(editorRarityWeights?.common ?? 100),
         rarityWeightUncommon: Number(editorRarityWeights?.uncommon ?? 45),
         rarityWeightRare: Number(editorRarityWeights?.rare ?? 16),
@@ -27823,6 +27907,14 @@ function readMerchantDefinitionPatchFromElement(element) {
     ),
     duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
     maxStackSize: 20,
+    mundaneAmmoWeightBoost: getNumber(
+      "input[name='merchantMundaneAmmoWeightBoost']",
+      Number(existingStock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost ?? 3)
+    ),
+    mundaneAmmoStackSize: getNumber(
+      "input[name='merchantMundaneAmmoStackSize']",
+      Number(existingStock?.mundaneAmmoStackSize ?? MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize ?? 20)
+    ),
     rarityWeights,
     existingStock,
     existingPricing
@@ -28102,7 +28194,7 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
 
   const createData = [];
   for (const candidate of selectedRows) {
-    const data = foundry.utils.deepClone(candidate.data ?? {});
+    const data = coerceMerchantCandidateDataToStockItemData(candidate.data ?? {});
     if (!data || typeof data !== "object") continue;
     if (Object.prototype.hasOwnProperty.call(data, "_id")) delete data._id;
     const requestedQuantity = Number(candidate?.quantity ?? getMerchantItemDataQuantity(data));
@@ -44320,13 +44412,12 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
     });
     // Refresh immediately for player to avoid stale lag
     refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.REST });
-    return true;
-  }
-  const state = getRestWatchState();
-  if (typeof mutatorOrRequest === "function") {
-    mutatorOrRequest(state);
-  } else {
     await applyRestRequest(mutatorOrRequest, game.user.id, {
+      if (!normalizedRequest) return;
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "march:mutate",
+        request: normalizedRequest
+      });
       getRestWatchState,
       game,
       resolveRequester,
@@ -44390,13 +44481,12 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
     if (!options.skipLocalRefresh) {
       // Refresh immediately for player to avoid stale lag
       refreshOpenApps({ scope: REFRESH_SCOPE_KEYS.MARCH });
-    }
-    return true;
-  }
-  const state = getMarchingOrderState();
-  if (typeof mutatorOrRequest === "function") {
-    mutatorOrRequest(state);
   } else {
+      if (!normalizedRequest) return;
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "rest:mutate",
+        request: normalizedRequest
+      });
     await applyMarchRequest(mutatorOrRequest, game.user.id, {
       getMarchingOrderState,
       game,

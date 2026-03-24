@@ -115,17 +115,21 @@ export async function routeGmSocketMessage(message, context = {}) {
   }
 
   if (message.type === "rest:mutate") {
-    const requester = getActivePlayerRequester();
     const request = normalizeSocketRestRequest(message.request);
-    if (!requester || !request) return true;
+    if (!request) return true;
+    // Allow request to proceed; applyRestRequest will check per-actor permissions
+    // Requester may be null if userId not in message (after SBP-001 fix)
+    const requester = getActivePlayerRequester() || { id: null, name: "Unknown" };
     await applyRestRequest(request, requester);
     return true;
   }
 
   if (message.type === "march:mutate") {
-    const requester = getActivePlayerRequester();
     const request = normalizeSocketMarchRequest(message.request);
-    if (!requester || !request) return true;
+    if (!request) return true;
+    // Allow request to proceed; applyMarchRequest will check per-actor permissions
+    // Requester may be null if userId not in message (after SBP-001 fix)
+    const requester = getActivePlayerRequester() || { id: null, name: "Unknown" };
     await applyMarchRequest(request, requester);
     return true;
   }

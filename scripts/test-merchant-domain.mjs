@@ -60,6 +60,9 @@ assert.deepEqual(starterPatch.pricing, {
   sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled,
   cashOnHandGp: MERCHANT_DEFAULTS.pricing.cashOnHandGp,
   buybackAllowedTypes: [...MERCHANT_DEFAULTS.pricing.buybackAllowedTypes],
+  taxFeePercent: Number(MERCHANT_DEFAULTS.pricing.taxFeePercent ?? 0),
+  rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
+  stockPressureEnabled: Boolean(MERCHANT_DEFAULTS.pricing.stockPressureEnabled),
   barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled,
   barterDc: MERCHANT_DEFAULTS.pricing.barterDc,
   barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
@@ -82,6 +85,16 @@ assert.equal(barterPatch.pricing.barterSuccessBuyModifier, -0.15);
 assert.equal(barterPatch.pricing.barterSuccessSellModifier, 0.2);
 assert.equal(barterPatch.pricing.barterFailureBuyModifier, 0.15);
 assert.equal(barterPatch.pricing.barterFailureSellModifier, -0.3);
+
+const ammoSettingsPatch = buildMerchantDefinitionPatchFromEditorForm({
+  name: "Ammo Tuner",
+  mundaneAmmoWeightBoost: 4.5,
+  mundaneAmmoStackSize: 40,
+  existingStock: {},
+  existingPricing: {}
+});
+assert.equal(ammoSettingsPatch.stock.mundaneAmmoWeightBoost, 4.5);
+assert.equal(ammoSettingsPatch.stock.mundaneAmmoStackSize, 40);
 
 const ammoCandidates = [
   {
@@ -124,5 +137,75 @@ assert.ok(
   ammoSelection.some((entry) => String(entry?.key ?? "").includes("::stack-")),
   "Expected additional ammo stacks once a stack reaches max size."
 );
+
+const ammoWeightCandidates = [
+  {
+    key: "Item.ammo.mundane.arrow",
+    name: "Arrow",
+    gpValue: 1,
+    rarityBucket: "common",
+    data: { name: "Arrow", type: "ammunition" },
+    keywords: []
+  },
+  {
+    key: "Item.ammo.magic.arrow-plus-1",
+    name: "Arrow +1",
+    gpValue: 1,
+    rarityBucket: "common",
+    data: { name: "Arrow +1", type: "ammunition" },
+    keywords: ["loot.weapon.magic"]
+  }
+];
+
+const ammoWeightMerchant = {
+  stock: {
+    maxItems: 1,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+};
+
+const weightedAmmoSelection = selectMerchantStockRows(ammoWeightCandidates, ammoWeightMerchant, {
+  randomFn: () => 0.6,
+  shuffleRows: (rows) => rows
+});
+
+assert.equal(weightedAmmoSelection.length, 1);
+assert.equal(weightedAmmoSelection[0]?.sourceKey ?? weightedAmmoSelection[0]?.key, "Item.ammo.mundane.arrow");
+assert.equal(
+  Math.max(1, Math.floor(Number(weightedAmmoSelection[0]?.quantity ?? 1) || 1)),
+  20,
+  "Expected mundane ammo rolls to create 20-unit stacks."
+);
+
+const tunedAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[0]], {
+  stock: {
+    maxItems: 1,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 40,
+    mundaneAmmoWeightBoost: 5,
+    mundaneAmmoStackSize: 40,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+}, {
+  randomFn: () => 0.4,
+  shuffleRows: (rows) => rows
+});
+assert.equal(Math.max(1, Math.floor(Number(tunedAmmoSelection[0]?.quantity ?? 1) || 1)), 40);
 
 process.stdout.write("merchant domain validation passed\n");

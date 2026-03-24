@@ -113,6 +113,8 @@ const MERCHANT_MAX_KEYWORD_COUNT = 60;
 const MERCHANT_MAX_KEYWORD_LENGTH = 80;
 const MERCHANT_MAX_DUPLICATE_CHANCE = 100;
 const MERCHANT_MAX_STACK_SIZE = 25;
+const MERCHANT_MAX_MUNDANE_AMMO_WEIGHT_BOOST = 10;
+const MERCHANT_MAX_MUNDANE_AMMO_STACK_SIZE = 200;
 const MERCHANT_MAX_RARITY_WEIGHT = 100;
 const MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS = 365;
 const MERCHANT_MAX_GENERATED_ITEM_COUNT = 250;
@@ -377,6 +379,8 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
     duplicateChance: 25,
     maxStackSize: 20,
+    mundaneAmmoWeightBoost: 3,
+    mundaneAmmoStackSize: 20,
     rarityWeights: Object.freeze({ ...MERCHANT_DEFAULT_RARITY_WEIGHTS }),
     autoRefresh: Object.freeze({
       enabled: false,
@@ -443,6 +447,16 @@ export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   })
 ]);
 
+function deepCloneValue(value, foundryRef = globalThis.foundry) {
+  const deepClone = foundryRef?.utils?.deepClone;
+  if (typeof deepClone === "function") return deepClone(value);
+  try {
+    return structuredClone(value);
+  } catch {
+    return JSON.parse(JSON.stringify(value));
+  }
+}
+
 function clampMerchantMarkupPercent(value, fallback = 0) {
   const raw = Number(value);
   if (!Number.isFinite(raw)) return Math.max(0, Math.min(MERCHANT_MAX_MARKUP_PERCENT, Number(fallback) || 0));
@@ -473,6 +487,22 @@ function clampMerchantMaxStackSize(value, fallback = MERCHANT_DEFAULTS.stock.max
   const raw = Number(value);
   if (!Number.isFinite(raw)) return Math.max(1, Math.min(MERCHANT_MAX_STACK_SIZE, Math.floor(Number(fallback) || 1)));
   return Math.max(1, Math.min(MERCHANT_MAX_STACK_SIZE, Math.floor(raw)));
+}
+
+function clampMerchantMundaneAmmoWeightBoost(value, fallback = MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) {
+    return Math.max(1, Math.min(MERCHANT_MAX_MUNDANE_AMMO_WEIGHT_BOOST, Number(fallback) || 1));
+  }
+  return Math.max(1, Math.min(MERCHANT_MAX_MUNDANE_AMMO_WEIGHT_BOOST, Number(raw.toFixed(2))));
+}
+
+function clampMerchantMundaneAmmoStackSize(value, fallback = MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) {
+    return Math.max(1, Math.min(MERCHANT_MAX_MUNDANE_AMMO_STACK_SIZE, Math.floor(Number(fallback) || 1)));
+  }
+  return Math.max(1, Math.min(MERCHANT_MAX_MUNDANE_AMMO_STACK_SIZE, Math.floor(raw)));
 }
 
 export function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
@@ -822,7 +852,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     location: normalizeMerchantLocation(blueprint?.location ?? MERCHANT_DEFAULTS.location),
     disposition: normalizeMerchantDisposition(blueprint?.disposition ?? MERCHANT_DEFAULTS.disposition),
     liquidationMode: Boolean(blueprint?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode),
-    permissions: foundry.utils.deepClone(MERCHANT_DEFAULTS.permissions),
+    permissions: deepCloneValue(MERCHANT_DEFAULTS.permissions),
     accessMode: "all",
     isHidden: false,
     requiresContract: false,
@@ -874,6 +904,8 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
       duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
       maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
+      mundaneAmmoWeightBoost: MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost,
+      mundaneAmmoStackSize: MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize,
       rarityWeights: normalizeMerchantRarityWeights(MERCHANT_DEFAULTS.stock.rarityWeights),
       autoRefresh: normalizeMerchantAutoRefreshConfig(MERCHANT_DEFAULTS.stock.autoRefresh)
     },
@@ -1020,12 +1052,20 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   );
   const scarcity = normalizeMerchantScarcity(source?.scarcity ?? existingStock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
   const duplicateChance = clampMerchantDuplicateChance(
-    MERCHANT_DEFAULTS.stock.duplicateChance,
+    source?.duplicateChance ?? existingStock?.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance,
     MERCHANT_DEFAULTS.stock.duplicateChance
   );
   const maxStackSize = clampMerchantMaxStackSize(
-    MERCHANT_DEFAULTS.stock.maxStackSize,
+    source?.maxStackSize ?? existingStock?.maxStackSize ?? MERCHANT_DEFAULTS.stock.maxStackSize,
     MERCHANT_DEFAULTS.stock.maxStackSize
+  );
+  const mundaneAmmoWeightBoost = clampMerchantMundaneAmmoWeightBoost(
+    source?.mundaneAmmoWeightBoost ?? existingStock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost,
+    MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost
+  );
+  const mundaneAmmoStackSize = clampMerchantMundaneAmmoStackSize(
+    source?.mundaneAmmoStackSize ?? existingStock?.mundaneAmmoStackSize ?? MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize,
+    MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize
   );
   const rarityWeights = normalizeMerchantRarityWeights(
     source?.rarityWeights ?? existingStock?.rarityWeights,
@@ -1127,6 +1167,8 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       scarcity,
       duplicateChance,
       maxStackSize,
+      mundaneAmmoWeightBoost,
+      mundaneAmmoStackSize,
       rarityWeights,
       autoRefresh
     },
@@ -1331,6 +1373,30 @@ function chooseWeightedRow(entries = [], weightAccessor = () => 1, randomFn = Ma
   return weighted[weighted.length - 1]?.entry ?? entries[0] ?? null;
 }
 
+function isAmmoCandidate(candidate = {}) {
+  const dataType = String(candidate?.data?.type ?? "").trim().toLowerCase();
+  if (dataType === "ammunition") return true;
+  const itemType = String(candidate?.itemType ?? "").trim().toLowerCase();
+  return itemType === "ammunition";
+}
+
+function getAmmoEnchantmentLevel(candidate = {}) {
+  if (!isAmmoCandidate(candidate)) return 0;
+  const candidateName = String(candidate?.name ?? candidate?.data?.name ?? "").trim();
+  const plusMatch = candidateName.match(/\+(\d+)/);
+  if (plusMatch) {
+    const parsed = Number.parseInt(String(plusMatch[1] ?? "0"), 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const keywords = Array.isArray(candidate?.keywords) ? candidate.keywords : [];
+  const hasMagicKeyword = keywords.some((value) => String(value ?? "").trim().toLowerCase().includes("magic"));
+  return hasMagicKeyword ? 1 : 0;
+}
+
+function isMundaneAmmoCandidate(candidate = {}) {
+  return isAmmoCandidate(candidate) && getAmmoEnchantmentLevel(candidate) <= 0;
+}
+
 export function selectMerchantStockRows(candidates = [], merchant = {}, options = {}) {
   const normalizeCuratedItemUuids = typeof options?.normalizeCuratedItemUuids === "function"
     ? options.normalizeCuratedItemUuids
@@ -1384,6 +1450,14 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   const budgetTolerance = budgetEnabled ? valueTolerance.toleranceGp : Infinity;
   const budgetHardCap = budgetEnabled ? valueTolerance.maxGp : Infinity;
   const maxGeneratedRows = MERCHANT_MAX_GENERATED_ITEM_COUNT;
+  const mundaneAmmoWeightBoost = clampMerchantMundaneAmmoWeightBoost(
+    stock?.mundaneAmmoWeightBoost,
+    MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost
+  );
+  const mundaneAmmoRollQuantity = clampMerchantMundaneAmmoStackSize(
+    stock?.mundaneAmmoStackSize,
+    MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize
+  );
   const canAddRows = () => selected.length < targetCount;
   const canAddRowsBeyondTarget = () => budgetEnabled && runningValue < targetValueGp && selected.length < maxGeneratedRows;
 
@@ -1488,7 +1562,13 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   const getSelectionWeight = (candidate) => {
     const curatedBoost = candidate?.isCurated ? 1.25 : 1;
-    return getRarityWeight(candidate) * getBudgetWeight(candidate) * curatedBoost;
+    const ammoBoost = isMundaneAmmoCandidate(candidate) ? mundaneAmmoWeightBoost : 1;
+    return getRarityWeight(candidate) * getBudgetWeight(candidate) * curatedBoost * ammoBoost;
+  };
+
+  const getRollQuantity = (candidate) => {
+    if (isMundaneAmmoCandidate(candidate)) return mundaneAmmoRollQuantity;
+    return 1;
   };
 
   if (curatedOrder.length > 0) {
@@ -1496,7 +1576,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       if (!canAddRows() && !canAddRowsBeyondTarget()) break;
       const match = candidateByKey.get(String(uuid ?? "").trim());
       if (!match) continue;
-      addSelection(match, 1, { bypassBudget: true });
+      addSelection(match, getRollQuantity(match), { bypassBudget: true });
     }
   }
 
@@ -1511,9 +1591,9 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const duplicatePool = selected
       .filter((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
     const affordableCandidates = canAddNewCandidate
-      ? remainingCandidates.filter((entry) => canAffordCandidate(entry, 1))
+      ? remainingCandidates.filter((entry) => canAffordCandidate(entry, getRollQuantity(entry)))
       : [];
-    const affordableDuplicates = duplicatePool.filter((entry) => canAffordCandidate(entry, 1));
+    const affordableDuplicates = duplicatePool.filter((entry) => canAffordCandidate(entry, getRollQuantity(entry)));
 
     const canDuplicate = affordableDuplicates.length > 0;
     const shouldDuplicate = canDuplicate && duplicateChance > 0 && random() < duplicateChance;
@@ -1526,7 +1606,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
         return rarityWeight * valueWeight * affordableBoost;
       }, random);
       if (duplicatePick) {
-        addSelection(duplicatePick, 1);
+        addSelection(duplicatePick, getRollQuantity(duplicatePick));
         continue;
       }
     }
@@ -1534,7 +1614,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     if (affordableCandidates.length > 0) {
       const picked = chooseWeightedRow(affordableCandidates, getSelectionWeight, random);
       if (picked) {
-        addSelection(picked, 1);
+        addSelection(picked, getRollQuantity(picked));
         continue;
       }
     }
@@ -1542,7 +1622,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     if (canDuplicate) {
       const fallbackDuplicate = chooseWeightedRow(affordableDuplicates, getSelectionWeight, random);
       if (fallbackDuplicate) {
-        addSelection(fallbackDuplicate, 1);
+        addSelection(fallbackDuplicate, getRollQuantity(fallbackDuplicate));
         continue;
       }
     }
@@ -1550,7 +1630,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   }
 
   if (selected.length === 0 && shuffled.length > 0) {
-    addSelection(shuffled[0], 1);
+    addSelection(shuffled[0], getRollQuantity(shuffled[0]));
   }
   return selected;
 }
