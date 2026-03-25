@@ -17169,6 +17169,24 @@ function getLootSelectionTotalValueGp(entries = []) {
   }, 0).toFixed(2));
 }
 
+function getRemainingLootBudgetGp(targetBudgetGp = 0, spentValueGp = 0) {
+  const safeTargetBudgetGp = Math.max(0, Number(targetBudgetGp) || 0);
+  const safeSpentValueGp = Math.max(0, Number(spentValueGp) || 0);
+  return Math.max(0, Number((safeTargetBudgetGp - safeSpentValueGp).toFixed(2)));
+}
+
+function getLootRemainingSelectionBudgetGp(targetBudgetGp = 0, entries = []) {
+  return getRemainingLootBudgetGp(targetBudgetGp, getLootSelectionTotalValueGp(entries));
+}
+
+function buildLootCurrencyBudgetContext(budgetContext = {}, selectedValuablesValueGp = 0) {
+  const targetCurrencyBudgetGp = Math.max(0, Number(budgetContext?.targetCurrencyBudgetGp ?? 0) || 0);
+  return {
+    ...budgetContext,
+    targetCoinBudgetGp: getRemainingLootBudgetGp(targetCurrencyBudgetGp, selectedValuablesValueGp)
+  };
+}
+
 function buildLootValuablesLaneTargets(draft = {}, budgetContext = {}, valuablesPool = [], targetCount = 0) {
   const valuablesBudgetGp = Math.max(0, Number(budgetContext?.targetValuablesBudgetGp ?? 0) || 0);
   const safeTargetCount = Math.max(0, Math.floor(Number(targetCount) || 0));
@@ -21003,18 +21021,6 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
     Math.max(1, Math.ceil(targetCount * Math.max(0.2, valuablesShare))),
     1
   );
-  const valuablesBudgetContext = buildLootBucketBudgetContext(
-    budgetContext,
-    Math.max(
-      valuablesBudgetGp,
-      Math.min(...valuablesPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
-    ),
-    valuablesCountTarget,
-    {
-      selectionCategory: "valuables",
-      maxItems: Math.max(valuablesCountTarget + 1, valuablesCountTarget * 2)
-    }
-  );
   const valuablesTargets = buildLootValuablesLaneTargets(draft, budgetContext, valuablesPool, valuablesCountTarget);
   const artSelected = valuablesTargets.artCountTarget > 0
     ? pickLootItemsFromCandidates(valuablesTargets.artPool, valuablesTargets.artCountTarget, draft, {
@@ -21039,7 +21045,7 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
       .map((entry) => String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase())
       .filter(Boolean)
   );
-  const remainingValuablesBudgetGp = Math.max(0, Number((valuablesBudgetGp - getLootSelectionTotalValueGp(artSelected)).toFixed(2)));
+  const remainingValuablesBudgetGp = getLootRemainingSelectionBudgetGp(valuablesBudgetGp, artSelected);
   const gemPoolForSelection = artSelectedKeys.size > 0
     ? valuablesTargets.gemPool.filter((entry) => {
       const key = String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase();
@@ -21055,7 +21061,7 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
       budgetContext: buildLootBucketBudgetContext(
         budgetContext,
         Math.max(
-          Math.min(remainingValuablesBudgetGp, Math.max(0, Number(valuablesTargets.gemBudgetTargetGp ?? 0) || 0)),
+          remainingValuablesBudgetGp,
           Math.min(...gemPoolForSelection.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
         ),
         gemCountTarget,
@@ -21074,6 +21080,10 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
       .filter(Boolean)
   );
   const remainingValuablesCount = Math.max(0, valuablesCountTarget - artSelected.length - gemSelected.length);
+  const remainingMixedValuablesBudgetGp = getLootRemainingSelectionBudgetGp(
+    valuablesBudgetGp,
+    [...artSelected, ...gemSelected]
+  );
   const remainingValuablesPool = remainingValuablesCount > 0
     ? valuablesPool.filter((entry) => {
       const key = String(entry?.uuid ?? entry?.name ?? "").trim().toLowerCase();
@@ -21082,7 +21092,18 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
     : [];
   const mixedValuablesSelected = remainingValuablesCount > 0 && remainingValuablesPool.length > 0
     ? pickLootItemsFromCandidates(remainingValuablesPool, remainingValuablesCount, draft, {
-      budgetContext: valuablesBudgetContext,
+      budgetContext: buildLootBucketBudgetContext(
+        budgetContext,
+        Math.max(
+          remainingMixedValuablesBudgetGp,
+          Math.min(...remainingValuablesPool.map((entry) => Math.max(1, Number(entry?.itemValueGp ?? 1) || 1)))
+        ),
+        remainingValuablesCount,
+        {
+          selectionCategory: "valuables",
+          maxItems: Math.max(remainingValuablesCount + 1, remainingValuablesCount * 2)
+        }
+      ),
       randomContext,
       selectionCategory: "valuables"
     })
@@ -21177,14 +21198,12 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
     ? hoardGeneralPreferredPool
     : (generalRemainingPool.length > 0 ? generalRemainingPool : generalPool);
   const baseItemBudgetGp = Math.max(0, Number(budgetContext?.targetItemBudgetGp ?? 0) || 0);
-  const premiumReservedBudgetGp = premiumSelected.length > 0
-    ? Math.max(0, Number(premiumLane.targetBudgetGp ?? 0) || 0)
-    : 0;
+  const premiumSelectedValueGp = getLootSelectionTotalValueGp(premiumSelected);
   const generalSelected = remainingCountTarget > 0
     ? pickLootItemsFromCandidates(generalPoolForSelection, remainingCountTarget, draft, {
       budgetContext: buildLootBucketBudgetContext(
         budgetContext,
-        Math.max(0, Number((baseItemBudgetGp - premiumReservedBudgetGp).toFixed(2))),
+        getRemainingLootBudgetGp(baseItemBudgetGp, premiumSelectedValueGp),
         remainingCountTarget,
         {
           selectionCategory: "general",
@@ -21297,9 +21316,10 @@ async function generateLootPreviewPayload(draftInput = {}) {
       ...entry
     }));
     const itemTotals = calculateLootPreviewValueTotals({ items, currency: { pp: 0, gp: 0, sp: 0, cp: 0, gpEquivalent: 0 } }, runtimeBudgetContext);
-    const currency = await rollLootCurrency(draft, randomContext, runtimeBudgetContext, itemTotals.finalItemsValueGp);
+    const currencyBudgetContext = buildLootCurrencyBudgetContext(runtimeBudgetContext, itemTotals.finalValuablesValueGp);
+    const currency = await rollLootCurrency(draft, randomContext, currencyBudgetContext, itemTotals.finalItemsValueGp);
     const generatedItemCount = items.reduce((sum, entry) => sum + Math.max(1, Math.floor(Number(entry?.quantity ?? 1) || 1)), 0);
-    const valueTotals = calculateLootPreviewValueTotals({ items, currency }, previewBudgetContext);
+    const valueTotals = calculateLootPreviewValueTotals({ items, currency }, runtimeBudgetContext);
     const resolvedSelectionMeta = selectionMeta ?? {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
