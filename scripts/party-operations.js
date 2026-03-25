@@ -20141,6 +20141,17 @@ function resolveLootBudgetEnforcementTolerance(targetTotalGp = 0, toleranceGp = 
   return Math.max(1, Math.min(safeTolerance, Math.max(minimumWorkingTolerance, tightenedFromBand)));
 }
 
+function getLootBudgetItemCap(budgetContext = {}, fallbackTargetCount = 1) {
+  const targetCount = Math.max(1, Math.floor(Number(
+    fallbackTargetCount
+    ?? budgetContext?.targetCount
+    ?? 1
+  ) || 1));
+  const configuredMaxItems = Math.max(0, Math.floor(Number(budgetContext?.maxItems ?? 0) || 0));
+  const autoMaxItems = Math.max(0, Math.floor(Number(budgetContext?.autoMaxItems ?? 0) || 0));
+  return Math.max(targetCount, configuredMaxItems > 0 ? configuredMaxItems : autoMaxItems);
+}
+
 function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spend") {
   const budgetContext = state?.budgetContext ?? {};
   const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
@@ -20246,7 +20257,10 @@ function commitLootBudgetPick(state = {}, picked = null) {
     const candidate = row?.candidate;
     if (!candidate) continue;
     const selectedCount = getLootSelectedQuantityCount(state?.selected);
-    const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? state?.budgetContext?.targetCount ?? 1) || 1));
+    const targetCount = getLootBudgetItemCap(
+      state?.budgetContext ?? {},
+      state?.targetCount ?? state?.budgetContext?.targetCount ?? 1
+    );
     const remainingSlots = Math.max(0, targetCount - selectedCount);
     if (remainingSlots <= 0) break;
     const requestedQuantity = Math.min(
@@ -20378,10 +20392,14 @@ function spendBudgetLoop(state = {}) {
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
-    const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
-    const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
     const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
-    const effectiveItemCap = maxItems > 0 ? Math.min(maxItems, targetCount) : targetCount;
+    const effectiveItemCap = getLootBudgetItemCap(
+      {
+        ...budgetContext,
+        maxItems: state?.maxItems ?? budgetContext?.maxItems ?? 0
+      },
+      targetCount
+    );
     let safety = 0;
     while (safety < 600) {
       safety += 1;
@@ -20431,10 +20449,14 @@ function fillPass(state = {}) {
     const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
     const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
     const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
-    const maxItemsRaw = Number(state?.maxItems ?? budgetContext?.maxItems ?? 0);
-    const maxItems = Number.isFinite(maxItemsRaw) ? Math.max(0, Math.floor(maxItemsRaw)) : 0;
     const targetCount = Math.max(1, Math.floor(Number(state?.targetCount ?? budgetContext?.targetCount ?? 1) || 1));
-    const effectiveItemCap = maxItems > 0 ? Math.min(maxItems, targetCount) : targetCount;
+    const effectiveItemCap = getLootBudgetItemCap(
+      {
+        ...budgetContext,
+        maxItems: state?.maxItems ?? budgetContext?.maxItems ?? 0
+      },
+      targetCount
+    );
     let safety = 0;
     while (safety < 400) {
       safety += 1;
@@ -20680,6 +20702,7 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
     const randomContext = (options?.randomContext && typeof options.randomContext === "object")
       ? options.randomContext
       : buildLootRandomContext(draft, budgetContext);
+    const effectiveItemCap = getLootBudgetItemCap(budgetContext, budgetContext?.targetCount ?? targetCount);
     const initialPool = [...candidates];
     const state = {
       pool: initialPool,
@@ -20695,11 +20718,11 @@ function pickLootItemsFromCandidates(candidates, count = 0, draft = {}, options 
       },
       rarityCaps: (options?.rarityCaps && typeof options.rarityCaps === "object")
         ? options.rarityCaps
-        : getLootRaritySelectionCaps(draft, Math.max(targetCount, Number(budgetContext?.maxItems ?? 0) || 0)),
+        : getLootRaritySelectionCaps(draft, effectiveItemCap),
       budgetContext,
       selectionCategory: String(options?.selectionCategory ?? budgetContext?.selectionCategory ?? "").trim().toLowerCase(),
       targetCount: Math.max(1, Number(budgetContext?.targetCount ?? targetCount) || targetCount),
-      maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
+      maxItems: effectiveItemCap,
       draft,
       random: randomContext?.random ?? Math.random,
       diagnostics: []
@@ -20954,6 +20977,7 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
   const randomContext = (options?.randomContext && typeof options.randomContext === "object")
     ? options.randomContext
     : buildLootRandomContext(draft, budgetContext);
+  const effectiveItemCap = getLootBudgetItemCap(budgetContext, budgetContext?.targetCount ?? targetCount);
   const mode = String(draft?.mode ?? budgetContext?.mode ?? "horde").trim().toLowerCase();
   const valuablesBudgetGp = Math.max(0, Number(budgetContext?.targetValuablesBudgetGp ?? 0) || 0);
   if (mode !== "horde" || valuablesBudgetGp <= 0) {
@@ -21197,7 +21221,7 @@ function pickLootItemsAcrossBudgetBuckets(candidates, count = 0, draft = {}, opt
     deterministic: Boolean(randomContext?.deterministic),
     seed: String(randomContext?.seed ?? ""),
     desiredItemCount: targetCount,
-    maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
+    maxItems: effectiveItemCap,
     encounterTargetGp: Math.max(0, Number(
       budgetContext?.configuredTotalTargetGp
       ?? budgetContext?.effectiveTotalTargetGp
@@ -21280,7 +21304,7 @@ async function generateLootPreviewPayload(draftInput = {}) {
       deterministic: Boolean(randomContext?.deterministic),
       seed: String(randomContext?.seed ?? ""),
       desiredItemCount: itemCountTarget,
-      maxItems: Math.max(0, Number(previewBudgetContext?.maxItems ?? 0) || 0),
+      maxItems: getLootBudgetItemCap(runtimeBudgetContext, itemCountTarget),
       encounterTargetGp: Number(previewBudgetContext?.effectiveTotalTargetGp ?? 0),
       itemTargetGp: Number(previewBudgetContext?.targetItemBudgetGp ?? 0),
       currencyTargetGp: Number(previewBudgetContext?.targetCurrencyBudgetGp ?? 0),
@@ -39850,10 +39874,11 @@ function buildLootPreviewAdditionalItemBudgetContext(draft = {}, result = null, 
 
 function buildLootPreviewAdditionalItemState(candidates = [], selectedSummary = {}, draft = {}, budgetContext = {}, randomContext = {}) {
   const totalQuantity = Math.max(0, Number(selectedSummary?.totalQuantity ?? 0) || 0);
+  const effectiveItemCap = getLootBudgetItemCap(budgetContext, budgetContext?.targetCount ?? 1);
   const rarityCapCount = Math.max(
     totalQuantity + 1,
     Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1),
-    Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0)
+    effectiveItemCap
   );
   return {
     pool: [...(Array.isArray(candidates) ? candidates : [])],
@@ -39870,7 +39895,7 @@ function buildLootPreviewAdditionalItemState(candidates = [], selectedSummary = 
     rarityCaps: getLootRaritySelectionCaps(draft, rarityCapCount),
     budgetContext,
     targetCount: Math.max(1, Number(budgetContext?.targetCount ?? 1) || 1),
-    maxItems: Math.max(0, Number(budgetContext?.maxItems ?? 0) || 0),
+    maxItems: effectiveItemCap,
     draft,
     random: randomContext?.random ?? Math.random,
     diagnostics: []

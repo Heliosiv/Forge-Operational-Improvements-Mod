@@ -12,7 +12,8 @@ function extractFunctionBlock(source, functionName, nextFunctionName) {
   return source.slice(start, end).trim();
 }
 
-const quantityCountBlock = extractFunctionBlock(moduleSource, "getLootSelectedQuantityCount", "getLootBudgetPhaseCandidateWeight");
+const quantityCountBlock = extractFunctionBlock(moduleSource, "getLootSelectedQuantityCount", "getLootBudgetItemCap");
+const itemCapBlock = extractFunctionBlock(moduleSource, "getLootBudgetItemCap", "getLootBudgetPhaseCandidateWeight");
 const commitBlock = extractFunctionBlock(moduleSource, "commitLootBudgetPick", "buildLootPhaseSelectionPool");
 
 const context = vm.createContext({
@@ -32,17 +33,20 @@ const context = vm.createContext({
 
 vm.runInContext(`
 ${quantityCountBlock}
+${itemCapBlock}
 ${commitBlock}
 result.getLootSelectedQuantityCount = getLootSelectedQuantityCount;
+result.getLootBudgetItemCap = getLootBudgetItemCap;
 result.commitLootBudgetPick = commitLootBudgetPick;
 `, context);
 
-const { getLootSelectedQuantityCount, commitLootBudgetPick } = context.result;
+const { getLootSelectedQuantityCount, getLootBudgetItemCap, commitLootBudgetPick } = context.result;
 
 assert.equal(getLootSelectedQuantityCount([{ quantity: 2 }, { quantity: 3 }]), 5);
+assert.equal(getLootBudgetItemCap({ targetCount: 4, autoMaxItems: 6 }, 4), 6);
 
 const state = {
-  budgetContext: { targetItemBudgetGp: 200, targetCount: 4 },
+  budgetContext: { targetItemBudgetGp: 200, targetCount: 4, autoMaxItems: 6 },
   targetCount: 4,
   pool: [],
   selected: [
@@ -82,8 +86,8 @@ const committed = commitLootBudgetPick(state, {
 
 assert.equal(committed, true);
 assert.equal(state.selected.length, 2);
-assert.equal(state.selected[1].quantity, 1);
-assert.equal(getLootSelectedQuantityCount(state.selected), 4);
-assert.equal(state.selectedTotalValueGp, 35);
+assert.equal(state.selected[1].quantity, 3);
+assert.equal(getLootSelectedQuantityCount(state.selected), 6);
+assert.equal(state.selectedTotalValueGp, 45);
 
 process.stdout.write("loot picker item cap validation passed\n");
