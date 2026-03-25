@@ -20152,11 +20152,33 @@ function getLootSelectedQuantityCount(entries = []) {
 }
 
 function resolveLootBudgetEnforcementTolerance(targetTotalGp = 0, toleranceGp = 0) {
-  const safeTarget = Math.max(1, Number(targetTotalGp) || 1);
   const safeTolerance = Math.max(1, Number(toleranceGp) || 1);
-  const tightenedFromBand = Math.max(1, Number((safeTolerance * 0.65).toFixed(2)));
-  const minimumWorkingTolerance = Math.max(1, Number((safeTarget * 0.035).toFixed(2)));
-  return Math.max(1, Math.min(safeTolerance, Math.max(minimumWorkingTolerance, tightenedFromBand)));
+  return safeTolerance;
+}
+
+function isLootCorrectiveOvershootEntry(entry = {}, state = {}, phase = "spend") {
+  const budgetContext = state?.budgetContext ?? {};
+  const selectedTotalValueGp = Math.max(0, Number(state?.selectedTotalValueGp ?? 0) || 0);
+  const targetTotal = Math.max(1, Number(budgetContext?.targetItemBudgetGp ?? budgetContext?.effectiveTotalTargetGp ?? 1) || 1);
+  const toleranceGp = Math.max(1, Number(budgetContext?.itemToleranceGp ?? budgetContext?.toleranceGp ?? 1) || 1);
+  const enforcedToleranceGp = resolveLootBudgetEnforcementTolerance(targetTotal, toleranceGp);
+  const value = Math.max(0, Number(entry?.itemValueGp ?? 0) || 0);
+  const outsideBudgetPolicy = isLootOutsideBudgetPolicy(entry);
+  const currentDeltaGp = Math.abs(targetTotal - selectedTotalValueGp);
+  const projectedTotalGp = selectedTotalValueGp + value;
+  const projectedDeltaGp = Math.abs(targetTotal - projectedTotalGp);
+  const remaining = Math.max(0, targetTotal - selectedTotalValueGp);
+  const allowedOvershootGp = outsideBudgetPolicy
+    ? Math.max(toleranceGp * 3, enforcedToleranceGp)
+    : toleranceGp;
+  if (value <= 0 || projectedTotalGp <= targetTotal) return false;
+  if (projectedTotalGp > (targetTotal + allowedOvershootGp)) return false;
+  if (projectedDeltaGp >= currentDeltaGp) return false;
+  const minimumImprovementGp = phase === "fill"
+    ? Math.max(0.5, Number((enforcedToleranceGp * 0.05).toFixed(2)))
+    : Math.max(1, Number((enforcedToleranceGp * 0.12).toFixed(2)));
+  if ((currentDeltaGp - projectedDeltaGp) < minimumImprovementGp) return false;
+  return remaining > enforcedToleranceGp || projectedDeltaGp <= toleranceGp;
 }
 
 function getLootBudgetItemCap(budgetContext = {}, fallbackTargetCount = 1) {
@@ -20184,10 +20206,11 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
   const overshootAllowanceRatio = Math.max(0.05, Math.min(0.45, Number(budgetContext?.overshootAllowanceRatio ?? 0.2) || 0.2));
   const overshootLimit = Math.max(1, remaining * (1 + overshootAllowanceRatio));
   const outsideBudgetPolicy = isLootOutsideBudgetPolicy(entry);
-  if (!outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > overshootLimit) return 0;
-  if (!outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)))) return 0;
-  if (outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > (overshootLimit * 3)) return 0;
-  if (outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * 3.5)) return 0;
+  const correctiveOvershoot = isLootCorrectiveOvershootEntry(entry, state, phase);
+  if (!outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > overshootLimit && !correctiveOvershoot) return 0;
+  if (!outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio))) && !correctiveOvershoot) return 0;
+  if (outsideBudgetPolicy && phase === "spend" && remaining > enforcedToleranceGp && value > (overshootLimit * 3) && !correctiveOvershoot) return 0;
+  if (outsideBudgetPolicy && phase === "fill" && value > Math.max(1, remaining * 3.5) && !correctiveOvershoot) return 0;
 
   const sourceWeight = Math.max(1, Number(entry?.sourceWeight ?? 1) || 1);
   const profileWeight = Math.max(0.1, Number(entry?.profileWeight ?? 1) || 1);
@@ -20229,11 +20252,14 @@ function getLootBudgetPhaseCandidateWeight(entry = {}, state = {}, phase = "spen
     if (projectedDeltaGp < currentDeltaGp) {
       const gainRatio = (currentDeltaGp - projectedDeltaGp) / Math.max(1, currentDeltaGp);
       budgetWeight *= 1 + Math.min(2.4, gainRatio * 2.2);
+      if (correctiveOvershoot) {
+        budgetWeight *= 1.3 + Math.min(0.45, gainRatio);
+      }
     } else if (!outsideBudgetPolicy && remaining > enforcedToleranceGp) {
-      budgetWeight *= 0.08;
+      budgetWeight *= 0.18;
     }
   } else if (phase === "fill") {
-    budgetWeight *= projectedDeltaGp < currentDeltaGp ? 1.35 : 0.35;
+    budgetWeight *= projectedDeltaGp < currentDeltaGp ? (correctiveOvershoot ? 2.4 : 1.35) : 0.35;
   }
   const lootWeight = Math.max(0.05, Number(entry?.lootWeight ?? 1) || 1);
   const treasureKindWeight = Math.max(0.01, Number(
@@ -20390,16 +20416,41 @@ function buildLootPhaseSelectionPool(state = {}, phase = "spend") {
       return value <= effectiveCapGp;
     });
   if (rawPool.length === 0) return [];
+  const correctivePool = [...rawPool]
+    .filter((entry) => isLootCorrectiveOvershootEntry(entry, state, phase))
+    .sort((left, right) => {
+      const leftProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(left?.itemValueGp ?? 0) || 0)));
+      const rightProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(right?.itemValueGp ?? 0) || 0)));
+      if (leftProjectedDelta !== rightProjectedDelta) return leftProjectedDelta - rightProjectedDelta;
+      return Math.max(0, Number(left?.itemValueGp ?? 0) || 0) - Math.max(0, Number(right?.itemValueGp ?? 0) || 0);
+    })
+    .slice(0, phase === "fill" ? 8 : 10);
   if (phase === "spend" && remaining > enforcedToleranceGp) {
     const budgetPool = rawPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= overshootLimit);
-    if (budgetPool.length > 0) return budgetPool;
-    return [...rawPool].sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0)).slice(0, 18);
+    if (budgetPool.length > 0) {
+      return [...new Set([...budgetPool, ...correctivePool])];
+    }
+    if (correctivePool.length > 0) return correctivePool;
+    return [...rawPool].sort((left, right) => {
+      const leftProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(left?.itemValueGp ?? 0) || 0)));
+      const rightProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(right?.itemValueGp ?? 0) || 0)));
+      if (leftProjectedDelta !== rightProjectedDelta) return leftProjectedDelta - rightProjectedDelta;
+      return Math.max(0, Number(left?.itemValueGp ?? 0) || 0) - Math.max(0, Number(right?.itemValueGp ?? 0) || 0);
+    }).slice(0, 18);
   }
   if (phase === "fill") {
     const fillLimit = Math.max(1, remaining * (1 + Math.min(0.2, overshootAllowanceRatio)));
     const fillPool = rawPool.filter((entry) => Math.max(0, Number(entry?.itemValueGp ?? 0) || 0) <= fillLimit);
-    if (fillPool.length > 0) return fillPool;
-    return [...rawPool].sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0)).slice(0, 12);
+    if (fillPool.length > 0) {
+      return [...new Set([...fillPool, ...correctivePool])];
+    }
+    if (correctivePool.length > 0) return correctivePool;
+    return [...rawPool].sort((left, right) => {
+      const leftProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(left?.itemValueGp ?? 0) || 0)));
+      const rightProjectedDelta = Math.abs(targetTotal - (selectedTotalValueGp + Math.max(0, Number(right?.itemValueGp ?? 0) || 0)));
+      if (leftProjectedDelta !== rightProjectedDelta) return leftProjectedDelta - rightProjectedDelta;
+      return Math.max(0, Number(left?.itemValueGp ?? 0) || 0) - Math.max(0, Number(right?.itemValueGp ?? 0) || 0);
+    }).slice(0, 12);
   }
   return rawPool;
 }
