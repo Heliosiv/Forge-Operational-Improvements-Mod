@@ -1579,8 +1579,6 @@ const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
   cha: "Charisma"
 });
 const NON_GM_READONLY_ACTIONS = new Set([
-  "set-role",
-  "clear-role",
   "toggle-sop",
   "set-resource",
   "run-gather-preset",
@@ -7013,27 +7011,7 @@ function buildOperationsContextFallback() {
       items: []
     };
   }
-  const roleMeta = [
-    { key: "quartermaster", label: "Quartermaster", bonus: "+Supply discipline", penalty: "Missed ration/ammo tracking", hint: "Assign this role to keep supply usage, load tracking, and upkeep consistent." },
-    { key: "cartographer", label: "Cartographer", bonus: "+Route clarity", penalty: "Navigation uncertainty", hint: "Assign this role to maintain route notes, landmarks, and navigation prep." },
-    { key: "chronicler", label: "Chronicler", bonus: "+Operational recall", penalty: "Lost session intel", hint: "Assign this role to track key discoveries, risks, and mission outcomes." },
-    { key: "steward", label: "Steward", bonus: "+Financial control", penalty: "Debt/coin drift", hint: "Assign this role to manage coin flow, contracts, and downtime costs." }
-  ];
-  const roles = roleMeta.map((role) => {
-    const actorId = String(ledger.roles?.[role.key] ?? "");
-    const actor = actorId ? game.actors.get(actorId) : null;
-    return {
-      key: role.key,
-      label: role.label,
-      actorId,
-      actorName: actor?.name ?? "Unassigned",
-      hasActor: Boolean(actor),
-      bonus: role.bonus,
-      penalty: role.penalty,
-      hint: role.hint,
-      actorOptions: buildRoleActorOptions(actorId)
-    };
-  });
+  const roles = [];
   const sops = [];
   const roleCoverage = roles.filter((role) => role.hasActor).length;
   const activeSops = 0;
@@ -7585,11 +7563,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPageGm: operationsPageValue === "gm",
         gmOpsTabEnvironment: gmOperationsTab === "environment",
         gmOpsTabLootSources: gmOperationsTab === "loot-sources",
-        operationsPlanningRoles: operationsPlanningTab === "roles",
         operationsPlanningSops: false,
         operationsPlanningResources: operationsPlanningTab === "resources",
         operationsPlanningLoot: operationsPlanningTab === "loot",
-        operationsPlanningBonuses: operationsPlanningTab === "bonuses",
         autofillSummary: {
           rosterCount: autofillRosterCount,
           visibleCapacity: autofillVisibleCapacity,
@@ -7689,11 +7665,9 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         operationsPageGm: fallbackOpsPage === "gm",
         gmOpsTabEnvironment: fallbackGmOpsTab === "environment",
         gmOpsTabLootSources: fallbackGmOpsTab === "loot-sources",
-        operationsPlanningRoles: fallbackPlanningTab === "roles",
         operationsPlanningSops: false,
         operationsPlanningResources: fallbackPlanningTab === "resources",
         operationsPlanningLoot: fallbackPlanningTab === "loot",
-        operationsPlanningBonuses: fallbackPlanningTab === "bonuses",
         autofillSummary: {
           rosterCount: fallbackAutofillRosterCount,
           visibleCapacity: fallbackAutofillVisibleCapacity,
@@ -8314,12 +8288,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           }
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "set-role": async () => {
-          await setOperationalRole(element);
-        },
-        "clear-role": async () => {
-          await clearOperationalRole(element);
-        },
         "toggle-sop": async () => {
           await toggleOperationalSOP(element, { skipLocalRefresh: true });
         },
@@ -8780,7 +8748,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           openGlobalModifierSummaryPage({ force: true });
         },
         "gm-quick-open-environment": async () => {
-          openGmEnvironmentPage({ force: true });
+          openGmDowntimePage({ force: true });
         },
         "gm-quick-open-downtime": async () => {
           openGmDowntimePage({ force: true });
@@ -8801,26 +8769,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "gm-quick-submit-faction": async () => {
           await gmQuickSubmitFaction(element);
-        },
-        "gm-quick-submit-modifier": async () => {
-          await gmQuickSubmitModifier(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
-        "gm-quick-save-modifier": async () => {
-          await gmQuickSaveModifier(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
-        "gm-quick-set-staged-field": async () => {
-          await gmQuickSetStagedModifierField(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
-        "gm-quick-delete-staged-modifier": async () => {
-          await gmQuickDeleteStagedModifier(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
-        "gm-quick-delete-saved-modifier": async () => {
-          await gmQuickDeleteSavedModifier(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
         "gm-quick-sync-integrations": async () => {
           scheduleIntegrationSync("gm-quick-action");
@@ -8845,12 +8793,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "gm-quick-weather-set": async () => {
           gmQuickUpdateWeatherDraftField(element);
-        },
-        "gm-quick-modifier-key-preset": async () => {
-          gmQuickApplyModifierKeyPreset(element);
-        },
-        "gm-quick-modifier-key-filter": async () => {
-          filterModifierPresetSelect(element, "quickGlobalModifierKey");
         },
         "gm-quick-weather-dae-key-preset": async () => {
           gmQuickApplyWeatherDaeKeyPreset(element);
@@ -9046,19 +8988,10 @@ export class OperationsShellApp extends RestWatchApp {
 }
 
 function buildGlobalModifierSummaryContext() {
-  const operations = getStandaloneOpsContext();
   const ledger = getOperationsLedger();
-  const roleKeys = ["quartermaster", "cartographer", "chronicler", "steward"];
-  const roles = roleKeys.map((key) => {
-    const actorId = String(ledger.roles?.[key] ?? "").trim();
-    return {
-      hasActor: Boolean(actorId && game.actors?.get(actorId))
-    };
-  });
+  const roles = [];
   const sops = [];
   const effects = getOperationalEffects(ledger, roles, sops);
-  const partyHealth = ensurePartyHealthState(ledger);
-  const customModifierById = new Map((partyHealth.customModifiers ?? []).map((entry) => [String(entry?.id ?? ""), entry]));
 
   const globalRows = (effects.derivedModifierRows ?? [])
     .filter((row) => row?.enabled)
@@ -9070,89 +9003,14 @@ function buildGlobalModifierSummaryContext() {
       note: String(row?.note ?? "").trim()
     }));
 
-  const partyRows = (effects.customModifierRows ?? [])
-    .filter((row) => row?.enabled)
-    .map((row) => {
-      const modifierId = String(row?.modifierId ?? "");
-      const customId = modifierId.startsWith("custom:") ? modifierId.slice("custom:".length) : "";
-      const customEntry = customModifierById.get(customId);
-      const modeLabel = String(row?.modeLabel ?? "").trim() || (customEntry ? getActiveEffectModeLabel(customEntry.mode) : "-");
-      return {
-        label: String(row?.label ?? "Modifier").trim() || "Modifier",
-        modeLabel,
-        key: String(row?.key ?? "").trim() || "-",
-        value: String(row?.effectiveFormatted ?? row?.formatted ?? row?.value ?? "-").trim() || "-",
-        appliesTo: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
-        note: String(row?.note ?? "").trim()
-      };
-    });
-
-  const exclusionRows = (effects.globalModifierRows ?? []).map((row) => {
-    const modifierId = String(row?.modifierId ?? "").trim();
-    const source = String(row?.source ?? "derived").trim() || "derived";
-    const customId = modifierId.startsWith("custom:") ? modifierId.slice("custom:".length) : "";
-    const customEntry = customModifierById.get(customId);
-    const excluded = source === "custom"
-      ? !(customEntry?.enabled !== false)
-      : row?.enabled === false;
-    const enabled = !excluded;
-    return {
-      modifierId,
-      label: String(row?.label ?? "Modifier").trim() || "Modifier",
-      source,
-      scopeLabel: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
-      valueLabel: String(row?.formatted ?? row?.value ?? "-").trim() || "-",
-      excluded,
-      enabled
-    };
-  });
-  const gmQuickTools = operations?.gmQuickTools ?? {
-    modifierModeOptions: [],
-    modifierKeyOptions: [],
-    stagedModifierQueue: [],
-    hasStagedModifierQueue: false,
-    modifierAddLog: [],
-    hasModifierAddLog: false
-  };
-
   return {
     moduleVersion: getCurrentModuleVersion(),
     generatedAtLabel: new Date().toLocaleString(),
     generatedBy: String(game.user?.name ?? "GM"),
     globalRows,
-    partyRows,
-    exclusionRows,
-    gmQuickTools,
     hasGlobalRows: globalRows.length > 0,
-    hasPartyRows: partyRows.length > 0,
-    hasExclusionRows: exclusionRows.length > 0,
-    hasAnyRows: globalRows.length > 0 || partyRows.length > 0
+    hasAnyRows: globalRows.length > 0
   };
-}
-
-async function setGlobalModifierExcluded(modifierId, excluded, options = {}) {
-  const normalizedId = String(modifierId ?? "").trim();
-  if (!normalizedId) return false;
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can update modifier exclusions.");
-    return false;
-  }
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    if (normalizedId.startsWith("custom:")) {
-      const customId = normalizedId.slice("custom:".length);
-      const entry = (partyHealth.customModifiers ?? []).find((row) => String(row?.id ?? "") === customId);
-      if (entry) entry.enabled = !excluded;
-      return;
-    }
-    if (!partyHealth.modifierEnabled || typeof partyHealth.modifierEnabled !== "object") {
-      partyHealth.modifierEnabled = {};
-    }
-    partyHealth.modifierEnabled[normalizedId] = !excluded;
-  }, options);
-
-  return true;
 }
 
 function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
@@ -9197,19 +9055,7 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         generatedAtLabel: new Date().toLocaleString(),
         generatedBy: String(game.user?.name ?? "GM"),
         globalRows: [],
-        partyRows: [],
-        exclusionRows: [],
-        gmQuickTools: {
-          modifierModeOptions: [],
-          modifierKeyOptions: [],
-          stagedModifierQueue: [],
-          hasStagedModifierQueue: false,
-          modifierAddLog: [],
-          hasModifierAddLog: false
-        },
         hasGlobalRows: false,
-        hasPartyRows: false,
-        hasExclusionRows: false,
         hasAnyRows: false
       };
     }
@@ -9284,61 +9130,6 @@ export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(Applica
         openGmPanelByKey(panelKey, { force: true });
       });
 
-      bindChangeOnce("[data-action='global-modifier-set-excluded']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const modifierId = String(element?.dataset?.modifierId ?? "").trim();
-        const excluded = !Boolean(element?.checked);
-        await setGlobalModifierExcluded(modifierId, excluded, { skipLocalRefresh: true });
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindInputOnce("[data-action='gm-quick-modifier-key-filter']", (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        filterModifierPresetSelect(element, "quickGlobalModifierKey");
-      });
-
-      bindChangeOnce("[data-action='gm-quick-modifier-key-preset']", (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        gmQuickApplyModifierKeyPreset(element);
-      });
-
-      bindClickOnce("[data-action='gm-quick-submit-modifier']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await gmQuickSubmitModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindClickOnce("[data-action='gm-quick-save-modifier']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await gmQuickSaveModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindChangeOnce("[data-action='gm-quick-set-staged-field']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await gmQuickSetStagedModifierField(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindClickOnce("[data-action='gm-quick-delete-staged-modifier']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await gmQuickDeleteStagedModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindClickOnce("[data-action='gm-quick-delete-saved-modifier']", async (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await gmQuickDeleteSavedModifier(element);
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
     }
     restorePendingWindowState(this);
     restorePendingUiState(this);
@@ -9588,17 +9379,9 @@ function openGmFactionsPage(renderOptions = { force: true }) {
 }
 
 function openGmEnvironmentPage(renderOptions = { force: true }) {
-  const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessGmPage()) {
-    ui.notifications?.warn("GM permissions are required to view environment controls.");
-    return null;
-  }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE);
-  const app = existingApp?.element?.isConnected
-    ? existingApp
-    : new GmEnvironmentPageApp(getResponsiveWindowOptions("gm-environment"));
-  app.render(renderOptions);
-  return app;
+  openGmDowntimePage(renderOptions);
+  ui.notifications?.info("Environment has been removed from Party Operations.");
+  return null;
 }
 
 function openGmDowntimePage(renderOptions = { force: true }) {
@@ -9672,7 +9455,7 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   } else if (key === "global-modifiers") {
     app = openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
   } else if (key === "environment") {
-    app = openGmEnvironmentPage({ ...renderOptions, suppressHistory });
+    app = openGmDowntimePage({ ...renderOptions, suppressHistory });
   } else if (key === "downtime") {
     app = openGmDowntimePage({ ...renderOptions, suppressHistory });
   } else if (key === "merchants") {
@@ -22700,11 +22483,6 @@ function buildDefaultOperationsLedger() {
       logs: []
     },
     partyHealth: {
-      modifierEnabled: {},
-      customModifiers: [],
-      stagedModifierQueue: [],
-      modifierAddLog: [],
-      archivedSyncEffects: [],
       syncToSceneNonParty: true,
       nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
     },
@@ -22835,16 +22613,8 @@ function getOperationsLedger() {
   merged.environment.logs = Array.isArray(merged.environment.logs) ? merged.environment.logs : [];
   merged.environment.checkResults = Array.isArray(merged.environment.checkResults) ? merged.environment.checkResults : [];
   merged.weather.logs = Array.isArray(merged.weather.logs) ? merged.weather.logs : [];
-  merged.partyHealth.customModifiers = Array.isArray(merged.partyHealth.customModifiers) ? merged.partyHealth.customModifiers : [];
-  merged.partyHealth.stagedModifierQueue = Array.isArray(merged.partyHealth.stagedModifierQueue)
-    ? merged.partyHealth.stagedModifierQueue
-    : [];
-  merged.partyHealth.modifierAddLog = Array.isArray(merged.partyHealth.modifierAddLog)
-    ? merged.partyHealth.modifierAddLog
-    : [];
-  merged.partyHealth.archivedSyncEffects = Array.isArray(merged.partyHealth.archivedSyncEffects)
-    ? merged.partyHealth.archivedSyncEffects
-    : [];
+  merged.partyHealth.syncToSceneNonParty = merged.partyHealth.syncToSceneNonParty !== false;
+  merged.partyHealth.nonPartySyncScope = getNonPartySyncScope(merged.partyHealth.nonPartySyncScope);
 
   merged.resources.gather = ensureObject(merged.resources.gather, defaults.resources.gather);
   merged.resources.gather.weatherMods = ensureObject(merged.resources.gather.weatherMods, defaults.resources.gather.weatherMods);
@@ -22891,17 +22661,6 @@ async function updateOperationsLedger(mutator, options = {}) {
     });
     throw error;
   }
-}
-
-function buildRoleActorOptions(selectedActorId) {
-  return game.actors.contents
-    .filter((actor) => actor.type === "character" || actor.hasPlayerOwner)
-    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""))
-    .map((actor) => ({
-      id: actor.id,
-      name: actor.name,
-      selected: actor.id === selectedActorId
-    }));
 }
 
 function getOwnedPcActors() {
@@ -23254,52 +23013,7 @@ function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
 
 function buildOperationsContext() {
   const ledger = getOperationsLedger();
-  const roleMeta = [
-    {
-      key: "quartermaster",
-      label: "Quartermaster",
-      bonus: "+Supply discipline",
-      penalty: "Missed ration/ammo tracking",
-      hint: "Assign this role to keep supply usage, load tracking, and upkeep consistent."
-    },
-    {
-      key: "cartographer",
-      label: "Cartographer",
-      bonus: "+Route clarity",
-      penalty: "Navigation uncertainty",
-      hint: "Assign this role to maintain route notes, landmarks, and navigation prep."
-    },
-    {
-      key: "chronicler",
-      label: "Chronicler",
-      bonus: "+Operational recall",
-      penalty: "Lost session intel",
-      hint: "Assign this role to track key discoveries, risks, and mission outcomes."
-    },
-    {
-      key: "steward",
-      label: "Steward",
-      bonus: "+Financial control",
-      penalty: "Debt/coin drift",
-      hint: "Assign this role to manage coin flow, contracts, and downtime costs."
-    }
-  ];
-
-  const roles = roleMeta.map((role) => {
-    const actorId = ledger.roles?.[role.key] ?? "";
-    const actor = actorId ? game.actors.get(actorId) : null;
-    return {
-      key: role.key,
-      label: role.label,
-      actorId,
-      actorName: actor?.name ?? "Unassigned",
-      hasActor: Boolean(actor),
-      bonus: role.bonus,
-      penalty: role.penalty,
-      hint: role.hint,
-      actorOptions: buildRoleActorOptions(actorId)
-    };
-  });
+  const roles = [];
 
   const sops = [];
 
@@ -23804,7 +23518,7 @@ function buildOperationsContext() {
     },
     recon,
     partyHealth: {
-      customModifiers: partyHealthState.customModifiers.map((entry) => ({
+      customModifiers: (partyHealthState.customModifiers ?? []).map((entry) => ({
         ...entry,
         modeLabel: getActiveEffectModeLabel(entry.mode),
         keyHint: partyModifierKeyOptions.find((option) => option.value === entry.key)?.hint ?? "",
@@ -24029,12 +23743,8 @@ function buildOperationsContext() {
 }
 
 function getOperationalEffects(ledger, roles, sops) {
-  const roleCoverage = roles.filter((role) => role.hasActor).length;
+  const roleCoverage = Array.isArray(roles) ? roles.filter((role) => role.hasActor).length : 0;
   const activeSops = Array.isArray(sops) ? sops.filter((sop) => sop?.active).length : 0;
-  const hasQuartermaster = Boolean(ledger.roles?.quartermaster);
-  const hasCartographer = Boolean(ledger.roles?.cartographer);
-  const hasChronicler = Boolean(ledger.roles?.chronicler);
-  const hasSteward = Boolean(ledger.roles?.steward);
   const recon = buildReconContext(ensureReconState(ledger));
   const reputation = buildReputationContext(ensureReputationState(ledger), {}, {
     scope: REPUTATION_VIEW_SCOPES.GM
@@ -24046,12 +23756,11 @@ function getOperationalEffects(ledger, roles, sops) {
   const weatherDaeChanges = Array.isArray(weatherState.current?.daeChanges)
     ? weatherState.current.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
     : [];
-  const prepEdge = roleCoverage >= 3;
+  const prepEdge = false;
 
   const bonuses = [];
   const globalMinorBonuses = [];
   const risks = [];
-  const partyHealth = ensurePartyHealthState(ledger);
   const globalModifiers = {
     initiative: 0,
     abilityChecks: 0,
@@ -24071,9 +23780,7 @@ function getOperationalEffects(ledger, roles, sops) {
     if (!Number.isFinite(value) || value === 0) return { enabled: true, value: 0 };
     const source = String(options.source ?? "derived");
     const note = String(options.note ?? "");
-    const enabled = source === "custom"
-      ? options.enabled !== false
-      : partyHealth.modifierEnabled?.[modifierId] !== false;
+    const enabled = options.enabled !== false;
     if (enabled) globalModifiers[key] = Number(globalModifiers[key] ?? 0) + value;
     globalModifierRows.push({
       modifierId,
@@ -24097,16 +23804,9 @@ function getOperationalEffects(ledger, roles, sops) {
     worldGlobalModifiers[key] = Number(worldGlobalModifiers[key] ?? 0) + value;
   };
 
-  if (prepEdge) bonuses.push("Preparation edge active: grant advantage on one operational check this session.");
-  if (hasChronicler) bonuses.push("Operational recall active: clarify one unknown clue or timeline detail once per session.");
-  if (hasSteward) bonuses.push("Stewardship active: reduce one lifestyle/logistics cost friction once per session.");
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
 
-  if (roleCoverage >= 2) {
-    const modifier = addGlobalModifier("team-rhythm", "initiative", 1, "Team rhythm (2+ roles)", "Initiative rolls");
-    if (modifier.enabled) globalMinorBonuses.push("Team rhythm: all player actors gain +1 initiative while 2+ operations roles are assigned.");
-  }
   if (baseOperations.readiness) {
     const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
     if (modifier.enabled) globalMinorBonuses.push("Operational sheltering: all player actors gain +1 to saving throws while base readiness is stable.");
@@ -24133,12 +23833,10 @@ function getOperationalEffects(ledger, roles, sops) {
     bonuses.push(`Weather profile (${weatherLabel}) applies ${weatherDaeChanges.length} global DAE change(s).`);
   }
 
-  if (!ledger.roles?.quartermaster) risks.push("No Quartermaster: increase supply error risk this rest cycle.");
   if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
 
-  if (roleCoverage <= 1) addGlobalModifier("poor-role-coverage", "initiative", -1, "Poor role coverage", "Initiative rolls");
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const customDaeChanges = [];
@@ -24155,65 +23853,9 @@ function getOperationalEffects(ledger, roles, sops) {
     customDaeChanges.push(normalized);
     worldDaeChanges.push(foundry.utils.deepClone(normalized));
   }
-  for (const custom of partyHealth.customModifiers ?? []) {
-    const key = String(custom?.key ?? "").trim();
-    const value = String(custom?.value ?? "").trim();
-    const enabled = custom?.enabled !== false;
-    const label = String(custom?.label ?? "Custom Modifier").trim() || "Custom Modifier";
-    const note = String(custom?.note ?? "");
-    const mode = Math.floor(Number(custom?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-    const appliesTo = "All player actors";
-
-    const mappedSummaryKey = {
-      "system.attributes.init.bonus": "initiative",
-      "system.bonuses.abilities.check": "abilityChecks",
-      "system.skills.prc.bonuses.check": "perceptionChecks",
-      "system.bonuses.abilities.save": "savingThrows"
-    }[key];
-
-    const numericValue = Number(value);
-    if (mappedSummaryKey && Number.isFinite(numericValue)) {
-      addGlobalModifier(`custom:${custom.id}`, mappedSummaryKey, numericValue, label, appliesTo, {
-        source: "custom",
-        enabled,
-        note
-      });
-      if (enabled) addWorldModifier(mappedSummaryKey, numericValue);
-    } else {
-      globalModifierRows.push({
-        modifierId: `custom:${custom.id}`,
-        enabled,
-        source: "custom",
-        key,
-        appliesTo,
-        value,
-        label,
-        note,
-        isPositive: false,
-        isNegative: false,
-        formatted: value || "-",
-        effectiveFormatted: enabled ? (value || "-") : "Off",
-        modeLabel: getActiveEffectModeLabel(mode)
-      });
-    }
-
-    if (enabled && key && value) {
-      const normalized = {
-        modifierId: `custom:${custom.id}`,
-        label,
-        note,
-        key,
-        mode,
-        value
-      };
-      customDaeChanges.push(normalized);
-      worldDaeChanges.push(foundry.utils.deepClone(normalized));
-    }
-  }
-
   const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
-  const riskScore = roleCoverage + activeSops - pressurePenalty;
-  const riskTier = riskScore >= 8 ? "low" : riskScore >= 5 ? "moderate" : "high";
+  const riskScore = activeSops - pressurePenalty;
+  const riskTier = riskScore >= 2 ? "low" : riskScore >= 0 ? "moderate" : "high";
 
   return {
     prepEdge,
@@ -24223,10 +23865,10 @@ function getOperationalEffects(ledger, roles, sops) {
     globalModifiers,
     worldGlobalModifiers,
     globalModifierRows,
-    derivedModifierRows: globalModifierRows.filter((row) => row.source !== "custom"),
-    customModifierRows: globalModifierRows.filter((row) => row.source === "custom"),
+    derivedModifierRows: globalModifierRows,
+    customModifierRows: [],
     hasGlobalModifiers: globalModifierRows.length > 0,
-    hasCustomModifiers: globalModifierRows.some((row) => row.source === "custom"),
+    hasCustomModifiers: false,
     customDaeChanges,
     worldDaeChanges,
     hasGlobalMinorBonuses: globalMinorBonuses.length > 0,
@@ -32995,170 +32637,21 @@ function resolveCurrentSceneWeatherSnapshot() {
 function ensurePartyHealthState(ledger) {
   if (!ledger.partyHealth || typeof ledger.partyHealth !== "object") {
     ledger.partyHealth = {
-      modifierEnabled: {},
-      customModifiers: [],
-      stagedModifierQueue: [],
-      modifierAddLog: [],
-      archivedSyncEffects: [],
       syncToSceneNonParty: true,
       nonPartySyncScope: NON_PARTY_SYNC_SCOPES.SCENE
     };
   }
-  if (!ledger.partyHealth.modifierEnabled || typeof ledger.partyHealth.modifierEnabled !== "object") {
-    ledger.partyHealth.modifierEnabled = {};
-  }
-  if (!Array.isArray(ledger.partyHealth.customModifiers)) ledger.partyHealth.customModifiers = [];
-  if (!Array.isArray(ledger.partyHealth.stagedModifierQueue)) ledger.partyHealth.stagedModifierQueue = [];
-  if (!Array.isArray(ledger.partyHealth.modifierAddLog)) ledger.partyHealth.modifierAddLog = [];
-  if (!Array.isArray(ledger.partyHealth.archivedSyncEffects)) ledger.partyHealth.archivedSyncEffects = [];
+
+  // Remove legacy Party Health payloads from persisted ledger state.
+  delete ledger.partyHealth.modifierEnabled;
+  delete ledger.partyHealth.customModifiers;
+  delete ledger.partyHealth.stagedModifierQueue;
+  delete ledger.partyHealth.modifierAddLog;
+  delete ledger.partyHealth.archivedSyncEffects;
+
   ledger.partyHealth.syncToSceneNonParty = ledger.partyHealth.syncToSceneNonParty !== false;
   ledger.partyHealth.nonPartySyncScope = getNonPartySyncScope(ledger.partyHealth.nonPartySyncScope);
-  ledger.partyHealth.customModifiers = ledger.partyHealth.customModifiers
-    .map((entry) => {
-      const rawMode = Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-      const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((value) => Number(value)));
-      return {
-        id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-        label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
-        key: String(entry?.key ?? "").trim(),
-        mode: validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD),
-        value: String(entry?.value ?? "").trim(),
-        note: String(entry?.note ?? ""),
-        enabled: entry?.enabled !== false
-      };
-    })
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
-  ledger.partyHealth.stagedModifierQueue = ledger.partyHealth.stagedModifierQueue
-    .map((entry) => ({
-      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
-      key: String(entry?.key ?? "").trim(),
-      mode: Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
-      value: String(entry?.value ?? "").trim(),
-      note: String(entry?.note ?? ""),
-      createdAt: Number(entry?.createdAt ?? Date.now()) || Date.now(),
-      createdBy: String(entry?.createdBy ?? game.user?.name ?? "GM").trim() || "GM"
-    }))
-    .filter((entry, index, arr) => entry.key && entry.value && entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index)
-    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
-    .slice(0, 24);
-  ledger.partyHealth.modifierAddLog = ledger.partyHealth.modifierAddLog
-    .map((entry) => ({
-      id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-      customModifierId: String(entry?.customModifierId ?? "").trim(),
-      origin: String(entry?.origin ?? "custom").trim() || "custom",
-      label: String(entry?.label ?? "Custom Modifier").trim() || "Custom Modifier",
-      key: String(entry?.key ?? "").trim(),
-      mode: Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
-      value: String(entry?.value ?? "").trim(),
-      note: String(entry?.note ?? ""),
-      createdAt: Number(entry?.createdAt ?? Date.now()) || Date.now(),
-      createdBy: String(entry?.createdBy ?? game.user?.name ?? "GM").trim() || "GM"
-    }))
-    .filter((entry) => entry.key && entry.value)
-    .sort((a, b) => Number(b.createdAt ?? 0) - Number(a.createdAt ?? 0))
-    .slice(0, 12);
-  ledger.partyHealth.archivedSyncEffects = ledger.partyHealth.archivedSyncEffects
-    .map((entry) => {
-      const effectData = entry?.effectData && typeof entry.effectData === "object"
-        ? foundry.utils.deepClone(entry.effectData)
-        : {};
-      if (effectData && typeof effectData === "object" && Object.prototype.hasOwnProperty.call(effectData, "_id")) delete effectData._id;
-      return {
-        id: String(entry?.id ?? foundry.utils.randomID()).trim() || foundry.utils.randomID(),
-        actorId: String(entry?.actorId ?? "").trim(),
-        actorName: String(entry?.actorName ?? "Unknown Actor").trim() || "Unknown Actor",
-        effectName: String(entry?.effectName ?? INTEGRATION_EFFECT_NAME).trim() || INTEGRATION_EFFECT_NAME,
-        label: String(entry?.label ?? entry?.effectName ?? "Archived Sync Effect").trim() || "Archived Sync Effect",
-        note: String(entry?.note ?? ""),
-        archivedAt: Number.isFinite(Number(entry?.archivedAt)) ? Number(entry.archivedAt) : Date.now(),
-        archivedBy: String(entry?.archivedBy ?? game.user?.name ?? "GM"),
-        effectData
-      };
-    })
-    .filter((entry, index, arr) => entry.id && arr.findIndex((candidate) => candidate.id === entry.id) === index);
   return ledger.partyHealth;
-}
-
-function logAddedPartyHealthModifier(partyHealth, payload = {}) {
-  if (!partyHealth || typeof partyHealth !== "object") return;
-  if (!Array.isArray(partyHealth.modifierAddLog)) partyHealth.modifierAddLog = [];
-  partyHealth.modifierAddLog.unshift({
-    id: foundry.utils.randomID(),
-    customModifierId: String(payload.customModifierId ?? "").trim(),
-    origin: String(payload.origin ?? "custom").trim() || "custom",
-    label: String(payload.label ?? "Custom Modifier").trim() || "Custom Modifier",
-    key: String(payload.key ?? "").trim(),
-    mode: Math.floor(Number(payload.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)),
-    value: String(payload.value ?? "").trim(),
-    note: String(payload.note ?? ""),
-    createdAt: Date.now(),
-    createdBy: String(game.user?.name ?? "GM").trim() || "GM"
-  });
-  partyHealth.modifierAddLog = partyHealth.modifierAddLog.slice(0, 12);
-}
-
-function filterModifierPresetSelect(element, selectName) {
-  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-party-health-manager") ?? element?.closest(".po-gm-section");
-  if (!root) return;
-  const select = root.querySelector(`select[name='${selectName}']`);
-  if (!(select instanceof HTMLSelectElement)) return;
-  const query = String(element?.value ?? "").trim().toLowerCase();
-  const options = Array.from(select.options ?? []);
-  for (const option of options) {
-    const value = String(option?.value ?? "").trim();
-    if (!value) {
-      option.hidden = false;
-      option.disabled = false;
-      continue;
-    }
-    if (!query) {
-      option.hidden = false;
-      option.disabled = false;
-      continue;
-    }
-    const label = String(option?.textContent ?? "").toLowerCase();
-    const visible = label.includes(query) || value.toLowerCase().includes(query);
-    option.hidden = !visible;
-    option.disabled = !visible;
-  }
-  const selectedValue = String(select.value ?? "").trim();
-  if (selectedValue) {
-    const selectedOption = options.find((option) => String(option.value ?? "").trim() === selectedValue);
-    if (selectedOption?.hidden || selectedOption?.disabled) select.value = "";
-  }
-}
-
-function resetQuickModifierForm(root) {
-  if (!root) return;
-  const label = root.querySelector("input[name='quickGlobalModifierLabel']");
-  const filter = root.querySelector("input[name='quickGlobalModifierKeyFilter']");
-  const mode = root.querySelector("select[name='quickGlobalModifierMode']");
-  const value = root.querySelector("input[name='quickGlobalModifierValue']");
-  const note = root.querySelector("textarea[name='quickGlobalModifierNote']");
-  const preset = root.querySelector("select[name='quickGlobalModifierKey']");
-  if (label) label.value = "Custom Modifier";
-  if (filter) filter.value = "";
-  if (mode) mode.value = String(Number(CONST.ACTIVE_EFFECT_MODES.ADD));
-  if (value) value.value = "1";
-  if (note) note.value = "";
-  if (preset) preset.value = "";
-}
-
-function resetCustomModifierForm(root) {
-  if (!root) return;
-  const label = root.querySelector("input[name='customModifierLabel']");
-  const filter = root.querySelector("input[name='customModifierKeyFilter']");
-  const mode = root.querySelector("select[name='customModifierMode']");
-  const value = root.querySelector("input[name='customModifierValue']");
-  const note = root.querySelector("textarea[name='customModifierNote']");
-  const preset = root.querySelector("select[name='customModifierKeySelect']");
-  if (label) label.value = "";
-  if (filter) filter.value = "";
-  if (mode) mode.value = String(Number(CONST.ACTIVE_EFFECT_MODES.ADD));
-  if (value) value.value = "";
-  if (note) note.value = "";
-  if (preset) preset.value = "";
 }
 
 function ensureSopNotesState(ledger) {
@@ -33262,33 +32755,6 @@ function appendSopNoteEntry(ledger, sopKeyInput, noteInput, requester = game.use
   entries.unshift(nextEntry);
   sopNoteLedger[sopKey] = entries.slice(0, 40);
   return nextEntry;
-}
-
-async function setOperationalRole(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can assign operational roles.");
-    return;
-  }
-  const roleKey = element?.dataset?.role;
-  const actorId = element?.value ?? "";
-  if (!roleKey) return;
-  await updateOperationsLedger((ledger) => {
-    if (!ledger.roles) ledger.roles = {};
-    ledger.roles[roleKey] = actorId;
-  });
-}
-
-async function clearOperationalRole(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can assign operational roles.");
-    return;
-  }
-  const roleKey = element?.dataset?.role;
-  if (!roleKey) return;
-  await updateOperationsLedger((ledger) => {
-    if (!ledger.roles) ledger.roles = {};
-    ledger.roles[roleKey] = "";
-  });
 }
 
 async function toggleOperationalSOP(element, options = {}) {
@@ -41876,293 +41342,6 @@ function getDaeModifierCategoryOptions() {
       || key.includes("skills.")
     ) }
   ];
-}
-
-async function gmQuickAddModifier() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const current = getActiveGmQuickPanel();
-  setActiveGmQuickPanel(current === "modifier" ? "none" : "modifier");
-}
-
-async function gmQuickSubmitModifier(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const payload = readQuickModifierDraftFromRoot(root);
-  if (!payload) return;
-  const { label, key, value, note, mode } = payload;
-
-  if (!key || !value) {
-    ui.notifications?.warn("Select a key preset and provide a value to add a drafted modifier.");
-    return;
-  }
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    partyHealth.stagedModifierQueue.unshift({
-      id: foundry.utils.randomID(),
-      label,
-      key,
-      mode,
-      value,
-      note,
-      createdAt: Date.now(),
-      createdBy: String(game.user?.name ?? "GM").trim() || "GM"
-    });
-    partyHealth.stagedModifierQueue = partyHealth.stagedModifierQueue.slice(0, 24);
-  });
-}
-
-function readQuickModifierDraftFromRoot(root) {
-  if (!root) return null;
-  const label = String(root.querySelector("input[name='quickGlobalModifierLabel']")?.value ?? "").trim() || "Custom Modifier";
-  const key = String(root.querySelector("select[name='quickGlobalModifierKey']")?.value ?? "").trim();
-  const value = String(root.querySelector("input[name='quickGlobalModifierValue']")?.value ?? "").trim();
-  const note = String(root.querySelector("textarea[name='quickGlobalModifierNote']")?.value ?? "");
-  const rawMode = Math.floor(Number(root.querySelector("select[name='quickGlobalModifierMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-  const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
-  const mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
-  return { label, key, value, note, mode };
-}
-
-async function gmQuickSaveModifier(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const groupedEntries = new Map();
-  let publishedCount = 0;
-  let skippedCount = 0;
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const stagedQueue = Array.isArray(partyHealth.stagedModifierQueue) ? partyHealth.stagedModifierQueue : [];
-    if (stagedQueue.length === 0) return;
-
-    for (const row of stagedQueue) {
-      const stagedId = String(row?.id ?? "").trim();
-      const key = String(row?.key ?? "").trim();
-      const value = String(row?.value ?? "").trim();
-      const mode = Math.floor(Number(row?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-      if (!stagedId || !key || !value) continue;
-      const groupKey = `${key}::${mode}`;
-      if (!groupedEntries.has(groupKey)) groupedEntries.set(groupKey, []);
-      groupedEntries.get(groupKey).push({
-        stagedId,
-        key,
-        mode,
-        label: String(row?.label ?? "Custom Modifier").trim() || "Custom Modifier",
-        value,
-        note: String(row?.note ?? "")
-      });
-    }
-
-    const consumedIds = new Set();
-    for (const rows of groupedEntries.values()) {
-      if (!Array.isArray(rows) || rows.length === 0) continue;
-      const numericValues = rows.map((row) => Number(row.value));
-      const hasNonNumeric = numericValues.some((value) => !Number.isFinite(value));
-      if (hasNonNumeric && rows.length > 1) {
-        skippedCount += rows.length;
-        continue;
-      }
-
-      const key = rows[0].key;
-      const mode = rows[0].mode;
-      const mergedValue = hasNonNumeric
-        ? rows[0].value
-        : String(numericValues.reduce((total, entry) => total + entry, 0));
-      const labels = [...new Set(rows.map((row) => String(row.label ?? "").trim()).filter(Boolean))];
-      const baseLabel = labels[0] || getDaeKeyLabel(key) || "Custom Modifier";
-      const mergedLabel = labels.length <= 1 ? baseLabel : `${baseLabel} (Stacked ${rows.length})`;
-      const noteParts = rows.map((row) => String(row.note ?? "").trim()).filter(Boolean);
-      const mergedNote = noteParts.join(" | ");
-
-      const customModifierId = foundry.utils.randomID();
-      partyHealth.customModifiers.push({
-        id: customModifierId,
-        label: mergedLabel,
-        key,
-        mode,
-        value: mergedValue,
-        note: mergedNote,
-        enabled: true
-      });
-      logAddedPartyHealthModifier(partyHealth, {
-        customModifierId,
-        origin: "quick",
-        label: mergedLabel,
-        key,
-        mode,
-        value: mergedValue,
-        note: mergedNote
-      });
-      rows.forEach((row) => consumedIds.add(row.stagedId));
-      publishedCount += 1;
-    }
-
-    partyHealth.stagedModifierQueue = stagedQueue
-      .filter((row) => !consumedIds.has(String(row?.id ?? "").trim()));
-  });
-
-  if (groupedEntries.size === 0) {
-    ui.notifications?.warn("Draft stack is empty. Add at least one modifier before saving.");
-    return;
-  }
-  if (publishedCount === 0) {
-    ui.notifications?.warn("No drafted modifiers were published. Check drafted values and try again.");
-    return;
-  }
-
-  resetQuickModifierForm(root);
-  if (skippedCount > 0) {
-    ui.notifications?.info(`Published ${publishedCount} modifier group(s); ${skippedCount} drafted entr${skippedCount === 1 ? "y was" : "ies were"} skipped for manual cleanup.`);
-    return;
-  }
-  ui.notifications?.info(`Published ${publishedCount} modifier group${publishedCount === 1 ? "" : "s"} from the draft stack.`);
-}
-
-async function gmQuickSetStagedModifierField(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const stagedId = String(element?.dataset?.stagedId ?? "").trim();
-  const field = String(element?.dataset?.stagedField ?? "").trim();
-  if (!stagedId || !field) return;
-  const editableFields = new Set(["label", "key", "mode", "value", "note"]);
-  if (!editableFields.has(field)) return;
-
-  const rawValue = String(element?.value ?? "");
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const stagedEntry = (partyHealth.stagedModifierQueue ?? [])
-      .find((entry) => String(entry?.id ?? "").trim() === stagedId);
-    if (!stagedEntry) return;
-
-    if (field === "label") {
-      stagedEntry.label = String(rawValue).trim() || "Custom Modifier";
-      return;
-    }
-    if (field === "key") {
-      stagedEntry.key = String(rawValue).trim();
-      return;
-    }
-    if (field === "mode") {
-      const rawMode = Math.floor(Number(rawValue ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-      const validModes = new Set(Object.values(CONST.ACTIVE_EFFECT_MODES ?? {}).map((entry) => Number(entry)));
-      stagedEntry.mode = validModes.has(rawMode) ? rawMode : Number(CONST.ACTIVE_EFFECT_MODES.ADD);
-      return;
-    }
-    if (field === "value") {
-      stagedEntry.value = String(rawValue).trim();
-      return;
-    }
-    if (field === "note") {
-      stagedEntry.note = String(rawValue ?? "");
-    }
-  });
-}
-
-async function gmQuickDeleteStagedModifier(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const stagedId = String(element?.dataset?.stagedId ?? "").trim();
-  if (!stagedId) {
-    ui.notifications?.warn("No queued modifier id was provided.");
-    return;
-  }
-
-  let removed = false;
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const before = partyHealth.stagedModifierQueue.length;
-    partyHealth.stagedModifierQueue = partyHealth.stagedModifierQueue
-      .filter((entry) => String(entry?.id ?? "").trim() !== stagedId);
-    removed = partyHealth.stagedModifierQueue.length < before;
-  });
-
-  if (!removed) ui.notifications?.warn("Queued modifier was already removed.");
-}
-
-async function gmQuickDeleteSavedModifier(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit Party Health modifiers.");
-    return;
-  }
-  const customIdRaw = String(element?.dataset?.customId ?? "").trim();
-  const logId = String(element?.dataset?.logId ?? "").trim();
-  if (!customIdRaw && !logId) {
-    ui.notifications?.warn("No saved modifier id was provided.");
-    return;
-  }
-
-  let removedCustom = false;
-  let removedLog = false;
-
-  await updateOperationsLedger((ledger) => {
-    const partyHealth = ensurePartyHealthState(ledger);
-    const logEntry = logId
-      ? partyHealth.modifierAddLog.find((entry) => String(entry?.id ?? "").trim() === logId)
-      : null;
-    let customId = customIdRaw || String(logEntry?.customModifierId ?? "").trim();
-    if (!customId && logEntry) {
-      const logLabel = String(logEntry?.label ?? "").trim();
-      const logKey = String(logEntry?.key ?? "").trim();
-      const logValue = String(logEntry?.value ?? "").trim();
-      const logNote = String(logEntry?.note ?? "");
-      const logMode = Math.floor(Number(logEntry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-      const matchedEntry = partyHealth.customModifiers.find((entry) =>
-        String(entry?.key ?? "").trim() === logKey
-        && String(entry?.value ?? "").trim() === logValue
-        && Math.floor(Number(entry?.mode ?? CONST.ACTIVE_EFFECT_MODES.ADD)) === logMode
-        && (!logLabel || String(entry?.label ?? "").trim() === logLabel)
-        && (!logNote || String(entry?.note ?? "") === logNote)
-      );
-      customId = String(matchedEntry?.id ?? "").trim();
-    }
-
-    if (customId) {
-      const beforeCustomCount = partyHealth.customModifiers.length;
-      partyHealth.customModifiers = partyHealth.customModifiers
-        .filter((entry) => String(entry?.id ?? "").trim() !== customId);
-      removedCustom = partyHealth.customModifiers.length < beforeCustomCount;
-      if (partyHealth.modifierEnabled && typeof partyHealth.modifierEnabled === "object") {
-        delete partyHealth.modifierEnabled[`custom:${customId}`];
-      }
-    }
-
-    const beforeLogCount = partyHealth.modifierAddLog.length;
-    if (logId) {
-      partyHealth.modifierAddLog = partyHealth.modifierAddLog
-        .filter((entry) => String(entry?.id ?? "").trim() !== logId);
-    } else if (customId) {
-      partyHealth.modifierAddLog = partyHealth.modifierAddLog
-        .filter((entry) => String(entry?.customModifierId ?? "").trim() !== customId);
-    }
-    removedLog = partyHealth.modifierAddLog.length < beforeLogCount;
-  });
-
-  if (!removedCustom && !removedLog) {
-    ui.notifications?.warn("Saved modifier was already removed.");
-  }
-}
-
-function gmQuickApplyModifierKeyPreset(element) {
-  const root = element?.closest(".po-op-role-row") ?? element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  if (!root) return;
-  const selectedKey = String(element?.value ?? "").trim();
-  const input = root.querySelector("input[name='quickGlobalModifierKeyFilter']");
-  if (!input) return;
-  input.value = selectedKey;
 }
 
 function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {

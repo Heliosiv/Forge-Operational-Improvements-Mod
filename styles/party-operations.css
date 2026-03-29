@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Montserrat:wght@400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
 
 /* =========================================================
    Root + Variables
@@ -23,26 +23,46 @@
 }
 
 .party-operations .po-window {
-  --po-bg: var(--color-bg, #1f2630);
-  --po-bg-alt: var(--color-bg-option, #252f3b);
-  --po-surface: var(--color-bg-btn-minor, #2a3543);
-  --po-surface-elevated: #fff6df;
-  --po-border: var(--color-border-light-primary, #3a4758);
-  --po-border-strong: var(--color-border-highlight, #4b5e74);
-  --po-text: var(--color-text-primary, #d7dee8);
-  --po-text-strong: #1a1008;
-  --po-muted: var(--color-text-light-7, #9ba7b7);
-  --po-accent: var(--color-text-hyperlink, #6fb0ff);
-  --po-accent-contrast: var(--color-text-light-highlight, #eef5ff);
-  --po-success: var(--color-level-success, #57b881);
-  --po-warn: var(--color-level-warning, #d3a245);
-  --po-danger: var(--color-level-error, #c95e5e);
-  --po-neon-green: color-mix(in srgb, var(--po-success) 82%, white 18%);
-  --po-fantasy-font: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-  --po-select-ink: #1d140b;
-  --po-select-bg-light: #eadfbe;
-  --po-select-bg-dark: #d3bb86;
-  --po-select-border: #8f6f3f;
+  --po-bg: #f3ecdd;
+  --po-bg-alt: #e6d8be;
+  --po-surface: #f9f2e3;
+  --po-surface-elevated: #fffaf0;
+  --po-border: #9a845d;
+  --po-border-strong: #6f5a35;
+  --po-text: #2b2113;
+  --po-text-strong: #1c140a;
+  --po-muted: #5f5139;
+  --po-accent: #2f5f42;
+  --po-accent-contrast: #132819;
+  --po-success: #2f7a4f;
+  --po-warn: #a46a1f;
+  --po-danger: #9a3f34;
+  --po-neon-green: color-mix(in srgb, var(--po-success) 72%, #dff3e6 28%);
+  --po-brass: #b8893d;
+  --po-brass-strong: #8a5f24;
+  --po-brass-soft: #e9d19b;
+  --po-wood-light: #b79a67;
+  --po-wood-mid: #a38351;
+  --po-wood-dark: #6e522f;
+  --po-wood-rim: #3a2c1f;
+  --po-shadow-warm: #22190f;
+  --po-shadow-warm-deep: #24180f;
+  --po-glow-warm: #d9c39f;
+  --po-glow-deep: #7c5e35;
+  --po-silhouette-1: #040404;
+  --po-silhouette-2: #080808;
+  --po-ember: #ff8a3d;
+  --po-ember-bright: #ff9f57;
+  --po-ember-soft: #ffd0a6;
+  --po-ember-gold: #ffb15d;
+  --po-warning-surface-1: #f3e3bf;
+  --po-warning-surface-2: #e5c98f;
+  --po-stash-accent: #c58a2a;
+  --po-fantasy-font: "Montserrat", "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --po-select-ink: #2a1d0d;
+  --po-select-bg-light: #f6ebd4;
+  --po-select-bg-dark: #e2c995;
+  --po-select-border: #8a6a3d;
 
   --po-radius: 10px;
   --po-space-1: 3px;
@@ -235,9 +255,14 @@
 .party-operations .po-tabs-main .po-tab.is-active,
 .party-operations .po-tabs-ops .po-tab.is-active,
 .party-operations .po-tabs-sub .po-tab.is-active {
-  border-color: var(--po-neon-green);
-  background: color-mix(in srgb, var(--po-neon-green) 24%, var(--po-bg-alt));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 42%, transparent), 0 0 8px color-mix(in srgb, var(--po-neon-green) 35%, transparent);
+  border-color: color-mix(in srgb, var(--po-brass-strong) 72%, var(--po-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-brass-soft) 44%, var(--po-surface)),
+    color-mix(in srgb, var(--po-brass) 20%, var(--po-bg-alt))
+  );
+  color: var(--po-text-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-brass) 48%, transparent), 0 0 12px color-mix(in srgb, var(--po-brass) 24%, transparent);
 }
 
 .party-operations .po-audio-grid,
@@ -1001,8 +1026,8 @@
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 56%, var(--po-border));
   overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, #2a2c34 92%, var(--po-bg-alt)), color-mix(in srgb, #0f1115 88%, var(--po-bg))),
-    linear-gradient(90deg, color-mix(in srgb, #5f4d30 35%, transparent), color-mix(in srgb, #2a2116 72%, transparent));
+    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 80%, var(--po-wood-light) 20%), color-mix(in srgb, var(--po-bg) 86%, var(--po-select-border) 14%)),
+    linear-gradient(90deg, color-mix(in srgb, var(--po-wood-mid) 28%, transparent), color-mix(in srgb, var(--po-wood-dark) 42%, transparent));
 }
 
 .party-operations .po-merchants-player-view .po-merchant-doorway::before {
@@ -1010,8 +1035,8 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, color-mix(in srgb, #22190f 70%, transparent), transparent 22%, transparent 78%, color-mix(in srgb, #22190f 70%, transparent)),
-    linear-gradient(180deg, color-mix(in srgb, #24180f 72%, transparent) 0 12%, transparent 30% 100%);
+    linear-gradient(90deg, color-mix(in srgb, var(--po-shadow-warm) 70%, transparent), transparent 22%, transparent 78%, color-mix(in srgb, var(--po-shadow-warm) 70%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, var(--po-shadow-warm-deep) 72%, transparent) 0 12%, transparent 30% 100%);
   pointer-events: none;
 }
 
@@ -1024,7 +1049,7 @@
   height: 260px;
   transform: translateX(-50%);
   border-radius: 50%;
-  border: 22px solid color-mix(in srgb, #3a2c1f 72%, transparent);
+  border: 22px solid color-mix(in srgb, var(--po-wood-rim) 72%, transparent);
   opacity: 0.56;
   filter: blur(0.2px);
   pointer-events: none;
@@ -1035,8 +1060,8 @@
   inset: 18% 20% 16%;
   border-radius: 44%;
   background:
-    radial-gradient(circle at 50% 45%, color-mix(in srgb, #d9c39f 22%, transparent), transparent 65%),
-    radial-gradient(circle at 50% 86%, color-mix(in srgb, #7c5e35 42%, transparent), transparent 76%);
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--po-glow-warm) 22%, transparent), transparent 65%),
+    radial-gradient(circle at 50% 86%, color-mix(in srgb, var(--po-glow-deep) 42%, transparent), transparent 76%);
   opacity: 0.8;
   pointer-events: none;
 }
@@ -1049,8 +1074,8 @@
   height: 226px;
   transform: translateX(-50%);
   background:
-    radial-gradient(circle at 50% 16%, color-mix(in srgb, #040404 94%, transparent) 0 20%, transparent 23%),
-    radial-gradient(circle at 50% 66%, color-mix(in srgb, #080808 96%, transparent) 0 58%, transparent 60%);
+    radial-gradient(circle at 50% 16%, color-mix(in srgb, var(--po-silhouette-1) 94%, transparent) 0 20%, transparent 23%),
+    radial-gradient(circle at 50% 66%, color-mix(in srgb, var(--po-silhouette-2) 96%, transparent) 0 58%, transparent 60%);
   filter: blur(0.5px);
   opacity: 0.66;
   pointer-events: none;
@@ -1334,7 +1359,7 @@
 }
 
 .party-operations .po-loot-claim-actor-card.is-stash {
-  background: linear-gradient(180deg, color-mix(in srgb, #c58a2a 14%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-stash-accent) 14%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
 }
 
 .party-operations .po-loot-claim-actor-card input[name='lootClaimActorId'] {
@@ -2778,13 +2803,13 @@
 }
 
 .party-operations .po-reputation-impact-total.is-positive {
-  border-color: color-mix(in srgb, #2ca36a 45%, var(--po-border));
-  background: color-mix(in srgb, #2ca36a 15%, var(--po-rep-pill-bg));
+  border-color: color-mix(in srgb, var(--po-success) 45%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 15%, var(--po-rep-pill-bg));
 }
 
 .party-operations .po-reputation-impact-total.is-negative {
-  border-color: color-mix(in srgb, #c0564a 45%, var(--po-border));
-  background: color-mix(in srgb, #c0564a 14%, var(--po-rep-pill-bg));
+  border-color: color-mix(in srgb, var(--po-danger) 45%, var(--po-border));
+  background: color-mix(in srgb, var(--po-danger) 14%, var(--po-rep-pill-bg));
 }
 
 .party-operations .po-reputation-gm-tools {
@@ -3010,23 +3035,28 @@
 .party-operations .po-exh-btn.is-active,
 .party-operations .po-campfire-toggle.is-active,
 .party-operations .po-campfire-status.is-active {
-  border-color: color-mix(in srgb, var(--po-accent) 75%, var(--po-border));
-  background: color-mix(in srgb, var(--po-accent) 28%, var(--po-bg-alt));
-  color: var(--po-accent-contrast);
+  border-color: color-mix(in srgb, var(--po-brass-strong) 74%, var(--po-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-brass-soft) 52%, var(--po-surface)),
+    color-mix(in srgb, var(--po-brass) 30%, var(--po-bg-alt))
+  );
+  color: var(--po-text-strong);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent), 0 0 0 1px color-mix(in srgb, var(--po-brass) 32%, transparent);
 }
 
 .party-operations .po-campfire-toggle.is-active,
 .party-operations .po-campfire-status.is-active {
-  border-color: color-mix(in srgb, #ff9f57 72%, var(--po-border));
-  background: color-mix(in srgb, #ff8a3d 22%, var(--po-bg-alt));
-  color: color-mix(in srgb, white 88%, #ffd0a6);
-  box-shadow: 0 0 0 1px color-mix(in srgb, #ff9f57 24%, transparent), 0 0 18px color-mix(in srgb, #ff8a3d 18%, transparent);
+  border-color: color-mix(in srgb, var(--po-ember-bright) 72%, var(--po-border));
+  background: color-mix(in srgb, var(--po-ember) 22%, var(--po-bg-alt));
+  color: color-mix(in srgb, white 88%, var(--po-ember-soft));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-ember-bright) 24%, transparent), 0 0 18px color-mix(in srgb, var(--po-ember) 18%, transparent);
 }
 
 .party-operations .po-campfire-toggle.is-active i,
 .party-operations .po-campfire-status.is-active i {
-  color: color-mix(in srgb, #ffb15d 90%, white 10%);
-  text-shadow: 0 0 12px color-mix(in srgb, #ff8a3d 34%, transparent);
+  color: color-mix(in srgb, var(--po-ember-gold) 90%, white 10%);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--po-ember) 34%, transparent);
 }
 
 .party-operations .po-campfire-toggle.is-inactive,
@@ -3068,6 +3098,23 @@
 .party-operations .po-entry-handle:hover,
 .party-operations .po-campfire-toggle:hover {
   border-color: var(--po-border-strong);
+}
+
+.party-operations .po-tab:hover,
+.party-operations .po-tab.is-active:hover,
+.party-operations .po-btn.is-primary:hover,
+.party-operations .po-btn.is-active:hover {
+  border-color: color-mix(in srgb, var(--po-brass-strong) 78%, var(--po-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-brass-soft) 58%, var(--po-surface)),
+    color-mix(in srgb, var(--po-brass) 34%, var(--po-bg-alt))
+  );
+  color: var(--po-text-strong);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 42%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--po-brass) 34%, transparent),
+    0 8px 18px color-mix(in srgb, var(--po-brass-strong) 16%, transparent);
 }
 
 .party-operations .po-btn:active,
@@ -4597,7 +4644,7 @@
 }
 
 .party-operations .po-tabs .po-tab.is-active {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 52%, transparent), 0 0 10px color-mix(in srgb, var(--po-neon-green) 32%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-brass) 54%, transparent), 0 0 12px color-mix(in srgb, var(--po-brass) 30%, transparent);
 }
 
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
@@ -7327,9 +7374,13 @@
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-warning-card {
   padding: 12px 14px;
-  color: color-mix(in srgb, #ffd28a 82%, white 18%);
-  border-color: color-mix(in srgb, #e0a54d 55%, var(--po-border));
-  background: linear-gradient(180deg, color-mix(in srgb, #6a4620 28%, var(--po-bg-alt)), color-mix(in srgb, var(--po-bg) 88%, transparent));
+  color: color-mix(in srgb, var(--po-text-strong) 92%, var(--po-brass-strong) 8%);
+  border-color: color-mix(in srgb, var(--po-warn) 52%, var(--po-border));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-warning-surface-1) 84%, var(--po-bg-alt)),
+    color-mix(in srgb, var(--po-warning-surface-2) 52%, var(--po-bg))
+  );
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-empty-state {
@@ -9335,11 +9386,11 @@
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-formation-card-effect-label.is-positive {
-  color: color-mix(in srgb, #79b26a 75%, var(--po-text));
+  color: color-mix(in srgb, var(--po-success) 75%, var(--po-text));
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-formation-card-effect-label.is-negative {
-  color: color-mix(in srgb, #b26f5a 75%, var(--po-text));
+  color: color-mix(in srgb, var(--po-danger) 75%, var(--po-text));
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-formation-card-effect-value {

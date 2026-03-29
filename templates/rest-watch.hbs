@@ -246,7 +246,7 @@
       <aside class="po-gm-panel {{#if mainTabOperationsOrGm}}is-operations-full{{/if}}">
         {{#if mainTabOperations}}
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
-          <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Plan leadership, resources, loot, and Party Health modifiers">Planning</button>
+          <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Track resources and loot operations">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
           <button type="button" class="po-tab {{#if operationsPageMerchants}}is-active{{/if}}" data-action="operations-page" data-page="merchants" title="Track merchant contacts, routes, and procurement priorities">Merchants</button>
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
@@ -258,7 +258,6 @@
         <div id="po-ops-summary" class="po-gm-section po-gm-section-compact">
           <div class="po-info-strip">
             <div class="po-info-chip" title="Overall operational risk from role coverage and base pressure"><span>Risk</span><strong>{{operations.summary.effects.riskTier}}</strong></div>
-            <div class="po-info-chip" title="Assigned leadership roles out of total available roles"><span>Roles</span><strong>{{operations.summary.roleCoverage}} / {{operations.summary.roleTotal}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before food is depleted"><span>Food Cycles</span><strong>{{operations.resources.summary.foodCyclesLeft}}</strong></div>
             <div class="po-info-chip" title="Estimated number of long-rest cycles before water is depleted"><span>Water Cycles</span><strong>{{operations.resources.summary.waterCyclesLeft}}</strong></div>
             <div class="po-info-chip" title="Inventory bindings linked to owned player-character items"><span>Bindings</span><strong>{{operations.resources.summary.selectedBindingCount}} / 3</strong></div>
@@ -268,37 +267,9 @@
         {{#if operationsPagePlanning}}
 
         <nav class="po-tabs po-tabs-sub po-planning-tabs" role="tablist" aria-label="Planning Sections">
-          <button type="button" class="po-tab {{#if operationsPlanningRoles}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="roles" title="Assign operational leadership roles">Roles</button>
           <button type="button" class="po-tab {{#if operationsPlanningResources}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="resources" title="Track supplies, drains, and inventory bindings">Resources</button>
           <button type="button" class="po-tab {{#if operationsPlanningLoot}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="loot" title="Assign and collect published loot">Loot</button>
-          <button type="button" class="po-tab {{#if operationsPlanningBonuses}}is-active{{/if}}" data-action="operations-planning-tab" data-planning-tab="bonuses" title="Review Party Health global modifiers for player actors">Party Health</button>
         </nav>
-
-        {{#if operationsPlanningRoles}}
-
-        <div id="po-ops-roles" class="po-gm-section">
-          <div class="po-section-title">Operations Roles</div>
-          <div class="po-hint">Assign leads for logistics, readiness, and accountability.</div>
-          <div class="po-roles-grid">
-          {{#each operations.roles}}
-          <div class="po-op-role-row" data-role="{{key}}" title="{{hint}}">
-            <div class="po-op-role-head">
-              <div class="po-op-role-name">{{label}}</div>
-              <div class="po-op-role-status {{#if hasActor}}is-ready{{else}}is-missing{{/if}}">{{actorName}}</div>
-            </div>
-            <select class="po-select" data-action="set-role" data-role="{{key}}" title="Assign an actor to {{label}}">
-              <option value="">Unassigned</option>
-              {{#each actorOptions}}
-              <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
-              {{/each}}
-            </select>
-            <button type="button" class="po-btn po-btn-sm" data-action="clear-role" data-role="{{key}}" title="Clear {{label}} assignment">Clear</button>
-            <div class="po-op-role-meta">Bonus: {{bonus}} - Neglect: {{penalty}}</div>
-          </div>
-          {{/each}}
-          </div>
-        </div>
-        {{/if}}
 
         {{#if operationsPlanningResources}}
         <div id="po-ops-resources" class="po-gm-section">
@@ -534,41 +505,6 @@
             {{/if}}
             </div>
           </details>
-        </div>
-        {{/if}}
-
-        {{#if operationsPlanningBonuses}}
-        <div id="po-ops-party-health" class="po-gm-section">
-          <div class="po-section-title">Party Health</div>
-          <div class="po-hint">Read-only party modifier summary. Use the GM page to enable/disable and add custom DAE modifiers.</div>
-          {{#if operations.summary.effects.hasGlobalModifiers}}
-          {{#each operations.summary.effects.globalModifierRows}}
-          <div class="po-op-summary {{#if isPositive}}is-good{{/if}} {{#if isNegative}}is-warn{{/if}} {{#unless enabled}}is-disabled{{/unless}}" title="Applies to {{appliesTo}}; synced to player actor effects when enabled.">{{label}}: {{formatted}} - {{#if source}}{{source}}{{else}}derived{{/if}} - Applies to: {{appliesTo}}{{#unless enabled}} - Off{{/unless}}</div>
-          {{#if note}}
-          <div class="po-op-summary">Note: {{note}}</div>
-          {{/if}}
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary" title="No active Party Health global modifiers">No active Party Health global modifiers.</div>
-          {{/if}}
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Active Positive Effects</div>
-          {{#if operations.summary.effects.hasGlobalMinorBonuses}}
-          {{#each operations.summary.effects.globalMinorBonuses}}
-          <div class="po-op-summary is-good" title="Global player bonus">{{this}}</div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary is-warn" title="No active global player bonuses">No global minor bonuses are currently active.</div>
-          {{/if}}
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Operational Risks</div>
-          {{#if operations.summary.effects.hasRisks}}
-          {{#each operations.summary.effects.risks}}
-          <div class="po-op-summary is-warn" title="Current operational risk">{{this}}</div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary" title="No immediate operational risk penalties">No immediate penalties.</div>
-          {{/if}}
         </div>
         {{/if}}
 

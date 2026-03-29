@@ -24,156 +24,16 @@
         </div>
         <div class="po-gm-page-stat-grid" role="list" aria-label="Modifier summary">
           <div class="po-gm-page-stat" role="listitem">
-            <span>Derived</span>
+            <span>Active</span>
             <strong>{{globalRows.length}}</strong>
-          </div>
-          <div class="po-gm-page-stat" role="listitem">
-            <span>Party</span>
-            <strong>{{partyRows.length}}</strong>
-          </div>
-          <div class="po-gm-page-stat" role="listitem">
-            <span>Exclusions</span>
-            <strong>{{exclusionRows.length}}</strong>
           </div>
         </div>
       </section>
 
-      <div class="po-global-modifier-editor-grid">
-        <section class="po-gm-section">
-          <div class="po-collapsible-head">
-            <div>
-              <div class="po-section-title">Modifier Editor</div>
-              <div class="po-hint">Create drafted or published party-wide modifiers directly from the Global Modifiers tab.</div>
-            </div>
-            <div class="po-pill">GM Only</div>
-          </div>
-
-          <label class="po-resource-row">
-            <span>Label</span>
-            <input type="text" name="quickGlobalModifierLabel" class="po-input" value="Custom Modifier" />
-          </label>
-          <label class="po-resource-row">
-            <span>Key Preset Filter</span>
-            <input type="text" name="quickGlobalModifierKeyFilter" class="po-input" data-action="gm-quick-modifier-key-filter" placeholder="Filter key presets" />
-          </label>
-          <label class="po-resource-row">
-            <span>Key Preset</span>
-            <select name="quickGlobalModifierKey" class="po-select" data-action="gm-quick-modifier-key-preset">
-              <option value="">Select key preset</option>
-              {{#each gmQuickTools.modifierKeyOptions}}
-              <option value="{{value}}">{{label}} - {{value}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Mode</span>
-            <select name="quickGlobalModifierMode" class="po-select">
-              {{#each gmQuickTools.modifierModeOptions}}
-              <option value="{{value}}">{{label}}</option>
-              {{/each}}
-            </select>
-          </label>
-          <label class="po-resource-row">
-            <span>Value</span>
-            <input type="text" name="quickGlobalModifierValue" class="po-input" value="1" />
-          </label>
-          <label class="po-resource-row po-notes-row-lg">
-            <span>Notes</span>
-            <textarea name="quickGlobalModifierNote" rows="3" class="po-input" placeholder="What this modifier does for the party"></textarea>
-          </label>
-          <div class="po-op-action-row">
-            <button type="button" class="po-btn po-btn-sm" data-action="gm-quick-submit-modifier">Add Draft</button>
-            <button type="button" class="po-btn po-btn-sm is-primary" data-action="gm-quick-save-modifier">Publish Drafts</button>
-          </div>
-        </section>
-
-        <section class="po-gm-section">
-          <div class="po-collapsible-head">
-            <div>
-              <div class="po-section-title">Draft Queue &amp; Saved History</div>
-              <div class="po-hint">Edit drafted entries before publishing, then remove published entries from the recent log when needed.</div>
-            </div>
-            <div class="po-pill">{{gmQuickTools.stagedModifierQueue.length}} draft(s)</div>
-          </div>
-
-          {{#if gmQuickTools.hasStagedModifierQueue}}
-          <div class="po-op-summary">Drafted modifiers are grouped by key and mode when you publish them.</div>
-          <div class="po-gm-modifier-queue">
-            {{#each gmQuickTools.stagedModifierQueue}}
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status">{{modeLabel}} {{value}}</div>
-              </div>
-              <div class="po-op-summary">{{key}} - {{createdAtLabel}} by {{createdBy}}</div>
-              <label class="po-resource-row">
-                <span>Label</span>
-                <input type="text" class="po-input" value="{{label}}" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="label" />
-              </label>
-              <label class="po-resource-row">
-                <span>Key Preset</span>
-                <select class="po-select" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="key">
-                  {{#each keyOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}} - {{value}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Mode</span>
-                <select class="po-select" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="mode">
-                  {{#each modeOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
-              </label>
-              <label class="po-resource-row">
-                <span>Value</span>
-                <input type="text" class="po-input" value="{{value}}" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="value" />
-              </label>
-              <label class="po-resource-row po-notes-row-lg">
-                <span>Notes</span>
-                <textarea rows="2" class="po-input" data-action="gm-quick-set-staged-field" data-staged-id="{{id}}" data-staged-field="note">{{note}}</textarea>
-              </label>
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-delete-staged-modifier" data-staged-id="{{id}}">Delete Draft</button>
-              </div>
-            </div>
-            {{/each}}
-          </div>
-          {{else}}
-          <div class="po-op-summary">No drafted modifiers yet.</div>
-          {{/if}}
-
-          <div class="po-op-divider"></div>
-          <div class="po-section-title">Recent Saved Modifiers</div>
-          {{#if gmQuickTools.hasModifierAddLog}}
-          <div class="po-gm-modifier-queue">
-            {{#each gmQuickTools.modifierAddLog}}
-            <div class="po-op-role-row">
-              <div class="po-op-role-head">
-                <div class="po-op-role-name">{{label}}</div>
-                <div class="po-op-role-status">{{modeLabel}} {{value}}</div>
-              </div>
-              <div class="po-op-summary">{{originLabel}} - {{key}} - {{createdAtLabel}} by {{createdBy}}</div>
-              {{#if hasNote}}
-              <div class="po-op-summary">Note: {{note}}</div>
-              {{/if}}
-              <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-danger" data-action="gm-quick-delete-saved-modifier" data-custom-id="{{customModifierId}}" data-log-id="{{id}}">Delete</button>
-              </div>
-            </div>
-            {{/each}}
-          </div>
-          {{else}}
-          <div class="po-op-summary">No saved modifiers yet.</div>
-          {{/if}}
-        </section>
-      </div>
-
       <div class="po-grid is-operations-layout">
         <div class="po-gm-section">
-          <div class="po-section-title">Global Modifiers</div>
-          <div class="po-hint">Applied derived modifiers from current operations, weather, and readiness state.</div>
+          <div class="po-section-title">Active Global Modifiers</div>
+          <div class="po-hint">Read-only derived modifiers from current operations, weather, and readiness state.</div>
           {{#if hasGlobalRows}}
           {{#each globalRows}}
           <div class="po-op-summary">
@@ -185,45 +45,6 @@
           {{/each}}
           {{else}}
           <div class="po-op-summary">No applied global modifiers.</div>
-          {{/if}}
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Party Modifiers</div>
-          <div class="po-hint">Applied custom party modifiers currently enabled in Party Operations.</div>
-          {{#if hasPartyRows}}
-          {{#each partyRows}}
-          <div class="po-op-summary">
-            <strong>{{label}}</strong>: {{modeLabel}} {{value}} - Applies to: {{appliesTo}} - {{key}}
-          </div>
-          {{#if note}}
-          <div class="po-op-summary">Note: {{note}}</div>
-          {{/if}}
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No applied party modifiers.</div>
-          {{/if}}
-        </div>
-
-        <div class="po-gm-section">
-          <div class="po-section-title">Modifier Toggles (GM)</div>
-          <div class="po-hint">Checked modifiers apply. Uncheck any row to temporarily disable it.</div>
-          {{#if hasExclusionRows}}
-          {{#each exclusionRows}}
-          <div class="po-op-role-row">
-            <label class="po-switch" title="Enable or disable this modifier">
-              <input id="{{modifierInputId}}" name="{{modifierInputName}}" type="checkbox" data-action="global-modifier-set-excluded" data-modifier-id="{{modifierId}}" {{#if enabled}}checked{{/if}} />
-              <span>{{label}} ({{valueLabel}}) - {{scopeLabel}} - {{source}}</span>
-            </label>
-            {{#if canDelete}}
-            <div class="po-op-action-row">
-              <button type="button" class="po-btn po-btn-sm is-danger" data-action="global-modifier-delete-custom" data-modifier-id="{{modifierId}}">Delete</button>
-            </div>
-            {{/if}}
-          </div>
-          {{/each}}
-          {{else}}
-          <div class="po-op-summary">No modifiers available for exclusion.</div>
           {{/if}}
         </div>
       </div>

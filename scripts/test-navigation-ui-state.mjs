@@ -88,18 +88,18 @@ assert.equal(uiState.getActiveGmQuickPanel(), "weather");
 uiState.setActiveGmQuickPanel("invalid");
 assert.equal(uiState.getActiveGmQuickPanel(), "none");
 
-assert.equal(uiState.getActiveGmOperationsTab(), "environment");
+assert.equal(uiState.getActiveGmOperationsTab(), "loot-sources");
 uiState.setActiveGmOperationsTab("loot-sources");
 assert.equal(uiState.getActiveGmOperationsTab(), "loot-sources");
-assert.equal(uiState.normalizeGmOperationsTab("invalid", "environment"), "environment");
+assert.equal(uiState.normalizeGmOperationsTab("invalid", "loot-sources"), "loot-sources");
 
-assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
+assert.equal(uiState.getActiveOperationsPlanningTab(), "resources");
 uiState.setActiveOperationsPlanningTab("loot");
 assert.equal(uiState.getActiveOperationsPlanningTab(), "loot");
 uiState.setActiveOperationsPlanningTab("sops");
-assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
+assert.equal(uiState.getActiveOperationsPlanningTab(), "resources");
 uiState.setActiveOperationsPlanningTab("invalid");
-assert.equal(uiState.getActiveOperationsPlanningTab(), "roles");
+assert.equal(uiState.getActiveOperationsPlanningTab(), "resources");
 
 assert.equal(uiState.isMiniVizCollapsed(), false);
 uiState.setMiniVizCollapsed(true);

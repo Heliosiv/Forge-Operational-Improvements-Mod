@@ -7,8 +7,8 @@ import {
 const OPERATIONS_PAGE_VALUES = new Set(["planning", "reputation", "merchants", "recovery", "gm"]);
 const PLAYER_HUB_TAB_VALUES = new Set(["watch", "march", "loot", "downtime"]);
 const GM_QUICK_PANEL_VALUES = new Set(["none", "faction", "modifier", "weather"]);
-const GM_OPERATIONS_TAB_VALUES = new Set(["environment", "loot-sources"]);
-const OPERATIONS_PLANNING_TAB_VALUES = new Set(["roles", "resources", "loot", "bonuses"]);
+const GM_OPERATIONS_TAB_VALUES = new Set(["loot-sources"]);
+const OPERATIONS_PLANNING_TAB_VALUES = new Set(["resources", "loot"]);
 
 // Group the app-wide navigation/session preferences behind a single browser-state boundary.
 export function createNavigationUiState({
@@ -112,16 +112,16 @@ export function createNavigationUiState({
   }
 
   function getActiveGmOperationsTab() {
-    const stored = String(readSessionValue(getGmOperationsTabStorageKey()) ?? "environment").trim().toLowerCase();
-    return GM_OPERATIONS_TAB_VALUES.has(stored) ? stored : "environment";
+    const stored = String(readSessionValue(getGmOperationsTabStorageKey()) ?? "loot-sources").trim().toLowerCase();
+    return GM_OPERATIONS_TAB_VALUES.has(stored) ? stored : "loot-sources";
   }
 
   function setActiveGmOperationsTab(tab) {
-    const value = String(tab ?? "environment").trim().toLowerCase();
-    writeSessionValue(getGmOperationsTabStorageKey(), GM_OPERATIONS_TAB_VALUES.has(value) ? value : "environment");
+    const value = String(tab ?? "loot-sources").trim().toLowerCase();
+    writeSessionValue(getGmOperationsTabStorageKey(), GM_OPERATIONS_TAB_VALUES.has(value) ? value : "loot-sources");
   }
 
-  function normalizeGmOperationsTab(tab, fallback = "environment") {
+  function normalizeGmOperationsTab(tab, fallback = "loot-sources") {
     const value = String(tab ?? fallback).trim().toLowerCase();
     return GM_OPERATIONS_TAB_VALUES.has(value) ? value : fallback;
   }
@@ -131,13 +131,13 @@ export function createNavigationUiState({
   }
 
   function getActiveOperationsPlanningTab() {
-    const stored = String(readSessionValue(getOperationsPlanningTabStorageKey()) ?? "roles").trim().toLowerCase();
-    return OPERATIONS_PLANNING_TAB_VALUES.has(stored) ? stored : "roles";
+    const stored = String(readSessionValue(getOperationsPlanningTabStorageKey()) ?? "resources").trim().toLowerCase();
+    return OPERATIONS_PLANNING_TAB_VALUES.has(stored) ? stored : "resources";
   }
 
   function setActiveOperationsPlanningTab(tab) {
     const normalized = String(tab ?? "").trim().toLowerCase();
-    const value = OPERATIONS_PLANNING_TAB_VALUES.has(normalized) ? normalized : "roles";
+    const value = OPERATIONS_PLANNING_TAB_VALUES.has(normalized) ? normalized : "resources";
     writeSessionValue(getOperationsPlanningTabStorageKey(), value);
   }
 
