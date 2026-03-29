@@ -348,6 +348,8 @@ const registerFeatureModules = createFeatureRegistrar({
   ]
 });
 
+const getAppInstance = (key) => getPartyOpsAppInstance(key);
+
 installFoundryEscapeHtmlShim(foundry);
 export { SETTINGS };
 
