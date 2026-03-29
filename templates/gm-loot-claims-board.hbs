@@ -57,6 +57,14 @@
       {{#if lootClaims.selectedActorClaimedCurrency}}
       <div class="po-op-summary">Selected actor already claimed a currency share.</div>
       {{/if}}
+      {{#if lootClaims.hasUnrepresentedPlayers}}
+      <div class="po-loot-claims-unrepresented-warning">
+        <strong>No character found for:</strong>
+        {{#each lootClaims.unrepresentedPlayers}}
+        <span class="po-pill" style="border-left: 3px solid {{color}}">{{name}}</span>
+        {{/each}}
+      </div>
+      {{/if}}
       <div class="po-loot-claims-actor-row">
         <div class="po-loot-claims-actor-header">
           <span>Deposit To</span>
@@ -64,6 +72,43 @@
           <span class="po-pill is-accent">Selected Destination: Stash</span>
           {{/if}}
         </div>
+        {{#if lootClaims.hasActorGroups}}
+        <div role="radiogroup" aria-label="Deposit destination">
+          {{#each lootClaims.actorGroups}}
+          <div class="po-loot-claims-actor-group">
+            <div class="po-loot-claims-actor-group-header">
+              <span class="po-loot-claims-actor-group-name" style="border-left: 3px solid {{ownerColor}}">{{ownerName}}</span>
+              {{#if isActive}}<span class="po-pill is-success">Online</span>{{else}}<span class="po-pill">Offline</span>{{/if}}
+            </div>
+            <div class="po-loot-claims-actor-grid">
+              {{#each actors}}
+              <button
+                type="button"
+                class="po-loot-claim-actor-card {{#if selected}}is-selected{{/if}} {{#if isStashLike}}is-stash{{/if}}"
+                data-action="set-loot-claim-actor"
+                data-actor-id="{{id}}"
+                role="radio"
+                aria-checked="{{#if selected}}true{{else}}false{{/if}}"
+                aria-label="Deposit to {{name}}"
+              >
+                <input type="radio" name="lootClaimActorId" value="{{id}}" {{#if selected}}checked{{/if}} tabindex="-1" aria-hidden="true" />
+                <img class="po-loot-claim-actor-thumb" src="{{img}}" alt="{{name}}" loading="lazy" />
+                <span class="po-loot-claim-actor-copy">
+                  <span class="po-loot-claim-actor-name">{{name}}</span>
+                  <span class="po-loot-claim-actor-meta">
+                    <span class="po-pill">{{typeLabel}}</span>
+                    {{#if isLastUsed}}<span class="po-pill is-success">Last Used</span>{{/if}}
+                    {{#if isStashLike}}<span class="po-pill is-accent">Stash</span>{{/if}}
+                    {{#if hasCurrencyLabel}}<span class="po-pill po-loot-claim-actor-gold">{{currencyLabel}}</span>{{/if}}
+                  </span>
+                </span>
+              </button>
+              {{/each}}
+            </div>
+          </div>
+          {{/each}}
+        </div>
+        {{else}}
         <div class="po-loot-claims-actor-grid" role="radiogroup" aria-label="Deposit destination">
           {{#each lootClaims.actorOptions}}
           <button
@@ -83,11 +128,13 @@
                 <span class="po-pill">{{typeLabel}}</span>
                 {{#if isLastUsed}}<span class="po-pill is-success">Last Used</span>{{/if}}
                 {{#if isStashLike}}<span class="po-pill is-accent">Stash</span>{{/if}}
+                {{#if hasCurrencyLabel}}<span class="po-pill po-loot-claim-actor-gold">{{currencyLabel}}</span>{{/if}}
               </span>
             </span>
           </button>
           {{/each}}
         </div>
+        {{/if}}
       </div>
       <div class="po-loot-claims-quick-actions">
         <div class="po-op-summary"><strong>Quick Actions:</strong> Use the selected destination for every button below.</div>
@@ -96,6 +143,8 @@
         <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Deposit Currency</button>
         <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot-items" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canDepositAllItems}}disabled{{/unless}}>Deposit All Items</button>
         <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSendEverything}}disabled{{/unless}}>Send Everything</button>
+        <button type="button" class="po-btn po-btn-sm" data-action="auto-assign-by-vouch" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canAutoAssignByVouch}}disabled{{/unless}}>Assign by Vouch</button>
+        <button type="button" class="po-btn po-btn-sm" data-action="auto-split-items" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canAutoSplitItems}}disabled{{/unless}}>Even-split Items</button>
         </div>
       </div>
       {{#if lootClaims.hasUndoEntries}}

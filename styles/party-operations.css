@@ -1394,6 +1394,44 @@
   gap: 5px;
 }
 
+.party-operations .po-loot-claim-actor-gold {
+  color: var(--po-accent, #b8860b);
+  font-weight: 600;
+}
+
+.party-operations .po-loot-claims-actor-group {
+  margin-bottom: 12px;
+}
+
+.party-operations .po-loot-claims-actor-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.party-operations .po-loot-claims-actor-group-name {
+  padding-left: 7px;
+}
+
+.party-operations .po-loot-claims-unrepresented-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  margin-bottom: 8px;
+  background: color-mix(in srgb, var(--po-warn, #c0782a) 10%, var(--po-surface));
+  border: 1px solid color-mix(in srgb, var(--po-warn, #c0782a) 40%, var(--po-border));
+  border-radius: 8px;
+  font-size: 0.82rem;
+}
+
 .party-operations .po-loot-claim-items-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));

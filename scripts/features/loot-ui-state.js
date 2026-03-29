@@ -1,3 +1,10 @@
+import {
+  getCurrentUserId,
+  readSessionValue,
+  removeSessionValue,
+  writeSessionValue
+} from "../core/browser-session-state.js";
+
 export const LOOT_REGISTRY_TABS = Object.freeze({
   PREVIEW: "preview",
   SETTINGS: "settings"
@@ -8,13 +15,6 @@ export const LOOT_SETTINGS_TABS = Object.freeze({
   TABLES: "tables",
   FILTERS: "filters"
 });
-
-import {
-  getCurrentUserId,
-  readSessionValue,
-  removeSessionValue,
-  writeSessionValue
-} from "../core/browser-session-state.js";
 
 // Encapsulate browser-scoped loot UI state behind a small feature boundary.
 export function createLootUiState({
@@ -110,6 +110,11 @@ export function createLootUiState({
   }
 
   function getLootClaimActorSelection() {
+    // Prefer localStorage so the selection persists across browser restarts
+    const localVal = normalizeLootClaimActorId(
+      readSessionValue(getLootClaimActorStorageKey(), { storageRef: globalThis.localStorage })
+    );
+    if (localVal) return localVal;
     return normalizeLootClaimActorId(readSessionValue(getLootClaimActorStorageKey()));
   }
 
@@ -133,9 +138,11 @@ export function createLootUiState({
     const actorId = normalizeLootClaimActorId(actorIdInput);
     if (!actorId) {
       removeSessionValue(getLootClaimActorStorageKey());
+      removeSessionValue(getLootClaimActorStorageKey(), { storageRef: globalThis.localStorage });
       return "";
     }
     writeSessionValue(getLootClaimActorStorageKey(), actorId);
+    writeSessionValue(getLootClaimActorStorageKey(), actorId, { storageRef: globalThis.localStorage });
     return actorId;
   }
 

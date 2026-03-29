@@ -4,6 +4,7 @@ import { createGmDowntimePageApp } from "./features/downtime-ui.js";
 import { createGmMerchantsPageApp } from "./features/merchants-ui.js";
 import { createGmAudioPageApp } from "./features/audio-ui.js";
 import { RestWatchSharedNoteApp } from "./apps/rest-watch-shared-note-app.js";
+import { createRestWatchPlayerAppClass } from "./apps/rest-watch-player-app.js";
 import { createAudioMixPresetManager } from "./features/audio-preset-manager.js";
 import { createAudioLibraryCatalogSignatureTools } from "./features/audio-library-catalog-signature.js";
 import { createAudioLibraryUiDraftActions } from "./features/audio-library-ui-draft-actions.js";
@@ -82,6 +83,11 @@ import {
 import { runPartyOperationsInit, runPartyOperationsReady } from "./core/lifecycle.js";
 import { createLogger } from "./core/logger.js";
 import {
+  buildUuidJournalLink,
+  escapeHtml as poEscapeHtml,
+  installFoundryEscapeHtmlShim
+} from "./core/html-utils.js";
+import {
   createModulePerfTracker,
   getPartyOpsPerfState,
   summarizeCurrentPartyOpsPerfState
@@ -125,6 +131,7 @@ import { createPartyOperationsSettingsAccess } from "./core/settings-access.js";
 import { createPartyOperationsSettingsBootstrap } from "./core/settings-bootstrap.js";
 import { createPartyOperationsSettingsHub } from "./core/settings-hub.js";
 import { createPartyOperationsConfigAccess } from "./core/config-access.js";
+import { SETTINGS } from "./core/settings-keys.js";
 import {
   buildPartyOperationsInitConfig as buildPartyOperationsInitConfigSurface,
   buildPartyOperationsReadyConfig as buildPartyOperationsReadyConfigSurface,
@@ -136,6 +143,40 @@ import { bindCanvasKeyboardSuppression } from "./core/ui-keyboard-guard.js";
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 import { emitModuleSocket, registerModuleSocketHandler } from "./core/socket-registry.js";
 import { createPartyOperationsSocketHandler } from "./core/socket-route-deps.js";
+import { createPartyOperationsSocketHandlerConfig } from "./core/socket-handler-config.js";
+import { createRenderPreservationTools } from "./core/render-preservation.js";
+import {
+  SOCKET_MARCH_OPS,
+  SOCKET_MARCH_RANKS,
+  SOCKET_NOTE_MAX_LENGTH,
+  SOCKET_REST_OPS
+} from "./core/socket-constants.js";
+import {
+  clampRestWatchRichNoteText,
+  clampSocketText,
+  normalizeRestNoteSaveSource
+} from "./core/socket-text-utils.js";
+import {
+  normalizeSocketActivityType,
+  sanitizeSocketIdentifier
+} from "./core/socket-validation.js";
+import {
+  getSocketRequesterFromMessage as getSocketRequester,
+  resolveSocketRequester as resolveRequester
+} from "./core/socket-requester.js";
+import { createPlayerUiOverrideTools } from "./core/player-ui-overrides.js";
+import { createPlayerPermissionDebugTools } from "./core/player-permission-debug.js";
+import { getRenderableElementRoot } from "./core/renderable-element-root.js";
+import { parseFolderOwnershipBatchLevelsFromSubmitData } from "./core/folder-ownership-utils.js";
+import {
+  readSessionStorageJson,
+  writeSessionStorageJson
+} from "./core/session-storage-json.js";
+import {
+  canAccessAllPlayerOps,
+  hasActiveGmClient,
+  isWritableModuleSettingKey
+} from "./core/socket-write-policy.js";
 import { createAppWindowPositionManager } from "./core/window-position-manager.js";
 import {
   preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
@@ -143,6 +184,7 @@ import {
 } from "./core/template-loader.js";
 import {
   PARTY_OPS_APP_INSTANCE_KEYS as APP_INSTANCE_KEYS,
+  PARTY_OPS_REFRESH_INSTANCE_KEYS,
   clearPartyOpsAppInstance,
   getPartyOpsAppInstance,
   getPartyOpsAppInstances,
@@ -159,6 +201,21 @@ import {
   REFRESH_SCOPE_KEYS,
   REFRESH_SCOPE_TO_WINDOW_IDS
 } from "./core/window-config.js";
+import {
+  getAppWindowId,
+  getRefreshScopesForSettingKey,
+  getRefreshTargetWindowIds,
+  normalizeRefreshScopeList
+} from "./core/refresh-scopes.js";
+import {
+  AUTO_UPKEEP_CHAT_ACTIONS,
+  AUTO_UPKEEP_PROMPT_STATES,
+  GATHER_DEFAULTS,
+  GATHER_ENVIRONMENT_KEYS,
+  GATHER_ENVIRONMENT_LABELS,
+  GATHER_QUICK_PRESETS,
+  GATHER_TRAVEL_CHOICES
+} from "./core/gather-constants.js";
 import {
   MERCHANT_SOURCE_TYPES as DOMAIN_MERCHANT_SOURCE_TYPES,
   MERCHANT_SCARCITY_LEVELS as DOMAIN_MERCHANT_SCARCITY_LEVELS,
@@ -291,156 +348,19 @@ const registerFeatureModules = createFeatureRegistrar({
   ]
 });
 
-const REFRESH_KNOWN_INSTANCE_KEYS = Object.freeze([
-  APP_INSTANCE_KEYS.REST_WATCH,
-  APP_INSTANCE_KEYS.OPERATIONS_SHELL,
-  APP_INSTANCE_KEYS.MARCHING_ORDER,
-  APP_INSTANCE_KEYS.REST_WATCH_PLAYER,
-  APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY,
-  APP_INSTANCE_KEYS.GM_FACTIONS_PAGE,
-  APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE,
-  APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE,
-  APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE,
-  APP_INSTANCE_KEYS.GM_LOOT_PAGE,
-  APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD
-]);
-
-const getAppInstance = (key) => getPartyOpsAppInstance(key);
-const setAppInstance = (key, instance) => setPartyOpsAppInstance(key, instance);
-const clearAppInstance = (key, instance) => clearPartyOpsAppInstance(key, instance);
-
-const PO_ESCAPE_HTML_FALLBACK = (value) => String(value ?? "")
-  .replace(/&/g, "&amp;")
-  .replace(/</g, "&lt;")
-  .replace(/>/g, "&gt;")
-  .replace(/\"/g, "&quot;")
-  .replace(/'/g, "&#39;");
-
-const poEscapeHtml = (value) => {
-  try {
-    const escapeFn = foundry?.utils?.escapeHTML;
-    if (typeof escapeFn === "function") return escapeFn(String(value ?? ""));
-  } catch {
-    // Fall through to fallback encoder.
-  }
-  return PO_ESCAPE_HTML_FALLBACK(value);
-};
-
-function buildUuidJournalLink(uuid, label) {
-  const safeLabel = poEscapeHtml(String(label ?? "").trim() || "Unknown");
-  const safeUuid = String(uuid ?? "").trim();
-  if (!safeUuid) return safeLabel;
-  return `@UUID[${safeUuid}]{${safeLabel}}`;
-}
-
-try {
-  if (typeof foundry?.utils?.escapeHTML !== "function" && foundry?.utils && typeof foundry.utils === "object") {
-    foundry.utils.escapeHTML = PO_ESCAPE_HTML_FALLBACK;
-  }
-} catch {
-  // Ignore shim failures; local fallbacks exist in some call-sites.
-}
-
-export const SETTINGS = {
-  REST_STATE: "restWatchState",
-  REST_COMMITTED: "restWatchStateLastCommitted",
-  MARCH_STATE: "marchingOrderState",
-  MARCH_COMMITTED: "marchingOrderStateLastCommitted",
-  REST_ACTIVITIES: "restActivities",
-  OPS_LEDGER: "operationsLedger",
-  GATHER_ROLL_MODE: "gatherRollMode",
-  GATHER_ENABLED: "gatherEnabled",
-  GATHER_MIN_HOURS: "gatherMinimumHours",
-  GATHER_DISALLOW_COMBAT: "gatherDisallowCombat",
-  GATHER_DC_LUSH: "gatherBaseDcLushForest",
-  GATHER_DC_TEMPERATE: "gatherBaseDcTemperateHills",
-  GATHER_DC_SPARSE: "gatherBaseDcSparsePlains",
-  GATHER_DC_COLD: "gatherBaseDcColdMountains",
-  GATHER_DC_DESERT: "gatherBaseDcDesert",
-  GATHER_DEFAULT_SEASON_MOD: "gatherDefaultSeasonMod",
-  GATHER_DEFAULT_WEATHER_MOD: "gatherDefaultWeatherMod",
-  GATHER_DEFAULT_CORRUPTION_MOD: "gatherDefaultCorruptionMod",
-  GATHER_ENABLE_HERBALISM_ADVANTAGE: "gatherEnableHerbalismAdvantage",
-  GATHER_ENABLE_HOSTILE_FAIL_FLAG: "gatherEnableHostileEncounterFlag",
-  GATHER_ENABLE_FAIL_BY5_COMPLICATION: "gatherEnableFailBy5Complication",
-  GATHER_ENABLE_SUCCESS_BY5_DOUBLE: "gatherEnableSuccessBy5Double",
-  GATHER_ENABLE_NAT20_BONUS: "gatherEnableNat20Bonus",
-  GATHER_ENABLE_NAT1_FLAG: "gatherEnableNat1Complication",
-  GATHER_ENABLE_CORRUPTION_WATER_CHECK: "gatherEnableCorruptionWaterCheck",
-  GATHER_CORRUPTION_SAVE_DC: "gatherCorruptionConSaveDc",
-  GATHER_ENABLE_WATER_AUTO_FOUND: "gatherEnableWaterAutoFound",
-  GATHER_ENABLE_TRAVEL_TRADEOFF: "gatherEnableTravelTradeoff",
-  GATHER_TRAVEL_TRADEOFF_DEFAULT: "gatherTravelTradeoffDefault",
-  GATHER_TRAVEL_CON_SAVE_DC: "gatherTravelConSaveDc",
-  INJURY_RECOVERY: "injuryRecoveryState",
-  INJURY_REMINDER_DAY: "injuryReminderDay",
-  MERCHANT_AUTO_REFRESH_DAY: "merchantAutoRefreshDay",
-  LOOT_SOURCE_CONFIG: "lootSourceConfig",
-  AUDIO_LIBRARY_SOURCE: "audioLibrarySource",
-  AUDIO_LIBRARY_ROOT: "audioLibraryRoot",
-  AUDIO_LIBRARY_CATALOG: "audioLibraryCatalog",
-  AUDIO_LIBRARY_HIDDEN_TRACKS: "audioLibraryHiddenTracks",
-  AUDIO_MIX_PRESETS: "audioMixPresets",
-  AUDIO_PREVIEW_VOLUME: "audioPreviewVolume",
-  INTEGRATION_MODE: "integrationMode",
-  SESSION_AUTOPILOT_SNAPSHOT: "sessionAutopilotSnapshot",
-  LAUNCHER_PLACEMENT: "launcherPlacement",
-  FLOATING_LAUNCHER_POS: "floatingLauncherPos",
-  FLOATING_LAUNCHER_LOCKED: "floatingLauncherLocked",
-  FLOATING_LAUNCHER_RESET: "floatingLauncherReset",
-  APP_WINDOW_POSITIONS: "appWindowPositions",
-  PLAYER_AUTO_OPEN_REST: "playerAutoOpenRest",
-  ADVANCED_SETTINGS_ENABLED: "advancedSettingsEnabled",
-  PLAYER_HUB_MODE: "playerHubMode",
-  UI_BUTTON_SOUNDS_ENABLED: "uiButtonSoundsEnabled",
-  UI_BUTTON_SOUND_PATH: "uiButtonSoundPath",
-  SHARED_GM_PERMISSIONS: "sharedGmPermissions",
-  DEBUG_ENABLED: "debugEnabled",
-  LOOT_SCARCITY: "lootScarcity",
-  LOOT_HORDE_UNCOMMON_PLUS_CHANCE: "lootHordeUncommonPlusChance",
-  REST_AUTOMATION_ENABLED: "restAutomationEnabled",
-  MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
-  PARTY_OPS_CONFIG: "partyOpsConfig",
-  JOURNAL_ENTRY_VISIBILITY: "journalEntryVisibility",
-  JOURNAL_FILTER_DEBOUNCE_MS: "journalFilterDebounceMs",
-  SESSION_SUMMARY_RANGE: "sessionSummaryRange",
-  JOURNAL_FOLDER_CACHE: "journalFolderCache",
-  INVENTORY_HOOK_MODE: "inventoryHookMode",
-  AUTO_INV_ENABLED: "autoInventoryEnabled",
-  AUTO_INV_WEAPON_PACK: "autoInventoryWeaponPackId",
-  AUTO_INV_ARMOR_PACK: "autoInventoryArmorPackId",
-  AUTO_INV_GEAR_PACK: "autoInventoryGearPackId",
-  AUTO_INV_CONSUMABLES_PACK: "autoInventoryConsumablesPackId",
-  AUTO_INV_CURRENCY_ENABLED: "autoInventoryCurrencyEnabled",
-  AUTO_INV_ITEM_CHANCE_SCALAR: "autoInventoryItemChanceScalar",
-  AUTO_INV_CONSUMABLE_CHANCE_SCALAR: "autoInventoryConsumableChanceScalar",
-  AUTO_INV_CURRENCY_SCALAR: "autoInventoryCurrencyScalar",
-  AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift"
-};
+installFoundryEscapeHtmlShim(foundry);
+export { SETTINGS };
 
 const pendingScrollRestore = new WeakMap();
 const pendingUiRestore = new WeakMap();
 const pendingWindowRestore = new WeakMap();
-let latestCanvasRestoreRequestId = 0;
 const sopNoteDebounceTimers = new WeakMap();
 const restWatchNoteDebounceTimers = new WeakMap();
 let restWatchSharedNoteApp = null;
-const playerUiLocalSettingOverridesMemory = new Map();
-const playerPermissionDebugMemory = [];
-const PLAYER_PERMISSION_DEBUG_LIMIT = 50;
 const SHARED_ACTOR_NOTE_FLAGS = Object.freeze({
   REST_WATCH: "sharedRestWatchNotes",
   MARCHING: "sharedMarchingNote"
 });
-const PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS = new Set([
-  SETTINGS.REST_STATE,
-  SETTINGS.REST_COMMITTED,
-  SETTINGS.REST_ACTIVITIES,
-  SETTINGS.MARCH_STATE,
-  SETTINGS.MARCH_COMMITTED,
-  SETTINGS.OPS_LEDGER,
-  SETTINGS.INJURY_RECOVERY
-]);
 const marchingNoteDebounceTimers = new WeakMap();
 const suppressedSettingRefreshKeys = new Map();
 const pendingGatherCheckRequests = new Map();
@@ -479,135 +399,6 @@ const audioLibraryMetadataWarmupState = {
   catalogKey: ""
 };
 let managedAudioMixResyncTimerId = null;
-const GATHER_TRAVEL_CHOICES = Object.freeze({
-  PACE: "pace",
-  FELL_BEHIND: "fell-behind"
-});
-const AUTO_UPKEEP_PROMPT_STATES = Object.freeze({
-  IDLE: "idle",
-  DECISION: "decision",
-  AWAITING_GATHER: "awaiting-gather"
-});
-const AUTO_UPKEEP_CHAT_ACTIONS = Object.freeze({
-  START_GATHER: "start-gather",
-  APPLY_NOW: "apply-now",
-  OPEN_RESOURCES: "open-resources"
-});
-const GATHER_ENVIRONMENT_KEYS = Object.freeze([
-  "lush_forest_or_river_valley",
-  "temperate_hills_or_light_woodland",
-  "sparse_plains_or_rocky",
-  "cold_mountains_or_swamp",
-  "desert_blighted_wasteland"
-]);
-const GATHER_ENVIRONMENT_LABELS = Object.freeze({
-  lush_forest_or_river_valley: "Lush Forest / River Valley",
-  temperate_hills_or_light_woodland: "Temperate Hills / Light Woodland",
-  sparse_plains_or_rocky: "Sparse Plains / Rocky Terrain",
-  cold_mountains_or_swamp: "Cold Mountains / Swamp",
-  desert_blighted_wasteland: "Desert / Blighted Wasteland"
-});
-const GATHER_DEFAULTS = Object.freeze({
-  enabled: true,
-  minimumHours: 4,
-  disallowCombat: true,
-  baseDc: {
-    lush_forest_or_river_valley: 10,
-    temperate_hills_or_light_woodland: 12,
-    sparse_plains_or_rocky: 14,
-    cold_mountains_or_swamp: 15,
-    desert_blighted_wasteland: 19
-  },
-  seasonMod: 0,
-  weatherMod: 0,
-  corruptionMod: 0,
-  herbalismAdvantageEnabled: false,
-  hostileEncounterFlagEnabled: true,
-  failBy5ComplicationEnabled: true,
-  successBy5DoubleEnabled: true,
-  nat20BonusEnabled: true,
-  nat1ComplicationEnabled: true,
-  corruptionWaterCheckEnabled: false,
-  corruptionConSaveDc: 13,
-  waterAutoFoundEnabled: true,
-  travelTradeoffEnabled: true,
-  travelTradeoffDefault: GATHER_TRAVEL_CHOICES.PACE,
-  travelConSaveDc: 10
-});
-const GATHER_QUICK_PRESETS = Object.freeze([
-  {
-    id: "lush-food-sweep",
-    label: "Lush Food Sweep",
-    description: "Low-risk food pass in lush terrain.",
-    options: {
-      environment: "lush_forest_or_river_valley",
-      resourceType: "food",
-      gatherMode: "plant",
-      seasonMod: 0,
-      weatherMod: 0,
-      corruptionMod: 0,
-      hostileTerrain: false,
-      isCorruptedRegion: false,
-      waterAutoFound: false,
-      duringTravel: false,
-      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
-    }
-  },
-  {
-    id: "river-water-run",
-    label: "River Water Run",
-    description: "Quick water gather at obvious source.",
-    options: {
-      environment: "lush_forest_or_river_valley",
-      resourceType: "water",
-      gatherMode: "standard",
-      seasonMod: 0,
-      weatherMod: 0,
-      corruptionMod: 0,
-      hostileTerrain: false,
-      isCorruptedRegion: false,
-      waterAutoFound: true,
-      duringTravel: false,
-      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
-    }
-  },
-  {
-    id: "temperate-travel-forage",
-    label: "Temperate Travel Forage",
-    description: "On-the-move forage with pace reduction tradeoff.",
-    options: {
-      environment: "temperate_hills_or_light_woodland",
-      resourceType: "food",
-      gatherMode: "standard",
-      seasonMod: 0,
-      weatherMod: 1,
-      corruptionMod: 0,
-      hostileTerrain: false,
-      isCorruptedRegion: false,
-      waterAutoFound: false,
-      duringTravel: true,
-      travelTradeoff: GATHER_TRAVEL_CHOICES.PACE
-    }
-  },
-  {
-    id: "wasteland-water-risk",
-    label: "Wasteland Water Risk",
-    description: "High-risk water gather in blighted terrain.",
-    options: {
-      environment: "desert_blighted_wasteland",
-      resourceType: "water",
-      gatherMode: "standard",
-      seasonMod: 0,
-      weatherMod: 2,
-      corruptionMod: 2,
-      hostileTerrain: true,
-      isCorruptedRegion: true,
-      waterAutoFound: false,
-      duringTravel: true,
-      travelTradeoff: GATHER_TRAVEL_CHOICES.FELL_BEHIND
-    }
-  }
-]);
 
 const {
   clampWindowPositionToViewport,
@@ -629,196 +420,27 @@ const {
 });
 
 function normalizePreservedRenderOptions(renderOptions = null) {
-  const patch = renderOptions && typeof renderOptions === "object" ? renderOptions : {};
-  return foundry.utils.mergeObject({
-    force: true,
-    parts: ["main"],
-    focus: false
-  }, patch, { inplace: false, overwrite: true });
+  return normalizePreservedRenderOptionsBridge(renderOptions);
 }
 
-function captureCanvasViewState() {
-  try {
-    const liveCanvas = globalThis?.canvas;
-    if (!liveCanvas?.ready || !liveCanvas?.stage) return null;
-    const sceneId = String(liveCanvas.scene?.id ?? "");
-    if (!sceneId) return null;
-    const x = Number(liveCanvas.stage.pivot?.x);
-    const y = Number(liveCanvas.stage.pivot?.y);
-    const scale = Number(liveCanvas.stage.scale?.x ?? liveCanvas.stage.scale?.y ?? 1);
-    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(scale)) return null;
-    return {
-      sceneId,
-      x,
-      y,
-      scale,
-      capturedAt: Date.now()
-    };
-  } catch {
-    return null;
-  }
-}
-
-function hasCanvasViewShifted(previous, current, options = {}) {
-  if (!previous || !current) return false;
-  if (String(previous.sceneId ?? "") !== String(current.sceneId ?? "")) return false;
-  const tolerancePx = Math.max(0.25, Number(options.tolerancePx ?? 1.5));
-  const toleranceScale = Math.max(0.0005, Number(options.toleranceScale ?? 0.0025));
-  return Math.abs(Number(current.x ?? 0) - Number(previous.x ?? 0)) > tolerancePx
-    || Math.abs(Number(current.y ?? 0) - Number(previous.y ?? 0)) > tolerancePx
-    || Math.abs(Number(current.scale ?? 1) - Number(previous.scale ?? 1)) > toleranceScale;
-}
-
-function restoreCanvasViewState(snapshot, options = {}) {
-  try {
-    if (!snapshot) return false;
-    const liveCanvas = globalThis?.canvas;
-    if (!liveCanvas?.ready || !liveCanvas?.stage) return false;
-    if (String(liveCanvas.scene?.id ?? "") !== String(snapshot.sceneId ?? "")) return false;
-    const current = captureCanvasViewState();
-    if (!hasCanvasViewShifted(snapshot, current, options)) return false;
-    const panData = {
-      x: Number(snapshot.x ?? 0),
-      y: Number(snapshot.y ?? 0),
-      scale: Number(snapshot.scale ?? 1),
-      duration: 0
-    };
-    if (typeof liveCanvas.animatePan === "function") {
-      void liveCanvas.animatePan(panData);
-      return true;
-    }
-    if (typeof liveCanvas.pan === "function") {
-      liveCanvas.pan(panData);
-      return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
-function queueCanvasViewRestore(snapshot, options = {}) {
-  if (!snapshot) return;
-  const latestOnly = options?.latestOnly !== false;
-  const requestId = latestOnly ? ++latestCanvasRestoreRequestId : 0;
-  const maxAgeMs = Math.max(80, Math.floor(Number(options.maxAgeMs ?? 1500)));
-  const runRestore = () => {
-    if ((Date.now() - Number(snapshot.capturedAt ?? 0)) > maxAgeMs) return;
-    if (latestOnly && requestId !== latestCanvasRestoreRequestId) return;
-    restoreCanvasViewState(snapshot, options);
-  };
-  requestAnimationFrame(() => {
-    requestAnimationFrame(runRestore);
-  });
-  try {
-    window.setTimeout(runRestore, 64);
-  } catch {
-    // Ignore timer failures in non-browser execution contexts.
-  }
-}
-
-function shouldPreserveCanvasForUiEvent(event, actionElement, actionInput = "") {
-  const eventType = String(event?.type ?? "").trim().toLowerCase();
-  if (eventType === "change" || eventType === "input") return true;
-  const action = String(actionInput ?? actionElement?.dataset?.action ?? "").trim().toLowerCase();
-  if (action === "ping") return false;
-  const tag = String(actionElement?.tagName ?? "").trim().toUpperCase();
-  if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return true;
-  return false;
-}
-
-function renderAppWithPreservedState(app, renderOptions = { force: true, parts: ["main"], focus: false }, options = {}) {
-  if (!app?.render) return;
-  const uiState = captureUiState(app);
-  if (uiState) pendingUiRestore.set(app, uiState);
-  const scrollState = captureScrollState(app);
-  if (scrollState.length > 0) pendingScrollRestore.set(app, scrollState);
-  const preserveWindow = options?.preserveWindow !== false;
-  if (preserveWindow) {
-    const windowState = captureWindowState(app);
-    if (windowState) pendingWindowRestore.set(app, windowState);
-  }
-  const normalizedOptions = normalizePreservedRenderOptions(renderOptions);
-  const preserveCanvas = options?.preserveCanvas !== false;
-  const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
-  app.render(normalizedOptions);
-  if (preserveCanvas) {
-    queueCanvasViewRestore(canvasSnapshot, {
-      action: String(options?.action ?? ""),
-      eventType: String(options?.eventType ?? "")
-    });
-  }
-}
-
-function normalizeRefreshScopeList(input) {
-  const values = Array.isArray(input) ? input : [input];
-  const normalized = [];
-  for (const value of values) {
-    const scope = String(value ?? "").trim().toLowerCase();
-    if (!scope) continue;
-    if (!Object.prototype.hasOwnProperty.call(REFRESH_SCOPE_TO_WINDOW_IDS, scope)) continue;
-    if (normalized.includes(scope)) continue;
-    normalized.push(scope);
-  }
-  return normalized;
-}
-
-function getRefreshTargetWindowIds(scopes = []) {
-  const normalizedScopes = normalizeRefreshScopeList(scopes);
-  if (normalizedScopes.length <= 0) return new Set(PARTY_OPS_REFRESHABLE_WINDOW_IDS);
-  const ids = new Set();
-  for (const scope of normalizedScopes) {
-    const windowIds = REFRESH_SCOPE_TO_WINDOW_IDS[scope] ?? [];
-    for (const windowId of windowIds) ids.add(windowId);
-  }
-  return ids;
-}
-
-function getAppWindowId(app) {
-  return String(app?.id ?? app?.options?.id ?? "").trim();
-}
-
-function getRefreshScopesForSettingKey(settingKeyInput) {
-  const fullKey = String(settingKeyInput ?? "").trim();
-  if (!fullKey) return [];
-  const prefix = `${MODULE_ID}.`;
-  const settingKey = fullKey.startsWith(prefix) ? fullKey.slice(prefix.length) : fullKey;
-  switch (settingKey) {
-    case SETTINGS.REST_STATE:
-    case SETTINGS.REST_COMMITTED:
-    case SETTINGS.REST_ACTIVITIES:
-      return [REFRESH_SCOPE_KEYS.REST];
-    case SETTINGS.MARCH_STATE:
-    case SETTINGS.MARCH_COMMITTED:
-      return [REFRESH_SCOPE_KEYS.MARCH];
-    case SETTINGS.OPS_LEDGER:
-    case SETTINGS.JOURNAL_ENTRY_VISIBILITY:
-    case SETTINGS.SESSION_SUMMARY_RANGE:
-      return [REFRESH_SCOPE_KEYS.OPERATIONS];
-    case SETTINGS.LOOT_SOURCE_CONFIG:
-    case SETTINGS.LOOT_SCARCITY:
-    case SETTINGS.LOOT_HORDE_UNCOMMON_PLUS_CHANCE:
-    case SETTINGS.AUDIO_LIBRARY_SOURCE:
-    case SETTINGS.AUDIO_LIBRARY_ROOT:
-    case SETTINGS.AUDIO_LIBRARY_CATALOG:
-    case SETTINGS.AUDIO_LIBRARY_HIDDEN_TRACKS:
-    case SETTINGS.AUDIO_MIX_PRESETS:
-      return [REFRESH_SCOPE_KEYS.LOOT];
-    case SETTINGS.INJURY_RECOVERY:
-    case SETTINGS.INJURY_REMINDER_DAY:
-      return [REFRESH_SCOPE_KEYS.INJURY];
-    case SETTINGS.ADVANCED_SETTINGS_ENABLED:
-    case SETTINGS.MARCHING_ORDER_LOCK_PLAYERS:
-    case SETTINGS.PLAYER_AUTO_OPEN_REST:
-    case SETTINGS.PLAYER_HUB_MODE:
-    case SETTINGS.REST_AUTOMATION_ENABLED:
-    case SETTINGS.SHARED_GM_PERMISSIONS:
-    case SETTINGS.LAUNCHER_PLACEMENT:
-      return [REFRESH_SCOPE_KEYS.SETTINGS];
-    default:
-      return [];
-  }
-}
+const {
+  normalizePreservedRenderOptions: normalizePreservedRenderOptionsBridge,
+  captureCanvasViewState,
+  queueCanvasViewRestore,
+  shouldPreserveCanvasForUiEvent,
+  renderAppWithPreservedState
+} = createRenderPreservationTools({
+  foundryRef: foundry,
+  globalObject: globalThis,
+  requestAnimationFrameFn: requestAnimationFrame,
+  setTimeoutFn: (...args) => window.setTimeout(...args),
+  pendingUiRestore,
+  pendingScrollRestore,
+  pendingWindowRestore,
+  captureUiState,
+  captureScrollState,
+  captureWindowState
+});
 
 const {
   mainTabIds: PO_MAIN_TAB_IDS,
@@ -1695,7 +1317,6 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "clear-environment-effects",
   "request-environment-checks",
   "gm-quick-add-faction",
-  "gm-quick-add-modifier",
   "gm-quick-open-downtime",
   "gm-quick-save-modifier",
   "gm-quick-set-staged-field",
@@ -1720,14 +1341,9 @@ const UPKEEP_DUSK_MINUTES = 20 * 60;
 const ENVIRONMENT_MOVE_PROMPT_COOLDOWN_MS = 6000;
 const environmentMovePromptByActor = new Map();
 const environmentMoveOriginByToken = new Map();
-const SOCKET_NOTE_MAX_LENGTH = 4000;
 const REST_WATCH_MAX_ENTRIES = 5;
 const REST_WATCH_SELECT_OPTIONS_CACHE_MAX = 96;
 const DOWNTIME_SUBMIT_OPTIONS_CACHE_MAX = 64;
-const SOCKET_ACTIVITY_TYPES = new Set(["rested", "light", "heavy", "strenuous"]);
-const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes", "moveSlot"]);
-const SOCKET_MARCH_OPS = new Set(["joinRank", "leaveRank", "setNote"]);
-const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
 const restWatchSelectOptionsCache = new Map();
 let restWatchActorOptionsCache = { key: "", options: [] };
 const downtimeSubmitOptionsCache = new Map();
@@ -2078,239 +1694,39 @@ function syncNotesDisclosureState(root) {
   });
 }
 
-function sanitizeSocketIdentifier(value, options = {}) {
-  const maxLength = Number.isFinite(Number(options.maxLength)) ? Math.max(1, Math.floor(Number(options.maxLength))) : 128;
-  const normalized = String(value ?? "").trim();
-  if (!normalized || normalized.length > maxLength) return "";
-  if (!/^[A-Za-z0-9._:-]+$/.test(normalized)) return "";
-  return normalized;
-}
+const {
+  getPlayerUiLocalOverrideStorageKey,
+  readPlayerUiLocalSettingOverrides,
+  writePlayerUiLocalSettingOverrides,
+  getPlayerUiLocalSettingOverride,
+  setPlayerUiLocalSettingOverride,
+  canUsePlayerUiLocalOverride,
+  getModuleSettingWithPlayerUiOverride
+} = createPlayerUiOverrideTools({
+  gameRef: game,
+  moduleId: MODULE_ID,
+  readSessionStorageJson,
+  writeSessionStorageJson,
+  deepClone: foundry.utils.deepClone,
+  canAccessAllPlayerOps,
+  hasActiveGmClient
+});
 
-function clampSocketText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
-  const cap = Number.isFinite(Number(maxLength)) ? Math.max(0, Math.floor(Number(maxLength))) : SOCKET_NOTE_MAX_LENGTH;
-  return String(value ?? "").slice(0, cap);
-}
-
-function clampRestWatchRichNoteText(value, maxLength = SOCKET_NOTE_MAX_LENGTH) {
-  const cap = Number.isFinite(Number(maxLength)) ? Math.max(0, Math.floor(Number(maxLength))) : SOCKET_NOTE_MAX_LENGTH;
-  const raw = String(value ?? "");
-  if (!raw || cap <= 0) return "";
-  if (typeof document === "undefined" || typeof document.createElement !== "function") {
-    return clampSocketText(raw, cap);
-  }
-  const scratch = document.createElement("div");
-  scratch.innerHTML = raw;
-  const plainText = String(scratch.textContent ?? "");
-  if (plainText.length <= cap) return raw;
-  const truncated = plainText.slice(0, cap);
-  return `<p>${poEscapeHtml(truncated).replace(/\n/g, "<br>")}</p>`;
-}
-
-function normalizeRestNoteSaveSource(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return normalized === "manual" ? "manual" : "autosave";
-}
-
-function resolveRequester(userOrId, options = {}) {
-  const allowGM = options.allowGM !== false;
-  const requireActive = options.requireActive === true;
-  const requester = typeof userOrId === "string" ? game.users.get(userOrId) : userOrId;
-  if (!requester) return null;
-  if (!allowGM && requester.isGM) return null;
-  if (requireActive && !requester.active) return null;
-  return requester;
-}
-
-function getSocketRequester(message, options = {}) {
-  const userId = sanitizeSocketIdentifier(message?.userId, { maxLength: 64 });
-  if (!userId) return null;
-  return resolveRequester(userId, options);
-}
-
-function normalizeSocketActivityType(value) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return SOCKET_ACTIVITY_TYPES.has(normalized) ? normalized : "";
-}
-
-function isWritableModuleSettingKey(settingKeyInput) {
-  const settingKey = String(settingKeyInput ?? "").trim();
-  if (!settingKey) return false;
-  return Object.values(SETTINGS).includes(settingKey);
-}
-
-
-function canAccessAllPlayerOps(user = game.user) {
-  if (!user) return false;
-  if (Boolean(user?.isGM)) return true;
-  try {
-    return Boolean(game.settings?.get?.(MODULE_ID, SETTINGS.SHARED_GM_PERMISSIONS));
-  } catch {
-    return false;
-  }
-}
-
-function hasActiveGmClient() {
-  const users = game.users?.contents ?? game.users ?? [];
-  return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
-}
-
-function getPlayerUiLocalOverrideStorageKey() {
-  return `po-player-ui-setting-overrides-${game.user?.id ?? "anon"}`;
-}
-
-function getPlayerPermissionDebugStorageKey() {
-  return `po-permission-debug-${game.user?.id ?? "anon"}`;
-}
-
-function readSessionStorageJson(key, fallback) {
-  try {
-    const raw = globalThis.sessionStorage?.getItem?.(key);
-    if (!raw) return fallback;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeSessionStorageJson(key, value) {
-  try {
-    globalThis.sessionStorage?.setItem?.(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function readPlayerUiLocalSettingOverrides() {
-  const key = getPlayerUiLocalOverrideStorageKey();
-  const stored = readSessionStorageJson(key, null);
-  if (stored && typeof stored === "object" && !Array.isArray(stored)) return stored;
-  return Object.fromEntries(playerUiLocalSettingOverridesMemory.entries());
-}
-
-function writePlayerUiLocalSettingOverrides(overrides = {}) {
-  const normalized = overrides && typeof overrides === "object" && !Array.isArray(overrides)
-    ? overrides
-    : {};
-  playerUiLocalSettingOverridesMemory.clear();
-  for (const [key, value] of Object.entries(normalized)) {
-    playerUiLocalSettingOverridesMemory.set(String(key ?? "").trim(), foundry.utils.deepClone(value));
-  }
-  writeSessionStorageJson(getPlayerUiLocalOverrideStorageKey(), normalized);
-}
-
-function getPlayerUiLocalSettingOverride(settingKey) {
-  const normalizedSettingKey = String(settingKey ?? "").trim();
-  if (!normalizedSettingKey) return undefined;
-  const overrides = readPlayerUiLocalSettingOverrides();
-  if (!Object.prototype.hasOwnProperty.call(overrides, normalizedSettingKey)) return undefined;
-  return foundry.utils.deepClone(overrides[normalizedSettingKey]);
-}
-
-function setPlayerUiLocalSettingOverride(settingKey, value) {
-  const normalizedSettingKey = String(settingKey ?? "").trim();
-  if (!normalizedSettingKey) return false;
-  const overrides = readPlayerUiLocalSettingOverrides();
-  overrides[normalizedSettingKey] = foundry.utils.deepClone(value);
-  writePlayerUiLocalSettingOverrides(overrides);
-  return true;
-}
-
-function canUsePlayerUiLocalOverride(settingKey, user = game.user) {
-  const normalizedSettingKey = String(settingKey ?? "").trim();
-  return Boolean(
-    normalizedSettingKey
-    && PLAYER_UI_LOCAL_OVERRIDE_SETTING_KEYS.has(normalizedSettingKey)
-    && user
-    && !user.isGM
-    && canAccessAllPlayerOps(user)
-    && !hasActiveGmClient()
-  );
-}
-
-function getModuleSettingWithPlayerUiOverride(settingKey) {
-  const normalizedSettingKey = String(settingKey ?? "").trim();
-  if (!normalizedSettingKey) return undefined;
-  if (canUsePlayerUiLocalOverride(normalizedSettingKey)) {
-    const override = getPlayerUiLocalSettingOverride(normalizedSettingKey);
-    if (override !== undefined) return override;
-  }
-  return game.settings.get(MODULE_ID, normalizedSettingKey);
-}
-
-function logPlayerPermissionDebug(code, message, details = {}) {
-  const entry = {
-    at: new Date().toISOString(),
-    userId: String(game.user?.id ?? "").trim(),
-    userName: String(game.user?.name ?? "Unknown").trim() || "Unknown",
-    code: String(code ?? "").trim() || "unknown",
-    message: String(message ?? "").trim() || "Permission barrier encountered.",
-    details: details && typeof details === "object" && !Array.isArray(details)
-      ? foundry.utils.deepClone(details)
-      : {}
-  };
-  playerPermissionDebugMemory.unshift(entry);
-  if (playerPermissionDebugMemory.length > PLAYER_PERMISSION_DEBUG_LIMIT) {
-    playerPermissionDebugMemory.length = PLAYER_PERMISSION_DEBUG_LIMIT;
-  }
-  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
-  const next = [entry, ...(Array.isArray(stored) ? stored : [])].slice(0, PLAYER_PERMISSION_DEBUG_LIMIT);
-  writeSessionStorageJson(getPlayerPermissionDebugStorageKey(), next);
-  console.warn(`[${MODULE_ID}][permission-debug] ${entry.message}`, entry);
-  try {
-    globalThis.dispatchEvent?.(new CustomEvent(`${MODULE_ID}:permission-debug`, { detail: entry }));
-  } catch {
-    // Ignore event dispatch failures in older browser contexts.
-  }
-  return entry;
-}
-
-function getPlayerPermissionDebugEntries() {
-  const stored = readSessionStorageJson(getPlayerPermissionDebugStorageKey(), []);
-  const entries = Array.isArray(stored) ? stored : playerPermissionDebugMemory;
-  return foundry.utils.deepClone(entries);
-}
-
-function clearPlayerPermissionDebugEntries() {
-  playerPermissionDebugMemory.length = 0;
-  try {
-    globalThis.sessionStorage?.removeItem?.(getPlayerPermissionDebugStorageKey());
-  } catch {
-    // Ignore storage cleanup failures.
-  }
-}
-
-function getRenderableElementRoot(html) {
-  if (!html) return null;
-  if (html instanceof HTMLElement) return html;
-  if (Array.isArray(html) && html[0] instanceof HTMLElement) return html[0];
-  if (html?.[0] instanceof HTMLElement) return html[0];
-  if (typeof html?.get === "function") {
-    const node = html.get(0);
-    if (node instanceof HTMLElement) return node;
-  }
-  return null;
-}
-
-function parseFolderOwnershipBatchLevelsFromSubmitData(submitData = {}) {
-  const source = submitData && typeof submitData === "object" ? submitData : {};
-  const levels = {};
-  for (const [key, rawValue] of Object.entries(source)) {
-    const textKey = String(key ?? "").trim();
-    if (!textKey.startsWith("ownership.")) continue;
-    const ownershipKey = textKey.slice("ownership.".length).trim();
-    if (!ownershipKey) continue;
-    const levelRaw = Number(rawValue);
-    if (!Number.isFinite(levelRaw) || levelRaw < 0) continue;
-    const level = Math.max(
-      Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.NONE ?? 0),
-      Math.min(Number(CONST?.DOCUMENT_OWNERSHIP_LEVELS?.OWNER ?? 3), Math.trunc(levelRaw))
-    );
-    levels[ownershipKey] = level;
-  }
-  return levels;
-}
+const {
+  getPlayerPermissionDebugStorageKey,
+  logPlayerPermissionDebug,
+  getPlayerPermissionDebugEntries,
+  clearPlayerPermissionDebugEntries
+} = createPlayerPermissionDebugTools({
+  gameRef: game,
+  moduleId: MODULE_ID,
+  readSessionStorageJson,
+  writeSessionStorageJson,
+  deepClone: foundry.utils.deepClone,
+  globalObject: globalThis,
+  customEventCtor: CustomEvent,
+  warnLogger: console.warn
+});
 
 function bindFolderOwnershipProxySubmit(app, html) {
   if (game.user?.isGM) return;
@@ -2351,7 +1767,9 @@ function bindFolderOwnershipProxySubmit(app, html) {
       return;
     }
 
-    const levels = parseFolderOwnershipBatchLevelsFromSubmitData(submitData);
+    const levels = parseFolderOwnershipBatchLevelsFromSubmitData(submitData, {
+      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS
+    });
     if (Object.keys(levels).length <= 0) {
       ui.notifications?.info("No ownership changes selected.");
       return;
@@ -7692,7 +7110,7 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
   async _onRender(context, options) {
     await super._onRender(context, options);
     if (DEBUG_LOG) console.log("RestWatchApp: _onRender called");
-    setAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
     bindTabListKeyboardNavigation(this.element);
@@ -8744,9 +8162,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
           await gmQuickAddFaction();
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
         },
-        "gm-quick-add-modifier": async () => {
-          openGlobalModifierSummaryPage({ force: true });
-        },
         "gm-quick-open-environment": async () => {
           openGmDowntimePage({ force: true });
         },
@@ -8941,10 +8356,10 @@ export class OperationsShellApp extends RestWatchApp {
     this._openedPlayers = true;
     await super._onRender(context, options);
     this._openedPlayers = openedPlayers;
-    if (getAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
-      clearAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     }
-    setAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
     syncApplicationWindowTitle(this, this._activePanel === "gm"
       ? "Party Operations - GM"
       : "Party Operations - Operations");
@@ -8979,161 +8394,11 @@ export class OperationsShellApp extends RestWatchApp {
   }
 
   async close(options = {}) {
-    clearAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
-    if (getAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
-      clearAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
+    clearPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL, this);
+    if (getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH) === this) {
+      clearPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH, this);
     }
     return super.close(options);
-  }
-}
-
-function buildGlobalModifierSummaryContext() {
-  const ledger = getOperationsLedger();
-  const roles = [];
-  const sops = [];
-  const effects = getOperationalEffects(ledger, roles, sops);
-
-  const globalRows = (effects.derivedModifierRows ?? [])
-    .filter((row) => row?.enabled)
-    .map((row) => ({
-      label: String(row?.label ?? "Modifier").trim() || "Modifier",
-      appliesTo: String(row?.appliesTo ?? "All player actors").trim() || "All player actors",
-      key: String(row?.key ?? "").trim() || "-",
-      value: String(row?.effectiveFormatted ?? row?.formatted ?? row?.value ?? "-").trim() || "-",
-      note: String(row?.note ?? "").trim()
-    }));
-
-  return {
-    moduleVersion: getCurrentModuleVersion(),
-    generatedAtLabel: new Date().toLocaleString(),
-    generatedBy: String(game.user?.name ?? "GM"),
-    globalRows,
-    hasGlobalRows: globalRows.length > 0,
-    hasAnyRows: globalRows.length > 0
-  };
-}
-
-function openGlobalModifierSummaryPage(renderOptions = { force: true }) {
-  const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  if (!canAccessGmPage()) {
-    ui.notifications?.warn("GM permissions are required to view global modifiers.");
-    return null;
-  }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY);
-  const app = existingApp?.element?.isConnected
-    ? existingApp
-    : new GlobalModifierSummaryApp(getResponsiveWindowOptions("global-modifiers"));
-  app.render(renderOptions);
-  return app;
-}
-
-export class GlobalModifierSummaryApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "party-operations-global-modifier-summary",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - Global Modifiers" },
-    position: getResponsiveWindowPosition("global-modifiers"),
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/global-modifiers.hbs" }
-  };
-
-  constructor(options = {}) {
-    super(options);
-    setAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY, this);
-  }
-
-  async _prepareContext() {
-    try {
-      return buildGlobalModifierSummaryContext();
-    } catch (error) {
-      console.warn(`${MODULE_ID}: failed to build global modifier summary context`, error);
-      return {
-        moduleVersion: getCurrentModuleVersion(),
-        generatedAtLabel: new Date().toLocaleString(),
-        generatedBy: String(game.user?.name ?? "GM"),
-        globalRows: [],
-        hasGlobalRows: false,
-        hasAnyRows: false
-      };
-    }
-  }
-
-  async close(options = {}) {
-    clearAppInstance(APP_INSTANCE_KEYS.GLOBAL_MODIFIER_SUMMARY, this);
-    return super.close(options);
-  }
-
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    renderAppWithPreservedState(this, renderOptions);
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-    ensurePartyOperationsClass(this);
-    bindCanvasKeyboardSuppression(this.element);
-    bindTabListKeyboardNavigation(this.element);
-    if (this.element) {
-      const bindClickOnce = (selector, handler) => {
-        const elements = Array.from(this.element.querySelectorAll(selector));
-        for (const element of elements) {
-          if (element.dataset.poBoundClick === "1") continue;
-          element.dataset.poBoundClick = "1";
-          element.addEventListener("click", (event) => {
-            void handler(event, element);
-          });
-        }
-      };
-
-      const bindChangeOnce = (selector, handler) => {
-        const elements = Array.from(this.element.querySelectorAll(selector));
-        for (const element of elements) {
-          if (element.dataset.poBoundChange === "1") continue;
-          element.dataset.poBoundChange = "1";
-          element.addEventListener("change", (event) => {
-            void handler(event, element);
-          });
-        }
-      };
-
-      const bindInputOnce = (selector, handler) => {
-        const elements = Array.from(this.element.querySelectorAll(selector));
-        for (const element of elements) {
-          if (element.dataset.poBoundInput === "1") continue;
-          element.dataset.poBoundInput = "1";
-          element.addEventListener("input", (event) => {
-            void handler(event, element);
-          });
-        }
-      };
-
-      bindClickOnce("[data-action='global-modifiers-back']", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        await this.close();
-        openMainTab("gm", { force: true });
-      });
-
-      bindClickOnce("[data-action='global-modifiers-refresh']", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-
-      bindClickOnce("[data-action='gm-panel-tab']", (event, element) => {
-        event.preventDefault();
-        event.stopPropagation();
-        const panelKey = String(element?.dataset?.panel ?? "").trim().toLowerCase();
-        if (!panelKey || panelKey === "global-modifiers") return;
-        openGmPanelByKey(panelKey, { force: true });
-      });
-
-    }
-    restorePendingWindowState(this);
-    restorePendingUiState(this);
-    restorePendingScrollState(this);
   }
 }
 
@@ -9370,7 +8635,7 @@ function openGmFactionsPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view faction controls.");
     return null;
   }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmFactionsPageApp(getResponsiveWindowOptions("gm-factions"));
@@ -9390,7 +8655,7 @@ function openGmDowntimePage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view downtime controls.");
     return null;
   }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmDowntimePageApp(getResponsiveWindowOptions("gm-downtime"));
@@ -9404,7 +8669,7 @@ function openGmMerchantsPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view merchant controls.");
     return null;
   }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmMerchantsPageApp(getResponsiveWindowOptions("gm-merchants"));
@@ -9418,7 +8683,7 @@ function openGmAudioPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view audio controls.");
     return null;
   }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmAudioPageApp(getResponsiveWindowOptions("gm-audio"));
@@ -9432,7 +8697,7 @@ function openGmLootPage(renderOptions = { force: true }) {
     ui.notifications?.warn("GM permissions are required to view loot controls.");
     return null;
   }
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmLootPageApp(getResponsiveWindowOptions("gm-loot"));
@@ -9452,8 +8717,6 @@ function openGmPanelByKey(panelKey, renderOptions = { force: true }) {
   if (key === "faction") {
     setActiveGmQuickPanel("none");
     app = openGmFactionsPage({ ...renderOptions, suppressHistory });
-  } else if (key === "global-modifiers") {
-    app = openGlobalModifierSummaryPage({ ...renderOptions, suppressHistory });
   } else if (key === "environment") {
     app = openGmDowntimePage({ ...renderOptions, suppressHistory });
   } else if (key === "downtime") {
@@ -9473,7 +8736,7 @@ function openGmLootClaimsBoard(renderOptions = { force: true }) {
   const runId = normalizeLootClaimRunId(renderOptions?.runId);
   if (runId) setLootClaimRunSelection(runId);
   const suppressHistory = Boolean(renderOptions?.suppressHistory);
-  const existingApp = getAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD);
+  const existingApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD);
   const app = existingApp?.element?.isConnected
     ? existingApp
     : new GmLootClaimsBoardApp(getResponsiveWindowOptions("gm-loot-claims-board"));
@@ -9802,7 +9065,7 @@ export const GmFactionsPageApp = createGmFactionsPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_FACTIONS_PAGE, instance);
   },
   buildContext: buildGmFactionsPageContext,
   openMainTab,
@@ -9838,7 +9101,7 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_ENVIRONMENT_PAGE, instance);
   },
   buildContext: buildGmEnvironmentPageContext,
   openMainTab,
@@ -9886,7 +9149,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_DOWNTIME_PAGE, instance);
   },
   buildContext: buildGmDowntimePageContext,
   openMainTab,
@@ -9920,7 +9183,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_MERCHANTS_PAGE, instance);
   },
   buildContext: buildGmMerchantsPageContext,
   openMainTab,
@@ -9974,7 +9237,7 @@ export const GmAudioPageApp = createGmAudioPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_AUDIO_PAGE, instance);
   },
   buildContext: buildGmAudioPageContext,
   openMainTab,
@@ -10113,7 +9376,7 @@ export const GmLootPageApp = createGmLootPageApp({
   BaseStatefulPageApp,
   getResponsiveWindowPosition,
   setPageInstance: (instance) => {
-    setAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE, instance);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_PAGE, instance);
   },
   buildContext: buildGmLootPageContext,
   openMainTab,
@@ -10166,7 +9429,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
 
   constructor(options = {}) {
     super(options);
-    setAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
   }
 
   async _prepareContext() {
@@ -10174,7 +9437,7 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   }
 
   async close(options = {}) {
-    clearAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
+    clearPartyOpsAppInstance(APP_INSTANCE_KEYS.GM_LOOT_CLAIMS_BOARD, this);
     return super.close(options);
   }
 
@@ -10264,6 +9527,16 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
           return;
         }
+        if (action === "auto-assign-by-vouch") {
+          await autoAssignItemsByVouchForGm(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
+        if (action === "auto-split-items") {
+          await autoSplitItemsEvenlyForGm(actionElement);
+          this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          return;
+        }
         if (action === "undo-loot-claim") {
           await undoLootClaimFromElement(actionElement);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -10327,404 +9600,81 @@ export class GmLootClaimsBoardApp extends HandlebarsApplicationMixin(Application
   }
 }
 
-export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
-  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
-    id: "rest-watch-player-app",
-    classes: ["party-operations"],
-    window: { title: "Party Operations - Rest Watch" },
-    position: getResponsiveWindowPosition("rest-watch-player"),
-    resizable: true
-  });
-
-  static PARTS = {
-    main: { template: "modules/party-operations/templates/rest-watch-player.hbs" }
-  };
-
-  async _prepareContext() {
-    try {
-      const state = getRestWatchState();
-      const visibility = state.visibility ?? "names-passives";
-      const slots = buildWatchSlotsView(state, false, visibility);
-      const lockBannerText = state.locked ? "Locked by GM" : "";
-      const lockBannerTooltip = state.locked ? "Edits are disabled while the GM lock is active." : "";
-      const miniViz = buildMiniVisualizationContext({ visibility });
-      const miniVizUi = buildMiniVizUiContext();
-      const totalSlots = slots.length;
-      const occupiedSlots = slots.filter((slot) => (slot.entries?.length ?? 0) > 0).length;
-      const assignedEntries = slots.reduce((count, slot) => count + (slot.entries?.length ?? 0), 0);
-      const lowDarkvisionSlots = slots.filter((slot) => Number(slot.slotNoDarkvision ?? 0) > 0).length;
-      const playerHubMode = getPlayerHubModeSetting();
-      const playerHubSimpleMode = playerHubMode === PLAYER_HUB_MODES.SIMPLE;
-      const playerHubTab = getPlayerHubTab();
-      const lootClaims = buildLootClaimsContext(game.user);
-      const operationsJournal = buildOperationsJournalContext();
-      const ledger = getOperationsLedger();
-      const downtime = buildDowntimeContext(ensureDowntimeState(ledger), { user: game.user });
-      const playerMarch = buildPlayerMarchQuickContext();
-      const context = {
-        isGM: false,
-        locked: state.locked,
-        lockBannerText,
-        lockBannerTooltip,
-        lockBannerClass: "",
-        showPopout: false,
-        lastUpdatedAt: state.lastUpdatedAt ?? "-",
-        lastUpdatedBy: state.lastUpdatedBy ?? "-",
-        moduleVersion: getCurrentModuleVersion(),
-        activeTab: "rest",
-        playerHubMode,
-        playerHubSimpleMode,
-        playerHubTab,
-        playerHubWatch: playerHubTab === "watch",
-        playerHubMarch: playerHubTab === "march",
-        playerHubLoot: playerHubTab === "loot",
-        playerHubDowntime: playerHubTab === "downtime",
-        slots,
-        miniViz,
-        playerMarch,
-        downtime,
-        lootClaims,
-        operationsJournal,
-        ...miniVizUi,
-        overview: {
-          totalSlots,
-          occupiedSlots,
-          assignedEntries,
-          lowDarkvisionSlots,
-          hasLowDarkvisionCoverage: lowDarkvisionSlots > 0,
-          lockState: state.locked ? "Locked by GM" : "Open"
-        }
-      };
-      logUiDebug("rest-watch-player", "prepared player context", {
-        template: PO_TEMPLATE_MAP["rest-watch-player"],
-        slots: slots.length
-      });
-      return context;
-    } catch (error) {
-      console.error(`${MODULE_ID}: RestWatchPlayerApp _prepareContext failed`, error);
-      logUiDebug("rest-watch-player", "falling back to safe player context", { error: String(error?.message ?? error) });
-      return {
-        isGM: false,
-        locked: false,
-        lockBannerText: "",
-        lockBannerTooltip: "",
-        lockBannerClass: "",
-        showPopout: false,
-        lastUpdatedAt: "-",
-        lastUpdatedBy: "-",
-        moduleVersion: getCurrentModuleVersion(),
-        activeTab: "rest",
-        playerHubMode: PLAYER_HUB_MODES.SIMPLE,
-        playerHubSimpleMode: true,
-        playerHubTab: "watch",
-        playerHubWatch: true,
-        playerHubMarch: false,
-        playerHubLoot: false,
-        playerHubDowntime: false,
-        slots: [],
-        miniViz: {},
-        playerMarch: {
-          hasActor: false,
-          actorId: "",
-          actorName: "",
-          currentRankId: "",
-          currentRankLabel: "Unassigned",
-          canSetRank: false,
-          lockState: "Locked",
-          rankButtons: []
-        },
-        downtime: {
-          hoursGranted: 0,
-          draftHoursGranted: 4,
-          publishedHoursGranted: 0,
-          publication: {
-            isPublished: false,
-            publishedHoursGranted: 0,
-            publishedAt: 0,
-            publishedAtLabel: "-",
-            publishedBy: "-",
-            statusLabel: "Not published to players",
-            submitHint: "Players cannot submit downtime until the GM publishes granted hours.",
-            buttonLabel: "Publish Hours to Players"
-          },
-          submit: {
-            actorOptions: [],
-            canChooseActor: false,
-            canSubmit: false,
-            actorName: "",
-            actionOptions: [],
-            hoursMax: 4,
-            hours: 4,
-            note: "",
-            disabledReason: "Waiting for GM to publish granted downtime hours."
-          },
-          entries: [],
-          hasEntries: false,
-          pendingCount: 0,
-          resolvedCount: 0,
-          logCount: 0,
-          logs: [],
-          hasLogs: false
-        },
-        lootClaims: {},
-        operationsJournal: {},
-        ...buildMiniVizUiContext(),
-        overview: {
-          totalSlots: 0,
-          occupiedSlots: 0,
-          assignedEntries: 0,
-          lowDarkvisionSlots: 0,
-          hasLowDarkvisionCoverage: false,
-          lockState: "Open"
-        }
-      };
-    }
-  }
-
-  async _onRender(context, options) {
-    await super._onRender(context, options);
-
-    setAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER, this);
-    ensurePartyOperationsClass(this);
-    bindCanvasKeyboardSuppression(this.element);
-    bindTabListKeyboardNavigation(this.element);
-    bindRestWatchDelegatedListeners({
-      app: this,
-      boundDatasetKey: "poBoundRestPlayer",
-      debugScope: "rest-watch-player",
-      onSwitchTabClick: (event, tabSwitch) => this.#onSwitchTabClick(event, tabSwitch),
-      onAction: (event) => this.#onAction(event),
-      changeHandlers: [
-        (event) => {
-          if (!event.target?.matches(REST_WATCH_ACTION_CONTROL_SELECTOR)) return false;
-          void this.#onAction(event);
-          return true;
-        },
-        (event) => {
-          if (!event.target?.matches(REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR)) return false;
-          syncDowntimeUiDraftFromElement(event.target);
-          return true;
-        }
-      ],
-      inputHandlers: [
-        (event) => {
-          if (!event.target?.matches("input[data-action='set-journal-filter']")) return false;
-          scheduleOperationsJournalFilterUpdate(this, event.target?.value ?? "", () => {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          });
-          return true;
-        },
-        (event) => {
-          if (!event.target?.matches(REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR)) return false;
-          syncDowntimeUiDraftFromElement(event.target);
-          return true;
-        }
-      ],
-      dragOverHandler: (event) => {
-        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
-        if (!materialDropZone) return;
-        event.preventDefault();
-      },
-      dropHandler: async (event) => {
-        const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
-        if (!materialDropZone) return;
-        event.preventDefault();
-        const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
-        if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      }
-    });
-
-    this.#updateActivityUI();
-    finalizeRestWatchRender(this, "rest-watch-player");
-  }
-
-  #updateActivityUI() {
-    updateRestWatchActivityUi(getAppRootElement(this));
-  }
-
-  #renderWithPreservedState(renderOptions = { force: true, parts: ["main"], focus: false }) {
-    renderAppWithPreservedState(this, renderOptions);
-  }
-
-  #onTabClick(tabElement, html, event = null) {
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    const tabName = normalizeMainTabId(getRequestedPanelIdFromElement(tabElement), "rest-watch");
-    logUiDebug("rest-watch-player", "main tab click", {
-      tabName,
-      target: summarizeClickTarget(event?.target ?? tabElement)
-    });
-    openMainTab(tabName, { force: true });
-  }
-
-  #onSwitchTabClick(event, tabButton) {
-    event.preventDefault();
-    event.stopPropagation();
-    const tabId = String(tabButton?.dataset?.tab ?? "").trim().toLowerCase();
-    logUiDebug("rest-watch-player", "switch-tab click", {
-      tabId,
-      target: summarizeClickTarget(event.target)
-    });
-    openMainTab(normalizeMainTabId(tabId, "rest-watch"), { force: true });
-  }
-
-  async #onAction(event) {
-    const element = event.target?.closest("[data-action]");
-    const action = element?.dataset?.action;
-    const preserveCanvas = shouldPreserveCanvasForUiEvent(event, element, action);
-    const canvasSnapshot = preserveCanvas ? captureCanvasViewState() : null;
-    try {
-      if (event?.type === "click") {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-      if (!action) return;
-      if (element?.tagName === "SELECT" && event?.type !== "change") return;
-
-      const handledJournalAction = await handleOperationsJournalAction(action, element, () => {
-        this.#renderWithPreservedState({ force: true, parts: ["main"] });
-      });
-      if (handledJournalAction) return;
-      const hubActionRequest = getPlayerHubActionRequestFromUiAction(action);
-      if (hubActionRequest) {
-        const result = await submitPlayerHubAction(hubActionRequest.type, {
-          element,
-          claimVariant: hubActionRequest.claimVariant
-        });
-        if (result?.rerender) this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        return;
-      }
-
-      switch (action) {
-        case "refresh":
-          emitSocketRefresh();
-          break;
-        case "player-hub-tab":
-          setPlayerHubTab(element?.dataset?.tab);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "refresh-downtime-submit-selection":
-          syncDowntimeUiDraftFromElement(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "switch-tab":
-          this.#onSwitchTabClick(event, element);
-          break;
-        case "main-tab":
-        case "set-panel":
-          this.#onTabClick(element, this.element);
-          break;
-        case "toggle-mini-viz":
-          setMiniVizCollapsed(!isMiniVizCollapsed());
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "set-activity":
-          await updateActivity(element, { skipLocalRefresh: true });
-          break;
-        case "clear":
-          await clearSlotEntry(element);
-          break;
-        case "open-shared-note":
-          await openRestWatchSharedNoteEditorFromElement(element);
-          break;
-        case "ping":
-          await pingActorFromElement(element);
-          break;
-        case "set-loot-claim-run":
-          if (setLootClaimRunSelectionFromElement(element)) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-          break;
-        case "remove-downtime-material-drop":
-          if (removeDowntimeSubmissionMaterialDropFromUi(element)) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-          break;
-        case "set-loot-claims-archive-sort":
-          setLootClaimsArchiveSort(element?.value);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "set-loot-claim-actor":
-          if (setLootClaimActorSelectionFromElement(element)) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-          break;
-        case "set-loot-claims-live-sort":
-          if (setLootClaimsLiveSortFromElement(element)) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-          break;
-        case "set-loot-claims-live-search":
-          if (setLootClaimsLiveSearchFromElement(element)) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-          break;
-        case "split-loot-currency":
-          await splitLootCurrencyForPlayer(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "undo-loot-claim":
-          await undoLootClaimFromElement(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "unlock-loot-claim-run":
-          await unlockLootClaimRunFromElement(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          break;
-        case "open-gm-loot-claims-board":
-          openGmLootClaimsBoard({
-            force: true,
-            runId: getLootClaimRunIdFromElement(element)
-          });
-          break;
-        case "open-loot-item":
-          await openLootItemFromElement(element);
-          break;
-        default:
-          break;
-      }
-    } finally {
-      if (preserveCanvas) {
-        queueCanvasViewRestore(canvasSnapshot, {
-          action: String(action ?? ""),
-          eventType: String(event?.type ?? "")
-        });
-      }
-    }
-  }
-
-  async #onNotesChange(event) {
-    if (event?.type === "input") return;
-    const state = getRestWatchState();
-    if (isRestWatchLockedForUser(state, canAccessAllPlayerOps())) {
-      notifyUiWarnThrottled("Rest watch is locked by the GM.", {
-        key: "rest-watch-locked",
-        ttlMs: 1500
-      });
-      return;
-    }
-    const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
-    if (!slotId) return;
-    const text = event.target.value ?? "";
-    const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
-    if (!actorId) return;
-    await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
-      notify: false,
-      source: "manual"
-    });
-  }
-
-  async close(options = {}) {
-    if (isModuleDebugEnabled()) {
-      console.trace(`[${MODULE_ID}] RestWatchPlayerApp.close`, {
-        options
-      });
-    }
-    return super.close(options);
-  }
-}
+export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
+  HandlebarsApplicationMixin,
+  ApplicationV2,
+  foundry,
+  getResponsiveWindowPosition,
+  getRestWatchState,
+  buildWatchSlotsView,
+  buildMiniVisualizationContext,
+  buildMiniVizUiContext,
+  getPlayerHubModeSetting,
+  PLAYER_HUB_MODES,
+  getPlayerHubTab,
+  buildLootClaimsContext,
+  buildOperationsJournalContext,
+  getOperationsLedger,
+  ensureDowntimeState,
+  buildDowntimeContext,
+  buildPlayerMarchQuickContext,
+  getCurrentModuleVersion,
+  logUiDebug,
+  PO_TEMPLATE_MAP,
+  MODULE_ID,
+  setPartyOpsAppInstance,
+  APP_INSTANCE_KEYS,
+  ensurePartyOperationsClass,
+  bindCanvasKeyboardSuppression,
+  bindTabListKeyboardNavigation,
+  bindRestWatchDelegatedListeners,
+  REST_WATCH_ACTION_CONTROL_SELECTOR,
+  REST_WATCH_PLAYER_DOWNTIME_DRAFT_SELECTOR,
+  syncDowntimeUiDraftFromElement,
+  scheduleOperationsJournalFilterUpdate,
+  addDowntimeSubmissionMaterialDropFromDropEvent,
+  finalizeRestWatchRender,
+  updateRestWatchActivityUi,
+  getAppRootElement,
+  renderAppWithPreservedState,
+  normalizeMainTabId,
+  getRequestedPanelIdFromElement,
+  summarizeClickTarget,
+  openMainTab,
+  shouldPreserveCanvasForUiEvent,
+  captureCanvasViewState,
+  handleOperationsJournalAction,
+  getPlayerHubActionRequestFromUiAction,
+  submitPlayerHubAction,
+  emitSocketRefresh,
+  setPlayerHubTab,
+  setMiniVizCollapsed,
+  isMiniVizCollapsed,
+  updateActivity,
+  clearSlotEntry,
+  openRestWatchSharedNoteEditorFromElement,
+  pingActorFromElement,
+  setLootClaimRunSelectionFromElement,
+  removeDowntimeSubmissionMaterialDropFromUi,
+  setLootClaimsArchiveSort,
+  setLootClaimActorSelectionFromElement,
+  setLootClaimsLiveSortFromElement,
+  setLootClaimsLiveSearchFromElement,
+  splitLootCurrencyForPlayer,
+  undoLootClaimFromElement,
+  unlockLootClaimRunFromElement,
+  openGmLootClaimsBoard,
+  getLootClaimRunIdFromElement,
+  openLootItemFromElement,
+  queueCanvasViewRestore,
+  isRestWatchLockedForUser,
+  canAccessAllPlayerOps,
+  notifyUiWarnThrottled,
+  getActiveActorForUser,
+  saveRestWatchEntryNoteByContext,
+  isModuleDebugEnabled,
+  game
+});
 
 export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) {
   static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -10849,7 +9799,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
 
   async _onRender(context, options) {
     await super._onRender(context, options);
-    setAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
+    setPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER, this);
     if (DEBUG_LOG) console.log("MarchingOrderApp: _onRender called");
     ensurePartyOperationsClass(this);
     bindCanvasKeyboardSuppression(this.element);
@@ -19729,12 +18679,8 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         return copy;
       });
     });
-  const sourceItemsCache = (typeof lootSourceItemsCache !== "undefined" && lootSourceItemsCache instanceof Map)
-    ? lootSourceItemsCache
-    : new Map();
-  const candidatesCache = (typeof lootCandidateBuildCache !== "undefined" && lootCandidateBuildCache instanceof Map)
-    ? lootCandidateBuildCache
-    : new Map();
+  const sourceItemsCache = lootSourceItemsCache;
+  const candidatesCache = lootCandidateBuildCache;
   const sourceItemsCacheTtlMs = Number(
     typeof LOOT_SOURCE_ITEMS_CACHE_TTL_MS !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_TTL_MS : 30000
   ) || 30000;
@@ -22134,6 +21080,17 @@ function buildLootClaimsContext(user = game.user) {
     const actorTypeLabel = actorType.charAt(0).toUpperCase() + actorType.slice(1);
     const actorImage = String(actor.img ?? actor.prototypeToken?.texture?.src ?? "icons/svg/mystery-man.svg").trim() || "icons/svg/mystery-man.svg";
     const isStashLike = actorType !== "character";
+    const sys = actor.system?.currency ?? {};
+    const cPp = Math.max(0, Math.floor(Number(sys.pp ?? 0) || 0));
+    const cGp = Math.max(0, Math.floor(Number(sys.gp ?? 0) || 0));
+    const cSp = Math.max(0, Math.floor(Number(sys.sp ?? 0) || 0));
+    const cCp = Math.max(0, Math.floor(Number(sys.cp ?? 0) || 0));
+    const currencyParts = [];
+    if (cPp > 0) currencyParts.push(`${cPp}pp`);
+    if (cGp > 0) currencyParts.push(`${cGp}gp`);
+    if (cSp > 0) currencyParts.push(`${cSp}sp`);
+    if (cCp > 0) currencyParts.push(`${cCp}cp`);
+    const currencyLabel = currencyParts.slice(0, 2).join(" ");
     return {
       id: actorId,
       name: actorName,
@@ -22142,9 +21099,55 @@ function buildLootClaimsContext(user = game.user) {
       img: actorImage,
       isStashLike,
       isLastUsed: actorId.length > 0 && actorId === storedActorId,
+      currencyLabel,
+      hasCurrencyLabel: currencyLabel.length > 0,
       selected: false
     };
   });
+  // Group PC actors by owning player (GM view)
+  const actorGroups = [];
+  if (canManageClaims) {
+    const groupByUserId = new Map();
+    const ungrouped = [];
+    for (const actorOption of actorOptions) {
+      const foundActor = game.actors?.get?.(actorOption.id);
+      const ownership = foundActor?.ownership ?? {};
+      const ownerUsers = Object.entries(ownership)
+        .filter(([userId, level]) => userId !== "default" && Number(level) >= 3)
+        .map(([userId]) => game.users?.get?.(userId))
+        .filter((u) => u && !u.isGM);
+      if (ownerUsers.length > 0) {
+        const ownerUser = ownerUsers[0];
+        if (!groupByUserId.has(ownerUser.id)) {
+          groupByUserId.set(ownerUser.id, {
+            ownerUserId: String(ownerUser.id),
+            ownerName: String(ownerUser.name ?? "Player"),
+            ownerColor: String(ownerUser.color ?? "#888888"),
+            isActive: Boolean(ownerUser.active),
+            actors: []
+          });
+        }
+        groupByUserId.get(ownerUser.id).actors.push(actorOption);
+      } else {
+        ungrouped.push(actorOption);
+      }
+    }
+    const sortedGroups = Array.from(groupByUserId.values())
+      .sort((a, b) => {
+        if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+        return a.ownerName.localeCompare(b.ownerName);
+      });
+    actorGroups.push(...sortedGroups);
+    if (ungrouped.length > 0) {
+      actorGroups.push({ ownerName: "Unassigned", isActive: false, ownerUserId: "", ownerColor: "#888888", actors: ungrouped });
+    }
+  }
+  // Active players with no eligible PC on the board
+  const activePlayers = (game.users?.contents ?? []).filter((u) => u && !u.isGM && Boolean(u.active));
+  const representedUserIds = new Set(actorGroups.filter((g) => g.ownerUserId).map((g) => g.ownerUserId));
+  const unrepresentedPlayers = activePlayers
+    .filter((u) => !representedUserIds.has(String(u.id)))
+    .map((u) => ({ name: String(u.name ?? "Player"), color: String(u.color ?? "#888888") }));
   const canChooseActor = actorOptions.length > 1;
   const preferredActorId = storedActorId || String(getActiveActorForUser(user)?.id ?? "").trim();
   const fallbackActorId = actorOptions[0]?.id ?? "";
@@ -22238,6 +21241,11 @@ function buildLootClaimsContext(user = game.user) {
     && !displayRunIsArchived
     && Boolean(selectedActorId)
     && (selectedRunHasItems || hasCurrencyRemaining);
+  const singleVouchItems = displayItems.filter((item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length === 1);
+  const unvouchedItems = displayItems.filter((item) => !Array.isArray(item?.vouchedByActorIds) || item.vouchedByActorIds.length === 0);
+  const pcActorCount = actorOptions.filter((a) => !a.isStashLike).length;
+  const canAutoAssignByVouch = hasSelectedRun && !displayRunIsArchived && singleVouchItems.length > 0;
+  const canAutoSplitItems = hasSelectedRun && !displayRunIsArchived && unvouchedItems.length > 0 && pcActorCount >= 2;
   return {
     selectedRunId: displayRunId,
     selectedRunStatus: displayRunStatus,
@@ -22281,6 +21289,12 @@ function buildLootClaimsContext(user = game.user) {
     selectedActorId,
     selectedActorName,
     selectedActorIsStashLike,
+    actorGroups,
+    hasActorGroups: actorGroups.length > 0,
+    unrepresentedPlayers,
+    hasUnrepresentedPlayers: unrepresentedPlayers.length > 0,
+    canAutoAssignByVouch,
+    canAutoSplitItems,
     liveSearch,
     hasLiveSearch: liveSearch.length > 0,
     liveSort,
@@ -22681,6 +21695,7 @@ function getOwnedPcActors() {
 
 function getLootClaimSelectableActorsForUser(user = game.user) {
   if (!user) return [];
+  const isGmUser = canAccessAllPlayerOps(user);
   const unique = new Map();
   const addActor = (actor) => {
     if (!actor || !actor.id) return;
@@ -22688,9 +21703,11 @@ function getLootClaimSelectableActorsForUser(user = game.user) {
     unique.set(String(actor.id), actor);
   };
 
-  if (user.character?.id) addActor(user.character);
+  if (!isGmUser && user.character?.id) addActor(user.character);
   for (const actor of getOwnedPcActors()) addActor(actor);
-  for (const actor of game.actors?.contents ?? []) addActor(actor);
+  if (!isGmUser) {
+    for (const actor of game.actors?.contents ?? []) addActor(actor);
+  }
 
   return Array.from(unique.values()).sort((left, right) => {
     const leftIsCharacter = String(left?.type ?? "") === "character";
@@ -41063,6 +40080,92 @@ async function claimAllLootForPlayer(element) {
   if (hasCurrency) await claimLootCurrencyForPlayer(element);
 }
 
+async function autoAssignItemsByVouchForGm(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) {
+    ui.notifications?.warn("No open loot claim board is selected.");
+    return;
+  }
+  const singleVouchItems = (board.items ?? []).filter(
+    (item) => Array.isArray(item?.vouchedByActorIds) && item.vouchedByActorIds.length === 1
+  );
+  if (singleVouchItems.length === 0) {
+    ui.notifications?.warn("No items have a single voucher to assign.");
+    return;
+  }
+  let claimedCount = 0;
+  let completionSummary = null;
+  for (const item of singleVouchItems) {
+    const actorId = String(item.vouchedByActorIds[0] ?? "").trim();
+    if (!actorId) continue;
+    const outcome = await applyLootClaimForUser(game.user, actorId, String(item.id ?? ""), runId);
+    if (!outcome.ok) continue;
+    claimedCount++;
+    await postLootItemClaimToChat(outcome);
+    if (outcome?.completion?.completed) completionSummary = outcome?.completion?.summary ?? completionSummary;
+  }
+  if (claimedCount <= 0) {
+    ui.notifications?.warn("No items could be assigned by vouch. Check actor permissions.");
+    return;
+  }
+  ui.notifications?.info(`Assigned ${claimedCount} item(s) by vouch.`);
+  if (completionSummary) await showLootRunCompletionSummary(completionSummary);
+}
+
+async function autoSplitItemsEvenlyForGm(element) {
+  const runId = getLootClaimRunIdFromElement(element);
+  const claims = ensureLootClaimsState(getOperationsLedger());
+  const board = getLootClaimBoardFromState(claims, runId, { requireOpen: true });
+  if (!board) {
+    ui.notifications?.warn("No open loot claim board is selected.");
+    return;
+  }
+  const targetActors = getOwnedPcActors().filter((a) => a?.id);
+  if (targetActors.length < 2) {
+    ui.notifications?.warn("Even-split requires at least two PC characters.");
+    return;
+  }
+  const unvouchedItems = (board.items ?? []).filter(
+    (item) => !Array.isArray(item?.vouchedByActorIds) || item.vouchedByActorIds.length === 0
+  );
+  if (unvouchedItems.length === 0) {
+    ui.notifications?.warn("No unvouched items to split.");
+    return;
+  }
+  // Greedy value-balanced distribution: assign each item to the PC with the lowest running GP total
+  const totalByActorId = new Map(targetActors.map((a) => [String(a.id), 0]));
+  const sortedItems = [...unvouchedItems].sort(
+    (a, b) => Number(b?.itemValueGp ?? 0) - Number(a?.itemValueGp ?? 0)
+  );
+  const assignments = [];
+  for (const item of sortedItems) {
+    let minTotal = Infinity;
+    let minActorId = String(targetActors[0].id);
+    for (const [actorId, total] of totalByActorId) {
+      if (total < minTotal) { minTotal = total; minActorId = actorId; }
+    }
+    assignments.push({ itemId: String(item.id ?? ""), actorId: minActorId });
+    totalByActorId.set(minActorId, minTotal + Math.max(0, Number(item.itemValueGp ?? 0)));
+  }
+  let claimedCount = 0;
+  let completionSummary = null;
+  for (const { itemId, actorId } of assignments) {
+    const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
+    if (!outcome.ok) continue;
+    claimedCount++;
+    await postLootItemClaimToChat(outcome);
+    if (outcome?.completion?.completed) completionSummary = outcome?.completion?.summary ?? completionSummary;
+  }
+  if (claimedCount <= 0) {
+    ui.notifications?.warn("No items could be split. Check actor permissions.");
+    return;
+  }
+  ui.notifications?.info(`Split ${claimedCount} item(s) evenly across ${targetActors.length} characters.`);
+  if (completionSummary) await showLootRunCompletionSummary(completionSummary);
+}
+
 async function applyLootClaimUndoForUser(user, logIdInput = "", runIdInput = "") {
   const logId = String(logIdInput ?? "").trim();
   const runId = normalizeLootClaimRunId(runIdInput);
@@ -42257,9 +41360,6 @@ async function showOperationalBrief() {
   const context = buildOperationsContext();
   const bonusItems = context.summary.effects.bonuses.map((item) => `<li>${item}</li>`).join("");
   const globalMinorBonusItems = context.summary.effects.globalMinorBonuses.map((item) => `<li>${item}</li>`).join("");
-  const globalModifierItems = (context.summary.effects.globalModifierRows ?? [])
-    .map((item) => `<li>${item.label}: ${item.formatted} - applies to ${item.appliesTo}${item.enabled ? "" : " - OFF"}</li>`)
-    .join("");
   const riskItems = context.summary.effects.risks.map((item) => `<li>${item}</li>`).join("");
   const missingRoles = context.diagnostics.missingRoles.length
     ? context.diagnostics.missingRoles.join(", ")
@@ -42276,8 +41376,6 @@ async function showOperationalBrief() {
       <p><strong>Inactive SOPs:</strong> ${inactiveSops}</p>
       <p><strong>Bonuses</strong></p>
       <ul>${bonusItems || "<li>None active.</li>"}</ul>
-      <p><strong>Party Health Global Modifiers (DAE Synced)</strong></p>
-      <ul>${globalModifierItems || "<li>No active Party Health global modifiers.</li>"}</ul>
       <p><strong>Active Positive Effects</strong></p>
       <ul>${globalMinorBonusItems || "<li>No active global minor bonuses.</li>"}</ul>
       <p><strong>Risks</strong></p>
@@ -44778,13 +43876,13 @@ function refreshSingleAppPreservingView(app) {
 }
 
 function refreshRestWatchAppsImmediately() {
-  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
-  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL));
-  refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH));
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.OPERATIONS_SHELL));
+  refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.REST_WATCH_PLAYER));
 }
 
 function moveActorEntryToRankDom(rankId, actorId) {
-  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   const root = getAppRootElement(marchingOrderApp);
   if (!root) return false;
   const targetEntries = root.querySelector(`.po-rank-col[data-rank-id="${rankId}"] .po-rank-entries`);
@@ -44853,13 +43951,13 @@ async function assignActorToRank(element) {
             }
           }, { skipLocalRefresh: true });
           if (!updated) {
-            refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+            refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
             return;
           }
 
           const moved = moveActorEntryToRankDom(rankId, actorId);
           if (!moved) {
-            refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+            refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
           }
         }
       },
@@ -44996,10 +44094,10 @@ async function toggleLight(element) {
     }
   }, { skipLocalRefresh: true });
   if (!updated) {
-    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
     return;
   }
-  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
   }
@@ -45027,10 +44125,10 @@ async function setLightRange(element) {
     }
   }, { skipLocalRefresh: true });
   if (!updated) {
-    refreshSingleAppPreservingView(getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
     return;
   }
-  const marchingOrderApp = getAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
+  const marchingOrderApp = getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER);
   if (marchingOrderApp?.element?.isConnected) {
     refreshSingleAppPreservingView(marchingOrderApp);
   }
@@ -46976,7 +46074,6 @@ export function installPartyOperationsAppBehaviors() {
       RestWatchApp,
       OperationsShellApp,
       MarchingOrderApp,
-      GlobalModifierSummaryApp,
       GmLootClaimsBoardApp,
       RestWatchPlayerApp
     ]
@@ -47101,88 +46198,105 @@ const {
   uiRef: ui
 });
 
-const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler({
-  game,
-  applyPlayerGatherRequest,
-  promptLocalGatherCheckRoll,
-  promptLocalGatherYieldRoll,
-  resolvePendingGatherCheckRequest,
-  resolvePendingGatherYieldRequest,
-  settings: SETTINGS,
-  refreshScopeKeys: REFRESH_SCOPE_KEYS,
-  normalizeRefreshScopeList,
-  setLootClaimActorSelection,
-  normalizeLootClaimActorId,
-  setLootClaimRunSelection,
-  normalizeLootClaimRunId,
-  waitForLootClaimsPublished,
-  buildLootClaimsContext,
-  logUiDebug,
-  openOperationsLootClaimsTabForPlayer,
-  openRestWatchUiForCurrentUser,
-    refreshOpenApps,
-    schedulePendingSopNoteSync,
-    syncMerchantBarterStatusForOpenDialogs,
-    getSocketRequester,
-    sanitizeSocketIdentifier,
-    normalizeSocketActivityType,
-  getRestActivities,
-  setModuleSettingWithLocalRefreshSuppressed,
-  emitSocketRefresh,
-  normalizeSocketRestRequest,
-  restOps: SOCKET_REST_OPS,
-  clampSocketText,
-  socketNoteMaxLength: SOCKET_NOTE_MAX_LENGTH,
-  normalizeRestNoteSaveSource,
-  applyRestRequest,
-  getRestWatchState,
-  resolveRequester,
-  canUserControlActor,
-  stampUpdate,
-  scheduleIntegrationSync,
-  applyPlayerActivityUpdateRequestFeature,
-  normalizeSocketMarchRequest,
-  marchOps: SOCKET_MARCH_OPS,
-  marchRanks: SOCKET_MARCH_RANKS,
-  applyMarchRequest,
-  getMarchingOrderState,
-  isMarchingOrderPlayerLocked,
-  applyPlayerSettingWriteRequestFeature,
-  canAccessAllPlayerOps,
-  isWritableModuleSettingKey,
-  foundry,
-  moduleId: MODULE_ID,
-  suppressNextSettingRefresh,
-  getRefreshScopesForSettingKey,
-  logUiFailure,
-  applyPlayerFolderOwnershipWriteRequestFeature,
-  constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
-  ui,
-  findOperationsJournalRootFolder,
-  journalFolderIsUnderRoot,
-  applyPlayerSopNoteRequestFeature,
-  sopKeys: SOP_KEYS,
-  updateOperationsLedger,
-  setSharedSopNoteText,
-  applyPlayerOperationsLedgerWriteRequestFeature,
-  buildDefaultOperationsLedger,
-  applyPlayerDowntimeSubmitRequestFeature,
-  getOperationsLedger,
-  ensureDowntimeState,
-  normalizeDowntimeSubmission,
-  applyDowntimeSubmissionForUser,
-  applyPlayerDowntimeClearRequestFeature,
-  canUserManageDowntimeActor,
-  applyPlayerDowntimeCollectRequestFeature,
-  applyDowntimeCollectionForUser,
-  getDowntimeCollectionSummary,
-  applyPlayerMerchantBarterRequest,
-  applyPlayerMerchantTradeRequest,
-  applyPlayerLootClaimRequest,
-  applyPlayerLootCurrencyClaimRequest,
-  applyPlayerLootCurrencySplitRequest,
-  applyPlayerLootUndoClaimRequest
-});
+const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
+  createPartyOperationsSocketHandlerConfig({
+    game,
+    gather: {
+      applyPlayerGatherRequest,
+      promptLocalGatherCheckRoll,
+      promptLocalGatherYieldRoll,
+      resolvePendingGatherCheckRequest,
+      resolvePendingGatherYieldRequest
+    },
+    shared: {
+      settings: SETTINGS,
+      refreshScopeKeys: REFRESH_SCOPE_KEYS,
+      normalizeRefreshScopeList,
+      setLootClaimActorSelection,
+      normalizeLootClaimActorId,
+      setLootClaimRunSelection,
+      normalizeLootClaimRunId,
+      waitForLootClaimsPublished,
+      buildLootClaimsContext,
+      logUiDebug,
+      openOperationsLootClaimsTabForPlayer,
+      openRestWatchUiForCurrentUser,
+      refreshOpenApps,
+      schedulePendingSopNoteSync,
+      syncMerchantBarterStatusForOpenDialogs,
+      getSocketRequester,
+      sanitizeSocketIdentifier,
+      normalizeSocketActivityType,
+      getRestActivities,
+      setModuleSettingWithLocalRefreshSuppressed,
+      emitSocketRefresh
+    },
+    rest: {
+      normalizeSocketRestRequest,
+      ops: SOCKET_REST_OPS,
+      clampSocketText,
+      clampRestWatchRichNoteText,
+      socketNoteMaxLength: SOCKET_NOTE_MAX_LENGTH,
+      normalizeRestNoteSaveSource,
+      applyRestRequest,
+      getRestWatchState,
+      resolveRequester,
+      canUserControlActor,
+      stampUpdate,
+      scheduleIntegrationSync,
+      applyPlayerActivityUpdateRequestFeature
+    },
+    march: {
+      normalizeSocketMarchRequest,
+      ops: SOCKET_MARCH_OPS,
+      ranks: SOCKET_MARCH_RANKS,
+      applyMarchRequest,
+      getMarchingOrderState,
+      isMarchingOrderPlayerLocked
+    },
+    settingsWrites: {
+      applyPlayerSettingWriteRequestFeature,
+      canAccessAllPlayerOps,
+      isWritableModuleSettingKey,
+      foundry,
+      moduleId: MODULE_ID,
+      suppressNextSettingRefresh,
+      getRefreshScopesForSettingKey,
+      logUiFailure,
+      applyPlayerFolderOwnershipWriteRequestFeature,
+      constDocOwnershipLevels: CONST?.DOCUMENT_OWNERSHIP_LEVELS,
+      ui
+    },
+    operations: {
+      applyPlayerSopNoteRequestFeature,
+      sopKeys: SOP_KEYS,
+      updateOperationsLedger,
+      setSharedSopNoteText,
+      applyPlayerOperationsLedgerWriteRequestFeature,
+      buildDefaultOperationsLedger
+    },
+    downtime: {
+      applyPlayerDowntimeSubmitRequestFeature,
+      getOperationsLedger,
+      ensureDowntimeState,
+      normalizeDowntimeSubmission,
+      applyDowntimeSubmissionForUser,
+      applyPlayerDowntimeClearRequestFeature,
+      canUserManageDowntimeActor,
+      applyPlayerDowntimeCollectRequestFeature,
+      applyDowntimeCollectionForUser,
+      getDowntimeCollectionSummary
+    },
+    commerce: {
+      applyPlayerMerchantBarterRequest,
+      applyPlayerMerchantTradeRequest,
+      applyPlayerLootClaimRequest,
+      applyPlayerLootCurrencyClaimRequest,
+      applyPlayerLootCurrencySplitRequest,
+      applyPlayerLootUndoClaimRequest
+    }
+  })
+);
 
 function toggleCardNotes(element) {
   const entry = element?.closest(".po-watch-entry, .po-watch-assignment-inline, .po-watch-assignment-row");
@@ -47244,7 +46358,7 @@ const refreshOpenAppsController = createOpenAppRefresher({
   normalizeRefreshScopeList,
   getRefreshTargetWindowIds,
   refreshableWindowIds: PARTY_OPS_REFRESHABLE_WINDOW_IDS,
-  getKnownInstances: () => getPartyOpsAppInstances(REFRESH_KNOWN_INSTANCE_KEYS),
+  getKnownInstances: () => getPartyOpsAppInstances(PARTY_OPS_REFRESH_INSTANCE_KEYS),
   getUiWindows: () => ui.windows,
   getAppWindowId,
   appHasFocusedTypingInput,
@@ -47291,3 +46405,4 @@ export function emitSocketRefresh(options = {}) {
 function emitOpenRestPlayers() {
   emitModuleSocket({ type: "players:openRest" }, { channel: SOCKET_CHANNEL });
 }
+

@@ -377,9 +377,37 @@ export function createGmAudioPageApp(deps) {
       const cards = Array.from(root.querySelectorAll("[data-po-audio-live-monitor]"));
       if (cards.length < 1 || typeof getManagedAudioMixPlaybackMonitorSnapshot !== "function") return;
 
+      const FAST_POLL_MS = 250;
+      const IDLE_POLL_MS = 1000;
+      let currentPollMs = FAST_POLL_MS;
+      let idleTicks = 0;
+      let previousCurrentSeconds = 0;
+
+      const restartMonitor = () => {
+        if (this._audioLiveMonitorTimer) {
+          window.clearInterval(this._audioLiveMonitorTimer);
+          this._audioLiveMonitorTimer = null;
+        }
+        this._audioLiveMonitorTimer = window.setInterval(syncCards, currentPollMs);
+      };
+
       const syncCards = () => {
         const snapshot = getManagedAudioMixPlaybackMonitorSnapshot() ?? {};
         const livePlaybackId = String(snapshot?.playbackId ?? "").trim();
+        const snapshotCurrentSeconds = Math.max(0, Number(snapshot?.currentSeconds ?? 0) || 0);
+        const snapshotDurationSeconds = Math.max(0, Number(snapshot?.durationSeconds ?? 0) || 0);
+        const snapshotProgressPermille = Math.max(0, Math.min(1000, Number(snapshot?.progressPermille ?? 0) || 0));
+        const hasActiveProgress = snapshotDurationSeconds > 0 && snapshotProgressPermille > 0 && snapshotProgressPermille < 1000;
+        const isAdvancing = snapshotCurrentSeconds > (previousCurrentSeconds + 0.01);
+        previousCurrentSeconds = snapshotCurrentSeconds;
+        idleTicks = (hasActiveProgress || isAdvancing) ? 0 : (idleTicks + 1);
+
+        const nextPollMs = idleTicks >= 3 ? IDLE_POLL_MS : FAST_POLL_MS;
+        if (nextPollMs !== currentPollMs) {
+          currentPollMs = nextPollMs;
+          restartMonitor();
+        }
+
         for (const card of cards) {
           const expectedPlaybackId = String(card?.dataset?.playbackId ?? "").trim();
           const isActive = !expectedPlaybackId || !livePlaybackId || expectedPlaybackId === livePlaybackId;
@@ -408,7 +436,7 @@ export function createGmAudioPageApp(deps) {
       };
 
       syncCards();
-      this._audioLiveMonitorTimer = window.setInterval(syncCards, 250);
+      restartMonitor();
     }
 
     _getActionHandlers() {

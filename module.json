@@ -31,7 +31,6 @@
                       "templates/settings-hub.hbs",
                       "templates/marching-order.hbs",
                       "templates/rest-watch-player.hbs",
-                      "templates/global-modifiers.hbs",
                       "templates/gm-factions.hbs",
                       "templates/merchant-shop.hbs",
                       "templates/gm-environment.hbs",
