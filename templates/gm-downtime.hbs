@@ -423,8 +423,17 @@
                 <div class="po-op-summary">{{actionLabel}} - {{hours}} hour(s)</div>
                 {{#if hasQueuedEntries}}
                 <div class="po-op-summary">Queued: {{queueSummaryLabel}}</div>
-                {{#each queuedPreview}}
-                <div class="po-op-summary">- {{this}}</div>
+                {{#each queuedItems}}
+                <div class="po-downtime-queue-item-row">
+                  <div class="po-op-summary">{{label}}</div>
+                  {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
+                  <div class="po-op-action-row po-downtime-queue-actions">
+                    <button type="button" class="po-btn po-btn-sm" data-action="promote-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="promote">Promote Now</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="move-up-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="move-up" {{#if @first}}disabled{{/if}}>Up</button>
+                    <button type="button" class="po-btn po-btn-sm" data-action="move-down-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="move-down" {{#if @last}}disabled{{/if}}>Down</button>
+                    <button type="button" class="po-btn po-btn-sm is-danger" data-action="remove-downtime-queued-entry" data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}" data-queue-operation="remove">Remove</button>
+                  </div>
+                </div>
                 {{/each}}
                 {{/if}}
                 {{#if hasActionDetails}}

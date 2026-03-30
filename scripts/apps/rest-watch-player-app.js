@@ -53,6 +53,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     clearSlotEntry,
     openRestWatchSharedNoteEditorFromElement,
     pingActorFromElement,
+    editDowntimeQueueEntry,
     setLootClaimRunSelectionFromElement,
     removeDowntimeSubmissionMaterialDropFromUi,
     setLootClaimsArchiveSort,
@@ -355,6 +356,13 @@ export function createRestWatchPlayerAppClass(deps = {}) {
             break;
           case "refresh-downtime-submit-selection":
             syncDowntimeUiDraftFromElement(element);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "promote-downtime-queued-entry":
+          case "remove-downtime-queued-entry":
+          case "move-up-downtime-queued-entry":
+          case "move-down-downtime-queued-entry":
+            await editDowntimeQueueEntry(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
             break;
           case "switch-tab":

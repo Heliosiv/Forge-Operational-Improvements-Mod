@@ -1964,6 +1964,21 @@
     font-size: 0.75rem;
     color: var(--po-muted);
   }
+
+  .party-operations .po-downtime-queue-item-row {
+    margin: 6px 0;
+    padding: 6px 8px;
+    border: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
+    border-radius: calc(var(--po-radius) - 2px);
+    background: color-mix(in srgb, var(--po-surface) 92%, transparent);
+  }
+
+  .party-operations .po-downtime-queue-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
@@ -3721,6 +3736,11 @@
 .party-operations [data-tool="marching-order"] .po-march-formation-detail-card.is-invalid {
   border-color: color-mix(in srgb, var(--po-warn) 45%, var(--po-border));
   background: color-mix(in srgb, var(--po-warn) 12%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-formation-detail-card.is-strained {
+  border-color: color-mix(in srgb, #f59e0b 35%, var(--po-border));
+  background: color-mix(in srgb, #f59e0b 8%, var(--po-bg-alt));
 }
 
 .party-operations [data-tool="marching-order"] .po-formation-card-grid-wide {

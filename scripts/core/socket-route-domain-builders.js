@@ -211,6 +211,7 @@ export function buildDowntimeSocketRouteDeps({
   sanitizeSocketIdentifier,
   applyDowntimeSubmissionForUser,
   applyPlayerDowntimeClearRequestFeature,
+  applyPlayerDowntimeQueueEditRequestFeature,
   game,
   canUserManageDowntimeActor,
   updateOperationsLedger,
@@ -229,6 +230,14 @@ export function buildDowntimeSocketRouteDeps({
       applyDowntimeSubmissionForUser
     }),
     applyPlayerDowntimeClearRequest: (message, requesterRef) => applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
+      resolveRequester,
+      sanitizeSocketIdentifier,
+      game,
+      canUserManageDowntimeActor,
+      updateOperationsLedger,
+      ensureDowntimeState
+    }),
+    applyPlayerDowntimeQueueEditRequest: (message, requesterRef) => applyPlayerDowntimeQueueEditRequestFeature(message, requesterRef, {
       resolveRequester,
       sanitizeSocketIdentifier,
       game,

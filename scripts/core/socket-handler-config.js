@@ -79,6 +79,7 @@ export function createPartyOperationsSocketHandlerConfig({
     normalizeDowntimeSubmission: downtime.normalizeDowntimeSubmission,
     applyDowntimeSubmissionForUser: downtime.applyDowntimeSubmissionForUser,
     applyPlayerDowntimeClearRequestFeature: downtime.applyPlayerDowntimeClearRequestFeature,
+    applyPlayerDowntimeQueueEditRequestFeature: downtime.applyPlayerDowntimeQueueEditRequestFeature,
     canUserManageDowntimeActor: downtime.canUserManageDowntimeActor,
     applyPlayerDowntimeCollectRequestFeature: downtime.applyPlayerDowntimeCollectRequestFeature,
     applyDowntimeCollectionForUser: downtime.applyDowntimeCollectionForUser,

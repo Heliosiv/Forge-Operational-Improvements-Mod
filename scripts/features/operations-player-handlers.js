@@ -311,6 +311,90 @@ export async function applyPlayerDowntimeClearRequest(message, requesterRef = nu
   });
 }
 
+export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef = null, deps = {}) {
+  const {
+    resolveRequester,
+    sanitizeSocketIdentifier,
+    game,
+    canUserManageDowntimeActor,
+    updateOperationsLedger,
+    ensureDowntimeState
+  } = deps;
+
+  const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+  if (!requester) return;
+  const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor || !canUserManageDowntimeActor(requester, actor)) return;
+
+  const operation = String(message?.operation ?? "").trim().toLowerCase();
+  const queueIndexRaw = Number(message?.queueIndex);
+  const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
+  if (!["remove", "promote", "move-up", "move-down"].includes(operation)) return;
+  if (queueIndex < 0) return;
+
+  await updateOperationsLedger((ledger) => {
+    const downtime = ensureDowntimeState(ledger);
+    if (!downtime.entries) return;
+    const current = downtime.entries[actorId];
+    if (!current) return;
+    const queue = Array.isArray(current.queue) ? [...current.queue] : [];
+    if (queueIndex >= queue.length) return;
+
+    if (operation === "remove") {
+      queue.splice(queueIndex, 1);
+      downtime.entries[actorId] = {
+        ...current,
+        queue
+      };
+      return;
+    }
+
+    if (operation === "move-up") {
+      if (queueIndex <= 0) return;
+      const temp = queue[queueIndex - 1];
+      queue[queueIndex - 1] = queue[queueIndex];
+      queue[queueIndex] = temp;
+      downtime.entries[actorId] = {
+        ...current,
+        queue
+      };
+      return;
+    }
+
+    if (operation === "move-down") {
+      if (queueIndex >= queue.length - 1) return;
+      const temp = queue[queueIndex + 1];
+      queue[queueIndex + 1] = queue[queueIndex];
+      queue[queueIndex] = temp;
+      downtime.entries[actorId] = {
+        ...current,
+        queue
+      };
+      return;
+    }
+
+    if (operation === "promote") {
+      const [nextActive] = queue.splice(queueIndex, 1);
+      if (!nextActive) return;
+      const previousActive = {
+        ...current,
+        queue: undefined
+      };
+      downtime.entries[actorId] = {
+        ...nextActive,
+        queue: [previousActive, ...queue],
+        hoursInvested: Math.max(0, Number(current.hoursInvested ?? 0) || 0),
+        currentMilestone: Math.max(0, Number(current.currentMilestone ?? 0) || 0),
+        updatedAt: Date.now(),
+        updatedBy: String(requester.name ?? "Player"),
+        updatedByUserId: String(requester.id ?? "")
+      };
+    }
+  });
+}
+
 export async function applyPlayerDowntimeCollectRequest(message, requesterRef = null, deps = {}) {
   const {
     resolveRequester,

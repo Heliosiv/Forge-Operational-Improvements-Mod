@@ -37,6 +37,7 @@ import {
 import {
   MARCH_DOCTRINE_STATES,
   MARCH_DOCTRINE_TRIGGERS,
+  MARCH_DOCTRINE_RECOVERY_PATHS,
   buildDefaultMarchDoctrineTracker,
   buildDoctrineCheckPayload,
   buildMarchFormationChoices,
@@ -54,6 +55,7 @@ import {
 import {
   applyPlayerActivityUpdateRequest as applyPlayerActivityUpdateRequestFeature,
   applyPlayerDowntimeClearRequest as applyPlayerDowntimeClearRequestFeature,
+  applyPlayerDowntimeQueueEditRequest as applyPlayerDowntimeQueueEditRequestFeature,
   applyPlayerDowntimeCollectRequest as applyPlayerDowntimeCollectRequestFeature,
   applyPlayerDowntimeSubmitRequest as applyPlayerDowntimeSubmitRequestFeature,
   applyPlayerFolderOwnershipWriteRequest as applyPlayerFolderOwnershipWriteRequestFeature,
@@ -9169,6 +9171,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   preResolveSelectedDowntimeEntry,
   resolveSelectedDowntimeEntry,
   editDowntimeResult,
+  editDowntimeQueueEntry,
   submitDowntimeAction,
   clearDowntimeEntry,
   clearDowntimeResults,
@@ -9659,6 +9662,7 @@ export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
   clearSlotEntry,
   openRestWatchSharedNoteEditorFromElement,
   pingActorFromElement,
+  editDowntimeQueueEntry,
   setLootClaimRunSelectionFromElement,
   removeDowntimeSubmissionMaterialDropFromUi,
   setLootClaimsArchiveSort,
@@ -9763,7 +9767,32 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         tokenCoverageFallbackActive: Boolean(tokenCoverageFallbackReason),
         tokenCoverageFallbackMessage: String(tokenCoverageFallbackReason?.message ?? ""),
         invalidReasons,
-        bandTargets: formationSnapshot.bandTargets
+        bandTargets: formationSnapshot.bandTargets,
+        // Failure streak and momentum tracking
+        failureStreakCount: Math.max(0, Number(tracker.failureStreakCount ?? 0)),
+        consecutiveSuccessCount: Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0)),
+        lastCheckWasSuccess: Boolean(tracker.lastCheckWasSuccess ?? false),
+        failureStreakLabel: (() => {
+          const count = Math.max(0, Number(tracker.failureStreakCount ?? 0));
+          if (count === 0) return "No failures";
+          if (count === 1) return "1 failure — DC increasing";
+          return `${count} failures — DC escalated +${count}`;
+        })(),
+        successStreakLabel: (() => {
+          const count = Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0));
+          if (count === 0) return "No momentum";
+          if (count < 3) return `${count} success${count !== 1 ? "es" : ""} — building momentum`;
+          const bonus = Math.floor(count / 3);
+          return `${count} successes ★ +${bonus} momentum bonus`;
+        })(),
+        formationHealthPercent: (() => {
+          const count = Math.max(0, Number(tracker.failureStreakCount ?? 0));
+          return Math.max(0, 100 - (count * 15));
+        })(),
+        healthTrendIndicator: (() => {
+          const was = Boolean(tracker.lastCheckWasSuccess ?? false);
+          return was ? "↑ Improving" : "↓ Declining";
+        })()
       },
       gmNotes: state.gmNotes ?? "",
       lightToggles,
@@ -30569,6 +30598,19 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const submittedCheckLabel = canManageDowntime ? buildDowntimeSubmittedCheckLabel(submittedCheck) : "";
     const queuedEntries = Array.isArray(entry?.queue) ? entry.queue : [];
     const queueCount = queuedEntries.length;
+    const queuedItems = queuedEntries.map((queuedEntry, queueIndex) => {
+      const queuedAction = getDowntimeActionDefinition(queuedEntry?.actionKey);
+      const queuedHours = clampDowntimeHours(queuedEntry?.hours, configuredHoursGranted);
+      return {
+        queueIndex,
+        actionKey: queuedAction.key,
+        actionLabel: queuedAction.label,
+        hours: queuedHours,
+        label: `${queuedAction.label} (${queuedHours}h)`,
+        hasNote: String(queuedEntry?.note ?? "").trim().length > 0,
+        note: String(queuedEntry?.note ?? "")
+      };
+    });
     const queuedPreview = queuedEntries.slice(0, 3).map((queuedEntry) => {
       const queuedAction = getDowntimeActionDefinition(queuedEntry?.actionKey);
       return `${queuedAction.label} (${clampDowntimeHours(queuedEntry?.hours, configuredHoursGranted)}h)`;
@@ -30713,6 +30755,7 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       preResolvedBy: canManageDowntime && hasPreResolved ? String(entry?.stagedBy ?? "GM") : "",
       queueCount,
       hasQueuedEntries: queueCount > 0,
+      queuedItems,
       queuedPreview,
       queueSummaryLabel: queueCount > 0 ? `${queueCount} queued` : ""
     };
@@ -32191,6 +32234,109 @@ async function clearDowntimeEntry(element) {
     actorId
   });
   ui.notifications?.info("Downtime clear request sent to GM.");
+}
+
+async function editDowntimeQueueEntry(element) {
+  const actorId = String(element?.dataset?.actorId ?? readDowntimeSubmissionFromUi(element)?.actorId ?? "").trim();
+  if (!actorId) return;
+  const actor = game.actors.get(actorId);
+  if (!actor) {
+    ui.notifications?.warn("Actor for downtime queue edit was not found.");
+    return;
+  }
+
+  const queueIndexRaw = Number(element?.dataset?.queueIndex ?? -1);
+  const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
+  if (queueIndex < 0) return;
+
+  const operation = String(element?.dataset?.queueOperation ?? "").trim().toLowerCase();
+  if (!["remove", "promote", "move-up", "move-down"].includes(operation)) return;
+
+  const operationLabel = operation === "remove"
+    ? "removed"
+    : operation === "promote"
+      ? "promoted"
+      : operation === "move-up"
+        ? "moved up"
+        : "moved down";
+
+  if (canAccessAllPlayerOps()) {
+    await updateOperationsLedger((ledger) => {
+      const downtime = ensureDowntimeState(ledger);
+      if (!downtime.entries) return;
+      const current = downtime.entries[actorId];
+      if (!current) return;
+      const queue = Array.isArray(current.queue) ? [...current.queue] : [];
+      if (queueIndex >= queue.length) return;
+
+      if (operation === "remove") {
+        queue.splice(queueIndex, 1);
+        downtime.entries[actorId] = {
+          ...current,
+          queue
+        };
+        return;
+      }
+
+      if (operation === "move-up") {
+        if (queueIndex <= 0) return;
+        const temp = queue[queueIndex - 1];
+        queue[queueIndex - 1] = queue[queueIndex];
+        queue[queueIndex] = temp;
+        downtime.entries[actorId] = {
+          ...current,
+          queue
+        };
+        return;
+      }
+
+      if (operation === "move-down") {
+        if (queueIndex >= queue.length - 1) return;
+        const temp = queue[queueIndex + 1];
+        queue[queueIndex + 1] = queue[queueIndex];
+        queue[queueIndex] = temp;
+        downtime.entries[actorId] = {
+          ...current,
+          queue
+        };
+        return;
+      }
+
+      if (operation === "promote") {
+        const [nextActive] = queue.splice(queueIndex, 1);
+        if (!nextActive) return;
+        const previousActive = {
+          ...current,
+          queue: undefined
+        };
+        downtime.entries[actorId] = {
+          ...nextActive,
+          queue: [previousActive, ...queue],
+          hoursInvested: Math.max(0, Number(current.hoursInvested ?? 0) || 0),
+          currentMilestone: Math.max(0, Number(current.currentMilestone ?? 0) || 0),
+          updatedAt: Date.now(),
+          updatedBy: String(game.user?.name ?? "GM"),
+          updatedByUserId: String(game.user?.id ?? "")
+        };
+      }
+    });
+    ui.notifications?.info(`Downtime queue entry ${operationLabel} for ${actor.name}.`);
+    return;
+  }
+
+  if (!canUserManageDowntimeActor(game.user, actor)) {
+    ui.notifications?.warn("You can only edit downtime queues for party characters you can access.");
+    return;
+  }
+
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "ops:downtime-queue-edit",
+    userId: game.user.id,
+    actorId,
+    queueIndex,
+    operation
+  });
+  ui.notifications?.info(`Downtime queue ${operationLabel} request sent to GM.`);
 }
 
 async function setDowntimeHoursGranted(element) {
@@ -43813,11 +43959,19 @@ async function runDoctrineCheckPrompt() {
   const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
   const doctrineRows = getMarchDoctrineActorRows(state);
   const trigger = formationSnapshot.doctrine.pendingTrigger || MARCH_DOCTRINE_TRIGGERS.MANUAL;
+  
+  // Get current failure and success streak from tracker for DC escalation
+  const currentTracker = formationSnapshot.doctrineTracker ?? {};
+  const currentFailureStreak = Math.max(0, Number(currentTracker.failureStreakCount ?? 0));
+  const currentSuccessStreak = Math.max(0, Number(currentTracker.consecutiveSuccessCount ?? 0));
+  
   const checkPayloadBase = buildDoctrineCheckPayload({
     formationId: formationSnapshot.formation.id,
     doctrineState: formationSnapshot.doctrine.state,
     trigger,
-    actorRows: doctrineRows
+    actorRows: doctrineRows,
+    failureStreakCount: currentFailureStreak,
+    consecutiveSuccessCount: currentSuccessStreak
   });
 
   if (!checkPayloadBase.active) {
@@ -43831,7 +43985,9 @@ async function runDoctrineCheckPrompt() {
     doctrineState: formationSnapshot.doctrine.state,
     trigger,
     actorRows: doctrineRows,
-    rollTotal: roll.total
+    rollTotal: roll.total,
+    failureStreakCount: currentFailureStreak,
+    consecutiveSuccessCount: currentSuccessStreak
   });
 
   await updateMarchingOrderState((draft) => {
@@ -43842,10 +43998,40 @@ async function runDoctrineCheckPrompt() {
     tracker.lastCheckSummary = checkPayload.summary;
     tracker.lastCheckRollTotal = Number(checkPayload.rollTotal ?? 0);
     tracker.lastCheckDc = Number(checkPayload.dc ?? 0);
+    tracker.lastCheckWasSuccess = checkPayload.checkPassed ?? false;
+    
+    // Update failure/success streaks based on check result
+    if (checkPayload.checkPassed) {
+      tracker.failureStreakCount = 0;
+      tracker.consecutiveSuccessCount = Math.min(10, (tracker.consecutiveSuccessCount ?? 0) + 1);
+    } else {
+      tracker.failureStreakCount = Math.min(10, (tracker.failureStreakCount ?? 0) + 1);
+      tracker.consecutiveSuccessCount = 0;
+    }
+    
     clearDoctrineTriggerPending(draft);
   });
   await flushIntegrationSyncQueue("march-doctrine-check");
   const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+
+  // Build detailed result card with severity callout
+  const resultEmoji = checkPayload.checkPassed ? "✓" : "✗";
+  const severityLabel =
+    checkPayload.severityLevel === "success" ? "<span style='color: #28c44e; font-weight: bold;'>✓ SUCCESS</span>" :
+    checkPayload.severityLevel === "light" ? "<span style='color: #f59e0b; font-weight: bold;'>⚠ STRAINED</span>" :
+    "<span style='color: #dc2626; font-weight: bold;'>✗ CRITICAL - FORMATION BROKEN</span>";
+  
+  const momentumLabel = checkPayload.momentumBonus > 0
+    ? `<p><em>★ Momentum Bonus: +${checkPayload.momentumBonus} (from ${checkPayload.consecutiveSuccesses} successes)</em></p>`
+    : "";
+  
+  const streakLabel = currentFailureStreak > 0
+    ? `<p><em>Difficulty escalated by +${currentFailureStreak} due to failure streak.</em></p>`
+    : "";
+  
+  const recoveryHint = !checkPayload.checkPassed && checkPayload.recoveryPath !== MARCH_DOCTRINE_RECOVERY_PATHS.NONE
+    ? `<p><em>Recovery option: ${escape(checkPayload.recoveryPathLabel)}</em></p>`
+    : "";
 
   const doctrinePartySummary = doctrineRows.length > 0
     ? `<ul>${doctrineRows.map((row) => `<li><strong>${escape(row.name)}</strong> (${escape(row.rankId)}) CHA ${row.charismaModifier >= 0 ? "+" : ""}${row.charismaModifier}</li>`).join("")}</ul>`
@@ -43860,8 +44046,12 @@ async function runDoctrineCheckPrompt() {
       <p><strong>Trigger:</strong> ${escape(getMarchDoctrineTriggerLabel(checkPayload.trigger))}</p>
       <p><strong>Method:</strong> ${escape(checkPayload.methodLabel)}</p>
       <p><strong>Roll:</strong> ${escape(checkPayload.summary)} Result ${roll.total}</p>
+      ${streakLabel}
+      ${momentumLabel}
+      <p><strong>Result:</strong> ${severityLabel}</p>
       <p><strong>Doctrine State:</strong> ${escape(checkPayload.stateLabel)}</p>
       <p><strong>Formation State:</strong> ${escape(updatedSnapshot.formationState.stateLabel)}</p>
+      ${recoveryHint}
       <p><strong>Assigned Group:</strong></p>
       ${doctrinePartySummary}
       <p><strong>Current Effects:</strong> ${escape(updatedSnapshot.effectSummaries.join(", ") || "None")}</p>
@@ -46415,6 +46605,7 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
       normalizeDowntimeSubmission,
       applyDowntimeSubmissionForUser,
       applyPlayerDowntimeClearRequestFeature,
+      applyPlayerDowntimeQueueEditRequestFeature,
       canUserManageDowntimeActor,
       applyPlayerDowntimeCollectRequestFeature,
       applyDowntimeCollectionForUser,

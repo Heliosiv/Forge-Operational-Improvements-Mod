@@ -17,6 +17,7 @@ export function createGmDowntimePageApp(deps) {
     preResolveSelectedDowntimeEntry,
     resolveSelectedDowntimeEntry,
     editDowntimeResult,
+    editDowntimeQueueEntry,
     submitDowntimeAction,
     clearDowntimeEntry,
     clearDowntimeResults,
@@ -157,6 +158,15 @@ export function createGmDowntimePageApp(deps) {
           success: "Downtime action submitted.",
           failure: "Downtime submission failed."
         })),
+        "submit-downtime-action-replace": rerenderAlways(withActionStatus(submitDowntimeAction, {
+          pending: "Submitting downtime action…",
+          success: "Downtime action submitted.",
+          failure: "Downtime submission failed."
+        })),
+        "promote-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
+        "remove-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
+        "move-up-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
+        "move-down-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
         "clear-downtime-entry": rerenderAlways(clearDowntimeEntry),
         "clear-downtime-results": rerenderAlways(() => clearDowntimeResults()),
         "unarchive-downtime-log": rerenderAlways(unarchiveDowntimeLogEntry),
