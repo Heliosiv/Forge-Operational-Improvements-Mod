@@ -30023,6 +30023,35 @@ function getDowntimeEntryHoursInvested(downtime = {}, actorId = "") {
   return Number(entry.hoursInvested ?? 0) || 0;
 }
 
+function getDowntimePlannedHoursSummary(downtimeState = {}, actorId = "", options = {}) {
+  const entry = downtimeState?.entries?.[actorId] ?? null;
+  const configuredHours = clampDowntimeHours(downtimeState?.hoursGranted, 4);
+  const publication = normalizeDowntimePublication(downtimeState, configuredHours);
+  const capHours = Number.isFinite(Number(options?.capHours))
+    ? Math.max(1, Math.floor(Number(options.capHours) || configuredHours))
+    : Math.max(1, Math.floor(Number(options?.isGM ? configuredHours : publication.publishedHoursGranted) || configuredHours));
+  const queue = Array.isArray(entry?.queue) ? entry.queue : [];
+  const queueHours = queue.reduce((sum, queuedEntry) => sum + clampDowntimeHours(queuedEntry?.hours, configuredHours), 0);
+  const activeHours = clampDowntimeHours(entry?.hours, configuredHours);
+  const replacementHours = Number.isFinite(Number(options?.replacementHours))
+    ? Math.max(0, Math.floor(Number(options.replacementHours) || 0))
+    : activeHours;
+  const queueMode = String(options?.queueMode ?? "append").trim().toLowerCase();
+  const plannedHours = queueMode === "replace-current"
+    ? replacementHours + queueHours
+    : activeHours + queueHours + replacementHours;
+  const overBudgetHours = Math.max(0, plannedHours - capHours);
+  return {
+    activeHours,
+    queueHours,
+    plannedHours,
+    capHours,
+    overBudgetHours,
+    withinBudgetHours: Math.max(0, capHours - plannedHours),
+    hasOverBudget: overBudgetHours > 0
+  };
+}
+
 function normalizeLootClaimCurrencyRecord(value = {}, fallback = {}) {
   const source = value && typeof value === "object" ? value : {};
   const base = fallback && typeof fallback === "object" ? fallback : {};
@@ -30719,12 +30748,17 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const projectedTimelineLabel = queueCount > 0
       ? `Next ${nextQueuedHours}h${laterQueuedHours > 0 ? ` | Later ${laterQueuedHours}h` : ""} | Total queued ${queuedHoursTotal}h`
       : "";
-    const activeHours = clampDowntimeHours(entry?.hours, configuredHoursGranted);
-    const plannedHoursTotal = activeHours + queuedHoursTotal;
-    const queueBudgetCapHours = Math.max(1, Number(hoursGranted ?? configuredHoursGranted) || configuredHoursGranted);
-    const queueOverBudgetHours = Math.max(0, plannedHoursTotal - queueBudgetCapHours);
-    const queueWithinBudgetHours = Math.max(0, queueBudgetCapHours - plannedHoursTotal);
-    const hasQueueBudgetWarning = queueOverBudgetHours > 0;
+    const plannedHoursSummary = getDowntimePlannedHoursSummary(downtimeState, String(entry?.actorId ?? ""), {
+      isGM: canManageDowntime,
+      capHours: hoursGranted,
+      queueMode: "replace-current",
+      replacementHours: clampDowntimeHours(entry?.hours, configuredHoursGranted)
+    });
+    const plannedHoursTotal = plannedHoursSummary.plannedHours;
+    const queueBudgetCapHours = plannedHoursSummary.capHours;
+    const queueOverBudgetHours = plannedHoursSummary.overBudgetHours;
+    const queueWithinBudgetHours = plannedHoursSummary.withinBudgetHours;
+    const hasQueueBudgetWarning = plannedHoursSummary.hasOverBudget;
     const queueBudgetLabel = hasQueueBudgetWarning
       ? `Planned ${plannedHoursTotal}h exceeds ${queueBudgetCapHours}h cap by ${queueOverBudgetHours}h.`
       : `Planned ${plannedHoursTotal}h of ${queueBudgetCapHours}h cap (${queueWithinBudgetHours}h remaining).`;
@@ -32262,6 +32296,18 @@ async function submitDowntimeAction(element) {
   const existingEntry = downtimeState?.entries?.[normalizedSubmission.actorId] ?? null;
   const entryAlreadyActive = Boolean(existingEntry) && (existingEntry.pending !== false || existingEntry.lastResult);
   const willQueue = entryAlreadyActive && normalizedSubmission.queueMode !== "replace-current";
+  if (!canAccessAllPlayerOps()) {
+    const plannedHoursSummary = getDowntimePlannedHoursSummary(downtimeState, normalizedSubmission.actorId, {
+      isGM: false,
+      capHours: submissionHoursCap,
+      queueMode: normalizedSubmission.queueMode,
+      replacementHours: normalizedSubmission.hours
+    });
+    if (plannedHoursSummary.hasOverBudget) {
+      ui.notifications?.warn(`This plan exceeds the ${plannedHoursSummary.capHours}h downtime cap by ${plannedHoursSummary.overBudgetHours}h.`);
+      return;
+    }
+  }
   const actionKey = String(normalizedSubmission.actionKey ?? "").trim();
   if (actionKey === "crafting") {
     const craftable = getCraftableById(normalizedSubmission.actionData?.craftItemId);
