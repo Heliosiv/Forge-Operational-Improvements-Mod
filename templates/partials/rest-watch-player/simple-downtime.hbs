@@ -250,6 +250,7 @@
       </summary>
       <div class="po-panel-disclosure-body">
         <div class="po-op-summary po-downtime-queue-timeline">{{projectedTimelineLabel}}</div>
+        <div class="po-op-summary po-downtime-queue-budget {{#if hasQueueBudgetWarning}}is-warn{{else}}is-good{{/if}}">{{queueBudgetLabel}}</div>
         {{#each queuedItems}}
         <div class="po-downtime-queue-item-row" draggable="true" data-downtime-queue-item data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}">
           <div class="po-op-summary">

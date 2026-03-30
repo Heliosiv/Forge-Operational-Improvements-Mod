@@ -30719,6 +30719,15 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     const projectedTimelineLabel = queueCount > 0
       ? `Next ${nextQueuedHours}h${laterQueuedHours > 0 ? ` | Later ${laterQueuedHours}h` : ""} | Total queued ${queuedHoursTotal}h`
       : "";
+    const activeHours = clampDowntimeHours(entry?.hours, configuredHoursGranted);
+    const plannedHoursTotal = activeHours + queuedHoursTotal;
+    const queueBudgetCapHours = Math.max(1, Number(hoursGranted ?? configuredHoursGranted) || configuredHoursGranted);
+    const queueOverBudgetHours = Math.max(0, plannedHoursTotal - queueBudgetCapHours);
+    const queueWithinBudgetHours = Math.max(0, queueBudgetCapHours - plannedHoursTotal);
+    const hasQueueBudgetWarning = queueOverBudgetHours > 0;
+    const queueBudgetLabel = hasQueueBudgetWarning
+      ? `Planned ${plannedHoursTotal}h exceeds ${queueBudgetCapHours}h cap by ${queueOverBudgetHours}h.`
+      : `Planned ${plannedHoursTotal}h of ${queueBudgetCapHours}h cap (${queueWithinBudgetHours}h remaining).`;
     const queuedPreview = queuedEntries.slice(0, 3).map((queuedEntry) => {
       const queuedAction = getDowntimeActionDefinition(queuedEntry?.actionKey);
       return `${queuedAction.label} (${clampDowntimeHours(queuedEntry?.hours, configuredHoursGranted)}h)`;
@@ -30866,6 +30875,11 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       queuedItems,
       queuedHoursTotal,
       projectedTimelineLabel,
+      plannedHoursTotal,
+      queueBudgetCapHours,
+      queueOverBudgetHours,
+      hasQueueBudgetWarning,
+      queueBudgetLabel,
       queuedPreview,
       queueSummaryLabel: queueCount > 0 ? `${queueCount} queued` : ""
     };

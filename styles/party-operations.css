@@ -2020,6 +2020,11 @@
     font-weight: 600;
     color: var(--po-accent-contrast);
   }
+
+  .party-operations .po-downtime-queue-budget {
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
