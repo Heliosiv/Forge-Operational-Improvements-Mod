@@ -400,11 +400,12 @@
               <div class="po-op-summary is-good">{{downtime.gmResolve.selectedPreResolvedLabel}}</div>
               {{/if}}
               <div class="po-hint" data-downtime-resolve-hint>{{downtime.gmResolve.hint}}</div>
-              <div class="po-hint">Use <strong>Auto-Fill</strong> to populate fields from the activity baseline. Use <strong>Auto-Resolve</strong> to roll and stage a draft for review. Use <strong>Deliver to Player</strong> to finalize and push to the player's inbox.</div>
+              <div class="po-hint">Use <strong>Auto-Fill</strong> to populate fields from the activity baseline. Use <strong>Auto-Resolve</strong> to roll and stage a draft for review. Use <strong>Deliver to Player</strong> to finalize and push to the player's inbox. Use <strong>Resolve Next Automatically</strong> to do both in one step.</div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm" data-action="prefill-downtime-resolution">Auto-Fill Fields</button>
                 <button type="button" class="po-btn po-btn-sm" data-action="pre-resolve-selected-downtime-entry">Auto-Resolve (Roll &amp; Stage)</button>
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="resolve-selected-downtime-entry">Deliver to Player</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="auto-resolve-and-deliver-downtime-entry">Resolve Next Automatically</button>
               </div>
               {{else}}
               <div class="po-op-summary">No pending downtime entries to resolve.</div>

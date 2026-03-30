@@ -16,6 +16,7 @@ export function createGmDowntimePageApp(deps) {
     applyDowntimeResolverBaseToUi,
     preResolveSelectedDowntimeEntry,
     resolveSelectedDowntimeEntry,
+    autoResolveAndDeliverSelectedDowntimeEntry,
     editDowntimeResult,
     editDowntimeQueueEntry,
     submitDowntimeAction,
@@ -151,6 +152,11 @@ export function createGmDowntimePageApp(deps) {
           pending: "Applying downtime resolution…",
           success: "Downtime entry resolved.",
           failure: "Unable to resolve downtime entry."
+        })),
+        "auto-resolve-and-deliver-downtime-entry": rerenderAlways(withActionStatus(autoResolveAndDeliverSelectedDowntimeEntry, {
+          pending: "Auto-resolving downtime entry...",
+          success: "Downtime entry auto-resolved.",
+          failure: "Unable to auto-resolve downtime entry."
         })),
         "edit-downtime-result": rerenderAlways(editDowntimeResult),
         "submit-downtime-action": rerenderAlways(withActionStatus(submitDowntimeAction, {

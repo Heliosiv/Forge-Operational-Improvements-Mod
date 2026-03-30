@@ -9170,6 +9170,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   applyDowntimeResolverBaseToUi,
   preResolveSelectedDowntimeEntry,
   resolveSelectedDowntimeEntry,
+  autoResolveAndDeliverSelectedDowntimeEntry,
   editDowntimeResult,
   editDowntimeQueueEntry,
   submitDowntimeAction,
@@ -32993,7 +32994,7 @@ function getPendingDowntimeResolutionTarget(element) {
   };
 }
 
-async function preResolveSelectedDowntimeEntry(element) {
+async function preResolveSelectedDowntimeEntry(element, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn(DOWNTIME_GM_ONLY_PRERESOLVE_WARNING);
     return;
@@ -33017,10 +33018,12 @@ async function preResolveSelectedDowntimeEntry(element) {
 
   const actorName = getDowntimeActorName(resolution.actorId, entry.actorName);
   replaceDowntimeUiDraftSection("resolution", { actorId: resolution.actorId });
-  ui.notifications?.info(`Pre-resolved downtime for ${actorName}. Edit fields, then Final Resolve.`);
+  if (!options?.suppressNotification) {
+    ui.notifications?.info(`Pre-resolved downtime for ${actorName}. Edit fields, then Final Resolve.`);
+  }
 }
 
-async function resolveSelectedDowntimeEntry(element) {
+async function resolveSelectedDowntimeEntry(element, options = {}) {
   if (!canAccessAllPlayerOps()) {
     ui.notifications?.warn(DOWNTIME_GM_ONLY_RESOLVE_WARNING);
     return;
@@ -33091,7 +33094,22 @@ async function resolveSelectedDowntimeEntry(element) {
   await persistCraftingProgressForResolvedDowntime(resolution.actorId, result);
 
   clearDowntimeUiDraft("resolution");
-  ui.notifications?.info(`Resolved downtime for ${actorName}.`);
+  if (!options?.suppressNotification) {
+    ui.notifications?.info(`Resolved downtime for ${actorName}.`);
+  }
+}
+
+async function autoResolveAndDeliverSelectedDowntimeEntry(element) {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn(DOWNTIME_GM_ONLY_RESOLVE_WARNING);
+    return;
+  }
+  const target = getPendingDowntimeResolutionTarget(element);
+  if (!target) return;
+  const actorName = getDowntimeActorName(target.resolution.actorId, target.entry?.actorName);
+  await preResolveSelectedDowntimeEntry(element, { suppressNotification: true });
+  await resolveSelectedDowntimeEntry(element, { suppressNotification: true });
+  ui.notifications?.info(`Auto-resolved and delivered downtime for ${actorName}.`);
 }
 
 async function editDowntimeResult(element) {

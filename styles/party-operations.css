@@ -2003,6 +2003,10 @@
     margin-bottom: 6px;
   }
 
+  .party-operations [data-action="auto-resolve-and-deliver-downtime-entry"] {
+    font-weight: 600;
+  }
+
   .party-operations .po-downtime-queue-disclosure {
     margin-top: 6px;
   }
