@@ -9722,6 +9722,90 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       : [];
     const tokenCoverageFallbackReason = formationReasons.find((reason) => String(reason?.code ?? "") === "missing-token-positions") ?? null;
     const invalidReasons = formationReasons.filter((reason) => String(reason?.code ?? "") !== "missing-token-positions");
+    const activeCombatId = String(game.combats?.active?.id ?? "").trim();
+    const leadersCommandUsedThisCombat = Boolean(activeCombatId) && String(tracker.leadersCommandCombatId ?? "") === activeCombatId;
+    const doctrineStateCode = String(formationSnapshot?.doctrine?.state ?? "").trim().toLowerCase();
+    const failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0));
+    const consecutiveSuccessCount = Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0));
+    const leadershipCheckDue = Boolean(
+      formationSnapshot.doctrine.cohesionCheckRequired
+      && String(formationSnapshot.doctrine.pendingTrigger ?? "").trim()
+    );
+    const canUseLeadersCommand = !leadersCommandUsedThisCombat;
+    const shouldShowRecoveryGuidance = leadershipCheckDue
+      || doctrineStateCode === MARCH_DOCTRINE_STATES.STRAINED
+      || doctrineStateCode === MARCH_DOCTRINE_STATES.BROKEN
+      || failureStreakCount > 0;
+
+    const recoveryGuidance = (() => {
+      if (!shouldShowRecoveryGuidance) {
+        return {
+          recommendedAction: "none",
+          title: "Formation Stable",
+          text: "No immediate recovery action is needed.",
+          canRally: true,
+          canLeadersCommand: canUseLeadersCommand,
+          canDropFormation: true
+        };
+      }
+      if (doctrineStateCode === MARCH_DOCTRINE_STATES.BROKEN) {
+        if (canUseLeadersCommand) {
+          return {
+            recommendedAction: "leaders-command",
+            title: "Critical Recovery",
+            text: "Formation is broken. Use Leader's Command first, then Rally Check or Drop Formation if pressure remains.",
+            canRally: true,
+            canLeadersCommand: true,
+            canDropFormation: true
+          };
+        }
+        return {
+          recommendedAction: "formation-drop",
+          title: "Critical Recovery",
+          text: "Formation is broken and Leader's Command is spent. Drop Formation now, then Rally Check to stabilize.",
+          canRally: true,
+          canLeadersCommand: false,
+          canDropFormation: true
+        };
+      }
+      if (leadershipCheckDue) {
+        return {
+          recommendedAction: "doctrine-check",
+          title: "Immediate Maintenance",
+          text: "Roll Joint Leadership now to prevent further pressure this round.",
+          canRally: true,
+          canLeadersCommand: canUseLeadersCommand,
+          canDropFormation: true
+        };
+      }
+      if (failureStreakCount >= 2 && canUseLeadersCommand) {
+        return {
+          recommendedAction: "leaders-command",
+          title: "Escalating Pressure",
+          text: "Failure streak is high. Use Leader's Command to cut pressure quickly, then continue with Joint Leadership.",
+          canRally: true,
+          canLeadersCommand: true,
+          canDropFormation: true
+        };
+      }
+      return {
+        recommendedAction: "rally-check",
+        title: "Stabilize Formation",
+        text: "Use Rally Check to reduce pressure, or Drop Formation for a lower-DC posture.",
+        canRally: true,
+        canLeadersCommand: canUseLeadersCommand,
+        canDropFormation: true
+      };
+    })();
+    const recoveryRecommendedActionLabel = (() => {
+      const action = String(recoveryGuidance.recommendedAction ?? "").trim().toLowerCase();
+      if (action === "doctrine-check") return "Joint Leadership";
+      if (action === "rally-check") return "Rally Check";
+      if (action === "leaders-command") return "Leader's Command";
+      if (action === "formation-drop") return "Drop Formation";
+      return "None";
+    })();
+
     return {
       isGM,
       showGmPageTab: canAccessGmPage(),
@@ -9753,10 +9837,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         cohesionChecksActive: formationSnapshot.doctrine.cohesionChecksActive,
         cohesionCheckRequired: formationSnapshot.doctrine.cohesionCheckRequired,
         pendingTriggerCode: formationSnapshot.doctrine.pendingTrigger,
-        leadershipCheckDue: Boolean(
-          formationSnapshot.doctrine.cohesionCheckRequired
-          && String(formationSnapshot.doctrine.pendingTrigger ?? "").trim()
-        ),
+        leadershipCheckDue,
         formationStateLabel: formationSnapshot.formationState.stateLabel,
         lastCheckAt: tracker.lastCheckAt ?? "-",
         lastCheckTriggerLabel: formationSnapshot.doctrine.lastCheckTriggerLabel ?? "-",
@@ -9769,30 +9850,39 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         invalidReasons,
         bandTargets: formationSnapshot.bandTargets,
         // Failure streak and momentum tracking
-        failureStreakCount: Math.max(0, Number(tracker.failureStreakCount ?? 0)),
-        consecutiveSuccessCount: Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0)),
+        failureStreakCount,
+        consecutiveSuccessCount,
         lastCheckWasSuccess: Boolean(tracker.lastCheckWasSuccess ?? false),
         failureStreakLabel: (() => {
-          const count = Math.max(0, Number(tracker.failureStreakCount ?? 0));
+          const count = failureStreakCount;
           if (count === 0) return "No failures";
-          if (count === 1) return "1 failure — DC increasing";
-          return `${count} failures — DC escalated +${count}`;
+          if (count === 1) return "1 failure - DC increasing";
+          return `${count} failures - DC escalated +${count}`;
         })(),
         successStreakLabel: (() => {
-          const count = Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0));
+          const count = consecutiveSuccessCount;
           if (count === 0) return "No momentum";
-          if (count < 3) return `${count} success${count !== 1 ? "es" : ""} — building momentum`;
+          if (count < 3) return `${count} success${count !== 1 ? "es" : ""} - building momentum`;
           const bonus = Math.floor(count / 3);
-          return `${count} successes ★ +${bonus} momentum bonus`;
+          return `${count} successes (+${bonus} momentum bonus)`;
         })(),
         formationHealthPercent: (() => {
-          const count = Math.max(0, Number(tracker.failureStreakCount ?? 0));
-          return Math.max(0, 100 - (count * 15));
+          return Math.max(0, 100 - (failureStreakCount * 15));
         })(),
         healthTrendIndicator: (() => {
           const was = Boolean(tracker.lastCheckWasSuccess ?? false);
-          return was ? "↑ Improving" : "↓ Declining";
-        })()
+          return was ? "Improving" : "Declining";
+        })(),
+        leadersCommandUsedThisCombat,
+        canUseLeadersCommand,
+        recoveryGuidanceVisible: shouldShowRecoveryGuidance,
+        recoveryGuidanceTitle: recoveryGuidance.title,
+        recoveryGuidanceText: recoveryGuidance.text,
+        recoveryRecommendedAction: recoveryGuidance.recommendedAction,
+        recoveryRecommendedActionLabel,
+        recoveryCanRally: recoveryGuidance.canRally,
+        recoveryCanLeadersCommand: recoveryGuidance.canLeadersCommand,
+        recoveryCanDropFormation: recoveryGuidance.canDropFormation
       },
       gmNotes: state.gmNotes ?? "",
       lightToggles,
@@ -10050,6 +10140,18 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
           break;
         case "doctrine-check":
           await runDoctrineCheckPrompt();
+          break;
+        case "doctrine-trigger-theater":
+          await markTheaterDoctrineTrigger();
+          break;
+        case "doctrine-rally-check":
+          await runDoctrineRallyCheck();
+          break;
+        case "doctrine-leaders-command":
+          await runDoctrineLeadersCommand();
+          break;
+        case "doctrine-formation-drop":
+          await runDoctrineFormationDropRecovery();
           break;
         default:
           break;
@@ -30611,6 +30713,12 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
         note: String(queuedEntry?.note ?? "")
       };
     });
+    const queuedHoursTotal = queuedItems.reduce((sum, item) => sum + Math.max(0, Number(item.hours ?? 0) || 0), 0);
+    const nextQueuedHours = Math.max(0, Number(queuedItems[0]?.hours ?? 0) || 0);
+    const laterQueuedHours = Math.max(0, queuedHoursTotal - nextQueuedHours);
+    const projectedTimelineLabel = queueCount > 0
+      ? `Next ${nextQueuedHours}h${laterQueuedHours > 0 ? ` | Later ${laterQueuedHours}h` : ""} | Total queued ${queuedHoursTotal}h`
+      : "";
     const queuedPreview = queuedEntries.slice(0, 3).map((queuedEntry) => {
       const queuedAction = getDowntimeActionDefinition(queuedEntry?.actionKey);
       return `${queuedAction.label} (${clampDowntimeHours(queuedEntry?.hours, configuredHoursGranted)}h)`;
@@ -30756,6 +30864,8 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       queueCount,
       hasQueuedEntries: queueCount > 0,
       queuedItems,
+      queuedHoursTotal,
+      projectedTimelineLabel,
       queuedPreview,
       queueSummaryLabel: queueCount > 0 ? `${queueCount} queued` : ""
     };
@@ -44083,6 +44193,196 @@ async function markTheaterDoctrineTrigger() {
     markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE);
   });
   ui.notifications?.info("Theater-of-the-mind pressure marked. Run Joint Leadership to maintain formation bonuses.");
+}
+
+async function runDoctrineRallyCheck() {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  if (formationSnapshot?.formation?.id === "free") {
+    ui.notifications?.info("Free formation has no doctrine pressure to rally.");
+    return;
+  }
+
+  const averageModifier = doctrineRows.length > 0
+    ? Math.round(doctrineRows.reduce((sum, row) => sum + Number(row?.charismaModifier ?? 0), 0) / doctrineRows.length)
+    : 0;
+  const dc = 10;
+  const roll = await (new Roll(`1d20 + ${averageModifier}`)).evaluate();
+  const success = Number(roll.total ?? 0) >= dc;
+
+  await updateMarchingOrderState((draft) => {
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    tracker.lastCheckRollTotal = Number(roll.total ?? 0);
+    tracker.lastCheckDc = dc;
+    tracker.lastCheckWasSuccess = success;
+    if (success) {
+      tracker.failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0) - 1);
+      tracker.consecutiveSuccessCount = Math.min(10, Number(tracker.consecutiveSuccessCount ?? 0) + 1);
+      tracker.state = tracker.state === MARCH_DOCTRINE_STATES.BROKEN
+        ? MARCH_DOCTRINE_STATES.STRAINED
+        : MARCH_DOCTRINE_STATES.STABLE;
+      tracker.lastCheckSummary = `Rally Check succeeded (${roll.total} vs DC ${dc}). Doctrine pressure eased.`;
+      clearDoctrineTriggerPending(draft);
+    } else {
+      tracker.failureStreakCount = Math.min(10, Number(tracker.failureStreakCount ?? 0) + 1);
+      tracker.consecutiveSuccessCount = 0;
+      if (tracker.state === MARCH_DOCTRINE_STATES.STABLE) tracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+      tracker.lastCheckSummary = `Rally Check failed (${roll.total} vs DC ${dc}). Doctrine pressure increased.`;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-rally");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Rally Check</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot?.formation?.label ?? "Unknown")}</p>
+      <p><strong>Roll:</strong> 1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} = ${escape(roll.total)} vs DC ${dc}</p>
+      <p><strong>Outcome:</strong> ${success ? "<span style='color: #28c44e; font-weight: bold;'>SUCCESS</span>" : "<span style='color: #dc2626; font-weight: bold;'>FAILURE</span>"}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
+}
+
+async function runDoctrineLeadersCommand() {
+  if (!canAccessAllPlayerOps()) return;
+  const state = getMarchingOrderState();
+  const formationSnapshot = getMarchingFormationSnapshot(state);
+  const doctrineRows = getMarchDoctrineActorRows(state);
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  if (formationSnapshot?.formation?.id === "free") {
+    ui.notifications?.info("Free formation has no doctrine pressure to command.");
+    return;
+  }
+
+  const activeCombatId = String(game.combats?.active?.id ?? "").trim();
+  const tracker = formationSnapshot?.doctrineTracker ?? {};
+  if (activeCombatId && String(tracker.leadersCommandCombatId ?? "") === activeCombatId) {
+    ui.notifications?.warn("Leader's Command was already used this combat.");
+    return;
+  }
+
+  const averageModifier = doctrineRows.length > 0
+    ? Math.round(doctrineRows.reduce((sum, row) => sum + Number(row?.charismaModifier ?? 0), 0) / doctrineRows.length)
+    : 0;
+  const dc = 12;
+  const roll = await (new Roll(`1d20 + ${averageModifier}`)).evaluate();
+  const success = Number(roll.total ?? 0) >= dc;
+
+  await updateMarchingOrderState((draft) => {
+    const nextTracker = ensureDoctrineTracker(draft);
+    nextTracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    nextTracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    nextTracker.lastCheckRollTotal = Number(roll.total ?? 0);
+    nextTracker.lastCheckDc = dc;
+    nextTracker.lastCheckWasSuccess = success;
+    if (success) {
+      nextTracker.failureStreakCount = Math.max(0, Number(nextTracker.failureStreakCount ?? 0) - 2);
+      nextTracker.consecutiveSuccessCount = Math.min(10, Number(nextTracker.consecutiveSuccessCount ?? 0) + 1);
+      nextTracker.state = nextTracker.state === MARCH_DOCTRINE_STATES.BROKEN
+        ? MARCH_DOCTRINE_STATES.STRAINED
+        : MARCH_DOCTRINE_STATES.STABLE;
+      nextTracker.lastCheckSummary = `Leader's Command succeeded (${roll.total} vs DC ${dc}). Failure streak reduced by 2.`;
+      if (activeCombatId) nextTracker.leadersCommandCombatId = activeCombatId;
+      clearDoctrineTriggerPending(draft);
+    } else {
+      nextTracker.failureStreakCount = Math.min(10, Number(nextTracker.failureStreakCount ?? 0) + 1);
+      nextTracker.consecutiveSuccessCount = 0;
+      if (nextTracker.state === MARCH_DOCTRINE_STATES.STABLE) nextTracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+      nextTracker.lastCheckSummary = `Leader's Command failed (${roll.total} vs DC ${dc}). Doctrine pressure increased.`;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-leaders-command");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Leader's Command</strong></p>
+      <p><strong>Formation:</strong> ${escape(formationSnapshot?.formation?.label ?? "Unknown")}</p>
+      <p><strong>Roll:</strong> 1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} = ${escape(roll.total)} vs DC ${dc}</p>
+      <p><strong>Outcome:</strong> ${success ? "<span style='color: #28c44e; font-weight: bold;'>SUCCESS</span>" : "<span style='color: #dc2626; font-weight: bold;'>FAILURE</span>"}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
+}
+
+async function runDoctrineFormationDropRecovery() {
+  if (!canAccessAllPlayerOps()) return;
+  const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+  const state = getMarchingOrderState();
+  const currentFormationId = normalizeMarchingFormation(state.formation ?? "loose");
+  if (currentFormationId === "free") {
+    ui.notifications?.info("Formation is already Free. No further drop is available.");
+    return;
+  }
+
+  const currentDefinition = getMarchFormationDefinition(currentFormationId);
+  const candidateFormations = getMarchFormationDefinitions()
+    .filter((entry) => entry.id !== currentFormationId)
+    .filter((entry) => Number(entry.doctrineDc ?? 0) <= Number(currentDefinition.doctrineDc ?? 0))
+    .sort((a, b) => Number(a.doctrineDc ?? 0) - Number(b.doctrineDc ?? 0));
+
+  if (!candidateFormations.length) {
+    ui.notifications?.warn("No lower-pressure formation is available.");
+    return;
+  }
+
+  const optionsHtml = candidateFormations
+    .map((entry) => `<option value="${entry.id}">${entry.label} (DC ${entry.doctrineDc})</option>`)
+    .join("");
+
+  let selectedFormationId = candidateFormations[0].id;
+  const confirmed = await Dialog.confirm({
+    title: "Drop Formation Pressure",
+    content: `
+      <p>Choose a lower-pressure formation to stabilize doctrine.</p>
+      <div class="form-group">
+        <label>Target Formation</label>
+        <select name="formationId">${optionsHtml}</select>
+      </div>
+    `,
+    yes: (html) => {
+      const picked = String(html?.find?.("select[name=formationId]")?.val?.() ?? "").trim();
+      if (picked) selectedFormationId = picked;
+    }
+  });
+  if (!confirmed) return;
+
+  await updateMarchingOrderState((draft) => {
+    draft.formation = selectedFormationId;
+    const tracker = ensureDoctrineTracker(draft);
+    tracker.failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0) - 1);
+    tracker.consecutiveSuccessCount = 0;
+    tracker.lastCheckWasSuccess = true;
+    tracker.lastCheckAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    tracker.lastCheckTrigger = MARCH_DOCTRINE_TRIGGERS.MANUAL;
+    tracker.lastCheckSummary = `Formation dropped to ${selectedFormationId}. Doctrine pressure reduced.`;
+    if (selectedFormationId === "free") {
+      tracker.state = MARCH_DOCTRINE_STATES.STABLE;
+      clearDoctrineTriggerPending(draft);
+    } else if (tracker.state === MARCH_DOCTRINE_STATES.BROKEN) {
+      tracker.state = MARCH_DOCTRINE_STATES.STRAINED;
+    }
+  });
+  await flushIntegrationSyncQueue("march-doctrine-formation-drop");
+
+  const updatedSnapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+    content: `
+      <p><strong>Formation Recovery</strong></p>
+      <p><strong>Action:</strong> Formation Drop</p>
+      <p><strong>New Formation:</strong> ${escape(updatedSnapshot?.formation?.label ?? selectedFormationId)}</p>
+      <p><strong>Doctrine State:</strong> ${escape(updatedSnapshot?.doctrine?.stateLabel ?? "Unknown")}</p>
+    `
+  });
 }
 
 async function onMarchSceneEntry() {

@@ -2014,6 +2014,12 @@
     border-color: color-mix(in srgb, var(--po-success) 62%, var(--po-border));
     background: color-mix(in srgb, var(--po-success) 18%, var(--po-surface));
   }
+
+  .party-operations .po-downtime-queue-timeline {
+    margin-bottom: 6px;
+    font-weight: 600;
+    color: var(--po-accent-contrast);
+  }
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
@@ -3776,6 +3782,18 @@
 .party-operations [data-tool="marching-order"] .po-march-formation-detail-card.is-strained {
   border-color: color-mix(in srgb, #f59e0b 35%, var(--po-border));
   background: color-mix(in srgb, #f59e0b 8%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-formation-detail-card.is-guidance {
+  border-color: color-mix(in srgb, var(--po-accent, #2d6cdf) 38%, var(--po-border));
+  background: color-mix(in srgb, var(--po-accent, #2d6cdf) 8%, var(--po-bg-alt));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-guidance-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
 }
 
 .party-operations [data-tool="marching-order"] .po-formation-card-grid-wide {
