@@ -92,6 +92,24 @@
                   {{/each}}
                 </select>
               </label>
+              <div class="po-downtime-status-strip po-downtime-planning-strip" aria-label="Selected actor downtime summary">
+                <div class="po-downtime-status-card">
+                  <span class="po-downtime-status-label">Active</span>
+                  <strong class="po-downtime-status-value">{{downtime.submit.activeHours}}h</strong>
+                </div>
+                <div class="po-downtime-status-card">
+                  <span class="po-downtime-status-label">Queued</span>
+                  <strong class="po-downtime-status-value">{{downtime.submit.queuedHours}}h</strong>
+                </div>
+                <div class="po-downtime-status-card">
+                  <span class="po-downtime-status-label">Planned</span>
+                  <strong class="po-downtime-status-value">{{downtime.submit.plannedHours}}h / {{downtime.submit.capHours}}h</strong>
+                </div>
+                <div class="po-downtime-status-card {{#if downtime.submit.hasOverBudgetHours}}is-blocked{{else}}is-ready{{/if}}">
+                  <span class="po-downtime-status-label">Remaining</span>
+                  <strong class="po-downtime-status-value">{{#if downtime.submit.hasOverBudgetHours}}-{{downtime.submit.overBudgetHours}}h{{else}}{{downtime.submit.remainingHours}}h{{/if}}</strong>
+                </div>
+              </div>
               <label class="po-resource-row">
                 <span>Action</span>
                 <select name="downtimeActionKey" class="po-select" data-action="refresh-downtime-submit-selection">

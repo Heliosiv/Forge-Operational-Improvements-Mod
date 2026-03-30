@@ -1896,6 +1896,15 @@
     min-height: 52px;
   }
 
+  .party-operations .po-downtime-planning-strip {
+    margin-top: var(--po-space-1);
+    margin-bottom: var(--po-space-2);
+  }
+
+  .party-operations .po-downtime-planning-strip .po-downtime-status-card {
+    min-height: 58px;
+  }
+
   .party-operations .po-downtime-effects-bar {
     display: flex;
     align-items: baseline;

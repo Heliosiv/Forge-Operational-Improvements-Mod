@@ -31173,6 +31173,12 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     downtimeState?.rewardEffectsLedger?.byActor?.[resolvedSubmitActorId]
   );
   const selectedActorRewardEffectsSummary = summarizeDowntimeRewardEffectsRecord(selectedActorRewardEffectsRecord);
+  const selectedActorPlanSummary = getDowntimePlannedHoursSummary(downtimeState, resolvedSubmitActorId, {
+    isGM: canManageDowntime,
+    capHours: submitHourCap,
+    queueMode: "replace-current",
+    replacementHours: clampDowntimeHours(submitEntry?.hours ?? submitHourCap, submitHourCap)
+  });
   const activeCraftingProject = submitActionDetails.craftingProject;
   const selectedProfession = submitActionDetails.selectedProfession;
   const hasCraftingOptions = submitActionDetails.craftingCategoryViews.some((category) => Array.isArray(category.items) && category.items.length > 0);
@@ -31315,6 +31321,13 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
       selectedProfessionKnown: selectedProfession ? actorKnowsProfession(submitActor, selectedProfession.id, { moduleId: MODULE_ID }) : false,
       activeRewardEffects: selectedActorRewardEffectsRecord,
       activeRewardEffectsSummary: selectedActorRewardEffectsSummary,
+      activeHours: selectedActorPlanSummary.activeHours,
+      queuedHours: selectedActorPlanSummary.queueHours,
+      plannedHours: selectedActorPlanSummary.plannedHours,
+      remainingHours: selectedActorPlanSummary.withinBudgetHours,
+      capHours: selectedActorPlanSummary.capHours,
+      overBudgetHours: selectedActorPlanSummary.overBudgetHours,
+      hasOverBudgetHours: selectedActorPlanSummary.hasOverBudget,
       disabledReason: canSubmit
         ? ""
         : "Waiting for GM to publish granted downtime hours."
