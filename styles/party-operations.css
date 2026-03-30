@@ -1989,6 +1989,31 @@
     gap: 6px;
     margin-top: 4px;
   }
+
+  .party-operations .po-downtime-queue-disclosure {
+    margin-top: 6px;
+  }
+
+  .party-operations .po-downtime-queue-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--po-border-strong) 55%, var(--po-border));
+    background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+    color: var(--po-text-strong);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .party-operations .po-downtime-queue-badge.is-next {
+    border-color: color-mix(in srgb, var(--po-success) 62%, var(--po-border));
+    background: color-mix(in srgb, var(--po-success) 18%, var(--po-surface));
+  }
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
