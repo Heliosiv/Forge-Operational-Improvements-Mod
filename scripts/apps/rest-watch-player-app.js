@@ -414,6 +414,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
             break;
           case "promote-downtime-queued-entry":
+          case "clear-downtime-queue":
           case "remove-downtime-queued-entry":
           case "move-up-downtime-queued-entry":
           case "move-down-downtime-queued-entry":

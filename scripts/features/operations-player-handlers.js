@@ -333,8 +333,8 @@ export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef 
   const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
   const targetQueueIndexRaw = Number(message?.targetQueueIndex);
   const targetQueueIndex = Number.isFinite(targetQueueIndexRaw) ? Math.max(0, Math.floor(targetQueueIndexRaw)) : -1;
-  if (!["remove", "promote", "move-up", "move-down", "move-to"].includes(operation)) return;
-  if (queueIndex < 0) return;
+  if (!["remove", "promote", "move-up", "move-down", "move-to", "clear-all"].includes(operation)) return;
+  if (operation !== "clear-all" && queueIndex < 0) return;
 
   await updateOperationsLedger((ledger) => {
     const downtime = ensureDowntimeState(ledger);
@@ -342,6 +342,13 @@ export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef 
     const current = downtime.entries[actorId];
     if (!current) return;
     const queue = Array.isArray(current.queue) ? [...current.queue] : [];
+    if (operation === "clear-all") {
+      downtime.entries[actorId] = {
+        ...current,
+        queue: []
+      };
+      return;
+    }
     if (queueIndex >= queue.length) return;
 
     if (operation === "remove") {

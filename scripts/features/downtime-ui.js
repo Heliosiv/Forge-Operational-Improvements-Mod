@@ -164,6 +164,7 @@ export function createGmDowntimePageApp(deps) {
           failure: "Downtime submission failed."
         })),
         "promote-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
+        "clear-downtime-queue": rerenderAlways(editDowntimeQueueEntry),
         "remove-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
         "move-up-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),
         "move-down-downtime-queued-entry": rerenderAlways(editDowntimeQueueEntry),

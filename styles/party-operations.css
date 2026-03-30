@@ -1999,6 +1999,10 @@
     margin-top: 4px;
   }
 
+  .party-operations .po-downtime-queue-head-actions {
+    margin-bottom: 6px;
+  }
+
   .party-operations .po-downtime-queue-disclosure {
     margin-top: 6px;
   }

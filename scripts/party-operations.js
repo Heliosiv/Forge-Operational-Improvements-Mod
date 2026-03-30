@@ -32430,12 +32430,11 @@ async function editDowntimeQueueEntry(element) {
 
   const queueIndexRaw = Number(element?.dataset?.queueIndex ?? -1);
   const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
-  if (queueIndex < 0) return;
-
   const operation = String(element?.dataset?.queueOperation ?? "").trim().toLowerCase();
   const targetQueueIndexRaw = Number(element?.dataset?.targetQueueIndex ?? -1);
   const targetQueueIndex = Number.isFinite(targetQueueIndexRaw) ? Math.max(0, Math.floor(targetQueueIndexRaw)) : -1;
-  if (!["remove", "promote", "move-up", "move-down", "move-to"].includes(operation)) return;
+  if (!["remove", "promote", "move-up", "move-down", "move-to", "clear-all"].includes(operation)) return;
+  if (operation !== "clear-all" && queueIndex < 0) return;
 
   const operationLabel = operation === "remove"
     ? "removed"
@@ -32443,7 +32442,11 @@ async function editDowntimeQueueEntry(element) {
       ? "promoted"
       : operation === "move-up"
         ? "moved up"
-        : "moved down";
+        : operation === "move-down"
+          ? "moved down"
+          : operation === "clear-all"
+            ? "cleared"
+            : "reordered";
 
   if (canAccessAllPlayerOps()) {
     await updateOperationsLedger((ledger) => {
@@ -32452,6 +32455,13 @@ async function editDowntimeQueueEntry(element) {
       const current = downtime.entries[actorId];
       if (!current) return;
       const queue = Array.isArray(current.queue) ? [...current.queue] : [];
+      if (operation === "clear-all") {
+        downtime.entries[actorId] = {
+          ...current,
+          queue: []
+        };
+        return;
+      }
       if (queueIndex >= queue.length) return;
 
       if (operation === "remove") {
@@ -32533,6 +32543,7 @@ async function editDowntimeQueueEntry(element) {
     userId: game.user.id,
     actorId,
     queueIndex,
+    targetQueueIndex,
     operation
   });
   ui.notifications?.info(`Downtime queue ${operationLabel} request sent to GM.`);
