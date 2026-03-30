@@ -36,6 +36,8 @@ export function createPlayerHubActions({
         return { type: playerHubActionTypes.SET_MARCH_RANK };
       case "submit-downtime-action":
         return { type: playerHubActionTypes.SUBMIT_DOWNTIME };
+      case "submit-downtime-action-replace":
+        return { type: playerHubActionTypes.SUBMIT_DOWNTIME };
       case "collect-downtime-result":
         return { type: playerHubActionTypes.COLLECT_DOWNTIME };
       case "claim-loot-item":

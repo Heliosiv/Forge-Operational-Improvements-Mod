@@ -231,7 +231,11 @@
               <div class="po-op-summary">Known professions: {{#each downtime.submit.knownProfessionNames}}{{this}}{{#unless @last}}, {{/unless}}{{/each}}</div>
               {{/if}}
               {{/if}}
-              <button type="button" class="po-btn" data-action="submit-downtime-action">Submit Downtime Action</button>
+              <div class="po-hint">Choose whether this becomes the actor's active entry or is queued behind the current one.</div>
+              <div class="po-op-action-row">
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action-replace" data-queue-mode="replace-current">Start / Replace Current</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="submit-downtime-action" data-queue-mode="append">Queue Next Action</button>
+              </div>
             </div>
 
             <div class="po-op-role-row po-downtime-resolver">

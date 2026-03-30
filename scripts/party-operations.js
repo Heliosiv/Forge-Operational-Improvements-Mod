@@ -31955,12 +31955,15 @@ function normalizeDowntimeSubmission(raw = {}, downtimeState = {}, options = {})
     areaSettings
   });
   const submittedCheck = normalizeDowntimeSubmittedCheck(raw?.submittedCheck, "int");
+  const queueModeRaw = String(raw?.queueMode ?? "append").trim().toLowerCase();
+  const queueMode = queueModeRaw === "replace-current" ? "replace-current" : "append";
   return {
     actorId,
     actionKey: actionDef.key,
     areaSettings,
     actionData,
     submittedCheck,
+    queueMode,
     hours,
     note
   };
@@ -31973,6 +31976,7 @@ function readDowntimeSubmissionFromUi(element) {
   const actorId = selectedActorId || String(getActiveActorForUser(game.user)?.id ?? "").trim();
   return {
     actorId,
+    queueMode: String(element?.dataset?.queueMode ?? "append").trim().toLowerCase(),
     actionKey: String(root.querySelector("select[name='downtimeActionKey']")?.value ?? "").trim(),
     subtypeKey: String(root.querySelector("select[name='downtimeSubtypeKey']")?.value ?? "").trim(),
     hours: Number(root.querySelector("input[name='downtimeHours']")?.value ?? 0),
@@ -32033,6 +32037,15 @@ async function applyDowntimeSubmissionForUser(user, rawSubmission = {}) {
     };
 
     if (previous && (previous.pending !== false || previous.lastResult)) {
+      if (normalized.queueMode === "replace-current") {
+        downtime.entries[normalized.actorId] = {
+          ...(previous ?? {}),
+          ...nextEntry,
+          queue: Array.isArray(previous?.queue) ? previous.queue : [],
+          hoursInvested: Math.max(0, Number(previous?.hoursInvested ?? 0) || 0) + nextEntry.hours
+        };
+        return;
+      }
       const existingQueue = Array.isArray(previous.queue) ? previous.queue : [];
       downtime.entries[normalized.actorId] = {
         ...previous,
@@ -32079,6 +32092,9 @@ async function submitDowntimeAction(element) {
     hoursCap: submissionHoursCap
   });
   const actor = game.actors.get(normalizedSubmission.actorId);
+  const existingEntry = downtimeState?.entries?.[normalizedSubmission.actorId] ?? null;
+  const entryAlreadyActive = Boolean(existingEntry) && (existingEntry.pending !== false || existingEntry.lastResult);
+  const willQueue = entryAlreadyActive && normalizedSubmission.queueMode !== "replace-current";
   const actionKey = String(normalizedSubmission.actionKey ?? "").trim();
   if (actionKey === "crafting") {
     const craftable = getCraftableById(normalizedSubmission.actionData?.craftItemId);
@@ -32110,7 +32126,7 @@ async function submitDowntimeAction(element) {
   if (canAccessAllPlayerOps()) {
     const applied = await applyDowntimeSubmissionForUser(game.user, normalizedSubmission);
     if (!applied) ui.notifications?.warn("Downtime submission failed.");
-    else ui.notifications?.info("Downtime action submitted.");
+    else ui.notifications?.info(willQueue ? "Downtime action queued." : "Downtime action submitted.");
     return;
   }
 
@@ -32126,7 +32142,7 @@ async function submitDowntimeAction(element) {
     userId: game.user.id,
     entry: normalizedSubmission
   });
-  ui.notifications?.info("Downtime check submitted to GM.");
+  ui.notifications?.info(willQueue ? "Downtime action queued and sent to GM." : "Downtime check submitted to GM.");
 }
 
 async function clearDowntimeEntry(element) {

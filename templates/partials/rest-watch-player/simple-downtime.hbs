@@ -221,8 +221,10 @@
   <div class="po-hint">Stored effects that may apply to this action: {{downtime.actorEffectsSummary}}</div>
   {{/if}}
 
+  <div class="po-hint">If you already have an active entry, you can either replace it or queue this one for later.</div>
   <div class="po-op-action-row">
-    <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action">Submit Downtime Action</button>
+    <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action-replace" data-queue-mode="replace-current">Start / Replace Current</button>
+    <button type="button" class="po-btn po-btn-sm" data-action="submit-downtime-action" data-queue-mode="append">Queue Next Action</button>
   </div>
 
   {{else}}
