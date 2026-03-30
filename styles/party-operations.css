@@ -1971,6 +1971,16 @@
     border: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
     border-radius: calc(var(--po-radius) - 2px);
     background: color-mix(in srgb, var(--po-surface) 92%, transparent);
+    cursor: grab;
+  }
+
+  .party-operations .po-downtime-queue-item-row.is-drop-target {
+    border-color: color-mix(in srgb, var(--po-accent) 60%, var(--po-border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 28%, transparent);
+  }
+
+  .party-operations .po-downtime-queue-item-row:active {
+    cursor: grabbing;
   }
 
   .party-operations .po-downtime-queue-actions {

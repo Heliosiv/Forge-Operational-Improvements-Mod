@@ -204,12 +204,48 @@ export function createGmDowntimePageApp(deps) {
         syncDraft(event.target);
       });
       root.addEventListener("dragover", (event) => {
+        const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+        if (queueDropTarget) {
+          event.preventDefault();
+          queueDropTarget.classList.add("is-drop-target");
+          return;
+        }
         const dropZone = event.target?.closest?.("[data-downtime-material-dropzone], [data-downtime-item-dropzone], [data-downtime-crafting-item-dropzone]");
         if (!dropZone) return;
         event.preventDefault();
       });
       root.addEventListener("drop", (event) => {
         void (async () => {
+          const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+          if (queueDropTarget) {
+            event.preventDefault();
+            queueDropTarget.classList.remove("is-drop-target");
+            const payloadRaw = event.dataTransfer?.getData("application/x-party-ops-downtime-queue") ?? "";
+            if (!payloadRaw) return;
+            let payload = null;
+            try {
+              payload = JSON.parse(payloadRaw);
+            } catch {
+              payload = null;
+            }
+            const sourceActorId = String(payload?.actorId ?? "").trim();
+            const sourceQueueIndex = Number(payload?.queueIndex ?? -1);
+            const targetActorId = String(queueDropTarget?.dataset?.actorId ?? "").trim();
+            const targetQueueIndex = Number(queueDropTarget?.dataset?.queueIndex ?? -1);
+            if (!sourceActorId || !targetActorId || sourceActorId !== targetActorId) return;
+            if (!Number.isFinite(sourceQueueIndex) || !Number.isFinite(targetQueueIndex)) return;
+            if (Math.floor(sourceQueueIndex) === Math.floor(targetQueueIndex)) return;
+            await editDowntimeQueueEntry({
+              dataset: {
+                actorId: sourceActorId,
+                queueIndex: String(Math.floor(sourceQueueIndex)),
+                targetQueueIndex: String(Math.floor(targetQueueIndex)),
+                queueOperation: "move-to"
+              }
+            });
+            this.render({ force: true, parts: ["main"] });
+            return;
+          }
           const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
           const textDropZone = event.target?.closest?.("[data-downtime-item-dropzone]");
           const craftingDropZone = event.target?.closest?.("[data-downtime-crafting-item-dropzone]");
@@ -227,6 +263,25 @@ export function createGmDowntimePageApp(deps) {
           event.preventDefault();
           await addDowntimeResolverItemRewardFromDropEvent(event);
         })();
+      });
+
+      root.addEventListener("dragstart", (event) => {
+        const queueItem = event.target?.closest?.("[data-downtime-queue-item]");
+        if (!queueItem) return;
+        const actorId = String(queueItem.dataset?.actorId ?? "").trim();
+        const queueIndex = Number(queueItem.dataset?.queueIndex ?? -1);
+        if (!actorId || !Number.isFinite(queueIndex) || queueIndex < 0) return;
+        event.dataTransfer?.setData("application/x-party-ops-downtime-queue", JSON.stringify({
+          actorId,
+          queueIndex: Math.floor(queueIndex)
+        }));
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      });
+
+      root.addEventListener("dragleave", (event) => {
+        const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+        if (!queueDropTarget) return;
+        queueDropTarget.classList.remove("is-drop-target");
       });
     }
 

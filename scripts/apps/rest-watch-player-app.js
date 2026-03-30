@@ -270,17 +270,72 @@ export function createRestWatchPlayerAppClass(deps = {}) {
           }
         ],
         dragOverHandler: (event) => {
+          const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+          if (queueDropTarget) {
+            event.preventDefault();
+            queueDropTarget.classList.add("is-drop-target");
+            return;
+          }
           const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
           if (!materialDropZone) return;
           event.preventDefault();
         },
         dropHandler: async (event) => {
+          const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+          if (queueDropTarget) {
+            event.preventDefault();
+            queueDropTarget.classList.remove("is-drop-target");
+            const payloadRaw = event.dataTransfer?.getData("application/x-party-ops-downtime-queue") ?? "";
+            if (!payloadRaw) return;
+            let payload = null;
+            try {
+              payload = JSON.parse(payloadRaw);
+            } catch {
+              payload = null;
+            }
+            const sourceActorId = String(payload?.actorId ?? "").trim();
+            const sourceQueueIndex = Number(payload?.queueIndex ?? -1);
+            const targetActorId = String(queueDropTarget?.dataset?.actorId ?? "").trim();
+            const targetQueueIndex = Number(queueDropTarget?.dataset?.queueIndex ?? -1);
+            if (!sourceActorId || !targetActorId || sourceActorId !== targetActorId) return;
+            if (!Number.isFinite(sourceQueueIndex) || !Number.isFinite(targetQueueIndex)) return;
+            if (Math.floor(sourceQueueIndex) === Math.floor(targetQueueIndex)) return;
+            await editDowntimeQueueEntry({
+              dataset: {
+                actorId: sourceActorId,
+                queueIndex: String(Math.floor(sourceQueueIndex)),
+                targetQueueIndex: String(Math.floor(targetQueueIndex)),
+                queueOperation: "move-to"
+              }
+            });
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            return;
+          }
           const materialDropZone = event.target?.closest?.("[data-downtime-material-dropzone]");
           if (!materialDropZone) return;
           event.preventDefault();
           const added = await addDowntimeSubmissionMaterialDropFromDropEvent(event);
           if (added) this.#renderWithPreservedState({ force: true, parts: ["main"] });
         }
+      });
+
+      this.element?.addEventListener?.("dragstart", (event) => {
+        const queueItem = event.target?.closest?.("[data-downtime-queue-item]");
+        if (!queueItem) return;
+        const actorId = String(queueItem.dataset?.actorId ?? "").trim();
+        const queueIndex = Number(queueItem.dataset?.queueIndex ?? -1);
+        if (!actorId || !Number.isFinite(queueIndex) || queueIndex < 0) return;
+        event.dataTransfer?.setData("application/x-party-ops-downtime-queue", JSON.stringify({
+          actorId,
+          queueIndex: Math.floor(queueIndex)
+        }));
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+      });
+
+      this.element?.addEventListener?.("dragleave", (event) => {
+        const queueDropTarget = event.target?.closest?.("[data-downtime-queue-item]");
+        if (!queueDropTarget) return;
+        queueDropTarget.classList.remove("is-drop-target");
       });
 
       this.#updateActivityUI();

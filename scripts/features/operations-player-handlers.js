@@ -331,7 +331,9 @@ export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef 
   const operation = String(message?.operation ?? "").trim().toLowerCase();
   const queueIndexRaw = Number(message?.queueIndex);
   const queueIndex = Number.isFinite(queueIndexRaw) ? Math.max(0, Math.floor(queueIndexRaw)) : -1;
-  if (!["remove", "promote", "move-up", "move-down"].includes(operation)) return;
+  const targetQueueIndexRaw = Number(message?.targetQueueIndex);
+  const targetQueueIndex = Number.isFinite(targetQueueIndexRaw) ? Math.max(0, Math.floor(targetQueueIndexRaw)) : -1;
+  if (!["remove", "promote", "move-up", "move-down", "move-to"].includes(operation)) return;
   if (queueIndex < 0) return;
 
   await updateOperationsLedger((ledger) => {
@@ -368,6 +370,20 @@ export async function applyPlayerDowntimeQueueEditRequest(message, requesterRef 
       const temp = queue[queueIndex + 1];
       queue[queueIndex + 1] = queue[queueIndex];
       queue[queueIndex] = temp;
+      downtime.entries[actorId] = {
+        ...current,
+        queue
+      };
+      return;
+    }
+
+    if (operation === "move-to") {
+      if (targetQueueIndex < 0 || targetQueueIndex >= queue.length) return;
+      if (queueIndex === targetQueueIndex) return;
+      const [moved] = queue.splice(queueIndex, 1);
+      if (!moved) return;
+      const insertIndex = queueIndex < targetQueueIndex ? targetQueueIndex - 1 : targetQueueIndex;
+      queue.splice(insertIndex, 0, moved);
       downtime.entries[actorId] = {
         ...current,
         queue

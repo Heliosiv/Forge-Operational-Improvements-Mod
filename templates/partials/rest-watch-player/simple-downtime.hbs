@@ -245,7 +245,7 @@
     {{#if hasQueuedEntries}}
     <div class="po-op-summary">Queued: {{queueSummaryLabel}}</div>
     {{#each queuedItems}}
-    <div class="po-downtime-queue-item-row">
+    <div class="po-downtime-queue-item-row" draggable="true" data-downtime-queue-item data-actor-id="{{../actorId}}" data-queue-index="{{queueIndex}}">
       <div class="po-op-summary">{{label}}</div>
       {{#if hasNote}}<div class="po-op-summary">Note: {{note}}</div>{{/if}}
       <div class="po-op-action-row po-downtime-queue-actions">

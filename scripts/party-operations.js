@@ -32250,7 +32250,9 @@ async function editDowntimeQueueEntry(element) {
   if (queueIndex < 0) return;
 
   const operation = String(element?.dataset?.queueOperation ?? "").trim().toLowerCase();
-  if (!["remove", "promote", "move-up", "move-down"].includes(operation)) return;
+  const targetQueueIndexRaw = Number(element?.dataset?.targetQueueIndex ?? -1);
+  const targetQueueIndex = Number.isFinite(targetQueueIndexRaw) ? Math.max(0, Math.floor(targetQueueIndexRaw)) : -1;
+  if (!["remove", "promote", "move-up", "move-down", "move-to"].includes(operation)) return;
 
   const operationLabel = operation === "remove"
     ? "removed"
@@ -32295,6 +32297,20 @@ async function editDowntimeQueueEntry(element) {
         const temp = queue[queueIndex + 1];
         queue[queueIndex + 1] = queue[queueIndex];
         queue[queueIndex] = temp;
+        downtime.entries[actorId] = {
+          ...current,
+          queue
+        };
+        return;
+      }
+
+      if (operation === "move-to") {
+        if (targetQueueIndex < 0 || targetQueueIndex >= queue.length) return;
+        if (queueIndex === targetQueueIndex) return;
+        const [moved] = queue.splice(queueIndex, 1);
+        if (!moved) return;
+        const insertIndex = queueIndex < targetQueueIndex ? targetQueueIndex - 1 : targetQueueIndex;
+        queue.splice(insertIndex, 0, moved);
         downtime.entries[actorId] = {
           ...current,
           queue
