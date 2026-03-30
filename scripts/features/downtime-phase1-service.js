@@ -728,25 +728,50 @@ function resolveBrowsingEntry({ actor, entry, actionData, d20 }) {
   const tier = getTierFromMargin(check.total - dc);
   const suggestedTags = getBrowsingTagsByTier(tier, actionData.areaSettings);
   const expectedQuality = buildBrowsingQuality(tier);
+
+  let rumorCount = 0;
+  let rewardEffects = { contactTier: "", discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0 };
+  let outcomeNote = "";
+
+  if (tier === "exceptional-success") {
+    rumorCount = 3;
+    rewardEffects = { contactTier: "medium", discountPercent: 10, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 1 };
+    outcomeNote = "Exceptional browsing: found a key contact (medium), uncovered 3 leads, and built local standing (+1 reputation, -10% shop discount).";
+  } else if (tier === "strong-success") {
+    rumorCount = 2;
+    rewardEffects = { contactTier: "minor", discountPercent: 5, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0 };
+    outcomeNote = "Strong browsing: found a minor contact, uncovered 2 leads, earned a 5% local discount for the session.";
+  } else if (tier === "success") {
+    rumorCount = 1;
+    rewardEffects = { contactTier: "minor", discountPercent: 0, materialsCreditGp: 0, heatDelta: 0, reputationDelta: 0 };
+    outcomeNote = "Browsing succeeded: found a minor contact and 1 usable lead. GM will describe the contact and rumor.";
+  } else {
+    outcomeNote = "Browsing failed: no actionable leads found. The area may have been too guarded or the contacts too tight-lipped.";
+  }
+
+  const detailLines = [
+    `Browsing check ${check.total} vs DC ${dc} (${check.d20} on d20, ${ability.toUpperCase()} mod ${check.abilityMod >= 0 ? "+" : ""}${check.abilityMod}).`,
+    `Expected quality: ${expectedQuality}`,
+    outcomeNote,
+    `GM guidance: ${buildBrowsingGuidance(tier, suggestedTags)}`,
+    `Suggested tags: ${suggestedTags.length > 0 ? suggestedTags.join(", ") : "none"}`
+  ];
+
   return {
     tier,
     summary: `Browsing resolved as ${getTierLabel(tier).toLowerCase()}.`,
-    details: [
-      `Browsing check ${check.total} vs DC ${dc} (${check.d20} on d20, ${ability.toUpperCase()} mod ${check.abilityMod >= 0 ? "+" : ""}${check.abilityMod}).`,
-      `Expected quality: ${expectedQuality}`,
-      `GM guidance: ${buildBrowsingGuidance(tier, suggestedTags)}`,
-      `Suggested tags: ${suggestedTags.length > 0 ? suggestedTags.join(", ") : "rumor"}`
-    ],
+    details: detailLines,
     rollTotal: check.total,
     dc,
     gpAward: 0,
     gpCost: 0,
     progress: 0,
-    rumorCount: 0,
+    rumorCount,
     itemRewards: [],
     itemRewardDrops: [],
     expectedQuality,
     suggestedTags,
+    rewardEffects,
     browsing: {
       ability,
       dc,

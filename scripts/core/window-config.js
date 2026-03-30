@@ -13,7 +13,8 @@ export const PLAYER_HUB_ACTION_TYPES = Object.freeze({
   ASSIGN_WATCH: "assignWatch",
   SET_MARCH_RANK: "setMarchRank",
   CLAIM_LOOT: "claimLoot",
-  SUBMIT_DOWNTIME: "submitDowntime"
+  SUBMIT_DOWNTIME: "submitDowntime",
+  COLLECT_DOWNTIME: "collectDowntime"
 });
 
 export const PLAYER_HUB_CLAIM_VARIANTS = Object.freeze({

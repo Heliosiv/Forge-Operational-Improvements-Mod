@@ -4920,6 +4920,9 @@ async function submitPlayerHubAction(type, payload = {}) {
     case PLAYER_HUB_ACTION_TYPES.SUBMIT_DOWNTIME:
       await submitDowntimeAction(element);
       return { handled: true, rerender: true };
+    case PLAYER_HUB_ACTION_TYPES.COLLECT_DOWNTIME:
+      await collectDowntimeResult(element);
+      return { handled: true, rerender: true };
     default:
       return { handled: false, rerender: false };
   }
@@ -9745,6 +9748,11 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
         doctrineChecksActive: formationSnapshot.doctrine.checksActive,
         cohesionChecksActive: formationSnapshot.doctrine.cohesionChecksActive,
         cohesionCheckRequired: formationSnapshot.doctrine.cohesionCheckRequired,
+        pendingTriggerCode: formationSnapshot.doctrine.pendingTrigger,
+        leadershipCheckDue: Boolean(
+          formationSnapshot.doctrine.cohesionCheckRequired
+          && String(formationSnapshot.doctrine.pendingTrigger ?? "").trim()
+        ),
         formationStateLabel: formationSnapshot.formationState.stateLabel,
         lastCheckAt: tracker.lastCheckAt ?? "-",
         lastCheckTriggerLabel: formationSnapshot.doctrine.lastCheckTriggerLabel ?? "-",
@@ -31006,10 +31014,27 @@ function buildDowntimeContext(downtimeState = {}, options = {}) {
     isPublished: publication.isPublished
   });
 
+  const areaLabel = formatPhase1AreaSettingsLabel(downtimeState?.tuning ?? {});
+  const actorEffectsRecord = normalizeDowntimeRewardEffectsRecord(
+    downtimeState?.rewardEffectsLedger?.byActor?.[defaultActorId]
+  );
+  const actorEffectsSummary = summarizeDowntimeRewardEffectsRecord(actorEffectsRecord);
+  const hasActorEffects = actorEffectsRecord.discountPercent > 0
+    || actorEffectsRecord.materialsCreditGp > 0
+    || actorEffectsRecord.heatDelta > 0
+    || actorEffectsRecord.reputationDelta !== 0
+    || actorEffectsRecord.contactTiers.minor > 0
+    || actorEffectsRecord.contactTiers.medium > 0
+    || actorEffectsRecord.contactTiers.major > 0;
+
   return {
     hoursGranted,
     draftHoursGranted: configuredHoursGranted,
     publishedHoursGranted: publication.publishedHoursGranted,
+    areaLabel,
+    actorEffectsRecord,
+    actorEffectsSummary,
+    hasActorEffects,
     publication: {
       isPublished: publication.isPublished,
       publishedHoursGranted: publication.publishedHoursGranted,
@@ -43813,7 +43838,7 @@ async function runDoctrineCheckPrompt() {
   await ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
     content: `
-      <p><strong>Doctrine Check</strong></p>
+      <p><strong>Joint Leadership Check</strong></p>
       <p><strong>Formation:</strong> ${escape(formationSnapshot.formation.label)}</p>
       <p><strong>Category:</strong> ${escape(formationSnapshot.formation.categoryLabel)}</p>
       <p><strong>Trigger:</strong> ${escape(getMarchDoctrineTriggerLabel(checkPayload.trigger))}</p>
@@ -43828,6 +43853,16 @@ async function runDoctrineCheckPrompt() {
   });
 }
 
+async function markTheaterDoctrineTrigger() {
+  if (!canAccessAllPlayerOps()) return;
+  await updateMarchingOrderState((state) => {
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE);
+  });
+  ui.notifications?.info("Theater-of-the-mind pressure marked. Run Joint Leadership to maintain formation bonuses.");
+}
+
 async function onMarchSceneEntry() {
   if (!game.user?.isGM) return;
   await updateMarchingOrderState((state) => {
@@ -43839,6 +43874,84 @@ async function onMarchSceneEntry() {
 }
 
 let marchSpacingCheckTimeout = null;
+let lastMarchDoctrineCombatRoundKey = "";
+
+const FORMATION_REMINDER_VISIBILITY = Object.freeze({
+  PUBLIC: "public",
+  GM_ONLY: "gm-only"
+});
+
+function normalizeFormationReminderVisibility(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized === FORMATION_REMINDER_VISIBILITY.GM_ONLY
+    ? FORMATION_REMINDER_VISIBILITY.GM_ONLY
+    : FORMATION_REMINDER_VISIBILITY.PUBLIC;
+}
+
+function getFormationReminderVisibility() {
+  return normalizeFormationReminderVisibility(
+    game.settings?.get?.(MODULE_ID, SETTINGS.FORMATION_MAINTENANCE_REMINDER_VISIBILITY)
+  );
+}
+
+async function onMarchCombatRound(combat, changed = {}) {
+  if (!game.user?.isGM) return;
+  const round = Number(combat?.round ?? 0);
+  if (!Number.isFinite(round) || round <= 0) return;
+  const combatId = String(combat?.id ?? "").trim();
+  if (!combatId) return;
+
+  const triggerSource = String(changed?.source ?? "").trim();
+  if (!triggerSource && changed && changed.round === undefined) return;
+
+  const roundKey = `${combatId}:${round}`;
+  if (roundKey === lastMarchDoctrineCombatRoundKey) return;
+  lastMarchDoctrineCombatRoundKey = roundKey;
+
+  await updateMarchingOrderState((state) => {
+    const formationId = normalizeMarchingFormation(state.formation ?? "loose");
+    if (formationId === "free") return;
+    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND);
+  });
+
+  const snapshot = getMarchingFormationSnapshot(getMarchingOrderState());
+  const pendingTrigger = String(snapshot?.doctrine?.pendingTrigger ?? "").trim();
+  if (pendingTrigger === MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND && snapshot?.doctrine?.cohesionCheckRequired) {
+    notifyUiWarnThrottled("Combat round maintenance is pending. Roll Joint Leadership to keep formation bonuses active.", {
+      key: `march-doctrine-combat-round-${roundKey}`,
+      ttlMs: 5000
+    });
+
+    const escape = foundry.utils.escapeHTML ?? ((value) => String(value ?? ""));
+    const effectSummary = Array.isArray(snapshot?.effectSummaries) && snapshot.effectSummaries.length > 0
+      ? snapshot.effectSummaries.join(", ")
+      : "No active effects";
+    const reminderVisibility = getFormationReminderVisibility();
+    const gmWhisperIds = reminderVisibility === FORMATION_REMINDER_VISIBILITY.GM_ONLY
+      ? (Array.from(game.users ?? []).filter((user) => user?.isGM).map((user) => user.id).filter(Boolean))
+      : [];
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
+      whisper: gmWhisperIds,
+      content: `
+        <p><strong>Formation Maintenance Due</strong></p>
+        <p><strong>Round:</strong> ${escape(round)}</p>
+        <p><strong>Formation:</strong> ${escape(snapshot?.formation?.label ?? "Unknown")}</p>
+        <p><strong>Trigger:</strong> ${escape(snapshot?.doctrine?.pendingTriggerLabel ?? "Combat round maintenance")}</p>
+        <p><strong>Action:</strong> Roll <em>Joint Leadership</em> to keep formation bonuses active this round.</p>
+        <p><strong>Current Effects:</strong> ${escape(effectSummary)}</p>
+      `
+    });
+  }
+}
+
+function onMarchCombatEnded(combat) {
+  const combatId = String(combat?.id ?? "").trim();
+  if (!combatId) return;
+  if (lastMarchDoctrineCombatRoundKey.startsWith(`${combatId}:`)) {
+    lastMarchDoctrineCombatRoundKey = "";
+  }
+}
 
 function scheduleSpacingViolationCheck() {
   if (!game.user?.isGM) return;
@@ -46055,6 +46168,8 @@ const registerPartyOpsHooks = createPartyOperationsHookRegistrar({
   maybePromptEnvironmentMovementCheck,
   onMarchTokenMoved,
   onMarchSceneEntry,
+  onMarchCombatRound,
+  onMarchCombatEnded,
   hasInventoryDelta,
   queueInventoryRefresh,
   consumeSuppressedSettingRefresh,

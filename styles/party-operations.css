@@ -1892,6 +1892,78 @@
   margin-bottom: var(--po-space-2);
 }
 
+  .party-operations .po-downtime-area-strip .po-downtime-status-card {
+    min-height: 52px;
+  }
+
+  .party-operations .po-downtime-effects-bar {
+    display: flex;
+    align-items: baseline;
+    gap: var(--po-space-2);
+    padding: 7px 12px;
+    margin: var(--po-space-1) 0 var(--po-space-2);
+    background: color-mix(in srgb, var(--po-accent) 10%, var(--po-surface));
+    border: 1px solid color-mix(in srgb, var(--po-accent) 38%, var(--po-border));
+    border-radius: var(--po-radius);
+    font-size: 0.82rem;
+    flex-wrap: wrap;
+  }
+
+  .party-operations .po-downtime-effects-bar-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--po-muted);
+    flex: 0 0 auto;
+  }
+
+  .party-operations .po-downtime-effects-bar-value {
+    color: var(--po-accent-contrast);
+    font-weight: 500;
+  }
+
+  .party-operations .po-downtime-action-guidance {
+    margin: 2px 0 var(--po-space-1);
+    padding: 5px 8px;
+    background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+    border-left: 2px solid var(--po-accent);
+    border-radius: 0 var(--po-radius) var(--po-radius) 0;
+    font-size: 0.8rem;
+    color: var(--po-muted);
+  }
+
+  .party-operations .po-downtime-collect-row {
+    display: flex;
+    align-items: center;
+    gap: var(--po-space-2);
+    margin: var(--po-space-1) 0;
+    flex-wrap: wrap;
+  }
+
+  .party-operations .po-downtime-collect-btn {
+    flex: 0 0 auto;
+  }
+
+  .party-operations .po-downtime-collect-hint {
+    font-size: 0.78rem;
+    color: var(--po-muted);
+    flex: 1 1 auto;
+  }
+
+  .party-operations .po-downtime-entry-card {
+    border-left: 2px solid var(--po-border-strong);
+    padding-left: var(--po-space-2);
+  }
+
+  .party-operations .po-downtime-entry-card:has(.po-downtime-collect-btn) {
+    border-left-color: var(--po-success);
+  }
+
+  .party-operations .po-downtime-entry-meta {
+    margin-top: var(--po-space-1);
+    font-size: 0.75rem;
+    color: var(--po-muted);
+  }
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
