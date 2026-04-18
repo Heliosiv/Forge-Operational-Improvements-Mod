@@ -30,6 +30,8 @@ import { createOperationsJournalSettings } from "./features/operations-journal-s
 import { createOperationsJournalService } from "./features/operations-journal-service.js";
 import {
   applyMarchRequest,
+  buildMarchFormationSummaryContext,
+  buildMarchOverviewContext,
   createMarchFeatureModule,
   normalizeSocketMarchRequest,
   setupMarchingDragAndDrop as setupMarchingDragAndDropFeature
@@ -392,6 +394,7 @@ const merchantUiAccessThrottleByKey = new Map();
 const merchantBarterResolutionByKey = new Map();
 const lootSourceItemsCache = new Map();
 const lootCandidateBuildCache = new Map();
+const activeLootClaimRequestKeys = new Set();
 const LOOT_SOURCE_ITEMS_CACHE_TTL_MS = 30000;
 const LOOT_SOURCE_ITEMS_CACHE_MAX_ENTRIES = 64;
 const LOOT_CANDIDATE_BUILD_CACHE_TTL_MS = 15000;
@@ -1335,9 +1338,6 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "gm-quick-submit-weather",
   "gm-quick-weather-select",
   "gm-quick-weather-set",
-  "gm-quick-weather-dae-key-preset",
-  "gm-quick-weather-add-dae",
-  "gm-quick-weather-remove-dae",
   "gm-quick-weather-save-preset",
   "gm-quick-weather-delete-preset"
 ]);
@@ -3948,9 +3948,6 @@ function ensureEnvironmentState(ledger) {
           darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
           visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier)))) : 0,
           note: String(entry?.note ?? ""),
-          daeChanges: Array.isArray(entry?.daeChanges)
-            ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
-            : [],
           createdAt: Number.isFinite(createdAt) ? createdAt : Date.now(),
           createdBy: String(entry?.createdBy ?? "GM")
         };
@@ -6265,10 +6262,8 @@ function buildOperationsContextFallback() {
     darkness: 0,
     visibilityModifier: 0,
     note: "",
-    presetName: "",
-    daeChanges: []
+    presetName: ""
   };
-  let fallbackWeatherDaeModeOptions = [];
   try {
     const weatherState = ensureWeatherState(ledger);
     const currentWeather = weatherState.current ?? null;
@@ -6301,12 +6296,7 @@ function buildOperationsContextFallback() {
         ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
         : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
       note: String(storedWeatherDraft?.note ?? ""),
-      presetName: String(storedWeatherDraft?.presetName ?? ""),
-      daeChanges: Array.isArray(storedWeatherDraft?.daeChanges)
-        ? storedWeatherDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-        : (Array.isArray(selectedWeatherOption?.daeChanges)
-          ? selectedWeatherOption.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-          : [])
+      presetName: String(storedWeatherDraft?.presetName ?? "")
     };
     fallbackWeatherOptions = weatherQuickOptions.map((option) => ({
       key: option.key,
@@ -6316,14 +6306,9 @@ function buildOperationsContextFallback() {
       visibilityModifier: Number(option.visibilityModifier ?? 0),
       visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
       effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
-      daeSummary: describeWeatherDaeChanges(option.daeChanges ?? []),
       selected: option.key === fallbackWeatherDraft.selectedKey
     }));
-    fallbackWeatherDaeModeOptions = Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
-      .map(([label, value]) => ({ label, value: Number(value) }))
-      .sort((a, b) => a.label.localeCompare(b.label));
   } catch (_error) {
-    fallbackWeatherDaeModeOptions = [];
   }
   let fallbackLootSources;
   try {
@@ -6808,7 +6793,6 @@ function buildOperationsContextFallback() {
       showFactionPanel: gmQuickPanel === "faction",
       showModifierPanel: gmQuickPanel === "modifier",
       showWeatherPanel: gmQuickPanel === "weather",
-      modifierKeyOptions: fallbackModifierKeyOptions,
       modifierModeOptions: fallbackModifierModeOptions,
       stagedModifierQueue: [],
       hasStagedModifierQueue: false,
@@ -6816,7 +6800,6 @@ function buildOperationsContextFallback() {
       modifierAddLog: [],
       weatherSceneSnapshot: fallbackWeatherSceneSnapshot,
       weatherOptions: fallbackWeatherOptions,
-      weatherDaeModeOptions: fallbackWeatherDaeModeOptions,
       weatherDraft: fallbackWeatherDraft
     },
     lootSources: fallbackLootSources,
@@ -8216,17 +8199,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         "gm-quick-weather-set": async () => {
           gmQuickUpdateWeatherDraftField(element);
         },
-        "gm-quick-weather-dae-key-preset": async () => {
-          gmQuickApplyWeatherDaeKeyPreset(element);
-        },
-        "gm-quick-weather-add-dae": async () => {
-          await gmQuickAddWeatherDaeChange(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
-        "gm-quick-weather-remove-dae": async () => {
-          await gmQuickRemoveWeatherDaeChange(element);
-          this.#renderWithPreservedState({ force: true, parts: ["main"] });
-        },
         "gm-quick-weather-save-preset": async () => {
           await gmQuickSaveWeatherPreset(element);
           this.#renderWithPreservedState({ force: true, parts: ["main"] });
@@ -8433,15 +8405,12 @@ function buildGmEnvironmentPageContext() {
       visibilityModifier: 0
     },
     weatherOptions: [],
-    weatherDaeModeOptions: [],
-    modifierKeyOptions: [],
     weatherDraft: {
       selectedKey: "",
       darkness: 0,
       visibilityModifier: 0,
       note: "",
-      presetName: "",
-      daeChanges: []
+      presetName: ""
     }
   };
   const logs = Array.isArray(environment.logs) ? environment.logs : [];
@@ -9139,14 +9108,11 @@ export const GmEnvironmentPageApp = createGmEnvironmentPageApp({
   requestOperationalEnvironmentChecks,
   showOperationalEnvironmentBrief,
   gmQuickLogCurrentWeather,
-  gmQuickAddWeatherDaeChange,
-  gmQuickRemoveWeatherDaeChange,
   gmQuickSaveWeatherPreset,
   gmQuickDeleteWeatherPreset,
   gmQuickSubmitWeather,
   gmQuickSelectWeatherPreset,
   gmQuickUpdateWeatherDraftField,
-  gmQuickApplyWeatherDaeKeyPreset,
   loadWeatherLogToQuickPanel,
   removeWeatherLogById,
   openGmPanelByKey
@@ -9171,6 +9137,7 @@ export const GmDowntimePageApp = createGmDowntimePageApp({
   preResolveSelectedDowntimeEntry,
   resolveSelectedDowntimeEntry,
   autoResolveAndDeliverSelectedDowntimeEntry,
+  autoResolveAllPendingDowntimeEntries,
   editDowntimeResult,
   editDowntimeQueueEntry,
   submitDowntimeAction,
@@ -9718,94 +9685,26 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const totalAssigned = frontCount + middleCount + rearCount;
     const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
     const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
-    const formationReasons = Array.isArray(formationSnapshot?.validity?.reasons)
-      ? formationSnapshot.validity.reasons
-      : [];
-    const tokenCoverageFallbackReason = formationReasons.find((reason) => String(reason?.code ?? "") === "missing-token-positions") ?? null;
-    const invalidReasons = formationReasons.filter((reason) => String(reason?.code ?? "") !== "missing-token-positions");
     const activeCombatId = String(game.combats?.active?.id ?? "").trim();
-    const leadersCommandUsedThisCombat = Boolean(activeCombatId) && String(tracker.leadersCommandCombatId ?? "") === activeCombatId;
-    const doctrineStateCode = String(formationSnapshot?.doctrine?.state ?? "").trim().toLowerCase();
-    const failureStreakCount = Math.max(0, Number(tracker.failureStreakCount ?? 0));
-    const consecutiveSuccessCount = Math.max(0, Number(tracker.consecutiveSuccessCount ?? 0));
-    const leadershipCheckDue = Boolean(
-      formationSnapshot.doctrine.cohesionCheckRequired
-      && String(formationSnapshot.doctrine.pendingTrigger ?? "").trim()
-    );
-    const canUseLeadersCommand = !leadersCommandUsedThisCombat;
-    const shouldShowRecoveryGuidance = leadershipCheckDue
-      || doctrineStateCode === MARCH_DOCTRINE_STATES.STRAINED
-      || doctrineStateCode === MARCH_DOCTRINE_STATES.BROKEN
-      || failureStreakCount > 0;
-
-    const recoveryGuidance = (() => {
-      if (!shouldShowRecoveryGuidance) {
-        return {
-          recommendedAction: "none",
-          title: "Formation Stable",
-          text: "No immediate recovery action is needed.",
-          canRally: true,
-          canLeadersCommand: canUseLeadersCommand,
-          canDropFormation: true
-        };
-      }
-      if (doctrineStateCode === MARCH_DOCTRINE_STATES.BROKEN) {
-        if (canUseLeadersCommand) {
-          return {
-            recommendedAction: "leaders-command",
-            title: "Critical Recovery",
-            text: "Formation is broken. Use Leader's Command first, then Rally Check or Drop Formation if pressure remains.",
-            canRally: true,
-            canLeadersCommand: true,
-            canDropFormation: true
-          };
-        }
-        return {
-          recommendedAction: "formation-drop",
-          title: "Critical Recovery",
-          text: "Formation is broken and Leader's Command is spent. Drop Formation now, then Rally Check to stabilize.",
-          canRally: true,
-          canLeadersCommand: false,
-          canDropFormation: true
-        };
-      }
-      if (leadershipCheckDue) {
-        return {
-          recommendedAction: "doctrine-check",
-          title: "Immediate Maintenance",
-          text: "Roll Joint Leadership now to prevent further pressure this round.",
-          canRally: true,
-          canLeadersCommand: canUseLeadersCommand,
-          canDropFormation: true
-        };
-      }
-      if (failureStreakCount >= 2 && canUseLeadersCommand) {
-        return {
-          recommendedAction: "leaders-command",
-          title: "Escalating Pressure",
-          text: "Failure streak is high. Use Leader's Command to cut pressure quickly, then continue with Joint Leadership.",
-          canRally: true,
-          canLeadersCommand: true,
-          canDropFormation: true
-        };
-      }
-      return {
-        recommendedAction: "rally-check",
-        title: "Stabilize Formation",
-        text: "Use Rally Check to reduce pressure, or Drop Formation for a lower-DC posture.",
-        canRally: true,
-        canLeadersCommand: canUseLeadersCommand,
-        canDropFormation: true
-      };
-    })();
-    const recoveryRecommendedActionLabel = (() => {
-      const action = String(recoveryGuidance.recommendedAction ?? "").trim().toLowerCase();
-      if (action === "doctrine-check") return "Joint Leadership";
-      if (action === "rally-check") return "Rally Check";
-      if (action === "leaders-command") return "Leader's Command";
-      if (action === "formation-drop") return "Drop Formation";
-      return "None";
-    })();
+    const formationSummary = buildMarchFormationSummaryContext({
+      formationSnapshot,
+      tracker,
+      activeCombatId,
+      doctrineStates: MARCH_DOCTRINE_STATES
+    });
+    const overview = buildMarchOverviewContext({
+      totalAssigned,
+      frontCount,
+      middleCount,
+      rearCount,
+      formationLabel: formationSnapshot.formation.label,
+      formationStateLabel: formationSnapshot.formationState.stateLabel,
+      lightSources,
+      lockState,
+      unassignedCount: Number(formationBoard?.unassignedRestActors?.length ?? 0),
+      warningCount: Number(formationSummary.invalidReasons?.length ?? 0),
+      leadershipCheckDue: formationSummary.leadershipCheckDue
+    });
 
     return {
       isGM,
@@ -9826,65 +9725,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       formationChoices: buildMarchFormationChoices(formationSnapshot.formation.id),
       formationChoiceCards,
       formationBoard,
-      formationSummary: {
-        label: formationSnapshot.formation.label,
-        category: formationSnapshot.formation.category,
-        categoryLabel: formationSnapshot.formation.categoryLabel,
-        summary: formationSnapshot.formation.summary,
-        validityLabel: formationSnapshot.validity.stateLabel,
-        valid: formationSnapshot.validity.isValid,
-        doctrineStateLabel: formationSnapshot.doctrine.stateLabel,
-        doctrineChecksActive: formationSnapshot.doctrine.checksActive,
-        cohesionChecksActive: formationSnapshot.doctrine.cohesionChecksActive,
-        cohesionCheckRequired: formationSnapshot.doctrine.cohesionCheckRequired,
-        pendingTriggerCode: formationSnapshot.doctrine.pendingTrigger,
-        leadershipCheckDue,
-        formationStateLabel: formationSnapshot.formationState.stateLabel,
-        lastCheckAt: tracker.lastCheckAt ?? "-",
-        lastCheckTriggerLabel: formationSnapshot.doctrine.lastCheckTriggerLabel ?? "-",
-        lastCheckSummary: tracker.lastCheckSummary ?? "-",
-        pendingTriggerLabel: formationSnapshot.doctrine.pendingTriggerLabel ?? "",
-        effectEntries: formationSnapshot.effectEntries,
-        effectSummaries: formationSnapshot.effectSummaries,
-        tokenCoverageFallbackActive: Boolean(tokenCoverageFallbackReason),
-        tokenCoverageFallbackMessage: String(tokenCoverageFallbackReason?.message ?? ""),
-        invalidReasons,
-        bandTargets: formationSnapshot.bandTargets,
-        // Failure streak and momentum tracking
-        failureStreakCount,
-        consecutiveSuccessCount,
-        lastCheckWasSuccess: Boolean(tracker.lastCheckWasSuccess ?? false),
-        failureStreakLabel: (() => {
-          const count = failureStreakCount;
-          if (count === 0) return "No failures";
-          if (count === 1) return "1 failure - DC increasing";
-          return `${count} failures - DC escalated +${count}`;
-        })(),
-        successStreakLabel: (() => {
-          const count = consecutiveSuccessCount;
-          if (count === 0) return "No momentum";
-          if (count < 3) return `${count} success${count !== 1 ? "es" : ""} - building momentum`;
-          const bonus = Math.floor(count / 3);
-          return `${count} successes (+${bonus} momentum bonus)`;
-        })(),
-        formationHealthPercent: (() => {
-          return Math.max(0, 100 - (failureStreakCount * 15));
-        })(),
-        healthTrendIndicator: (() => {
-          const was = Boolean(tracker.lastCheckWasSuccess ?? false);
-          return was ? "Improving" : "Declining";
-        })(),
-        leadersCommandUsedThisCombat,
-        canUseLeadersCommand,
-        recoveryGuidanceVisible: shouldShowRecoveryGuidance,
-        recoveryGuidanceTitle: recoveryGuidance.title,
-        recoveryGuidanceText: recoveryGuidance.text,
-        recoveryRecommendedAction: recoveryGuidance.recommendedAction,
-        recoveryRecommendedActionLabel,
-        recoveryCanRally: recoveryGuidance.canRally,
-        recoveryCanLeadersCommand: recoveryGuidance.canLeadersCommand,
-        recoveryCanDropFormation: recoveryGuidance.canDropFormation
-      },
+      formationSummary,
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
@@ -9914,16 +9755,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       },
       miniViz,
       ...miniVizUi,
-      overview: {
-        totalAssigned,
-        frontCount,
-        middleCount,
-        rearCount,
-        formationLabel: formationSnapshot.formation.label,
-        formationStateLabel: formationSnapshot.formationState.stateLabel,
-        lightSources,
-        lockState
-      }
+      overview
     };
   }
 
@@ -18821,8 +18653,12 @@ async function buildLootItemCandidates(sourceConfig, draft, warnings = []) {
         return copy;
       });
     });
-  const sourceItemsCache = lootSourceItemsCache;
-  const candidatesCache = lootCandidateBuildCache;
+  const sourceItemsCache = typeof lootSourceItemsCache !== "undefined"
+    ? lootSourceItemsCache
+    : new Map();
+  const candidatesCache = typeof lootCandidateBuildCache !== "undefined"
+    ? lootCandidateBuildCache
+    : new Map();
   const sourceItemsCacheTtlMs = Number(
     typeof LOOT_SOURCE_ITEMS_CACHE_TTL_MS !== "undefined" ? LOOT_SOURCE_ITEMS_CACHE_TTL_MS : 30000
   ) || 30000;
@@ -21835,6 +21671,15 @@ function getOwnedPcActors() {
   return Array.from(unique.values());
 }
 
+function getPartyCharacterActors() {
+  const unique = new Map();
+  for (const actor of Array.isArray(game.party?.members) ? game.party.members : []) {
+    if (!actor || actor.type !== "character" || !actor.id) continue;
+    unique.set(String(actor.id), actor);
+  }
+  return Array.from(unique.values()).sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
+}
+
 function getLootClaimSelectableActorsForUser(user = game.user) {
   if (!user) return [];
   const isGmUser = canAccessAllPlayerOps(user);
@@ -21846,6 +21691,7 @@ function getLootClaimSelectableActorsForUser(user = game.user) {
   };
 
   if (!isGmUser && user.character?.id) addActor(user.character);
+  for (const actor of getPartyCharacterActors()) addActor(actor);
   for (const actor of getOwnedPcActors()) addActor(actor);
   if (!isGmUser) {
     for (const actor of game.actors?.contents ?? []) addActor(actor);
@@ -21862,6 +21708,18 @@ function getLootClaimSelectableActorsForUser(user = game.user) {
 function getLootCurrencySplitEligibleActorsForUser(user = game.user) {
   return getLootClaimSelectableActorsForUser(user)
     .filter((actor) => String(actor?.type ?? "") === "character");
+}
+
+async function runLootClaimRequestOnce(requestKey, operation) {
+  const key = String(requestKey ?? "").trim();
+  if (!key) return operation();
+  if (activeLootClaimRequestKeys.has(key)) return { skipped: true };
+  activeLootClaimRequestKeys.add(key);
+  try {
+    return await operation();
+  } finally {
+    activeLootClaimRequestKeys.delete(key);
+  }
 }
 
 function getNeutralFriendlyActors() {
@@ -22432,12 +22290,7 @@ function buildOperationsContext() {
       ? Math.max(-5, Math.min(5, Math.floor(Number(storedWeatherDraft.visibilityModifier))))
       : Math.max(-5, Math.min(5, Math.floor(Number(selectedWeatherOption?.visibilityModifier ?? 0) || 0))),
     note: String(storedWeatherDraft?.note ?? ""),
-    presetName: String(storedWeatherDraft?.presetName ?? ""),
-    daeChanges: Array.isArray(storedWeatherDraft?.daeChanges)
-      ? storedWeatherDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-      : (Array.isArray(selectedWeatherOption?.daeChanges)
-        ? selectedWeatherOption.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-        : [])
+    presetName: String(storedWeatherDraft?.presetName ?? "")
   };
   const globalLogs = (environmentState.logs ?? [])
     .map((entry) => {
@@ -22452,7 +22305,7 @@ function buildOperationsContext() {
           logTypeLabel: "Weather",
           title: String(entry.label ?? "Weather").trim() || "Weather",
           summary: `Visibility ${formatSignedModifier(Number(entry.visibilityModifier ?? 0)) || "0"} - Darkness ${Number(entry.darkness ?? 0).toFixed(2)}`,
-          details: `${getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0))} - ${describeWeatherDaeChanges(entry.daeChanges ?? [])}`,
+          details: getWeatherEffectSummary(Number(entry.visibilityModifier ?? 0)),
           note: String(entry.note ?? ""),
           hasNote: String(entry.note ?? "").trim().length > 0,
           createdBy: String(entry.createdBy ?? "GM"),
@@ -22852,7 +22705,6 @@ function buildOperationsContext() {
       showModifierPanel: gmQuickPanel === "modifier",
       showWeatherPanel: gmQuickPanel === "weather",
       modifierModeOptions: partyModifierModeOptions,
-      modifierKeyOptions: partyModifierKeyOptions,
       stagedModifierQueue,
       hasStagedModifierQueue: stagedModifierQueue.length > 0,
       modifierAddLog,
@@ -22866,12 +22718,8 @@ function buildOperationsContext() {
         visibilityModifier: Number(option.visibilityModifier ?? 0),
         visibilityLabel: formatSignedModifier(Number(option.visibilityModifier ?? 0)) || "0",
         effectSummary: getWeatherEffectSummary(Number(option.visibilityModifier ?? 0)),
-        daeSummary: describeWeatherDaeChanges(option.daeChanges ?? []),
         selected: option.key === weatherQuickDraft.selectedKey
       })),
-      weatherDaeModeOptions: Object.entries(CONST.ACTIVE_EFFECT_MODES ?? {})
-        .map(([label, value]) => ({ label, value: Number(value) }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
       weatherDraft: weatherQuickDraft
     },
     downtime,
@@ -22912,9 +22760,6 @@ function getOperationalEffects(ledger, roles, sops) {
   const weatherState = ensureWeatherState(ledger);
   const weatherVisibilityModifier = Number(weatherState.current?.visibilityModifier ?? 0);
   const weatherLabel = String(weatherState.current?.label ?? "Weather");
-  const weatherDaeChanges = Array.isArray(weatherState.current?.daeChanges)
-    ? weatherState.current.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-    : [];
   const prepEdge = false;
 
   const bonuses = [];
@@ -22988,30 +22833,12 @@ function getOperationalEffects(ledger, roles, sops) {
       }
     }
   }
-  if (weatherDaeChanges.length > 0) {
-    bonuses.push(`Weather profile (${weatherLabel}) applies ${weatherDaeChanges.length} global DAE change(s).`);
-  }
-
   if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
 
   if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
-  const customDaeChanges = [];
-  const worldDaeChanges = [];
-  for (const [index, weatherChange] of weatherDaeChanges.entries()) {
-    const normalized = {
-      modifierId: `weather:${index}`,
-      label: `Weather (${weatherLabel})`,
-      note: String(weatherChange.note ?? ""),
-      key: weatherChange.key,
-      mode: weatherChange.mode,
-      value: weatherChange.value
-    };
-    customDaeChanges.push(normalized);
-    worldDaeChanges.push(foundry.utils.deepClone(normalized));
-  }
   const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
   const riskScore = activeSops - pressurePenalty;
   const riskTier = riskScore >= 2 ? "low" : riskScore >= 0 ? "moderate" : "high";
@@ -23028,8 +22855,8 @@ function getOperationalEffects(ledger, roles, sops) {
     customModifierRows: [],
     hasGlobalModifiers: globalModifierRows.length > 0,
     hasCustomModifiers: false,
-    customDaeChanges,
-    worldDaeChanges,
+    customDaeChanges: [],
+    worldDaeChanges: [],
     hasGlobalMinorBonuses: globalMinorBonuses.length > 0,
     hasRisks: risks.length > 0,
     risks
@@ -31793,9 +31620,6 @@ function ensureWeatherState(ledger) {
       darkness: Number.isFinite(Number(entry?.darkness)) ? Math.max(0, Math.min(1, Number(entry.darkness))) : 0,
       visibilityModifier: Number.isFinite(Number(entry?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(entry.visibilityModifier)))) : 0,
       note: String(entry?.note ?? ""),
-      daeChanges: Array.isArray(entry?.daeChanges)
-        ? entry.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
-        : [],
       loggedAt: Number.isFinite(Number(entry?.loggedAt)) ? Number(entry.loggedAt) : Date.now(),
       loggedBy: String(entry?.loggedBy ?? "GM")
     }))
@@ -31811,9 +31635,6 @@ function ensureWeatherState(ledger) {
       darkness: Number.isFinite(Number(current?.darkness)) ? Math.max(0, Math.min(1, Number(current.darkness))) : 0,
       visibilityModifier: Number.isFinite(Number(current?.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(current.visibilityModifier)))) : 0,
       note: String(current?.note ?? ""),
-      daeChanges: Array.isArray(current?.daeChanges)
-        ? current.daeChanges.map((change) => normalizeWeatherDaeChange(change)).filter((change) => change.key && change.value)
-        : [],
       loggedAt: Number.isFinite(Number(current?.loggedAt)) ? Number(current.loggedAt) : Date.now(),
       loggedBy: String(current?.loggedBy ?? "GM")
     };
@@ -33110,6 +32931,118 @@ async function autoResolveAndDeliverSelectedDowntimeEntry(element) {
   await preResolveSelectedDowntimeEntry(element, { suppressNotification: true });
   await resolveSelectedDowntimeEntry(element, { suppressNotification: true });
   ui.notifications?.info(`Auto-resolved and delivered downtime for ${actorName}.`);
+}
+
+async function autoResolveAllPendingDowntimeEntries() {
+  if (!canAccessAllPlayerOps()) {
+    ui.notifications?.warn(DOWNTIME_GM_ONLY_RESOLVE_WARNING);
+    return;
+  }
+
+  const ledger = getOperationsLedger();
+  const downtime = ensureDowntimeState(ledger);
+  const viewState = getGmDowntimeViewState();
+  const pendingOptions = buildDowntimeContext(downtime, {
+    user: game.user,
+    entriesSort: viewState.entriesSort,
+    logsSort: viewState.logsSort
+  })?.gmResolve?.pendingOptions ?? [];
+
+  const pendingPlans = [];
+  for (const option of pendingOptions) {
+    const actorId = String(option?.actorId ?? "").trim();
+    if (!actorId) continue;
+    const entry = downtime.entries?.[actorId];
+    if (!entry || entry.pending === false) continue;
+    const actorName = getDowntimeActorName(actorId, entry.actorName);
+    const rolled = await generateDowntimeResult(entry, downtime);
+    const fallback = getDowntimeResolutionBase(entry, downtime);
+    const stagedResult = buildDowntimePreResolvedDraftResult(rolled, fallback);
+    const actionDef = getDowntimeActionDefinition(entry.actionKey);
+    const details = buildDowntimeResolutionDetails({
+      stagedResult,
+      gpAward: stagedResult.gpAward,
+      gpCost: stagedResult.gpCost,
+      rumorCount: stagedResult.rumorCount,
+      itemRewards: stagedResult.itemRewards,
+      itemRewardDrops: stagedResult.itemRewardDrops,
+      gmNotes: "",
+      socialContract: stagedResult.socialContract
+    });
+    const summary = String(stagedResult.summary ?? "").trim() || `${actionDef.label} resolved for ${actorName}.`;
+    const result = normalizeDowntimeResult({
+      id: foundry.utils.randomID(),
+      actionKey: actionDef.key,
+      actionLabel: actionDef.label,
+      actionData: entry?.actionData ?? stagedResult?.actionData ?? {},
+      areaSettings: entry?.areaSettings ?? stagedResult?.areaSettings ?? {},
+      tier: stagedResult?.tier ?? "success",
+      summary,
+      details,
+      rollTotal: Number(stagedResult?.rollTotal ?? 0) || 0,
+      gpAward: Math.max(0, Number(stagedResult?.gpAward ?? 0) || 0),
+      gpCost: Math.max(0, Number(stagedResult?.gpCost ?? 0) || 0),
+      gpDelta: (Number(stagedResult?.gpAward ?? 0) || 0) - (Number(stagedResult?.gpCost ?? 0) || 0),
+      progress: Math.max(0, Math.floor(Number(stagedResult?.progress ?? 0) || 0)),
+      complication: String(stagedResult?.complication ?? "").trim(),
+      rumorCount: Math.max(0, Number(stagedResult?.rumorCount ?? 0) || 0),
+      itemRewards: Array.isArray(stagedResult?.itemRewards) ? stagedResult.itemRewards : [],
+      itemRewardDrops: normalizeDowntimeItemRewardDrops(stagedResult?.itemRewardDrops ?? []),
+      gmNotes: "",
+      expectedQuality: String(stagedResult?.expectedQuality ?? ""),
+      suggestedTags: Array.isArray(stagedResult?.suggestedTags) ? stagedResult.suggestedTags : [],
+      browsing: stagedResult?.browsing ?? null,
+      crafting: stagedResult?.crafting ?? null,
+      profession: stagedResult?.profession ?? null,
+      performanceLabel: String(stagedResult?.performanceLabel ?? ""),
+      socialContract: stagedResult?.socialContract ?? null,
+      collected: false,
+      resolvedAt: Date.now(),
+      resolvedBy: String(game.user?.name ?? "GM")
+    });
+
+    pendingPlans.push({
+      actorId,
+      actorName,
+      actionKey: actionDef.key,
+      entry,
+      result
+    });
+  }
+
+  if (pendingPlans.length < 1) {
+    ui.notifications?.warn("No pending downtime entries were available to auto-resolve.");
+    return;
+  }
+
+  const appliedPlans = [];
+  await updateOperationsLedger((nextLedger) => {
+    const state = ensureDowntimeState(nextLedger);
+    for (const plan of pendingPlans) {
+      const current = state.entries?.[plan.actorId];
+      if (!current || current.pending === false) continue;
+      applyResolvedDowntimeToState(state, {
+        actorId: plan.actorId,
+        actorName: plan.actorName,
+        actionKey: plan.actionKey,
+        fallbackEntry: plan.entry,
+        result: plan.result
+      });
+      appliedPlans.push(plan);
+    }
+  });
+
+  if (appliedPlans.length < 1) {
+    ui.notifications?.warn(DOWNTIME_STALE_PENDING_WARNING);
+    return;
+  }
+
+  for (const plan of appliedPlans) {
+    await persistCraftingProgressForResolvedDowntime(plan.actorId, plan.result);
+  }
+
+  clearDowntimeUiDraft("resolution");
+  ui.notifications?.info(`Auto-resolved and delivered ${appliedPlans.length} downtime entr${appliedPlans.length === 1 ? "y" : "ies"}.`);
 }
 
 async function editDowntimeResult(element) {
@@ -40493,8 +40426,89 @@ async function claimAllLootForPlayer(element) {
     return;
   }
 
-  if (hasItems) await claimAllLootItemsForPlayer(element);
-  if (hasCurrency) await claimLootCurrencyForPlayer(element);
+  const requestKey = `claim-all:${String(game.user?.id ?? "anon")}:${runId}:${actorId}`;
+  const result = await runLootClaimRequestOnce(requestKey, async () => {
+    if (canAccessAllPlayerOps()) {
+      let claimedItemCount = 0;
+      let claimedCurrency = null;
+      let completionSummary = null;
+
+      for (const itemId of itemIds) {
+        const outcome = await applyLootClaimForUser(game.user, actorId, itemId, runId);
+        if (!outcome.ok) continue;
+        claimedItemCount += 1;
+        await postLootItemClaimToChat(outcome);
+        if (outcome?.completion?.completed) completionSummary = outcome?.completion?.summary ?? completionSummary;
+      }
+
+      const refreshedClaims = ensureLootClaimsState(getOperationsLedger());
+      const refreshedBoard = getLootClaimBoardFromState(refreshedClaims, runId, { requireOpen: true });
+      const refreshedCurrency = normalizeLootClaimCurrencyRecord(refreshedBoard?.currencyRemaining ?? refreshedBoard?.currency ?? {});
+      const hasRefreshedCurrency = refreshedCurrency.pp > 0 || refreshedCurrency.gp > 0 || refreshedCurrency.sp > 0 || refreshedCurrency.cp > 0;
+      if (hasRefreshedCurrency) {
+        const currencyOutcome = await applyLootCurrencyClaimForUser(game.user, actorId, runId);
+        if (currencyOutcome.ok) {
+          claimedCurrency = currencyOutcome.share ?? { pp: 0, gp: 0, sp: 0, cp: 0 };
+          await postLootCurrencyClaimToChat(currencyOutcome);
+          if (currencyOutcome?.completion?.completed) completionSummary = currencyOutcome?.completion?.summary ?? completionSummary;
+        }
+      }
+
+      return {
+        claimedItemCount,
+        claimedCurrency,
+        completionSummary
+      };
+    }
+
+    for (const itemId of itemIds) {
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:loot-claim",
+        userId: game.user.id,
+        actorId,
+        itemId,
+        runId
+      });
+    }
+    if (hasCurrency) {
+      game.socket.emit(SOCKET_CHANNEL, {
+        type: "ops:loot-claim-currency",
+        userId: game.user.id,
+        actorId,
+        runId
+      });
+    }
+
+    return {
+      requestedItemCount: itemIds.length,
+      requestedCurrency: hasCurrency
+    };
+  });
+
+  if (result?.skipped) {
+    ui.notifications?.info("Loot deposit is already in progress for that destination.");
+    return;
+  }
+
+  if (canAccessAllPlayerOps()) {
+    const claimedItemCount = Math.max(0, Number(result?.claimedItemCount ?? 0) || 0);
+    const claimedCurrency = result?.claimedCurrency ?? null;
+    const hasClaimedCurrency = claimedCurrency
+      && (Number(claimedCurrency.pp ?? 0) > 0 || Number(claimedCurrency.gp ?? 0) > 0 || Number(claimedCurrency.sp ?? 0) > 0 || Number(claimedCurrency.cp ?? 0) > 0);
+    if (claimedItemCount <= 0 && !hasClaimedCurrency) {
+      ui.notifications?.warn("No loot was deposited.");
+      return;
+    }
+
+    const summaryParts = [];
+    if (claimedItemCount > 0) summaryParts.push(`${claimedItemCount} item(s)`);
+    if (hasClaimedCurrency) summaryParts.push(formatLootCurrencyBundleLabel(claimedCurrency));
+    ui.notifications?.info(`Deposited ${summaryParts.join(" and ")} to the selected destination.`);
+    if (result?.completionSummary) await showLootRunCompletionSummary(result.completionSummary);
+    return;
+  }
+
+  ui.notifications?.info("Deposit request sent to GM.");
 }
 
 async function autoAssignItemsByVouchForGm(element) {
@@ -40865,12 +40879,6 @@ function getDaeModifierCategoryOptions() {
 }
 
 function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) {
-  const presetChanges = Array.isArray(preset?.daeChanges)
-    ? preset.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-    : [];
-  const previousChanges = Array.isArray(previousDraft?.daeChanges)
-    ? previousDraft.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-    : null;
   return {
     selectedKey: String(preset?.key ?? ""),
     darkness: Number.isFinite(Number(previousDraft?.darkness))
@@ -40880,8 +40888,7 @@ function buildWeatherDraftFromPreset(preset, sceneSnapshot, previousDraft = {}) 
       ? Math.max(-5, Math.min(5, Math.floor(Number(previousDraft.visibilityModifier))))
       : Math.max(-5, Math.min(5, Math.floor(Number(preset?.visibilityModifier ?? 0) || 0))),
     note: String(previousDraft?.note ?? preset?.note ?? sceneSnapshot?.note ?? ""),
-    presetName: String(previousDraft?.presetName ?? preset?.label ?? ""),
-    daeChanges: previousChanges ?? presetChanges
+    presetName: String(previousDraft?.presetName ?? preset?.label ?? "")
   };
 }
 
@@ -40921,9 +40928,6 @@ async function gmQuickSelectWeatherPreset(element) {
   const darkness = Number.isFinite(rawDarkness) ? Math.max(0, Math.min(1, rawDarkness)) : 0;
   const rawVisibility = Number(draft?.visibilityModifier ?? selectedPreset?.visibilityModifier ?? 0);
   const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
-  const daeChanges = (Array.isArray(draft?.daeChanges) ? draft.daeChanges : selectedPreset?.daeChanges ?? [])
-    .map((entry) => normalizeWeatherDaeChange(entry))
-    .filter((entry) => entry.key && entry.value);
   const label = String(selectedPreset?.label ?? "Weather").trim() || "Weather";
   const snapshot = {
     id: foundry.utils.randomID(),
@@ -40932,7 +40936,6 @@ async function gmQuickSelectWeatherPreset(element) {
     darkness,
     visibilityModifier,
     note: String(draft?.note ?? selectedPreset?.note ?? "").trim() || `Weather preset selected: ${label}`,
-    daeChanges,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };
@@ -40961,49 +40964,6 @@ function gmQuickUpdateWeatherDraftField(element) {
   setGmQuickWeatherDraft(draft);
 }
 
-function gmQuickApplyWeatherDaeKeyPreset(element) {
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  if (!root) return;
-  const selectedKey = String(element?.value ?? "").trim();
-  if (!selectedKey) return;
-  const input = root.querySelector("input[name='quickWeatherDaeKeyInput']");
-  if (!input) return;
-  input.value = selectedKey;
-}
-
-async function gmQuickAddWeatherDaeChange(element) {
-  const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
-  const key = String(root?.querySelector("input[name='quickWeatherDaeKeyInput']")?.value ?? root?.querySelector("select[name='quickWeatherDaeKey']")?.value ?? "").trim();
-  const value = String(root?.querySelector("input[name='quickWeatherDaeValue']")?.value ?? "").trim();
-  const note = String(root?.querySelector("input[name='quickWeatherDaeNote']")?.value ?? "").trim();
-  const rawMode = Math.floor(Number(root?.querySelector("select[name='quickWeatherDaeMode']")?.value ?? CONST.ACTIVE_EFFECT_MODES.ADD));
-  if (!key || !value) {
-    ui.notifications?.warn("DAE change requires key and value.");
-    return;
-  }
-  const draft = getGmQuickWeatherDraft() ?? {};
-  draft.daeChanges = [
-    ...(Array.isArray(draft.daeChanges) ? draft.daeChanges : []),
-    normalizeWeatherDaeChange({
-      id: foundry.utils.randomID(),
-      key,
-      mode: rawMode,
-      value,
-      label: getDaeKeyLabel(key),
-      note
-    })
-  ];
-  setGmQuickWeatherDraft(draft);
-}
-
-async function gmQuickRemoveWeatherDaeChange(element) {
-  const changeId = String(element?.dataset?.changeId ?? "").trim();
-  if (!changeId) return;
-  const draft = getGmQuickWeatherDraft() ?? {};
-  draft.daeChanges = (Array.isArray(draft.daeChanges) ? draft.daeChanges : []).filter((entry) => String(entry?.id ?? "") !== changeId);
-  setGmQuickWeatherDraft(draft);
-}
-
 async function gmQuickSaveWeatherPreset(element) {
   const root = element?.closest(".po-gm-quick-actions") ?? element?.closest(".po-gm-section");
   const draft = getGmQuickWeatherDraft() ?? {};
@@ -41021,7 +40981,6 @@ async function gmQuickSaveWeatherPreset(element) {
       visibilityModifier: Number(draft.visibilityModifier ?? 0),
       darkness: Number(draft.darkness ?? 0),
       note: String(draft.note ?? ""),
-      daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : [],
       isBuiltIn: false
     }));
   });
@@ -41070,7 +41029,6 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
       darkness: snapshot.darkness,
       visibilityModifier: snapshot.visibilityModifier,
       note: snapshot.note,
-      daeChanges: snapshot.daeChanges,
       createdAt: snapshot.loggedAt,
       createdBy: snapshot.loggedBy
     });
@@ -41088,7 +41046,7 @@ async function commitWeatherSnapshot(snapshot, options = {}) {
   if (!suppressChat) {
     await ChatMessage.create({
       speaker: ChatMessage.getSpeaker({ alias: "Party Operations" }),
-      content: `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>DAE Changes:</strong> ${poEscapeHtml(describeWeatherDaeChanges(snapshot.daeChanges))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
+      content: `<p><strong>Weather Logged:</strong> ${poEscapeHtml(snapshot.label)}</p><p><strong>Visibility Modifier:</strong> ${signedModifier}</p><p><strong>Effect:</strong> ${poEscapeHtml(getWeatherEffectSummary(snapshot.visibilityModifier))}</p><p><strong>Darkness:</strong> ${snapshot.darkness.toFixed(2)}</p>`
     });
   }
   return {
@@ -41114,8 +41072,7 @@ async function gmQuickSubmitWeather(element) {
     label: "Clear",
     weatherId: "clear",
     darkness: sceneSnapshot.darkness,
-    visibilityModifier: sceneSnapshot.visibilityModifier,
-    daeChanges: []
+    visibilityModifier: sceneSnapshot.visibilityModifier
   };
   const draft = getGmQuickWeatherDraft() ?? buildWeatherDraftFromPreset(selectedPreset, sceneSnapshot);
   const rawDarkness = Number(root?.querySelector("input[name='quickWeatherDarkness']")?.value ?? draft.darkness ?? selectedPreset.darkness ?? sceneSnapshot.darkness ?? 0);
@@ -41123,9 +41080,6 @@ async function gmQuickSubmitWeather(element) {
   const rawVisibility = Number(root?.querySelector("input[name='quickWeatherVisibility']")?.value ?? draft.visibilityModifier ?? selectedPreset.visibilityModifier ?? 0);
   const visibilityModifier = Number.isFinite(rawVisibility) ? Math.max(-5, Math.min(5, Math.floor(rawVisibility))) : 0;
   const note = String(root?.querySelector("textarea[name='quickWeatherNote']")?.value ?? draft.note ?? "").trim();
-  const daeChanges = (Array.isArray(draft.daeChanges) ? draft.daeChanges : selectedPreset.daeChanges ?? [])
-    .map((entry) => normalizeWeatherDaeChange(entry))
-    .filter((entry) => entry.key && entry.value);
 
   const snapshot = {
     id: foundry.utils.randomID(),
@@ -41134,7 +41088,6 @@ async function gmQuickSubmitWeather(element) {
     darkness,
     visibilityModifier,
     note: note || `Weather profile logged - darkness ${darkness.toFixed(2)}`,
-    daeChanges,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };
@@ -41146,8 +41099,7 @@ async function gmQuickSubmitWeather(element) {
     darkness,
     visibilityModifier,
     note,
-    presetName: String(selectedPreset.label ?? ""),
-    daeChanges
+    presetName: String(selectedPreset.label ?? "")
   });
   setActiveGmQuickPanel("none");
 }
@@ -41167,8 +41119,7 @@ async function loadWeatherLogToQuickPanel(logId) {
     selectedKey: String(selectedPreset?.key ?? entry.weatherId ?? ""),
     darkness: Number(entry.darkness ?? 0),
     visibilityModifier: Number(entry.visibilityModifier ?? 0),
-    note: String(entry.note ?? ""),
-    daeChanges: Array.isArray(entry.daeChanges) ? entry.daeChanges : []
+    note: String(entry.note ?? "")
   });
   setActiveGmQuickPanel("weather");
   return true;
@@ -41627,9 +41578,6 @@ async function logCurrentSceneWeatherSnapshot(options = {}) {
   const sceneSnapshot = resolveCurrentSceneWeatherSnapshot();
   const weatherState = ensureWeatherState(getOperationsLedger());
   const previous = weatherState.current ?? null;
-  const previousDae = Array.isArray(previous?.daeChanges)
-    ? previous.daeChanges.map((entry) => normalizeWeatherDaeChange(entry)).filter((entry) => entry.key && entry.value)
-    : [];
   const snapshot = {
     id: foundry.utils.randomID(),
     label: String(sceneSnapshot.label ?? previous?.label ?? "Weather").trim() || "Weather",
@@ -41637,7 +41585,6 @@ async function logCurrentSceneWeatherSnapshot(options = {}) {
     darkness: Number.isFinite(Number(sceneSnapshot.darkness)) ? Math.max(0, Math.min(1, Number(sceneSnapshot.darkness))) : 0,
     visibilityModifier: Number.isFinite(Number(sceneSnapshot.visibilityModifier)) ? Math.max(-5, Math.min(5, Math.floor(Number(sceneSnapshot.visibilityModifier)))) : 0,
     note: String(sceneSnapshot.note ?? previous?.note ?? "").trim() || `Scene weather snapshot logged at darkness ${Number(sceneSnapshot.darkness ?? 0).toFixed(2)}`,
-    daeChanges: previousDae,
     loggedAt: Date.now(),
     loggedBy: String(game.user?.name ?? "GM")
   };

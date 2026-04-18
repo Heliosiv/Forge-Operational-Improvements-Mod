@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { setupMarchingDragAndDrop } from "./features/march-feature.js";
+import {
+  buildMarchFormationSummaryContext,
+  buildMarchOverviewContext,
+  setupMarchingDragAndDrop
+} from "./features/march-feature.js";
 
 class FakeClassList {
   constructor() {
@@ -64,6 +68,85 @@ class FakeElement {
       await listener(event);
     }
   }
+}
+
+{
+  const summary = buildMarchFormationSummaryContext({
+    formationSnapshot: {
+      formation: {
+        label: "Shield Wedge",
+        category: "tight",
+        categoryLabel: "Tight Formation",
+        summary: "Front pressure is absorbed by the vanguard."
+      },
+      validity: {
+        isValid: false,
+        stateLabel: "Needs Attention",
+        reasons: [
+          { code: "missing-token-positions", message: "Token positions unavailable." },
+          { code: "rank-gap", message: "Rear line is undermanned." }
+        ]
+      },
+      doctrine: {
+        state: "strained",
+        stateLabel: "Strained",
+        checksActive: true,
+        cohesionChecksActive: true,
+        cohesionCheckRequired: true,
+        pendingTrigger: "major-reposition",
+        pendingTriggerLabel: "Major Reposition",
+        lastCheckTriggerLabel: "Ambush"
+      },
+      formationState: {
+        stateLabel: "Holding"
+      },
+      effectEntries: [],
+      effectSummaries: ["Front line gains cover"],
+      bandTargets: {}
+    },
+    tracker: {
+      failureStreakCount: 2,
+      consecutiveSuccessCount: 3,
+      lastCheckAt: "Now",
+      lastCheckSummary: "Mixed result",
+      lastCheckWasSuccess: true,
+      leadersCommandCombatId: "combat-1"
+    },
+    activeCombatId: "combat-1",
+    doctrineStates: {
+      STRAINED: "strained",
+      BROKEN: "broken"
+    }
+  });
+
+  assert.equal(summary.statusHeadline, "Leadership Check Due");
+  assert.equal(summary.tokenCoverageFallbackActive, true);
+  assert.equal(summary.invalidReasons.length, 1);
+  assert.equal(summary.recoveryRecommendedActionLabel, "Joint Leadership");
+  assert.equal(summary.canUseLeadersCommand, false);
+  assert.equal(summary.metaBlocks.length, 8);
+  assert.equal(summary.momentumRows.length, 2);
+}
+
+{
+  const overview = buildMarchOverviewContext({
+    totalAssigned: 5,
+    frontCount: 2,
+    middleCount: 2,
+    rearCount: 1,
+    formationLabel: "Column",
+    formationStateLabel: "Holding",
+    lightSources: 0,
+    lockState: "Locked by GM",
+    unassignedCount: 1,
+    warningCount: 2,
+    leadershipCheckDue: false
+  });
+
+  assert.equal(overview.cards.length, 5);
+  assert.equal(overview.cards[0].detail, "1 still unplaced");
+  assert.equal(overview.cards[3].toneClass, "is-muted");
+  assert.equal(overview.cards[4].toneClass, "is-alert");
 }
 
 {

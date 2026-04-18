@@ -1,0 +1,50 @@
+<section class="po-rest-shared-note" data-slot-id="{{slotId}}" data-actor-id="{{actorId}}">
+  <div class="po-rest-shared-note-head">
+    <div class="po-rest-shared-note-copy">
+      <div class="po-section-title">Shared Note</div>
+      <div class="po-op-summary">{{slotLabel}} - {{actorName}}</div>
+      <div class="po-op-summary">{{visibilityHint}}</div>
+    </div>
+    {{#if lastSavedLabel}}
+    <div class="po-note-label">{{lastSavedLabel}}</div>
+    {{/if}}
+  </div>
+
+  {{#if missingEntryMessage}}
+  <div class="po-op-summary is-warn">{{missingEntryMessage}}</div>
+  {{/if}}
+
+  <label class="po-resource-row po-notes-row-lg po-rest-shared-note-field">
+    <span>{{#if canEdit}}Shared Note{{else}}Shared Note (Read Only){{/if}}</span>
+    {{#if canEdit}}
+    <div class="po-rest-shared-note-toolbar" role="toolbar" aria-label="Shared note formatting">
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="bold" aria-label="Bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="italic" aria-label="Italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="insertUnorderedList" aria-label="Bulleted list" title="Bulleted list"><i class="fa-solid fa-list-ul"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="insertOrderedList" aria-label="Numbered list" title="Numbered list"><i class="fa-solid fa-list-ol"></i></button>
+      <button type="button" class="po-icon-btn" data-action="shared-note-format" data-command="createLink" aria-label="Insert link" title="Insert link"><i class="fa-solid fa-link"></i></button>
+    </div>
+    {{/if}}
+    <div
+      class="po-input po-rest-shared-note-input"
+      role="textbox"
+      aria-multiline="true"
+      aria-label="Shared note for {{actorName}} in {{slotLabel}}"
+      data-shared-note-input
+      data-max-length="{{noteMaxLength}}"
+      {{#if canEdit}}contenteditable="true"{{else}}contenteditable="false"{{/if}}>{{{noteHtml}}}</div>
+  </label>
+
+  <div class="po-rest-shared-note-foot">
+    <div class="po-note-label">
+      {{#if entryStatus}}{{entryStatus}} - {{/if}}<span data-shared-note-count>{{noteLengthLabel}}</span>
+    </div>
+    <div class="po-op-summary {{#if saveStatusWarn}}is-warn{{/if}}" data-shared-note-status aria-live="polite">{{saveStatusMessage}}</div>
+    <div class="po-rest-shared-note-actions">
+      {{#if canEdit}}
+      <button type="button" class="po-btn" data-action="save-shared-note" {{#if isSaving}}disabled{{/if}}>{{#if isSaving}}Saving...{{else}}Save Shared Note{{/if}}</button>
+      {{/if}}
+      <button type="button" class="po-btn po-btn-sm" data-action="close-shared-note">Close</button>
+    </div>
+  </div>
+</section>

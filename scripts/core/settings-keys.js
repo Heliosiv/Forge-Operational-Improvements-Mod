@@ -57,6 +57,7 @@ export const SETTINGS = {
   LOOT_HORDE_UNCOMMON_PLUS_CHANCE: "lootHordeUncommonPlusChance",
   REST_AUTOMATION_ENABLED: "restAutomationEnabled",
   MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
+  FORMATION_MAINTENANCE_REMINDER_VISIBILITY: "formationMaintenanceReminderVisibility",
   PARTY_OPS_CONFIG: "partyOpsConfig",
   JOURNAL_ENTRY_VISIBILITY: "journalEntryVisibility",
   JOURNAL_FILTER_DEBOUNCE_MS: "journalFilterDebounceMs",

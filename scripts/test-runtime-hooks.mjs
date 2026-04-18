@@ -154,7 +154,7 @@ import {
     }
   });
 
-  assert.equal(modules.length, 8);
+  assert.equal(modules.length, 9);
 
   const settingsHandler = modules.find((module) => module.id === "settings").registrations[0][1];
   settingsHandler({ key: "party-operations.restWatchState" });

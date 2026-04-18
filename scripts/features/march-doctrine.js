@@ -17,11 +17,22 @@ export const MARCH_DOCTRINE_CHECK_METHODS = Object.freeze({
 
 export const MARCH_DOCTRINE_TRIGGERS = Object.freeze({
   MANUAL: "manual",
+  COMBAT_ROUND: "combat-round",
+  THEATER_SCENE: "theater-scene",
   MAJOR_REPOSITION: "major-reposition",
   SPACING_VIOLATION: "spacing-violation",
   SCENE_ENTRY: "scene-entry",
   TRAVEL_INTERVAL: "travel-interval",
   GROUP_DISRUPTION: "group-disruption"
+});
+
+export const MARCH_DOCTRINE_RECOVERY_PATHS = Object.freeze({
+  NONE: "none",
+  SHORT_REST: "short-rest",
+  RALLY_CHECK: "rally-check",
+  FORMATION_DROP: "formation-drop",
+  LEADERS_COMMAND: "leaders-command",
+  CONSECUTIVE_SUCCESS: "consecutive-success"
 });
 
 export const MARCH_RANK_ORDER = Object.freeze(["front", "middle", "rear"]);
@@ -41,6 +52,8 @@ const DOCTRINE_STATE_LABELS = Object.freeze({
 
 const DOCTRINE_TRIGGER_LABELS = Object.freeze({
   [MARCH_DOCTRINE_TRIGGERS.MANUAL]: "Manual GM trigger",
+  [MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND]: "Combat round maintenance",
+  [MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE]: "Theater-of-the-mind pressure",
   [MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION]: "Major repositioning",
   [MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION]: "Spacing violation",
   [MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY]: "Scene entry",
@@ -48,8 +61,19 @@ const DOCTRINE_TRIGGER_LABELS = Object.freeze({
   [MARCH_DOCTRINE_TRIGGERS.GROUP_DISRUPTION]: "Group disruption"
 });
 
+const RECOVERY_PATH_LABELS = Object.freeze({
+  [MARCH_DOCTRINE_RECOVERY_PATHS.NONE]: "No recovery pending",
+  [MARCH_DOCTRINE_RECOVERY_PATHS.SHORT_REST]: "Short Rest (automatic reset)",
+  [MARCH_DOCTRINE_RECOVERY_PATHS.RALLY_CHECK]: "Rally Check (DC 10)",
+  [MARCH_DOCTRINE_RECOVERY_PATHS.FORMATION_DROP]: "Change Formation (lower difficulty)",
+  [MARCH_DOCTRINE_RECOVERY_PATHS.LEADERS_COMMAND]: "Leader's Command (once per combat)",
+  [MARCH_DOCTRINE_RECOVERY_PATHS.CONSECUTIVE_SUCCESS]: "Consecutive successes build momentum"
+});
+
 const DOCTRINE_TRIGGER_PRIORITY = Object.freeze({
   [MARCH_DOCTRINE_TRIGGERS.MANUAL]: 0,
+  [MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND]: 1,
+  [MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE]: 1,
   [MARCH_DOCTRINE_TRIGGERS.TRAVEL_INTERVAL]: 0,
   [MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY]: 1,
   [MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION]: 1,
@@ -98,6 +122,8 @@ const EFFECT_DEFINITIONS = Object.freeze({
 
 const TRIGGER_DC_ADJUSTMENTS = Object.freeze({
   [MARCH_DOCTRINE_TRIGGERS.MANUAL]: 0,
+  [MARCH_DOCTRINE_TRIGGERS.COMBAT_ROUND]: 1,
+  [MARCH_DOCTRINE_TRIGGERS.THEATER_SCENE]: 1,
   [MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION]: 1,
   [MARCH_DOCTRINE_TRIGGERS.SPACING_VIOLATION]: 2,
   [MARCH_DOCTRINE_TRIGGERS.SCENE_ENTRY]: 1,
@@ -758,7 +784,11 @@ export function buildDefaultMarchDoctrineTracker() {
     lastCheckRollTotal: null,
     lastCheckDc: null,
     pendingTrigger: "",
-    cohesionCheckRequired: false
+    cohesionCheckRequired: false,
+    failureStreakCount: 0,
+    consecutiveSuccessCount: 0,
+    lastCheckWasSuccess: false,
+    leadersCommandCombatId: ""
   };
 }
 
@@ -776,6 +806,13 @@ export function ensureMarchDoctrineTracker(state) {
   tracker.lastCheckDc = Number.isFinite(Number(tracker.lastCheckDc)) ? Number(tracker.lastCheckDc) : null;
   tracker.pendingTrigger = typeof tracker.pendingTrigger === "string" ? tracker.pendingTrigger : "";
   tracker.cohesionCheckRequired = Boolean(tracker.cohesionCheckRequired);
+  // Normalize new failure/success tracking fields
+  tracker.failureStreakCount = Math.max(0, Math.min(10, Number.isFinite(Number(tracker.failureStreakCount)) ? Math.floor(tracker.failureStreakCount) : 0));
+  tracker.consecutiveSuccessCount = Math.max(0, Math.min(10, Number.isFinite(Number(tracker.consecutiveSuccessCount)) ? Math.floor(tracker.consecutiveSuccessCount) : 0));
+  tracker.lastCheckWasSuccess = Boolean(tracker.lastCheckWasSuccess);
+  tracker.leadersCommandCombatId = typeof tracker.leadersCommandCombatId === "string"
+    ? tracker.leadersCommandCombatId
+    : "";
   return tracker;
 }
 
@@ -945,7 +982,7 @@ export function evaluateMarchingFormationState({
       pendingTrigger: tracker.pendingTrigger,
       pendingTriggerLabel,
       checkMethod: tracker.checkMethod,
-      checkMethodLabel: "Group Charisma (average modifier)"
+      checkMethodLabel: "Joint Leadership (group Charisma average)"
     },
     formationState: {
       state: formationState,
@@ -963,7 +1000,9 @@ export function buildDoctrineCheckPayload({
   actorRows = [],
   doctrineState = MARCH_DOCTRINE_STATES.STABLE,
   trigger = MARCH_DOCTRINE_TRIGGERS.MANUAL,
-  rollTotal = null
+  rollTotal = null,
+  failureStreakCount = 0,
+  consecutiveSuccessCount = 0
 } = {}) {
   const definition = getMarchFormationDefinition(formationId);
   if (definition.category === MARCH_FORMATION_CATEGORIES.FREE) {
@@ -995,37 +1034,91 @@ export function buildDoctrineCheckPayload({
   const totalModifier = participants.reduce((sum, row) => sum + row.charismaModifier, 0);
   const averageModifier = participantCount > 0 ? Math.round(totalModifier / participantCount) : 0;
   const normalizedTrigger = normalizeDoctrineTrigger(trigger);
-  const dc = definition.doctrineDc
-    + Number(TRIGGER_DC_ADJUSTMENTS[normalizedTrigger] ?? 0)
-    + (normalizeDoctrineState(doctrineState) === MARCH_DOCTRINE_STATES.STRAINED ? 1 : 0);
+  
+  // Normalize failure and success counts
+  const failStreak = Math.max(0, Math.min(10, Number.isFinite(failureStreakCount) ? Math.floor(failureStreakCount) : 0));
+  const successStreak = Math.max(0, Math.min(10, Number.isFinite(consecutiveSuccessCount) ? Math.floor(consecutiveSuccessCount) : 0));
+  
+  // Calculate momentum bonus (every 3 consecutive successes grant +1 to next check)
+  const momentumBonus = Math.floor(successStreak / 3);
+  const momentumLabel = momentumBonus > 0 ? ` +${momentumBonus} momentum` : "";
+  
+  // Calculate DC with failure streak escalation (+1 per failure) and state modifiers
+  let baseDc = definition.doctrineDc + Number(TRIGGER_DC_ADJUSTMENTS[normalizedTrigger] ?? 0);
+  const stateModifier = normalizeDoctrineState(doctrineState) === MARCH_DOCTRINE_STATES.STRAINED ? 1 : 0;
+  const failureEscalation = failStreak;
+  const dc = baseDc + stateModifier + failureEscalation;
 
   let nextState = normalizeDoctrineState(doctrineState);
+  let checkPassed = false;
+  let severityLevel = "none"; // "light", "moderate", "critical"
+  
   if (participantCount <= 0) {
     nextState = MARCH_DOCTRINE_STATES.BROKEN;
+    severityLevel = "critical";
   } else if (Number.isFinite(Number(rollTotal))) {
     const total = Number(rollTotal);
-    if (total >= dc) nextState = MARCH_DOCTRINE_STATES.STABLE;
-    else if (total >= dc - 4) nextState = MARCH_DOCTRINE_STATES.STRAINED;
-    else nextState = MARCH_DOCTRINE_STATES.BROKEN;
+    const rollCheck = total + momentumBonus; // Apply momentum bonus to roll
+    
+    if (rollCheck >= dc) {
+      // Success: return to or maintain STABLE
+      nextState = MARCH_DOCTRINE_STATES.STABLE;
+      checkPassed = true;
+      severityLevel = "success";
+    } else if (rollCheck >= dc - 4) {
+      // Moderate failure: move toward or maintain STRAINED
+      nextState = normalizeDoctrineState(doctrineState) === MARCH_DOCTRINE_STATES.BROKEN
+        ? MARCH_DOCTRINE_STATES.BROKEN
+        : MARCH_DOCTRINE_STATES.STRAINED;
+      severityLevel = "light";
+    } else {
+      // Critical failure: move to BROKEN or degrade further
+      nextState = MARCH_DOCTRINE_STATES.BROKEN;
+      severityLevel = "critical";
+    }
+  }
+  
+  // Determine recovery path based on new state
+  let recoveryPath = MARCH_DOCTRINE_RECOVERY_PATHS.NONE;
+  if (nextState === MARCH_DOCTRINE_STATES.STRAINED) {
+    recoveryPath = MARCH_DOCTRINE_RECOVERY_PATHS.RALLY_CHECK;
+  } else if (nextState === MARCH_DOCTRINE_STATES.BROKEN) {
+    recoveryPath = MARCH_DOCTRINE_RECOVERY_PATHS.SHORT_REST;
   }
 
   return {
     active: true,
     method: MARCH_DOCTRINE_CHECK_METHODS.GROUP_CHARISMA_AVERAGE,
-    methodLabel: "Group Charisma (average modifier)",
+    methodLabel: "Joint Leadership (group Charisma average)",
     trigger: normalizedTrigger,
     triggerLabel: getMarchDoctrineTriggerLabel(normalizedTrigger),
     dc,
-    baseDc: definition.doctrineDc,
+    baseDc,
+    dcBreakdown: {
+      baseDc,
+      stateModifier,
+      failureEscalation,
+      totalModifiers: stateModifier + failureEscalation
+    },
     averageModifier,
+    momentumBonus,
+    momentumLabel,
     participantCount,
     participantRows: participants,
-    rollFormula: `1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)}`,
+    failureStreak: failStreak,
+    consecutiveSuccesses: successStreak,
+    rollFormula: `1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)}${momentumLabel}`,
     rollTotal: Number.isFinite(Number(rollTotal)) ? Number(rollTotal) : null,
     state: nextState,
     stateLabel: buildStateLabel(nextState),
+    checkPassed,
+    severityLevel,
+    recoveryPath,
+    recoveryPathLabel: RECOVERY_PATH_LABELS[recoveryPath] ?? "No recovery",
     summary: participantCount <= 0
       ? "No assigned actors were available for a group Charisma doctrine check."
-      : `1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} vs DC ${dc}.`
+      : failStreak > 0
+        ? `1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)}${momentumLabel} vs DC ${dc} (base ${baseDc} +${failStreak} for ${failStreak} failure streak).`
+        : `1d20 ${averageModifier >= 0 ? "+" : "-"} ${Math.abs(averageModifier)} vs DC ${dc}.`
   };
 }

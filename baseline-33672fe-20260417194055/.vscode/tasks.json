@@ -1,0 +1,103 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "build-current-test-zip",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "$ErrorActionPreference = \"Stop\"; $version = ((Get-Content -Raw \"module.json\" | ConvertFrom-Json).version); $staging = \".build-regular-staging\"; $zipName = \"party-operations-v$version-regular.zip\"; $shaName = \"party-operations-v$version-regular.sha256.txt\"; if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }; New-Item -ItemType Directory -Path $staging | Out-Null; Copy-Item \"module.json\" $staging -Force; Copy-Item \"scripts\" $staging -Recurse -Force; Copy-Item \"styles\" $staging -Recurse -Force; Copy-Item \"templates\" $staging -Recurse -Force; if (Test-Path \"packs\") { Copy-Item \"packs\" $staging -Recurse -Force }; if (Test-Path $zipName) { Remove-Item $zipName -Force }; Compress-Archive -Path (Join-Path $staging \"*\") -DestinationPath $zipName -CompressionLevel Optimal; $hash = (Get-FileHash -Path $zipName -Algorithm SHA256).Hash; \"SHA256=$hash\" | Set-Content -NoNewline $shaName; Add-Type -AssemblyName System.IO.Compression.FileSystem; $archive = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $zipName)); try { $entry = $archive.Entries | Where-Object { $_.FullName -eq \"module.json\" } | Select-Object -First 1; if (-not $entry) { throw \"module.json missing in zip\"; }; $reader = New-Object System.IO.StreamReader($entry.Open()); $content = $reader.ReadToEnd(); $reader.Dispose(); $zipVersion = ((ConvertFrom-Json $content).version); Write-Output \"ZIP=$zipName\"; Write-Output \"SHA_FILE=$shaName\"; Write-Output \"ZIP_MODULE_VERSION=$zipVersion\"; Write-Output \"ZIP_ENTRY_COUNT=$($archive.Entries.Count)\"; Write-Output \"SHA256=$hash\" } finally { $archive.Dispose(); if (Test-Path $staging) { Remove-Item $staging -Recurse -Force } }"],
+			"problemMatcher": []
+		},
+		{
+			"label": "package-current-test-zip",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "$v=((Get-Content -Raw \"module.json\"|ConvertFrom-Json).version);$s=\".build-regular-staging\";$z=\"party-operations-v$v-regular.zip\";$h=\"party-operations-v$v-regular.sha256.txt\";if(Test-Path $s){Remove-Item $s -Recurse -Force};mkdir $s|Out-Null;Copy-Item \"module.json\",\"scripts\",\"styles\",\"templates\" -Destination $s -Recurse -Force;if(Test-Path \"packs\"){Copy-Item \"packs\" $s -Recurse -Force};if(Test-Path $z){Remove-Item $z -Force};Compress-Archive -Path (Join-Path $s \"*\") -DestinationPath $z -CompressionLevel Optimal;$sha=(Get-FileHash $z -Algorithm SHA256).Hash;\"SHA256=$sha\"|Set-Content -NoNewline $h;Add-Type -AssemblyName System.IO.Compression.FileSystem;$a=[System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $z));try{$e=$a.Entries|?{$_.FullName -eq \"module.json\"}|Select-Object -First 1;$r=New-Object IO.StreamReader($e.Open());$j=$r.ReadToEnd();$r.Dispose();$vz=((ConvertFrom-Json $j).version);Write-Output \"ZIP=$z\";Write-Output \"SHA_FILE=$h\";Write-Output \"ZIP_MODULE_VERSION=$vz\";Write-Output \"SHA256=$sha\"}finally{$a.Dispose();if(Test-Path $s){Remove-Item $s -Recurse -Force}}"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:setup",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; $py='C:\\Users\\Kyle\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'; Set-Alias python $py; .\\scripts\\setup_universal.ps1"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:verify",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; py -3.12 .\\scripts\\verify_tools.py"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:langgraph-starter",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; py -3.12 .\\scripts\\langgraph_starter.py"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:repo-health",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock -PromptInput 'Summarize Party Operations repository health'; py -3.12 .\\scripts\\langgraph_repo_health.py --repo 'E:\\DND Stuff\\Modules\\party-operations' --task 'Summarize Party Operations repository health and validation entry points'"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:test-summary",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock -PromptInput 'Summarize Party Operations failing checks'; py -3.12 .\\scripts\\langgraph_test_summary.py --repo 'E:\\DND Stuff\\Modules\\party-operations' --command 'npm run check' --task 'Summarize failing checks and produce a triage report for Party Operations'"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:release-readiness",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock -PromptInput 'Inspect Party Operations release readiness'; py -3.12 .\\scripts\\langgraph_release_readiness.py --repo 'E:\\DND Stuff\\Modules\\party-operations' --task 'Inspect Party Operations release readiness before zip creation'"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:workflow-history",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock -PromptInput 'Summarize workflow history'; py -3.12 .\\scripts\\langgraph_workflow_history.py --repo 'E:\\DND Stuff\\Modules\\party-operations' --workflow 'repo-health' --limit 12 --task 'Summarize workflow run history and compare with prior stronger baseline'"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:workflow-history-test-summary",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock -PromptInput 'Summarize test-summary workflow history'; py -3.12 .\\scripts\\langgraph_workflow_history.py --repo 'E:\\DND Stuff\\Modules\\party-operations' --workflow 'test-summary' --limit 12 --task 'Summarize test-summary history and compare with prior stronger baseline'"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:agent-mock",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile mock; py -3.12 .\\scripts\\langgraph_agents.py"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:agent-copilot",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile copilot; py -3.12 .\\scripts\\langgraph_agents.py"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:agent-codex",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile codex; py -3.12 .\\scripts\\langgraph_agents.py"],
+			"problemMatcher": []
+		},
+		{
+			"label": "external-tools:agent-azure",
+			"type": "process",
+			"command": "powershell",
+			"args": ["-NoProfile", "-Command", "Set-Location 'E:\\Computer Upgrades'; .\\scripts\\set_agent_profile.ps1 -Profile azure; py -3.12 .\\scripts\\langgraph_agents.py"],
+			"problemMatcher": []
+		}
+	]
+}

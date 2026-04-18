@@ -2003,7 +2003,8 @@
     margin-bottom: 6px;
   }
 
-  .party-operations [data-action="auto-resolve-and-deliver-downtime-entry"] {
+  .party-operations [data-action="auto-resolve-and-deliver-downtime-entry"],
+  .party-operations [data-action="auto-resolve-all-downtime-entries"] {
     font-weight: 600;
   }
 
@@ -3811,6 +3812,115 @@
   background: color-mix(in srgb, var(--po-accent, #2d6cdf) 8%, var(--po-bg-alt));
 }
 
+.party-operations [data-tool="marching-order"] .po-march-status-card {
+  gap: 10px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 78%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+  background-size: 100% 100%, 720px 720px;
+  background-position: 0 0, center center;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-card.is-stable {
+  border-color: color-mix(in srgb, var(--po-success) 42%, var(--po-border));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-card.is-warn {
+  border-color: color-mix(in srgb, var(--po-warn) 48%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-warning-surface-1) 50%, transparent), color-mix(in srgb, var(--po-bg-alt) 82%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-card.is-alert {
+  border-color: color-mix(in srgb, var(--po-danger) 48%, var(--po-border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--po-danger) 10%, transparent), color-mix(in srgb, var(--po-bg-alt) 84%, transparent)),
+    url("./assets/po-cartography-texture.svg");
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-card-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-headline {
+  color: var(--po-accent-contrast);
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-health-meter {
+  position: relative;
+  height: 12px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--po-bg) 75%, transparent);
+  overflow: hidden;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-health-meter-bar {
+  display: block;
+  width: var(--po-march-health, 100%);
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--po-danger) 78%, #f3c28a 22%), color-mix(in srgb, var(--po-success) 80%, #d9efc2 20%));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-grid,
+.party-operations [data-tool="marching-order"] .po-march-momentum-list {
+  display: grid;
+  gap: 8px;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-grid {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-stat,
+.party-operations [data-tool="marching-order"] .po-march-momentum-row {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 18%, var(--po-border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--po-surface) 78%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-stat span,
+.party-operations [data-tool="marching-order"] .po-march-momentum-row span {
+  color: var(--po-muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-status-stat strong,
+.party-operations [data-tool="marching-order"] .po-march-momentum-row strong {
+  color: var(--po-accent-contrast);
+  font-size: 0.88rem;
+  line-height: 1.2;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-momentum-row.is-positive {
+  border-color: color-mix(in srgb, var(--po-success) 38%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 11%, var(--po-surface));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-momentum-row.is-negative {
+  border-color: color-mix(in srgb, var(--po-danger) 34%, var(--po-border));
+  background: color-mix(in srgb, var(--po-danger) 8%, var(--po-surface));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-momentum-row.is-muted {
+  opacity: 0.9;
+}
+
 .party-operations [data-tool="marching-order"] .po-march-guidance-actions {
   display: flex;
   flex-wrap: wrap;
@@ -4478,9 +4588,20 @@
   white-space: nowrap;
 }
 
+.party-operations .po-overview-card-detail {
+  min-height: 1.2rem;
+  color: var(--po-muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+}
+
 .party-operations .po-overview-card.is-alert {
   border-color: color-mix(in srgb, var(--po-warn) 75%, var(--po-border));
   background: color-mix(in srgb, var(--po-warn) 18%, var(--po-bg-alt));
+}
+
+.party-operations .po-overview-card.is-muted {
+  opacity: 0.88;
 }
 
 .party-operations .po-overview-actions {
@@ -9681,6 +9802,10 @@
 
   .party-operations .po-window[data-tool="marching-order"] .po-march-board-card-actions {
     justify-items: start;
+  }
+
+  .party-operations [data-tool="marching-order"] .po-march-status-card-head {
+    flex-direction: column;
   }
 }
 

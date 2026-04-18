@@ -17,6 +17,7 @@ export function createGmDowntimePageApp(deps) {
     preResolveSelectedDowntimeEntry,
     resolveSelectedDowntimeEntry,
     autoResolveAndDeliverSelectedDowntimeEntry,
+    autoResolveAllPendingDowntimeEntries,
     editDowntimeResult,
     editDowntimeQueueEntry,
     submitDowntimeAction,
@@ -72,6 +73,7 @@ export function createGmDowntimePageApp(deps) {
         statusNode.textContent = this._uiActionStatus.message;
         statusNode.classList.toggle("is-warn", this._uiActionStatus.tone === "warn");
         statusNode.classList.toggle("is-good", this._uiActionStatus.tone === "good");
+        statusNode.setAttribute("aria-live", this._uiActionStatus.tone === "warn" ? "assertive" : "polite");
       }
     }
 
@@ -93,19 +95,34 @@ export function createGmDowntimePageApp(deps) {
 
     _getActionHandlers() {
       const { rerender, rerenderAlways, openPanelTab } = createPageActionHelpers(this);
+      const isOperationFailureResult = (result) => {
+        if (result === false || result === null) return true;
+        if (result && typeof result === "object" && "ok" in result && result.ok === false) return true;
+        return false;
+      };
       const withActionStatus = (operation, {
         pending = "Working…",
         success = "Update complete.",
         failure = "Action failed."
       } = {}) => async (actionElement, event) => {
         this._setUiActionStatus(pending);
+        const root = this.element instanceof HTMLElement
+          ? this.element
+          : (this.element?.[0] instanceof HTMLElement ? this.element[0] : null);
+        root?.setAttribute?.("aria-busy", "true");
         try {
           const result = await operation(actionElement, event);
-          this._setUiActionStatus(success, "good");
+          if (isOperationFailureResult(result)) {
+            this._setUiActionStatus(failure, "warn");
+          } else {
+            this._setUiActionStatus(success, "good");
+          }
           return result;
         } catch (error) {
           this._setUiActionStatus(failure, "warn");
           throw error;
+        } finally {
+          root?.setAttribute?.("aria-busy", "false");
         }
       };
       return {
@@ -157,6 +174,11 @@ export function createGmDowntimePageApp(deps) {
           pending: "Auto-resolving downtime entry...",
           success: "Downtime entry auto-resolved.",
           failure: "Unable to auto-resolve downtime entry."
+        })),
+        "auto-resolve-all-downtime-entries": rerenderAlways(withActionStatus(autoResolveAllPendingDowntimeEntries, {
+          pending: "Auto-resolving all pending downtime...",
+          success: "Pending downtime queue auto-resolved.",
+          failure: "Unable to auto-resolve all pending downtime."
         })),
         "edit-downtime-result": rerenderAlways(editDowntimeResult),
         "submit-downtime-action": rerenderAlways(withActionStatus(submitDowntimeAction, {

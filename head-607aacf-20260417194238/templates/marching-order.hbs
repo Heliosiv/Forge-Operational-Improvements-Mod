@@ -1,0 +1,338 @@
+﻿<div class="po-window po-window-marching" data-tool="marching-order" data-main-tab="marching-order" role="region" aria-label="Party Operations Marching Order">
+  <header class="po-header">
+    <div class="po-header-main">
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+      <div class="po-subtitle" aria-live="polite">Marching Order - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
+    </div>
+    <nav class="po-tabs po-tabs-main po-tabs-main-header" role="tablist" aria-label="Party Operations views">
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="rest" aria-selected="false" aria-current="false">Rest Watch</button>
+      <button type="button" class="po-tab is-active" data-action="switch-tab" data-tab="march" aria-selected="true" aria-current="page">Marching Order</button>
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="operations" aria-selected="false" aria-current="false">Operations</button>
+      {{#if showGmPageTab}}
+      <button type="button" class="po-tab" data-action="switch-tab" data-tab="gm" aria-selected="false" aria-current="false">GM</button>
+      {{/if}}
+    </nav>
+    <div class="po-controls">
+      {{#if isGM}}
+      <details class="po-rest-settings-menu po-march-settings-menu">
+        <summary class="po-rest-settings-summary" aria-label="March settings" title="March settings">
+          <i class="fa-solid fa-gear"></i>
+        </summary>
+        <div class="po-rest-settings-menu-panel">
+          <div class="po-rest-settings-body">
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Export</div>
+              <button type="button" class="po-btn" data-action="copy-text"><i class="fa-solid fa-copy"></i> Copy Text</button>
+              <button type="button" class="po-btn" data-action="copy-md"><i class="fa-brands fa-markdown"></i> Copy Markdown</button>
+            </div>
+            <div class="po-rest-settings-group">
+              <div class="po-section-title">Snapshot</div>
+              <button type="button" class="po-btn" data-action="commit-plan"><i class="fa-solid fa-floppy-disk"></i> Save Snapshot</button>
+            </div>
+            <div class="po-rest-settings-group po-rest-settings-group-danger">
+              <div class="po-section-title">Plan</div>
+              <button type="button" class="po-btn is-danger" data-action="clear-all"><i class="fa-solid fa-trash"></i> Clear Plan</button>
+            </div>
+          </div>
+        </div>
+      </details>
+      {{/if}}
+      <button type="button" class="po-icon-btn" data-action="open-march-help" aria-label="Help">
+        <i class="fa-solid fa-circle-question"></i>
+      </button>
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+      {{#if showPopout}}
+      <button type="button" class="po-icon-btn" data-action="popout" aria-label="Pop out">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </button>
+      {{/if}}
+    </div>
+  </header>
+
+  <div class="po-body">
+  <div class="po-primary-shell">
+  <section id="po-march-overview" class="po-overview" aria-label="Marching status">
+    <article class="po-overview-card">
+      <span>Assigned Actors</span>
+      <strong>{{overview.totalAssigned}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Front / Middle / Rear</span>
+      <strong>{{overview.frontCount}} / {{overview.middleCount}} / {{overview.rearCount}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Formation</span>
+      <strong>{{overview.formationLabel}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Formation State</span>
+      <strong>{{overview.formationStateLabel}}</strong>
+    </article>
+    <article class="po-overview-card">
+      <span>Light Sources</span>
+      <strong>{{overview.lightSources}}</strong>
+    </article>
+  </section>
+
+  <section class="po-content">
+    <div class="po-grid po-columns po-primary-layout">
+      <div id="po-march-ranks" class="po-ranks po-left">
+        <section class="po-gm-section po-march-board-panel" aria-label="Formation board">
+          <div class="po-march-board-head">
+            <div>
+              <div class="po-section-title">Formation Board</div>
+              <div class="po-op-summary">{{formationBoard.formationLabel}} · {{formationBoard.formationCategoryLabel}}</div>
+            </div>
+            {{#if isGM}}
+            <button type="button" class="po-btn po-btn-sm" data-action="sync-rest-watch">
+              <i class="fa-solid fa-arrows-rotate"></i> Read Rest Watch Into March
+            </button>
+            {{/if}}
+          </div>
+          <div class="po-march-board-summary">
+            <span class="po-pill">Rest Watch Roster {{formationBoard.restWatchRosterCount}}</span>
+            <span class="po-pill">Placed {{formationBoard.assignedActorCount}}</span>
+            <span class="po-pill">{{formationSummary.formationStateLabel}}</span>
+          </div>
+          <div class="po-march-board-grid" data-formation-id="{{formationBoard.formationId}}">
+            {{#each formationBoard.rows}}
+            <div class="po-march-board-row" data-rank-id="{{id}}">
+              <div class="po-march-board-label">
+                <strong>{{label}}</strong>
+                <span>{{actualCount}} placed{{#if recommendedCount}} · target {{recommendedCount}}{{/if}}</span>
+              </div>
+              <div class="po-march-board-cells">
+                {{#each cells}}
+                <div class="po-march-board-cell {{#if isRecommended}}is-recommended{{/if}} {{#if hasActor}}is-occupied{{else}}is-empty{{/if}} {{#if isCurrentUserActor}}is-user-actor{{/if}}" data-rank-id="{{../id}}" data-cell-index="{{column}}" data-insert-index="{{insertIndex}}">
+                  {{#if hasActor}}
+                  <article class="po-march-board-card" data-actor-id="{{entry.actorId}}">
+                    <div class="po-march-board-card-top">
+                      <div class="po-march-board-card-title">
+                        <img class="po-portrait" src="{{entry.actor.img}}" alt="{{entry.actor.name}}" />
+                        <div class="po-march-board-card-copy">
+                          <span class="po-march-board-cell-name">{{entry.actor.name}}</span>
+                          <div class="po-march-board-card-meta">
+                            {{#if entry.actor.passivePerception}}
+                            <span class="po-pill">PP {{entry.actor.passivePerception}}</span>
+                            {{/if}}
+                            {{#if entry.actor.ac}}
+                            <span class="po-pill">AC {{entry.actor.ac}}</span>
+                            {{/if}}
+                            {{#if entry.actor.hpLabel}}
+                            <span class="po-pill">HP {{entry.actor.hpLabel}}</span>
+                            {{/if}}
+                            {{#if entry.actor.darkvision}}
+                            <span class="po-pill">DV {{entry.actor.darkvision}}</span>
+                            {{/if}}
+                            {{#if entry.hasLight}}
+                            <span class="po-pill po-pill-torch" title="{{entry.lightTooltip}}">
+                              <i class="fa-solid fa-fire" aria-hidden="true"></i>
+                              Torch
+                            </span>
+                            {{/if}}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="po-march-board-card-actions">
+                        <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                          <i class="fa-solid fa-location-dot"></i>
+                        </button>
+                        {{#if entry.canRemove}}
+                        <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{entry.actorId}}" aria-label="Remove">
+                          <i class="fa-solid fa-xmark"></i>
+                        </button>
+                        {{/if}}
+                      </div>
+                    </div>
+                  </article>
+                  {{else}}
+                  <button type="button" class="po-march-board-slot" data-action="{{action}}" data-rank-id="{{../id}}" data-cell-index="{{column}}" data-insert-index="{{insertIndex}}" {{#if actionDisabled}}disabled{{/if}}>
+                    <span class="po-march-board-cell-placeholder">{{placeholderLabel}}</span>
+                    <span class="po-march-board-cell-cta">{{actionLabel}}</span>
+                  </button>
+                  {{/if}}
+                </div>
+                {{/each}}
+              </div>
+            </div>
+            {{/each}}
+          </div>
+          {{#if formationBoard.hasUnassignedRestActors}}
+          <div class="po-march-board-staging">
+            <div class="po-section-title">Rest Watch Roster Not Placed</div>
+            <div class="po-march-board-staging-list">
+              {{#each formationBoard.unassignedRestActors}}
+              <div class="po-march-board-staging-chip" data-actor-id="{{id}}">
+                <img class="po-portrait" src="{{img}}" alt="{{name}}" />
+                <span>{{name}}</span>
+              </div>
+              {{/each}}
+            </div>
+          </div>
+          {{/if}}
+        </section>
+
+        <section id="po-march-formations" class="po-gm-section po-march-formation-panel" aria-label="Formation details">
+          <div class="po-march-formation-head">
+            <div>
+              <div class="po-section-title">Formation Details</div>
+              <div class="po-formation-display">Current: <strong>{{formationSummary.label}}</strong></div>
+            </div>
+            <div class="po-march-formation-actions">
+              {{#if isGM}}
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Run Doctrine Check</button>
+              {{/if}}
+            </div>
+          </div>
+
+          <div class="po-march-formation-layout">
+            <div class="po-march-formation-main">
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Summary</div>
+                <div class="po-op-summary">{{formationSummary.summary}}</div>
+                <div class="po-op-summary"><strong>Last Trigger:</strong> {{formationSummary.lastCheckTriggerLabel}}</div>
+                <div class="po-op-summary"><strong>Last Summary:</strong> {{formationSummary.lastCheckSummary}}</div>
+                {{#if formationSummary.pendingTriggerLabel}}
+                <div class="po-op-summary"><strong>Pending Trigger:</strong> {{formationSummary.pendingTriggerLabel}}</div>
+                {{/if}}
+              </div>
+
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Active Effects</div>
+                <div class="po-op-summary"><strong>Applied Now:</strong> Current formation + doctrine state</div>
+                <div class="po-op-summary">
+                  {{#each formationSummary.effectSummaries}}
+                  {{this}}{{#unless @last}}; {{/unless}}
+                  {{else}}
+                  No active effects
+                  {{/each}}
+                </div>
+              </div>
+
+              {{#if formationSummary.tokenCoverageFallbackActive}}
+              <div class="po-march-formation-detail-card">
+                <div class="po-watch-total-label">Token Coverage</div>
+                <div class="po-op-summary">{{formationSummary.tokenCoverageFallbackMessage}}</div>
+              </div>
+              {{/if}}
+
+              {{#if formationSummary.invalidReasons.[0]}}
+              <div class="po-march-formation-detail-card is-invalid">
+                <div class="po-watch-total-label">Warnings</div>
+                {{#each formationSummary.invalidReasons}}
+                <div class="po-op-summary is-warn">{{message}}</div>
+                {{/each}}
+              </div>
+              {{/if}}
+            </div>
+
+            <aside class="po-march-formation-meta-panel" aria-label="Formation status">
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Category</div>
+                <div class="po-watch-total-value">{{formationSummary.categoryLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Formation State</div>
+                <div class="po-watch-total-value">{{formationSummary.formationStateLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Doctrine State</div>
+                <div class="po-watch-total-value">{{formationSummary.doctrineStateLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Layout Validity</div>
+                <div class="po-watch-total-value">{{formationSummary.validityLabel}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Doctrine Checks</div>
+                <div class="po-watch-total-value">{{#if formationSummary.doctrineChecksActive}}Active{{else}}Inactive{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Cohesion Checks</div>
+                <div class="po-watch-total-value">{{#if formationSummary.cohesionChecksActive}}Active{{else}}Inactive{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Cohesion Required</div>
+                <div class="po-watch-total-value">{{#if formationSummary.cohesionCheckRequired}}Yes{{else}}No{{/if}}</div>
+              </div>
+              <div class="po-march-formation-meta-block">
+                <div class="po-watch-total-label">Last Doctrine Check</div>
+                <div class="po-watch-total-value">{{formationSummary.lastCheckAt}}</div>
+              </div>
+            </aside>
+          </div>
+
+          {{#if isGM}}
+          <div class="po-formation-card-grid po-formation-card-grid-wide">
+            {{#each formationChoiceCards}}
+            <button type="button" class="po-formation-card {{#if active}}is-active{{/if}}" data-action="formation-set" data-formation-id="{{id}}" title="{{summary}}">
+              <div class="po-formation-card-main">
+                <div class="po-formation-card-head">
+                  <strong>{{label}}</strong>
+                  <span>{{categoryLabel}}</span>
+                </div>
+                <div class="po-op-summary po-formation-card-summary">{{summary}}</div>
+                <div class="po-formation-card-effects">
+                  <div class="po-formation-card-effect-line">
+                    <span class="po-formation-card-effect-label is-positive">{{passivePositiveLabel}}</span>
+                    <span class="po-formation-card-effect-value">{{passivePositiveSummary}}</span>
+                  </div>
+                  <div class="po-formation-card-effect-line">
+                    <span class="po-formation-card-effect-label is-negative">{{passiveNegativeLabel}}</span>
+                    <span class="po-formation-card-effect-value">{{passiveNegativeSummary}}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="po-formation-preview-grid" aria-hidden="true">
+                {{#each previewRows}}
+                <div class="po-formation-preview-row">
+                  {{#each cells}}
+                  <span class="po-formation-preview-dot {{#if filled}}is-filled{{/if}}"></span>
+                  {{/each}}
+                </div>
+                {{/each}}
+              </div>
+            </button>
+            {{/each}}
+          </div>
+          {{/if}}
+        </section>
+      </div>
+
+      {{#if isGM}}
+      <aside class="po-gm-panel po-right">
+        <div id="po-march-gm-light" class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
+          <header class="po-collapsible-head">
+            <div class="po-section-title">Torch / Light</div>
+          </header>
+          {{#unless gmSections.lightCollapsed}}
+          <div class="po-collapsible-body">
+            <div class="po-march-light-grid">
+            {{#each lightToggles}}
+            <div class="po-checkbox-target" data-actor-id="{{actorId}}">
+              <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+              <label class="po-checkbox-target-label" for="po-light-target-{{actorId}}">{{actorName}}</label>
+              <label class="po-sr-only" for="po-light-bright-{{actorId}}">Bright light distance for {{actorName}}</label>
+              <input id="po-light-bright-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="bright" value="{{bright}}" {{#unless hasLight}}disabled{{/unless}} />
+              <span class="po-light-range-label">Bright</span>
+              <label class="po-sr-only" for="po-light-dim-{{actorId}}">Dim light distance for {{actorName}}</label>
+              <input id="po-light-dim-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="dim" value="{{dim}}" {{#unless hasLight}}disabled{{/unless}} />
+              <span class="po-light-range-label">Dim</span>
+            </div>
+            {{/each}}
+            </div>
+          </div>
+          {{/unless}}
+        </div>
+      </aside>
+      {{/if}}
+    </div>
+  </section>
+  </div>
+</div>
+
+</div>
+
+

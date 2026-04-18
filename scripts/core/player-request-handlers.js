@@ -23,6 +23,18 @@ export function createPlayerRequestHandlers(options = {}) {
     uiRef = globalThis.ui
   } = options;
 
+  function notifyInvalidPlayerRequest(reason) {
+    const message = String(reason ?? "Invalid player request.").trim() || "Invalid player request.";
+    uiRef?.notifications?.warn?.(message);
+  }
+
+  function resolveActivePlayerRequester(requesterRef, fallbackUserId, actionLabel) {
+    const requester = resolveRequester(requesterRef ?? fallbackUserId, { allowGM: false, requireActive: true });
+    if (requester) return requester;
+    notifyInvalidPlayerRequest(`${actionLabel} failed: unable to resolve an active player requester.`);
+    return null;
+  }
+
   function normalizeTradeLines(raw) {
     const source = Array.isArray(raw) ? raw : [];
     const rows = [];
@@ -37,11 +49,14 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Merchant barter");
     if (!requester) return;
     const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
     const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-    if (!merchantId || !actorId) return;
+    if (!merchantId || !actorId) {
+      notifyInvalidPlayerRequest("Merchant barter failed: missing merchant or actor selection.");
+      return;
+    }
     const merchants = ensureMerchantsState(getOperationsLedger());
     const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
       allowStoredPreference: false
@@ -85,11 +100,14 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerMerchantTradeRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Merchant trade");
     if (!requester) return;
     const merchantId = sanitizeSocketIdentifier(message?.merchantId, { maxLength: 64 });
     const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
-    if (!merchantId || !actorId) return;
+    if (!merchantId || !actorId) {
+      notifyInvalidPlayerRequest("Merchant trade failed: missing merchant or actor selection.");
+      return;
+    }
     const merchants = ensureMerchantsState(getOperationsLedger());
     const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
       allowStoredPreference: false
@@ -119,12 +137,15 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerLootClaimRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Loot claim");
     if (!requester) return;
     const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
     const itemId = sanitizeSocketIdentifier(message?.itemId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-    if (!actorId || !itemId) return;
+    if (!actorId || !itemId) {
+      notifyInvalidPlayerRequest("Loot claim failed: missing actor or item selection.");
+      return;
+    }
     const outcome = await applyLootClaimForUser(requester, actorId, itemId, runId);
     if (!outcome.ok) {
       uiRef?.notifications?.warn?.(`Loot claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
@@ -141,11 +162,14 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerLootCurrencyClaimRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Currency claim");
     if (!requester) return;
     const actorId = sanitizeSocketIdentifier(message?.actorId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-    if (!actorId) return;
+    if (!actorId) {
+      notifyInvalidPlayerRequest("Currency claim failed: missing actor selection.");
+      return;
+    }
     const outcome = await applyLootCurrencyClaimForUser(requester, actorId, runId);
     if (!outcome.ok) {
       uiRef?.notifications?.warn?.(`Currency claim failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
@@ -165,7 +189,7 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerLootCurrencySplitRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Currency split");
     if (!requester) return;
     const actorIdsRaw = Array.isArray(message?.actorIds) ? message.actorIds : [];
     const actorIds = actorIdsRaw
@@ -173,7 +197,10 @@ export function createPlayerRequestHandlers(options = {}) {
       .filter(Boolean);
     const stashActorId = sanitizeSocketIdentifier(message?.stashActorId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-    if (actorIds.length <= 0) return;
+    if (actorIds.length <= 0) {
+      notifyInvalidPlayerRequest("Currency split failed: select at least one destination actor.");
+      return;
+    }
     const outcome = await applyLootCurrencySplitForUser(requester, actorIds, runId, stashActorId);
     if (!outcome.ok) {
       uiRef?.notifications?.warn?.(`Currency split failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
@@ -189,11 +216,14 @@ export function createPlayerRequestHandlers(options = {}) {
   }
 
   async function applyPlayerLootUndoClaimRequest(message, requesterRef = null) {
-    const requester = resolveRequester(requesterRef ?? message?.userId, { allowGM: false, requireActive: true });
+    const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Loot undo");
     if (!requester) return;
     const logId = sanitizeSocketIdentifier(message?.logId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
-    if (!logId) return;
+    if (!logId) {
+      notifyInvalidPlayerRequest("Loot undo failed: missing claim log reference.");
+      return;
+    }
     const outcome = await applyLootClaimUndoForUser(requester, logId, runId);
     if (!outcome.ok) {
       uiRef?.notifications?.warn?.(`Loot undo failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);

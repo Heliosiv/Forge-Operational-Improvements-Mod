@@ -1,0 +1,307 @@
+export function createMarchFeatureModule(deps = {}) {
+  return {
+    id: "march",
+    register() {
+      if (typeof deps.onRegister === "function") deps.onRegister("march");
+    }
+  };
+}
+
+function buildDefaultRankPlacements() {
+  return {
+    front: {},
+    middle: {},
+    rear: {}
+  };
+}
+
+function clearActorPlacement(state, actorId) {
+  if (!state.rankPlacements || typeof state.rankPlacements !== "object") {
+    state.rankPlacements = buildDefaultRankPlacements();
+  }
+  for (const key of Object.keys(state.rankPlacements)) {
+    if (state.rankPlacements[key] && typeof state.rankPlacements[key] === "object") {
+      delete state.rankPlacements[key][actorId];
+    }
+  }
+}
+
+function setActorPlacement(state, rankId, actorId, cellIndex) {
+  clearActorPlacement(state, actorId);
+  if (!Number.isInteger(cellIndex) || cellIndex < 0) return;
+  if (!state.rankPlacements[rankId] || typeof state.rankPlacements[rankId] !== "object") {
+    state.rankPlacements[rankId] = {};
+  }
+  state.rankPlacements[rankId][actorId] = cellIndex;
+}
+
+export function normalizeSocketMarchRequest(request, deps = {}) {
+  const {
+    marchOps,
+    marchRanks,
+    sanitizeSocketIdentifier,
+    clampSocketText,
+    noteMaxLength
+  } = deps;
+
+  if (!request || typeof request !== "object") return null;
+  const op = String(request.op ?? "").trim();
+  if (!marchOps?.has?.(op)) return null;
+  const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
+  if (!actorId) return null;
+
+  if (op === "joinRank") {
+    const rankId = String(request.rankId ?? "").trim();
+    if (!marchRanks?.has?.(rankId)) return null;
+    const insertIndexRaw = Number.parseInt(String(request.insertIndex ?? ""), 10);
+    const insertIndex = Number.isInteger(insertIndexRaw) && insertIndexRaw >= 0 ? insertIndexRaw : null;
+    const cellIndexRaw = Number.parseInt(String(request.cellIndex ?? ""), 10);
+    const cellIndex = Number.isInteger(cellIndexRaw) && cellIndexRaw >= 0 ? cellIndexRaw : null;
+    const normalized = { op, actorId, rankId };
+    if (insertIndex !== null) normalized.insertIndex = insertIndex;
+    if (cellIndex !== null) normalized.cellIndex = cellIndex;
+    return normalized;
+  }
+
+  if (op === "leaveRank") {
+    return { op, actorId };
+  }
+
+  return {
+    op,
+    actorId,
+    text: clampSocketText(request.text, noteMaxLength)
+  };
+}
+
+export async function applyMarchRequest(request, requesterRef, deps = {}) {
+  const {
+    getMarchingOrderState,
+    game,
+    resolveRequester,
+    canUserControlActor,
+    isMarchingOrderPlayerLocked,
+    stampUpdate,
+    setModuleSettingWithLocalRefreshSuppressed,
+    settings,
+    scheduleIntegrationSync,
+    refreshOpenApps,
+    refreshScopeKeys,
+    emitSocketRefresh,
+    logUiDebug,
+    markDoctrineTriggerPending,
+    doctrineTriggers,
+    normalizeMarchingFormation
+  } = deps;
+
+  if (!request || typeof request !== "object") return;
+  const state = getMarchingOrderState();
+  const requester = resolveRequester(requesterRef, { allowGM: true });
+  if (!requester) return;
+  const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
+  const requesterCanControlActor = Boolean(
+    requestedActor
+    && (requester?.isGM || canUserControlActor?.(requestedActor, requester))
+  );
+
+  if (request.op === "joinRank") {
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject joinRank (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
+    }
+    clearActorPlacement(state, request.actorId);
+    if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
+    const target = state.ranks[request.rankId];
+    const requestedInsertIndex = Number.parseInt(String(request.insertIndex ?? ""), 10);
+    const safeIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0
+      ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+      : target.length;
+    target.splice(safeIndex, 0, request.actorId);
+    const requestedCellIndex = Number.parseInt(String(request.cellIndex ?? ""), 10);
+    setActorPlacement(
+      state,
+      request.rankId,
+      request.actorId,
+      Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0 ? requestedCellIndex : null
+    );
+    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
+    }
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
+
+  if (request.op === "leaveRank") {
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject leaveRank (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    for (const key of Object.keys(state.ranks ?? {})) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
+    }
+    clearActorPlacement(state, request.actorId);
+    if (state.notes) delete state.notes[request.actorId];
+    if (state.light) delete state.light[request.actorId];
+    if (state.lightRanges) delete state.lightRanges[request.actorId];
+    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
+      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
+    }
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
+
+  if (request.op === "setNote") {
+    if (!requesterCanControlActor) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
+      Array.isArray(actorIds) && actorIds.includes(request.actorId)
+    ));
+    if (!inFormation) {
+      logUiDebug("march-notes", "socket reject setNote (actor not in formation)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!state.notes) state.notes = {};
+    state.notes[request.actorId] = String(request.text ?? "");
+    logUiDebug("march-notes", "socket apply setNote", {
+      actorId: request.actorId,
+      requesterId: String(requester?.id ?? ""),
+      requesterName: String(requester?.name ?? "Unknown"),
+      textLength: String(request.text ?? "").length
+    });
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+  }
+}
+
+export function setupMarchingDragAndDrop(html, deps = {}) {
+  const {
+    getMarchingOrderState,
+    isActualGM = false,  // Actual GM status for drag-and-drop interaction permissions
+    canDragEntry,
+    isLockedForUser,
+    notifyUiWarnThrottled,
+    updateMarchingOrderState,
+    refreshSingleAppPreservingView,
+    getAppInstance,
+    markDoctrineTriggerPending,
+    doctrineTriggers,
+    normalizeMarchingFormation,
+    appInstanceKeys
+  } = deps;
+
+  const state = getMarchingOrderState();
+  const locked = state.locked;
+  const playerLocked = !isActualGM && isLockedForUser(state, isActualGM);
+
+  const draggableEntries = [
+    ...Array.from(html.querySelectorAll(".po-entry")),
+    ...Array.from(html.querySelectorAll(".po-march-board-card[data-actor-id]")),
+    ...Array.from(html.querySelectorAll(".po-march-board-staging-chip[data-actor-id]"))
+  ];
+
+  draggableEntries.forEach((entry) => {
+    const actorId = entry.dataset.actorId;
+    if (!actorId) return;
+    const draggable = canDragEntry(actorId, isActualGM, locked) && !playerLocked;
+    entry.setAttribute("draggable", draggable ? "true" : "false");
+    entry.classList.toggle("is-draggable", draggable);
+    if (!draggable) return;
+    if (entry.dataset.poDndEntryBound === "1") return;
+    entry.dataset.poDndEntryBound = "1";
+    entry.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("text/plain", actorId);
+      event.dataTransfer?.setDragImage?.(entry, 20, 20);
+    });
+
+    const handle = entry.querySelector(".po-entry-handle");
+    if (handle) {
+      handle.setAttribute("draggable", "true");
+      if (handle.dataset.poDndHandleBound !== "1") {
+        handle.dataset.poDndHandleBound = "1";
+        handle.addEventListener("dragstart", (event) => {
+          event.dataTransfer?.setData("text/plain", actorId);
+          event.dataTransfer?.setDragImage?.(entry, 20, 20);
+          event.stopPropagation();
+        });
+      }
+    }
+  });
+
+  const dropTargets = [
+    ...Array.from(html.querySelectorAll(".po-rank-col")),
+    ...Array.from(html.querySelectorAll(".po-march-board-cell[data-rank-id]"))
+  ];
+
+  dropTargets.forEach((column) => {
+    if (column.dataset.poDndColBound === "1") return;
+    column.dataset.poDndColBound = "1";
+    column.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+
+    column.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      const liveState = getMarchingOrderState();
+      if (isLockedForUser(liveState, isActualGM)) {
+        notifyUiWarnThrottled("Marching order is locked by the GM.", {
+          key: "marching-order-locked",
+          ttlMs: 1500
+        });
+        return;
+      }
+      const actorId = event.dataTransfer?.getData("text/plain");
+      if (!actorId) return;
+      const rankId = column.dataset.rankId || column.closest?.("[data-rank-id]")?.dataset?.rankId;
+      if (!rankId) return;
+      const requestedCellIndex = Number.parseInt(String(column.dataset.cellIndex ?? ""), 10);
+
+      let insertIndex = Number.parseInt(String(column.dataset.insertIndex ?? ""), 10);
+      if (!Number.isInteger(insertIndex) || insertIndex < 0) {
+        const targetEntry = event.target?.closest?.(".po-entry") ?? event.target?.closest?.(".po-march-board-card");
+        const entryList = [
+          ...Array.from(column.querySelectorAll(".po-entry")),
+          ...Array.from(column.querySelectorAll(".po-march-board-card"))
+        ];
+        insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+      }
+
+      const request = { op: "joinRank", actorId, rankId };
+      if (Number.isInteger(insertIndex) && insertIndex >= 0) request.insertIndex = insertIndex;
+      if (Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0) request.cellIndex = requestedCellIndex;
+      const saved = await updateMarchingOrderState(request, { skipLocalRefresh: true });
+
+      if (saved !== false) {
+        refreshSingleAppPreservingView(getAppInstance(appInstanceKeys.MARCHING_ORDER));
+      }
+    });
+  });
+}

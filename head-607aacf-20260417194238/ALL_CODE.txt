@@ -1,0 +1,2816 @@
+﻿{
+  "id": "party-operations",
+  "title": "Party Operations",
+  "description": "Rest Watch and Marching Order tools.",
+  "version": "2.0",
+  "authors": [
+    {
+      "name": "Your Name"
+    }
+  ],
+  "compatibility": {
+    "minimum": "12",
+    "verified": "12"
+  },
+  "esmodules": [
+    "scripts/party-operations.js"
+  ],
+  "styles": [
+    "styles/party-operations.css"
+  ],
+  "templates": [
+    "templates/rest-watch.hbs",
+    "templates/marching-order.hbs",
+    "templates/rest-watch-player.hbs"
+  ]
+}
+
+
+=== PARTY-OPERATIONS.JS ===
+
+console.log("party-operations: script loaded");
+
+const MODULE_ID = "party-operations";
+const { ApplicationV2, HandlebarsApplicationMixin } = foundry.applications.api;
+
+export const SETTINGS = {
+  REST_STATE: "restWatchState",
+  REST_COMMITTED: "restWatchStateLastCommitted",
+  MARCH_STATE: "marchingOrderState",
+  MARCH_COMMITTED: "marchingOrderStateLastCommitted"
+};
+
+const SOCKET_CHANNEL = `module.${MODULE_ID}`;
+
+const OPEN_SHARE_TIMEOUT_MS = 5000;
+const openShareState = new Map();
+
+function emitOpenForPlayers(app) {
+  if (!game.user.isGM) return;
+  const requestId = foundry.utils.randomID();
+  const label = app === "march" ? "Marching Order" : "Rest Watch";
+  const timeoutId = setTimeout(() => {
+    if (!openShareState.has(requestId)) return;
+    openShareState.delete(requestId);
+    ui.notifications?.warn(`${label} share failed: no player acknowledged.`);
+  }, OPEN_SHARE_TIMEOUT_MS);
+
+  openShareState.set(requestId, { app, timeoutId });
+  ui.notifications?.info(`Sharing ${label} with players...`);
+  game.socket.emit(SOCKET_CHANNEL, {
+    type: "open",
+    app,
+    requestId,
+    fromUserId: game.user.id
+  });
+}
+
+function handleOpenAck(message) {
+  if (!game.user.isGM) return;
+  const entry = openShareState.get(message.requestId);
+  if (!entry) return;
+  clearTimeout(entry.timeoutId);
+  openShareState.delete(message.requestId);
+  const label = entry.app === "march" ? "Marching Order" : "Rest Watch";
+  const userName = game.users.get(message.userId)?.name ?? "Player";
+  ui.notifications?.info(`${label} shared with ${userName}.`);
+}
+
+export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "rest-watch-app",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Rest Watch" },
+    position: { width: 800, height: 600 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/rest-watch.hbs" }
+  };
+
+  async _prepareContext() {
+    const isGM = game.user.isGM;
+    const state = getRestWatchState();
+    const visibility = state.visibility ?? "names-passives";
+    const slots = buildWatchSlotsView(state, isGM, visibility);
+    const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+    const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
+    return {
+      isGM,
+      locked: state.locked,
+      lockBannerText,
+      lockBannerTooltip,
+      lockBannerClass: isGM ? "is-gm" : "",
+      showPopout: false,
+      lastUpdatedAt: state.lastUpdatedAt ?? "-",
+      lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      visibilityOptions: buildVisibilityOptions(visibility),
+      highestPP: isGM ? computeHighestPP(slots) : "-",
+      noDarkvision: isGM ? computeNoDarkvision(slots) : "",
+      quickNotes: isGM ? buildQuickNotes(state) : [],
+      slots
+    };
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    console.log("RestWatchApp: _onRender called");
+
+    const restWidth = game.user.isGM ? 960 : 600;
+    const restHeight = game.user.isGM ? 680 : 560;
+    this.setPosition({ width: restWidth, height: restHeight });
+    
+    if (this.element && !this.element.dataset.poBoundRest) {
+      this.element.dataset.poBoundRest = "1";
+
+      // Use event delegation on the app element
+      this.element.addEventListener("click", (event) => {
+        const tab = event.target?.closest(".po-tab");
+        if (tab) return this.#onTabClick(tab, this.element);
+
+        const action = event.target?.closest("[data-action]")?.dataset?.action;
+        if (action) this.#onAction(event);
+      });
+      
+      this.element.addEventListener("change", (event) => {
+        if (event.target?.matches("select[data-action], input[data-action]")) {
+          this.#onAction(event);
+        } else if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        }
+      });
+
+      this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        }
+      });
+    }
+    
+    if (game.user.isGM && !this._openedPlayers) {
+      emitOpenRestPlayers();
+      this._openedPlayers = true;
+    }
+
+    console.log("RestWatchApp: event delegation attached", this.element);
+  }
+
+  #onTabClick(tabElement, html) {
+    const tabName = tabElement?.dataset?.tab;
+    if (tabName === "marching-order") {
+      new MarchingOrderApp().render({ force: true });
+      this.close();
+    }
+  }
+
+  async #onAction(event) {
+    const element = event.target?.closest("[data-action]");
+    const action = element?.dataset?.action;
+    console.log("RestWatchApp #onAction:", { action, element, event });
+    if (!action) return;
+
+    switch (action) {
+      case "refresh":
+        emitSocketRefresh();
+        break;
+      case "open-for-players":
+        emitOpenForPlayers("rest");
+        break;
+      case "popout":
+        this.render({ force: true, popOut: true });
+        break;
+      case "assign":
+        await assignSlotByPicker(element);
+        break;
+      case "assign-me":
+        await assignSlotToMe(element);
+        break;
+      case "clear":
+        await clearSlotEntry(element);
+        break;
+      case "swap":
+        await swapSlots(element);
+        break;
+      case "toggle-lock":
+        await toggleRestLock(element);
+        break;
+      case "toggle-notes":
+        toggleCardNotes(element);
+        break;
+      case "visibility":
+        await updateVisibility(element);
+        break;
+      case "autofill-party":
+        await autofillFromParty();
+        break;
+      case "autofill-last":
+        await restoreRestCommitted();
+        break;
+      case "commit-plan":
+        await commitRestWatchState();
+        break;
+      case "copy-text":
+        await copyRestWatchText(false);
+        break;
+      case "copy-md":
+        await copyRestWatchText(true);
+        break;
+      case "clear-all":
+        await clearRestWatchAll();
+        break;
+      case "ping":
+        await pingActorFromElement(element);
+        break;
+      case "time-range":
+        await updateTimeRange(element);
+        break;
+      default:
+        break;
+    }
+  }
+
+  async #onNotesChange(event) {
+    const state = getRestWatchState();
+    if (isLockedForUser(state, game.user.isGM)) {
+      ui.notifications?.warn("Rest watch is locked by the GM.");
+      return;
+    }
+    const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
+    if (!slotId) return;
+    const text = event.target.value ?? "";
+
+    if (!game.user.isGM) {
+      const actor = getActiveActorForUser();
+      if (!actor) return;
+      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
+      return;
+    }
+
+    await updateRestWatchState((state) => {
+      const slot = state.slots.find((entry) => entry.id === slotId);
+      if (slot) slot.notes = text;
+    });
+  }
+}
+
+export class RestWatchPlayerApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "rest-watch-player-app",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Rest Watch" },
+    position: { width: 700, height: 520 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/rest-watch-player.hbs" }
+  };
+
+  async _prepareContext() {
+    const state = getRestWatchState();
+    const visibility = state.visibility ?? "names-passives";
+    const slots = buildWatchSlotsView(state, false, visibility);
+    const lockBannerText = state.locked ? "Locked by GM" : "";
+    const lockBannerTooltip = state.locked ? "Edits are disabled while the GM lock is active." : "";
+    return {
+      isGM: false,
+      locked: state.locked,
+      lockBannerText,
+      lockBannerTooltip,
+      lockBannerClass: "",
+      showPopout: false,
+      lastUpdatedAt: state.lastUpdatedAt ?? "-",
+      lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      slots
+    };
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+
+    this.setPosition({ width: 600, height: 560 });
+
+    if (this.element && !this.element.dataset.poBoundRestPlayer) {
+      this.element.dataset.poBoundRestPlayer = "1";
+
+      this.element.addEventListener("click", (event) => {
+        const action = event.target?.closest("[data-action]")?.dataset?.action;
+        if (action) this.#onAction(event);
+      });
+
+      this.element.addEventListener("change", (event) => {
+        if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        }
+      });
+
+      this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        }
+      });
+    }
+  }
+
+  async #onAction(event) {
+    const element = event.target?.closest("[data-action]");
+    const action = element?.dataset?.action;
+    if (!action) return;
+
+    switch (action) {
+      case "refresh":
+        emitSocketRefresh();
+        break;
+      case "assign-me":
+        await assignSlotToUser(element);
+        break;
+      case "clear":
+        await clearSlotAssignment(element);
+        break;
+      case "toggle-notes":
+        toggleCardNotes(element);
+        break;
+      case "ping":
+        await pingActorFromElement(element);
+        break;
+      default:
+        break;
+    }
+  }
+
+  async #onNotesChange(event) {
+    const state = getRestWatchState();
+    if (isLockedForUser(state, game.user.isGM)) {
+      ui.notifications?.warn("Rest watch is locked by the GM.");
+      return;
+    }
+    const slotId = event.target?.closest(".po-card")?.dataset?.slotId;
+    if (!slotId) return;
+    const text = event.target.value ?? "";
+    const actor = getActiveActorForUser();
+    if (actor) {
+      await updateRestWatchState({ op: "setEntryNotes", slotId, actorId: actor.id, text });
+    }
+  }
+}
+
+export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
+    id: "marching-order-app",
+    classes: ["party-operations"],
+    window: { title: "Party Operations - Marching Order" },
+    position: { width: 900, height: 650 },
+    resizable: true
+  });
+
+  static PARTS = {
+    main: { template: "modules/party-operations/templates/marching-order.hbs" }
+  };
+
+  async _prepareContext() {
+    const isGM = game.user.isGM;
+    const state = getMarchingOrderState();
+    const ranks = buildRanksView(state, isGM);
+    const lockBannerText = state.locked ? (isGM ? "Players locked" : "Locked by GM") : "";
+    const lockBannerTooltip = state.locked ? (isGM ? "Players cannot edit while locked." : "Edits are disabled while the GM lock is active.") : "";
+    return {
+      isGM,
+      locked: state.locked,
+      lockBannerText,
+      lockBannerTooltip,
+      lockBannerClass: isGM ? "is-gm" : "",
+      showPopout: false,
+      lastUpdatedAt: state.lastUpdatedAt ?? "-",
+      lastUpdatedBy: state.lastUpdatedBy ?? "-",
+      ranks,
+      notes: buildNotesView(state, ranks, isGM),
+      gmNotes: state.gmNotes ?? "",
+      lightToggles: buildLightToggles(state, ranks, isGM)
+    };
+  }
+
+  async _onRender(context, options) {
+    await super._onRender(context, options);
+    console.log("MarchingOrderApp: _onRender called");
+
+    const marchWidth = game.user.isGM ? 980 : 600;
+    const marchHeight = game.user.isGM ? 700 : 560;
+    this.setPosition({ width: marchWidth, height: marchHeight });
+    
+    if (this.element && !this.element.dataset.poBoundMarch) {
+      this.element.dataset.poBoundMarch = "1";
+
+      // Use event delegation on the app element
+      this.element.addEventListener("click", (event) => {
+        const tab = event.target?.closest(".po-tab");
+        if (tab) return this.#onTabClick(tab, this.element);
+
+        const action = event.target?.closest("[data-action]")?.dataset?.action;
+        if (action) this.#onAction(event);
+      });
+      
+      this.element.addEventListener("change", (event) => {
+        if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        } else if (event.target?.matches("textarea.po-gm-notes")) {
+          this.#onGMNotesChange(event);
+        }
+      });
+
+      this.element.addEventListener("input", (event) => {
+        if (event.target?.matches("textarea.po-notes-input")) {
+          this.#onNotesChange(event);
+        } else if (event.target?.matches("textarea.po-gm-notes")) {
+          this.#onGMNotesChange(event);
+        }
+      });
+    }
+    
+    setupMarchingDragAndDrop(this.element);
+    
+    console.log("MarchingOrderApp: event delegation attached", this.element);
+  }
+
+  #onTabClick(tabElement, html) {
+    const tabName = tabElement?.dataset?.tab;
+    if (tabName === "rest-watch") {
+      new RestWatchApp().render({ force: true });
+      this.close();
+    }
+  }
+
+  async #onAction(event) {
+    const element = event.target?.closest("[data-action]");
+    const action = element?.dataset?.action;
+    console.log("MarchingOrderApp #onAction:", { action, element, event });
+    if (!action) return;
+
+    switch (action) {
+      case "refresh":
+        emitSocketRefresh();
+        break;
+      case "open-for-players":
+        emitOpenForPlayers("march");
+        break;
+      case "help":
+        showMarchingHelp();
+        break;
+      case "popout":
+        this.render({ force: true, popOut: true });
+        break;
+      case "assign-rank":
+        await assignActorToRank(element);
+        break;
+      case "remove-from-rank":
+        await removeActorFromRanks(element);
+        break;
+      case "toggle-lock":
+        await toggleMarchLock(element);
+        break;
+      case "toggle-light":
+        await toggleLight(element);
+        break;
+      case "copy-text":
+        await copyMarchingText(false);
+        break;
+      case "copy-md":
+        await copyMarchingText(true);
+        break;
+      case "commit-plan":
+        await commitMarchingOrderState();
+        break;
+      case "clear-all":
+        await clearMarchingAll();
+        break;
+      case "ping":
+        await pingActorFromElement(element);
+        break;
+      case "formation-standard":
+      case "formation-two-wide":
+      case "formation-single-file":
+      case "formation-wedge":
+        ui.notifications?.info("Formations are not implemented yet.");
+        break;
+      case "toggle-notes":
+          toggleNotesDrawer(element);
+        break;
+      default:
+        break;
+    }
+  }
+
+  async #onNotesChange(event) {
+    const state = getMarchingOrderState();
+    if (isLockedForUser(state, game.user.isGM)) {
+      ui.notifications?.warn("Marching order is locked by the GM.");
+      return;
+    }
+    const text = event.target.value ?? "";
+
+    // Players: only allowed to edit their own note, via request object
+    if (!game.user.isGM) {
+      const actor = getActiveActorForUser();
+      if (!actor) return;
+      await updateMarchingOrderState({ op: "setNote", actorId: actor.id, text });
+      return;
+    }
+
+    // GM: apply per-actor notes directly
+    const actorId = event.target?.closest("[data-actor-id]")?.dataset?.actorId;
+    if (!actorId) return;
+    await updateMarchingOrderState((state) => {
+      if (!state.notes) state.notes = {};
+      state.notes[actorId] = text;
+    });
+  }
+
+  async #onGMNotesChange(event) {
+    const state = getMarchingOrderState();
+    if (isLockedForUser(state, game.user.isGM)) {
+      ui.notifications?.warn("Marching order is locked by the GM.");
+      return;
+    }
+    if (!game.user.isGM) return; // GM notes are GM-only
+    const text = event.currentTarget.value ?? "";
+    await updateMarchingOrderState((state) => {
+      state.gmNotes = text;
+    });
+  }
+}
+
+function buildEmptyWatchSlots(isGM) {
+  return [1, 2, 3, 4].map((index) => ({
+    id: `watch-${index}`,
+    label: `Watch ${index}`,
+    timeRange: "",
+    actor: null,
+    notes: "",
+    canAssign: isGM,
+    canAssignMe: !isGM,
+    canClear: false,
+    canEditNotes: isGM
+  }));
+}
+
+function buildEmptyRanks(isGM) {
+  return [
+    { id: "front", label: "Front Rank", entries: [], capacity: null, canJoin: false },
+    { id: "middle", label: "Middle Rank", entries: [], capacity: null, canJoin: false },
+    { id: "rear", label: "Rear Rank", entries: [], capacity: null, canJoin: false }
+  ];
+}
+
+function buildStoredWatchSlots() {
+  return [1, 2, 3, 4].map((index) => ({
+    id: `watch-${index}`,
+    timeRange: "",
+    entries: [] // each entry: { actorId, notes }
+  }));
+}
+
+function buildDefaultRestWatchState() {
+  return {
+    locked: false,
+    lockedBy: "",
+    visibility: "names-passives",
+    lastUpdatedAt: "-",
+    lastUpdatedBy: "-",
+    slots: buildStoredWatchSlots()
+  };
+}
+
+function buildDefaultMarchingOrderState() {
+  return {
+    locked: false,
+    lockedBy: "",
+    lastUpdatedAt: "-",
+    lastUpdatedBy: "-",
+    ranks: {
+      front: [],
+      middle: [],
+      rear: []
+    },
+    notes: {},
+    gmNotes: "",
+    light: {}
+  };
+}
+
+function getActiveActorForUser() {
+  return game.user?.character ?? null;
+}
+
+async function updateRestWatchState(mutatorOrRequest) {
+  if (!game.user.isGM) {
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "rest:mutate",
+      userId: game.user.id,
+      request: mutatorOrRequest
+    });
+    return;
+  }
+  const state = getRestWatchState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
+  } else {
+    await applyRestRequest(mutatorOrRequest, game.user.id);
+    return;
+  }
+  stampUpdate(state);
+  await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+  refreshOpenApps();
+  emitSocketRefresh();
+}
+
+async function updateMarchingOrderState(mutatorOrRequest) {
+  if (!game.user.isGM) {
+    game.socket.emit(SOCKET_CHANNEL, {
+      type: "march:mutate",
+      userId: game.user.id,
+      request: mutatorOrRequest
+    });
+    return;
+  }
+  const state = getMarchingOrderState();
+  if (typeof mutatorOrRequest === "function") {
+    mutatorOrRequest(state);
+  } else {
+    await applyMarchRequest(mutatorOrRequest, game.user.id);
+    return;
+  }
+  stampUpdate(state);
+  await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+  refreshOpenApps();
+  emitSocketRefresh();
+}
+
+function stampUpdate(state, user = game.user) {
+  state.lastUpdatedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  state.lastUpdatedBy = user?.name ?? "-";
+}
+
+async function assignSlotToUser(element) {
+  const state = getRestWatchState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Rest watch is locked by the GM.");
+    return;
+  }
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
+    return;
+  }
+  
+  if (!game.user.isGM) {
+    const slotId = element?.closest(".po-card")?.dataset?.slotId;
+    const clicked = state.slots.find((s) => s.id === slotId);
+    const targetSlotId = (clicked && !clicked.actorId)
+      ? clicked.id
+      : state.slots.find((s) => !s.actorId)?.id;
+    if (!targetSlotId) {
+      ui.notifications?.warn("All rest watch slots are full.");
+      return;
+    }
+    // Warn if we're redirecting from a filled slot
+    if (clicked && clicked.actorId && targetSlotId !== clicked.id) {
+      ui.notifications?.info("That slot is already taken; assigning you to the next available slot.");
+    }
+    await updateRestWatchState({ op: "assignMe", slotId: targetSlotId, actorId: actor.id });
+    return;
+  }
+  const slotId = element?.closest(".po-card")?.dataset?.slotId;
+  if (!slotId) return;
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    slot.actorId = actor.id;
+  });
+}
+
+async function assignSlotByPicker(element) {
+  const slotId = element?.closest(".po-card")?.dataset?.slotId;
+  if (!slotId) return;
+  const actors = game.actors.contents.slice().sort((a, b) => {
+    // Priority 1: Character type (PCs)
+    const aIsPC = a.type === "character" ? 0 : 1;
+    const bIsPC = b.type === "character" ? 0 : 1;
+    if (aIsPC !== bIsPC) return aIsPC - bIsPC;
+    // Priority 2: Player owner
+    const aOwned = a.hasPlayerOwner ? 0 : 1;
+    const bOwned = b.hasPlayerOwner ? 0 : 1;
+    if (aOwned !== bOwned) return aOwned - bOwned;
+    // Priority 3: Name
+    return (a.name ?? "").localeCompare(b.name ?? "");
+  });
+  const options = actors.map((actor) =>
+    `<option value="${actor.id}">${actor.name}</option>`
+  );
+  const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
+  const dialog = new Dialog({
+    title: "Assign Actor",
+    content,
+    buttons: {
+      assign: {
+        label: "Assign",
+        callback: async (html) => {
+          const actorId = html.find("select[name=actorId]").val();
+          if (!actorId) return;
+          await updateRestWatchState((state) => {
+            const slot = state.slots.find((entry) => entry.id === slotId);
+            if (!slot) return;
+            // Migrate old format
+            if (!slot.entries) slot.entries = [];
+            // Add new entry
+            slot.entries.push({ actorId, notes: "" });
+          });
+          if (game.user.isGM) refreshOpenApps();
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "assign"
+  });
+  dialog.render(true);
+}
+
+async function clearSlotEntry(element) {
+  const state = getRestWatchState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Rest watch is locked by the GM.");
+    return;
+  }
+  const card = element?.closest(".po-card");
+  const slotId = card?.dataset?.slotId;
+  const actorId = element?.closest(".po-watch-entry")?.dataset?.actorId;
+  if (!slotId || !actorId) return;
+  
+  if (!game.user.isGM) {
+    await updateRestWatchState({ op: "clearEntry", slotId, actorId });
+    return;
+  }
+  
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((entry) => entry.id === slotId);
+    if (!slot) return;
+    // Migrate old format
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [];
+      slot.actorId = null;
+      slot.notes = "";
+      return;
+    }
+    if (!slot.entries) slot.entries = [];
+    slot.entries = slot.entries.filter((entry) => entry.actorId !== actorId);
+  });
+}
+
+async function swapSlots(element) {
+  const state = getRestWatchState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Rest watch is locked by the GM.");
+    return;
+  }
+  const slotId = element?.closest(".po-card")?.dataset?.slotId;
+  if (!slotId) return;
+
+  const otherOptions = state.slots
+    .filter((s) => s.id !== slotId)
+    .map((s) => {
+      const entryCount = s.entries?.length ?? 0;
+      const label = entryCount > 0 ? ` (${entryCount} assigned)` : "";
+      return `<option value="${s.id}">Slot ${s.id.replace("watch-", "")}${label}</option>`;
+    })
+    .join("");
+
+  const content = `<div class="form-group"><label>Swap with:</label><select name="targetSlotId">${otherOptions}</select></div>`;
+  const dialog = new Dialog({
+    title: "Swap Slots",
+    content,
+    buttons: {
+      swap: {
+        label: "Swap",
+        callback: async (html) => {
+          const targetSlotId = html.find("select[name=targetSlotId]").val();
+          if (!targetSlotId) return;
+          await updateRestWatchState((state) => {
+            const slot1 = state.slots.find((s) => s.id === slotId);
+            const slot2 = state.slots.find((s) => s.id === targetSlotId);
+            if (!slot1 || !slot2) return;
+            // Migrate old format for both slots
+            if (!slot1.entries && slot1.actorId) {
+              slot1.entries = [{ actorId: slot1.actorId, notes: slot1.notes ?? "" }];
+              slot1.actorId = null;
+              slot1.notes = "";
+            }
+            if (!slot2.entries && slot2.actorId) {
+              slot2.entries = [{ actorId: slot2.actorId, notes: slot2.notes ?? "" }];
+              slot2.actorId = null;
+              slot2.notes = "";
+            }
+            if (!slot1.entries) slot1.entries = [];
+            if (!slot2.entries) slot2.entries = [];
+            [slot1.entries, slot2.entries] = [slot2.entries, slot1.entries];
+          });
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "swap"
+  });
+  dialog.render(true);
+}
+
+async function toggleRestLock(element) {
+  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
+  await updateRestWatchState((state) => {
+    state.locked = Boolean(checked);
+    state.lockedBy = state.locked ? (game.user?.name ?? "GM") : "";
+  });
+}
+
+async function updateVisibility(element) {
+  const value = element?.value ?? element?.querySelector?.("select")?.value;
+  if (!value) return;
+  await updateRestWatchState((state) => {
+    state.visibility = value;
+  });
+}
+
+async function updateTimeRange(element) {
+  if (!game.user.isGM) return; // GM only
+  const slotId = element?.dataset?.slotId;
+  const timeRange = element?.value ?? "";
+  if (!slotId) return;
+  await updateRestWatchState((state) => {
+    const slot = state.slots.find((s) => s.id === slotId);
+    if (!slot) return;
+    slot.timeRange = timeRange;
+  });
+}
+
+async function autofillFromParty() {
+  const state = getRestWatchState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Rest watch is locked by the GM.");
+    return;
+  }
+  const actors = game.actors.contents.filter((actor) => actor.hasPlayerOwner);
+  await updateRestWatchState((state) => {
+    // Distribute actors among slots, one per slot
+    state.slots.forEach((slot, index) => {
+      // Migrate old format
+      if (!slot.entries && slot.actorId) {
+        slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+        slot.actorId = null;
+        slot.notes = "";
+      }
+      if (!slot.entries) slot.entries = [];
+      // Assign one actor per slot
+      if (actors[index]) {
+        slot.entries = [{ actorId: actors[index].id, notes: "" }];
+      } else {
+        slot.entries = [];
+      }
+    });
+  });
+}
+
+async function restoreRestCommitted() {
+  const committed = game.settings.get(MODULE_ID, SETTINGS.REST_COMMITTED) ?? buildDefaultRestWatchState();
+  await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, foundry.utils.deepClone(committed));
+  refreshOpenApps();        // ensures local refresh even if socket doesn't echo back
+  emitSocketRefresh();
+}
+
+async function commitRestWatchState() {
+  const state = getRestWatchState();
+  await game.settings.set(MODULE_ID, SETTINGS.REST_COMMITTED, foundry.utils.deepClone(state));
+  ui.notifications?.info("Rest watch snapshot saved.");
+}
+
+async function writeClipboardText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    if (foundry?.utils?.copyToClipboard) {
+      foundry.utils.copyToClipboard(text);
+      return true;
+    }
+    throw err;
+  }
+}
+
+async function copyRestWatchText(asMarkdown) {
+  const state = getRestWatchState();
+  const isGM = game.user.isGM;
+  let text = "";
+
+  if (asMarkdown && isGM) {
+    const rows = [];
+    state.slots.forEach((slot, index) => {
+      const entries = slot.entries ?? [];
+      const timeRange = slot.timeRange || "-";
+      if (entries.length === 0) {
+        rows.push(`| ${index + 1} | (empty) | - | ${timeRange} | - |`);
+      } else {
+        entries.forEach((entry) => {
+          const actor = game.actors.get(entry.actorId);
+          const name = actor?.name ?? "(unknown)";
+          const pp = actor ? getPassive(actor, "prc") ?? "-" : "-";
+          const notes = entry.notes ? `${entry.notes.substring(0, 30)}...` : "-";
+          rows.push(`| ${index + 1} | ${name} | ${pp} | ${timeRange} | ${notes} |`);
+        });
+      }
+    });
+    text = `| Watch | Actor | PP | Time | Notes |\n| --- | --- | --- | --- | --- |\n${rows.join("\n")}`;
+  } else {
+    const lines = [];
+    state.slots.forEach((slot, index) => {
+      const entries = slot.entries ?? [];
+      const label = `Watch ${index + 1}`;
+      if (entries.length === 0) {
+        lines.push(asMarkdown ? `| ${label} | (empty) |` : `${label}: (empty)`);
+      } else {
+        entries.forEach((entry) => {
+          const actor = game.actors.get(entry.actorId);
+          const name = actor?.name ?? "(unknown)";
+          lines.push(asMarkdown ? `| ${label} | ${name} |` : `${label}: ${name}`);
+        });
+      }
+    });
+    text = asMarkdown
+      ? `| Slot | Actor |\n| --- | --- |\n${lines.join("\n")}`
+      : lines.join("\n");
+  }
+
+  try {
+    await writeClipboardText(text);
+    ui.notifications?.info("Copied to clipboard.");
+  } catch (err) {
+    console.warn("Clipboard write failed:", err);
+    ui.notifications?.warn("Failed to copy to clipboard. Check browser permissions.");
+  }
+}
+
+async function clearRestWatchAll() {
+  const state = getRestWatchState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Rest watch is locked by the GM.");
+    return;
+  }
+  if (!game.user.isGM) {
+    ui.notifications?.warn("Only the GM can clear all.");
+    return;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Rest Watch",
+    content: "<p>Clear all rest watch slots?</p>"
+  });
+  if (!confirmed) return;
+  await updateRestWatchState((state) => {
+    state.slots = buildStoredWatchSlots();
+  });
+}
+
+function showMarchingHelp() {
+  const content = `
+  <div class="po-help">
+    <p><strong>Purpose:</strong> Defines the party's physical formation while traveling or exploring.</p>
+    <p><strong>Authority:</strong> GM assigns and removes actors from ranks. Players can view when opened by the GM.</p>
+    <ul>
+      <li><strong>Front:</strong> First to encounter threats.</li>
+      <li><strong>Middle:</strong> Partially protected support.</li>
+      <li><strong>Rear:</strong> Last engaged, rear guard.</li>
+      <li><strong>Lock:</strong> Prevents rank changes.</li>
+      <li><strong>Formations:</strong> Change how ranks are interpreted.</li>
+      <li><strong>Light:</strong> Track visible light sources per rank.</li>
+    </ul>
+  </div>`;
+
+  new Dialog({
+    title: "Party Operations - Marching Order",
+    content,
+    buttons: { ok: { label: "OK" } },
+    default: "ok"
+  }).render(true);
+}
+
+async function assignActorToRank(element) {
+  if (!game.user.isGM) return;
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, true)) {
+    ui.notifications?.warn("Marching order is locked by the GM.");
+    return;
+  }
+  const rankId = element?.dataset?.rankId;
+  if (!rankId) return;
+
+  const actors = game.actors.contents.filter((actor) => actor.hasPlayerOwner);
+  const options = actors.map((actor) =>
+    `<option value="${actor.id}">${actor.name}</option>`
+  );
+  const content = `<div class="form-group"><label>Actor</label><select name="actorId">${options.join("")}</select></div>`;
+  const dialog = new Dialog({
+    title: `Assign Actor - ${rankId}`,
+    content,
+    buttons: {
+      assign: {
+        label: "Assign",
+        callback: async (html) => {
+          const actorId = html.find("select[name=actorId]").val();
+          if (!actorId) return;
+          await updateMarchingOrderState((state) => {
+            for (const key of Object.keys(state.ranks)) {
+              state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
+            }
+            if (!state.ranks[rankId]) state.ranks[rankId] = [];
+            state.ranks[rankId].push(actorId);
+          });
+        }
+      },
+      cancel: { label: "Cancel" }
+    },
+    default: "assign"
+  });
+  dialog.render(true);
+}
+
+async function removeActorFromRanks(element) {
+  if (!game.user.isGM) return;
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, true)) {
+    ui.notifications?.warn("Marching order is locked by the GM.");
+    return;
+  }
+  const actorId = element?.dataset?.actorId;
+  if (!actorId) return;
+
+  await updateMarchingOrderState((state) => {
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
+    }
+    if (state.notes) delete state.notes[actorId];
+    if (state.light) delete state.light[actorId];
+  });
+}
+
+async function joinRank(element) {
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Marching order is locked by the GM.");
+    return;
+  }
+  let rankId = element?.closest(".po-rank-col")?.dataset?.rankId;
+  
+  // If not clicked on a rank, default to middle
+  if (!rankId) {
+    rankId = "middle";
+  }
+  
+  const actor = getActiveActorForUser();
+  if (!actor) {
+    ui.notifications?.warn("No assigned character for this user.");
+    return;
+  }
+  
+  if (!game.user.isGM) {
+    await updateMarchingOrderState({ op: "joinRank", rankId, actorId: actor.id });
+    return;
+  }
+  await updateMarchingOrderState((state) => {
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actor.id);
+    }
+    if (!state.ranks[rankId]) state.ranks[rankId] = [];
+    state.ranks[rankId].push(actor.id);
+  });
+}
+
+async function toggleMarchLock(element) {
+  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
+  await updateMarchingOrderState((state) => {
+    state.locked = Boolean(checked);
+    state.lockedBy = state.locked ? (game.user?.name ?? "GM") : "";
+  });
+}
+
+async function toggleLight(element) {
+  const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
+  const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
+  if (!actorId) return;
+  await updateMarchingOrderState((state) => {
+    if (!state.light) state.light = {};
+    state.light[actorId] = Boolean(checked);
+  });
+}
+
+async function copyMarchingText(asMarkdown) {
+  const state = getMarchingOrderState();
+  const lines = Object.entries(state.ranks).map(([rank, actorIds]) => {
+    const names = (actorIds ?? []).map((actorId) => game.actors.get(actorId)?.name ?? "(missing)");
+    const label = rank.charAt(0).toUpperCase() + rank.slice(1);
+    if (asMarkdown) return `| ${label} | ${names.join(", ") || "-"} |`;
+    return `${label}: ${names.join(", ") || "-"}`;
+  });
+  const text = asMarkdown
+    ? `| Rank | Actors |\n| --- | --- |\n${lines.join("\n")}`
+    : lines.join("\n");
+  try {
+    await writeClipboardText(text);
+    ui.notifications?.info("Copied to clipboard.");
+  } catch (err) {
+    console.warn("Clipboard write failed:", err);
+    ui.notifications?.warn("Failed to copy to clipboard. Check browser permissions.");
+  }
+}
+
+async function clearMarchingAll() {
+  const state = getMarchingOrderState();
+  if (isLockedForUser(state, game.user.isGM)) {
+    ui.notifications?.warn("Marching order is locked by the GM.");
+    return;
+  }
+  const confirmed = await Dialog.confirm({
+    title: "Clear Marching Order",
+    content: "<p>Clear all marching order entries?</p>"
+  });
+  if (!confirmed) return;
+  await updateMarchingOrderState((state) => {
+    state.ranks = { front: [], middle: [], rear: [] };
+    state.notes = {};
+    state.light = {};
+    state.gmNotes = "";
+  });
+}
+
+async function commitMarchingOrderState() {
+  const state = getMarchingOrderState();
+  await game.settings.set(MODULE_ID, SETTINGS.MARCH_COMMITTED, foundry.utils.deepClone(state));
+  ui.notifications?.info("Marching order snapshot saved.");
+}
+
+function toggleNotesDrawer(element) {
+  const root = element?.closest(".po-window");
+  const drawer = root?.querySelector(".po-notes-drawer");
+  if (!drawer) return;
+  const isOpen = drawer.classList.toggle("is-open");
+  const actorId = element?.closest(".po-entry")?.dataset?.actorId;
+  if (isOpen && actorId) {
+    const row = drawer.querySelector(`[data-actor-id="${actorId}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+async function pingActorFromElement(element) {
+  const actorId = element?.closest("[data-actor-id], .po-card")?.dataset?.actorId;
+  const actor = actorId ? game.actors.get(actorId) : null;
+  if (!actor) return;
+  const token = actor.getActiveTokens?.(true, true)?.[0];
+  if (!token) {
+    ui.notifications?.warn(`${actor.name} has no active token on this scene.`);
+    return;
+  }
+  const center = token?.center ?? token?.object?.center;
+  if (!center || !canvas?.ping) return;
+  canvas.ping(center, { pingType: "pulse" });
+}
+
+function getRestWatchState() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.REST_STATE);
+  return foundry.utils.mergeObject(buildDefaultRestWatchState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+}
+
+function getMarchingOrderState() {
+  const stored = game.settings.get(MODULE_ID, SETTINGS.MARCH_STATE);
+  return foundry.utils.mergeObject(buildDefaultMarchingOrderState(), stored ?? {}, {
+    inplace: false,
+    insertKeys: true,
+    insertValues: true
+  });
+}
+
+function buildVisibilityOptions(current) {
+  return [
+    { value: "names-only", label: "Names only", selected: current === "names-only" },
+    {
+      value: "names-passives",
+      label: "Names + passives",
+      selected: current === "names-passives"
+    },
+    {
+      value: "names-passives-notes",
+      label: "Names + passives + notes",
+      selected: current === "names-passives-notes"
+    }
+  ];
+}
+
+function buildWatchSlotsView(state, isGM, visibility) {
+  const lockedForUser = isLockedForUser(state, isGM);
+  return state.slots.map((slot, index) => {
+    // Migrate old format: if slot has actorId, convert to entries
+    let entries = slot.entries ?? [];
+    if (slot.actorId && entries.length === 0) {
+      entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+    }
+    
+    const entriesView = entries.map((entry) => {
+      const actor = game.actors.get(entry.actorId);
+      if (!actor) return null;
+      const canEditNotes = isGM || userOwnsActor(actor);
+      return {
+        actorId: entry.actorId,
+        actor: buildActorView(actor, isGM, visibility),
+        notes: entry.notes ?? "",
+        canClear: (isGM || userOwnsActor(actor)) && !lockedForUser,
+        canEditNotes: canEditNotes && !lockedForUser
+      };
+    }).filter(Boolean);
+
+    return {
+      id: slot.id ?? `watch-${index + 1}`,
+      label: `Watch ${index + 1}`,
+      timeRange: slot.timeRange ?? "",
+      entries: entriesView,
+      hasEntries: entriesView.length > 0,
+      canAssign: isGM,
+      canAssignMe: !isGM && !lockedForUser
+    };
+  });
+}
+
+function buildRanksView(state, isGM) {
+  const lockedForUser = isLockedForUser(state, isGM);
+  const base = buildEmptyRanks(isGM).map((rank) => {
+    const actorIds = state.ranks?.[rank.id] ?? [];
+    const entries = actorIds
+      .map((actorId) => {
+        const actor = game.actors.get(actorId);
+        if (!actor) return null;
+        return {
+          actorId,
+          actor: buildActorView(actor, isGM, "names-passives")
+        };
+      })
+      .filter(Boolean);
+
+    return {
+      ...rank,
+      entries
+    };
+  });
+
+  return base;
+}
+
+function buildNotesView(state, ranks, isGM) {
+  const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
+  const uniqueIds = Array.from(new Set(actorIds));
+  return uniqueIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      const canEdit = isGM || userOwnsActor(actor);
+      if (!isGM && !canEdit) return null;
+      return {
+        actorId,
+        actorName: actor.name,
+        text: state.notes?.[actorId] ?? "",
+        canEdit
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildLightToggles(state, ranks, isGM) {
+  if (!isGM) return [];
+  const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
+  const uniqueIds = Array.from(new Set(actorIds));
+  return uniqueIds
+    .map((actorId) => {
+      const actor = game.actors.get(actorId);
+      if (!actor) return null;
+      return {
+        actorId,
+        actorName: actor.name,
+        hasLight: Boolean(state.light?.[actorId])
+      };
+    })
+    .filter(Boolean);
+}
+
+function userOwnsActor(actor) {
+  return actor?.testUserPermission?.(game.user, "OWNER") ?? false;
+}
+
+function canDragEntry(actorId, isGM, locked) {
+  if (!isGM) return false;
+  if (locked) return false;
+  return true;
+}
+
+function isLockedForUser(state, isGM) {
+  if (isGM) return false;
+  return Boolean(state.locked);
+}
+
+function buildActorView(actor, isGM, visibility) {
+  const data = {
+    id: actor.id,
+    name: actor.name,
+    img: actor.img,
+    passivePerception: getPassive(actor, "prc"),
+    passiveInsight: getPassive(actor, "ins"),
+    passiveInvestigation: getPassive(actor, "inv"),
+    darkvision: getDarkvision(actor),
+    stealthDisadv: getStealthDisadv(actor),
+    ac: getArmorClass(actor),
+    languages: getLanguages(actor)
+  };
+
+  if (isGM) return data;
+
+  const showPassives = visibility === "names-passives" || visibility === "names-passives-notes";
+  return {
+    id: data.id,
+    name: data.name,
+    img: data.img,
+    passivePerception: showPassives ? data.passivePerception : null,
+    passiveInsight: null,
+    passiveInvestigation: null,
+    darkvision: null,
+    stealthDisadv: null,
+    ac: null,
+    languages: null
+  };
+}
+
+function getPassive(actor, skillKey) {
+  const passive = actor?.system?.skills?.[skillKey]?.passive;
+  if (passive !== undefined && passive !== null) return passive;
+  // Fallback: 10 + skill modifier
+  const mod = actor?.system?.skills?.[skillKey]?.mod;
+  if (mod !== undefined && mod !== null) return 10 + mod;
+  return null;
+}
+
+function getDarkvision(actor) {
+  if (!actor) return null;
+  // Check active token on canvas for darkvision/vision
+  const token = actor.getActiveTokens?.(true, true)?.[0];
+  if (token) {
+    // Check if token has vision/darkvision enabled
+    const visionConfig = token.document?.sight;
+    if (visionConfig?.enabled && visionConfig?.visionRange > 0) {
+      return visionConfig.visionRange; // Return the range (e.g., 60)
+    }
+  }
+  // Fallback to actor data
+  return actor?.system?.attributes?.senses?.darkvision ?? null;
+}
+
+function getStealthDisadv(actor) {
+  return actor?.system?.traits?.stealth?.disadv ?? false;
+}
+
+function getArmorClass(actor) {
+  return actor?.system?.attributes?.ac?.value ?? null;
+}
+
+function getLanguages(actor) {
+  const langs = actor?.system?.traits?.languages?.value;
+  if (!langs || langs.length === 0) return null;
+  if (langs.length <= 3) return langs.join(", ");
+  return `${langs.length} langs`;
+}
+
+function computeHighestPP(slots) {
+  const values = slots
+    .flatMap((slot) => slot.entries ?? [])
+    .map((entry) => entry.actor?.passivePerception)
+    .filter((value) => typeof value === "number");
+  if (values.length === 0) return "-";
+  return Math.max(...values);
+}
+
+function computeNoDarkvision(slots) {
+  for (const slot of slots) {
+    const entries = slot.entries ?? [];
+    for (const entry of entries) {
+      if (entry.actor && !entry.actor.darkvision) {
+        return slot.label;
+      }
+    }
+  }
+  return "";
+}
+
+function buildQuickNotes(state) {
+  const notes = [];
+  state.slots.forEach((slot, index) => {
+    const entries = slot.entries ?? [];
+    entries.forEach((entry) => {
+      const actor = game.actors.get(entry.actorId);
+      const text = String(entry.notes ?? "").trim();
+      if (text.length > 0) {
+        notes.push({
+          label: `Watch ${index + 1}`,
+          actorName: actor?.name ?? "Unknown",
+          text
+        });
+      }
+    });
+    // If no entries with notes, show placeholder
+    if (entries.length === 0 || entries.every((e) => !e.notes?.trim())) {
+      notes.push({
+        label: `Watch ${index + 1}`,
+        actorName: "",
+        text: "-"
+      });
+    }
+  });
+  return notes;
+}
+
+function setupMarchingDragAndDrop(html) {
+  // Guard against duplicate listener attachment on re-render
+  if (html.dataset.poDndBound === "1") return;
+  html.dataset.poDndBound = "1";
+
+  const state = getMarchingOrderState();
+  const isGM = game.user.isGM;
+  const locked = state.locked;
+
+  html.querySelectorAll(".po-entry").forEach((entry) => {
+    const actorId = entry.dataset.actorId;
+    const draggable = canDragEntry(actorId, isGM, locked);
+    entry.setAttribute("draggable", draggable ? "true" : "false");
+    entry.classList.toggle("is-draggable", draggable);
+    if (draggable) {
+      entry.addEventListener("dragstart", (event) => {
+        event.dataTransfer?.setData("text/plain", actorId);
+        event.dataTransfer?.setDragImage?.(entry, 20, 20);
+      });
+    }
+  });
+
+  html.querySelectorAll(".po-rank-col").forEach((column) => {
+    column.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+
+    column.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      if (!isGM) return;
+      const liveState = getMarchingOrderState();
+      if (isLockedForUser(liveState, isGM)) {
+        ui.notifications?.warn("Marching order is locked by the GM.");
+        return;
+      }
+      const actorId = event.dataTransfer?.getData("text/plain");
+      if (!actorId) return;
+      const rankId = column.dataset.rankId;
+      if (!rankId) return;
+
+      const targetEntry = event.target?.closest(".po-entry");
+      const entryList = Array.from(column.querySelectorAll(".po-entry"));
+      const insertIndex = targetEntry ? entryList.indexOf(targetEntry) : entryList.length;
+
+      await updateMarchingOrderState((state) => {
+        for (const key of Object.keys(state.ranks)) {
+          state.ranks[key] = (state.ranks[key] ?? []).filter((id) => id !== actorId);
+        }
+        if (!state.ranks[rankId]) state.ranks[rankId] = [];
+        const target = state.ranks[rankId];
+        const safeIndex = Math.max(0, Math.min(insertIndex, target.length));
+        target.splice(safeIndex, 0, actorId);
+      });
+    });
+  });
+}
+
+Hooks.once("init", () => {
+  game.settings.register(MODULE_ID, SETTINGS.REST_STATE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultRestWatchState()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.REST_COMMITTED, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultRestWatchState()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MARCH_STATE, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultMarchingOrderState()
+  });
+
+  game.settings.register(MODULE_ID, SETTINGS.MARCH_COMMITTED, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: buildDefaultMarchingOrderState()
+  });
+
+  game.partyOperations = {
+    restWatch: () => new RestWatchApp().render({ force: true }),
+    marchingOrder: () => new MarchingOrderApp().render({ force: true }),
+    refreshAll: () => refreshOpenApps()
+  };
+
+  game.keybindings.register(MODULE_ID, "openRestWatch", {
+    name: "Open Rest Watch",
+    editable: [],
+    onDown: () => {
+      if (!game.user.isGM) return false;
+      new RestWatchApp().render({ force: true });
+      return true;
+    }
+  });
+
+  game.keybindings.register(MODULE_ID, "openMarchingOrder", {
+    name: "Open Marching Order",
+    editable: [],
+    onDown: () => {
+      if (!game.user.isGM) return false;
+      new MarchingOrderApp().render({ force: true });
+      return true;
+    }
+  });
+});
+
+Hooks.once("ready", () => {
+  // Auto-open player UI for non-GM players
+  if (!game.user.isGM) {
+    openRestWatchPlayerApp();
+  }
+
+  game.socket.on(SOCKET_CHANNEL, async (message) => {
+    if (!message || typeof message !== "object") return;
+
+    if (message.type === "open") {
+      if (!game.user.isGM) {
+        if (message.app === "rest") new RestWatchPlayerApp().render(true);
+        if (message.app === "march") new MarchingOrderApp().render(true);
+        if (message.requestId) {
+          game.socket.emit(SOCKET_CHANNEL, {
+            type: "open:ack",
+            requestId: message.requestId,
+            app: message.app,
+            userId: game.user.id
+          });
+        }
+      }
+      return;
+    }
+
+    if (message.type === "open:ack") {
+      handleOpenAck(message);
+      return;
+    }
+
+    if (message.type === "players:openRest" && !game.user.isGM) {
+      openRestWatchPlayerApp();
+      return;
+    }
+
+    if (message.type === "refresh") return refreshOpenApps();
+
+    if (!game.user.isGM) return; // only GM applies mutations
+
+    if (message.type === "rest:mutate") {
+      await applyRestRequest(message.request, message.userId);
+      return;
+    }
+    if (message.type === "march:mutate") {
+      await applyMarchRequest(message.request, message.userId);
+      return;
+    }
+  });
+});
+
+async function applyRestRequest(request, userId) {
+  if (!request || typeof request !== "object") return;
+  const state = getRestWatchState();
+  const requester = game.users.get(userId);
+  if (!requester) return;
+
+  if (state.locked) return;
+
+  // clearAll is not supported via socket (GM clears directly)
+  if (request.op === "clearAll") return;
+
+  // assignMe and clearEntry must be requester's character
+  const requesterActor = requester.character;
+  if (request.op === "assignMe") {
+    if (!requesterActor || requesterActor.id !== request.actorId) return; // security check
+    const slot = state.slots.find((s) => s.id === request.slotId);
+    if (!slot) return;
+    // Migrate old format
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+      slot.actorId = null;
+      slot.notes = "";
+    }
+    if (!slot.entries) slot.entries = [];
+    // Add new entry
+    slot.entries.push({ actorId: request.actorId, notes: "" });
+    stampUpdate(state, requester);
+    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    refreshOpenApps();
+    emitSocketRefresh();
+    return;
+  }
+
+  if (request.op === "clearEntry") {
+    const slot = state.slots.find((s) => s.id === request.slotId);
+    if (!slot) return;
+    // Migrate old format
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+      slot.actorId = null;
+      slot.notes = "";
+    }
+    if (!slot.entries) slot.entries = [];
+    // Only clear own entry
+    const entryIndex = slot.entries.findIndex((e) => e.actorId === requesterActor?.id);
+    if (entryIndex === -1) return; // not found or not owned
+    if (slot.entries[entryIndex].actorId !== request.actorId) return; // security check
+    slot.entries.splice(entryIndex, 1);
+    stampUpdate(state, requester);
+    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    refreshOpenApps();
+    emitSocketRefresh();
+    return;
+  }
+
+  if (request.op === "setEntryNotes") {
+    const slot = state.slots.find((s) => s.id === request.slotId);
+    if (!slot) return;
+    // Migrate old format
+    if (!slot.entries && slot.actorId) {
+      slot.entries = [{ actorId: slot.actorId, notes: slot.notes ?? "" }];
+      slot.actorId = null;
+      slot.notes = "";
+    }
+    if (!slot.entries) slot.entries = [];
+    // Only allow notes edits for own entry
+    const entry = slot.entries.find((e) => e.actorId === request.actorId);
+    if (!entry || !requesterActor || entry.actorId !== requesterActor.id) return;
+    entry.notes = String(request.text ?? "");
+    stampUpdate(state, requester);
+    await game.settings.set(MODULE_ID, SETTINGS.REST_STATE, state);
+    refreshOpenApps();
+    emitSocketRefresh();
+    return;
+  }
+}
+
+async function applyMarchRequest(request, userId) {
+  if (!request || typeof request !== "object") return;
+  const state = getMarchingOrderState();
+  const requester = game.users.get(userId);
+  if (!requester) return;
+  const requesterActor = requester.character;
+
+  if (state.locked) return;
+
+  // joinRank: must be requester's character
+  if (request.op === "joinRank") {
+    if (!requesterActor || requesterActor.id !== request.actorId) return; // security check
+    for (const key of Object.keys(state.ranks)) {
+      state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
+    }
+    if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
+    state.ranks[request.rankId].push(request.actorId);
+    stampUpdate(state, requester);
+    await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+    refreshOpenApps();
+    emitSocketRefresh();
+    return;
+  }
+
+  // setActorNote: only for requester's own actor
+  if (request.op === "setNote") {
+    if (!requesterActor || requesterActor.id !== request.actorId) return;
+    if (!state.notes) state.notes = {};
+    state.notes[request.actorId] = String(request.text ?? "");
+    stampUpdate(state, requester);
+    await game.settings.set(MODULE_ID, SETTINGS.MARCH_STATE, state);
+    refreshOpenApps();
+    emitSocketRefresh();
+    return;
+  }
+}
+
+function toggleCardNotes(element) {
+  const notes = element?.closest(".po-card")?.querySelector(".po-notes");
+  if (!notes) return;
+  notes.classList.toggle("is-active");
+}
+
+function refreshOpenApps() {
+  const apps = Object.values(ui.windows).filter((app) =>
+    app instanceof RestWatchApp || app instanceof MarchingOrderApp || app instanceof RestWatchPlayerApp
+  );
+  for (const app of apps) {
+    // Force re-prepare context and re-render for v12 ApplicationV2
+    app.render(true);
+  }
+}
+
+function openRestWatchPlayerApp() {
+  const existing = Object.values(ui.windows).find((app) => app instanceof RestWatchPlayerApp);
+  if (existing) {
+    existing.bringToTop?.();
+    return;
+  }
+  new RestWatchPlayerApp().render(true);
+}
+
+export function emitSocketRefresh() {
+  game.socket.emit(SOCKET_CHANNEL, { type: "refresh" });
+}
+
+function emitOpenRestPlayers() {
+  game.socket.emit(SOCKET_CHANNEL, { type: "players:openRest" });
+}
+
+
+=== REST-WATCH.HBS ===
+
+<div class="po-window" data-tool="rest-watch">
+  <header class="po-header">
+    <div>
+      <h1 class="po-title">Party Operations</h1>
+      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+      {{#if showPopout}}
+      <button type="button" class="po-icon-btn" data-action="popout" aria-label="Pop out">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </button>
+      {{/if}}
+    </div>
+  </header>
+
+  {{#if lockBannerText}}
+  <div class="po-lock-banner {{lockBannerClass}}" title="{{lockBannerTooltip}}">{{lockBannerText}}</div>
+  {{/if}}
+
+  <nav class="po-tabs" role="tablist">
+    <button type="button" class="po-tab is-active" data-tab="rest-watch" role="tab" aria-selected="true">Rest Watch</button>
+    <button type="button" class="po-tab" data-tab="marching-order" role="tab" aria-selected="false">Marching Order</button>
+  </nav>
+
+  <section class="po-content">
+    <div class="po-grid">
+      <div class="po-cards">
+        {{#each slots}}
+        <article class="po-card" data-slot-id="{{id}}">
+          <div class="po-card-left">
+            <div class="po-slot-badge">{{label}}</div>
+            {{#if isGM}}
+            <input type="text" class="po-time-range-input" data-action="time-range" data-slot-id="{{id}}" value="{{timeRange}}" placeholder="e.g., 8-10 PM" />
+            {{else}}
+            {{#if timeRange}}
+            <div class="po-time-range">{{timeRange}}</div>
+            {{/if}}
+            {{/if}}
+          </div>
+
+          <div class="po-card-center">
+            {{#if hasEntries}}
+            {{#each entries}}
+            <div class="po-watch-entry" data-actor-id="{{actorId}}">
+              <div class="po-actor">
+                <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+                <div class="po-actor-meta">
+                  <div class="po-actor-name">
+                    {{actor.name}}
+                    <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                      <i class="fa-solid fa-location-dot"></i>
+                    </button>
+                  </div>
+                  <div class="po-actor-sub">
+                    {{#if actor.passivePerception}}
+                    <div class="po-passive">
+                      <span class="po-passive-label">PP</span>
+                      <span class="po-passive-value">{{actor.passivePerception}}</span>
+                    </div>
+                    {{else}}
+                    {{#if ../isGM}}
+                    <div class="po-passive">
+                      <span class="po-passive-label">PP</span>
+                      <span class="po-passive-value">{{actor.passivePerception}}</span>
+                    </div>
+                    {{/if}}
+                    {{/if}}
+                    <div class="po-pills">
+                      {{#if ../isGM}}
+                      {{#if actor.darkvision}}
+                      <span class="po-pill">Darkvision {{actor.darkvision}}</span>
+                      {{/if}}
+                      {{#if actor.passiveInsight}}
+                      <span class="po-pill">PI {{actor.passiveInsight}}</span>
+                      {{/if}}
+                      {{#if actor.passiveInvestigation}}
+                      <span class="po-pill">PIv {{actor.passiveInvestigation}}</span>
+                      {{/if}}
+                      {{#if actor.stealthDisadv}}
+                      <span class="po-pill is-warn">Stealth Disadv</span>
+                      {{/if}}
+                      {{#if actor.ac}}
+                      <span class="po-pill">AC {{actor.ac}}</span>
+                      {{/if}}
+                      {{#if actor.languages}}
+                      <span class="po-pill">Lang {{actor.languages}}</span>
+                      {{/if}}
+                      {{/if}}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="po-entry-actions">
+                {{#if canClear}}
+                <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+                {{/if}}
+              </div>
+
+              <div class="po-notes is-active">
+                <button type="button" class="po-notes-toggle" data-action="toggle-notes">Notes</button>
+                <textarea class="po-notes-input" rows="2" placeholder="Notes" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+              </div>
+            </div>
+            {{/each}}
+            {{/if}}
+
+            {{#unless hasEntries}}
+            <div class="po-empty">
+              <div class="po-empty-text">Assign character(s)...</div>
+            </div>
+            {{/unless}}
+
+            <div class="po-assign-actions">
+              {{#if canAssign}}
+              <button type="button" class="po-btn" data-action="assign">+ Add Character</button>
+              {{/if}}
+              {{#if canAssignMe}}
+              <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
+              {{/if}}
+            </div>
+          </div>
+
+          <div class="po-card-right">
+            <button type="button" class="po-icon-btn" data-action="swap" aria-label="Swap">
+              <i class="fa-solid fa-grip-lines"></i>
+            </button>
+          </div>
+        </article>
+        {{/each}}
+      </div>
+
+      {{#if isGM}}
+      <aside class="po-gm-panel">
+        <div class="po-gm-section">
+          <button type="button" class="po-btn" data-action="open-for-players">Open for players</button>
+        </div>
+
+        <div class="po-gm-section">
+          <label class="po-switch">
+            <input type="checkbox" data-action="toggle-lock" {{#if locked}}checked{{/if}} />
+            <span>Lock plan</span>
+          </label>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Auto-Fill</div>
+          <button type="button" class="po-btn" data-action="autofill-party">Fill from active party</button>
+          <button type="button" class="po-btn" data-action="autofill-last">Fill from last session</button>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Snapshot</div>
+          <button type="button" class="po-btn" data-action="commit-plan">Save snapshot</button>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Visibility</div>
+          <select class="po-select" data-action="visibility">
+            {{#each visibilityOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Quick Checks</div>
+          <div class="po-chip">Highest PP: {{highestPP}}</div>
+          {{#if noDarkvision}}
+          <div class="po-chip is-warn">No darkvision on {{noDarkvision}}</div>
+          {{/if}}
+          <div class="po-quick-notes">
+            {{#each quickNotes}}
+            <div class="po-quick-note">
+              <div class="po-quick-note-label">{{label}}{{#if actorName}} - {{actorName}}{{/if}}</div>
+              <div class="po-quick-note-text">{{text}}</div>
+            </div>
+            {{/each}}
+          </div>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Export</div>
+          <button type="button" class="po-btn" data-action="copy-text">Copy as text</button>
+          <button type="button" class="po-btn" data-action="copy-md">Copy as markdown</button>
+        </div>
+
+        <div class="po-gm-section">
+          <button type="button" class="po-btn is-danger" data-action="clear-all">Clear all</button>
+        </div>
+      </aside>
+      {{/if}}
+    </div>
+  </section>
+</div>
+
+
+=== REST-WATCH-PLAYER.HBS ===
+
+<div class="po-window" data-tool="rest-watch-player">
+  <header class="po-header">
+    <div>
+      <h1 class="po-title">Party Operations</h1>
+      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  {{#if lockBannerText}}
+  <div class="po-lock-banner {{lockBannerClass}}" title="{{lockBannerTooltip}}">{{lockBannerText}}</div>
+  {{/if}}
+
+  <section class="po-content">
+    <div class="po-cards">
+      {{#each slots}}
+      <article class="po-card" data-slot-id="{{id}}">
+        <div class="po-card-left">
+          <div class="po-slot-badge">{{label}}</div>
+          {{#if timeRange}}
+          <div class="po-time-range">{{timeRange}}</div>
+          {{/if}}
+        </div>
+
+        <div class="po-card-center">
+          {{#if hasEntries}}
+          {{#each entries}}
+          <div class="po-watch-entry" data-actor-id="{{actorId}}">
+            <div class="po-actor">
+              <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+              <div class="po-actor-meta">
+                <div class="po-actor-name">
+                  {{actor.name}}
+                  <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                    <i class="fa-solid fa-location-dot"></i>
+                  </button>
+                </div>
+                <div class="po-actor-sub">
+                  {{#if actor.passivePerception}}
+                  <div class="po-passive">
+                    <span class="po-passive-label">PP</span>
+                    <span class="po-passive-value">{{actor.passivePerception}}</span>
+                  </div>
+                  {{/if}}
+                </div>
+              </div>
+            </div>
+
+            <div class="po-entry-actions">
+              {{#if canClear}}
+              <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+              {{/if}}
+            </div>
+
+            <div class="po-notes is-active">
+              <button type="button" class="po-notes-toggle" data-action="toggle-notes">Notes</button>
+              <textarea class="po-notes-input" rows="2" placeholder="Notes" {{#unless canEditNotes}}disabled{{/unless}}>{{notes}}</textarea>
+            </div>
+          </div>
+          {{/each}}
+          {{/if}}
+
+          {{#unless hasEntries}}
+          <div class="po-empty">
+            <div class="po-empty-text">Assign character(s)...</div>
+          </div>
+          {{/unless}}
+
+          <div class="po-assign-actions">
+            {{#if canAssignMe}}
+            <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
+            {{/if}}
+          </div>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+  </section>
+</div>
+
+
+=== MARCHING-ORDER.HBS ===
+
+<div class="po-window" data-tool="marching-order">
+  <header class="po-header">
+    <div>
+      <h1 class="po-title">Party Operations</h1>
+      <div class="po-subtitle">Last updated: {{lastUpdatedAt}} - by {{lastUpdatedBy}}</div>
+    </div>
+    <div class="po-controls">
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+      {{#if showPopout}}
+      <button type="button" class="po-icon-btn" data-action="popout" aria-label="Pop out">
+        <i class="fa-solid fa-up-right-from-square"></i>
+      </button>
+      {{/if}}
+    </div>
+  </header>
+
+  {{#if lockBannerText}}
+  <div class="po-lock-banner {{lockBannerClass}}" title="{{lockBannerTooltip}}">{{lockBannerText}}</div>
+  {{/if}}
+
+  <nav class="po-tabs" role="tablist">
+    <button type="button" class="po-tab" data-tab="rest-watch" role="tab" aria-selected="false">Rest Watch</button>
+    <button type="button" class="po-tab is-active" data-tab="marching-order" role="tab" aria-selected="true">Marching Order</button>
+  </nav>
+
+  <section class="po-content">
+    <div class="po-grid">
+      <div class="po-ranks">
+        {{#each ranks}}
+        <section class="po-rank-col" data-rank-id="{{id}}">
+          <header class="po-rank-header">
+            <div>
+              <div class="po-rank-title">{{label}}</div>
+              {{#if capacity}}
+              <div class="po-rank-cap">{{entries.length}} / {{capacity}}</div>
+              {{/if}}
+            </div>
+            {{#if ../isGM}}
+            <button type="button" class="po-btn" data-action="assign-rank" data-rank-id="{{id}}">Assign</button>
+            {{/if}}
+          </header>
+
+          <div class="po-rank-entries">
+            {{#each entries}}
+            <article class="po-entry" data-actor-id="{{actorId}}">
+              <button type="button" class="po-entry-handle" data-action="drag" aria-label="Drag">
+                <i class="fa-solid fa-grip-lines"></i>
+              </button>
+              <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+              <div class="po-entry-main">
+                <div class="po-entry-title">
+                  {{actor.name}}
+                  <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                    <i class="fa-solid fa-location-dot"></i>
+                  </button>
+                </div>
+                <div class="po-entry-sub">
+                  <span class="po-pill">PP {{actor.passivePerception}}</span>
+                  {{#if isGM}}
+                  {{#if actor.ac}}
+                  <span class="po-pill">AC {{actor.ac}}</span>
+                  {{/if}}
+                  {{#if actor.darkvision}}
+                  <span class="po-pill">Darkvision {{actor.darkvision}}</span>
+                  {{/if}}
+                  {{#if actor.stealthDisadv}}
+                  <span class="po-pill is-warn">Stealth Disadv</span>
+                  {{/if}}
+                  {{#if actor.languages}}
+                  <span class="po-pill">Lang {{actor.languages}}</span>
+                  {{/if}}
+                  {{#if actor.passiveInsight}}
+                  <span class="po-pill">PI {{actor.passiveInsight}}</span>
+                  {{/if}}
+                  {{#if actor.passiveInvestigation}}
+                  <span class="po-pill">PIv {{actor.passiveInvestigation}}</span>
+                  {{/if}}
+                  {{/if}}
+                </div>
+              </div>
+              <button type="button" class="po-icon-btn" data-action="toggle-notes" aria-label="Notes">
+                <i class="fa-solid fa-note-sticky"></i>
+              </button>
+              {{#if ../isGM}}
+              <button type="button" class="po-icon-btn" data-action="remove-from-rank" data-actor-id="{{actorId}}" aria-label="Remove">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+              {{/if}}
+            </article>
+            {{/each}}
+          </div>
+        </section>
+        {{/each}}
+      </div>
+
+      <aside class="po-notes-drawer">
+        <div class="po-section-title">Notes</div>
+        {{#each notes}}
+        <div class="po-note-row" data-actor-id="{{actorId}}">
+          <div class="po-note-label">{{actorName}}</div>
+          <textarea class="po-notes-input" rows="2" placeholder="Notes" {{#unless canEdit}}disabled{{/unless}}>{{text}}</textarea>
+        </div>
+        {{/each}}
+
+        {{#if isGM}}
+        <div class="po-section-title">GM Marching Notes</div>
+        <textarea class="po-gm-notes" rows="4" placeholder="Global notes">{{gmNotes}}</textarea>
+        {{/if}}
+      </aside>
+
+      {{#if isGM}}
+      <aside class="po-gm-panel">
+        <div class="po-gm-section">
+          <button type="button" class="po-btn" data-action="open-for-players">Open for players</button>
+        </div>
+
+        <div class="po-gm-section">
+          <button type="button" class="po-btn" data-action="help">Help</button>
+        </div>
+
+        <div class="po-gm-section">
+          <label class="po-switch">
+            <input type="checkbox" data-action="toggle-lock" {{#if locked}}checked{{/if}} />
+            <span>Lock marching order</span>
+          </label>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Formations</div>
+          <button type="button" class="po-btn" data-action="formation-standard">Standard dungeon</button>
+          <button type="button" class="po-btn" data-action="formation-two-wide">Two-wide corridor</button>
+          <button type="button" class="po-btn" data-action="formation-single-file">Single file stealth</button>
+          <button type="button" class="po-btn" data-action="formation-wedge">Wedge</button>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Torch / Light</div>
+          {{#each lightToggles}}
+          <label class="po-switch" data-actor-id="{{actorId}}">
+            <input type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+            <span>{{actorName}}</span>
+          </label>
+          {{/each}}
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Export</div>
+          <button type="button" class="po-btn" data-action="copy-text">Copy as text</button>
+          <button type="button" class="po-btn" data-action="copy-md">Copy as markdown</button>
+        </div>
+
+        <div class="po-gm-section">
+          <div class="po-section-title">Snapshot</div>
+          <button type="button" class="po-btn" data-action="commit-plan">Save snapshot</button>
+        </div>
+
+        <div class="po-gm-section">
+          <button type="button" class="po-btn is-danger" data-action="clear-all">Clear all</button>
+        </div>
+      </aside>
+      {{/if}}
+    </div>
+  </section>
+</div>
+
+
+=== PARTY-OPERATIONS.CSS ===
+
+/* Foundry ApplicationV2 window container overrides */
+.party-operations {
+  height: 100%;
+}
+
+.party-operations .window-content {
+  padding: 0;
+  overflow: hidden;
+}
+
+.po-window {
+  --po-bg-0: #14181e;
+  --po-bg-1: #1b222b;
+  --po-bg-2: #222c37;
+  --po-card: #1a2028;
+  --po-border: #2a3642;
+  --po-accent: #4aa0d8;
+  --po-accent-2: #73c3f3;
+  --po-warn: #d7a34a;
+  --po-danger: #d86a5f;
+  --po-text: #e6edf3;
+  --po-muted: #a7b1bc;
+  --po-radius: 10px;
+  --po-gap: 12px;
+  --po-font: "Cinzel", "Spectral", "Times New Roman", serif;
+  position: relative;
+  height: 100%;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: radial-gradient(1000px 400px at 15% -10%, #273544 0%, transparent 60%),
+    linear-gradient(180deg, var(--po-bg-1), var(--po-bg-0));
+  color: var(--po-text);
+  font-family: var(--po-font);
+  padding: 16px;
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+}
+
+.po-window::before {
+  content: "";
+  position: absolute;
+  inset: -30% -20% auto auto;
+  width: 260px;
+  height: 260px;
+  background: radial-gradient(circle, rgba(74, 160, 216, 0.2), transparent 70%);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.po-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--po-gap);
+}
+
+.po-title {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+
+.po-subtitle {
+  color: var(--po-muted);
+  font-size: 12px;
+}
+
+.po-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.po-icon-btn {
+  background: var(--po-bg-2);
+  border: 1px solid var(--po-border);
+  color: var(--po-text);
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.po-icon-btn:hover {
+  border-color: var(--po-accent);
+  color: var(--po-accent-2);
+}
+
+.po-lock-banner {
+  margin: 10px 0 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(216, 106, 95, 0.2);
+  border: 1px solid rgba(216, 106, 95, 0.5);
+  color: var(--po-danger);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+
+.po-lock-banner.is-gm {
+  background: rgba(74, 160, 216, 0.18);
+  border-color: rgba(74, 160, 216, 0.45);
+  color: var(--po-accent-2);
+}
+
+.po-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 12px;
+}
+
+.po-tab {
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--po-border);
+  background: var(--po-bg-2);
+  color: var(--po-text);
+  cursor: pointer;
+}
+
+.po-tab.is-active {
+  background: var(--po-accent);
+  color: #0d1117;
+  border-color: transparent;
+}
+
+.po-content {
+  display: block;
+  flex: 1;
+  overflow: auto;
+}
+
+.po-grid {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: var(--po-gap);
+  min-height: 0;
+}
+
+.po-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--po-gap);
+  min-height: 0;
+}
+
+.po-card {
+  display: grid;
+  grid-template-columns: 110px 1fr 70px;
+  gap: var(--po-gap);
+  padding: 12px;
+  background: var(--po-card);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  animation: po-fade-up 300ms ease-out both;
+}
+
+.po-card:nth-child(2) { animation-delay: 40ms; }
+.po-card:nth-child(3) { animation-delay: 80ms; }
+.po-card:nth-child(4) { animation-delay: 120ms; }
+
+.po-card-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.po-card-center {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.po-watch-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  background: var(--po-bg-1);
+  position: relative;
+}
+
+.po-entry-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.po-assign-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.po-slot-badge {
+  background: rgba(74, 160, 216, 0.2);
+  color: var(--po-accent-2);
+  border: 1px solid rgba(74, 160, 216, 0.4);
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.po-time-range {
+  color: var(--po-muted);
+  font-size: 12px;
+}
+
+.po-time-range-input {
+  width: 100%;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--po-bg-1);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  color: var(--po-text);
+}
+
+.po-time-range-input:focus {
+  outline: none;
+  background: var(--po-bg-2);
+  border-color: var(--po-accent);
+}
+
+.po-actor {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.po-portrait {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--po-border);
+  object-fit: cover;
+}
+
+.po-actor-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.po-actor-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-actor-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.po-passive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(74, 160, 216, 0.15);
+  border: 1px solid rgba(74, 160, 216, 0.35);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.po-passive-label {
+  font-size: 11px;
+  color: var(--po-muted);
+}
+
+.po-passive-value {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.po-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.po-pill {
+  background: var(--po-bg-2);
+  border: 1px solid var(--po-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--po-muted);
+}
+
+.po-pill.is-warn {
+  border-color: rgba(215, 163, 74, 0.6);
+  color: var(--po-warn);
+}
+
+.po-card-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.po-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.po-empty-text {
+  color: var(--po-muted);
+}
+
+.po-empty-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.po-btn {
+  background: var(--po-bg-2);
+  border: 1px solid var(--po-border);
+  color: var(--po-text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.po-btn.is-primary {
+  background: var(--po-accent);
+  border-color: transparent;
+  color: #0d1117;
+}
+
+.po-btn.is-danger {
+  background: rgba(216, 106, 95, 0.18);
+  border-color: rgba(216, 106, 95, 0.5);
+  color: var(--po-danger);
+}
+
+.po-notes {
+  grid-column: 1 / -1;
+  display: none;
+  grid-template-columns: 80px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.po-notes.is-active {
+  display: grid;
+}
+
+.po-notes-toggle {
+  background: transparent;
+  border: none;
+  color: var(--po-muted);
+  cursor: pointer;
+  text-align: left;
+}
+
+.po-notes-input {
+  width: 100%;
+  background: var(--po-bg-1);
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  color: var(--po-text);
+  padding: 6px 8px;
+  resize: vertical;
+}
+
+.po-gm-panel {
+  background: var(--po-card);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: po-fade-up 280ms ease-out both;
+}
+
+.po-gm-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.po-section-title {
+  color: var(--po-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 11px;
+}
+
+.po-chip {
+  background: rgba(115, 195, 243, 0.12);
+  border: 1px solid rgba(115, 195, 243, 0.4);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.po-chip.is-warn {
+  border-color: rgba(215, 163, 74, 0.6);
+  color: var(--po-warn);
+}
+
+.po-quick-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.po-quick-note {
+  background: rgba(27, 34, 43, 0.6);
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.po-quick-note-label {
+  font-size: 11px;
+  color: var(--po-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.po-quick-note-text {
+  font-size: 12px;
+  color: var(--po-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.po-select {
+  width: 100%;
+  background: var(--po-bg-2);
+  color: var(--po-text);
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.po-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--po-text);
+}
+
+.po-ranks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--po-gap);
+  min-height: 0;
+}
+
+.po-rank-col {
+  background: var(--po-card);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  animation: po-fade-up 300ms ease-out both;
+}
+
+.po-rank-col:nth-child(2) { animation-delay: 40ms; }
+.po-rank-col:nth-child(3) { animation-delay: 80ms; }
+
+.po-rank-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-rank-title {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.po-rank-cap {
+  color: var(--po-muted);
+  font-size: 12px;
+}
+
+.po-rank-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.po-entry {
+  display: grid;
+  grid-template-columns: 20px 44px 1fr 32px;
+  gap: 8px;
+  align-items: center;
+  background: var(--po-bg-1);
+  border: 1px solid var(--po-border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.po-entry.is-draggable {
+  cursor: grab;
+}
+
+.po-entry.is-draggable:active {
+  cursor: grabbing;
+}
+
+.po-entry-handle {
+  background: transparent;
+  border: none;
+  color: var(--po-muted);
+  cursor: grab;
+}
+
+.po-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.po-entry-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-entry-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.po-rank-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.po-notes-drawer {
+  background: var(--po-card);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+  padding: 12px;
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.po-notes-drawer.is-open {
+  display: flex;
+}
+
+.po-note-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.po-note-label {
+  font-size: 12px;
+  color: var(--po-muted);
+}
+
+@keyframes po-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .po-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .po-ranks {
+    grid-template-columns: 1fr;
+  }
+}
+

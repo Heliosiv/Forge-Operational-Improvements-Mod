@@ -1,0 +1,220 @@
+<section class="po-overview" aria-label="Rest watch status">
+  <article class="po-overview-card">
+    <span>Slots Filled</span>
+    <strong>{{overview.occupiedSlots}} / {{overview.totalSlots}}</strong>
+  </article>
+  <article class="po-overview-card">
+    <span>Assigned Entries</span>
+    <strong>{{overview.assignedEntries}}</strong>
+  </article>
+  <article class="po-overview-card {{#if overview.hasLowDarkvisionCoverage}}is-alert{{/if}}">
+    <span>Low Darkvision Slots</span>
+    <strong>{{overview.lowDarkvisionSlots}}</strong>
+  </article>
+</section>
+
+<section class="po-content">
+  {{#if operationsJournal.hasRootFolder}}
+  <section class="po-loot-claims-panel" aria-label="Shared logs">
+    <div class="po-section-head-row">
+      <div class="po-section-title">Shared Logs</div>
+      <span class="po-op-summary">{{operationsJournal.visibleCount}} visible</span>
+    </div>
+    <div class="po-hint">Open shared operations journals posted by the table.</div>
+    <label class="po-resource-row po-loot-claim-sort-row">
+      <span>Search</span>
+      <input
+        type="text"
+        class="po-input"
+        data-action="set-journal-filter"
+        value="{{operationsJournal.selectedFilter}}"
+        placeholder="Search title or category" />
+    </label>
+    {{#if operationsJournal.hasRows}}
+    <div class="po-loot-claims-run-grid">
+      {{#each operationsJournal.rows}}
+      <article class="po-op-role-row po-loot-claim-run-card">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name">{{name}}</div>
+          <div class="po-op-role-status">{{categoryLabel}}</div>
+        </div>
+        <div class="po-op-summary"><strong>Folder:</strong> {{folderLabel}}</div>
+        <div class="po-op-summary"><strong>Updated:</strong> {{updatedAtLabel}}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm" data-action="open-journal-entry" data-journal-id="{{id}}">Open Log</button>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+    {{else}}
+    <div class="po-op-summary">No shared logs match the current filter.</div>
+    {{/if}}
+  </section>
+  <div class="po-op-divider"></div>
+  {{/if}}
+
+  <div class="po-hint">Tip: use <strong>Assign Me</strong> to quickly claim an empty watch slot, then add notes only for your actor. Watch planning covers assignments/coverage; downtime and loot rewards are managed in their own sections.</div>
+  <div class="po-op-divider"></div>
+  <section class="po-loot-claims-panel" aria-label="Loot claims">
+    <div class="po-section-head-row">
+      <div class="po-section-title">Loot Claims</div>
+      <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.hasSelectedRun}}disabled{{/unless}}>Open Live Claim Board</button>
+    </div>
+    <div class="po-hint">Choose a loot run below, then handle claims and currency in the Live Claim Board.</div>
+    {{#if lootClaims.hasOpenRuns}}
+    <div class="po-loot-claims-run-grid">
+      {{#each lootClaims.openRuns}}
+      <article class="po-op-role-row po-loot-claim-run-card {{#if selected}}is-selected{{/if}}">
+        <div class="po-op-role-head">
+          <div class="po-op-role-name">Loot Run</div>
+          <div class="po-op-role-status">{{statusLabel}}</div>
+        </div>
+        <div class="po-loot-claim-tags">
+          <span class="po-pill">Items: {{itemCount}}</span>
+          <span class="po-pill">Claims: {{claimsLogCount}}</span>
+          {{#if hasContestedItems}}<span class="po-pill is-warn">Contested: {{contestedItemCount}}</span>{{/if}}
+          {{#if hasCurrencyRemaining}}<span class="po-pill">Currency Open</span>{{/if}}
+        </div>
+        <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
+        <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+        <div class="po-op-action-row">
+          <button type="button" class="po-btn po-btn-sm is-primary" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Live Claim Board</button>
+        </div>
+      </article>
+      {{/each}}
+    </div>
+    {{else}}
+    <div class="po-op-summary">No active loot claim boards.</div>
+    {{/if}}
+    <details class="po-panel-disclosure po-loot-claim-archive-panel">
+      <summary class="po-panel-disclosure-summary">
+        <span class="po-section-title">Archived Loot Claims</span>
+        <span class="po-op-summary">{{lootClaims.archivedRunCount}} archived</span>
+      </summary>
+      <div class="po-panel-disclosure-body">
+        {{#if lootClaims.hasArchivedRuns}}
+        <label class="po-resource-row po-loot-claim-sort-row">
+          <span>Sort</span>
+          <select name="lootClaimsArchiveSort" class="po-select" data-action="set-loot-claims-archive-sort">
+            {{#each lootClaims.archiveSortOptions}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+          </select>
+        </label>
+        <div class="po-loot-claims-run-grid is-archived">
+          {{#each lootClaims.archivedRuns}}
+          <article class="po-op-role-row po-loot-claim-run-card is-archived {{#if selected}}is-selected{{/if}}">
+            <div class="po-op-role-head">
+              <div class="po-op-role-name">Loot Run</div>
+              <div class="po-op-role-status">{{statusLabel}}</div>
+            </div>
+            <div class="po-loot-claim-tags">
+              <span class="po-pill">Items: {{itemCount}}</span>
+              <span class="po-pill">Claims: {{claimsLogCount}}</span>
+              <span class="po-pill">Archived: {{archivedAtLabel}}</span>
+            </div>
+            <div class="po-op-summary"><strong>Published:</strong> {{publishedAtLabel}} by {{publishedBy}}</div>
+            <div class="po-op-summary"><strong>Currency:</strong> {{currencyRemainingLabel}}</div>
+            {{#if claimsLogEntries.length}}
+            <details class="po-panel-disclosure">
+              <summary class="po-panel-disclosure-summary">Audit Log ({{claimsLogCount}})</summary>
+              <div class="po-panel-disclosure-body">
+                <div class="po-op-stack">
+                  {{#each claimsLogEntries}}
+                  <div class="po-op-summary {{#if isUndone}}is-muted{{/if}}"><strong>{{claimedAtLabel}}</strong> — {{itemName}} → {{actorName}} (by {{claimedByName}}){{#if isUndone}} • Undone {{undoneAtLabel}} by {{undoneByName}}{{/if}}</div>
+                  {{/each}}
+                </div>
+              </div>
+            </details>
+            {{/if}}
+            <div class="po-op-action-row">
+              <button type="button" class="po-btn po-btn-sm" data-action="open-gm-loot-claims-board" data-claim-run-id="{{id}}">Open Board Snapshot</button>
+            </div>
+          </article>
+          {{/each}}
+        </div>
+        {{else}}
+        <div class="po-op-summary">No archived loot claims yet.</div>
+        {{/if}}
+      </div>
+    </details>
+  </section>
+  <div class="po-op-divider"></div>
+  <div class="po-cards">
+    {{#each slots}}
+    <article class="po-card" data-slot-id="{{id}}">
+      <div class="po-card-left">
+        <div class="po-slot-badge">{{label}}</div>
+        {{#if timeRange}}
+        <div class="po-time-range">{{timeRange}}</div>
+        {{/if}}
+      </div>
+
+      <div class="po-card-center">
+        {{#if hasEntries}}
+        {{#each entries}}
+        <div class="po-watch-entry" data-actor-id="{{actorId}}">
+          <div class="po-actor">
+            <img class="po-portrait" src="{{actor.img}}" alt="{{actor.name}}" />
+            <div class="po-actor-meta">
+              <div class="po-actor-name">
+                {{actor.name}}
+                <button type="button" class="po-icon-btn" data-action="ping" aria-label="Ping token">
+                  <i class="fa-solid fa-location-dot"></i>
+                </button>
+              </div>
+              <div class="po-watch-stats">
+                {{#if actor.passivePerception}}
+                <div class="po-stat po-stat-primary">
+                  <span class="po-stat-label">PP</span>
+                  <span class="po-stat-value">{{actor.passivePerception}}</span>
+                </div>
+                {{/if}}
+              </div>
+            </div>
+          </div>
+
+          {{#if activity}}
+          <div class="po-activity-section">
+            <div class="po-activity-row is-compact">
+              <div class="po-exhaustion-badge {{#if activity.exhaustion}}is-exhausted{{/if}}" title="Exhaustion: {{activity.exhaustionLabel}}">
+                {{#if activity.exhaustion}}
+                <i class="fa-solid fa-heart-crack"></i>
+                <span>{{activity.exhaustion}}</span>
+                {{else}}
+                <i class="fa-solid fa-heart"></i>
+                {{/if}}
+              </div>
+            </div>
+          </div>
+          {{/if}}
+
+          <div class="po-entry-actions">
+            {{#if canClear}}
+            <button type="button" class="po-icon-btn" data-action="clear" aria-label="Clear">
+              <i class="fa-solid fa-xmark"></i>
+              </button>
+            {{/if}}
+          </div>
+        </div>
+        {{/each}}
+        {{/if}}
+
+        {{#unless hasEntries}}
+        <div class="po-empty">
+          <div class="po-empty-text">Assign character(s)...</div>
+        </div>
+        {{/unless}}
+
+        <div class="po-slot-chip {{playerCoverageStateClass}}">Coverage: {{playerCoverageLabel}}</div>
+
+        <div class="po-assign-actions">
+          {{#if canAssignMe}}
+          <button type="button" class="po-btn is-primary" data-action="assign-me">+ Assign Me</button>
+          {{/if}}
+        </div>
+      </div>
+    </article>
+    {{/each}}
+  </div>
+</section>

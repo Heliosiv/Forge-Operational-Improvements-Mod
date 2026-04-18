@@ -1,0 +1,23 @@
+name: validate
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  repository-checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1) Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 2) Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 3) Run baseline and deterministic checks
+        run: npm run check

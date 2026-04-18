@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" fill="none">
+  <defs>
+    <linearGradient id="poMoonGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dce9f5" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#9bbdd0" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="poMountainNear" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ea6b0" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#35505d" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="poMountainFar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c4d7e0" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#507181" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <circle cx="582" cy="62" r="36" fill="url(#poMoonGlow)" opacity="0.72"/>
+  <path d="M332 200 434 106l56 66 58-46 124 74v108H250V244l82-44z" fill="url(#poMountainFar)" opacity="0.7"/>
+  <path d="m292 250 96-102 54 58 54-52 114 96v58H268v-34l24-24z" fill="url(#poMountainNear)" opacity="0.82"/>
+  <g opacity="0.62" fill="#88b5a6">
+    <path d="M506 208 494 236h8l-14 30h16l-7 18h18l-9 24h25l-11-24h18l-8-18h15l-13-30h8z"/>
+    <path d="M558 212 547 236h7l-13 27h15l-7 16h17l-8 20h23l-10-20h18l-8-16h14l-13-27h7z"/>
+    <path d="M617 210 607 232h6l-12 25h14l-6 15h16l-7 18h22l-9-18h16l-7-15h13l-12-25h7z"/>
+  </g>
+  <g opacity="0.84">
+    <path d="M434 250c10-10 23-19 39-24-10 14-10 29 0 44-14-4-27-10-39-20-12 10-25 16-39 20 10-15 10-30 0-44 15 5 29 14 39 24z" fill="#f2a65b"/>
+    <path d="M433 250c6-7 14-14 24-18-6 10-6 20 0 30-9-3-17-7-24-13-7 6-15 10-24 13 6-10 6-20 0-30 10 4 18 11 24 18z" fill="#fff1b7"/>
+    <path d="M394 286c20-7 46-10 79-10 38 0 66 3 86 10" stroke="#94afbb" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
+    <path d="M422 286c10-14 16-31 18-50M447 286c3-18 5-34 6-50M474 286c-3-16-5-32-6-50" stroke="#789aa7" stroke-width="3" stroke-linecap="round" opacity="0.55"/>
+  </g>
+  <g opacity="0.46" stroke="#d9eef4" stroke-width="2" stroke-linecap="round">
+    <path d="M298 72h12M304 66v12"/>
+    <path d="M418 44h10M423 39v10"/>
+    <path d="M648 118h12M654 112v12"/>
+    <path d="M520 26h8M524 22v8"/>
+  </g>
+</svg>

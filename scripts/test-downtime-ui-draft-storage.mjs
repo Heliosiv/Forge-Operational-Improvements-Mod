@@ -99,6 +99,7 @@ class FakeElement {
   assert.deepEqual(drafts.getDowntimeUiDraft().submission, {
     actorId: "actor-c",
     actionKey: "carouse",
+    subtypeKey: "",
     hours: "6",
     note: "Gather rumors",
     browsingAbility: "cha",

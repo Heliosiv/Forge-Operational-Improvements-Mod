@@ -1,5 +1,9 @@
 import { buildPartyOpsRuntimeHookModules, createPartyOpsHookRegistrar } from "../hooks/runtime-hooks.js";
 import { registerPartyOperationsUiHooks } from "../hooks/ui-hooks.js";
+import {
+  buildPartyOperationsDataSettingsConfig,
+  buildPartyOperationsFeatureSettingsConfig
+} from "../core/settings-registration.js";
 
 export function setupPartyOperationsUi({
   openMainTab,
@@ -88,7 +92,7 @@ export function buildPartyOperationsInitConfig({
     getRefreshScopesForSettingKey,
     refreshOpenApps,
     registerPartyOpsDataSettings,
-    dataSettingsConfig: {
+    dataSettingsConfig: buildPartyOperationsDataSettingsConfig({
       moduleId,
       settings,
       buildDefaultRestWatchState,
@@ -100,10 +104,10 @@ export function buildPartyOperationsInitConfig({
       buildDefaultAudioLibraryCatalog,
       buildDefaultAudioLibraryHiddenTrackStore,
       buildDefaultAudioMixPresetStore
-    },
+    }),
     syncAudioLibraryDraftFromSettings,
     registerPartyOpsFeatureSettings,
-    featureSettingsConfig: {
+    featureSettingsConfig: buildPartyOperationsFeatureSettingsConfig({
       moduleId,
       settings,
       areAdvancedSettingsEnabled,
@@ -121,7 +125,7 @@ export function buildPartyOperationsInitConfig({
       refreshScopeKeys,
       openRestWatchUiForCurrentUser,
       openMainTab
-    },
+    }),
     logger,
     moduleId
   };

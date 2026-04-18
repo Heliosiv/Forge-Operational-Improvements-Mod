@@ -1,0 +1,38 @@
+{
+  "generatedAt": "2026-02-27T01:26:31.360Z",
+  "writeMode": false,
+  "summary": {
+    "sourcePath": "C:\\Users\\Kyle\\AppData\\Local\\FoundryVTT\\Data\\worlds\\terranor\\packs\\terranor-c1-items-pack",
+    "manifestPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+    "sourceItemCount": 1010,
+    "manifestItemCountBefore": 1369,
+    "missingFromManifestCount": 66,
+    "balancedMode": true,
+    "deriveSpellPricing": true,
+    "sourceCollection": "world.terranor.terranor-c1-items-pack",
+    "allowedTypes": [
+      "consumable",
+      "equipment",
+      "weapon",
+      "loot",
+      "container",
+      "tool",
+      "backpack",
+      "armor",
+      "ammunition",
+      "trinket",
+      "spell"
+    ],
+    "skippedByBalance": 66,
+    "importedCount": 0,
+    "taggedItems": 0,
+    "itemMidiDefaults": 0,
+    "itemDaeDefaults": 0,
+    "itemMidiPropertiesDefaults": 0,
+    "effectCount": 14,
+    "effectMidiDefaults": 0,
+    "effectDaeDefaults": 0,
+    "manifestItemCountAfter": 1369
+  },
+  "importedItems": []
+}

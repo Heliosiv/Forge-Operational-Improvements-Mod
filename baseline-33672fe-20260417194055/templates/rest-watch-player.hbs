@@ -1,0 +1,50 @@
+<div class="po-window po-window-rest-player" data-tool="rest-watch-player" role="region" aria-label="Party Operations Player View">
+  <header class="po-header">
+    <div class="po-header-main">
+      <h1 class="po-title">Party Operations <span class="po-pill">v{{moduleVersion}}</span></h1>
+      <div class="po-subtitle" aria-live="polite">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch (Player){{/if}} - Last updated {{lastUpdatedAt}} by {{lastUpdatedBy}}</div>
+    </div>
+    <div class="po-context-pill" aria-hidden="true">Player View</div>
+    <div class="po-controls">
+      <button type="button" class="po-icon-btn" data-action="refresh" aria-label="Refresh">
+        <i class="fa-solid fa-rotate"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="po-body">
+    {{#if playerHubSimpleMode}}
+    <section class="po-content po-player-hub-shell">
+      <nav class="po-tabs po-tabs-sub po-player-hub-tabs" role="tablist" aria-label="Player Hub Tabs">
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-watch" tabindex="{{#if playerHubWatch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubWatch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="watch" aria-selected="{{#if playerHubWatch}}true{{else}}false{{/if}}">Watch</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-march" tabindex="{{#if playerHubMarch}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubMarch}}is-active{{/if}}" data-action="player-hub-tab" data-tab="march" aria-selected="{{#if playerHubMarch}}true{{else}}false{{/if}}">March</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-loot" tabindex="{{#if playerHubLoot}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubLoot}}is-active{{/if}}" data-action="player-hub-tab" data-tab="loot" aria-selected="{{#if playerHubLoot}}true{{else}}false{{/if}}">Loot</button>
+        <button type="button" role="tab" aria-controls="po-player-hub-panel-downtime" tabindex="{{#if playerHubDowntime}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
+      </nav>
+
+      {{#if playerHubWatch}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs"}}
+      {{/if}}
+
+      {{#if playerHubMarch}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-march.hbs"}}
+      {{/if}}
+
+      {{#if playerHubLoot}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-loot.hbs"}}
+      {{/if}}
+
+      {{#if playerHubDowntime}}
+      {{> "modules/party-operations/templates/partials/rest-watch-player/simple-downtime.hbs"}}
+      {{/if}}
+    </section>
+    {{else}}
+    {{> "modules/party-operations/templates/partials/rest-watch-player/classic.hbs"}}
+    {{/if}}
+  </div>
+
+  <footer class="po-footer">
+    <div class="po-footer-text">{{#if playerHubSimpleMode}}Player Hub{{else}}Rest Watch{{/if}}</div>
+    <div class="po-footer-text">{{#if playerHubSimpleMode}}{{#if playerHubWatch}}Watch{{/if}}{{#if playerHubMarch}}March{{/if}}{{#if playerHubLoot}}Loot{{/if}}{{#if playerHubDowntime}}Downtime{{/if}}{{else}}Player view{{/if}}</div>
+  </footer>
+</div>

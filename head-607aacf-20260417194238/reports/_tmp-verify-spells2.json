@@ -1,0 +1,28 @@
+{
+  "generatedAt": "2026-02-27T01:26:31.269Z",
+  "writeMode": false,
+  "summary": {
+    "sourcePath": "C:\\Users\\Kyle\\AppData\\Local\\FoundryVTT\\Data\\systems\\dnd5e\\packs\\spells",
+    "manifestPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+    "sourceItemCount": 319,
+    "manifestItemCountBefore": 1369,
+    "missingFromManifestCount": 0,
+    "balancedMode": true,
+    "deriveSpellPricing": true,
+    "sourceCollection": "dnd5e.spells",
+    "allowedTypes": [
+      "spell"
+    ],
+    "skippedByBalance": 0,
+    "importedCount": 0,
+    "taggedItems": 0,
+    "itemMidiDefaults": 0,
+    "itemDaeDefaults": 0,
+    "itemMidiPropertiesDefaults": 0,
+    "effectCount": 14,
+    "effectMidiDefaults": 0,
+    "effectDaeDefaults": 0,
+    "manifestItemCountAfter": 1369
+  },
+  "importedItems": []
+}

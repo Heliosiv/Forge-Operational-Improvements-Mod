@@ -1,0 +1,289 @@
+<div
+  class="po-merchant-trade-dialog"
+  data-merchant-id="{{merchantId}}"
+  data-actor-id="{{actorId}}"
+  data-settlement="{{settlement}}"
+  data-barter-key="{{barterResolutionKey}}"
+  data-base-buy-markup="{{baseBuyMarkup}}"
+  data-base-sell-rate="{{baseSellRate}}"
+  data-stock-pressure-multiplier="{{stockPressureMultiplier}}"
+  data-tax-fee-factor="{{taxFeeFactor}}"
+>
+  <div class="po-merchant-trade-shell">
+    <section class="po-merchant-trade-hero">
+      <div class="po-merchant-trade-merchant">
+        <div class="po-merchant-trade-art">
+          <img src="{{merchantImg}}" alt="{{merchantName}}" />
+        </div>
+        <div class="po-merchant-trade-copy">
+          <div class="po-merchant-trade-kicker">Merchant Shop</div>
+          <h2 class="po-merchant-trade-title">{{merchantName}}</h2>
+          {{#if merchantTitle}}
+          <div class="po-merchant-trade-subtitle">{{merchantTitle}}</div>
+          {{/if}}
+          <div class="po-merchant-trade-item-meta">
+            <span class="po-pill">{{merchantTypeLabel}}</span>
+            <span class="po-pill">{{merchantDispositionLabel}}</span>
+            {{#if merchantFactionLabel}}<span class="po-pill">{{merchantFactionLabel}}</span>{{/if}}
+          </div>
+          <p class="po-merchant-trade-description">
+            <strong>{{actorName}}</strong> is shopping at <strong>{{settlementLabel}}</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div class="po-merchant-trade-stat-grid">
+        <div class="po-merchant-trade-stat-card">
+          <span>Player Funds</span>
+          <strong>{{actorFunds}}</strong>
+        </div>
+        <div class="po-merchant-trade-stat-card">
+          <span>Merchant Funds</span>
+          <strong>{{merchantFunds}}</strong>
+        </div>
+        <div class="po-merchant-trade-stat-card">
+          <span>Buy Markup</span>
+          <strong>{{buyMarkupLabel}}</strong>
+        </div>
+        <div class="po-merchant-trade-stat-card">
+          <span>Sell Rate</span>
+          <strong>{{sellRateLabel}}</strong>
+        </div>
+        {{#if stockPressureLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Stock</span>
+          <strong>{{stockPressureLabel}}</strong>
+        </div>
+        {{/if}}
+        {{#if taxFeeLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Tax</span>
+          <strong>{{taxFeeLabel}}</strong>
+        </div>
+        {{/if}}
+        {{#if liquidationModeLabel}}
+        <div class="po-merchant-trade-stat-card po-merchant-trade-stat-card--modifier">
+          <span>Mode</span>
+          <strong>{{liquidationModeLabel}}</strong>
+        </div>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="po-merchant-trade-barter {{#unless barterEnabled}}is-disabled{{/unless}}">
+      <div class="po-merchant-trade-barter-copy">
+        <div class="po-merchant-trade-section-label">Barter</div>
+        <div class="po-merchant-trade-barter-title">
+          {{#if barterEnabled}}
+          {{barterAbilityLabel}} check
+          {{else}}
+          Negotiation unavailable
+          {{/if}}
+        </div>
+        <div class="po-op-summary">{{barterHint}}</div>
+      </div>
+      <div class="po-merchant-trade-barter-actions">
+        {{#if barterEnabled}}
+        <button type="button" class="po-btn po-btn-sm" data-merchant-barter-request>{{barterButtonLabel}}</button>
+        <span class="po-merchant-trade-barter-status" data-state="{{barterStatusState}}" data-merchant-barter-status>{{barterStatusLabel}}</span>
+        {{else}}
+        <span class="po-merchant-trade-barter-status" data-state="disabled" data-merchant-barter-status>{{barterStatusLabel}}</span>
+        {{/if}}
+      </div>
+    </section>
+
+    <section class="po-merchant-trade-grid">
+      <section class="po-merchant-trade-panel">
+        <header class="po-merchant-trade-panel-head">
+          <div>
+            <div class="po-merchant-trade-section-label">Buy</div>
+            <h3>Merchant Stock</h3>
+            <div class="po-op-summary">Double-click a row or use Inspect to open item details.</div>
+          </div>
+          <div class="po-op-summary">{{buyCountLabel}}</div>
+        </header>
+        <div class="po-merchant-trade-search-wrap">
+          <input
+            class="po-input po-merchant-trade-search"
+            type="search"
+            placeholder="Filter wares…"
+            aria-label="Filter merchant wares"
+            data-merchant-search
+          />
+        </div>
+        <div class="po-merchant-trade-table-wrap">
+          <table class="po-table po-table-sm po-merchant-trade-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Stock</th>
+                <th>Unit</th>
+                <th>Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#if hasBuyRows}}
+              {{#each buyRows}}
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../merchantStockActorId}}" data-price-kind="buy" data-base-gp="{{baseGp}}" data-rarity-mult="{{rarityMult}}" data-search="{{itemName}}">
+                <td>
+                  <div class="po-merchant-trade-item">
+                    <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
+                    <div class="po-merchant-trade-item-copy">
+                      <span class="po-merchant-trade-item-name" title="{{itemName}}">{{itemName}}</span>
+                      {{#if hasMetaPills}}
+                      <div class="po-merchant-trade-item-meta">
+                        {{#each metaPills}}
+                        <span class="po-pill">{{label}}</span>
+                        {{/each}}
+                      </div>
+                      {{/if}}
+                      {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
+                    </div>
+                    <button type="button" class="po-icon-btn po-merchant-trade-open-btn" data-po-merchant-open-item="true" aria-label="Inspect {{itemName}}" title="Inspect {{itemName}}">
+                      <i class="fa-solid fa-up-right-from-square"></i>
+                    </button>
+                  </div>
+                </td>
+                <td>{{qty}}</td>
+                <td data-merchant-unit-label>{{unitLabel}}</td>
+                <td>
+                  <input
+                    class="po-input po-merchant-trade-qty"
+                    type="number"
+                    min="0"
+                    max="{{qty}}"
+                    value="0"
+                    data-merchant-buy-item="{{itemId}}"
+                    data-unit-cp="{{unitCp}}"
+                  />
+                </td>
+              </tr>
+              {{/each}}
+              {{else}}
+              <tr>
+                <td colspan="4" class="po-merchant-trade-empty">{{buyEmptyLabel}}</td>
+              </tr>
+              {{/if}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="po-merchant-trade-panel">
+        <header class="po-merchant-trade-panel-head">
+          <div>
+            <div class="po-merchant-trade-section-label">Sell</div>
+            <h3>Player Inventory</h3>
+            <div class="po-op-summary">Double-click a row or use Inspect to open item details.</div>
+          </div>
+          <div class="po-op-summary">{{sellCountLabel}}</div>
+        </header>
+        <div class="po-op-summary po-merchant-trade-accepted-types">Accepted Types: {{buybackTypeSummary}}</div>
+        <div class="po-merchant-trade-table-wrap">
+          <table class="po-table po-table-sm po-merchant-trade-table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Type</th>
+                <th>Owned</th>
+                <th>Unit</th>
+                <th>Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#if hasSellRows}}
+              {{#each sellRows}}
+              <tr data-item-id="{{itemId}}" data-source-actor-id="{{../actorId}}" data-price-kind="sell" data-base-gp="{{baseGp}}">
+                <td>
+                  <div class="po-merchant-trade-item">
+                    <img src="{{img}}" alt="{{itemName}}" title="{{itemName}}" />
+                    <div class="po-merchant-trade-item-copy">
+                      <span class="po-merchant-trade-item-name" title="{{itemName}}">{{itemName}}</span>
+                      {{#if hasMetaPills}}
+                      <div class="po-merchant-trade-item-meta">
+                        {{#each metaPills}}
+                        <span class="po-pill">{{label}}</span>
+                        {{/each}}
+                      </div>
+                      {{/if}}
+                      {{#if valueLabel}}<span class="po-merchant-trade-item-stat">{{valueLabel}}</span>{{/if}}
+                    </div>
+                    <button type="button" class="po-icon-btn po-merchant-trade-open-btn" data-po-merchant-open-item="true" aria-label="Inspect {{itemName}}" title="Inspect {{itemName}}">
+                      <i class="fa-solid fa-up-right-from-square"></i>
+                    </button>
+                  </div>
+                </td>
+                <td>{{itemTypeLabel}}</td>
+                <td>{{qty}}</td>
+                <td data-merchant-unit-label>{{unitLabel}}</td>
+                <td>
+                  <input
+                    class="po-input po-merchant-trade-qty"
+                    type="number"
+                    min="0"
+                    max="{{qty}}"
+                    value="0"
+                    data-merchant-sell-item="{{itemId}}"
+                    data-unit-cp="{{unitCp}}"
+                  />
+                </td>
+              </tr>
+              {{/each}}
+              {{else}}
+              <tr>
+                <td colspan="5" class="po-merchant-trade-empty">{{sellEmptyLabel}}</td>
+              </tr>
+              {{/if}}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+
+    <section class="po-merchant-trade-totals">
+      <div class="po-merchant-trade-total-card">
+        <span>Buy Total</span>
+        <strong data-merchant-buy-total>0.00 gp</strong>
+      </div>
+      <div class="po-merchant-trade-total-card">
+        <span>Sell Total</span>
+        <strong data-merchant-sell-total>0.00 gp</strong>
+      </div>
+      <div class="po-merchant-trade-total-card is-net" data-net-state="even">
+        <span>Net</span>
+        <strong data-merchant-net-total>0.00 gp</strong>
+      </div>
+    </section>
+
+    {{#if hasRecentTrades}}
+    <section class="po-merchant-trade-panel">
+      <header class="po-merchant-trade-panel-head">
+        <div>
+          <div class="po-merchant-trade-section-label">Recent</div>
+          <h3>Recent Transactions</h3>
+        </div>
+      </header>
+      <div class="po-merchant-trade-table-wrap">
+        <table class="po-table po-table-sm po-merchant-trade-table">
+          <thead>
+            <tr>
+              <th>Actor</th>
+              <th>When</th>
+              <th>Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each recentTrades}}
+            <tr>
+              <td>{{actorName}}</td>
+              <td>{{whenLabel}}</td>
+              <td>{{netLabel}}</td>
+            </tr>
+            {{/each}}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {{/if}}
+  </div>
+</div>

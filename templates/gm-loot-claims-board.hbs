@@ -137,12 +137,9 @@
         {{/if}}
       </div>
       <div class="po-loot-claims-quick-actions">
-        <div class="po-op-summary"><strong>Quick Actions:</strong> Use the selected destination for every button below.</div>
+        <div class="po-op-summary"><strong>Quick Actions:</strong> Deposit everything to the selected destination, then use the assignment tools if needed.</div>
         <div class="po-op-action-row">
-        <button type="button" class="po-btn po-btn-sm" data-action="split-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSplitCurrency}}disabled{{/unless}}>Split Currency</button>
-        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-loot-currency" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canClaimCurrency}}disabled{{/unless}}>Deposit Currency</button>
-        <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot-items" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canDepositAllItems}}disabled{{/unless}}>Deposit All Items</button>
-        <button type="button" class="po-btn po-btn-sm" data-action="claim-all-loot" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSendEverything}}disabled{{/unless}}>Send Everything</button>
+        <button type="button" class="po-btn po-btn-sm is-primary" data-action="claim-all-loot" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canSendEverything}}disabled{{/unless}}>Deposit All</button>
         <button type="button" class="po-btn po-btn-sm" data-action="auto-assign-by-vouch" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canAutoAssignByVouch}}disabled{{/unless}}>Assign by Vouch</button>
         <button type="button" class="po-btn po-btn-sm" data-action="auto-split-items" data-claim-run-id="{{lootClaims.selectedRunId}}" {{#unless lootClaims.canAutoSplitItems}}disabled{{/unless}}>Even-split Items</button>
         </div>

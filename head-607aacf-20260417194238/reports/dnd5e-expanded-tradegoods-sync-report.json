@@ -1,0 +1,154 @@
+{
+  "generatedAt": "2026-02-27T01:20:48.096Z",
+  "writeMode": true,
+  "summary": {
+    "sourcePath": "C:\\Users\\Kyle\\AppData\\Local\\FoundryVTT\\Data\\systems\\dnd5e\\packs\\tradegoods",
+    "manifestPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db",
+    "sourceItemCount": 23,
+    "manifestItemCountBefore": 1302,
+    "missingFromManifestCount": 23,
+    "balancedMode": true,
+    "deriveSpellPricing": false,
+    "sourceCollection": "dnd5e.tradegoods",
+    "allowedTypes": [
+      "loot",
+      "consumable",
+      "equipment",
+      "tool",
+      "container",
+      "backpack",
+      "weapon",
+      "armor",
+      "ammunition",
+      "trinket"
+    ],
+    "skippedByBalance": 0,
+    "importedCount": 23,
+    "taggedItems": 23,
+    "itemMidiDefaults": 161,
+    "itemDaeDefaults": 207,
+    "itemMidiPropertiesDefaults": 253,
+    "effectCount": 14,
+    "effectMidiDefaults": 0,
+    "effectDaeDefaults": 0,
+    "manifestItemCountAfter": 1325
+  },
+  "importedItems": [
+    {
+      "id": "8SQ7vyE6gevpfJvn",
+      "name": "Pepper",
+      "type": "loot"
+    },
+    {
+      "id": "9t5X9HG9ou6YMSdJ",
+      "name": "Silver",
+      "type": "loot"
+    },
+    {
+      "id": "CrcfT5jwcJTPTsfQ",
+      "name": "Flour",
+      "type": "loot"
+    },
+    {
+      "id": "Eyl9QYZcM9CYIqbA",
+      "name": "Platinum",
+      "type": "loot"
+    },
+    {
+      "id": "Gh1JxTlM9aRGNrUH",
+      "name": "Linen",
+      "type": "loot"
+    },
+    {
+      "id": "HHh7Ihuk8ToxJzQX",
+      "name": "Gold",
+      "type": "loot"
+    },
+    {
+      "id": "Mrmkw4uaWX6UKpbn",
+      "name": "Saffron",
+      "type": "loot"
+    },
+    {
+      "id": "P29EeDJQrJJXOIuK",
+      "name": "Sheep",
+      "type": "loot"
+    },
+    {
+      "id": "Pn04ySJYcG06Jc4a",
+      "name": "Cinnamon",
+      "type": "loot"
+    },
+    {
+      "id": "V3uxNwciT4Ln7S4k",
+      "name": "Iron",
+      "type": "loot"
+    },
+    {
+      "id": "VcHmykfFBurKzCO6",
+      "name": "Ginger",
+      "type": "loot"
+    },
+    {
+      "id": "W6pJovmnVyjbk0fA",
+      "name": "Cow",
+      "type": "loot"
+    },
+    {
+      "id": "WCbKUQcahzQQX0pL",
+      "name": "Ox",
+      "type": "loot"
+    },
+    {
+      "id": "WdPAGBRUWYaS0TNQ",
+      "name": "Wheat",
+      "type": "loot"
+    },
+    {
+      "id": "YJ2pBio6uEg5vhgN",
+      "name": "Pig",
+      "type": "loot"
+    },
+    {
+      "id": "ZcAgZHJ1hhqbedLF",
+      "name": "Cotton",
+      "type": "loot"
+    },
+    {
+      "id": "aXWzDW0huOa0WuIO",
+      "name": "Copper",
+      "type": "loot"
+    },
+    {
+      "id": "eDVTXE3qv28DwvPl",
+      "name": "Salt",
+      "type": "loot"
+    },
+    {
+      "id": "jad5oFMDv21mPvJP",
+      "name": "Silk",
+      "type": "loot"
+    },
+    {
+      "id": "l1YRv9sdhQPaSQop",
+      "name": "Chicken",
+      "type": "loot"
+    },
+    {
+      "id": "mFJkwdzb9IpLC3Ip",
+      "name": "Canvas",
+      "type": "loot"
+    },
+    {
+      "id": "pMj0mA1wyEhoO6zP",
+      "name": "Goat",
+      "type": "loot"
+    },
+    {
+      "id": "u753EokyA4vjksle",
+      "name": "Cloves",
+      "type": "loot"
+    }
+  ],
+  "backupPath": "D:\\DND Stuff\\Modules\\party-operations\\packs\\party-operations-loot-manifest.db.pre-dnd5e-sync.bak"
+}

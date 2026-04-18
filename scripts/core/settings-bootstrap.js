@@ -1,3 +1,10 @@
+import {
+  buildPartyOperationsDataSettingsConfig,
+  buildPartyOperationsFeatureSettingsConfig,
+  buildPartyOperationsUiSettingsConfig,
+  createPartyOperationsSettingsChangeHandler
+} from "./settings-registration.js";
+
 export function createPartyOperationsSettingsBootstrap({
   moduleId = "party-operations",
   settings = {},
@@ -43,8 +50,42 @@ export function createPartyOperationsSettingsBootstrap({
   openMainTab = () => {},
   gameRef = globalThis.game ?? {}
 } = {}) {
+  const dataSettingsConfig = buildPartyOperationsDataSettingsConfig({
+    moduleId,
+    settings,
+    buildDefaultRestWatchState,
+    buildDefaultMarchingOrderState,
+    buildDefaultActivityState,
+    buildDefaultOperationsLedger,
+    buildDefaultInjuryRecoveryState,
+    buildDefaultLootSourceConfig,
+    buildDefaultAudioLibraryCatalog,
+    buildDefaultAudioLibraryHiddenTrackStore,
+    buildDefaultAudioMixPresetStore
+  });
+
+  const featureSettingsConfig = buildPartyOperationsFeatureSettingsConfig({
+    moduleId,
+    settings,
+    areAdvancedSettingsEnabled,
+    autoInventoryPackIndexCache,
+    autoInventoryDefaults,
+    gatherDefaults,
+    gatherTravelChoices,
+    launcherPlacements,
+    journalVisibilityModes,
+    sessionSummaryRangeOptions,
+    inventoryHookModes,
+    ensureLauncherUi,
+    resetFloatingLauncherPosition,
+    refreshOpenApps,
+    refreshScopeKeys,
+    openRestWatchUiForCurrentUser,
+    openMainTab
+  });
+
   function registerSettingsUi(onSettingsChanged = () => {}) {
-    registerPartyOpsUiSettings({
+    registerPartyOpsUiSettings(buildPartyOperationsUiSettingsConfig({
       moduleId,
       settings,
       settingsHubType,
@@ -60,7 +101,7 @@ export function createPartyOperationsSettingsBootstrap({
       isPartyOpsConfigNormalizationInProgress,
       setPartyOpsConfigNormalizationInProgress,
       onSettingsChanged
-    });
+    }));
   }
 
   function hasRegisteredSettingsNamespace(targetModuleId = moduleId) {
@@ -76,47 +117,17 @@ export function createPartyOperationsSettingsBootstrap({
   function ensureSettingsRegistered() {
     if (hasRegisteredSettingsNamespace(moduleId)) return false;
 
-    registerSettingsUi((key) => {
-      if (key === settings.DEBUG_ENABLED) return;
-      const scopes = getRefreshScopesForSettingKey(key);
-      refreshOpenApps({ scopes });
-    });
-
-    registerPartyOpsDataSettings({
-      moduleId,
+    registerSettingsUi(createPartyOperationsSettingsChangeHandler({
       settings,
-      buildDefaultRestWatchState,
-      buildDefaultMarchingOrderState,
-      buildDefaultActivityState,
-      buildDefaultOperationsLedger,
-      buildDefaultInjuryRecoveryState,
-      buildDefaultLootSourceConfig,
-      buildDefaultAudioLibraryCatalog,
-      buildDefaultAudioLibraryHiddenTrackStore,
-      buildDefaultAudioMixPresetStore
-    });
+      getRefreshScopesForSettingKey,
+      refreshOpenApps
+    }));
+
+    registerPartyOpsDataSettings(dataSettingsConfig);
 
     syncAudioLibraryDraftFromSettings();
 
-    registerPartyOpsFeatureSettings({
-      moduleId,
-      settings,
-      areAdvancedSettingsEnabled,
-      autoInventoryPackIndexCache,
-      autoInventoryDefaults,
-      gatherDefaults,
-      gatherTravelChoices,
-      launcherPlacements,
-      journalVisibilityModes,
-      sessionSummaryRangeOptions,
-      inventoryHookModes,
-      ensureLauncherUi,
-      resetFloatingLauncherPosition,
-      refreshOpenApps,
-      refreshScopeKeys,
-      openRestWatchUiForCurrentUser,
-      openMainTab
-    });
+    registerPartyOpsFeatureSettings(featureSettingsConfig);
 
     return true;
   }

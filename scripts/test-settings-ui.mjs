@@ -44,6 +44,7 @@ try {
       LOOT_HORDE_UNCOMMON_PLUS_CHANCE: "lootHordeUncommonPlusChance",
       REST_AUTOMATION_ENABLED: "restAutomationEnabled",
       MARCHING_ORDER_LOCK_PLAYERS: "marchingOrderLockPlayers",
+      FORMATION_MAINTENANCE_REMINDER_VISIBILITY: "formationMaintenanceReminderVisibility",
       PLAYER_HUB_MODE: "playerHubMode",
       UI_BUTTON_SOUNDS_ENABLED: "uiButtonSoundsEnabled",
       UI_BUTTON_SOUND_PATH: "uiButtonSoundPath",

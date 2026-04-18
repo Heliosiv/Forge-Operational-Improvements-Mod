@@ -130,6 +130,25 @@ export function registerPartyOpsUiSettings({
     onChange: (value) => notifySettingChanged(settings.MARCHING_ORDER_LOCK_PLAYERS, Boolean(value))
   });
 
+  game.settings.register(moduleId, settings.FORMATION_MAINTENANCE_REMINDER_VISIBILITY, {
+    name: "Formation Maintenance Reminder Audience",
+    hint: "Choose whether combat round formation-maintenance reminder chat cards are visible to everyone or only GMs.",
+    scope: "world",
+    config: true,
+    type: String,
+    choices: {
+      public: "Public (table visible)",
+      "gm-only": "GM Only"
+    },
+    default: "public",
+    onChange: (value) => {
+      const normalized = String(value ?? "public").trim().toLowerCase() === "gm-only"
+        ? "gm-only"
+        : "public";
+      notifySettingChanged(settings.FORMATION_MAINTENANCE_REMINDER_VISIBILITY, normalized);
+    }
+  });
+
   game.settings.register(moduleId, settings.PLAYER_HUB_MODE, {
     name: "Player Hub Mode",
     hint: "Choose the player-facing Party Operations UI: streamlined hub or full classic layout.",

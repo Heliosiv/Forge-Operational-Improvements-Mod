@@ -7,94 +7,70 @@
  * 4. Multi-track progression foundation is in place
  */
 
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, "..");
+const verbose = process.env.PARTY_OPS_VERBOSE_TESTS === "1";
 
-console.log("🧪 Testing Deep Design Corrections...\n");
+function log(message) {
+  if (verbose) process.stdout.write(`${message}\n`);
+}
 
-// Test 1: Check GM reward controls
-console.log("✓ Test 1: GM Reward Controls");
 const partyOpsContent = readFileSync(
   join(rootDir, "scripts", "party-operations.js"),
   "utf-8"
 );
 
-if (partyOpsContent.includes("showSocialContract: selectedPendingIsBrowsing,")) {
-  console.log("  ✅ Social contract control enabled based on browsing action");
-} else {
-  console.log("  ❌ Social contract control not found");
-}
-
-if (partyOpsContent.includes("showItemRewards: selectedPendingIsBrowsing || selectedPendingIsCrafting,")) {
-  console.log("  ✅ Item rewards control enabled for browsing and crafting");
-} else {
-  console.log("  ❌ Item rewards control not found");
-}
-
-// Test 2: Check new profession identities
-console.log("\n✓ Test 2: New Profession Identities");
 const downtimeDataContent = readFileSync(
   join(rootDir, "scripts", "features", "downtime-phase1-data.js"),
   "utf-8"
 );
 
-const professions = ["street-thief", "performer", "merchant-broker"];
-let professionCount = 0;
+log("Checking GM reward controls");
+assert(
+  partyOpsContent.includes("showSocialContract: selectedPendingIsBrowsing,"),
+  "Social contract control should be enabled based on browsing action."
+);
+assert(
+  partyOpsContent.includes("showItemRewards: selectedPendingIsBrowsing || selectedPendingIsCrafting,"),
+  "Item rewards control should be enabled for browsing and crafting."
+);
 
-professions.forEach((prof) => {
-  if (downtimeDataContent.includes(`"${prof}"`)) {
-    console.log(`  ✅ ${prof.replace("-", " ")} profession added`);
-    professionCount++;
-  }
-});
-
-if (professionCount === 3) {
-  console.log("  ✅ All three new professions exist with balanced rates");
+log("Checking profession identities");
+for (const profession of ["street-thief", "performer", "merchant-broker"]) {
+  assert(
+    downtimeDataContent.includes(`"${profession}"`),
+    `Expected profession ${profession} to exist.`
+  );
 }
 
-// Test 3: Check complication auto-assignment
-console.log("\n✓ Test 3: Complication Auto-Assignment");
+log("Checking complication auto-assignment");
+assert(
+  partyOpsContent.includes("function getRandomDowntimeComplication(actionKey = \"\", riskLevel = \"standard\")"),
+  "Expected getRandomDowntimeComplication to accept a riskLevel parameter."
+);
+assert(
+  partyOpsContent.includes("shouldRollComplication = riskLevel === \"high\""),
+  "Expected high risk rolls to auto-trigger complications."
+);
+assert(
+  partyOpsContent.includes("complication,") && partyOpsContent.includes("const complication = shouldRollComplication"),
+  "Expected complication field to be auto-populated in generateDowntimeResult."
+);
 
-if (partyOpsContent.includes("function getRandomDowntimeComplication(actionKey = \"\", riskLevel = \"standard\")")) {
-  console.log("  ✅ getRandomDowntimeComplication accepts riskLevel parameter");
+log("Checking multi-track progression foundation");
+for (const marker of [
+  "getDowntimeActiveEntry",
+  "getDowntimeEntryQueue",
+  "setDowntimeActiveEntry",
+  "getDowntimeEntryHoursInvested",
+  "Future Multi-Track Model (v2.0)"
+]) {
+  assert(partyOpsContent.includes(marker), `Expected ${marker} to exist.`);
 }
 
-if (partyOpsContent.includes("shouldRollComplication = riskLevel === \"high\"")) {
-  console.log("  ✅ Complications auto-trigger on high risk rolls");
-}
-
-if (partyOpsContent.includes("complication,") && 
-    partyOpsContent.includes("const complication = shouldRollComplication")) {
-  console.log("  ✅ Complication field auto-populated in generateDowntimeResult");
-}
-
-// Test 4: Check multi-track progression foundation
-console.log("\n✓ Test 4: Multi-Track Progression Foundation");
-
-if (partyOpsContent.includes("getDowntimeActiveEntry")) {
-  console.log("  ✅ getDowntimeActiveEntry accessor added");
-}
-
-if (partyOpsContent.includes("getDowntimeEntryQueue")) {
-  console.log("  ✅ getDowntimeEntryQueue accessor added");
-}
-
-if (partyOpsContent.includes("setDowntimeActiveEntry")) {
-  console.log("  ✅ setDowntimeActiveEntry setter added");
-}
-
-if (partyOpsContent.includes("getDowntimeEntryHoursInvested")) {
-  console.log("  ✅ getDowntimeEntryHoursInvested accessor added");
-}
-
-if (partyOpsContent.includes("Future Multi-Track Model (v2.0)")) {
-  console.log("  ✅ Multi-track progression v2.0 architecture documented");
-}
-
-console.log("\n" + "=".repeat(60));
-console.log("🎉 All deep design corrections validated!");
-console.log("=".repeat(60));
+process.stdout.write("deep design corrections validation passed\n");

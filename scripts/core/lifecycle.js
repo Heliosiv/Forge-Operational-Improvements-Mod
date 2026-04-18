@@ -1,4 +1,5 @@
 import { createModulePerfTracker } from "./perf.js";
+import { createPartyOperationsSettingsChangeHandler } from "./settings-registration.js";
 
 function warn(logger, moduleId, message, error) {
   if (typeof logger?.warn === "function") {
@@ -45,6 +46,18 @@ export function runPartyOperationsInit({
   moduleId = "party-operations"
 } = {}) {
   return perfTracker.time("run-init", () => {
+    const onSettingsChanged = createPartyOperationsSettingsChangeHandler({
+      settings,
+      getRefreshScopesForSettingKey,
+      refreshOpenApps,
+      onSettingsChanged: (key) => {
+        perfTracker.increment("settings.changed", 1, { key: String(key ?? "") });
+      },
+      onRefreshOpenApps: (key) => {
+        perfTracker.increment("settings.refresh-open-apps", 1, { key: String(key ?? "") });
+      }
+    });
+
     invokeSafely(logger, moduleId, "failed to register module API", registerPartyOperationsApi);
     invokeSafely(logger, moduleId, "failed to register feature modules", registerFeatureModules);
 
@@ -56,13 +69,7 @@ export function runPartyOperationsInit({
     }
 
     invokeSafely(logger, moduleId, "failed to register UI settings", () => {
-      registerPartyOpsSettings?.((key) => {
-        perfTracker.increment("settings.changed", 1, { key: String(key ?? "") });
-        if (key === settings?.DEBUG_ENABLED) return;
-        const scopes = getRefreshScopesForSettingKey?.(key);
-        perfTracker.increment("settings.refresh-open-apps", 1, { key: String(key ?? "") });
-        refreshOpenApps?.({ scopes });
-      });
+      registerPartyOpsSettings?.(onSettingsChanged);
     });
 
     invokeSafely(logger, moduleId, "failed to register data settings", () => {

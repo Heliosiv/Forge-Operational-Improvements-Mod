@@ -4,20 +4,28 @@ export function createGmQuickWeatherDraftStorage({
 } = {}) {
   const getGmQuickWeatherDraftStorageKey = () => `po-gm-quick-weather-draft-${gameRef?.user?.id ?? "anon"}`;
 
+  const normalizeBoundedNumber = (value, { fallback = 0, min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY, round = false } = {}) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return fallback;
+    const bounded = Math.max(min, Math.min(max, numeric));
+    return round ? Math.floor(bounded) : bounded;
+  };
+
+  const normalizeWeatherDraft = (draft = {}) => ({
+    selectedKey: String(draft?.selectedKey ?? "").trim(),
+    darkness: normalizeBoundedNumber(draft?.darkness, { fallback: 0, min: 0, max: 1 }),
+    visibilityModifier: normalizeBoundedNumber(draft?.visibilityModifier, { fallback: 0, min: -5, max: 5, round: true }),
+    note: String(draft?.note ?? ""),
+    presetName: String(draft?.presetName ?? "")
+  });
+
   const getGmQuickWeatherDraft = () => {
     const raw = storage?.getItem?.(getGmQuickWeatherDraftStorageKey());
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object") return null;
-      return {
-        selectedKey: String(parsed.selectedKey ?? "").trim(),
-        darkness: Number(parsed.darkness ?? 0),
-        visibilityModifier: Number(parsed.visibilityModifier ?? 0),
-        note: String(parsed.note ?? ""),
-        presetName: String(parsed.presetName ?? ""),
-        daeChanges: Array.isArray(parsed.daeChanges) ? parsed.daeChanges : []
-      };
+      return normalizeWeatherDraft(parsed);
     } catch {
       return null;
     }
@@ -28,14 +36,7 @@ export function createGmQuickWeatherDraftStorage({
       storage?.removeItem?.(getGmQuickWeatherDraftStorageKey());
       return;
     }
-    storage?.setItem?.(getGmQuickWeatherDraftStorageKey(), JSON.stringify({
-      selectedKey: String(draft.selectedKey ?? "").trim(),
-      darkness: Number(draft.darkness ?? 0),
-      visibilityModifier: Number(draft.visibilityModifier ?? 0),
-      note: String(draft.note ?? ""),
-      presetName: String(draft.presetName ?? ""),
-      daeChanges: Array.isArray(draft.daeChanges) ? draft.daeChanges : []
-    }));
+    storage?.setItem?.(getGmQuickWeatherDraftStorageKey(), JSON.stringify(normalizeWeatherDraft(draft)));
   };
 
   return Object.freeze({

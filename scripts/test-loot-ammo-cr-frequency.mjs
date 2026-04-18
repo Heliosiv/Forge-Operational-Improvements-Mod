@@ -1,6 +1,9 @@
+import assert from "node:assert/strict";
+
 import { buildLootCohesiveBundle } from "./features/loot-selection-cohesion.js";
 
 const TRIALS = 10000;
+const verbose = process.env.PARTY_OPS_VERBOSE_TESTS === "1";
 
 const CHALLENGE_LABELS = {
   low: "CR 0-4",
@@ -8,6 +11,10 @@ const CHALLENGE_LABELS = {
   high: "CR 11-16",
   epic: "CR 17+"
 };
+
+function log(message = "") {
+  if (verbose) process.stdout.write(`${message}\n`);
+}
 
 function createSeededRandom(seed = 1) {
   let state = Math.max(1, Math.floor(seed) || 1) % 2147483647;
@@ -125,42 +132,47 @@ function relativeSelectionIndex(challenge = "low", tier = 0) {
   return rarityWeight * availabilityWeight;
 }
 
-function printSection(title = "") {
-  process.stdout.write(`\n=== ${title} ===\n`);
+function logSample(sample) {
+  log(`${CHALLENGE_LABELS[sample.challenge]} +${sample.tier} | avg=${sample.avg.toFixed(2)} | nonZero=${sample.nonZeroRate.toFixed(1)}% | ${sample.top}`);
 }
 
-function run() {
-  printSection("Ammo stack Monte Carlo (10k trials each)");
-  process.stdout.write("Format: tier | avg stack | non-zero rate | top quantities(freq)\n");
+const lowPlusZero = sampleAmmoQuantity("low", 0, "medium", TRIALS);
+const lowPlusOne = sampleAmmoQuantity("low", 1, "medium", TRIALS);
+const lowPlusTwo = sampleAmmoQuantity("low", 2, "medium", TRIALS);
+const lowPlusThree = sampleAmmoQuantity("low", 3, "medium", TRIALS);
+const highPlusZero = sampleAmmoQuantity("high", 0, "medium", TRIALS);
+const highPlusOne = sampleAmmoQuantity("high", 1, "medium", TRIALS);
+const highPlusTwo = sampleAmmoQuantity("high", 2, "medium", TRIALS);
+const highPlusThree = sampleAmmoQuantity("high", 3, "medium", TRIALS);
 
-  for (const challenge of ["low", "high"]) {
-    process.stdout.write(`\n${CHALLENGE_LABELS[challenge]} (${challenge})\n`);
-    for (const tier of [0, 1, 2, 3]) {
-      const sample = sampleAmmoQuantity(challenge, tier, "medium", TRIALS);
-      process.stdout.write(
-        `+${tier} | avg=${sample.avg.toFixed(2)} | nonZero=${sample.nonZeroRate.toFixed(1)}% | ${sample.top}\n`
-      );
-    }
-  }
-
-  printSection("Relative availability index (higher = more likely to be picked)");
-  process.stdout.write("Index = horde rarityWeight * challengeAvailabilityWeight for ammo\n");
-
-  for (const challenge of ["low", "high"]) {
-    const row = [0, 1, 2, 3]
-      .map((tier) => `+${tier}:${relativeSelectionIndex(challenge, tier).toFixed(4)}`)
-      .join("  ");
-    process.stdout.write(`${CHALLENGE_LABELS[challenge]} -> ${row}\n`);
-  }
-
-  printSection("Low CR target check");
-  const lowPlusOne = sampleAmmoQuantity("low", 1, "medium", TRIALS);
-  const lowPlusTwo = sampleAmmoQuantity("low", 2, "medium", TRIALS);
-  const lowPlusThree = sampleAmmoQuantity("low", 3, "medium", TRIALS);
-
-  process.stdout.write(`CR 0-4 +1 expected around 1-3 stacks: observed avg ${lowPlusOne.avg.toFixed(2)}\n`);
-  process.stdout.write(`CR 0-4 +2 expected near 0-1: observed avg ${lowPlusTwo.avg.toFixed(2)}, nonZero ${lowPlusTwo.nonZeroRate.toFixed(1)}%\n`);
-  process.stdout.write(`CR 0-4 +3 expected 0: observed avg ${lowPlusThree.avg.toFixed(2)}, nonZero ${lowPlusThree.nonZeroRate.toFixed(1)}%\n`);
+for (const sample of [
+  lowPlusZero,
+  lowPlusOne,
+  lowPlusTwo,
+  lowPlusThree,
+  highPlusZero,
+  highPlusOne,
+  highPlusTwo,
+  highPlusThree
+]) {
+  logSample(sample);
 }
 
-run();
+assert(lowPlusZero.avg >= 4 && lowPlusZero.avg <= 6, `Expected low CR +0 ammo average near 4-6, got ${lowPlusZero.avg.toFixed(2)}.`);
+assert(lowPlusOne.avg >= 1 && lowPlusOne.avg <= 3, `Expected low CR +1 ammo average near 1-3, got ${lowPlusOne.avg.toFixed(2)}.`);
+assert(lowPlusTwo.avg >= 0 && lowPlusTwo.avg <= 1, `Expected low CR +2 ammo average near 0-1, got ${lowPlusTwo.avg.toFixed(2)}.`);
+assert.equal(lowPlusThree.avg, 0, "Expected low CR +3 ammo average to stay at 0.");
+assert.equal(lowPlusThree.nonZeroRate, 0, "Expected low CR +3 ammo to have a 0% non-zero rate.");
+assert(lowPlusTwo.nonZeroRate <= 25, `Expected low CR +2 ammo non-zero rate to stay <= 25%, got ${lowPlusTwo.nonZeroRate.toFixed(1)}%.`);
+
+assert(highPlusZero.avg > highPlusOne.avg, "Expected high CR +0 ammo average to exceed +1.");
+assert(highPlusOne.avg > highPlusTwo.avg, "Expected high CR +1 ammo average to exceed +2.");
+assert(highPlusTwo.avg > highPlusThree.avg, "Expected high CR +2 ammo average to exceed +3.");
+assert(highPlusThree.avg > 0, "Expected high CR +3 ammo average to remain above 0.");
+
+assert.equal(relativeSelectionIndex("low", 2), 0, "Expected low CR +2 ammo selection index to be 0.");
+assert.equal(relativeSelectionIndex("low", 3), 0, "Expected low CR +3 ammo selection index to be 0.");
+assert(relativeSelectionIndex("high", 1) > relativeSelectionIndex("high", 2), "Expected high CR +1 ammo selection index to exceed +2.");
+assert(relativeSelectionIndex("high", 2) > relativeSelectionIndex("high", 3), "Expected high CR +2 ammo selection index to exceed +3.");
+
+process.stdout.write("loot ammo cr frequency validation passed\n");

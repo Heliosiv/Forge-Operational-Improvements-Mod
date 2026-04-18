@@ -140,4 +140,18 @@ function buildBaseHandlers(overrides = {}) {
   assert.deepEqual(calls.warns, ["Loot claim failed (Aria): No share available."]);
 }
 
+{
+  const { handlers, calls } = buildBaseHandlers({
+    resolveRequester: () => null
+  });
+  await handlers.applyPlayerMerchantTradeRequest({ userId: "user-1", merchantId: "merchant-1", actorId: "actor-1" });
+  assert.deepEqual(calls.warns, ["Merchant trade failed: unable to resolve an active player requester."]);
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers();
+  await handlers.applyPlayerLootCurrencySplitRequest({ userId: "user-1", actorIds: [], runId: "run-1" });
+  assert.deepEqual(calls.warns, ["Currency split failed: select at least one destination actor."]);
+}
+
 process.stdout.write("player request handlers validation passed\n");

@@ -34,14 +34,11 @@ export function createGmEnvironmentPageApp(deps) {
     requestOperationalEnvironmentChecks,
     showOperationalEnvironmentBrief,
     gmQuickLogCurrentWeather,
-    gmQuickAddWeatherDaeChange,
-    gmQuickRemoveWeatherDaeChange,
     gmQuickSaveWeatherPreset,
     gmQuickDeleteWeatherPreset,
     gmQuickSubmitWeather,
     gmQuickSelectWeatherPreset,
     gmQuickUpdateWeatherDraftField,
-    gmQuickApplyWeatherDaeKeyPreset,
     loadWeatherLogToQuickPanel,
     removeWeatherLogById,
     openGmPanelByKey
@@ -135,17 +132,12 @@ export function createGmEnvironmentPageApp(deps) {
           await showOperationalEnvironmentBrief();
         },
         "gm-quick-log-weather": rerenderAlways(() => gmQuickLogCurrentWeather()),
-        "gm-quick-weather-add-dae": rerenderAlways(gmQuickAddWeatherDaeChange),
-        "gm-quick-weather-remove-dae": rerenderAlways(gmQuickRemoveWeatherDaeChange),
         "gm-quick-weather-save-preset": rerenderAlways(gmQuickSaveWeatherPreset),
         "gm-quick-weather-delete-preset": rerenderAlways(gmQuickDeleteWeatherPreset),
         "gm-quick-submit-weather": rerenderAlways(gmQuickSubmitWeather),
         "gm-quick-weather-select": rerenderAlways(gmQuickSelectWeatherPreset),
         "gm-quick-weather-set": async (actionElement) => {
           gmQuickUpdateWeatherDraftField(actionElement);
-        },
-        "gm-quick-weather-dae-key-preset": async (actionElement) => {
-          gmQuickApplyWeatherDaeKeyPreset(actionElement);
         },
         "load-weather-log": rerenderIfTruthy((actionElement) => loadWeatherLogToQuickPanel(actionElement?.dataset?.logId)),
         "remove-weather-log": rerenderIfTruthy((actionElement) => removeWeatherLogById(actionElement?.dataset?.logId))

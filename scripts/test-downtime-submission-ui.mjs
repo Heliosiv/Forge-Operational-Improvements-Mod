@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 
 const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
+const gmShellStyles = readFileSync(new URL("../styles/po-gm-shell.css", import.meta.url), "utf8");
 const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");
 const playerDowntimeTemplate = readFileSync(new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url), "utf8");
 
@@ -28,6 +29,66 @@ assert.match(
   gmDowntimeTemplate,
   /\{\{#if downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
   "GM downtime template should only show the crafting catalog while crafting is selected."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /data-page-action-status role="status" aria-live="polite" aria-atomic="true"/,
+  "GM downtime page status banner should expose atomic polite status semantics for assistive tech."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /po-downtime-publication-status \{\{#if downtime\.publication\.isPublished\}\}is-good\{\{else\}\}is-warn\{\{\/if\}\}/,
+  "GM downtime publication status callout should reflect published vs blocked states."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /Sort Entries<\/span>[\s\S]*data-action="set-downtime-entry-sort" aria-label="Sort submitted downtime entries" title="Sort submitted downtime entries"/,
+  "Submitted entries sort control should include explicit label and title affordances."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /Drag queued rows to reorder, or use Up\/Down for precise positioning\./,
+  "Queued plan section should include a clear reorder hint for drag-and-button interactions."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /Bulk actions immediately apply outcomes and can update multiple records at once\./,
+  "Resolver controls should warn that bulk actions affect multiple records."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /class="po-op-action-row po-downtime-resolver-actions"/,
+  "Resolver controls should expose a dedicated resolver action group wrapper."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /class="po-btn po-btn-sm po-downtime-bulk-action"[\s\S]*data-action="auto-resolve-all-downtime-entries"/,
+  "Resolver action row should mark all-pending auto-resolve as a dedicated bulk action."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /class="po-op-action-row po-downtime-maintenance-actions"[\s\S]*data-action="clear-downtime-results"/,
+  "Resolved log maintenance controls should be grouped in a dedicated maintenance action row."
+);
+
+assert.match(
+  gmDowntimeTemplate,
+  /data-action="clear-downtime-log" data-log-id="\{\{logId\}\}" title="Permanently remove this resolved log" aria-label="Permanently remove this resolved log"/,
+  "Resolved log clear action should include explicit destructive-action affordances."
+);
+
+assert.match(
+  gmShellStyles,
+  /\.po-window\[data-tool="gm-downtime"\] :is\(\.po-btn, \.po-select, \.po-input, \.po-icon-btn\):focus-visible/,
+  "GM downtime styles should include a focus-visible treatment for keyboard navigation."
 );
 
 assert.doesNotMatch(

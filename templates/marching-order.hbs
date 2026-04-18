@@ -54,26 +54,13 @@
   <div class="po-body">
   <div class="po-primary-shell">
   <section id="po-march-overview" class="po-overview" aria-label="Marching status">
-    <article class="po-overview-card">
-      <span>Assigned Actors</span>
-      <strong>{{overview.totalAssigned}}</strong>
+    {{#each overview.cards}}
+    <article class="po-overview-card {{toneClass}}">
+      <span>{{label}}</span>
+      <strong>{{value}}</strong>
+      <div class="po-overview-card-detail">{{detail}}</div>
     </article>
-    <article class="po-overview-card">
-      <span>Front / Middle / Rear</span>
-      <strong>{{overview.frontCount}} / {{overview.middleCount}} / {{overview.rearCount}}</strong>
-    </article>
-    <article class="po-overview-card">
-      <span>Formation</span>
-      <strong>{{overview.formationLabel}}</strong>
-    </article>
-    <article class="po-overview-card">
-      <span>Formation State</span>
-      <strong>{{overview.formationStateLabel}}</strong>
-    </article>
-    <article class="po-overview-card">
-      <span>Light Sources</span>
-      <strong>{{overview.lightSources}}</strong>
-    </article>
+    {{/each}}
   </section>
 
   <section class="po-content">
@@ -182,13 +169,45 @@
             </div>
             <div class="po-march-formation-actions">
               {{#if isGM}}
-              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Run Doctrine Check</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Roll Joint Leadership</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-rally-check">Rally Check</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-leaders-command" {{#unless formationSummary.canUseLeadersCommand}}disabled{{/unless}}>Leader's Command</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-formation-drop">Drop Formation</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="doctrine-trigger-theater">Mark Theater Pressure</button>
               {{/if}}
             </div>
           </div>
 
           <div class="po-march-formation-layout">
             <div class="po-march-formation-main">
+              <div class="po-march-formation-detail-card po-march-status-card {{formationSummary.statusToneClass}}">
+                <div class="po-march-status-card-head">
+                  <div>
+                    <div class="po-watch-total-label">Formation Health</div>
+                    <div class="po-march-status-headline">{{formationSummary.statusHeadline}}</div>
+                    <div class="po-op-summary">{{formationSummary.statusDetail}}</div>
+                  </div>
+                  <div class="po-pill">{{formationSummary.recoveryRecommendedActionLabel}}</div>
+                </div>
+                <div class="po-march-health-meter" style="{{formationSummary.formationHealthStyle}}" aria-label="Formation health {{formationSummary.formationHealthPercent}} percent">
+                  <span class="po-march-health-meter-bar"></span>
+                </div>
+                <div class="po-march-status-grid">
+                  <div class="po-march-status-stat">
+                    <span>Health</span>
+                    <strong>{{formationSummary.formationHealthPercent}}%</strong>
+                  </div>
+                  <div class="po-march-status-stat">
+                    <span>Trend</span>
+                    <strong>{{formationSummary.healthTrendIndicator}}</strong>
+                  </div>
+                  <div class="po-march-status-stat">
+                    <span>Checks</span>
+                    <strong>{{#if formationSummary.doctrineChecksActive}}Active{{else}}Inactive{{/if}}</strong>
+                  </div>
+                </div>
+              </div>
+
               <div class="po-march-formation-detail-card">
                 <div class="po-watch-total-label">Summary</div>
                 <div class="po-op-summary">{{formationSummary.summary}}</div>
@@ -198,6 +217,50 @@
                 <div class="po-op-summary"><strong>Pending Trigger:</strong> {{formationSummary.pendingTriggerLabel}}</div>
                 {{/if}}
               </div>
+
+              {{#if formationSummary.leadershipCheckDue}}
+              <div class="po-march-formation-detail-card is-invalid">
+                <div class="po-watch-total-label">Leadership Check Due</div>
+                <div class="po-op-summary is-warn"><strong>Joint Leadership needed:</strong> roll now to maintain formation bonuses this round/scene.</div>
+                {{#if formationSummary.pendingTriggerLabel}}
+                <div class="po-op-summary is-warn">Triggered by {{formationSummary.pendingTriggerLabel}}.</div>
+                {{/if}}
+              </div>
+              {{/if}}
+
+              {{#if formationSummary.recoveryGuidanceVisible}}
+              <div class="po-march-formation-detail-card is-guidance">
+                <div class="po-watch-total-label">Recovery Guidance</div>
+                <div class="po-op-summary"><strong>{{formationSummary.recoveryGuidanceTitle}}:</strong> {{formationSummary.recoveryGuidanceText}}</div>
+                <div class="po-op-summary"><strong>Recommended Next Action:</strong> {{formationSummary.recoveryRecommendedActionLabel}}</div>
+                <div class="po-march-guidance-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="doctrine-check">Joint Leadership</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="doctrine-rally-check" {{#unless formationSummary.recoveryCanRally}}disabled{{/unless}}>Rally Check</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="doctrine-leaders-command" {{#unless formationSummary.recoveryCanLeadersCommand}}disabled{{/unless}}>Leader's Command</button>
+                  <button type="button" class="po-btn po-btn-sm" data-action="doctrine-formation-drop" {{#unless formationSummary.recoveryCanDropFormation}}disabled{{/unless}}>Drop Formation</button>
+                </div>
+              </div>
+              {{/if}}
+
+              {{#if formationSummary.momentumVisible}}
+              <div class="po-march-formation-detail-card {{#if formationSummary.failureStreakActive}}is-strained{{/if}}">
+                <div class="po-watch-total-label">Formation Momentum</div>
+                <div class="po-march-momentum-list">
+                  {{#each formationSummary.momentumRows}}
+                  <div class="po-march-momentum-row {{toneClass}}">
+                    <span>{{label}}</span>
+                    <strong>{{value}}</strong>
+                  </div>
+                  {{/each}}
+                </div>
+                {{#if formationSummary.lastCheckWasSuccess}}
+                <div class="po-op-summary"><em>{{formationSummary.healthTrendIndicator}} since last check</em></div>
+                {{/if}}
+                {{#if formationSummary.leadersCommandUsedThisCombat}}
+                <div class="po-op-summary"><em>Leader's Command already spent this combat.</em></div>
+                {{/if}}
+              </div>
+              {{/if}}
 
               <div class="po-march-formation-detail-card">
                 <div class="po-watch-total-label">Active Effects</div>
@@ -229,38 +292,12 @@
             </div>
 
             <aside class="po-march-formation-meta-panel" aria-label="Formation status">
+              {{#each formationSummary.metaBlocks}}
               <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Category</div>
-                <div class="po-watch-total-value">{{formationSummary.categoryLabel}}</div>
+                <div class="po-watch-total-label">{{label}}</div>
+                <div class="po-watch-total-value">{{value}}</div>
               </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Formation State</div>
-                <div class="po-watch-total-value">{{formationSummary.formationStateLabel}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Doctrine State</div>
-                <div class="po-watch-total-value">{{formationSummary.doctrineStateLabel}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Layout Validity</div>
-                <div class="po-watch-total-value">{{formationSummary.validityLabel}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Doctrine Checks</div>
-                <div class="po-watch-total-value">{{#if formationSummary.doctrineChecksActive}}Active{{else}}Inactive{{/if}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Cohesion Checks</div>
-                <div class="po-watch-total-value">{{#if formationSummary.cohesionChecksActive}}Active{{else}}Inactive{{/if}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Cohesion Required</div>
-                <div class="po-watch-total-value">{{#if formationSummary.cohesionCheckRequired}}Yes{{else}}No{{/if}}</div>
-              </div>
-              <div class="po-march-formation-meta-block">
-                <div class="po-watch-total-label">Last Doctrine Check</div>
-                <div class="po-watch-total-value">{{formationSummary.lastCheckAt}}</div>
-              </div>
+              {{/each}}
             </aside>
           </div>
 

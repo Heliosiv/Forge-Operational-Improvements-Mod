@@ -163,6 +163,77 @@
   align-items: start;
 }
 
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-submit-readiness {
+  margin-top: 2px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 52%, var(--po-border));
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-bg-alt) 86%, transparent);
+  font-weight: 600;
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-submit-readiness.is-good {
+  border-color: color-mix(in srgb, var(--po-success) 52%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 11%, var(--po-surface));
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-submit-readiness.is-warn {
+  border-color: color-mix(in srgb, var(--po-warn) 56%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 10%, var(--po-surface));
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-publication-status {
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 50%, var(--po-border));
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-bg-alt) 88%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-publication-status.is-good {
+  border-color: color-mix(in srgb, var(--po-success) 50%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 10%, var(--po-surface));
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-publication-status.is-warn {
+  border-color: color-mix(in srgb, var(--po-warn) 56%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 11%, var(--po-surface));
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-op-action-row .po-btn[disabled] {
+  opacity: 0.58;
+  cursor: not-allowed;
+  filter: saturate(0.7);
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] :is(.po-btn, .po-select, .po-input, .po-icon-btn):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--po-accent) 78%, white 22%);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 26%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-log-actions {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--po-border) 76%, transparent);
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-resolver-actions {
+  margin-top: 4px;
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-bulk-action {
+  border-color: color-mix(in srgb, var(--po-warn) 58%, var(--po-border));
+  background: color-mix(in srgb, var(--po-warn) 12%, var(--po-surface));
+  color: var(--po-text-strong);
+  font-weight: 600;
+}
+
+.party-operations .po-window[data-tool="gm-downtime"] .po-downtime-maintenance-actions {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed color-mix(in srgb, var(--po-border) 82%, transparent);
+}
+
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-panel {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
@@ -178,6 +249,18 @@
   .party-operations .po-window[data-tool="gm-downtime"] .po-two-col,
   .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-panel {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .party-operations .po-window[data-tool="gm-downtime"] :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions) {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .party-operations .po-window[data-tool="gm-downtime"] :is(.po-downtime-resolver-actions, .po-downtime-log-actions, .po-downtime-queue-actions) .po-btn {
+    width: 100%;
   }
 }
 
