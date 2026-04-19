@@ -165,6 +165,103 @@ assert.ok(
   "Curated entries with stronger curation score should gain a selection preference."
 );
 
+const usefulHealingWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.healing-kit-1",
+  name: "Potion of Healing",
+  itemType: "consumable",
+  rarity: "common",
+  itemValueGp: 50,
+  merchantCategories: ["alchemy", "consumable"],
+  keywords: ["healing"],
+  sourceId: "world-items",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 3
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+const blandTrinketWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.trinket-1",
+  name: "Polished Trinket",
+  itemType: "loot",
+  rarity: "common",
+  itemValueGp: 45,
+  merchantCategories: ["loot", "treasure"],
+  keywords: [],
+  sourceId: "world-items",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 3
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+assert.ok(
+  usefulHealingWeight > blandTrinketWeight,
+  "Healing consumables should outrank similarly priced filler loot."
+);
+
+const practicalEquipmentWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.pack-1",
+  name: "Explorer's Pack",
+  itemType: "equipment",
+  rarity: "common",
+  itemValueGp: 10,
+  merchantCategories: ["outfitting", "equipment"],
+  keywords: ["merchant.outfitting"],
+  sourceId: "world-items",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 2
+}, { draft: { mode: "encounter" }, selected: [] }, "spend");
+
+const decorativeCurioWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.curio-1",
+  name: "Carved Curio",
+  itemType: "loot",
+  rarity: "common",
+  itemValueGp: 9,
+  merchantCategories: ["loot", "treasure"],
+  keywords: [],
+  sourceId: "world-items",
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 2
+}, { draft: { mode: "encounter" }, selected: [] }, "spend");
+
+assert.ok(
+  practicalEquipmentWeight > decorativeCurioWeight,
+  "Practical outfitting gear should outrank similarly cheap decorative filler."
+);
+
+const curatedUsefulWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.curated-useful-1",
+  name: "Curated Healer's Satchel",
+  itemType: "equipment",
+  rarity: "uncommon",
+  itemValueGp: 50,
+  merchantCategories: ["outfitting", "equipment"],
+  keywords: ["merchant.outfitting", "healing"],
+  sourceClass: "curated",
+  sourcePolicy: "normal",
+  curationScore: 8
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+const generatedFillerWeight = getLootSelectionIntelligenceWeight({
+  uuid: "Item.generated-filler-1",
+  name: "Generated Trinket",
+  itemType: "loot",
+  rarity: "common",
+  itemValueGp: 48,
+  merchantCategories: ["loot", "treasure"],
+  keywords: [],
+  sourceClass: "generated",
+  sourcePolicy: "normal",
+  curationScore: 2
+}, { draft: { mode: "horde" }, selected: [] }, "spend");
+
+assert.ok(
+  curatedUsefulWeight > generatedFillerWeight,
+  "Curated useful entries should decisively outrank generated filler at comparable value."
+);
+
 const anchorWeight = getLootSelectionIntelligenceWeight({
   uuid: "Item.anchor-1",
   name: "Anchor Relic",

@@ -28,6 +28,9 @@ const context = vm.createContext({
   normalizeLootVariableTreasureKind: (value) => String(value ?? ""),
   normalizeLootSourceClass: (value, fallback) => String(value ?? fallback ?? ""),
   normalizeLootSourcePolicy: (value, fallback) => String(value ?? fallback ?? ""),
+  isLootJackpotCandidate: () => false,
+  getLootJackpotDisplayName: (entry = {}) => String(entry?.name ?? "Item"),
+  getLootSelectionCandidateKey: (entry = {}) => String(entry?.uuid ?? entry?.name ?? ""),
   logLootBuilderDebug: () => {}
 });
 

@@ -44,6 +44,7 @@
     "check:module-api": "node scripts/test-module-api.mjs",
     "check:note-draft-cache": "node scripts/test-note-draft-cache.mjs",
     "check:perf": "node scripts/test-perf.mjs",
+    "check:permission-split": "node scripts/test-permission-split.mjs",
     "check:player-hub-actions": "node scripts/test-player-hub-actions.mjs",
     "check:player-request-handlers": "node scripts/test-player-request-handlers.mjs",
     "check:template-loader": "node scripts/test-template-loader.mjs",

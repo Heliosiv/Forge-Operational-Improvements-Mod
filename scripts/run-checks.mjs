@@ -38,6 +38,7 @@ const CHECK_COMMANDS = [
   [process.execPath, ["scripts/test-module-api.mjs"]],
   [process.execPath, ["scripts/test-note-draft-cache.mjs"]],
   [process.execPath, ["scripts/test-perf.mjs"]],
+  [process.execPath, ["scripts/test-permission-split.mjs"]],
   [process.execPath, ["scripts/test-player-hub-actions.mjs"]],
   [process.execPath, ["scripts/test-player-request-handlers.mjs"]],
   [process.execPath, ["scripts/test-operations-player-handlers.mjs"]],

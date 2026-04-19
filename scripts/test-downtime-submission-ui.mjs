@@ -26,6 +26,18 @@ assert.match(
 );
 
 assert.match(
+  moduleSource,
+  /function buildGatherRequestContext\(resourcesState = null, options = \{\}\) \{[\s\S]*const riskTags = getRiskTags\(source\);[\s\S]*modifierSummary,[\s\S]*riskTags,[\s\S]*riskLevelLabel:[\s\S]*matchingPresetLabel,/,
+  "Gather request context should expose normalized card fields for modifier summary, risk tags, and preset matching."
+);
+
+assert.match(
+  moduleSource,
+  /function buildGatherDefaultsContext\(resourcesState = null\) \{[\s\S]*const weatherOptions = getGatherWeatherOptions\(resourcesState\)[\s\S]*const presets = buildGatherPresetContext\(config\)[\s\S]*summary:[\s\S]*weatherOptions,[\s\S]*presets,/,
+  "Gather defaults context should group quick presets and hidden DC default controls for upcoming approvals."
+);
+
+assert.match(
   gmDowntimeTemplate,
   /\{\{#if downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
   "GM downtime template should only show the crafting catalog while crafting is selected."
@@ -101,6 +113,24 @@ assert.doesNotMatch(
   restWatchTemplate,
   /\{\{#if operationsPageDowntime\}\}/,
   "Rest watch operations template should not include an embedded downtime section."
+);
+
+assert.match(
+  restWatchTemplate,
+  /Pending Requests[\s\S]*Quick Resolution Defaults[\s\S]*Advanced Review[\s\S]*Gather History/,
+  "Gather panel should render queue-first section order: pending requests, defaults, advanced review, and history."
+);
+
+assert.match(
+  restWatchTemplate,
+  /\{\{#each operations\.resources\.gatherRequests\.rows\}\}[\s\S]*\{\{resourceTypeLabel\}\}[\s\S]*\{\{gatherModeLabel\}\}[\s\S]*\{\{travelModeLabel\}\}[\s\S]*\{\{environmentLabel\}\}[\s\S]*\{\{modifierSummary\}\}/,
+  "Pending request cards should render normalized intent and setup summary labels."
+);
+
+assert.match(
+  restWatchTemplate,
+  /\{\{#each operations\.resources\.gatherDefaults\.weatherOptions\}\}[\s\S]*data-resource="weatherMod:\{\{value\}\}"/,
+  "Quick resolution defaults should include visible weather/default controls for upcoming approvals."
 );
 
 assert.match(

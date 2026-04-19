@@ -37,7 +37,6 @@ export const PARTY_OPS_REFRESHABLE_WINDOW_IDS = Object.freeze([
   "operations-shell-app",
   "marching-order-app",
   "rest-watch-player-app",
-  "party-operations-global-modifier-summary",
   "party-operations-gm-factions-page",
   "party-operations-gm-environment-page",
   "party-operations-gm-downtime-page",
@@ -61,7 +60,6 @@ export const REFRESH_SCOPE_TO_WINDOW_IDS = Object.freeze({
   [REFRESH_SCOPE_KEYS.OPERATIONS]: Object.freeze([
     "operations-shell-app",
     "rest-watch-player-app",
-    "party-operations-global-modifier-summary",
     "party-operations-gm-factions-page",
     "party-operations-gm-environment-page",
     "party-operations-gm-downtime-page",
@@ -87,7 +85,6 @@ export const PO_TEMPLATE_MAP = Object.freeze({
   "rest-watch-shared-note": "modules/party-operations/templates/rest-watch-shared-note.hbs",
   "rest-watch-player": "modules/party-operations/templates/rest-watch-player.hbs",
   "marching-order": "modules/party-operations/templates/marching-order.hbs",
-  "global-modifiers": "modules/party-operations/templates/global-modifiers.hbs",
   "gm-factions": "modules/party-operations/templates/gm-factions.hbs",
   "gm-environment": "modules/party-operations/templates/gm-environment.hbs",
   "gm-downtime": "modules/party-operations/templates/gm-downtime.hbs",

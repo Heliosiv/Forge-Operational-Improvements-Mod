@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import {
+  getLootPracticalHoardScore,
+  isLootPracticalHoardCandidate
+} from "./features/loot-practicality.js";
 
 const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.url), "utf8");
 
@@ -49,6 +53,8 @@ const context = vm.createContext({
     }
     return { targetItemBudgetGp: 700, targetPerItemGp: 70 };
   },
+  getLootPracticalHoardScore,
+  isLootPracticalHoardCandidate,
   result: {}
 });
 
@@ -87,6 +93,24 @@ const solidCommon = {
   keywords: ["merchant.treasure"]
 };
 
+const practicalGear = {
+  name: "Explorer's Pack",
+  itemType: "equipment",
+  itemValueGp: 10,
+  rarity: "common",
+  merchantCategories: ["outfitting", "equipment"],
+  keywords: ["merchant.outfitting"]
+};
+
+const decorativeFiller = {
+  name: "Decorative Trinket",
+  itemType: "loot",
+  itemValueGp: 4,
+  rarity: "common",
+  merchantCategories: ["luxury", "treasure"],
+  keywords: ["merchant.treasure"]
+};
+
 const mediumLane = getLootGeneralLanePool([cheapFiller, strongUncommon, solidCommon], {
   mode: "horde",
   challenge: "mid",
@@ -119,6 +143,23 @@ assert.equal(
   majorLane.length,
   3,
   "Major hordes should keep the broader general pool instead of collapsing to filler-only picks."
+);
+
+const practicalLane = getLootGeneralLanePool([practicalGear, decorativeFiller, strongUncommon], {
+  mode: "horde",
+  challenge: "low",
+  scale: "small"
+});
+
+assert.equal(
+  practicalLane.some((entry) => entry.name === "Explorer's Pack"),
+  true,
+  "Low-tier horde general lanes should keep practical gear available."
+);
+assert.equal(
+  practicalLane.some((entry) => entry.name === "Decorative Trinket"),
+  false,
+  "Low-tier horde general lanes should drop decorative filler when practical options exist."
 );
 
 const premiumLane = buildLootPremiumLaneConfig(

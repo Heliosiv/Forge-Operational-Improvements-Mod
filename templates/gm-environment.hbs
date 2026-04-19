@@ -69,11 +69,6 @@
             </label>
           </div>
 
-          <label class="po-switch">
-            <input id="po-environment-sync-non-party" name="poEnvironmentSyncNonParty" type="checkbox" data-action="set-environment-sync-non-party" {{#if environment.syncToSceneNonParty}}checked{{/if}} />
-            <span>Also apply preset effects to non-party scene actors</span>
-          </label>
-
           <label class="po-resource-row">
             <span>GM Note</span>
             <textarea class="po-input" rows="3" data-action="set-environment-note" placeholder="Context, scene framing, or exceptions">{{environment.note}}</textarea>
@@ -107,7 +102,6 @@
             <button type="button" class="po-btn po-btn-sm" data-action="request-environment-checks" {{#unless environment.canRequestChecks}}disabled{{/unless}}>Push Check To Players</button>
             <button type="button" class="po-btn po-btn-sm" data-action="add-environment-log">Log Current Setup</button>
             <button type="button" class="po-btn po-btn-sm" data-action="show-environment-brief">Show Brief</button>
-            <button type="button" class="po-btn po-btn-sm" data-action="clear-environment-effects">Clear Active Effects</button>
           </div>
         </section>
 

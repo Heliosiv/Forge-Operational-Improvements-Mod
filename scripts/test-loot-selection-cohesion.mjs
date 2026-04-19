@@ -133,4 +133,124 @@ assert.ok(
   "Major hordes should keep valuables grouped into a small number of picks."
 );
 
+const healerKit = {
+  uuid: "Item.healer-kit",
+  name: "Healer's Kit",
+  itemType: "tool",
+  itemValueGp: 5,
+  merchantCategories: ["tool", "survival"],
+  keywords: ["merchant.tool", "merchant.survival"]
+};
+
+const healingPotion = {
+  uuid: "Item.healing-potion",
+  name: "Potion of Healing",
+  itemType: "consumable",
+  itemValueGp: 50,
+  merchantCategories: ["alchemy", "consumable"],
+  keywords: ["healing"]
+};
+
+const silkRope = {
+  uuid: "Item.silk-rope",
+  name: "Silk Rope",
+  itemType: "equipment",
+  itemValueGp: 10,
+  merchantCategories: ["outfitting", "equipment"],
+  keywords: ["merchant.outfitting"]
+};
+
+const toolBundle = buildLootCohesiveBundle(healerKit, {
+  budgetRemainingGp: 60,
+  draft: { mode: "encounter", challenge: "mid", scale: "medium" },
+  pool: [silkRope, healingPotion],
+  selected: [],
+  random: () => 0
+});
+
+assert.equal(toolBundle.length, 2);
+assert.equal(toolBundle[1].candidate.uuid, "Item.healing-potion");
+
+const backpack = {
+  uuid: "Item.backpack",
+  name: "Explorer's Backpack",
+  itemType: "container",
+  itemValueGp: 2,
+  merchantCategories: ["container", "outfitting"],
+  keywords: ["merchant.container", "merchant.outfitting"]
+};
+
+const crowbar = {
+  uuid: "Item.crowbar",
+  name: "Crowbar",
+  itemType: "equipment",
+  itemValueGp: 2,
+  merchantCategories: ["outfitting", "equipment"],
+  keywords: ["merchant.outfitting"]
+};
+
+const trinket = {
+  uuid: "Item.trinket",
+  name: "Decorative Trinket",
+  itemType: "loot",
+  itemValueGp: 1,
+  merchantCategories: ["loot", "treasure"],
+  keywords: []
+};
+
+const supportBundle = buildLootCohesiveBundle(backpack, {
+  budgetRemainingGp: 15,
+  draft: { mode: "encounter", challenge: "mid", scale: "medium" },
+  pool: [crowbar, trinket],
+  selected: [],
+  random: () => 0
+});
+
+assert.equal(supportBundle.length, 2);
+assert.equal(supportBundle[1].candidate.uuid, "Item.crowbar");
+
+const rations = {
+  uuid: "Item.rations",
+  name: "Rations",
+  itemType: "consumable",
+  itemValueGp: 0.5,
+  merchantCategories: ["survival", "consumable"],
+  keywords: ["merchant.survival"]
+};
+
+const consumableBatch = buildLootCohesiveBundle(rations, {
+  budgetRemainingGp: 10,
+  draft: { mode: "horde", challenge: "mid", scale: "medium" },
+  pool: [],
+  selected: [],
+  random: () => 0
+});
+
+assert.ok(
+  consumableBatch[0].quantity >= 2,
+  "Useful low-value consumables should batch into a compact supply bundle."
+);
+
+const magicArrow = {
+  uuid: "Item.magic-arrow",
+  name: "+2 Arrow",
+  itemType: "ammunition",
+  itemValueGp: 12,
+  merchantCategories: ["arms"],
+  keywords: ["loot.weapon.magic"]
+};
+
+const magicAmmoBundle = buildLootCohesiveBundle(magicArrow, {
+  budgetRemainingGp: 120,
+  draft: { mode: "horde", challenge: "high", scale: "medium" },
+  pool: [quiver],
+  selected: [],
+  random: () => 0
+});
+
+assert.ok(
+  magicAmmoBundle[0].quantity <= 9,
+  "Enhanced ammunition should still bundle conservatively."
+);
+
 process.stdout.write("loot selection cohesion validation passed\n");

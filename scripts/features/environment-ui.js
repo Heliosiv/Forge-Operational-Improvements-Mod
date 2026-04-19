@@ -7,7 +7,6 @@ export function createGmEnvironmentPageApp(deps) {
     setPageInstance,
     buildContext,
     openMainTab,
-    setOperationalEnvironmentSyncNonParty,
     setOperationalEnvironmentPreset,
     setOperationalEnvironmentDc,
     setOperationalEnvironmentSuccessive,
@@ -30,7 +29,6 @@ export function createGmEnvironmentPageApp(deps) {
     addOperationalEnvironmentLog,
     editOperationalEnvironmentLog,
     removeOperationalEnvironmentLog,
-    clearOperationalEnvironmentEffects,
     requestOperationalEnvironmentChecks,
     showOperationalEnvironmentBrief,
     gmQuickLogCurrentWeather,
@@ -103,7 +101,6 @@ export function createGmEnvironmentPageApp(deps) {
           rerender();
         },
         "gm-panel-tab": openPanelTab("environment", openGmPanelByKey),
-        "set-environment-sync-non-party": rerenderAlways(setOperationalEnvironmentSyncNonParty),
         "set-environment-preset": rerenderAlways(setOperationalEnvironmentPreset),
         "set-environment-dc": rerenderAlways(setOperationalEnvironmentDc),
         "set-environment-successive": rerenderUnlessInput(setOperationalEnvironmentSuccessive),
@@ -126,7 +123,6 @@ export function createGmEnvironmentPageApp(deps) {
         "add-environment-log": rerenderAlways(() => addOperationalEnvironmentLog()),
         "edit-environment-log": rerenderAlways(editOperationalEnvironmentLog),
         "remove-environment-log": rerenderAlways(removeOperationalEnvironmentLog),
-        "clear-environment-effects": rerenderAlways(() => clearOperationalEnvironmentEffects()),
         "request-environment-checks": rerenderAlways(() => requestOperationalEnvironmentChecks()),
         "show-environment-brief": async () => {
           await showOperationalEnvironmentBrief();

@@ -24,6 +24,9 @@ const context = vm.createContext({
       : String(entryOrPolicy ?? "").trim().toLowerCase();
     return policy === "outside-budget" || policy === "bonus";
   },
+  isLootJackpotCandidate() {
+    return false;
+  },
   result: {}
 });
 

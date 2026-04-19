@@ -114,20 +114,22 @@ Enable `Show Advanced Settings` when you need inventory hook tuning, gather beha
 The current build exposes a module API for macros and debugging:
 
 ```javascript
-game.partyOperations.restWatch();
-game.partyOperations.marchingOrder();
-game.partyOperations.operations();
-game.partyOperations.gm();
-game.partyOperations.gmAudio();
-game.partyOperations.settingsHub();
+game.partyOperations.navigation.openRestWatch();
+game.partyOperations.navigation.openMarchingOrder();
+game.partyOperations.navigation.openOperations();
+game.partyOperations.navigation.openGm();
+game.partyOperations.navigation.openGmAudio();
+game.partyOperations.navigation.openSettings();
 
+game.partyOperations.operations.getLedger();
+game.partyOperations.loot.generateBundle({ cr: 6, target: "horde" }, { includeDiagnostics: true });
 game.partyOperations.audio.scan({
   source: "data",
   rootPath: "assets/audio/fantasy-complete-ii"
 });
 ```
 
-Backward-compatible aliases are still attached for older macro snippets.
+Root API attachment aliases still exist (`game.partyOperations`, `game.partyops`, and module/global attachment points), but legacy flat method names were removed in favor of namespaced domains.
 
 ## Troubleshooting
 

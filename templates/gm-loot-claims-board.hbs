@@ -181,6 +181,8 @@
             <div class="po-loot-claim-name-row">
               <div class="po-op-role-name">{{name}}</div>
               {{#if hasQuantity}}<span class="po-pill">x{{quantity}}</span>{{/if}}
+              {{#if isUnidentified}}<span class="po-pill is-warn">Unidentified</span>{{/if}}
+              {{#if isJackpotRoll}}<span class="po-pill is-accent">{{jackpotBleedLabel}}</span>{{/if}}
               {{#if isMajorItem}}<span class="po-pill is-warn">Major Item</span>{{/if}}
             </div>
 

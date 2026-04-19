@@ -214,8 +214,8 @@ export function buildMarchOverviewContext({
   frontCount = 0,
   middleCount = 0,
   rearCount = 0,
-  formationLabel = "-",
-  formationStateLabel = "-",
+  formationLabel = "March Board",
+  formationStateLabel = "Active",
   lightSources = 0,
   lockState = "Open",
   unassignedCount = 0,
@@ -246,7 +246,7 @@ export function buildMarchOverviewContext({
         toneClass: ""
       },
       {
-        label: "Formation",
+        label: "Board",
         value: String(formationLabel || "-"),
         detail: String(formationStateLabel || "-"),
         toneClass: leadershipCheckDue ? "is-alert" : ""
@@ -348,10 +348,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     refreshOpenApps,
     refreshScopeKeys,
     emitSocketRefresh,
-    logUiDebug,
-    markDoctrineTriggerPending,
-    doctrineTriggers,
-    normalizeMarchingFormation
+    logUiDebug
   } = deps;
 
   if (!request || typeof request !== "object") return;
@@ -392,9 +389,6 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
       request.actorId,
       Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0 ? requestedCellIndex : null
     );
-    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
-      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
-    }
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
@@ -420,9 +414,6 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     if (state.notes) delete state.notes[request.actorId];
     if (state.light) delete state.light[request.actorId];
     if (state.lightRanges) delete state.lightRanges[request.actorId];
-    if (normalizeMarchingFormation?.(state.formation ?? "loose") !== "free") {
-      markDoctrineTriggerPending?.(state, doctrineTriggers?.MAJOR_REPOSITION ?? "major-reposition");
-    }
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");
@@ -471,9 +462,6 @@ export function setupMarchingDragAndDrop(html, deps = {}) {
     updateMarchingOrderState,
     refreshSingleAppPreservingView,
     getAppInstance,
-    markDoctrineTriggerPending,
-    doctrineTriggers,
-    normalizeMarchingFormation,
     appInstanceKeys
   } = deps;
 

@@ -1,4 +1,8 @@
 import { getRecentRollMalus } from "./loot-recent-rolls-cache.js";
+import {
+  getLootPracticalUsefulnessFactor,
+  isLootCommodityLike
+} from "./loot-practicality.js";
 
 function normalizeText(value = "") {
   return String(value ?? "").trim().toLowerCase();
@@ -58,19 +62,6 @@ function getEntryPrimaryCategory(entry = {}) {
   return normalizeList(entry?.merchantCategories)[0] ?? "";
 }
 
-function isCommodityLike(entry = {}) {
-  const itemType = normalizeText(entry?.itemType);
-  const variableTreasureKind = normalizeVariableTreasureKind(entry?.variableTreasureKind);
-  if (variableTreasureKind) return true;
-  if (itemType === "loot" || itemType === "consumable" || itemType === "ammo" || itemType === "ammunition") return true;
-  const categories = new Set(normalizeList(entry?.merchantCategories));
-  return categories.has("treasure")
-    || categories.has("loot")
-    || categories.has("luxury")
-    || categories.has("art")
-    || categories.has("gem");
-}
-
 function countCategoryOverlap(candidateCategories = [], selectedEntry = {}) {
   if (!candidateCategories.length) return 0;
   const selectedCategories = new Set(normalizeList(selectedEntry?.merchantCategories));
@@ -97,6 +88,8 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   const candidateSourceClass = normalizeSourceClass(entry?.sourceClass);
   const candidateSourcePolicy = normalizeSourcePolicy(entry?.sourcePolicy);
   const candidateCurationScore = normalizeCurationScore(entry?.curationScore);
+  const practicalUsefulnessFactor = getLootPracticalUsefulnessFactor(entry, state, phaseKey);
+  const usefulnessDelta = practicalUsefulnessFactor - 1;
 
   const selectedTypes = new Set();
   const selectedCategories = new Set();
@@ -136,7 +129,7 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   }
 
   let weight = 1;
-  const commodityLike = isCommodityLike(entry);
+  const commodityLike = isLootCommodityLike(entry);
   if (exactDuplicateCount > 0) {
     const duplicatePenalty = commodityLike ? 0.58 : 0.16;
     weight *= Math.pow(duplicatePenalty, exactDuplicateCount);
@@ -204,7 +197,13 @@ export function getLootSelectionIntelligenceWeight(entry = {}, state = {}, phase
   }
 
   const curationFactor = 0.9 + ((candidateCurationScore / 10) * 0.2);
-  weight *= curationFactor;
+  const usefulnessCurationLift = usefulnessDelta > 0
+    ? 1 + (usefulnessDelta * ((candidateCurationScore / 10) * 0.32))
+    : 1;
+  const generatedFillerPenalty = candidateSourceClass === "generated" && usefulnessDelta < 0
+    ? Math.max(0.72, 1 + (usefulnessDelta * 0.32))
+    : 1;
+  weight *= curationFactor * practicalUsefulnessFactor * usefulnessCurationLift * generatedFillerPenalty;
 
   // Apply recently-rolled item penalty to reduce repetition across multiple horde rolls in same scene
   weight *= recentRollMalus;

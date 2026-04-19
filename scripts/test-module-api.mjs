@@ -4,14 +4,39 @@ import {
   buildPartyOperationsApi,
   registerPartyOperationsApi
 } from "./core/module-api.js";
+import { attachModuleApi } from "./core/api-registry.js";
 
 {
   const calls = {
     openTabs: [],
-    launcher: 0,
+    launcherShow: 0,
     playedMixes: [],
-    picks: []
+    queueInputs: [],
+    gatherOptions: []
   };
+  const operationsLedgerState = { entries: [1] };
+  const moduleConfigState = { schema: 1, nested: { value: true } };
+  const typedConfigState = { mode: "typed", nested: { enabled: true } };
+  const injuryState = { injuries: 1 };
+  const lootSourceConfigState = { source: "loot", nested: { use: true } };
+  const lootPreviewState = { preview: true };
+  const launcherStatusState = { placement: "floating" };
+  const audioCatalogState = {
+    items: [
+      {
+        id: "track-1",
+        name: "Campfire",
+        category: "Ambient",
+        subcategory: "Night",
+        tags: ["camp"],
+        kind: "music",
+        usage: "travel"
+      }
+    ]
+  };
+  const perfState = { scopes: { raw: { counters: { foo: { count: 1 } } } } };
+  const perfSummary = { scopes: { summary: { counters: { foo: { avg: 1 } } } } };
+
   const api = buildPartyOperationsApi({
     foundryRef: {
       utils: {
@@ -27,31 +52,34 @@ import {
     },
     moduleId: "party-operations",
     ensureLauncherUi: () => {
-      calls.launcher += 1;
+      calls.launcherShow += 1;
       return { ok: true };
     },
     openMainTab: (tabId, options) => calls.openTabs.push({ tabId, options }),
     openGmMerchantsPage: () => "gm-merchants",
     openGmAudioPage: () => "gm-audio",
     refreshOpenApps: () => "refresh",
-    getOperationsLedger: () => ({ entries: [1] }),
-    runGatherResourcesAction: (options) => options,
+    getOperationsLedger: () => operationsLedgerState,
+    runGatherResourcesAction: (options) => {
+      calls.gatherOptions.push(options);
+      return options;
+    },
     applyOperationalUpkeep: () => "upkeep",
-    getInjuryRecoveryState: () => ({ injuries: 1 }),
+    getInjuryRecoveryState: () => injuryState,
     applyRecoveryCycle: () => "recover",
     runSessionAutopilot: () => "autopilot",
     undoLastSessionAutopilot: () => "undo",
     syncAllInjuriesToSimpleCalendar: () => "sync-calendar",
     scheduleIntegrationSync: (reason) => reason,
     openPartyOperationsSettingsHub: () => "settings",
-    getModuleConfigSnapshot: () => ({ schema: 1 }),
-    getPartyOpsConfigSetting: () => ({ mode: "typed" }),
+    getModuleConfigSnapshot: () => moduleConfigState,
+    getPartyOpsConfigSetting: () => typedConfigState,
     savePartyOpsConfigSetting: (input) => input,
     getInventoryHookModeSetting: () => "sync",
     setInventoryHookMode: (mode) => mode,
-    getLauncherPlacement: () => "floating",
+    getLauncherPlacement: () => launcherStatusState.placement,
     setLauncherPlacement: (placement) => placement,
-    getLootSourceConfig: () => ({ source: "loot" }),
+    getLootSourceConfig: () => lootSourceConfigState,
     getCrBracket: (cr) => `cr-${cr}`,
     convertCurrencyToGpEquivalent: (currency) => currency.gp ?? 0,
     rollIndividualTreasure: () => ({ kind: "individual" }),
@@ -61,11 +89,11 @@ import {
     generateBoardReadyLootBundle: (draft, options = {}) => ({ draft, options, boardReady: true }),
     generateLootPreviewPayload: (draft) => ({ draft }),
     generateLootFromPackIds: (packIds) => packIds,
-    getLootPreviewResult: () => ({ preview: true }),
+    getLootPreviewResult: () => lootPreviewState,
     diagnoseWorldData: (options) => options ?? { repair: false },
     resetFloatingLauncherPosition: () => "reset-launcher",
     forceLauncherRecovery: (reason) => ({ reason }),
-    getLauncherStatusSnapshot: () => ({ placement: "floating" }),
+    getLauncherStatusSnapshot: () => launcherStatusState,
     getAudioLibraryCatalog: ({ includeHidden } = {}) => ({
       items: [
         {
@@ -88,7 +116,10 @@ import {
     createAudioMixPresetFromSelection: () => "create-preset",
     deleteSelectedAudioMixPreset: () => "delete-preset",
     addTrackToSelectedAudioMixPreset: (trackId) => trackId,
-    queueSelectedTrackNext: (element) => element.dataset.trackId,
+    queueSelectedTrackNext: (input) => {
+      calls.queueInputs.push(input);
+      return String(input?.dataset?.trackId ?? "");
+    },
     moveTrackToIndexInSelectedAudioMixPreset: (trackId, targetIndex) => ({ trackId, targetIndex }),
     moveTrackToTopInSelectedAudioMixPreset: (trackId) => trackId,
     moveTrackWithinSelectedAudioMixPreset: (trackId, direction) => ({ trackId, direction }),
@@ -101,20 +132,89 @@ import {
     normalizeAudioLibraryKind: (value) => value,
     normalizeAudioLibraryUsage: (value) => value,
     normalizeAudioLibrarySearch: (value) => String(value ?? "").trim().toLowerCase(),
-    getPerfState: () => ({ scopes: { raw: { counters: { foo: { count: 1 } } } } }),
-    getPerfSummary: () => ({ scopes: { summary: { counters: { foo: { avg: 1 } } } } })
+    getPerfState: () => perfState,
+    getPerfSummary: () => perfSummary
   });
 
-  api.restWatch();
+  assert.deepEqual(Object.keys(api).sort(), [
+    "audio",
+    "config",
+    "diagnostics",
+    "launcher",
+    "loot",
+    "meta",
+    "navigation",
+    "operations"
+  ]);
+
+  assert.equal(typeof api.restWatch, "undefined");
+  assert.equal(typeof api.openRestWatch, "undefined");
+  assert.equal(typeof api.gather, "undefined");
+  assert.equal(typeof api.perf, "undefined");
+  assert.equal(typeof api.apiStatus, "undefined");
+
+  api.navigation.openRestWatch();
   assert.deepEqual(calls.openTabs.at(-1), { tabId: "rest-watch", options: { force: true } });
-  assert.deepEqual(api.getOperations(), { entries: [1] });
-  assert.deepEqual(api.getTypedConfig(), { mode: "typed" });
-  assert.deepEqual(api.generateLootBundle({ seed: "abc" }, { runId: "run-1" }), {
+  api.navigation.openMarchingOrder();
+  assert.deepEqual(calls.openTabs.at(-1), { tabId: "marching-order", options: { force: true } });
+  api.navigation.openOperations();
+  assert.deepEqual(calls.openTabs.at(-1), { tabId: "operations", options: { force: true } });
+  api.navigation.openGm();
+  assert.deepEqual(calls.openTabs.at(-1), { tabId: "gm", options: { force: true } });
+
+  const ledgerRead = api.operations.getLedger();
+  ledgerRead.entries.push(99);
+  assert.deepEqual(api.operations.getLedger(), { entries: [1] });
+  assert.deepEqual(api.operations.gatherResources({ mode: "quick" }), { mode: "quick" });
+  assert.deepEqual(calls.gatherOptions.at(-1), { mode: "quick" });
+  assert.equal(api.operations.applyUpkeep(), "upkeep");
+  assert.equal(api.operations.runSessionAutopilot(), "autopilot");
+  assert.equal(api.operations.undoSessionAutopilot(), "undo");
+  assert.deepEqual(api.operations.getInjuryRecovery(), { injuries: 1 });
+  assert.equal(api.operations.applyRecoveryCycle(), "recover");
+  assert.equal(api.operations.syncInjuryCalendar(), "sync-calendar");
+
+  const configSnapshot = api.config.getSnapshot();
+  configSnapshot.nested.value = false;
+  assert.deepEqual(api.config.getSnapshot(), { schema: 1, nested: { value: true } });
+  assert.deepEqual(api.config.getTyped(), { mode: "typed", nested: { enabled: true } });
+  assert.deepEqual(api.config.saveTyped({ enabled: false }), { enabled: false });
+  assert.equal(api.config.getInventoryHookMode(), "sync");
+  assert.equal(api.config.setInventoryHookMode("off"), "off");
+
+  assert.deepEqual(api.launcher.show(), { ok: true });
+  assert.equal(calls.launcherShow, 1);
+  assert.equal(api.launcher.getPlacement(), "floating");
+  assert.equal(api.launcher.setPlacement("docked"), "docked");
+  assert.equal(api.launcher.resetPosition(), "reset-launcher");
+  assert.deepEqual(api.launcher.forceRecovery("stuck"), { reason: "stuck" });
+  assert.deepEqual(api.launcher.getStatus(), { placement: "floating" });
+
+  const lootSource = api.loot.getSourceConfig();
+  lootSource.nested.use = false;
+  assert.deepEqual(api.loot.getSourceConfig(), { source: "loot", nested: { use: true } });
+  assert.equal(api.loot.getCrBracket(5), "cr-5");
+  assert.equal(api.loot.convertCurrencyToGpEquivalent({ gp: 22 }), 22);
+  assert.deepEqual(api.loot.rollIndividual(3, 2), { kind: "individual" });
+  assert.deepEqual(api.loot.rollHoard(5), { kind: "hoard" });
+  assert.deepEqual(api.loot.applyTweakers({ gold: 10 }, []), { gold: 10 });
+  assert.equal(api.loot.summarize({}), "summary");
+  assert.deepEqual(api.loot.generateBundle({ seed: "abc" }, { runId: "run-1" }), {
     draft: { seed: "abc" },
     options: { runId: "run-1" },
     boardReady: true
   });
+  assert.deepEqual(api.loot.preview({ seed: "preview" }), { draft: { seed: "preview" } });
+  assert.deepEqual(api.loot.generateFromPackIds(["pack.a"], { cr: 4 }, { label: "x" }), ["pack.a"]);
+  assert.deepEqual(api.loot.getPreviewResult(), { preview: true });
+
   assert.equal(api.audio.queueTrackNext("track-9"), "track-9");
+  assert.deepEqual(calls.queueInputs.at(-1), { dataset: { trackId: "track-9" } });
+  assert.deepEqual(api.audio.moveTrackToIndex("track-2", 4), { trackId: "track-2", targetIndex: 4 });
+  assert.equal(api.audio.moveTrackToTop("track-2"), "track-2");
+  assert.deepEqual(api.audio.moveTrack("track-2", "down"), { trackId: "track-2", direction: "down" });
+  assert.equal(api.audio.removeTrack("track-2"), "track-2");
+  assert.equal(api.audio.clearCatalog(), "clear-audio");
   api.audio.playMix();
   assert.deepEqual(calls.playedMixes, ["preset-selected"]);
   assert.deepEqual(api.audio.pick({ kind: "music", usage: "travel", search: "camp" }), {
@@ -126,18 +226,45 @@ import {
     kind: "music",
     usage: "travel"
   });
-  assert.equal(api.openRestWatch, api.restWatch);
-  assert.equal(api.launcher, api.ensureLauncher);
-  assert.deepEqual(api.getPerfState(), { scopes: { raw: { counters: { foo: { count: 1 } } } } });
-  assert.deepEqual(api.getPerfSummary(), { scopes: { summary: { counters: { foo: { avg: 1 } } } } });
-  assert.deepEqual(api.perf.summary(), { scopes: { summary: { counters: { foo: { avg: 1 } } } } });
-  assert.deepEqual(api.apiStatus(), {
+
+  assert.deepEqual(api.diagnostics.diagnoseWorldData({ dryRun: true }), { dryRun: true });
+  assert.deepEqual(api.diagnostics.repairWorldData(), { repair: true });
+  assert.deepEqual(api.diagnostics.getPerfState(), perfState);
+  assert.deepEqual(api.diagnostics.getPerfSummary(), perfSummary);
+
+  assert.deepEqual(api.meta.getStatus(), {
     moduleActive: true,
     hasGameApi: true,
     hasModuleApi: true,
-    hasGlobalApi: true,
-    launcher: { ok: true }
+    hasGlobalApi: true
   });
+}
+
+{
+  const api = { ok: true };
+  const moduleRef = { active: true };
+  const gameRef = {
+    modules: new Map([["party-operations", moduleRef]])
+  };
+  const globalRoot = { game: gameRef };
+  attachModuleApi({
+    moduleId: "party-operations",
+    api,
+    gameRef,
+    globalRoot
+  });
+
+  assert.equal(gameRef.partyOperations, api);
+  assert.equal(gameRef.partyops, api);
+  assert.equal(moduleRef.api, api);
+  assert.equal(globalRoot.partyOperations, api);
+  assert.equal(globalRoot.partyops, api);
+  assert.equal(globalRoot.PartyOperations, api);
+
+  const replacementApi = { replaced: true };
+  globalRoot.partyOperations = replacementApi;
+  assert.equal(gameRef.partyOperations, replacementApi);
+  assert.equal(gameRef.partyops, replacementApi);
 }
 
 {

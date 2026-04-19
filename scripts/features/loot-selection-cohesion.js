@@ -143,6 +143,175 @@ function matchesAmmoToken(entry = {}, token = "") {
   return false;
 }
 
+function isToolLike(entry = {}) {
+  const itemType = normalizeText(entry?.itemType);
+  const categories = new Set(normalizeList(entry?.merchantCategories));
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return itemType === "tool"
+    || categories.has("tool")
+    || categories.has("kit")
+    || keywords.has("merchant.tool")
+    || keywords.has("merchant.kit");
+}
+
+function isConsumableLike(entry = {}) {
+  return normalizeText(entry?.itemType) === "consumable";
+}
+
+function isUtilityConsumableLike(entry = {}) {
+  if (!isConsumableLike(entry)) return false;
+  const name = normalizeText(entry?.name);
+  const categories = new Set(normalizeList(entry?.merchantCategories));
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return /\bhealing\b/.test(name)
+    || /\bantitoxin\b/.test(name)
+    || /\balchemist'?s fire\b/.test(name)
+    || /\bholy water\b/.test(name)
+    || /\bacid\b/.test(name)
+    || /\boil\b/.test(name)
+    || /\brations?\b/.test(name)
+    || /\bwaterskin\b/.test(name)
+    || /\bscroll\b/.test(name)
+    || categories.has("alchemy")
+    || categories.has("survival")
+    || keywords.has("merchant.alchemy")
+    || keywords.has("merchant.survival")
+    || keywords.has("healing");
+}
+
+function isPracticalSupportGearLike(entry = {}) {
+  if (isContainerLike(entry) || isQuiverLike(entry)) return true;
+  const itemType = normalizeText(entry?.itemType);
+  const name = normalizeText(entry?.name);
+  const categories = new Set(normalizeList(entry?.merchantCategories));
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return itemType === "equipment"
+    || itemType === "backpack"
+    || /\brope\b/.test(name)
+    || /\btorch\b/.test(name)
+    || /\bbedroll\b/.test(name)
+    || /\bgrappling hook\b/.test(name)
+    || /\bcrowbar\b/.test(name)
+    || /\bpitons?\b/.test(name)
+    || /\bwaterskin\b/.test(name)
+    || categories.has("outfitting")
+    || categories.has("survival")
+    || keywords.has("merchant.outfitting")
+    || keywords.has("merchant.survival");
+}
+
+function isHealingConsumableLike(entry = {}) {
+  if (!isConsumableLike(entry)) return false;
+  const name = normalizeText(entry?.name);
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return /\bhealing\b/.test(name)
+    || /\bpotion of healing\b/.test(name)
+    || keywords.has("healing");
+}
+
+function isAmmoSupportLike(entry = {}) {
+  const name = normalizeText(entry?.name);
+  const categories = new Set(normalizeList(entry?.merchantCategories));
+  const keywords = new Set(normalizeList(entry?.keywords));
+  return isQuiverLike(entry)
+    || /\bpowder horn\b/.test(name)
+    || /\bshot pouch\b/.test(name)
+    || /\bammo pouch\b/.test(name)
+    || categories.has("storage")
+    || keywords.has("merchant.storage");
+}
+
+function getNameTokens(entry = {}) {
+  return new Set(
+    normalizeText(entry?.name)
+      .split(/[^a-z0-9]+/u)
+      .filter((token) => token.length >= 3)
+  );
+}
+
+function countNameOverlap(anchor = {}, candidate = {}) {
+  const anchorTokens = getNameTokens(anchor);
+  if (!anchorTokens.size) return 0;
+  let overlap = 0;
+  for (const token of getNameTokens(candidate)) {
+    if (anchorTokens.has(token)) overlap += 1;
+  }
+  return overlap;
+}
+
+function getCompanionAffinity(anchor = {}, candidate = {}) {
+  let affinity = 0;
+  const sharedTags = countSharedTags(anchor, candidate);
+  const sharedNameTokens = countNameOverlap(anchor, candidate);
+  const primaryCategory = getPrimaryCategory(anchor);
+  const candidatePrimaryCategory = getPrimaryCategory(candidate);
+
+  if (isRangedWeaponLike(anchor)) {
+    const ammoToken = getAmmoToken(anchor);
+    if (isAmmoLike(candidate) && (!ammoToken || matchesAmmoToken(candidate, ammoToken))) affinity += 40;
+    if (isAmmoSupportLike(candidate) && !isAmmoLike(candidate)) affinity += 24;
+  }
+
+  if (isAmmoLike(anchor)) {
+    if (isAmmoSupportLike(candidate) && !isAmmoLike(candidate)) affinity += 34;
+  }
+
+  if (isToolLike(anchor)) {
+    if (isUtilityConsumableLike(candidate)) affinity += 28;
+    if (isPracticalSupportGearLike(candidate)) affinity += 20;
+    if (isToolLike(candidate)) affinity += 10;
+  }
+
+  if (isPracticalSupportGearLike(anchor)) {
+    if (isToolLike(candidate)) affinity += 20;
+    if (isUtilityConsumableLike(candidate)) affinity += 18;
+    if (isPracticalSupportGearLike(candidate) && !isContainerLike(candidate)) affinity += 12;
+    if (isContainerLike(anchor) && isPracticalSupportGearLike(candidate) && !isContainerLike(candidate)) affinity += 10;
+  }
+
+  if (isUtilityConsumableLike(anchor)) {
+    if (isHealingConsumableLike(anchor) && isHealingConsumableLike(candidate)) affinity += 18;
+    else if (isUtilityConsumableLike(candidate)) affinity += 14;
+    if (isPracticalSupportGearLike(candidate)) affinity += 10;
+  }
+
+  if (primaryCategory && candidatePrimaryCategory === primaryCategory) affinity += 8;
+  affinity += sharedTags * 2;
+  affinity += sharedNameTokens * 3;
+
+  const candidateValue = Math.max(0, Number(candidate?.itemValueGp ?? 0) || 0);
+  if (candidateValue > 0) {
+    if (candidateValue <= 5) affinity += 4;
+    else if (candidateValue <= 25) affinity += 2;
+    else if (candidateValue >= 100) affinity -= 3;
+  }
+
+  return affinity;
+}
+
+function countSharedTags(anchor = {}, candidate = {}) {
+  const anchorTags = new Set([
+    ...normalizeList(anchor?.merchantCategories),
+    ...normalizeList(anchor?.keywords)
+  ]);
+  let overlap = 0;
+  for (const tag of [
+    ...normalizeList(candidate?.merchantCategories),
+    ...normalizeList(candidate?.keywords)
+  ]) {
+    if (anchorTags.has(tag)) overlap += 1;
+  }
+  return overlap;
+}
+
+function getConsumableBatchBonus(entry = {}) {
+  if (!isUtilityConsumableLike(entry)) return 1;
+  const name = normalizeText(entry?.name);
+  if (/\bhealing\b/.test(name) || /\bpotion\b/.test(name)) return 1.25;
+  if (/\bscroll\b/.test(name)) return 0.85;
+  return 1.12;
+}
+
 function canBatchPrimaryEntry(entry = {}) {
   const kind = normalizeVariableTreasureKind(entry?.variableTreasureKind);
   if (isAmmoLike(entry)) return "ammo";
@@ -179,7 +348,10 @@ function resolvePrimaryQuantity(entry = {}, budgetRemainingGp = 0, draft = {}, r
   const challenge = normalizeText(draft?.challenge) || "mid";
   const [minQty, maxQty] = getChallengeQuantityBand(challenge, bundleKind);
   const rolledQuantity = Math.max(1, Math.min(maxAffordable, randomIntInclusive(minQty, maxQty, randomFn)));
-  const quantity = applyChallengeStackScaling(rolledQuantity, bundleKind, draft, entry);
+  let quantity = applyChallengeStackScaling(rolledQuantity, bundleKind, draft, entry);
+  if (bundleKind === "supply") {
+    quantity = Math.max(1, Math.floor(quantity * getConsumableBatchBonus(entry)));
+  }
   return capBundledQuantity(quantity, bundleKind, draft);
 }
 
@@ -212,6 +384,18 @@ function findCompanionCandidate(anchor = {}, pool = [], selected = [], budgetRem
       .sort((left, right) => Number(left?.itemValueGp ?? 0) - Number(right?.itemValueGp ?? 0))[0] ?? null;
   }
 
+  const scored = affordable
+    .map((candidate) => {
+      return { candidate, affinity: getCompanionAffinity(anchor, candidate) };
+    })
+    .filter((entry) => entry.affinity > 0)
+    .sort((left, right) => {
+      if (right.affinity !== left.affinity) return right.affinity - left.affinity;
+      return Number(left.candidate?.itemValueGp ?? 0) - Number(right.candidate?.itemValueGp ?? 0);
+    });
+
+  if (scored.length > 0) return scored[0].candidate;
+
   const primaryCategory = getPrimaryCategory(anchor);
   if (!primaryCategory || primaryCategory === "magic" || primaryCategory === "art" || primaryCategory === "treasure") return null;
   return affordable
@@ -224,6 +408,9 @@ function shouldAddCompanion(anchor = {}, companion = {}, randomFn = Math.random)
   if (!companion) return false;
   if (isAmmoLike(anchor)) return random() < 0.72;
   if (isRangedWeaponLike(anchor)) return random() < 0.68;
+  if (isToolLike(anchor)) return random() < 0.64;
+  if (isPracticalSupportGearLike(anchor)) return random() < 0.46;
+  if (isUtilityConsumableLike(anchor)) return random() < 0.36;
   return random() < 0.22;
 }
 
