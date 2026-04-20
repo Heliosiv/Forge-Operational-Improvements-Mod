@@ -227,35 +227,6 @@ export function createMerchantUiState({
     removeSessionValue(getMerchantCityCatalogDraftStorageKey());
   }
 
-  function getMerchantEditorViewTabStorageKey() {
-    return `po-merchant-editor-view-tab-${getCurrentUserId()}`;
-  }
-
-  function normalizeMerchantEditorViewTab(value, fallback = "editor") {
-    const normalized = String(value ?? "").trim().toLowerCase();
-    if (normalized === "settings") return "settings";
-    if (normalized === "editor") return "editor";
-    return normalizeMerchantEditorViewTab(fallback, "editor");
-  }
-
-  function getMerchantEditorViewTab() {
-    return normalizeMerchantEditorViewTab(readSessionValue(getMerchantEditorViewTabStorageKey()), "editor");
-  }
-
-  function setMerchantEditorViewTab(value) {
-    const next = normalizeMerchantEditorViewTab(value, "editor");
-    writeSessionValue(getMerchantEditorViewTabStorageKey(), next);
-    return next;
-  }
-
-  function setMerchantEditorViewTabFromElement(element) {
-    const next = normalizeMerchantEditorViewTab(element?.dataset?.tab ?? element?.value, "editor");
-    const current = getMerchantEditorViewTab();
-    if (next === current) return false;
-    setMerchantEditorViewTab(next);
-    return true;
-  }
-
   function getMerchantGmViewTabStorageKey() {
     return `po-merchant-gm-view-tab-${getCurrentUserId()}`;
   }
@@ -489,9 +460,6 @@ export function createMerchantUiState({
     getMerchantCityCatalogDraftValue,
     setMerchantCityCatalogDraftValue,
     clearMerchantCityCatalogDraftValue,
-    getMerchantEditorViewTab,
-    setMerchantEditorViewTab,
-    setMerchantEditorViewTabFromElement,
     getMerchantGmViewTab,
     setMerchantGmViewTab,
     setMerchantGmViewTabFromElement,

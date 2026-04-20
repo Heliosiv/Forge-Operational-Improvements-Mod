@@ -78,9 +78,6 @@ assert.equal(uiState.getMerchantEditorPersistedId("merchant-fallback"), "");
 uiState.setMerchantEditorSelection("");
 assert.equal(uiState.getMerchantEditorPersistedId("merchant-fallback"), "merchant-fallback");
 
-assert.equal(uiState.setMerchantEditorViewTab("settings"), "settings");
-assert.equal(uiState.getMerchantEditorViewTab(), "settings");
-
 assert.equal(uiState.setMerchantEditorSourceFilter("  adventuring   gear  "), "adventuring gear");
 assert.equal(uiState.getMerchantEditorSourceFilter(), "adventuring gear");
 assert.equal(uiState.getMerchantEditorPackFilter(), "adventuring gear");

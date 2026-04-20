@@ -96,17 +96,14 @@ export function registerPartyOpsFeatureSettings({
 
   game.settings.register(moduleId, settings.INTEGRATION_MODE, {
     name: "Integration Mode",
-    hint: "Choose how Party Operations syncs state for DAE/automation modules.",
+    hint: "Legacy integration mode (locked off).",
     scope: "world",
-    config: true,
+    config: false,
     type: String,
     choices: {
-      auto: "Auto (DAE if active, otherwise flags)",
-      off: "Off",
-      flags: "Flags Only",
-      dae: "DAE + Flags"
+      off: "Off"
     },
-    default: "auto"
+    default: "off"
   });
 
   game.settings.register(moduleId, settings.SESSION_AUTOPILOT_SNAPSHOT, {

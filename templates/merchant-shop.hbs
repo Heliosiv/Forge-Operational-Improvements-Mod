@@ -22,6 +22,7 @@
           <div class="po-merchant-trade-subtitle">{{merchantTitle}}</div>
           {{/if}}
           <div class="po-merchant-trade-item-meta">
+            <span class="po-pill">{{merchantArchetypeLabel}}</span>
             <span class="po-pill">{{merchantTypeLabel}}</span>
             <span class="po-pill">{{merchantDispositionLabel}}</span>
             {{#if merchantFactionLabel}}<span class="po-pill">{{merchantFactionLabel}}</span>{{/if}}
@@ -29,6 +30,15 @@
           <p class="po-merchant-trade-description">
             <strong>{{actorName}}</strong> is shopping at <strong>{{settlementLabel}}</strong>.
           </p>
+          {{#if merchantSpecialtyLabel}}
+          <div class="po-op-summary">{{merchantSpecialtyLabel}}</div>
+          {{/if}}
+          {{#if merchantPricePostureLabel}}
+          <div class="po-op-summary">{{merchantPricePostureLabel}}</div>
+          {{/if}}
+          {{#if merchantCadenceLabel}}
+          <div class="po-op-summary">{{merchantCadenceLabel}}</div>
+          {{/if}}
         </div>
       </div>
 
@@ -111,6 +121,28 @@
             data-merchant-search
           />
         </div>
+        {{#if hasFeaturedSections}}
+        <div class="po-merchant-trade-featured">
+          <div class="po-merchant-trade-section-label">Featured Finds</div>
+          {{#each featuredSections}}
+          <div class="po-merchant-trade-featured-group">
+            <div class="po-op-summary"><strong>{{sectionLabel}}</strong></div>
+            <div class="po-merchant-trade-item-meta">
+              {{#each rows}}
+              <span class="po-pill">{{itemName}} - {{unitLabel}}</span>
+              {{/each}}
+            </div>
+          </div>
+          {{/each}}
+        </div>
+        {{/if}}
+        {{#if hasStockSections}}
+        <div class="po-merchant-trade-stock-groups">
+          {{#each stockSections}}
+          <div class="po-op-summary"><strong>{{sectionLabel}}</strong>: {{rows.length}} listings</div>
+          {{/each}}
+        </div>
+        {{/if}}
         <div class="po-merchant-trade-table-wrap">
           <table class="po-table po-table-sm po-merchant-trade-table">
             <thead>
@@ -173,8 +205,8 @@
         <header class="po-merchant-trade-panel-head">
           <div>
             <div class="po-merchant-trade-section-label">Sell</div>
-            <h3>Player Inventory</h3>
-            <div class="po-op-summary">Double-click a row or use Inspect to open item details.</div>
+            <h3>Sell To This Shop</h3>
+            <div class="po-op-summary">{{buybackCategorySummary}}</div>
           </div>
           <div class="po-op-summary">{{sellCountLabel}}</div>
         </header>

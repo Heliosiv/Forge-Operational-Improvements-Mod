@@ -6758,6 +6758,22 @@
   padding: 8px 14px 0;
 }
 
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-featured,
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-stock-groups {
+  display: grid;
+  gap: 8px;
+  padding: 10px 14px 0;
+}
+
+.party-operations.po-merchant-shop-dialog-app .po-merchant-trade-featured-group {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 26%, var(--po-border));
+  border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 8%, transparent), transparent 75%);
+}
+
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table-wrap {
   min-height: 0;
   overflow: auto;
@@ -9543,8 +9559,8 @@
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-row {
   display: grid;
-  grid-template-columns: 128px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 8px;
   align-items: stretch;
 }
 
@@ -9560,15 +9576,14 @@
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-cells {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(160px, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-cell {
   position: relative;
   display: flex;
-  min-height: 132px;
+  min-height: 96px;
   padding: 0;
   border: 1px dashed color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
   border-radius: 12px;
@@ -9606,8 +9621,8 @@
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 6px;
-  padding: 12px 10px;
+  gap: 4px;
+  padding: 8px;
   border: 0;
   background: transparent;
   color: var(--po-text);
@@ -9626,9 +9641,9 @@
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-cell .po-portrait,
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-staging-chip .po-portrait {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
 }
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-cell-name,
@@ -9654,8 +9669,8 @@
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-card {
   display: grid;
   align-content: start;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   background:
     linear-gradient(180deg, color-mix(in srgb, white 6%, transparent), transparent 78%),
     color-mix(in srgb, var(--po-surface) 82%, transparent);
@@ -9674,8 +9689,8 @@
 
 .party-operations .po-window[data-tool="marching-order"] .po-march-board-card-title {
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 6px;
   align-items: start;
   min-width: 0;
 }

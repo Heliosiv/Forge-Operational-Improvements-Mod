@@ -33,20 +33,20 @@ const integration = createIntegrationAccess({
   }
 });
 
-assert.equal(integration.getIntegrationModeSetting(), "auto");
+assert.equal(integration.getIntegrationModeSetting(), "off");
 assert.equal(integration.isDaeAvailable(), false);
-assert.equal(integration.resolveIntegrationMode(), "flags");
+assert.equal(integration.resolveIntegrationMode(), "off");
 
 modules.set("dae", { active: true });
-assert.equal(integration.isDaeAvailable(), true);
-assert.equal(integration.resolveIntegrationMode(), "dae");
+assert.equal(integration.isDaeAvailable(), false);
+assert.equal(integration.resolveIntegrationMode(), "off");
 
 settingsState.integrationMode = "off";
 assert.equal(integration.resolveIntegrationMode(), "off");
 settingsState.integrationMode = "flags";
-assert.equal(integration.resolveIntegrationMode(), "flags");
+assert.equal(integration.resolveIntegrationMode(), "off");
 settingsState.integrationMode = "dae";
 modules.set("dae", { active: false });
-assert.equal(integration.resolveIntegrationMode(), "flags");
+assert.equal(integration.resolveIntegrationMode(), "off");
 
 process.stdout.write("integration access validation passed\n");

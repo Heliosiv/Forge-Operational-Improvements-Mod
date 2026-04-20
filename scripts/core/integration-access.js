@@ -5,19 +5,15 @@ export function createIntegrationAccess({
   gameRef = globalThis.game ?? {}
 } = {}) {
   function getIntegrationModeSetting() {
-    return gameRef.settings?.get?.(moduleId, settings.INTEGRATION_MODE) ?? integrationModes.AUTO;
+    return integrationModes.OFF;
   }
 
   function isDaeAvailable() {
-    return Boolean(gameRef.modules?.get?.("dae")?.active);
+    return false;
   }
 
   function resolveIntegrationMode() {
-    const configured = getIntegrationModeSetting();
-    if (configured === integrationModes.OFF) return integrationModes.OFF;
-    if (configured === integrationModes.FLAGS) return integrationModes.FLAGS;
-    if (configured === integrationModes.DAE) return isDaeAvailable() ? integrationModes.DAE : integrationModes.FLAGS;
-    return isDaeAvailable() ? integrationModes.DAE : integrationModes.FLAGS;
+    return integrationModes.OFF;
   }
 
   return {

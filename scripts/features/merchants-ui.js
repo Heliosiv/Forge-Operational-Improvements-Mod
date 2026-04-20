@@ -255,8 +255,6 @@ export function createGmMerchantsPageApp(deps) {
     setMerchantEditorSourceFilter,
     setMerchantGmViewTab,
     setMerchantGmViewTabFromElement,
-    setMerchantEditorViewTab,
-    setMerchantEditorViewTabFromElement,
     resetMerchantEditorSelection,
     createStarterMerchants,
     saveMerchantCityCatalogFromElement,
@@ -409,14 +407,12 @@ export function createGmMerchantsPageApp(deps) {
           const input = this.element?.querySelector?.("[data-merchant-source-filter]");
           if (input instanceof HTMLInputElement) input.focus();
         },
-        "merchant-editor-view-tab": rerenderIfTruthy(setMerchantEditorViewTabFromElement),
         "merchant-gm-view-tab": async (actionElement) => {
           cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
           if (setMerchantGmViewTabFromElement(actionElement)) rerender();
         },
         "merchant-new": async () => {
           resetMerchantEditorSelection();
-          setMerchantEditorViewTab?.("editor");
           setMerchantGmViewTab?.("editor");
           rerender();
         },
@@ -435,7 +431,6 @@ export function createGmMerchantsPageApp(deps) {
         "merchant-randomize-race": rerenderIfTruthy(randomizeMerchantRaceFromElement),
         "merchant-edit": async (actionElement) => {
           if (setMerchantEditorSelectionFromElement(actionElement)) {
-            setMerchantEditorViewTab?.("editor");
             setMerchantGmViewTab?.("editor");
             rerender();
           }

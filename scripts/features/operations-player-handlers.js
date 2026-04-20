@@ -150,8 +150,12 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
 
   const seenDocumentIds = new Set();
   const documents = [];
+  const foldersToUpdate = [];
   for (const targetFolderId of targetFolderIds) {
     const targetFolder = game.folders?.get?.(targetFolderId) ?? null;
+    if (targetFolder && typeof targetFolder.update === "function") {
+      foldersToUpdate.push(targetFolder);
+    }
     for (const document of Array.from(targetFolder?.contents ?? [])) {
       if (!document || String(document?.documentName ?? "") !== "JournalEntry" || typeof document.update !== "function") continue;
       const documentId = String(document?.id ?? "").trim();
@@ -161,9 +165,32 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
     }
   }
 
-  if (documents.length <= 0) {
+  if (foldersToUpdate.length <= 0 && documents.length <= 0) {
     ui.notifications?.info(`No journal entries found in folder "${String(folder?.name ?? "Folder")}".`);
     return;
+  }
+
+  let updatedFolderCount = 0;
+  for (const targetFolder of foldersToUpdate) {
+    const currentOwnership = targetFolder?.ownership && typeof targetFolder.ownership === "object"
+      ? foundry.utils.deepClone(targetFolder.ownership)
+      : { default: Number(constDocOwnershipLevels?.NONE ?? 0) };
+    let changed = false;
+    for (const [ownershipKey, level] of Object.entries(levels)) {
+      if (Number(currentOwnership[ownershipKey]) === Number(level)) continue;
+      currentOwnership[ownershipKey] = level;
+      changed = true;
+    }
+    if (!changed) continue;
+    try {
+      await targetFolder.update({ ownership: currentOwnership });
+      updatedFolderCount += 1;
+    } catch (error) {
+      console.warn(`${moduleId}: failed updating ownership for journal folder`, {
+        folderId: String(targetFolder?.id ?? ""),
+        error
+      });
+    }
   }
 
   let updatedCount = 0;
@@ -190,8 +217,14 @@ export async function applyPlayerFolderOwnershipWriteRequest(message, requesterR
     }
   }
 
-  if (updatedCount > 0) {
-    ui.notifications?.info(`Updated permissions on ${updatedCount} document${updatedCount === 1 ? "" : "s"} in "${String(folder?.name ?? "Folder")}".`);
+  if (updatedFolderCount > 0 || updatedCount > 0) {
+    const folderSummary = updatedFolderCount > 0
+      ? `${updatedFolderCount} folder${updatedFolderCount === 1 ? "" : "s"}`
+      : "0 folders";
+    const documentSummary = updatedCount > 0
+      ? `${updatedCount} document${updatedCount === 1 ? "" : "s"}`
+      : "0 documents";
+    ui.notifications?.info(`Updated permissions on ${folderSummary} and ${documentSummary} in "${String(folder?.name ?? "Folder")}".`);
     refreshOpenApps({ scope: refreshScopeKeys.OPERATIONS });
     emitSocketRefresh({ scope: refreshScopeKeys.OPERATIONS });
   }

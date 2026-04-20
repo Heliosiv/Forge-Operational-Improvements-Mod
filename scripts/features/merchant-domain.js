@@ -81,6 +81,170 @@ export const MERCHANT_DISPOSITION_OPTIONS = Object.freeze([
   Object.freeze({ value: "helpful", label: "Helpful" })
 ]);
 
+export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: "general-goods",
+    label: "General Goods",
+    merchantType: "general",
+    specialtyLabel: "Practical staples and broad adventuring stock.",
+    pricePostureLabel: "Broad trade at steady town pricing.",
+    stockCadenceLabel: "Dependable staples with a few rotating finds.",
+    defaultTitle: "General Goods",
+    allowedTypes: Object.freeze(["equipment", "consumable", "tool", "backpack", "loot", "trinket", "ammunition"]),
+    buybackAllowedTypes: Object.freeze(["weapon", "equipment", "consumable", "loot", "tool", "backpack", "armor", "ammunition", "trinket"]),
+    preferredTypes: Object.freeze(["equipment", "consumable", "tool", "backpack", "ammunition", "loot", "trinket"]),
+    avoidTypes: Object.freeze(["spell"]),
+    focusKeywords: Object.freeze(["rope", "ration", "waterskin", "bedroll", "lamp", "kit", "pack", "torch", "potion", "ammo"]),
+    featuredKeywords: Object.freeze(["healing", "climber", "antitoxin", "quiver", "lantern", "pack"]),
+    markupPercent: 20,
+    sellRatePercent: 55,
+    cashOnHandGp: 700,
+    maxItems: 20,
+    targetValueGp: 450,
+    valueStrictness: 180,
+    scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
+    coreRatio: 0.7
+  }),
+  Object.freeze({
+    id: "outfitter",
+    label: "Outfitter",
+    merchantType: "general",
+    specialtyLabel: "Field gear, containers, survival tools, and travel supplies.",
+    pricePostureLabel: "Strong on dependable expedition gear.",
+    stockCadenceLabel: "Large dependable gear wall with a few trail-ready features.",
+    defaultTitle: "Trail Outfitter",
+    allowedTypes: Object.freeze(["equipment", "backpack", "tool", "consumable", "ammunition"]),
+    buybackAllowedTypes: Object.freeze(["equipment", "backpack", "tool", "consumable", "ammunition"]),
+    preferredTypes: Object.freeze(["equipment", "backpack", "tool", "consumable", "ammunition"]),
+    avoidTypes: Object.freeze(["trinket", "loot", "spell"]),
+    focusKeywords: Object.freeze(["rope", "bedroll", "tent", "pack", "waterskin", "lantern", "torch", "climber", "piton", "travel"]),
+    featuredKeywords: Object.freeze(["healing", "climber", "lantern", "quiver", "survival"]),
+    markupPercent: 18,
+    sellRatePercent: 50,
+    cashOnHandGp: 650,
+    maxItems: 18,
+    targetValueGp: 520,
+    valueStrictness: 170,
+    scarcity: MERCHANT_SCARCITY_LEVELS.STOCKED,
+    coreRatio: 0.72
+  }),
+  Object.freeze({
+    id: "armorer",
+    label: "Armorer",
+    merchantType: "general",
+    specialtyLabel: "Armor, shields, repair pieces, and heavy field kit.",
+    pricePostureLabel: "Specialist inventory with steadier armor pricing.",
+    stockCadenceLabel: "Consistent defensive stock with a few standout pieces.",
+    defaultTitle: "Armorer",
+    allowedTypes: Object.freeze(["armor", "equipment", "backpack"]),
+    buybackAllowedTypes: Object.freeze(["armor", "equipment", "backpack"]),
+    preferredTypes: Object.freeze(["armor", "equipment", "backpack"]),
+    avoidTypes: Object.freeze(["trinket", "loot", "spell", "consumable"]),
+    focusKeywords: Object.freeze(["shield", "mail", "plate", "helmet", "gauntlet", "repair", "padding", "buckler"]),
+    featuredKeywords: Object.freeze(["shield", "plate", "half plate", "breastplate"]),
+    markupPercent: 24,
+    sellRatePercent: 48,
+    cashOnHandGp: 1100,
+    maxItems: 14,
+    targetValueGp: 1200,
+    valueStrictness: 200,
+    scarcity: MERCHANT_SCARCITY_LEVELS.MODEST,
+    coreRatio: 0.76
+  }),
+  Object.freeze({
+    id: "weaponsmith",
+    label: "Weaponsmith",
+    merchantType: "general",
+    specialtyLabel: "Weapons, ammunition, and practical combat support.",
+    pricePostureLabel: "Combat-first stock with reliable ammo support.",
+    stockCadenceLabel: "Stable arms rack with rotating premium pieces.",
+    defaultTitle: "Weaponsmith",
+    allowedTypes: Object.freeze(["weapon", "ammunition", "equipment", "consumable"]),
+    buybackAllowedTypes: Object.freeze(["weapon", "ammunition", "equipment"]),
+    preferredTypes: Object.freeze(["weapon", "ammunition", "equipment", "consumable"]),
+    avoidTypes: Object.freeze(["trinket", "loot", "spell", "backpack"]),
+    focusKeywords: Object.freeze(["sword", "bow", "crossbow", "arrow", "bolt", "quiver", "blade", "hammer", "axe", "oil"]),
+    featuredKeywords: Object.freeze(["+1", "longbow", "crossbow", "arrow", "bolt", "quiver"]),
+    markupPercent: 24,
+    sellRatePercent: 48,
+    cashOnHandGp: 950,
+    maxItems: 16,
+    targetValueGp: 980,
+    valueStrictness: 190,
+    scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
+    coreRatio: 0.72
+  }),
+  Object.freeze({
+    id: "apothecary",
+    label: "Apothecary / Alchemist",
+    merchantType: "general",
+    specialtyLabel: "Healing, remedies, alchemical supplies, and useful compounds.",
+    pricePostureLabel: "Higher-value consumables with narrower buyback.",
+    stockCadenceLabel: "Stable staples with a few rotating concoctions.",
+    defaultTitle: "Apothecary",
+    allowedTypes: Object.freeze(["consumable", "tool", "equipment", "loot"]),
+    buybackAllowedTypes: Object.freeze(["consumable", "tool", "equipment", "loot"]),
+    preferredTypes: Object.freeze(["consumable", "tool", "equipment", "loot"]),
+    avoidTypes: Object.freeze(["weapon", "armor", "trinket", "spell"]),
+    focusKeywords: Object.freeze(["potion", "healing", "antitoxin", "herbal", "alchemist", "elixir", "acid", "fire", "poison", "remedy"]),
+    featuredKeywords: Object.freeze(["healing", "greater", "antitoxin", "alchemy", "elixir"]),
+    markupPercent: 26,
+    sellRatePercent: 45,
+    cashOnHandGp: 800,
+    maxItems: 15,
+    targetValueGp: 650,
+    valueStrictness: 185,
+    scarcity: MERCHANT_SCARCITY_LEVELS.MODEST,
+    coreRatio: 0.68
+  }),
+  Object.freeze({
+    id: "tool-merchant",
+    label: "Tool Merchant",
+    merchantType: "general",
+    specialtyLabel: "Kits, implements, and practical support gear.",
+    pricePostureLabel: "Focused workshop inventory with reliable utility.",
+    stockCadenceLabel: "Stable kit catalogue with a few practical highlights.",
+    defaultTitle: "Tool Merchant",
+    allowedTypes: Object.freeze(["tool", "equipment", "backpack", "consumable"]),
+    buybackAllowedTypes: Object.freeze(["tool", "equipment", "backpack"]),
+    preferredTypes: Object.freeze(["tool", "equipment", "backpack", "consumable"]),
+    avoidTypes: Object.freeze(["weapon", "armor", "spell", "trinket"]),
+    focusKeywords: Object.freeze(["kit", "tools", "artisan", "smith", "thieves", "healer", "climber", "mess", "cook", "repair"]),
+    featuredKeywords: Object.freeze(["healer", "thieves", "artisan", "climber"]),
+    markupPercent: 20,
+    sellRatePercent: 50,
+    cashOnHandGp: 650,
+    maxItems: 16,
+    targetValueGp: 500,
+    valueStrictness: 175,
+    scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
+    coreRatio: 0.72
+  }),
+  Object.freeze({
+    id: "magic-dealer",
+    label: "Magic Dealer",
+    merchantType: "magic",
+    specialtyLabel: "Fewer, better, more distinct arcane wares.",
+    pricePostureLabel: "Premium stock with lighter quantity and stronger highlights.",
+    stockCadenceLabel: "Small stable baseline with rotating signature finds.",
+    defaultTitle: "Magic Dealer",
+    allowedTypes: Object.freeze(["consumable", "spell", "equipment", "weapon", "armor", "loot", "trinket"]),
+    buybackAllowedTypes: Object.freeze(["consumable", "spell", "equipment", "weapon", "armor", "loot", "trinket"]),
+    preferredTypes: Object.freeze(["consumable", "spell", "equipment", "weapon", "armor", "loot", "trinket"]),
+    avoidTypes: Object.freeze(["backpack", "tool", "ammunition"]),
+    focusKeywords: Object.freeze(["scroll", "wand", "staff", "ring", "magic", "arcane", "enchanted", "+1", "spell", "focus"]),
+    featuredKeywords: Object.freeze(["rare", "very rare", "legendary", "+1", "scroll", "wand", "staff", "ring"]),
+    markupPercent: 32,
+    sellRatePercent: 40,
+    cashOnHandGp: 1800,
+    maxItems: 10,
+    targetValueGp: 2400,
+    valueStrictness: 220,
+    scarcity: MERCHANT_SCARCITY_LEVELS.THIN,
+    coreRatio: 0.6
+  })
+]);
+
 // Maximum fractional price deviation that barter/haggling may produce (±10% of base).
 export const MERCHANT_HAGGLE_CAP_PERCENT = 0.10;
 
@@ -323,6 +487,8 @@ const MERCHANT_OFFER_TAG_DEFINITIONS = Object.freeze([
 export const MERCHANT_DEFAULTS = Object.freeze({
   settlement: "",
   // Identity metadata
+  archetype: "general-goods",
+  customMode: false,
   type: "general",
   faction: "",
   location: "",
@@ -392,6 +558,7 @@ export const MERCHANT_DEFAULTS = Object.freeze({
 export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   Object.freeze({
     id: "starter-sundries",
+    archetype: "general-goods",
     name: "Sundries",
     title: "General Goods",
     race: "Human",
@@ -403,6 +570,7 @@ export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   }),
   Object.freeze({
     id: "starter-tools",
+    archetype: "tool-merchant",
     name: "Tools",
     title: "Implements and Kits",
     race: "Dwarf",
@@ -414,6 +582,7 @@ export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   }),
   Object.freeze({
     id: "starter-armour",
+    archetype: "armorer",
     name: "Armour",
     title: "Shields and Harness",
     race: "Goliath",
@@ -425,6 +594,7 @@ export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   }),
   Object.freeze({
     id: "starter-weapons",
+    archetype: "weaponsmith",
     name: "Weapons",
     title: "Arms and Ammunition",
     race: "Orc",
@@ -436,6 +606,7 @@ export const MERCHANT_STARTER_BLUEPRINTS = Object.freeze([
   }),
   Object.freeze({
     id: "starter-spells",
+    archetype: "magic-dealer",
     name: "Spells",
     title: "Scrolls and Arcana",
     race: "Elf",
@@ -455,6 +626,122 @@ function deepCloneValue(value, foundryRef = globalThis.foundry) {
   } catch {
     return JSON.parse(JSON.stringify(value));
   }
+}
+
+function buildMerchantArchetypeMap() {
+  return new Map(MERCHANT_ARCHETYPE_DEFINITIONS.map((entry) => [String(entry.id ?? "").trim().toLowerCase(), entry]));
+}
+
+const MERCHANT_ARCHETYPE_MAP = buildMerchantArchetypeMap();
+
+export function normalizeMerchantArchetype(value = "") {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (MERCHANT_ARCHETYPE_MAP.has(normalized)) return normalized;
+  return MERCHANT_DEFAULTS.archetype;
+}
+
+export function getMerchantArchetypeDefinition(archetypeInput = MERCHANT_DEFAULTS.archetype) {
+  return MERCHANT_ARCHETYPE_MAP.get(normalizeMerchantArchetype(archetypeInput))
+    ?? MERCHANT_ARCHETYPE_MAP.get(MERCHANT_DEFAULTS.archetype)
+    ?? MERCHANT_ARCHETYPE_DEFINITIONS[0];
+}
+
+export function getMerchantArchetypeOptions(selectedInput = MERCHANT_DEFAULTS.archetype) {
+  const selected = normalizeMerchantArchetype(selectedInput);
+  return MERCHANT_ARCHETYPE_DEFINITIONS.map((definition) => ({
+    value: definition.id,
+    label: definition.label,
+    specialtyLabel: definition.specialtyLabel,
+    selected: definition.id === selected
+  }));
+}
+
+function merchantHasAdvancedStockConfig(source = {}) {
+  const stock = source?.stock && typeof source.stock === "object" ? source.stock : source;
+  const sourceType = normalizeMerchantSourceType(stock?.sourceType ?? source?.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType);
+  const sourceRef = String(stock?.sourceRef ?? source?.sourceRef ?? "").trim();
+  const sourcePackIds = normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? source?.sourcePackIds ?? [], sourceRef);
+  if (sourceType !== MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return true;
+  if (sourcePackIds.length > 0) return true;
+  if (normalizeMerchantTagList(stock?.includeTags ?? source?.includeTags ?? []).length > 0) return true;
+  if (normalizeMerchantTagList(stock?.excludeTags ?? source?.excludeTags ?? []).length > 0) return true;
+  if (normalizeMerchantKeywordList(stock?.keywordInclude ?? source?.keywordInclude ?? []).length > 0) return true;
+  if (normalizeMerchantKeywordList(stock?.keywordExclude ?? source?.keywordExclude ?? []).length > 0) return true;
+  if (normalizeMerchantCuratedItemUuids(stock?.curatedItemUuids ?? source?.curatedItemUuids ?? []).length > 0) return true;
+  return false;
+}
+
+function getMerchantArchetypeDefaults(archetypeInput = MERCHANT_DEFAULTS.archetype) {
+  const definition = getMerchantArchetypeDefinition(archetypeInput);
+  return {
+    archetype: definition.id,
+    type: normalizeMerchantType(definition.merchantType ?? MERCHANT_DEFAULTS.type),
+    title: String(definition.defaultTitle ?? "").trim(),
+    customMode: false,
+    pricing: {
+      buyMarkup: Number((Number(definition.markupPercent ?? 0) / 100).toFixed(2)),
+      sellRate: Number((Number(definition.sellRatePercent ?? 0) / 100).toFixed(2)),
+      cashOnHandGp: Number(definition.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp),
+      buybackAllowedTypes: normalizeMerchantAllowedItemTypes(definition.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes)
+    },
+    stock: {
+      sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+      sourceRef: "",
+      sourcePackIds: [],
+      allowedTypes: normalizeMerchantAllowedItemTypes(definition.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
+      maxItems: clampMerchantItemCount(definition.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems, MERCHANT_DEFAULTS.stock.maxItems),
+      targetValueGp: Math.max(0, Number(definition.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp) || 0),
+      valueStrictness: clampMerchantValueStrictness(definition.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness, MERCHANT_DEFAULTS.stock.valueStrictness),
+      scarcity: normalizeMerchantScarcity(definition.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity)
+    }
+  };
+}
+
+function mergeMerchantArchetypeDefaults(source = {}, archetypeInput = source?.archetype ?? MERCHANT_DEFAULTS.archetype, customModeInput = source?.customMode) {
+  const archetype = normalizeMerchantArchetype(archetypeInput);
+  const definitionDefaults = getMerchantArchetypeDefaults(archetype);
+  const customMode = customModeInput === undefined
+    ? merchantHasAdvancedStockConfig(source)
+    : Boolean(customModeInput);
+  const stockSource = source?.stock && typeof source.stock === "object" ? source.stock : {};
+  const pricingSource = source?.pricing && typeof source.pricing === "object" ? source.pricing : {};
+  const merged = {
+    ...definitionDefaults,
+    ...source,
+    archetype,
+    customMode,
+    type: normalizeMerchantType(source?.type ?? definitionDefaults.type ?? MERCHANT_DEFAULTS.type),
+    title: String(source?.title ?? definitionDefaults.title ?? "").trim(),
+    pricing: {
+      ...definitionDefaults.pricing,
+      ...pricingSource
+    },
+    stock: {
+      ...definitionDefaults.stock,
+      ...stockSource
+    }
+  };
+  if (!customMode) {
+    merged.stock.sourceType = MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
+    merged.stock.sourceRef = "";
+    merged.stock.sourcePackIds = [];
+    merged.stock.includeTags = [];
+    merged.stock.excludeTags = [];
+    merged.stock.keywordInclude = [];
+    merged.stock.keywordExclude = [];
+    merged.stock.curatedItemUuids = [];
+    merged.stock.allowedTypes = normalizeMerchantAllowedItemTypes(
+      stockSource?.allowedTypes
+      ?? definitionDefaults.stock.allowedTypes
+      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    );
+    merged.pricing.buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+      pricingSource?.buybackAllowedTypes
+      ?? definitionDefaults.pricing.buybackAllowedTypes
+      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    );
+  }
+  return merged;
 }
 
 function clampMerchantMarkupPercent(value, fallback = 0) {
@@ -774,9 +1061,13 @@ export function generateRandomMerchantNameUnbound() {
 }
 
 export function getMerchantEditorSourceTypeOptions(selected = MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-  const valueRaw = normalizeMerchantSourceType(selected);
-  const value = valueRaw === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER : valueRaw;
+  const value = normalizeMerchantSourceType(selected);
   return [
+    {
+      value: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+      label: "All World Items",
+      selected: value === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+    },
     {
       value: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
       label: "World Item Folder",
@@ -832,14 +1123,36 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     ? options.resolveFolderByAliases
     : () => ({ id: "", name: "" });
   const sourceFolder = resolver(blueprint?.folderAliases ?? []);
+  const archetype = normalizeMerchantArchetype(blueprint?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const archetypeDefaults = getMerchantArchetypeDefaults(archetype);
   const id = String(blueprint?.id ?? `starter-merchant-${index + 1}`).trim() || `starter-merchant-${index + 1}`;
   const name = String(blueprint?.name ?? `Starter Merchant ${index + 1}`).trim() || `Starter Merchant ${index + 1}`;
-  const title = String(blueprint?.title ?? "").trim();
+  const title = String(blueprint?.title ?? archetypeDefaults?.title ?? "").trim();
   const race = normalizeMerchantRace(blueprint?.race ?? "Human");
   const img = String(blueprint?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
-  const markupPercent = clampMerchantMarkupPercent(blueprint?.markupPercent, 20);
+  const markupPercent = clampMerchantMarkupPercent(
+    blueprint?.markupPercent,
+    Number(archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
+  );
   const buyMarkup = Number((markupPercent / 100).toFixed(2));
-  const maxItems = clampMerchantItemCount(blueprint?.maxItems, MERCHANT_DEFAULTS.stock.maxItems);
+  const maxItems = clampMerchantItemCount(
+    blueprint?.maxItems,
+    archetypeDefaults?.stock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems
+  );
+  const customMode = Boolean(blueprint?.customMode ?? false);
+  const allowedTypes = normalizeMerchantAllowedItemTypes(
+    blueprint?.allowedTypes
+    ?? archetypeDefaults?.stock?.allowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
+    blueprint?.buybackAllowedTypes
+    ?? archetypeDefaults?.pricing?.buybackAllowedTypes
+    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+  );
+  const sourceType = customMode
+    ? normalizeMerchantSourceType(blueprint?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
+    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   return {
     id,
     name,
@@ -847,7 +1160,9 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     race,
     img,
     settlement: "",
-    type: normalizeMerchantType(blueprint?.type ?? MERCHANT_DEFAULTS.type),
+    archetype,
+    customMode,
+    type: normalizeMerchantType(blueprint?.type ?? archetypeDefaults?.type ?? MERCHANT_DEFAULTS.type),
     faction: normalizeMerchantFaction(blueprint?.faction ?? MERCHANT_DEFAULTS.faction),
     location: normalizeMerchantLocation(blueprint?.location ?? MERCHANT_DEFAULTS.location),
     disposition: normalizeMerchantDisposition(blueprint?.disposition ?? MERCHANT_DEFAULTS.disposition),
@@ -861,10 +1176,18 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     minSocialScore: 0,
     pricing: {
       buyMarkup,
-      sellRate: MERCHANT_DEFAULTS.pricing.sellRate,
+      sellRate: Number(
+        blueprint?.sellRate
+        ?? archetypeDefaults?.pricing?.sellRate
+        ?? MERCHANT_DEFAULTS.pricing.sellRate
+      ),
       sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled,
-      cashOnHandGp: MERCHANT_DEFAULTS.pricing.cashOnHandGp,
-      buybackAllowedTypes: normalizeMerchantAllowedItemTypes(MERCHANT_DEFAULTS.pricing.buybackAllowedTypes),
+      cashOnHandGp: Number(
+        blueprint?.cashOnHandGp
+        ?? archetypeDefaults?.pricing?.cashOnHandGp
+        ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+      ),
+      buybackAllowedTypes,
       taxFeePercent: normalizeMerchantTaxFeePercent(blueprint?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent),
       rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
       stockPressureEnabled: Boolean(MERCHANT_DEFAULTS.pricing.stockPressureEnabled),
@@ -889,19 +1212,34 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       )
     },
     stock: {
-      sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
-      sourceRef: String(sourceFolder?.id ?? "").trim(),
-      sourcePackIds: [],
+      sourceType,
+      sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER ? String(sourceFolder?.id ?? "").trim() : "",
+      sourcePackIds: sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
+        ? normalizeMerchantSourcePackIds(blueprint?.sourcePackIds ?? [], "")
+        : [],
       includeTags: [],
       excludeTags: [],
       keywordInclude: [],
       keywordExclude: [],
-      allowedTypes: normalizeMerchantAllowedItemTypes(blueprint?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
+      allowedTypes,
       curatedItemUuids: [],
       maxItems,
-      targetValueGp: 0,
-      valueStrictness: MERCHANT_DEFAULTS.stock.valueStrictness,
-      scarcity: MERCHANT_SCARCITY_LEVELS.NORMAL,
+      targetValueGp: Math.max(0, Number(
+        blueprint?.targetValueGp
+        ?? archetypeDefaults?.stock?.targetValueGp
+        ?? MERCHANT_DEFAULTS.stock.targetValueGp
+      ) || 0),
+      valueStrictness: clampMerchantValueStrictness(
+        blueprint?.valueStrictness
+        ?? archetypeDefaults?.stock?.valueStrictness
+        ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+        MERCHANT_DEFAULTS.stock.valueStrictness
+      ),
+      scarcity: normalizeMerchantScarcity(
+        blueprint?.scarcity
+        ?? archetypeDefaults?.stock?.scarcity
+        ?? MERCHANT_SCARCITY_LEVELS.NORMAL
+      ),
       duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
       maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
       mundaneAmmoWeightBoost: MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost,
@@ -921,16 +1259,33 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const existingPricing = source?.existingPricing && typeof source.existingPricing === "object"
     ? source.existingPricing
     : {};
+  const archetype = normalizeMerchantArchetype(
+    source?.archetype
+    ?? source?.existingArchetype
+    ?? source?.existingMerchant?.archetype
+    ?? MERCHANT_DEFAULTS.archetype
+  );
+  const archetypeDefaults = getMerchantArchetypeDefaults(archetype);
+  const customMode = source?.customMode === undefined
+    ? Boolean(
+      source?.existingCustomMode
+      ?? source?.existingMerchant?.customMode
+      ?? merchantHasAdvancedStockConfig({ stock: existingStock, pricing: existingPricing })
+    )
+    : Boolean(source?.customMode);
   const markupPercentRaw = Number(
     source?.markupPercent
-    ?? (Number(source?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100)
+    ?? (Number(source?.buyMarkup ?? archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100)
   );
-  const markupPercent = clampMerchantMarkupPercent(markupPercentRaw, Number(MERCHANT_DEFAULTS.pricing.buyMarkup) * 100);
+  const markupPercent = clampMerchantMarkupPercent(
+    markupPercentRaw,
+    Number(archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
+  );
   const buyMarkup = Number((markupPercent / 100).toFixed(2));
   const sellRatePercentRaw = Number(
     source?.sellRatePercent
     ?? source?.buybackRatePercent
-    ?? (Number(source?.sellRate ?? existingPricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100)
+    ?? (Number(source?.sellRate ?? existingPricing?.sellRate ?? archetypeDefaults?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100)
   );
   const sellRate = Number.isFinite(sellRatePercentRaw)
     ? Math.max(0, Math.min(10, Number((sellRatePercentRaw / 100).toFixed(2))))
@@ -938,13 +1293,19 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const sellEnabled = source?.sellEnabled === undefined
     ? Boolean(existingPricing?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
     : Boolean(source?.sellEnabled);
-  const cashOnHandGpRaw = Number(source?.cashOnHandGp ?? existingPricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp);
+  const cashOnHandGpRaw = Number(
+    source?.cashOnHandGp
+    ?? existingPricing?.cashOnHandGp
+    ?? archetypeDefaults?.pricing?.cashOnHandGp
+    ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+  );
   const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
     ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
     : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
   const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
     source?.buybackAllowedTypes
     ?? existingPricing?.buybackAllowedTypes
+    ?? archetypeDefaults?.pricing?.buybackAllowedTypes
     ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
   const barterEnabled = source?.barterEnabled === undefined
@@ -1024,10 +1385,9 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     source?.stockCount ?? source?.maxItems ?? existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems,
     MERCHANT_DEFAULTS.stock.maxItems
   );
-  const sourceTypeRaw = normalizeMerchantSourceType(source?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
-  const sourceType = sourceTypeRaw === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-    : sourceTypeRaw;
+  const sourceType = customMode
+    ? normalizeMerchantSourceType(source?.sourceType ?? existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
+    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   const sourceRef = String(source?.sourceRef ?? "").trim();
   const sourceRefs = sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
     ? []
@@ -1039,12 +1399,22 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     ? ""
     : String(sourceRefs[0] ?? sourceRef).trim();
   const sourcePackIds = sourceRefs;
-  const allowedTypes = normalizeMerchantAllowedItemTypes(source?.allowedTypes ?? existingStock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
-  const includeTags = normalizeMerchantTagList(source?.includeTags ?? existingStock?.includeTags ?? []);
-  const excludeTags = normalizeMerchantTagList(source?.excludeTags ?? existingStock?.excludeTags ?? []);
-  const keywordInclude = normalizeMerchantKeywordList(source?.keywordInclude ?? existingStock?.keywordInclude ?? []);
-  const keywordExclude = normalizeMerchantKeywordList(source?.keywordExclude ?? existingStock?.keywordExclude ?? []);
-  const targetValueGpRaw = Number(source?.targetValueGp ?? existingStock?.targetValueGp ?? 0);
+  const allowedTypes = normalizeMerchantAllowedItemTypes(
+    source?.allowedTypes
+    ?? existingStock?.allowedTypes
+    ?? archetypeDefaults?.stock?.allowedTypes
+    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+  );
+  const includeTags = customMode ? normalizeMerchantTagList(source?.includeTags ?? existingStock?.includeTags ?? []) : [];
+  const excludeTags = customMode ? normalizeMerchantTagList(source?.excludeTags ?? existingStock?.excludeTags ?? []) : [];
+  const keywordInclude = customMode ? normalizeMerchantKeywordList(source?.keywordInclude ?? existingStock?.keywordInclude ?? []) : [];
+  const keywordExclude = customMode ? normalizeMerchantKeywordList(source?.keywordExclude ?? existingStock?.keywordExclude ?? []) : [];
+  const targetValueGpRaw = Number(
+    source?.targetValueGp
+    ?? existingStock?.targetValueGp
+    ?? archetypeDefaults?.stock?.targetValueGp
+    ?? 0
+  );
   const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, Number(targetValueGpRaw.toFixed(2))) : 0;
   const valueStrictness = clampMerchantValueStrictness(
     source?.valueStrictness ?? existingStock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
@@ -1090,14 +1460,16 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const permissionsSource = source?.permissions && typeof source.permissions === "object"
     ? source.permissions
     : {};
-  return {
+  const patch = {
     id: String(source?.id ?? "").trim(),
     name: String(source?.name ?? "").trim(),
-    title: String(source?.title ?? "").trim(),
+    title: String(source?.title ?? archetypeDefaults?.title ?? "").trim(),
     race: normalizeMerchantRace(source?.race ?? ""),
     img: String(source?.img ?? "").trim(),
     settlement: String(source?.settlement ?? "").trim(),
-    type: normalizeMerchantType(source?.type ?? MERCHANT_DEFAULTS.type),
+    archetype,
+    customMode,
+    type: normalizeMerchantType(source?.type ?? archetypeDefaults?.type ?? MERCHANT_DEFAULTS.type),
     faction: normalizeMerchantFaction(source?.faction ?? MERCHANT_DEFAULTS.faction),
     location: normalizeMerchantLocation(source?.location ?? MERCHANT_DEFAULTS.location),
     disposition: normalizeMerchantDisposition(source?.disposition ?? MERCHANT_DEFAULTS.disposition),
@@ -1160,7 +1532,7 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       keywordInclude,
       keywordExclude,
       allowedTypes,
-      curatedItemUuids: normalizeMerchantCuratedItemUuids(existingStock?.curatedItemUuids ?? []),
+      curatedItemUuids: customMode ? normalizeMerchantCuratedItemUuids(existingStock?.curatedItemUuids ?? []) : [],
       maxItems: stockCount,
       targetValueGp,
       valueStrictness,
@@ -1174,6 +1546,7 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     },
     actorId: String(source?.actorId ?? "").trim()
   };
+  return mergeMerchantArchetypeDefaults(patch, archetype, customMode);
 }
 
 function getMerchantOfferTagDefinitionById(tagIdInput = "") {
@@ -1397,6 +1770,101 @@ function isMundaneAmmoCandidate(candidate = {}) {
   return isAmmoCandidate(candidate) && getAmmoEnchantmentLevel(candidate) <= 0;
 }
 
+function isCommonMundaneAmmoCandidate(candidate = {}, getRarityBucket = getMerchantRarityBucket) {
+  if (!isMundaneAmmoCandidate(candidate)) return false;
+  return getRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? "") === "common";
+}
+
+function getMerchantCandidateTokenSet(candidate = {}) {
+  const rows = [
+    String(candidate?.name ?? candidate?.data?.name ?? ""),
+    ...(Array.isArray(candidate?.keywords) ? candidate.keywords : []),
+    ...(Array.isArray(candidate?.tags) ? candidate.tags : [])
+  ];
+  return new Set(
+    rows
+      .flatMap((entry) => String(entry ?? "").trim().toLowerCase().split(/[^a-z0-9+]+/))
+      .filter(Boolean)
+  );
+}
+
+function hasMerchantCandidateKeywordMatch(candidate = {}, keywords = []) {
+  const tokenSet = getMerchantCandidateTokenSet(candidate);
+  return (Array.isArray(keywords) ? keywords : []).some((keyword) => {
+    const normalized = String(keyword ?? "").trim().toLowerCase();
+    if (!normalized) return false;
+    if (tokenSet.has(normalized)) return true;
+    return Array.from(tokenSet).some((token) => token.includes(normalized) || normalized.includes(token));
+  });
+}
+
+function getMerchantSectionMetaForCandidate(candidate = {}, archetypeDefinition = getMerchantArchetypeDefinition()) {
+  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "").trim().toLowerCase();
+  const rareItem = ["rare", "very-rare", "legendary"].includes(getMerchantRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? ""));
+  const featuredHit = rareItem || candidate?.isCurated || hasMerchantCandidateKeywordMatch(candidate, archetypeDefinition?.featuredKeywords ?? []);
+  if (featuredHit) return { key: "featured", label: "Featured Finds" };
+  if (archetypeDefinition?.id === "apothecary" && itemType === "consumable") {
+    return { key: "elixirs", label: "Elixirs & Remedies" };
+  }
+  if (archetypeDefinition?.id === "magic-dealer" && ["consumable", "spell"].includes(itemType)) {
+    return { key: "arcana", label: "Arcane Curios" };
+  }
+  if (itemType === "weapon") return { key: "weapons", label: "Arms Rack" };
+  if (itemType === "ammunition") return { key: "ammunition", label: "Ammunition" };
+  if (itemType === "armor") return { key: "armor", label: "Protection" };
+  if (itemType === "tool") return { key: "tools", label: "Tools & Kits" };
+  if (itemType === "backpack") return { key: "packs", label: "Packs & Containers" };
+  if (itemType === "equipment") return { key: "gear", label: "Field Gear" };
+  if (itemType === "consumable") return { key: "consumables", label: "Supplies & Tonics" };
+  if (itemType === "spell") return { key: "spells", label: "Arcane Stock" };
+  return { key: "misc", label: "Shop Stock" };
+}
+
+function getMerchantArchetypeCandidateScore(candidate = {}, merchant = {}, getRarityBucket = getMerchantRarityBucket) {
+  const definition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "").trim().toLowerCase();
+  const preferredTypes = Array.isArray(definition?.preferredTypes) ? definition.preferredTypes : [];
+  const avoidTypes = new Set(Array.isArray(definition?.avoidTypes) ? definition.avoidTypes : []);
+  const typeIndex = preferredTypes.indexOf(itemType);
+  let score = typeIndex >= 0 ? Math.max(0.3, 2.4 - (typeIndex * 0.23)) : 0.55;
+  if (avoidTypes.has(itemType)) score *= 0.18;
+  if (hasMerchantCandidateKeywordMatch(candidate, definition?.focusKeywords ?? [])) score *= 1.5;
+  if (hasMerchantCandidateKeywordMatch(candidate, definition?.featuredKeywords ?? [])) score *= 1.2;
+  const rarityBucket = getRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? "");
+  if (definition?.id === "magic-dealer") {
+    if (rarityBucket === "common") score *= 0.65;
+    if (["uncommon", "rare", "very-rare", "legendary"].includes(rarityBucket)) score *= 1.35;
+  } else if (["very-rare", "legendary"].includes(rarityBucket)) {
+    score *= 0.75;
+  }
+  if (["trinket", "loot"].includes(itemType) && definition?.id !== "magic-dealer") score *= 0.5;
+  if (candidate?.isCurated) score *= 1.15;
+  return Math.max(0.01, Number(score.toFixed(4)));
+}
+
+function enrichMerchantCandidateForSelection(candidate = {}, merchant = {}, getRarityBucket = getMerchantRarityBucket) {
+  const definition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const section = getMerchantSectionMetaForCandidate(candidate, definition);
+  const archetypeScore = getMerchantArchetypeCandidateScore(candidate, merchant, getRarityBucket);
+  const featuredWeight = section.key === "featured" ? archetypeScore * 1.35 : archetypeScore;
+  return {
+    ...candidate,
+    merchantArchetype: definition.id,
+    merchantSectionKey: section.key,
+    merchantSectionLabel: section.label,
+    merchantArchetypeScore: archetypeScore,
+    merchantFeaturedWeight: Number(featuredWeight.toFixed(4))
+  };
+}
+
+function getMerchantSectionPriority(sectionKey = "") {
+  const normalized = String(sectionKey ?? "").trim().toLowerCase();
+  if (normalized === "featured") return 99;
+  const order = ["gear", "packs", "tools", "weapons", "ammunition", "armor", "consumables", "elixirs", "arcana", "spells", "misc"];
+  const index = order.indexOf(normalized);
+  return index >= 0 ? index : 50;
+}
+
 export function selectMerchantStockRows(candidates = [], merchant = {}, options = {}) {
   const normalizeCuratedItemUuids = typeof options?.normalizeCuratedItemUuids === "function"
     ? options.normalizeCuratedItemUuids
@@ -1430,7 +1898,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   const duplicateChance = clampMerchantDuplicateChance(stock?.duplicateChance, MERCHANT_DEFAULTS.stock.duplicateChance) / 100;
   const maxStackSize = clampMerchantMaxStackSize(stock?.maxStackSize, MERCHANT_DEFAULTS.stock.maxStackSize);
   const rarityWeights = normalizeRarityWeights(stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
-  const shuffled = shuffleRows(Array.isArray(candidates) ? candidates : []);
+  const shuffled = shuffleRows(Array.isArray(candidates) ? candidates : [])
+    .map((entry) => enrichMerchantCandidateForSelection(entry, merchant, getRarityBucket));
   if (shuffled.length <= 0) return [];
 
   const candidateByKey = new Map();
@@ -1458,6 +1927,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     stock?.mundaneAmmoStackSize,
     MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize
   );
+  const archetypeDefinition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const coreTarget = Math.max(1, Math.min(targetCount, Math.round(targetCount * Math.max(0.45, Number(archetypeDefinition?.coreRatio ?? 0.7) || 0.7))));
   const canAddRows = () => selected.length < targetCount;
   const canAddRowsBeyondTarget = () => budgetEnabled && runningValue < targetValueGp && selected.length < maxGeneratedRows;
 
@@ -1512,7 +1983,11 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       ...candidate,
       key: stackKey,
       sourceKey: baseKey,
-      quantity: Math.max(1, quantity)
+      quantity: Math.max(1, quantity),
+      merchantStockRole: String(addOptions?.stockRole ?? candidate?.merchantStockRole ?? "core"),
+      merchantSectionKey: String(candidate?.merchantSectionKey ?? "misc"),
+      merchantSectionLabel: String(candidate?.merchantSectionLabel ?? "Shop Stock"),
+      merchantArchetype: String(candidate?.merchantArchetype ?? merchant?.archetype ?? MERCHANT_DEFAULTS.archetype)
     };
     selected.push(created);
     selectedByKey.set(stackKey, created);
@@ -1562,12 +2037,13 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 
   const getSelectionWeight = (candidate) => {
     const curatedBoost = candidate?.isCurated ? 1.25 : 1;
-    const ammoBoost = isMundaneAmmoCandidate(candidate) ? mundaneAmmoWeightBoost : 1;
-    return getRarityWeight(candidate) * getBudgetWeight(candidate) * curatedBoost * ammoBoost;
+    const ammoBoost = isCommonMundaneAmmoCandidate(candidate, getRarityBucket) ? mundaneAmmoWeightBoost : 1;
+    const archetypeBoost = Math.max(0.01, Number(candidate?.merchantArchetypeScore ?? 1) || 1);
+    return getRarityWeight(candidate) * getBudgetWeight(candidate) * curatedBoost * ammoBoost * archetypeBoost;
   };
 
   const getRollQuantity = (candidate) => {
-    if (isMundaneAmmoCandidate(candidate)) return mundaneAmmoRollQuantity;
+    if (isCommonMundaneAmmoCandidate(candidate, getRarityBucket)) return mundaneAmmoRollQuantity;
     return 1;
   };
 
@@ -1576,8 +2052,26 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       if (!canAddRows() && !canAddRowsBeyondTarget()) break;
       const match = candidateByKey.get(String(uuid ?? "").trim());
       if (!match) continue;
-      addSelection(match, getRollQuantity(match), { bypassBudget: true });
+      addSelection(match, getRollQuantity(match), {
+        bypassBudget: true,
+        stockRole: selected.length < coreTarget ? "core" : "featured"
+      });
     }
+  }
+
+  const deterministicCorePool = shuffled
+    .filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()))
+    .sort((left, right) => {
+      const rightScore = Number(right?.merchantArchetypeScore ?? 0) + (right?.isCurated ? 0.4 : 0);
+      const leftScore = Number(left?.merchantArchetypeScore ?? 0) + (left?.isCurated ? 0.4 : 0);
+      if (rightScore !== leftScore) return rightScore - leftScore;
+      const sectionDiff = getMerchantSectionPriority(left?.merchantSectionKey) - getMerchantSectionPriority(right?.merchantSectionKey);
+      if (sectionDiff !== 0) return sectionDiff;
+      return String(left?.key ?? "").localeCompare(String(right?.key ?? ""));
+    });
+  for (const candidate of deterministicCorePool) {
+    if (selected.length >= coreTarget) break;
+    addSelection(candidate, getRollQuantity(candidate), { stockRole: "core" });
   }
 
   let safety = 0;
@@ -1603,18 +2097,23 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
         const valueWeight = getBudgetWeight(entry);
         const value = getCandidateBudgetValue(entry);
         const affordableBoost = targetValueGp > 0 && value <= Math.max(0, targetValueGp - runningValue) ? 1.1 : 1;
-        return rarityWeight * valueWeight * affordableBoost;
+        const archetypeBoost = Math.max(0.01, Number(entry?.merchantFeaturedWeight ?? entry?.merchantArchetypeScore ?? 1) || 1);
+        return rarityWeight * valueWeight * affordableBoost * archetypeBoost;
       }, random);
       if (duplicatePick) {
-        addSelection(duplicatePick, getRollQuantity(duplicatePick));
+        addSelection(duplicatePick, getRollQuantity(duplicatePick), { stockRole: "featured" });
         continue;
       }
     }
 
     if (affordableCandidates.length > 0) {
-      const picked = chooseWeightedRow(affordableCandidates, getSelectionWeight, random);
+      const picked = chooseWeightedRow(affordableCandidates, (entry) => {
+        const baseWeight = getSelectionWeight(entry);
+        const featuredWeight = Math.max(0.01, Number(entry?.merchantFeaturedWeight ?? 1) || 1);
+        return baseWeight * featuredWeight;
+      }, random);
       if (picked) {
-        addSelection(picked, getRollQuantity(picked));
+        addSelection(picked, getRollQuantity(picked), { stockRole: "featured" });
         continue;
       }
     }
@@ -1622,7 +2121,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     if (canDuplicate) {
       const fallbackDuplicate = chooseWeightedRow(affordableDuplicates, getSelectionWeight, random);
       if (fallbackDuplicate) {
-        addSelection(fallbackDuplicate, getRollQuantity(fallbackDuplicate));
+        addSelection(fallbackDuplicate, getRollQuantity(fallbackDuplicate), { stockRole: "featured" });
         continue;
       }
     }
@@ -1630,7 +2129,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   }
 
   if (selected.length === 0 && shuffled.length > 0) {
-    addSelection(shuffled[0], getRollQuantity(shuffled[0]));
+    addSelection(shuffled[0], getRollQuantity(shuffled[0]), { stockRole: "core" });
   }
   return selected;
 }
@@ -1685,6 +2184,8 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
     const gpValue = Math.max(0, Number(getItemGpValue(data) || 0));
     rows.push({
       key: rowKey,
+      name: itemName,
+      itemType,
       data,
       gpValue,
       isCurated,

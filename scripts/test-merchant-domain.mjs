@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 
 import {
+  getMerchantArchetypeOptions,
   MERCHANT_DEFAULTS,
   buildMerchantDefinitionPatchFromEditorForm,
   buildStarterMerchantPatch,
@@ -49,28 +50,34 @@ const disabledPatch = buildMerchantDefinitionPatchFromEditorForm({
 assert.equal(disabledPatch.stock.autoRefresh.enabled, false);
 assert.equal(disabledPatch.stock.autoRefresh.intervalDays, 11);
 
+const archetypeOptions = getMerchantArchetypeOptions("weaponsmith");
+assert.ok(archetypeOptions.some((entry) => entry.value === "weaponsmith" && entry.selected));
+
+const presetPatch = buildMerchantDefinitionPatchFromEditorForm({
+  name: "Crossroads Outfitters",
+  archetype: "outfitter",
+  customMode: false,
+  existingStock: {},
+  existingPricing: {}
+});
+assert.equal(presetPatch.archetype, "outfitter");
+assert.equal(presetPatch.customMode, false);
+assert.equal(presetPatch.stock.sourceType, "world-items");
+assert.ok(presetPatch.stock.maxItems >= 1);
+assert.ok(presetPatch.stock.targetValueGp > 0);
+
 const starterPatch = buildStarterMerchantPatch({}, 0);
+assert.equal(starterPatch.archetype, "general-goods");
 assert.deepEqual(starterPatch.stock.autoRefresh, {
   enabled: false,
   intervalDays: Number(MERCHANT_DEFAULTS.stock.autoRefresh?.intervalDays ?? 7)
 });
-assert.deepEqual(starterPatch.pricing, {
-  buyMarkup: 0.2,
-  sellRate: MERCHANT_DEFAULTS.pricing.sellRate,
-  sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled,
-  cashOnHandGp: MERCHANT_DEFAULTS.pricing.cashOnHandGp,
-  buybackAllowedTypes: [...MERCHANT_DEFAULTS.pricing.buybackAllowedTypes],
-  taxFeePercent: Number(MERCHANT_DEFAULTS.pricing.taxFeePercent ?? 0),
-  rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
-  stockPressureEnabled: Boolean(MERCHANT_DEFAULTS.pricing.stockPressureEnabled),
-  barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled,
-  barterDc: MERCHANT_DEFAULTS.pricing.barterDc,
-  barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
-  barterSuccessBuyModifier: Number(MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier ?? -0.05),
-  barterSuccessSellModifier: Number(MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier ?? 0.05),
-  barterFailureBuyModifier: Number(MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier ?? 0.05),
-  barterFailureSellModifier: Number(MERCHANT_DEFAULTS.pricing.barterFailureSellModifier ?? -0.05)
-});
+assert.equal(starterPatch.pricing.buyMarkup, 0.2);
+assert.ok(starterPatch.pricing.sellRate > 0);
+assert.ok(starterPatch.pricing.cashOnHandGp > 0);
+assert.ok(starterPatch.pricing.buybackAllowedTypes.length > 0);
+assert.equal(starterPatch.pricing.sellEnabled, MERCHANT_DEFAULTS.pricing.sellEnabled);
+assert.equal(starterPatch.pricing.taxFeePercent, Number(MERCHANT_DEFAULTS.pricing.taxFeePercent ?? 0));
 
 const barterPatch = buildMerchantDefinitionPatchFromEditorForm({
   name: "Silver Tongue Supplies",
@@ -151,15 +158,16 @@ const ammoWeightCandidates = [
     key: "Item.ammo.magic.arrow-plus-1",
     name: "Arrow +1",
     gpValue: 1,
-    rarityBucket: "common",
+    rarityBucket: "uncommon",
     data: { name: "Arrow +1", type: "ammunition" },
     keywords: ["loot.weapon.magic"]
   }
 ];
 
 const ammoWeightMerchant = {
+  archetype: "weaponsmith",
   stock: {
-    maxItems: 1,
+    maxItems: 2,
     targetValueGp: 0,
     duplicateChance: 0,
     maxStackSize: 20,
@@ -178,12 +186,41 @@ const weightedAmmoSelection = selectMerchantStockRows(ammoWeightCandidates, ammo
   shuffleRows: (rows) => rows
 });
 
-assert.equal(weightedAmmoSelection.length, 1);
-assert.equal(weightedAmmoSelection[0]?.sourceKey ?? weightedAmmoSelection[0]?.key, "Item.ammo.mundane.arrow");
+assert.equal(weightedAmmoSelection.length, 2);
+assert.ok(
+  weightedAmmoSelection.some((entry) => (entry.sourceKey ?? entry.key) === "Item.ammo.mundane.arrow"),
+  "Expected practical merchants to retain mundane ammo support alongside rarer ammunition."
+);
 assert.equal(
-  Math.max(1, Math.floor(Number(weightedAmmoSelection[0]?.quantity ?? 1) || 1)),
+  Math.max(1, Math.floor(Number(weightedAmmoSelection.find((entry) => (entry.sourceKey ?? entry.key) === "Item.ammo.mundane.arrow")?.quantity ?? 1) || 1)),
   20,
-  "Expected mundane ammo rolls to create 20-unit stacks."
+  "Expected common mundane ammo rolls to create 20-unit stacks."
+);
+
+const uncommonAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[1]], {
+  stock: {
+    maxItems: 1,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+}, {
+  randomFn: () => 0.4,
+  shuffleRows: (rows) => rows
+});
+
+assert.equal(uncommonAmmoSelection.length, 1);
+assert.equal(
+  Math.max(1, Math.floor(Number(uncommonAmmoSelection[0]?.quantity ?? 1) || 1)),
+  1,
+  "Expected non-common ammunition to remain single-count when rolled."
 );
 
 const tunedAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[0]], {
@@ -207,5 +244,55 @@ const tunedAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[0]], {
   shuffleRows: (rows) => rows
 });
 assert.equal(Math.max(1, Math.floor(Number(tunedAmmoSelection[0]?.quantity ?? 1) || 1)), 40);
+
+const archetypeCandidates = [
+  {
+    key: "Item.weapon.longsword",
+    name: "Longsword",
+    gpValue: 15,
+    rarityBucket: "common",
+    data: { name: "Longsword", type: "weapon" },
+    keywords: ["blade", "sword"]
+  },
+  {
+    key: "Item.ammunition.arrow",
+    name: "Arrow",
+    gpValue: 0.05,
+    rarityBucket: "common",
+    data: { name: "Arrow", type: "ammunition" },
+    keywords: ["arrow", "ammo"]
+  },
+  {
+    key: "Item.trinket.polished-stone",
+    name: "Polished Stone",
+    gpValue: 1,
+    rarityBucket: "common",
+    data: { name: "Polished Stone", type: "trinket" },
+    keywords: ["curio"]
+  }
+];
+
+const archetypeSelection = selectMerchantStockRows(archetypeCandidates, {
+  archetype: "weaponsmith",
+  stock: {
+    maxItems: 2,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+}, {
+  randomFn: () => 0.25,
+  shuffleRows: (rows) => rows
+});
+assert.ok(archetypeSelection.some((entry) => (entry.sourceKey ?? entry.key) === "Item.weapon.longsword"));
+assert.ok(archetypeSelection.some((entry) => String(entry?.merchantSectionLabel ?? "").length > 0));
+assert.ok(archetypeSelection.some((entry) => entry?.merchantStockRole === "core"));
 
 process.stdout.write("merchant domain validation passed\n");

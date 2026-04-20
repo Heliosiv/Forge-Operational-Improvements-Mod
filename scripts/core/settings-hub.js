@@ -54,7 +54,6 @@ export function createPartyOperationsSettingsHub({
       const hordeUncommonPlusChance = String(
         game.settings.get(moduleId, settings.LOOT_HORDE_UNCOMMON_PLUS_CHANCE) ?? lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"
       ).trim().toLowerCase();
-      const integrationMode = String(game.settings.get(moduleId, settings.INTEGRATION_MODE) ?? "auto").trim().toLowerCase();
       const inventoryHookMode = normalizeInventoryHookMode(game.settings.get(moduleId, settings.INVENTORY_HOOK_MODE));
       const launcherPlacement = normalizeLauncherPlacement(game.settings.get(moduleId, settings.LAUNCHER_PLACEMENT));
       const journalVisibilityMode = String(
@@ -88,10 +87,6 @@ export function createPartyOperationsSettingsHub({
         hordeUncommonPlusChanceBoosted: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted"),
         hordeUncommonPlusChanceHigh: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.HIGH ?? "high"),
         hordeUncommonPlusChanceGuaranteed: hordeUncommonPlusChance === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed"),
-        integrationModeAuto: integrationMode === "auto",
-        integrationModeOff: integrationMode === "off",
-        integrationModeFlags: integrationMode === "flags",
-        integrationModeDae: integrationMode === "dae",
         journalVisibilityLabel,
         journalVisibilityIsGmPrivate: journalVisibilityMode === "gm-private",
         inventoryHookModeOff: inventoryHookMode === inventoryHookModes.OFF,
@@ -220,11 +215,6 @@ export function createPartyOperationsSettingsHub({
             if (value === (lootHordeUncommonPlusChanceModes.HIGH ?? "high")) return value;
             if (value === (lootHordeUncommonPlusChanceModes.GUARANTEED ?? "guaranteed")) return value;
             return lootHordeUncommonPlusChanceModes.BOOSTED ?? "boosted";
-          })()],
-          [settings.INTEGRATION_MODE, (() => {
-            const value = String(data.integrationMode ?? "auto").trim().toLowerCase();
-            if (value === "off" || value === "flags" || value === "dae") return value;
-            return "auto";
           })()],
           [settings.INVENTORY_HOOK_MODE, normalizeInventoryHookMode(data.inventoryHookMode)]
         ];

@@ -351,6 +351,7 @@ function getTierFromRarity(rarity = "") {
 
 function getValueBand(gpValue = 0) {
   const gp = Math.max(0, toNumber(gpValue));
+  if (gp < 5) return "value.v0";
   if (gp <= 49) return "value.v1";
   if (gp <= 149) return "value.v2";
   if (gp <= 749) return "value.v3";

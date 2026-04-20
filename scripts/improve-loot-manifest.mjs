@@ -52,6 +52,63 @@ const ZERO_PRICE_OVERRIDES = Object.freeze({
 });
 const TREASURE_SPEC_BY_IDENTIFIER = new Map(NEW_TREASURE.map((spec) => [normalizeLookupKey(spec?.identifier), spec]));
 
+/**
+ * Explicit price corrections for items where the dnd5e system compendium
+ * has a clearly wrong or severely unbalanced price.
+ * Keyed by normalised identifier → { value, denomination }.
+ */
+const PRICING_CORRECTIONS = Object.freeze({
+  "black-opal":                { value: 1000, denomination: "gp" },
+  "potion-of-greater-healing": { value: 100,  denomination: "gp" },
+  "potion-of-supreme-healing": { value: 5000, denomination: "gp" },
+  "decanter-of-endless-water": { value: 500,  denomination: "gp" },
+  "necklace-of-fireballs":     { value: 1600, denomination: "gp" },
+});
+
+/**
+ * Rarity corrections for items misclassified in the dnd5e system.
+ * Keyed by normalised identifier → corrected rarity string.
+ */
+const RARITY_CORRECTIONS = Object.freeze({
+  "wand-of-the-war-mage-3":  "very-rare",
+  "mirror-of-life-trapping": "very-rare",
+});
+
+/**
+ * lootType corrections for items misclassified by classifyLootType.
+ * Keyed by normalised identifier → corrected lootType string.
+ */
+const LOOT_TYPE_CORRECTIONS = Object.freeze({
+  "deck-of-illusions":   "loot.consumable",
+  "deck-of-many-things": "loot.consumable",
+});
+
+/**
+ * Maximum price (in gp) per rarity tier.  Items exceeding their rarity
+ * ceiling are capped to prevent Sane-Magical-Prices outliers from
+ * breaking the loot weight / merchant budget economy.
+ */
+const RARITY_PRICE_CEILING = Object.freeze({
+  common:      200,
+  uncommon:    2000,
+  rare:        20000,
+  "very-rare": 100000,
+  legendary:   500000,
+});
+
+/**
+ * Minimum price (in gp) per rarity tier for permanent items only
+ * (weapons, equipment, tools).  Consumables, spells, and single-use
+ * items are excluded so that potions, scrolls, and ammo keep their
+ * naturally lower prices.
+ */
+const RARITY_PRICE_FLOOR = Object.freeze({
+  rare:        750,
+  "very-rare": 5000,
+  legendary:   25000,
+});
+const PERMANENT_ITEM_TYPES = new Set(["weapon", "equipment", "tool", "container"]);
+
 function parseArgs(argv = []) {
   const args = { manifest: DEFAULT_MANIFEST, report: "", write: false };
   for (let index = 0; index < argv.length; index += 1) {
@@ -435,6 +492,48 @@ function applyCuratedOverrides(item = {}) {
   if (idUpdate) applyNarrativeUpdate(item, idUpdate);
 }
 
+function applyEconomyCorrections(item = {}) {
+  const identifier = normalizeLookupKey(item?.system?.identifier ?? "");
+  if (!identifier) return;
+  if (!item.system) item.system = {};
+  if (!item.system.price || typeof item.system.price !== "object") item.system.price = { value: 0, denomination: "gp" };
+
+  const rarityFix = RARITY_CORRECTIONS[identifier];
+  if (rarityFix) {
+    item.system.rarity = rarityFix;
+    if (item.flags?.[MODULE_ID]) item.flags[MODULE_ID].rarityNormalized = rarityFix;
+  }
+
+  const priceFix = PRICING_CORRECTIONS[identifier];
+  if (priceFix) {
+    item.system.price.value = priceFix.value;
+    item.system.price.denomination = priceFix.denomination;
+  }
+
+  const typeFix = LOOT_TYPE_CORRECTIONS[identifier];
+  if (typeFix && item.flags?.[MODULE_ID]) {
+    item.flags[MODULE_ID].lootType = typeFix;
+  }
+
+  if (!priceFix && !ZERO_PRICE_OVERRIDES[String(item._id ?? "").trim()]) {
+    const rarity = normalizeRarity(item.system.rarity ?? "");
+    const currentGp = getGpValue(item);
+    const ceiling = RARITY_PRICE_CEILING[rarity];
+    if (ceiling && currentGp > ceiling) {
+      item.system.price.value = ceiling;
+      item.system.price.denomination = "gp";
+    }
+    const itemType = String(item.type ?? "").trim().toLowerCase();
+    if (PERMANENT_ITEM_TYPES.has(itemType)) {
+      const floor = RARITY_PRICE_FLOOR[rarity];
+      if (floor && getGpValue(item) < floor) {
+        item.system.price.value = floor;
+        item.system.price.denomination = "gp";
+      }
+    }
+  }
+}
+
 function createTreasureItem(spec = {}) {
   const id = makeId(`party-operations:${spec.identifier}`);
   const sourceId = `Compendium.party-operations.party-operations-loot-manifest.Item.${id}`;
@@ -513,6 +612,7 @@ function enrichItem(item = {}, nowIso = "") {
     item.system.price.value = override.value;
     item.system.price.denomination = override.denomination;
   }
+  applyEconomyCorrections(item);
 
   const rarity = getRarity(item, po);
   const lootType = String(po.lootType ?? "").trim().toLowerCase() || classifyLootType(item, rarity);
@@ -659,11 +759,15 @@ function main() {
   }
 
   let zeroPriceResolved = 0;
+  let economyCorrected = 0;
   let variableTagged = 0;
   for (const item of items) {
-    const before = getGpValue(item);
+    const beforeGp = getGpValue(item);
+    const beforeRarity = String(item?.system?.rarity ?? "");
     enrichItem(item, nowIso);
-    if (before <= 0 && getGpValue(item) > 0) zeroPriceResolved += 1;
+    if (beforeGp <= 0 && getGpValue(item) > 0) zeroPriceResolved += 1;
+    if (beforeGp > 0 && getGpValue(item) !== beforeGp) economyCorrected += 1;
+    if (beforeRarity !== String(item?.system?.rarity ?? "")) economyCorrected += 1;
     if (String(item?.flags?.[MODULE_ID]?.variableTreasureKind ?? "").trim()) variableTagged += 1;
   }
 
@@ -675,7 +779,8 @@ function main() {
     seededItemCount: seeded.length,
     seededItems: seeded,
     variableTreasureTaggedCount: variableTagged,
-    zeroPriceItemsResolved: zeroPriceResolved
+    zeroPriceItemsResolved: zeroPriceResolved,
+    economyCorrectedCount: economyCorrected
   };
 
   if (args.write) writeManifest(args.manifest, items);

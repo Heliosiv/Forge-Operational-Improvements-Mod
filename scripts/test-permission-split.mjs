@@ -40,6 +40,7 @@ const canAccessGmPage = instantiateFunction("canAccessGmPage");
 const canUserOwnActor = instantiateFunction("canUserOwnActor", ["canAccessGmPage"], [canAccessGmPage]);
 const canUserManageDowntimeActor = instantiateFunction("canUserManageDowntimeActor", ["canUserOwnActor"], [canUserOwnActor]);
 const canUserControlActor = instantiateFunction("canUserControlActor", ["canUserOwnActor"], [canUserOwnActor]);
+const canUserViewItemDocument = instantiateFunction("canUserViewItemDocument", ["game"], [{ user: null }]);
 const canUserPerformMerchantAction = instantiateFunction(
   "canUserPerformMerchantAction",
   ["normalizeMerchantPermissionMatrix", "canAccessGmPage"],
@@ -114,6 +115,22 @@ assert.equal(canUserManageDowntimeActor(gmUser, outsiderActor), true, "GMs shoul
 assert.equal(canUserControlActor(outsiderActor, sharedOpsUser), false, "shared player ops should not grant generic actor control");
 assert.equal(canUserControlActor(ownerActor, sharedOpsUser), true, "players should still control their own character");
 assert.equal(canUserControlActor(npcActor, sharedOpsUser), false, "non-owners should not control unrelated non-character actors");
+
+const merchantParentActor = {
+  testUserPermission: (user, level) => String(user?.id ?? "") === "shared-user" && level === "OBSERVER"
+};
+const merchantItem = {
+  documentName: "Item",
+  isOwner: false,
+  parent: merchantParentActor,
+  testUserPermission: () => false
+};
+
+assert.equal(
+  canUserViewItemDocument(merchantItem, sharedOpsUser),
+  true,
+  "players with observer access through the merchant actor should be able to inspect merchant items"
+);
 
 assert.equal(
   canUserPerformMerchantAction(sharedOpsUser, {

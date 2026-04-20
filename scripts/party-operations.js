@@ -232,6 +232,7 @@ import {
   MERCHANT_DEFAULT_VALUE_STRICTNESS as DOMAIN_MERCHANT_DEFAULT_VALUE_STRICTNESS,
   MERCHANT_DEFAULTS as DOMAIN_MERCHANT_DEFAULTS,
   MERCHANT_STARTER_BLUEPRINTS as DOMAIN_MERCHANT_STARTER_BLUEPRINTS,
+  MERCHANT_ARCHETYPE_DEFINITIONS as DOMAIN_MERCHANT_ARCHETYPE_DEFINITIONS,
   clampMerchantValueStrictness as clampMerchantValueStrictnessDomain,
   normalizeMerchantBarterModifier as normalizeMerchantBarterModifierDomain,
   normalizeMerchantAutoRefreshConfig as normalizeMerchantAutoRefreshConfigDomain,
@@ -281,6 +282,9 @@ import {
   normalizeMerchantDisposition,
   normalizeMerchantFaction,
   normalizeMerchantLocation,
+  normalizeMerchantArchetype as normalizeMerchantArchetypeDomain,
+  getMerchantArchetypeDefinition as getMerchantArchetypeDefinitionDomain,
+  getMerchantArchetypeOptions as getMerchantArchetypeOptionsDomain,
   normalizeMerchantTaxFeePercent,
   computeMerchantEffectiveBuyMultiplier,
   computeMerchantEffectiveSellMultiplier,
@@ -1170,9 +1174,6 @@ const {
   getMerchantCityCatalogDraftValue,
   setMerchantCityCatalogDraftValue,
   clearMerchantCityCatalogDraftValue,
-  getMerchantEditorViewTab,
-  setMerchantEditorViewTab,
-  setMerchantEditorViewTabFromElement,
   getMerchantGmViewTab,
   setMerchantGmViewTab,
   setMerchantGmViewTabFromElement,
@@ -6698,9 +6699,6 @@ function buildOperationsContextFallback() {
           lastClosedAtLabel: "-",
           lastClosedBy: "-"
         },
-        editorViewTab: "editor",
-        editorViewTabEditor: true,
-        editorViewTabSettings: false,
         cityCatalogInput: "",
         savedLocationCatalogRows: [],
         hasSavedLocationCatalogRows: false,
@@ -6739,27 +6737,11 @@ function buildOperationsContextFallback() {
           sourceType: MERCHANT_SOURCE_TYPES.WORLD_FOLDER,
           sourceRef: "",
           sourcePackIds: [],
-          includeTagsInput: "",
-          excludeTagsInput: "",
-          keywordIncludeInput: "",
-          keywordExcludeInput: "",
           allowedTypes: [...MERCHANT_ALLOWED_ITEM_TYPE_LIST],
-          curatedItemUuidsInput: "",
           maxItems: MERCHANT_DEFAULTS.stock.maxItems,
           stockCount: MERCHANT_DEFAULTS.stock.maxItems,
-          targetValueGp: MERCHANT_DEFAULTS.stock.targetValueGp,
-          valueStrictness: MERCHANT_DEFAULTS.stock.valueStrictness,
-          valueStrictnessBandLabel: "Strict",
-          valueTolerancePercent: 10,
-          scarcity: MERCHANT_DEFAULTS.stock.scarcity,
-          scarcityLabel: String(getMerchantScarcityProfile(MERCHANT_DEFAULTS.stock.scarcity)?.label ?? "6 - Normal"),
-          autoRefreshEnabled: Boolean(MERCHANT_DEFAULTS.stock.autoRefresh?.enabled),
-          autoRefreshIntervalDays: Number(MERCHANT_DEFAULTS.stock.autoRefresh?.intervalDays ?? 7),
-          autoRefreshSummaryLabel: "Stock refresh remains manual until auto-refresh is enabled.",
           duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
           maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
-          mundaneAmmoWeightBoost: Number(MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost ?? 3),
-          mundaneAmmoStackSize: Number(MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize ?? 20),
           rarityWeightCommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.common ?? 100),
           rarityWeightUncommon: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.uncommon ?? 45),
           rarityWeightRare: Number(MERCHANT_DEFAULTS.stock.rarityWeights?.rare ?? 16),
@@ -6772,9 +6754,6 @@ function buildOperationsContextFallback() {
         barterAbilityOptions: getMerchantBarterAbilityOptions(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
         raceOptions: getMerchantEditorRaceOptions(""),
         cityOptions: [{ value: "", label: "Global", selected: true }],
-        offerTagOptions: buildMerchantOfferTagOptions(MERCHANT_DEFAULTS.stock.allowedTypes),
-        scarcityOptions: getMerchantScarcityOptions(MERCHANT_DEFAULTS.stock.scarcity),
-        actorOptions: [{ id: "", name: "Create on refresh", selected: true }],
         sourceRefOptions: [{ value: "", label: "Select one or more item folders", selected: true, disabled: true }],
         sourceRefSelectableOptions: [],
         hasSourceRefSelectableOptions: false,
@@ -6782,38 +6761,11 @@ function buildOperationsContextFallback() {
         sourceRefSelectedCount: 0,
         sourceRefHintLabel: "Select one or more item folders",
         sourcePackFilter: "",
-        sourcePackOptions: [],
-        sourcePackVisibleOptions: [],
-        sourcePackVisibleCount: 0,
         sourcePackFilterActive: false,
-        tagCatalogCount: 0,
-        hasTagCatalog: false,
-        includeTagOptions: [],
-        excludeTagOptions: [],
-        includeTagGroups: [],
-        excludeTagGroups: [],
-        hasIncludeTagOptions: false,
-        hasExcludeTagOptions: false,
-        hasIncludeTagGroups: false,
-        hasExcludeTagGroups: false,
-        includeTagSelectedCount: 0,
-        excludeTagSelectedCount: 0,
-        keywordCatalogCount: 0,
-        hasKeywordCatalog: false,
-        keywordIncludeOptions: [],
-        keywordExcludeOptions: [],
-        allowedTypeOptions: getMerchantAllowedTypeOptionsForEditor(MERCHANT_DEFAULTS.stock.allowedTypes),
         buybackTypeOptions: getMerchantAllowedTypeOptionsForEditor(
           MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
           ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
-        ),
-        curatedRows: [],
-        hasCuratedRows: false,
-        itemFilter: "",
-        candidateRows: [],
-        hasCandidateRows: false,
-        assignmentRows: [],
-        hasAssignmentRows: false
+        )
       }
     };
   }
@@ -7682,11 +7634,6 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "merchant-editor-draft-change": async () => {
           if (cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })) {
-            this.#renderWithPreservedState({ force: true, parts: ["main"] });
-          }
-        },
-        "merchant-editor-view-tab": async () => {
-          if (setMerchantEditorViewTabFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
@@ -9250,8 +9197,6 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   cacheMerchantEditorDraftFromElement,
   setMerchantGmViewTab,
   setMerchantGmViewTabFromElement,
-  setMerchantEditorViewTab,
-  setMerchantEditorViewTabFromElement,
   normalizeMerchantEditorFilter,
   getMerchantEditorSourceFilter,
   setMerchantEditorSourceFilter,
@@ -10161,6 +10106,8 @@ function sanitizeRestWatchEntries(slot) {
       const actorId = String(entry?.actorId ?? "").trim();
       if (!actorId) return null;
       if (seenActorIds.has(actorId)) return null;
+      const actor = game.actors.get(actorId);
+      if (!isEligiblePartyCharacterActor(actor)) return null;
       seenActorIds.add(actorId);
       return {
         actorId,
@@ -10179,6 +10126,20 @@ function sanitizeRestWatchEntries(slot) {
     notes: String(slot?.notes ?? ""),
     position: 0
   }];
+}
+
+function isEligiblePartyCharacterActor(actor) {
+  if (!actor) return false;
+  if (String(actor?.type ?? "") !== "character") return false;
+  if (!actor?.hasPlayerOwner) return false;
+
+  const currentHp = getCurrentHitPoints(actor);
+  if (currentHp !== null && currentHp <= 0) return false;
+
+  const statuses = Array.from(actor?.statuses ?? []).map((value) => String(value ?? "").trim().toLowerCase());
+  if (statuses.includes("dead") || statuses.includes("defeated")) return false;
+
+  return true;
 }
 
 function normalizeRestWatchVisibleEntryCount(slot, entries = sanitizeRestWatchEntries(slot)) {
@@ -22980,9 +22941,6 @@ function getOperationalEffects(ledger, roles, sops) {
     scope: REPUTATION_VIEW_SCOPES.GM
   });
   const baseOperations = buildBaseOperationsContext(ledger.baseOperations ?? {});
-  const weatherState = ensureWeatherState(ledger);
-  const weatherVisibilityModifier = Number(weatherState.current?.visibilityModifier ?? 0);
-  const weatherLabel = String(weatherState.current?.label ?? "Weather");
   const prepEdge = false;
 
   const bonuses = [];
@@ -23002,65 +22960,12 @@ function getOperationalEffects(ledger, roles, sops) {
   };
   const globalModifierRows = [];
 
-  const addGlobalModifier = (modifierId, key, amount, label, appliesTo, options = {}) => {
-    const value = Number(amount ?? 0);
-    if (!Number.isFinite(value) || value === 0) return { enabled: true, value: 0 };
-    const source = String(options.source ?? "derived");
-    const note = String(options.note ?? "");
-    const enabled = options.enabled !== false;
-    if (enabled) globalModifiers[key] = Number(globalModifiers[key] ?? 0) + value;
-    globalModifierRows.push({
-      modifierId,
-      enabled,
-      source,
-      key,
-      appliesTo,
-      value,
-      label,
-      note,
-      isPositive: value > 0,
-      isNegative: value < 0,
-      formatted: value > 0 ? `+${value}` : String(value),
-      effectiveFormatted: enabled ? (value > 0 ? `+${value}` : String(value)) : "0"
-    });
-    return { enabled, value };
-  };
-  const addWorldModifier = (key, amount) => {
-    const value = Number(amount ?? 0);
-    if (!Number.isFinite(value) || value === 0) return;
-    worldGlobalModifiers[key] = Number(worldGlobalModifiers[key] ?? 0) + value;
-  };
-
   if (reputation.highStandingCount >= 2) bonuses.push("Faction leverage active: ease one access or social gate this session.");
   if (baseOperations.readiness) bonuses.push("Base network stability active: soften one shelter or maintenance complication this cycle.");
 
-  if (baseOperations.readiness) {
-    const modifier = addGlobalModifier("operational-sheltering", "savingThrows", 1, "Operational sheltering (base ready)", "All saving throws");
-    if (modifier.enabled) globalMinorBonuses.push("Operational sheltering: all player actors gain +1 to saving throws while base readiness is stable.");
-  }
-  if (weatherVisibilityModifier !== 0) {
-    const modifier = addGlobalModifier(
-      "weather-visibility",
-      "perceptionChecks",
-      weatherVisibilityModifier,
-      `Weather visibility (${weatherLabel})`,
-      "Perception checks",
-      { note: `Logged weather visibility modifier ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.` }
-    );
-    if (modifier.enabled) {
-      addWorldModifier("perceptionChecks", weatherVisibilityModifier);
-      if (weatherVisibilityModifier > 0) {
-        globalMinorBonuses.push(`Weather visibility (${weatherLabel}): perception improves by ${weatherVisibilityModifier > 0 ? "+" : ""}${weatherVisibilityModifier}.`);
-      } else {
-        risks.push(`Weather visibility (${weatherLabel}): apply ${weatherVisibilityModifier} to perception checks.`);
-      }
-    }
-  }
   if (recon.tier === "blind") risks.push("Recon gaps: increase first-contact uncertainty by one step.");
   if (reputation.hostileCount >= 1) risks.push("Faction pressure: increase social or legal complication risk by one step.");
   if (baseOperations.maintenancePressure >= 3) risks.push("Base maintenance pressure: increase safehouse compromise/discovery risk by one step.");
-
-  if (baseOperations.maintenancePressure >= 3) addGlobalModifier("base-maintenance-pressure", "savingThrows", -1, "Base maintenance pressure", "All saving throws");
 
   const pressurePenalty = baseOperations.maintenancePressure >= 4 ? 2 : baseOperations.maintenancePressure >= 3 ? 1 : 0;
   const riskScore = activeSops - pressurePenalty;
@@ -23640,6 +23545,18 @@ function normalizeMerchantAllowedItemTypes(values = []) {
   return normalizeMerchantAllowedItemTypesDomain(values);
 }
 
+function normalizeMerchantArchetype(value = "") {
+  return normalizeMerchantArchetypeDomain(value);
+}
+
+function getMerchantArchetypeDefinition(archetypeInput = MERCHANT_DEFAULTS.archetype) {
+  return getMerchantArchetypeDefinitionDomain(archetypeInput);
+}
+
+function getMerchantArchetypeOptions(selectedInput = MERCHANT_DEFAULTS.archetype) {
+  return getMerchantArchetypeOptionsDomain(selectedInput);
+}
+
 function normalizeMerchantCuratedItemUuids(values = []) {
   return normalizeMerchantCuratedItemUuidsDomain(values);
 }
@@ -23786,13 +23703,27 @@ function getMerchantBarterAbilityOptions(selected = MERCHANT_DEFAULTS.pricing.ba
 
 function normalizeMerchantDefinition(raw = {}, index = 0) {
   const source = raw && typeof raw === "object" ? raw : {};
+  const archetype = normalizeMerchantArchetype(source?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const archetypeDefinition = getMerchantArchetypeDefinition(archetype);
   const fallbackId = foundry.utils.randomID();
   const id = String(source.id ?? fallbackId).trim() || fallbackId;
   const name = String(source.name ?? "").trim() || `Merchant ${Math.max(1, Number(index) + 1)}`;
-  const title = String(source.title ?? "").trim();
+  const title = String(source.title ?? archetypeDefinition?.defaultTitle ?? "").trim();
   const race = normalizeMerchantRace(source.race ?? "");
   const img = String(source.img ?? "").trim() || "icons/svg/item-bag.svg";
   const settlement = String(source.settlement ?? MERCHANT_DEFAULTS.settlement).trim().slice(0, 120);
+  const stock = source.stock && typeof source.stock === "object" ? source.stock : {};
+  const customMode = source?.customMode === undefined
+    ? Boolean(
+      normalizeMerchantSourceType(stock.sourceType ?? source.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType) !== MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+      || normalizeMerchantSourcePackIds(stock.sourcePackIds ?? source.sourcePackIds ?? [], String(stock.sourceRef ?? source.sourceRef ?? "").trim()).length > 0
+      || normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []).length > 0
+      || normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []).length > 0
+      || normalizeMerchantKeywordList(stock.keywordInclude ?? source.keywordInclude ?? []).length > 0
+      || normalizeMerchantKeywordList(stock.keywordExclude ?? source.keywordExclude ?? []).length > 0
+      || normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? source.curatedItemUuids ?? []).length > 0
+    )
+    : Boolean(source.customMode);
   const accessMode = normalizeMerchantAccessMode(source?.accessMode ?? source?.access?.mode ?? MERCHANT_ACCESS_MODES.ALL);
   const shopTradable = source.shopTradable !== false;
   const isHidden = false;
@@ -23801,24 +23732,36 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const socialGateEnabled = false;
   const minSocialScore = 0;
   // Identity metadata (v1 rework)
-  const type = normalizeMerchantType(source?.type ?? MERCHANT_DEFAULTS.type);
+  const type = normalizeMerchantType(source?.type ?? archetypeDefinition?.merchantType ?? MERCHANT_DEFAULTS.type);
   const faction = normalizeMerchantFaction(source?.faction ?? MERCHANT_DEFAULTS.faction);
   const location = normalizeMerchantLocation(source?.location ?? MERCHANT_DEFAULTS.location);
   const disposition = normalizeMerchantDisposition(source?.disposition ?? MERCHANT_DEFAULTS.disposition);
   const liquidationMode = Boolean(source?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode);
-  const buyMarkupRaw = Number(source?.pricing?.buyMarkup ?? source.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup);
-  const sellRateRaw = Number(source?.pricing?.sellRate ?? source.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
+  const buyMarkupRaw = Number(
+    source?.pricing?.buyMarkup
+    ?? source.buyMarkup
+    ?? (Number(archetypeDefinition?.markupPercent ?? 0) / 100)
+    ?? MERCHANT_DEFAULTS.pricing.buyMarkup
+  );
+  const sellRateRaw = Number(
+    source?.pricing?.sellRate
+    ?? source.sellRate
+    ?? (Number(archetypeDefinition?.sellRatePercent ?? 0) / 100)
+    ?? MERCHANT_DEFAULTS.pricing.sellRate
+  );
   const sellEnabled = source?.pricing?.sellEnabled === undefined
     ? Boolean(source?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
     : Boolean(source?.pricing?.sellEnabled);
   const cashOnHandGpRaw = Number(
     source?.pricing?.cashOnHandGp
     ?? source?.cashOnHandGp
+    ?? archetypeDefinition?.cashOnHandGp
     ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
   );
   const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
     source?.pricing?.buybackAllowedTypes
     ?? source?.buybackAllowedTypes
+    ?? archetypeDefinition?.buybackAllowedTypes
     ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
     ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
@@ -23854,32 +23797,48 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
   const barterDc = Number.isFinite(barterDcRaw)
     ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
     : Number(MERCHANT_DEFAULTS.pricing.barterDc);
-  const stock = source.stock && typeof source.stock === "object" ? source.stock : {};
-  const sourceType = normalizeMerchantSourceType(stock.sourceType ?? source.sourceType);
+  const sourceType = customMode
+    ? normalizeMerchantSourceType(stock.sourceType ?? source.sourceType)
+    : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   const sourceRef = String(stock.sourceRef ?? source.sourceRef ?? "").trim();
   const sourcePackIds = normalizeMerchantSourcePackIds(
     stock.sourcePackIds ?? source.sourcePackIds ?? [],
     sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : sourceRef
   );
-  const includeTags = normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []);
-  const excludeTags = normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []);
-  const keywordInclude = normalizeMerchantKeywordList(stock.keywordInclude ?? source.keywordInclude ?? []);
-  const keywordExclude = normalizeMerchantKeywordList(stock.keywordExclude ?? source.keywordExclude ?? []);
-  const allowedTypes = normalizeMerchantAllowedItemTypes(stock.allowedTypes ?? source.allowedTypes ?? []);
-  const curatedItemUuids = normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? source.curatedItemUuids ?? []);
-  const maxItemsRaw = Number(stock.maxItems ?? source.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
+  const includeTags = customMode ? normalizeMerchantTagList(stock.includeTags ?? source.includeTags ?? []) : [];
+  const excludeTags = customMode ? normalizeMerchantTagList(stock.excludeTags ?? source.excludeTags ?? []) : [];
+  const keywordInclude = customMode ? normalizeMerchantKeywordList(stock.keywordInclude ?? source.keywordInclude ?? []) : [];
+  const keywordExclude = customMode ? normalizeMerchantKeywordList(stock.keywordExclude ?? source.keywordExclude ?? []) : [];
+  const allowedTypes = normalizeMerchantAllowedItemTypes(
+    stock.allowedTypes
+    ?? source.allowedTypes
+    ?? archetypeDefinition?.allowedTypes
+    ?? []
+  );
+  const curatedItemUuids = customMode ? normalizeMerchantCuratedItemUuids(stock.curatedItemUuids ?? source.curatedItemUuids ?? []) : [];
+  const maxItemsRaw = Number(stock.maxItems ?? source.maxItems ?? archetypeDefinition?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems);
   const maxItems = Number.isFinite(maxItemsRaw)
     ? Math.max(1, Math.min(100, Math.floor(maxItemsRaw)))
     : Math.max(1, Math.min(100, Math.floor(Number(MERCHANT_DEFAULTS.stock.maxItems) || 20)));
-  const targetValueGpRaw = Number(stock.targetValueGp ?? source.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
+  const targetValueGpRaw = Number(
+    stock.targetValueGp
+    ?? source.targetValueGp
+    ?? archetypeDefinition?.targetValueGp
+    ?? MERCHANT_DEFAULTS.stock.targetValueGp
+  );
   const targetValueGp = Number.isFinite(targetValueGpRaw)
     ? Math.max(0, Math.min(1000000, Number(targetValueGpRaw.toFixed(2))))
     : MERCHANT_DEFAULTS.stock.targetValueGp;
   const valueStrictness = clampMerchantValueStrictness(
-    stock.valueStrictness ?? source.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+    stock.valueStrictness ?? source.valueStrictness ?? archetypeDefinition?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
     MERCHANT_DEFAULTS.stock.valueStrictness
   );
-  const scarcity = normalizeMerchantScarcity(stock.scarcity ?? source.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity);
+  const scarcity = normalizeMerchantScarcity(
+    stock.scarcity
+    ?? source.scarcity
+    ?? archetypeDefinition?.scarcity
+    ?? MERCHANT_DEFAULTS.stock.scarcity
+  );
   const duplicateChanceRaw = Number(stock.duplicateChance ?? source.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance ?? 25);
   const duplicateChance = Number.isFinite(duplicateChanceRaw)
     ? Math.max(0, Math.min(100, Math.floor(duplicateChanceRaw)))
@@ -23907,6 +23866,8 @@ function normalizeMerchantDefinition(raw = {}, index = 0) {
     race,
     img,
     settlement,
+    archetype,
+    customMode,
     type,
     faction,
     location,
@@ -25716,6 +25677,32 @@ function buildMerchantPlayerLocationOptions(merchantsState = {}, definitions = [
   };
 }
 
+function getMerchantItemStockMeta(item = null, merchant = {}) {
+  const flags = item?.flags?.[MODULE_ID] && typeof item.flags[MODULE_ID] === "object"
+    ? item.flags[MODULE_ID]
+    : {};
+  const role = String(flags?.merchantStockRole ?? "core").trim().toLowerCase();
+  const sectionKey = String(flags?.merchantStockSectionKey ?? "").trim().toLowerCase() || (role === "featured" ? "featured" : "misc");
+  const sectionLabel = String(flags?.merchantStockSectionLabel ?? "").trim()
+    || (sectionKey === "featured" ? "Featured Finds" : "Shop Stock");
+  const archetype = normalizeMerchantArchetype(flags?.merchantArchetype ?? merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  return {
+    role: role === "featured" ? "featured" : "core",
+    roleLabel: role === "featured" ? "Featured" : "Core Stock",
+    sectionKey,
+    sectionLabel,
+    archetype
+  };
+}
+
+function getMerchantSectionSortOrder(sectionKey = "", role = "core") {
+  if (role === "featured") return 0;
+  const normalized = String(sectionKey ?? "").trim().toLowerCase();
+  const order = ["gear", "packs", "tools", "weapons", "ammunition", "armor", "consumables", "elixirs", "arcana", "spells", "misc"];
+  const index = order.indexOf(normalized);
+  return index >= 0 ? index + 1 : 99;
+}
+
 function buildMerchantInventoryRowsForDisplay(merchant = {}) {
   const merchantActor = merchant?.actorId ? game.actors.get(String(merchant.actorId ?? "")) : null;
   const merchantActorId = String(merchantActor?.id ?? "").trim();
@@ -25736,6 +25723,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
     .filter((item) => MERCHANT_ALLOWED_ITEM_TYPES.has(String(item?.type ?? "").trim().toLowerCase()))
     .map((item) => {
       const itemData = getMerchantItemData(item);
+      const stockMeta = getMerchantItemStockMeta(item, merchant);
       const quantity = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
       const baseCp = getMerchantItemUnitPriceCp(itemData, 1);
       const rarityMult = liquidationMode && String(itemData?.type ?? "").trim().toLowerCase() === "loot"
@@ -25763,14 +25751,44 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         metaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }),
         basePriceLabel: formatMerchantCp(baseCp),
         buyPriceLabel: formatMerchantCp(buyCp),
-        markupLabel: (buyMarkup * rarityMult * stockPressureMult * taxFactor).toFixed(2)
+        markupLabel: (buyMarkup * rarityMult * stockPressureMult * taxFactor).toFixed(2),
+        stockRole: stockMeta.role,
+        stockRoleLabel: stockMeta.roleLabel,
+        stockSectionKey: stockMeta.sectionKey,
+        stockSectionLabel: stockMeta.sectionLabel,
+        archetype: stockMeta.archetype
       };
     })
     .filter((entry) => entry.quantity > 0)
-    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+    .sort((a, b) => {
+      const orderDiff = getMerchantSectionSortOrder(a.stockSectionKey, a.stockRole) - getMerchantSectionSortOrder(b.stockSectionKey, b.stockRole);
+      if (orderDiff !== 0) return orderDiff;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    })
     .slice(0, MERCHANT_PREVIEW_ITEM_LIMIT);
+  const groupedRows = [];
+  const groupByKey = new Map();
+  for (const row of rows) {
+    const key = `${row.stockRole}:${row.stockSectionKey}`;
+    let group = groupByKey.get(key);
+    if (!group) {
+      group = {
+        key,
+        role: row.stockRole,
+        roleLabel: row.stockRoleLabel,
+        sectionKey: row.stockSectionKey,
+        sectionLabel: row.stockSectionLabel,
+        rows: []
+      };
+      groupByKey.set(key, group);
+      groupedRows.push(group);
+    }
+    group.rows.push(row);
+  }
   return {
     rows,
+    groupedRows,
+    hasGroupedRows: groupedRows.length > 0,
     hasRows: rows.length > 0,
     buyMarkupLabel: buyMarkup.toFixed(2),
     itemCount: rows.reduce((sum, row) => sum + Math.max(0, Number(row?.quantity ?? 0) || 0), 0)
@@ -25858,6 +25876,8 @@ function filterMerchantDefinitionsForGm(definitions = [], filterState = {}) {
     const searchable = [
       merchant?.name,
       merchant?.title,
+      merchant?.archetypeLabel,
+      merchant?.specialtyLabel,
       merchant?.raceLabel,
       merchant?.settlementLabel,
       merchant?.sourceTypeLabel,
@@ -25936,6 +25956,8 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const currentWorldTimestamp = getCurrentWorldTimestamp();
 
   const definitionsForDisplay = definitions.map((merchant) => {
+    const merchantArchetype = normalizeMerchantArchetype(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+    const merchantArchetypeDefinition = getMerchantArchetypeDefinition(merchantArchetype);
     const merchantActor = merchant.actorId ? game.actors.get(merchant.actorId) : null;
     const stockMeta = normalizeMerchantStockStateEntry(stockStateById?.[merchant.id], merchant.actorId);
     const autoRefresh = normalizeMerchantAutoRefreshConfig(
@@ -26020,6 +26042,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     const assignedCount = assignmentRows.reduce((sum, row) => sum + (row.assigned ? 1 : 0), 0);
     const compactPills = [
       {
+        label: String(merchantArchetypeDefinition?.label ?? "Merchant").trim() || "Merchant",
+        isWarn: false
+      },
+      {
         label: accessMode === MERCHANT_ACCESS_MODES.ASSIGNED ? `${assignedCount} Assigned` : "All Players",
         isWarn: false
       },
@@ -26045,6 +26071,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     }
     return {
       ...merchant,
+      archetype: merchantArchetype,
+      archetypeLabel: String(merchantArchetypeDefinition?.label ?? "Merchant").trim() || "Merchant",
+      specialtyLabel: String(merchantArchetypeDefinition?.specialtyLabel ?? "").trim(),
+      customMode: Boolean(merchant?.customMode),
       shopTradable: merchant?.shopTradable !== false,
       shopTradableLabel: merchant?.shopTradable === false ? "Off" : "On",
       accessMode,
@@ -26290,11 +26320,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     if (editorSelectionKey === "__new__") merged.id = "";
     return getMerchantDefinitionDraftSource(merged);
   })();
-  const editorSourceTypeRaw = normalizeMerchantSourceType(editorDraft?.stock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
-  const editorSourceType = editorSourceTypeRaw === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    ? MERCHANT_SOURCE_TYPES.WORLD_FOLDER
-    : editorSourceTypeRaw;
-  const editorScarcity = normalizeMerchantScarcity(editorDraft?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
+  const editorSourceType = normalizeMerchantSourceType(editorDraft?.stock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS);
   const editorSourceRefs = getMerchantSourceRefIdsFromStock(editorDraft?.stock ?? {});
   const editorSourceFilter = getMerchantEditorSourceFilter();
   const editorSourcePackOptions = getMerchantCompendiumPackOptionsForEditor(editorDraft?.stock ?? {});
@@ -26314,13 +26340,15 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     .filter((entry) => Boolean(entry?.selected))
     .length;
   const editorAllowedTypes = normalizeMerchantAllowedItemTypes(editorDraft?.stock?.allowedTypes ?? []);
+  const editorArchetype = normalizeMerchantArchetype(editorDraft?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const editorArchetypeDefinition = getMerchantArchetypeDefinition(editorArchetype);
+  const editorCustomMode = Boolean(editorDraft?.customMode);
   const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
   const gmViewTabStored = getMerchantGmViewTab();
   const gmViewTab = gmViewTabStored === MERCHANT_GM_VIEW_TABS.SETTINGS
     ? MERCHANT_GM_VIEW_TABS.EDITOR
     : gmViewTabStored;
   if (gmViewTab !== gmViewTabStored) setMerchantGmViewTab(gmViewTab);
-  const editorViewTab = getMerchantEditorViewTab();
   const editorAccessMode = normalizeMerchantAccessMode(editorDraft?.accessMode ?? MERCHANT_ACCESS_MODES.ALL);
   const editorBuyMarkup = Math.max(0, Number(editorDraft?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const editorBuyMarkupPercent = Number((editorBuyMarkup * 100).toFixed(2));
@@ -26369,56 +26397,28 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorStockCount = Number.isFinite(editorStockCountRaw)
     ? Math.max(1, Math.min(100, Math.floor(editorStockCountRaw)))
     : MERCHANT_DEFAULTS.stock.maxItems;
-  const editorTargetValueGpRaw = Number(editorDraft?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp);
-  const editorTargetValueGp = Number.isFinite(editorTargetValueGpRaw)
-    ? Math.max(0, Math.min(1000000, Number(editorTargetValueGpRaw.toFixed(2))))
-    : MERCHANT_DEFAULTS.stock.targetValueGp;
+  const editorScarcity = normalizeMerchantScarcity(
+    editorDraft?.stock?.scarcity
+    ?? editorArchetypeDefinition?.scarcity
+    ?? MERCHANT_DEFAULTS.stock.scarcity
+  );
+  const editorTargetValueGp = Math.max(0, Number(
+    editorDraft?.stock?.targetValueGp
+    ?? editorArchetypeDefinition?.targetValueGp
+    ?? MERCHANT_DEFAULTS.stock.targetValueGp
+  ) || 0);
   const editorValueStrictness = clampMerchantValueStrictness(
-    editorDraft?.stock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+    editorDraft?.stock?.valueStrictness
+    ?? editorArchetypeDefinition?.valueStrictness
+    ?? MERCHANT_DEFAULTS.stock.valueStrictness,
     MERCHANT_DEFAULTS.stock.valueStrictness
   );
-  const editorValueTolerance = resolveMerchantValueTolerance(editorTargetValueGp, editorValueStrictness);
   const editorRarityWeights = normalizeMerchantRarityWeights(
     editorDraft?.stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights,
     MERCHANT_DEFAULTS.stock.rarityWeights
   );
-  const editorAutoRefresh = normalizeMerchantAutoRefreshConfig(
-    editorDraft?.stock?.autoRefresh ?? {},
-    MERCHANT_DEFAULTS.stock.autoRefresh
-  );
-  const editorAutoRefreshEnabled = Boolean(editorAutoRefresh.enabled);
-  const editorAutoRefreshIntervalDays = Math.max(
-    1,
-    Number(editorAutoRefresh.intervalDays ?? MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays
-  );
-  const editorAutoRefreshSummaryLabel = editorAutoRefreshEnabled
-    ? `Stock refreshes automatically every ${editorAutoRefreshIntervalDays} day${editorAutoRefreshIntervalDays === 1 ? "" : "s"} as the calendar advances.`
-    : "Stock refresh remains manual until auto-refresh is enabled.";
-  const editorMundaneAmmoWeightBoost = Math.max(
-    1,
-    Math.min(10, Number(editorDraft?.stock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost) || MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost)
-  );
-  const editorMundaneAmmoStackSize = Math.max(
-    1,
-    Math.min(200, Math.floor(Number(editorDraft?.stock?.mundaneAmmoStackSize ?? MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize) || MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize))
-  );
-  const editorTagCatalog = buildMerchantTagCatalogForEditor(editorDraft);
-  const editorIncludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.includeTags ?? []);
-  const editorExcludeTagOptions = buildMerchantTagOptionsForEditor(editorTagCatalog, editorDraft?.stock?.excludeTags ?? []);
-  const editorIncludeTagGroups = buildMerchantTagGroupsForEditor(editorIncludeTagOptions);
-  const editorExcludeTagGroups = buildMerchantTagGroupsForEditor(editorExcludeTagOptions);
-  const editorIncludeTagSelectedCount = editorIncludeTagOptions.filter((entry) => entry?.selected).length;
-  const editorExcludeTagSelectedCount = editorExcludeTagOptions.filter((entry) => entry?.selected).length;
-  const editorKeywordCatalog = buildMerchantKeywordCatalogForEditor(editorDraft);
-  const editorKeywordIncludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordInclude ?? []);
-  const editorKeywordExcludeOptions = buildMerchantKeywordOptionsForEditor(editorKeywordCatalog, editorDraft?.stock?.keywordExclude ?? []);
   const editorSourceTaxonomy = buildPartyOperationsTaxonomySummaryFromDocuments(getMerchantSourceDocumentsSync(editorDraft));
   const savedLocationCatalogRows = buildMerchantCatalogLocationRows(merchantsState, definitionsForDisplay);
-  const editorAllowedTypeOptions = getMerchantAllowedTypeOptionsForEditor(editorAllowedTypes);
-  const editorCuratedRows = [];
-  const editorItemFilter = "";
-  const editorCandidateRows = [];
-  const assignmentRows = [];
 
   return {
     currentSettlement: String(merchantsState.currentSettlement ?? ""),
@@ -26464,7 +26464,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         : (viewerShopAccess.message || "Shops are currently unavailable."))
     ).trim(),
     inventoryRows: activeMerchantInventory.rows,
+    inventoryGroups: activeMerchantInventory.groupedRows,
     hasInventoryRows: activeMerchantInventory.hasRows,
+    hasInventoryGroups: activeMerchantInventory.hasGroupedRows,
     inventoryItemCount: Math.max(0, Number(activeMerchantInventory.itemCount ?? 0) || 0),
     viewerName: String(user?.name ?? "Player").trim() || "Player",
     viewerLastAccessLabel: formatMerchantTimestampLabel(latestUserAccess?.viewedAt),
@@ -26516,9 +26518,6 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         lastClosedAtLabel: formatMerchantTimestampLabel(shopSession.lastClosedAt),
         lastClosedBy: String(shopSession.lastClosedBy ?? "").trim() || "-"
       },
-      editorViewTab,
-      editorViewTabEditor: editorViewTab !== "settings",
-      editorViewTabSettings: editorViewTab === "settings",
       cityCatalogInput: (() => {
         const draftValue = getMerchantCityCatalogDraftValue();
         return draftValue !== null ? draftValue : formatMerchantCityListInput(merchantsState?.cityCatalog ?? []);
@@ -26530,6 +26529,12 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         id: String(editorDraft?.id ?? ""),
         name: String(editorDraft?.name ?? ""),
         title: String(editorDraft?.title ?? ""),
+        archetype: editorArchetype,
+        archetypeLabel: String(editorArchetypeDefinition?.label ?? "Merchant").trim() || "Merchant",
+        specialtyLabel: String(editorArchetypeDefinition?.specialtyLabel ?? "").trim(),
+        pricePostureLabel: String(editorArchetypeDefinition?.pricePostureLabel ?? "").trim(),
+        stockCadenceLabel: String(editorArchetypeDefinition?.stockCadenceLabel ?? "").trim(),
+        customMode: editorCustomMode,
         race: normalizeMerchantRace(editorDraft?.race ?? ""),
         img: String(editorDraft?.img ?? "icons/svg/item-bag.svg"),
         settlement: String(editorDraft?.settlement ?? ""),
@@ -26557,27 +26562,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         sourceType: editorSourceType,
         sourceRef: String(editorSourceRefs[0] ?? editorDraft?.stock?.sourceRef ?? ""),
         sourcePackIds: editorSourceRefs,
-        includeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.includeTags ?? []),
-        excludeTagsInput: formatMerchantTagsCsv(editorDraft?.stock?.excludeTags ?? []),
-        keywordIncludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordInclude ?? []),
-        keywordExcludeInput: formatMerchantKeywordsCsv(editorDraft?.stock?.keywordExclude ?? []),
         allowedTypes: editorAllowedTypes,
-        curatedItemUuidsInput: formatMerchantUuidListInput(editorDraft?.stock?.curatedItemUuids ?? []),
         maxItems: editorStockCount,
         stockCount: editorStockCount,
+        scarcity: editorScarcity,
         targetValueGp: editorTargetValueGp,
         valueStrictness: editorValueStrictness,
-        valueStrictnessBandLabel: String(editorValueTolerance?.bandLabel ?? "Strict"),
-        valueTolerancePercent: Math.max(1, Number(editorValueTolerance?.percent ?? 10) || 10),
-        scarcity: editorScarcity,
-        scarcityLabel: String(getMerchantScarcityProfile(editorScarcity)?.label ?? "6 - Normal"),
-        autoRefreshEnabled: editorAutoRefreshEnabled,
-        autoRefreshIntervalDays: editorAutoRefreshIntervalDays,
-        autoRefreshSummaryLabel: editorAutoRefreshSummaryLabel,
         duplicateChance: Number(MERCHANT_DEFAULTS.stock.duplicateChance ?? 25),
         maxStackSize: 20,
-        mundaneAmmoWeightBoost: editorMundaneAmmoWeightBoost,
-        mundaneAmmoStackSize: editorMundaneAmmoStackSize,
         rarityWeightCommon: Number(editorRarityWeights?.common ?? 100),
         rarityWeightUncommon: Number(editorRarityWeights?.uncommon ?? 45),
         rarityWeightRare: Number(editorRarityWeights?.rare ?? 16),
@@ -26585,13 +26577,13 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         rarityWeightLegendary: Number(editorRarityWeights?.legendary ?? 1),
         actorId: String(editorDraft?.actorId ?? "")
       },
+      archetypeOptions: getMerchantArchetypeOptions(editorArchetype),
       sourceTypeOptions: getMerchantEditorSourceTypeOptions(editorSourceType),
+      scarcityOptions: getMerchantScarcityOptions(editorScarcity),
       accessModeOptions: getMerchantAccessModeOptions(editorAccessMode),
       barterAbilityOptions: getMerchantBarterAbilityOptions(editorBarterAbility),
       raceOptions: getMerchantEditorRaceOptions(editorDraft?.race ?? ""),
       cityOptions: editorCityOptions,
-      scarcityOptions: getMerchantScarcityOptions(editorScarcity),
-      actorOptions: getMerchantEditorActorOptions(editorDraft?.actorId ?? ""),
       sourceRefOptions: editorSourceRefOptions,
       sourceRefSelectableOptions: editorSourceRefSelectableOptions,
       sourceRefIsFolderTree: editorSourceRefIsFolderTree,
@@ -26600,36 +26592,9 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       sourceRefSelectedCount: editorSourceRefSelectedCount,
       sourceRefHintLabel: editorSourceRefHintLabel,
       sourcePackFilter: editorSourceFilter,
-      sourcePackOptions: editorSourcePackOptions,
-      sourcePackVisibleOptions: editorSourcePackOptions,
-      sourcePackVisibleCount: editorSourcePackOptions.length,
       sourcePackFilterActive: Boolean(editorSourceFilter),
-      tagCatalogCount: editorTagCatalog.length,
-      hasTagCatalog: editorTagCatalog.length > 0,
-      includeTagOptions: editorIncludeTagOptions,
-      excludeTagOptions: editorExcludeTagOptions,
-      includeTagGroups: editorIncludeTagGroups,
-      excludeTagGroups: editorExcludeTagGroups,
-      hasIncludeTagOptions: editorIncludeTagOptions.length > 0,
-      hasExcludeTagOptions: editorExcludeTagOptions.length > 0,
-      hasIncludeTagGroups: editorIncludeTagGroups.length > 0,
-      hasExcludeTagGroups: editorExcludeTagGroups.length > 0,
-      includeTagSelectedCount: editorIncludeTagSelectedCount,
-      excludeTagSelectedCount: editorExcludeTagSelectedCount,
-      keywordCatalogCount: editorKeywordCatalog.length,
-      hasKeywordCatalog: editorKeywordCatalog.length > 0,
-      keywordIncludeOptions: editorKeywordIncludeOptions,
-      keywordExcludeOptions: editorKeywordExcludeOptions,
       sourceTaxonomy: editorSourceTaxonomy,
-      allowedTypeOptions: editorAllowedTypeOptions,
-      buybackTypeOptions: editorBuybackTypeOptions,
-      curatedRows: editorCuratedRows,
-      hasCuratedRows: editorCuratedRows.length > 0,
-      itemFilter: editorItemFilter,
-      candidateRows: editorCandidateRows,
-      hasCandidateRows: editorCandidateRows.length > 0,
-      assignmentRows,
-      hasAssignmentRows: assignmentRows.length > 0
+      buybackTypeOptions: editorBuybackTypeOptions
     }
   };
 }
@@ -26727,7 +26692,11 @@ function readMerchantDefinitionPatchFromElement(element) {
   );
   const existingStock = editorBaseline?.stock ?? {};
   const existingPricing = editorBaseline?.pricing ?? {};
+  const existingArchetype = normalizeMerchantArchetype(editorBaseline?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const existingCustomMode = Boolean(editorBaseline?.customMode);
   const existingAllowedTypes = normalizeMerchantAllowedItemTypes(editorBaseline?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST);
+  const archetype = getText("select[name='merchantArchetype']", { missing: existingArchetype });
+  const customMode = getCheckbox("input[name='merchantCustomMode']", existingCustomMode);
   const raceInput = (
     getText("select[name='merchantRace']", { missing: editorBaseline?.race ?? "" })
     || getText("input[name='merchantRace']", { missing: editorBaseline?.race ?? "" })
@@ -26777,8 +26746,8 @@ function readMerchantDefinitionPatchFromElement(element) {
     "input[name='merchantMarkupPercent']",
     Number(existingPricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
   );
-  const sourceType = getText("select[name='merchantSourceType']", { missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER });
-  const previousSourceType = normalizeMerchantSourceType(existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER);
+  const sourceType = getText("select[name='merchantSourceType']", { missing: existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS });
+  const previousSourceType = normalizeMerchantSourceType(existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_ITEMS);
   const existingSourceRefs = getMerchantSourceRefIdsFromStock(existingStock);
   const hasSourceRefCheckboxes = pageRoot.querySelectorAll("input[name='merchantSourceRef']").length > 0;
   const sourceRefsFromSelect = normalizeMerchantSourceType(sourceType) === previousSourceType
@@ -26808,6 +26777,10 @@ function readMerchantDefinitionPatchFromElement(element) {
     id: merchantId,
     name: getText("input[name='merchantName']", { missing: editorBaseline?.name ?? "" }),
     title: getText("input[name='merchantTitle']", { missing: editorBaseline?.title ?? "" }),
+    archetype,
+    customMode,
+    existingArchetype,
+    existingCustomMode,
     race: normalizeMerchantRace(raceInput),
     img: getText("input[name='merchantImg']", { missing: editorBaseline?.img ?? "" }),
     settlement: getText("select[name='merchantSettlement']", { missing: editorBaseline?.settlement ?? "" }) || getText("input[name='merchantSettlement']", { missing: editorBaseline?.settlement ?? "" }),
@@ -26834,7 +26807,7 @@ function readMerchantDefinitionPatchFromElement(element) {
     barterSuccessSellModifierPercent,
     barterFailureBuyModifierPercent,
     barterFailureSellModifierPercent,
-    stockCount: Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems),
+    stockCount: getNumber("input[name='merchantStockCount']", Number(existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems)),
     targetValueGp: getNumber("input[name='merchantTargetValueGp']", Number(existingStock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp)),
     valueStrictness: getNumber(
       "input[name='merchantValueStrictness']",
@@ -27183,6 +27156,10 @@ async function refreshMerchantStock(merchantIdInput, options = {}) {
     if (!data.flags[MODULE_ID] || typeof data.flags[MODULE_ID] !== "object") data.flags[MODULE_ID] = {};
     data.flags[MODULE_ID].merchantGenerated = true;
     data.flags[MODULE_ID].merchantId = merchantId;
+    data.flags[MODULE_ID].merchantArchetype = String(candidate?.merchantArchetype ?? merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+    data.flags[MODULE_ID].merchantStockRole = String(candidate?.merchantStockRole ?? "core");
+    data.flags[MODULE_ID].merchantStockSectionKey = String(candidate?.merchantSectionKey ?? "misc");
+    data.flags[MODULE_ID].merchantStockSectionLabel = String(candidate?.merchantSectionLabel ?? "Shop Stock");
     createData.push(data);
   }
   if (createData.length > 0) {
@@ -28033,6 +28010,7 @@ async function applyMerchantTradeForUser(user, payload = {}) {
 
 async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, settlementInput = "") {
   const pricing = merchant?.pricing ?? {};
+  const archetypeDefinition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
   const buyMarkup = 1 + Math.max(0, Number(pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) || 0);
   const sellRateRaw = Number(pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate);
   const sellRate = Number.isFinite(sellRateRaw)
@@ -28089,6 +28067,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     .map((item) => {
       const qty = Math.max(0, Math.floor(getItemTrackedQuantity(item)));
       const itemData = getMerchantItemData(item);
+      const stockMeta = getMerchantItemStockMeta(item, merchant);
       const baseGp = Math.max(0, Number(getLootItemGpValueFromData(itemData) || 0));
       const rarity = getLootRarityFromData(itemData);
       const itemIsLiquidation = liquidationMode && String(itemData?.type ?? "").trim().toLowerCase() === "loot";
@@ -28110,11 +28089,41 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
         hasMetaPills: buildPartyOperationsMetaPillsFromData(itemData, { maxPills: 4 }).length > 0,
         valueLabel: baseGp > 0
           ? `${baseGp.toLocaleString(undefined, { maximumFractionDigits: 2 })} gp`
-          : ""
+          : "",
+        stockRole: stockMeta.role,
+        stockRoleLabel: stockMeta.roleLabel,
+        stockSectionKey: stockMeta.sectionKey,
+        stockSectionLabel: stockMeta.sectionLabel
       };
     })
     .filter((row) => row.qty > 0)
-    .sort((a, b) => a.itemName.localeCompare(b.itemName));
+    .sort((a, b) => {
+      const orderDiff = getMerchantSectionSortOrder(a.stockSectionKey, a.stockRole) - getMerchantSectionSortOrder(b.stockSectionKey, b.stockRole);
+      if (orderDiff !== 0) return orderDiff;
+      return a.itemName.localeCompare(b.itemName);
+    });
+  const buySectionRows = [];
+  const buySectionByKey = new Map();
+  for (const row of merchantItems) {
+    const key = `${row.stockRole}:${row.stockSectionKey}`;
+    let section = buySectionByKey.get(key);
+    if (!section) {
+      section = {
+        key,
+        role: row.stockRole,
+        roleLabel: row.stockRoleLabel,
+        sectionKey: row.stockSectionKey,
+        sectionLabel: row.stockSectionLabel,
+        rows: [],
+        isFeatured: row.stockRole === "featured"
+      };
+      buySectionByKey.set(key, section);
+      buySectionRows.push(section);
+    }
+    section.rows.push(row);
+  }
+  const featuredSections = buySectionRows.filter((section) => section.isFeatured);
+  const stockedSections = buySectionRows.filter((section) => !section.isFeatured);
 
   const actorSellItems = !sellEnabled
     ? []
@@ -28177,6 +28186,13 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
   const merchantDispositionLabel = getMerchantDispositionOptionsDomain(merchant?.disposition)
     .find((entry) => entry.selected)?.label ?? "Neutral";
   const merchantFactionLabel = String(merchant?.faction ?? "").trim();
+  const merchantArchetypeLabel = String(archetypeDefinition?.label ?? "Merchant").trim() || "Merchant";
+  const merchantSpecialtyLabel = String(archetypeDefinition?.specialtyLabel ?? "").trim();
+  const merchantPricePostureLabel = String(archetypeDefinition?.pricePostureLabel ?? "").trim();
+  const merchantCadenceLabel = String(archetypeDefinition?.stockCadenceLabel ?? "").trim();
+  const buybackCategorySummary = buybackAllowedTypeSet.size >= MERCHANT_ALLOWED_ITEM_TYPE_LIST.length
+    ? "Buys a wide practical range from travelers."
+    : `Buys back: ${buybackTypeSummary}.`;
   // Rework v1: build display labels for pricing modifiers
   const stockPressurePct = Math.round((stockPressureMult - 1) * 100);
   const stockPressureLabel = stockPressurePct > 0
@@ -28201,8 +28217,13 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     merchantTitle: String(merchant?.title ?? "").trim(),
     merchantImg: String(merchant?.img ?? merchantActor?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
     merchantTypeLabel,
+    merchantArchetypeLabel,
     merchantDispositionLabel,
     merchantFactionLabel,
+    merchantSpecialtyLabel,
+    merchantPricePostureLabel,
+    merchantCadenceLabel,
+    buybackCategorySummary,
     actorName: String(actor?.name ?? "Actor"),
     settlementLabel,
     actorFunds,
@@ -28227,6 +28248,10 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
       ? "Selling disabled"
       : (actorSellItems.length > 0 ? `${actorSellItems.length} sellable items` : "Nothing eligible to sell"),
     buybackTypeSummary,
+    hasFeaturedSections: featuredSections.length > 0,
+    featuredSections,
+    hasStockSections: stockedSections.length > 0,
+    stockSections: stockedSections,
     hasRecentTrades: recentTrades.length > 0,
     recentTrades,
     hasBuyRows: merchantItems.length > 0,
@@ -28937,7 +28962,6 @@ async function persistMerchantEditorPatchFromElement(element, options = {}) {
   }
   const saved = await upsertMerchant(patch);
   resetMerchantEditorSelection();
-  setMerchantEditorViewTab("editor");
   clearMerchantEditorDraftState();
   if (options.notifySaved) ui.notifications?.info(`Saved merchant: ${String(saved?.name ?? "Merchant")}.`);
   return saved;
@@ -38536,7 +38560,7 @@ function canUserViewItemDocument(document, user = game.user) {
   if (Boolean(document?.isOwner)) return true;
   if (typeof document.testUserPermission === "function") {
     try {
-      if (document.testUserPermission(user, "OWNER")) return true;
+      if (document.testUserPermission(user, "OBSERVER")) return true;
     } catch {
       // Fall back to parent permission checks below.
     }
@@ -38544,7 +38568,7 @@ function canUserViewItemDocument(document, user = game.user) {
   const parent = document?.parent ?? null;
   if (parent && typeof parent.testUserPermission === "function") {
     try {
-      if (parent.testUserPermission(user, "OWNER")) return true;
+      if (parent.testUserPermission(user, "OBSERVER")) return true;
     } catch {
       // Fall through to denied.
     }
@@ -44908,7 +44932,7 @@ async function assignActorToRank(element) {
   const requestedCellIndex = Number.parseInt(String(element?.dataset?.cellIndex ?? ""), 10);
   const hasRequestedCellIndex = Number.isInteger(requestedCellIndex) && requestedCellIndex >= 0;
 
-  const actors = game.actors.contents.filter((actor) => actor.hasPlayerOwner);
+  const actors = game.actors.contents.filter((actor) => isEligiblePartyCharacterActor(actor));
   const options = actors.map((actor) =>
     `<option value="${actor.id}">${actor.name}</option>`
   );
@@ -45582,7 +45606,7 @@ function buildRanksView(state, isGM) {
     const entries = actorIds
       .map((actorId) => {
         const actor = game.actors.get(actorId);
-        if (!actor) return null;
+        if (!isEligiblePartyCharacterActor(actor)) return null;
         const hasLight = Boolean(state.light?.[actorId]);
         const lightRange = getMarchLightRange(state, actorId);
         const lightTooltip = hasLight
