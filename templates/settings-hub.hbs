@@ -86,6 +86,17 @@
               </select>
             </label>
 
+            <label class="po-resource-row">
+              <span>Economy Price Scale</span>
+              <select class="po-select" name="economyPriceMultiplier">
+                <option value="dirt-cheap" {{#if economyDirtCheap}}selected{{/if}}>Dirt Cheap (&times;0.25)</option>
+                <option value="high-magic" {{#if economyHighMagic}}selected{{/if}}>High Magic (&times;0.5)</option>
+                <option value="standard" {{#if economyStandard}}selected{{/if}}>Standard (&times;1)</option>
+                <option value="low-magic" {{#if economyLowMagic}}selected{{/if}}>Low Magic (&times;1.5)</option>
+                <option value="expensive" {{#if economyExpensive}}selected{{/if}}>Expensive (&times;2)</option>
+              </select>
+            </label>
+
           </div>
 
           <div class="po-gm-section">

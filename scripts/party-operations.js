@@ -547,6 +547,31 @@ const LOOT_SCARCITY_LEVELS = {
   SCARCE: "scarce"
 };
 
+const ECONOMY_PRICE_LEVELS = Object.freeze({
+  DIRT_CHEAP: "dirt-cheap",
+  HIGH_MAGIC: "high-magic",
+  STANDARD: "standard",
+  LOW_MAGIC: "low-magic",
+  EXPENSIVE: "expensive"
+});
+
+const ECONOMY_PRICE_MULTIPLIER_VALUES = Object.freeze({
+  ["dirt-cheap"]: 0.25,
+  ["high-magic"]: 0.5,
+  ["standard"]: 1,
+  ["low-magic"]: 1.5,
+  ["expensive"]: 2
+});
+
+function getEconomyPriceMultiplier() {
+  try {
+    const raw = String(game.settings.get(MODULE_ID, SETTINGS.ECONOMY_PRICE_MULTIPLIER) ?? ECONOMY_PRICE_LEVELS.STANDARD).trim().toLowerCase();
+    return Number(ECONOMY_PRICE_MULTIPLIER_VALUES[raw] ?? 1) || 1;
+  } catch {
+    return 1;
+  }
+}
+
 const LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES = Object.freeze({
   STANDARD: "standard",
   BOOSTED: "boosted",
@@ -2443,6 +2468,7 @@ const {
   settings: SETTINGS,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
   lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
+  economyPriceLevels: ECONOMY_PRICE_LEVELS,
   playerHubModes: PLAYER_HUB_MODES,
   launcherPlacements: LAUNCHER_PLACEMENTS,
   inventoryHookModes: INVENTORY_HOOK_MODES,
@@ -2469,6 +2495,7 @@ const {
   areAdvancedSettingsEnabled,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
   lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
+  economyPriceLevels: ECONOMY_PRICE_LEVELS,
   playerHubModes: PLAYER_HUB_MODES,
   defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
   validatePartyOpsConfig,
@@ -16438,29 +16465,33 @@ function buildWeightedPool(items, weightFn) {
   return pool;
 }
 
-function getLootItemGpValueFromData(data = {}) {
+function getLootItemGpValueFromData(data = {}, { raw = false } = {}) {
   const toNumber = (value) => {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, parsed);
   };
+  let baseGp = 0;
   const priceNode = data?.system?.price;
   if (priceNode && typeof priceNode === "object") {
     const amount = toNumber(priceNode.value ?? priceNode.amount ?? 0);
     const denomRaw = String(priceNode.denomination ?? priceNode.currency ?? "gp").trim().toLowerCase();
     const denomMap = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
     const mult = Number(denomMap[denomRaw] ?? 1);
-    return Math.max(0, amount * mult);
-  }
-  if (priceNode !== null && priceNode !== undefined) return toNumber(priceNode);
-  if (data?.price && typeof data.price === "object") {
+    baseGp = Math.max(0, amount * mult);
+  } else if (priceNode !== null && priceNode !== undefined) {
+    baseGp = toNumber(priceNode);
+  } else if (data?.price && typeof data.price === "object") {
     const amount = toNumber(data.price.value ?? data.price.amount ?? 0);
     const denomRaw = String(data.price.denomination ?? data.price.currency ?? "gp").trim().toLowerCase();
     const denomMap = { pp: 10, gp: 1, ep: 0.5, sp: 0.1, cp: 0.01 };
     const mult = Number(denomMap[denomRaw] ?? 1);
-    return Math.max(0, amount * mult);
+    baseGp = Math.max(0, amount * mult);
+  } else {
+    baseGp = toNumber(data?.price ?? 0);
   }
-  return toNumber(data?.price ?? 0);
+  if (raw) return baseGp;
+  return Math.max(0, baseGp * getEconomyPriceMultiplier());
 }
 
 function summarizeLootCandidateValueStats(candidates = []) {

@@ -72,5 +72,6 @@ export const SETTINGS = {
   AUTO_INV_ITEM_CHANCE_SCALAR: "autoInventoryItemChanceScalar",
   AUTO_INV_CONSUMABLE_CHANCE_SCALAR: "autoInventoryConsumableChanceScalar",
   AUTO_INV_CURRENCY_SCALAR: "autoInventoryCurrencyScalar",
-  AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift"
+  AUTO_INV_QUALITY_SHIFT: "autoInventoryQualityShift",
+  ECONOMY_PRICE_MULTIPLIER: "economyPriceMultiplier"
 };
