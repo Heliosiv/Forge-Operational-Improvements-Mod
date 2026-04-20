@@ -30,6 +30,7 @@ import { createOperationsJournalSettings } from "./features/operations-journal-s
 import { createOperationsJournalService } from "./features/operations-journal-service.js";
 import {
   applyMarchRequest,
+  MARCH_BOARD_RANKS,
   buildMarchOverviewContext,
   createMarchFeatureModule,
   normalizeSocketMarchRequest,
@@ -547,26 +548,10 @@ const LOOT_SCARCITY_LEVELS = {
   SCARCE: "scarce"
 };
 
-const ECONOMY_PRICE_LEVELS = Object.freeze({
-  DIRT_CHEAP: "dirt-cheap",
-  HIGH_MAGIC: "high-magic",
-  STANDARD: "standard",
-  LOW_MAGIC: "low-magic",
-  EXPENSIVE: "expensive"
-});
-
-const ECONOMY_PRICE_MULTIPLIER_VALUES = Object.freeze({
-  ["dirt-cheap"]: 0.25,
-  ["high-magic"]: 0.5,
-  ["standard"]: 1,
-  ["low-magic"]: 1.5,
-  ["expensive"]: 2
-});
-
 function getEconomyPriceMultiplier() {
   try {
-    const raw = String(game.settings.get(MODULE_ID, SETTINGS.ECONOMY_PRICE_MULTIPLIER) ?? ECONOMY_PRICE_LEVELS.STANDARD).trim().toLowerCase();
-    return Number(ECONOMY_PRICE_MULTIPLIER_VALUES[raw] ?? 1) || 1;
+    const pct = Number(game.settings.get(MODULE_ID, SETTINGS.ECONOMY_PRICE_MULTIPLIER) ?? 100) || 100;
+    return Math.max(0.01, pct / 100);
   } catch {
     return 1;
   }
@@ -2468,7 +2453,6 @@ const {
   settings: SETTINGS,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
   lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
-  economyPriceLevels: ECONOMY_PRICE_LEVELS,
   playerHubModes: PLAYER_HUB_MODES,
   launcherPlacements: LAUNCHER_PLACEMENTS,
   inventoryHookModes: INVENTORY_HOOK_MODES,
@@ -2495,7 +2479,6 @@ const {
   areAdvancedSettingsEnabled,
   lootScarcityLevels: LOOT_SCARCITY_LEVELS,
   lootHordeUncommonPlusChanceModes: LOOT_HORDE_UNCOMMON_PLUS_CHANCE_MODES,
-  economyPriceLevels: ECONOMY_PRICE_LEVELS,
   playerHubModes: PLAYER_HUB_MODES,
   defaultPartyOpsConfig: DEFAULT_PARTY_OPS_CONFIG,
   validatePartyOpsConfig,
@@ -3130,7 +3113,7 @@ function buildIntegrationGlobalContext() {
   const operations = buildOperationsContext();
   const formationSnapshot = getMarchingFormationSnapshot(marchState);
   const rankByActorId = {};
-  for (const rank of ["front", "middle", "rear"]) {
+  for (const rank of getMarchBoardRankIds()) {
     for (const actorId of marchState.ranks?.[rank] ?? []) {
       if (actorId && !rankByActorId[actorId]) rankByActorId[actorId] = rank;
     }
@@ -9733,17 +9716,15 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const miniVizUi = buildMiniVizUiContext();
     const lightToggles = buildLightToggles(state, ranks, isGM);
     const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
-    const frontCount = (ranks.find((rank) => rank.id === "front")?.entries?.length ?? 0);
-    const middleCount = (ranks.find((rank) => rank.id === "middle")?.entries?.length ?? 0);
-    const rearCount = (ranks.find((rank) => rank.id === "rear")?.entries?.length ?? 0);
-    const totalAssigned = frontCount + middleCount + rearCount;
+    const laneCounts = Object.fromEntries(
+      getMarchBoardRankIds().map((rankId) => [rankId, ranks.find((rank) => rank.id === rankId)?.entries?.length ?? 0])
+    );
+    const totalAssigned = Object.values(laneCounts).reduce((sum, count) => sum + (Number(count) || 0), 0);
     const lightSources = lightToggles.filter((entry) => entry.hasLight).length;
     const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
     const overview = buildMarchOverviewContext({
       totalAssigned,
-      frontCount,
-      middleCount,
-      rearCount,
+      laneCounts,
       formationLabel: "March Board",
       formationStateLabel: "Active",
       lightSources,
@@ -10044,12 +10025,22 @@ function buildEmptyWatchSlots(isGM) {
   }));
 }
 
+function getMarchBoardRankIds() {
+  return MARCH_BOARD_RANKS.map((rank) => rank.id);
+}
+
+function getMarchBoardRankLabel(rankId, fallback = "Unassigned") {
+  return MARCH_BOARD_RANKS.find((rank) => rank.id === rankId)?.shortLabel ?? fallback;
+}
+
 function buildEmptyRanks(isGM) {
-  return [
-    { id: "front", label: "Front Rank", entries: [], capacity: null, canJoin: false },
-    { id: "middle", label: "Middle Rank", entries: [], capacity: null, canJoin: false },
-    { id: "rear", label: "Rear Rank", entries: [], capacity: null, canJoin: false }
-  ];
+  return MARCH_BOARD_RANKS.map((rank) => ({
+    id: rank.id,
+    label: `${rank.shortLabel} Rank`,
+    entries: [],
+    capacity: null,
+    canJoin: false
+  }));
 }
 
 function buildStoredWatchSlots() {
@@ -25046,7 +25037,63 @@ function getMerchantCompendiumPackLabelMap() {
   );
 }
 
+function isMerchantPresetStockMode(merchant = {}) {
+  return merchant?.customMode !== true;
+}
+
+function getMerchantPresetPackIds() {
+  return getAvailableLootItemPackSources()
+    .filter((entry) => String(entry?.sourceKind ?? "").trim() === "compendium-pack")
+    .map((entry) => String(entry?.id ?? "").trim())
+    .filter(Boolean);
+}
+
+function getMerchantPresetSourceDocumentsSync() {
+  const documents = [...(game.items?.contents ?? [])];
+  const packLabelMap = getMerchantCompendiumPackLabelMap();
+  for (const packId of getMerchantPresetPackIds()) {
+    const pack = game.packs?.get(packId);
+    if (!pack) continue;
+    const sourceLabel = packLabelMap.get(packId) ?? packId;
+    const indexRows = getCollectionValues(pack.index);
+    for (const indexRow of indexRows) {
+      const entry = Array.isArray(indexRow) ? indexRow[1] : indexRow;
+      const docId = String(entry?._id ?? entry?.id ?? "").trim();
+      if (!docId) continue;
+      documents.push({
+        uuid: `Compendium.${packId}.Item.${docId}`,
+        name: String(entry?.name ?? docId).trim() || docId,
+        img: String(entry?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        type: String(entry?.type ?? "").trim(),
+        flags: foundry.utils.deepClone(entry?.flags ?? {}),
+        system: foundry.utils.deepClone(entry?.system ?? {}),
+        _merchantSourceLabel: sourceLabel
+      });
+    }
+  }
+  return documents;
+}
+
+async function getMerchantPresetSourceDocuments() {
+  const documents = [...(game.items?.contents ?? [])];
+  const packLabelMap = getMerchantCompendiumPackLabelMap();
+  for (const packId of getMerchantPresetPackIds()) {
+    const sourceLabel = packLabelMap.get(packId) ?? packId;
+    const docs = await loadItemsFromPack(packId, { sourceLabel });
+    if (!Array.isArray(docs) || docs.length <= 0) continue;
+    documents.push(...docs.map((entry) => {
+      if (!entry || typeof entry !== "object" || entry._merchantSourceLabel) return entry;
+      return {
+        ...entry,
+        _merchantSourceLabel: sourceLabel
+      };
+    }));
+  }
+  return documents;
+}
+
 function getMerchantSourceRefLabel(merchant = {}) {
+  if (isMerchantPresetStockMode(merchant)) return "Preset Library (World + Packs)";
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return "All World Items";
@@ -25527,6 +25574,7 @@ function buildMerchantCuratedRowsForEditor(curatedItemUuids = []) {
 }
 
 function getMerchantSourceDocumentsSync(merchant = {}) {
+  if (isMerchantPresetStockMode(merchant)) return getMerchantPresetSourceDocumentsSync();
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
@@ -26869,6 +26917,7 @@ function readMerchantDefinitionPatchFromElement(element) {
 }
 
 async function getMerchantSourceDocuments(merchant = {}) {
+  if (isMerchantPresetStockMode(merchant)) return getMerchantPresetSourceDocuments();
   const stock = merchant?.stock ?? {};
   const sourceType = normalizeMerchantSourceType(stock?.sourceType);
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) {
@@ -31549,11 +31598,7 @@ function buildPlayerMarchQuickContext() {
   const state = getMarchingOrderState();
   const actor = getActiveActorForUser(game.user);
   const actorId = String(actor?.id ?? "").trim();
-  const rankRows = [
-    { id: "front", label: "Front" },
-    { id: "middle", label: "Middle" },
-    { id: "rear", label: "Rear" }
-  ];
+  const rankRows = MARCH_BOARD_RANKS.map((rank) => ({ id: rank.id, label: rank.shortLabel }));
   let currentRankId = "";
   if (actorId) {
     for (const row of rankRows) {
@@ -43193,16 +43238,8 @@ function buildDefaultMarchingOrderState() {
     lockedBy: "",
     lastUpdatedAt: "-",
     lastUpdatedBy: "-",
-    ranks: {
-      front: [],
-      middle: [],
-      rear: []
-    },
-    rankPlacements: {
-      front: {},
-      middle: {},
-      rear: {}
-    },
+    ranks: Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
+    rankPlacements: buildDefaultMarchRankPlacements(),
     notes: {},
     gmNotes: "",
     light: {},
@@ -43264,14 +43301,17 @@ function getMarchingTokenPositions(state = getMarchingOrderState()) {
 
 function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
   const ranks = state?.ranks ?? {};
-  const assignedActorIds = ["front", "middle", "rear"].flatMap((rankId) => Array.isArray(ranks?.[rankId]) ? ranks[rankId] : []);
+  const rankIds = getMarchBoardRankIds();
+  const assignedActorIds = rankIds.flatMap((rankId) => Array.isArray(ranks?.[rankId]) ? ranks[rankId] : []);
   const rankByActorId = {};
-  for (const rankId of ["front", "middle", "rear"]) {
+  for (const rankId of rankIds) {
     for (const actorId of ranks?.[rankId] ?? []) {
       if (!actorId || rankByActorId[actorId]) continue;
       rankByActorId[actorId] = rankId;
     }
   }
+  const defaultBandTargets = Object.fromEntries(rankIds.map((rankId) => [rankId, { recommended: 0, min: 0, max: null }]));
+  const counts = Object.fromEntries(rankIds.map((rankId) => [rankId, Array.isArray(ranks?.[rankId]) ? ranks[rankId].length : 0]));
   return {
     formation: {
       id: "simple",
@@ -43279,17 +43319,9 @@ function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
       category: "simple",
       categoryLabel: "Simple",
       summary: "Rank placement board without doctrine or formation effects.",
-      bandTargets: {
-        front: { recommended: 0, min: 0, max: null },
-        middle: { recommended: 0, min: 0, max: null },
-        rear: { recommended: 0, min: 0, max: null }
-      }
+      bandTargets: defaultBandTargets
     },
-    counts: {
-      front: Array.isArray(ranks?.front) ? ranks.front.length : 0,
-      middle: Array.isArray(ranks?.middle) ? ranks.middle.length : 0,
-      rear: Array.isArray(ranks?.rear) ? ranks.rear.length : 0
-    },
+    counts,
     assignedActorIds,
     rankByActorId,
     validity: {
@@ -43321,11 +43353,7 @@ function getMarchingFormationSnapshot(state = getMarchingOrderState()) {
     effectEntries: [],
     effectSummaries: [],
     effectChangesByActorId: {},
-    bandTargets: {
-      front: { recommended: 0, min: 0, max: null },
-      middle: { recommended: 0, min: 0, max: null },
-      rear: { recommended: 0, min: 0, max: null }
-    }
+    bandTargets: defaultBandTargets
   };
 }
 
@@ -43347,7 +43375,7 @@ function getMarchDoctrineActorRows(state = getMarchingOrderState()) {
         actorId,
         name: String(actor?.name ?? "Unknown"),
         charismaModifier: getActorCharismaModifier(actor),
-        rankId: snapshot.rankByActorId[actorId] ?? "rear"
+        rankId: snapshot.rankByActorId[actorId] ?? "middle"
       };
     })
     .filter(Boolean);
@@ -43411,11 +43439,7 @@ async function promptPlayerActorSelection(actors = [], options = {}) {
 }
 
 function getOrderedMarchingActors(state) {
-  const ordered = [
-    ...(state.ranks?.front ?? []),
-    ...(state.ranks?.middle ?? []),
-    ...(state.ranks?.rear ?? [])
-  ];
+  const ordered = getMarchBoardRankIds().flatMap((rankId) => state.ranks?.[rankId] ?? []);
   return Array.from(new Set(ordered));
 }
 
@@ -43442,6 +43466,7 @@ async function applyMarchingFormation({ front, middle, type }) {
     state.rankPlacements = buildDefaultMarchRankPlacements();
     if (nextFormation !== "free") {
       state.ranks = {
+        ...Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
         front: frontActors,
         middle: middleActors,
         rear: rearActors
@@ -43473,17 +43498,14 @@ async function syncMarchingOrderFromRestWatch() {
 
   let nextRanks;
   if (formationId === "free") {
-    nextRanks = {
-      front: [],
-      middle: ordered,
-      rear: []
-    };
+    nextRanks = Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, rankId === "middle" ? ordered : []]));
   } else {
     const frontRecommended = Math.max(0, Number(definition?.bandTargets?.front?.recommended ?? 0) || 0);
     const middleRecommended = Math.max(0, Number(definition?.bandTargets?.middle?.recommended ?? 0) || 0);
     const frontCount = Math.min(frontRecommended, ordered.length);
     const middleCount = Math.min(middleRecommended, Math.max(0, ordered.length - frontCount));
     nextRanks = {
+      ...Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []])),
       front: ordered.slice(0, frontCount),
       middle: ordered.slice(frontCount, frontCount + middleCount),
       rear: ordered.slice(frontCount + middleCount)
@@ -43865,11 +43887,7 @@ function summarizeRestWatchLanguages(entriesView) {
 }
 
 function buildDefaultMarchRankPlacements() {
-  return {
-    front: {},
-    middle: {},
-    rear: {}
-  };
+  return Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, {}]));
 }
 
 function normalizeMarchRankPlacements(state) {
@@ -45217,7 +45235,7 @@ async function clearMarchingAll() {
   });
   if (!confirmed) return;
   await updateMarchingOrderState((state) => {
-    state.ranks = { front: [], middle: [], rear: [] };
+    state.ranks = Object.fromEntries(getMarchBoardRankIds().map((rankId) => [rankId, []]));
     state.rankPlacements = buildDefaultMarchRankPlacements();
     state.notes = {};
     state.light = {};
@@ -45611,28 +45629,19 @@ function buildRanksView(state, isGM) {
   const formationSnapshot = getMarchingFormationSnapshot(state);
   const bandTargets = formationSnapshot.bandTargets ?? {};
   const rankConfigs = {
-    front: {
-      capacity: bandTargets.front?.recommended ?? null,
-      capLimit: bandTargets.front?.max ?? null,
-      desc: "Lead band",
-      icon: "fa-shield"
-    },
-    middle: {
-      capacity: bandTargets.middle?.recommended ?? null,
-      capLimit: bandTargets.middle?.max ?? null,
-      desc: "Center band",
-      icon: "fa-users"
-    },
-    rear: {
-      capacity: bandTargets.rear?.recommended ?? null,
-      capLimit: bandTargets.rear?.max ?? null,
-      desc: "Rear band",
-      icon: "fa-arrow-turn-up"
-    }
+    vanguard: { desc: "Advance screen", icon: "fa-person-running" },
+    front: { desc: "Lead band", icon: "fa-shield" },
+    middle: { desc: "Center band", icon: "fa-users" },
+    rear: { desc: "Rear band", icon: "fa-arrow-turn-up" },
+    reserve: { desc: "Reserve support", icon: "fa-boxes-stacked" }
   };
 
   const base = buildEmptyRanks(isGM).map((rank) => {
-    const config = rankConfigs[rank.id];
+    const config = {
+      capacity: bandTargets?.[rank.id]?.recommended ?? null,
+      capLimit: bandTargets?.[rank.id]?.max ?? null,
+      ...(rankConfigs[rank.id] ?? { desc: `${rank.label} band`, icon: "fa-users" })
+    };
     const actorIds = state.ranks?.[rank.id] ?? [];
     const entries = actorIds
       .map((actorId) => {
@@ -45749,11 +45758,7 @@ function buildFormationCellPositions(definition, rankId, count, columns) {
 }
 
 function buildFormationPreviewRows(definition) {
-  const ranks = [
-    { id: "front", label: "Front" },
-    { id: "middle", label: "Middle" },
-    { id: "rear", label: "Rear" }
-  ];
+  const ranks = MARCH_BOARD_RANKS.map((rank) => ({ id: rank.id, label: rank.shortLabel }));
   const recommendedCounts = ranks.map((row) => {
     const recommended = Number(definition?.bandTargets?.[row.id]?.recommended ?? 0) || 0;
     if (String(definition?.id ?? "") === "free") {
@@ -45799,11 +45804,7 @@ function buildMarchFormationChoiceCards(currentFormationId) {
 function buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks = []) {
   const definition = getMarchFormationDefinition(formationSnapshot?.formation?.id ?? state?.formation ?? "loose");
   const rankViewById = new Map((Array.isArray(ranks) ? ranks : []).map((rank) => [rank.id, rank]));
-  const rankRows = [
-    { id: "front", label: "Front Lane" },
-    { id: "middle", label: "Middle Lane" },
-    { id: "rear", label: "Rear Lane" }
-  ];
+  const rankRows = MARCH_BOARD_RANKS.map((rank) => ({ id: rank.id, label: rank.label }));
   const activeActorId = !isGM ? String(getActiveActorForUser(game.user)?.id ?? "").trim() : "";
   const selectableActorCount = !isGM ? getSelectablePlayerActorsForUser(game.user).length : 0;
   const lockedForUser = isLockedForUser(state, isGM);
@@ -46369,7 +46370,7 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
   const activityState = getRestActivities();
   const clock = getClockContext();
   const activeWatchSlotId = resolveActiveWatchSlotId(restState.slots ?? [], clock.totalMinutes);
-  const rankLabel = { front: "Front", middle: "Middle", rear: "Rear" };
+  const rankLabel = Object.fromEntries(MARCH_BOARD_RANKS.map((rank) => [rank.id, rank.shortLabel]));
 
   const watchByActorId = {};
   const restSlots = (restState.slots ?? []).map((slot, index) => {
@@ -46408,7 +46409,7 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
   });
 
   const rankByActorId = {};
-  for (const key of ["front", "middle", "rear"]) {
+  for (const key of getMarchBoardRankIds()) {
     for (const actorId of marchState.ranks?.[key] ?? []) {
       if (actorId && !rankByActorId[actorId]) rankByActorId[actorId] = key;
     }
@@ -46419,7 +46420,7 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
     .map((actorId) => game.actors.get(actorId))
     .filter(Boolean)
     .map((actor) => {
-      const role = rankByActorId[actor.id] ?? "rear";
+      const role = rankByActorId[actor.id] ?? "middle";
       const activity = activityState.activities?.[actor.id]?.activity ?? "rested";
       const isOnWatch = Boolean((watchByActorId[actor.id] ?? []).includes(activeWatchSlotId));
       const isSleeping = !isOnWatch && activity === "rested";
@@ -46428,7 +46429,7 @@ function buildMiniVisualizationContext({ visibility = "names-passives" } = {}) {
         actorId: actor.id,
         name: actor.name,
         img: getActorTokenImage(actor),
-        rank: rankLabel[role] ?? "Rear",
+        rank: rankLabel[role] ?? "Middle",
         watchLabel: (watchByActorId[actor.id] ?? []).join(", "),
         isOnWatch,
         isSleeping,

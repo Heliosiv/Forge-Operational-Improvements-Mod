@@ -5,7 +5,6 @@ export function registerPartyOpsUiSettings({
   areAdvancedSettingsEnabled,
   lootScarcityLevels,
   lootHordeUncommonPlusChanceModes = {},
-  economyPriceLevels = {},
   playerHubModes,
   defaultPartyOpsConfig,
   validatePartyOpsConfig,
@@ -88,23 +87,16 @@ export function registerPartyOpsUiSettings({
   });
 
   game.settings.register(moduleId, settings.ECONOMY_PRICE_MULTIPLIER, {
-    name: "Economy Price Scale",
-    hint: "Scale all item values for your world's economy. Low Magic worlds make items expensive; High Magic worlds make them cheap.",
+    name: "Economy Price Scale (%)",
+    hint: "Scale all item values across loot, merchants, and budgets. 100% is standard D&D pricing. Lower values cheapen items; higher values make them costlier.",
     scope: "world",
     config: true,
-    type: String,
-    choices: {
-      [economyPriceLevels.DIRT_CHEAP ?? "dirt-cheap"]: "Dirt Cheap (×0.25)",
-      [economyPriceLevels.HIGH_MAGIC ?? "high-magic"]: "High Magic (×0.5)",
-      [economyPriceLevels.STANDARD ?? "standard"]: "Standard (×1)",
-      [economyPriceLevels.LOW_MAGIC ?? "low-magic"]: "Low Magic (×1.5)",
-      [economyPriceLevels.EXPENSIVE ?? "expensive"]: "Expensive (×2)"
-    },
-    default: economyPriceLevels.STANDARD ?? "standard",
+    type: Number,
+    range: { min: 25, max: 300, step: 25 },
+    default: 100,
     onChange: (value) => {
-      const raw = String(value ?? economyPriceLevels.STANDARD ?? "standard").trim().toLowerCase();
-      const valid = Object.values(economyPriceLevels).includes(raw) ? raw : (economyPriceLevels.STANDARD ?? "standard");
-      notifySettingChanged(settings.ECONOMY_PRICE_MULTIPLIER, valid);
+      const pct = Math.max(25, Math.min(300, Math.round(Number(value) || 100)));
+      notifySettingChanged(settings.ECONOMY_PRICE_MULTIPLIER, pct);
     }
   });
 
