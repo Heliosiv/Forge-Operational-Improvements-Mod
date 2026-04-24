@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildMarchFormationSummaryContext,
   buildMarchOverviewContext,
+  MARCH_BOARD_RANKS,
   setupMarchingDragAndDrop
 } from "./features/march-feature.js";
 
@@ -131,9 +132,13 @@ class FakeElement {
 {
   const overview = buildMarchOverviewContext({
     totalAssigned: 5,
-    frontCount: 2,
-    middleCount: 2,
-    rearCount: 1,
+    laneCounts: {
+      vanguard: 0,
+      front: 2,
+      middle: 2,
+      rear: 1,
+      reserve: 0
+    },
     formationLabel: "Column",
     formationStateLabel: "Holding",
     lightSources: 0,
@@ -145,21 +150,36 @@ class FakeElement {
 
   assert.equal(overview.cards.length, 5);
   assert.equal(overview.cards[0].detail, "1 still unplaced");
+  assert.equal(overview.cards[1].value, "0 / 2 / 2 / 1 / 0");
+  assert.equal(overview.cards[1].detail, "Vanguard / Front / Middle / Rear / Reserve");
   assert.equal(overview.cards[3].toneClass, "is-muted");
   assert.equal(overview.cards[4].toneClass, "is-alert");
+}
+
+{
+  assert.deepEqual(
+    MARCH_BOARD_RANKS.map((rank) => rank.id),
+    ["vanguard", "front", "middle", "rear", "reserve"]
+  );
 }
 
 {
   const state = {
     locked: false,
     ranks: {
+      vanguard: [],
       front: ["actor-b"],
+      middle: [],
       rear: ["actor-a"]
+      ,
+      reserve: []
     },
     rankPlacements: {
+      vanguard: {},
       front: { "actor-b": 1 },
       middle: {},
-      rear: { "actor-a": 1 }
+      rear: { "actor-a": 1 },
+      reserve: {}
     }
   };
   const app = { id: "march-app" };
@@ -283,14 +303,18 @@ class FakeElement {
   const state = {
     locked: false,
     ranks: {
+      vanguard: [],
       front: ["actor-b"],
       middle: [],
-      rear: []
+      rear: [],
+      reserve: []
     },
     rankPlacements: {
+      vanguard: {},
       front: { "actor-b": 1 },
       middle: {},
-      rear: {}
+      rear: {},
+      reserve: {}
     }
   };
   const refreshes = [];

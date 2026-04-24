@@ -528,6 +528,8 @@
             </div>
             <div class="po-op-action-row po-merchant-filter-reset-row">
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-gm-filter-reset">Reset Filters</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell">Open Shops</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Shops</button>
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-tradable-none">Deselect All Merchants</button>
             </div>
             {{#if merchants.gm.hasDefinitions}}
@@ -559,6 +561,16 @@
                   <div class="po-merchant-definition-head-actions">
                     <button
                       type="button"
+                      class="po-btn po-btn-sm {{#if availableNow}}is-primary{{/if}}"
+                      data-action="merchant-make-available-now"
+                      data-merchant-id="{{id}}"
+                      data-available="{{#if availableNow}}false{{else}}true{{/if}}"
+                      title="{{availabilityActionHint}}"
+                    >
+                      {{availabilityActionLabel}}
+                    </button>
+                    <button
+                      type="button"
                       class="po-btn po-btn-sm {{#if shopTradable}}is-primary{{/if}}"
                       data-action="merchant-toggle-shop-tradable"
                       data-merchant-id="{{id}}"
@@ -571,6 +583,7 @@
                   </div>
                   <div class="po-merchant-definition-metadata">
                     <div class="po-op-summary">Profile: {{raceLabel}} | Location: {{settlementLabel}}</div>
+                    <div class="po-op-summary">Availability: {{availabilityStatusLabel}}</div>
                     <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
                     <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
                     <div class="po-op-summary">Markup: {{buyMarkupPercentLabel}} (x{{buyMarkupLabel}})</div>

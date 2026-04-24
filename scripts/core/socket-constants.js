@@ -6,4 +6,4 @@ export const SOCKET_REST_OPS = new Set(["assignMe", "clearEntry", "setEntryNotes
 
 export const SOCKET_MARCH_OPS = new Set(["joinRank", "leaveRank", "setNote"]);
 
-export const SOCKET_MARCH_RANKS = new Set(["front", "middle", "rear"]);
+export const SOCKET_MARCH_RANKS = new Set(["vanguard", "front", "middle", "rear", "reserve"]);

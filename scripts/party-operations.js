@@ -1293,6 +1293,7 @@ const NON_GM_READONLY_ACTIONS = new Set([
   "merchant-clear-curated-items",
   "merchant-open-actor",
   "merchant-toggle-shop-tradable",
+  "merchant-make-available-now",
   "merchant-shop-tradable-all",
   "merchant-shop-tradable-none",
   "toggle-loot-pack-source",
@@ -9234,6 +9235,7 @@ export const GmMerchantsPageApp = createGmMerchantsPageApp({
   setMerchantShopPlayerAllowedFromElement,
   setMerchantShopPlayersAllFromElement,
   setMerchantShopPlayersNoneFromElement,
+  setMerchantAvailableNowFromElement,
   setMerchantShopTradableFromElement,
   setMerchantShopTradableAllFromElement,
   setMerchantShopTradableNoneFromElement,
@@ -26148,6 +26150,14 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
         isWarn: false
       });
     }
+    const availableNow = Boolean(shopSession.isOpen && merchant?.shopTradable !== false);
+    const availabilityStatusLabel = availableNow
+      ? `Live Now - ${shopSession.restrictToSelected ? shopAccessSummary : "Shops Open"}`
+      : "Not Live";
+    const availabilityActionLabel = availableNow ? "Hide Now" : "Make Available Now";
+    const availabilityActionHint = availableNow
+      ? "Remove this merchant from the current live shop list."
+      : `Mark this merchant tradable and ${shopSession.isOpen ? "leave shops open" : "open shops"} immediately.`;
     return {
       ...merchant,
       archetype: merchantArchetype,
@@ -26211,6 +26221,10 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
       autoRefreshOverdue,
       actorName: String(merchantActor?.name ?? "").trim(),
       hasActor: Boolean(merchantActor),
+      availableNow,
+      availabilityStatusLabel,
+      availabilityActionLabel,
+      availabilityActionHint,
       lastRefreshedAt: Number(stockMeta?.lastRefreshedAt ?? 0) || 0,
       lastRefreshedAtLabel: formatMerchantTimestampLabel(stockMeta?.lastRefreshedAt),
       lastRefreshedBy: String(stockMeta?.lastRefreshedBy ?? "").trim() || "-",
@@ -29311,6 +29325,18 @@ async function setMerchantShopTradableById(merchantIdInput, tradable = true) {
   return saved;
 }
 
+async function ensureMerchantShopsOpenNow() {
+  const current = getMerchantShopSessionState();
+  if (current.isOpen) return { session: current, opened: false };
+  const openedBy = String(game.user?.name ?? "GM").trim() || "GM";
+  const session = await updateMerchantShopSessionState({
+    isOpen: true,
+    lastOpenedAt: Date.now(),
+    lastOpenedBy: openedBy
+  });
+  return { session, opened: true };
+}
+
 function parseMerchantTradableDatasetValue(value, fallback = true) {
   const normalized = String(value ?? "").trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(normalized)) return true;
@@ -29330,6 +29356,43 @@ async function setMerchantShopTradableFromElement(element) {
   const nextTradable = parseMerchantTradableDatasetValue(element?.dataset?.tradable, !fallback);
   const saved = await setMerchantShopTradableById(merchantId, nextTradable);
   return Boolean(saved?.id);
+}
+
+async function setMerchantAvailableNowById(merchantIdInput, available = true) {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can manage live merchant availability.");
+    return { ok: false, message: "Only the GM can manage live merchant availability." };
+  }
+  const merchantId = String(merchantIdInput ?? "").trim();
+  if (!merchantId) return { ok: false, message: "Merchant id is required." };
+  const merchant = getMerchantById(merchantId);
+  if (!merchant) return { ok: false, message: "Merchant not found." };
+  const merchantName = String(merchant?.name ?? "Merchant").trim() || "Merchant";
+  const enabled = Boolean(available);
+  const saved = await setMerchantShopTradableById(merchantId, enabled);
+  if (!saved?.id) return { ok: false, message: "Merchant could not be updated." };
+  if (!enabled) {
+    ui.notifications?.info(`${merchantName} is no longer available in the live shop list.`);
+    return { ok: true, merchantId, availableNow: false, sessionOpened: false };
+  }
+  const { session, opened } = await ensureMerchantShopsOpenNow();
+  const audienceLabel = getMerchantShopAudienceSummary(session);
+  ui.notifications?.info(
+    opened
+      ? `${merchantName} is now available. Shops opened for ${audienceLabel}.`
+      : `${merchantName} is now available while shops remain open for ${audienceLabel}.`
+  );
+  return { ok: true, merchantId, availableNow: true, sessionOpened: opened };
+}
+
+async function setMerchantAvailableNowFromElement(element) {
+  const merchantId = getMerchantIdFromElementOrEditor(element);
+  if (!merchantId) return false;
+  const currentMerchant = getMerchantById(merchantId);
+  const fallback = Boolean(getMerchantShopSessionState()?.isOpen && currentMerchant?.shopTradable !== false);
+  const nextAvailable = parseMerchantTradableDatasetValue(element?.dataset?.available, !fallback);
+  const result = await setMerchantAvailableNowById(merchantId, nextAvailable);
+  return Boolean(result?.ok);
 }
 
 async function setMerchantShopTradableForAll(enabled = true) {

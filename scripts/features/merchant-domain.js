@@ -1866,6 +1866,7 @@ function getMerchantSectionPriority(sectionKey = "") {
 }
 
 export function selectMerchantStockRows(candidates = [], merchant = {}, options = {}) {
+  const customMode = Boolean(merchant?.customMode);
   const normalizeCuratedItemUuids = typeof options?.normalizeCuratedItemUuids === "function"
     ? options.normalizeCuratedItemUuids
     : normalizeMerchantCuratedItemUuids;
@@ -1883,7 +1884,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     : shuffleMerchantRows;
   const random = typeof options?.randomFn === "function" ? options.randomFn : Math.random;
   const stock = merchant?.stock ?? {};
-  const curatedOrder = normalizeCuratedItemUuids(stock?.curatedItemUuids ?? []);
+  const curatedOrder = customMode ? normalizeCuratedItemUuids(stock?.curatedItemUuids ?? []) : [];
   const targetCount = Math.max(1, Number(getTargetCount(stock)) || 1);
   const targetValueGpRaw = Number(stock?.targetValueGp ?? 0);
   const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, targetValueGpRaw) : 0;
@@ -2158,13 +2159,21 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
   const normalizeKeywords = typeof options?.normalizeKeywordList === "function"
     ? options.normalizeKeywordList
     : normalizeMerchantKeywordList;
+  const customMode = Boolean(merchant?.customMode);
   const stock = merchant?.stock ?? {};
-  const curatedUuids = new Set(normalizeCuratedUuids(stock?.curatedItemUuids ?? []));
-  const allowedTypes = new Set(normalizeAllowedTypes(stock?.allowedTypes ?? []));
-  const includeTags = normalizeTags(stock?.includeTags ?? []);
-  const excludeTags = normalizeTags(stock?.excludeTags ?? []);
-  const includeKeywords = normalizeKeywords(stock?.keywordInclude ?? []);
-  const excludeKeywords = normalizeKeywords(stock?.keywordExclude ?? []);
+  const archetypeDefaults = getMerchantArchetypeDefaults(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const curatedUuids = new Set(customMode ? normalizeCuratedUuids(stock?.curatedItemUuids ?? []) : []);
+  const allowedTypes = new Set(
+    normalizeAllowedTypes(
+      customMode
+        ? (stock?.allowedTypes ?? [])
+        : (archetypeDefaults?.stock?.allowedTypes ?? stock?.allowedTypes ?? [])
+    )
+  );
+  const includeTags = customMode ? normalizeTags(stock?.includeTags ?? []) : [];
+  const excludeTags = customMode ? normalizeTags(stock?.excludeTags ?? []) : [];
+  const includeKeywords = customMode ? normalizeKeywords(stock?.keywordInclude ?? []) : [];
+  const excludeKeywords = customMode ? normalizeKeywords(stock?.keywordExclude ?? []) : [];
   const rows = [];
   for (const documentRef of (Array.isArray(documents) ? documents : [])) {
     const data = getItemData(documentRef);

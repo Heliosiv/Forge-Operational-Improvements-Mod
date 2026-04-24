@@ -295,4 +295,50 @@ assert.ok(archetypeSelection.some((entry) => (entry.sourceKey ?? entry.key) === 
 assert.ok(archetypeSelection.some((entry) => String(entry?.merchantSectionLabel ?? "").length > 0));
 assert.ok(archetypeSelection.some((entry) => entry?.merchantStockRole === "core"));
 
+const presetModeIgnoresManualCuratedSelection = selectMerchantStockRows([
+  {
+    key: "Item.trinket.feywild-circus-amulet",
+    name: "Feywild Circus Amulet",
+    gpValue: 2500,
+    rarityBucket: "rare",
+    isCurated: true,
+    data: { name: "Feywild Circus Amulet", type: "trinket" },
+    keywords: ["curio"]
+  },
+  {
+    key: "Item.armor.chain-shirt",
+    name: "Chain Shirt",
+    gpValue: 50,
+    rarityBucket: "common",
+    data: { name: "Chain Shirt", type: "armor" },
+    keywords: ["armor", "chain"]
+  }
+], {
+  archetype: "armorer",
+  customMode: false,
+  stock: {
+    curatedItemUuids: ["Item.trinket.feywild-circus-amulet"],
+    maxItems: 1,
+    targetValueGp: 0,
+    duplicateChance: 0,
+    maxStackSize: 20,
+    rarityWeights: {
+      common: 1,
+      uncommon: 1,
+      rare: 1,
+      "very-rare": 1,
+      legendary: 1
+    }
+  }
+}, {
+  randomFn: () => 0.25,
+  shuffleRows: (rows) => rows
+});
+
+assert.equal(presetModeIgnoresManualCuratedSelection.length, 1);
+assert.equal(
+  presetModeIgnoresManualCuratedSelection[0]?.sourceKey ?? presetModeIgnoresManualCuratedSelection[0]?.key,
+  "Item.armor.chain-shirt"
+);
+
 process.stdout.write("merchant domain validation passed\n");

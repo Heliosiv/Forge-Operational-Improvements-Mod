@@ -7,6 +7,14 @@ export function createMarchFeatureModule(deps = {}) {
   };
 }
 
+export const MARCH_BOARD_RANKS = Object.freeze([
+  { id: "vanguard", label: "Vanguard Lane", shortLabel: "Vanguard" },
+  { id: "front", label: "Front Lane", shortLabel: "Front" },
+  { id: "middle", label: "Middle Lane", shortLabel: "Middle" },
+  { id: "rear", label: "Rear Lane", shortLabel: "Rear" },
+  { id: "reserve", label: "Reserve Lane", shortLabel: "Reserve" }
+]);
+
 export function buildMarchFormationSummaryContext({
   formationSnapshot = {},
   tracker = {},
@@ -211,9 +219,7 @@ export function buildMarchFormationSummaryContext({
 
 export function buildMarchOverviewContext({
   totalAssigned = 0,
-  frontCount = 0,
-  middleCount = 0,
-  rearCount = 0,
+  laneCounts = {},
   formationLabel = "March Board",
   formationStateLabel = "Active",
   lightSources = 0,
@@ -225,9 +231,7 @@ export function buildMarchOverviewContext({
   const hasAlert = leadershipCheckDue || warningCount > 0 || unassignedCount > 0;
   return {
     totalAssigned,
-    frontCount,
-    middleCount,
-    rearCount,
+    laneCounts,
     formationLabel,
     formationStateLabel,
     lightSources,
@@ -240,9 +244,9 @@ export function buildMarchOverviewContext({
         toneClass: unassignedCount > 0 ? "is-alert" : ""
       },
       {
-        label: "Front / Middle / Rear",
-        value: `${frontCount} / ${middleCount} / ${rearCount}`,
-        detail: "Live board spread",
+        label: "Lane Spread",
+        value: MARCH_BOARD_RANKS.map((rank) => Number(laneCounts?.[rank.id] ?? 0)).join(" / "),
+        detail: MARCH_BOARD_RANKS.map((rank) => rank.shortLabel).join(" / "),
         toneClass: ""
       },
       {
@@ -268,11 +272,7 @@ export function buildMarchOverviewContext({
 }
 
 function buildDefaultRankPlacements() {
-  return {
-    front: {},
-    middle: {},
-    rear: {}
-  };
+  return Object.fromEntries(MARCH_BOARD_RANKS.map((rank) => [rank.id, {}]));
 }
 
 function clearActorPlacement(state, actorId) {
