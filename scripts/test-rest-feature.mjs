@@ -69,6 +69,8 @@ class FakeElement {
     "moveSlot",
     "setSlotEntry",
     "setVisibleEntryCount",
+    "setCampfire",
+    "setCampfireAll",
     "replaceState"
   ]);
   const normalize = (request) =>
@@ -96,6 +98,16 @@ class FakeElement {
     slotId: "slot-a",
     visibleEntryCount: 3
   });
+  assert.deepEqual(normalize({ op: "setCampfire", slotId: "slot-a", active: true }), {
+    op: "setCampfire",
+    slotId: "slot-a",
+    active: true
+  });
+  assert.deepEqual(normalize({ op: "setCampfireAll", slotId: "all", active: false }), {
+    op: "setCampfireAll",
+    slotId: "all",
+    active: false
+  });
   assert.deepEqual(normalize({ op: "replaceState", state: { slots: [] } }), {
     op: "replaceState",
     state: { slots: [] }
@@ -105,7 +117,10 @@ class FakeElement {
 {
   const state = {
     locked: false,
-    slots: [{ id: "slot-a", entries: [{ actorId: "actor-a", notes: "Old", position: 0 }], visibleEntryCount: 1 }]
+    slots: [
+      { id: "slot-a", entries: [{ actorId: "actor-a", notes: "Old", position: 0 }], visibleEntryCount: 1 },
+      { id: "slot-b", entries: [], visibleEntryCount: 1 }
+    ]
   };
   const saves = [];
   const refreshes = [];
@@ -144,6 +159,13 @@ class FakeElement {
 
   await applyRestRequest({ op: "setVisibleEntryCount", slotId: "slot-a", visibleEntryCount: 1 }, requester, deps);
   assert.equal(state.slots[0].visibleEntryCount, 1);
+
+  await applyRestRequest({ op: "setCampfire", slotId: "slot-a", active: true }, requester, deps);
+  assert.equal(state.campfireBySlot["slot-a"], true);
+
+  await applyRestRequest({ op: "setCampfireAll", slotId: "all", active: false }, requester, deps);
+  assert.equal(state.campfire, false);
+  assert.deepEqual(state.campfireBySlot, { "slot-a": false, "slot-b": false });
 
   await applyRestRequest({ op: "replaceState", state: { slots: [], locked: false } }, requester, deps);
   assert.deepEqual(saves.at(-1).value, { slots: [], locked: false, lastUpdatedBy: "Clarence" });

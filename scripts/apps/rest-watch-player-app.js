@@ -71,6 +71,8 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     canAccessAllPlayerOps,
     notifyUiWarnThrottled,
     getActiveActorForUser,
+    buildPlayerActorSelectorContext,
+    switchActiveCharacter,
     saveRestWatchEntryNoteByContext,
     isModuleDebugEnabled,
     game
@@ -110,6 +112,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         const ledger = getOperationsLedger();
         const downtime = buildDowntimeContext(ensureDowntimeState(ledger), { user: game.user });
         const playerMarch = buildPlayerMarchQuickContext();
+        const playerActorSelector = buildPlayerActorSelectorContext?.() ?? { hasChoices: false, options: [] };
         const context = {
           isGM: false,
           locked: state.locked,
@@ -130,6 +133,7 @@ export function createRestWatchPlayerAppClass(deps = {}) {
           playerHubDowntime: playerHubTab === "downtime",
           slots,
           miniViz,
+          playerActorSelector,
           playerMarch,
           downtime,
           lootClaims,
@@ -151,7 +155,9 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         return context;
       } catch (error) {
         console.error(`${MODULE_ID}: RestWatchPlayerApp _prepareContext failed`, error);
-        logUiDebug("rest-watch-player", "falling back to safe player context", { error: String(error?.message ?? error) });
+        logUiDebug("rest-watch-player", "falling back to safe player context", {
+          error: String(error?.message ?? error)
+        });
         return {
           isGM: false,
           locked: false,
@@ -181,6 +187,10 @@ export function createRestWatchPlayerAppClass(deps = {}) {
             canSetRank: false,
             lockState: "Locked",
             rankButtons: []
+          },
+          playerActorSelector: {
+            hasChoices: false,
+            options: []
           },
           downtime: {
             hoursGranted: 0,
@@ -325,10 +335,13 @@ export function createRestWatchPlayerAppClass(deps = {}) {
         const actorId = String(queueItem.dataset?.actorId ?? "").trim();
         const queueIndex = Number(queueItem.dataset?.queueIndex ?? -1);
         if (!actorId || !Number.isFinite(queueIndex) || queueIndex < 0) return;
-        event.dataTransfer?.setData("application/x-party-ops-downtime-queue", JSON.stringify({
-          actorId,
-          queueIndex: Math.floor(queueIndex)
-        }));
+        event.dataTransfer?.setData(
+          "application/x-party-ops-downtime-queue",
+          JSON.stringify({
+            actorId,
+            queueIndex: Math.floor(queueIndex)
+          })
+        );
         if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
       });
 
@@ -366,7 +379,9 @@ export function createRestWatchPlayerAppClass(deps = {}) {
     #onSwitchTabClick(event, tabButton) {
       event.preventDefault();
       event.stopPropagation();
-      const tabId = String(tabButton?.dataset?.tab ?? "").trim().toLowerCase();
+      const tabId = String(tabButton?.dataset?.tab ?? "")
+        .trim()
+        .toLowerCase();
       logUiDebug("rest-watch-player", "switch-tab click", {
         tabId,
         target: summarizeClickTarget(event.target)
@@ -407,6 +422,10 @@ export function createRestWatchPlayerAppClass(deps = {}) {
             break;
           case "player-hub-tab":
             setPlayerHubTab(element?.dataset?.tab);
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+            break;
+          case "switch-character":
+            await switchActiveCharacter?.(element);
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
             break;
           case "refresh-downtime-submit-selection":
@@ -522,10 +541,13 @@ export function createRestWatchPlayerAppClass(deps = {}) {
       const text = event.target.value ?? "";
       const actorId = event.target?.closest(".po-watch-entry")?.dataset?.actorId || getActiveActorForUser()?.id;
       if (!actorId) return;
-      await saveRestWatchEntryNoteByContext({ slotId, actorId, text }, {
-        notify: false,
-        source: "manual"
-      });
+      await saveRestWatchEntryNoteByContext(
+        { slotId, actorId, text },
+        {
+          notify: false,
+          source: "manual"
+        }
+      );
     }
 
     async close(options = {}) {

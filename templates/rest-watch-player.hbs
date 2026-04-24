@@ -22,6 +22,20 @@
         <button type="button" role="tab" aria-controls="po-player-hub-panel-downtime" tabindex="{{#if playerHubDowntime}}0{{else}}-1{{/if}}" class="po-tab {{#if playerHubDowntime}}is-active{{/if}}" data-action="player-hub-tab" data-tab="downtime" aria-selected="{{#if playerHubDowntime}}true{{else}}false{{/if}}">Downtime</button>
       </nav>
 
+      {{#if playerActorSelector.hasChoices}}
+      <div class="po-player-character-strip" aria-label="Active character">
+        <span class="po-player-character-strip-label">Using</span>
+        <div class="po-player-character-options">
+          {{#each playerActorSelector.options}}
+          <button type="button" class="po-player-character-chip {{#if selected}}is-active{{/if}}" data-action="switch-character" data-actor-id="{{id}}" aria-pressed="{{#if selected}}true{{else}}false{{/if}}">
+            {{#if img}}<img src="{{img}}" alt="" />{{/if}}
+            <span>{{name}}</span>
+          </button>
+          {{/each}}
+        </div>
+      </div>
+      {{/if}}
+
       {{#if playerHubWatch}}
       {{> "modules/party-operations/templates/partials/rest-watch-player/simple-watch.hbs"}}
       {{/if}}

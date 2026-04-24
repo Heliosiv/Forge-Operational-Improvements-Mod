@@ -111,6 +111,14 @@ export function normalizeSocketRestRequest(request, deps = {}) {
     return { op, slotId, visibleEntryCount: visibleEntryCountRaw };
   }
 
+  if (op === "setCampfire") {
+    return { op, slotId, active: Boolean(request.active) };
+  }
+
+  if (op === "setCampfireAll") {
+    return { op, slotId, active: Boolean(request.active) };
+  }
+
   if (!actorId) return null;
 
   return { op, slotId, actorId };
@@ -231,6 +239,39 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     if (!slot) return;
     const visibleEntryCount = Math.max(0, Math.min(REST_SLOT_MAX_ENTRIES, Number(request.visibleEntryCount ?? 0) || 0));
     slot.visibleEntryCount = visibleEntryCount;
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.REST });
+    emitSocketRefresh({ scope: refreshScopeKeys.REST });
+    return;
+  }
+
+  if (request.op === "setCampfire") {
+    const slot = state.slots.find((entry) => entry.id === request.slotId);
+    if (!slot) return;
+    if (!state.campfireBySlot || typeof state.campfireBySlot !== "object" || Array.isArray(state.campfireBySlot)) {
+      state.campfireBySlot = {};
+    }
+    state.campfireBySlot[request.slotId] = Boolean(request.active);
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
+    scheduleIntegrationSync("rest-watch-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.REST });
+    emitSocketRefresh({ scope: refreshScopeKeys.REST });
+    return;
+  }
+
+  if (request.op === "setCampfireAll") {
+    const active = Boolean(request.active);
+    state.campfire = active;
+    if (!state.campfireBySlot || typeof state.campfireBySlot !== "object" || Array.isArray(state.campfireBySlot)) {
+      state.campfireBySlot = {};
+    }
+    for (const slot of Array.isArray(state.slots) ? state.slots : []) {
+      const nextSlotId = String(slot?.id ?? "").trim();
+      if (nextSlotId) state.campfireBySlot[nextSlotId] = active;
+    }
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, state);
     scheduleIntegrationSync("rest-watch-player-mutate");

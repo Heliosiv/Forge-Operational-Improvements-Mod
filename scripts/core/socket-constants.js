@@ -9,6 +9,8 @@ export const SOCKET_REST_OPS = new Set([
   "moveSlot",
   "setSlotEntry",
   "setVisibleEntryCount",
+  "setCampfire",
+  "setCampfireAll",
   "replaceState"
 ]);
 

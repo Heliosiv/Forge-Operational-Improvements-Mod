@@ -10248,6 +10248,8 @@ export const RestWatchPlayerApp = createRestWatchPlayerAppClass({
   canAccessAllPlayerOps,
   notifyUiWarnThrottled,
   getActiveActorForUser,
+  buildPlayerActorSelectorContext,
+  switchActiveCharacter,
   saveRestWatchEntryNoteByContext,
   isModuleDebugEnabled,
   game
@@ -30725,7 +30727,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     settlement
   });
   const existingBarterResolution = getMerchantBarterResolutionEntryByKey(barterResolutionKey);
-  const barterButtonLabel = game.user?.isGM ? "Barter" : "Barter (Ask GM)";
+  const barterButtonLabel = "Roll Barter";
   const barterStatusLabel = barterEnabled
     ? existingBarterResolution?.applied
       ? getMerchantBarterUiSummaryText(existingBarterResolution)
@@ -30940,7 +30942,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
     barterStatusLabel,
     barterStatusState,
     barterHint: barterEnabled
-      ? `${barterAbilityLabel} barter check. ${getMerchantBarterConfigSummaryText(merchant?.pricing ?? {})} ${game.user?.isGM ? "Resolve it here before finalizing." : "Ask the GM to resolve it before finalizing."}`
+      ? `${barterAbilityLabel} barter check. ${getMerchantBarterConfigSummaryText(merchant?.pricing ?? {})} Roll it here before finalizing.`
       : "This merchant is not accepting barter checks.",
     buyCountLabel: merchantItems.length > 0 ? `${merchantItems.length} wares listed` : "No wares available",
     sellCountLabel: !sellEnabled
@@ -31249,34 +31251,18 @@ function bindMerchantTradeDialogBarterButton(html) {
     setMerchantTradeDialogBarterStatus(root, { pending: true });
 
     try {
-      if (game.user?.isGM) {
-        const resolved = await resolveMerchantBarterForUser(game.user, meta);
-        if (!resolved.ok) {
-          setMerchantTradeDialogBarterStatus(root, {
-            error: true,
-            errorLabel: resolved.message ?? "Barter request failed."
-          });
-          return;
-        }
-        setMerchantTradeDialogBarterStatus(root, { summary: String(resolved.summary ?? "").trim() });
-        ui.notifications?.info("Barter resolved.");
+      const resolved = await resolveMerchantBarterForUser(game.user, meta);
+      if (!resolved.ok) {
+        setMerchantTradeDialogBarterStatus(root, {
+          error: true,
+          errorLabel: resolved.message ?? "Barter request failed."
+        });
+        ui.notifications?.warn(resolved.message ?? "Barter request failed.");
         return;
       }
-      if (!hasActiveGmClient()) {
-        setMerchantTradeDialogBarterStatus(root, { error: true, errorLabel: "No active GM to resolve barter." });
-        ui.notifications?.warn("No active GM to resolve barter.");
-        return;
-      }
-      const gmUserId = getPrimaryActiveGmUserId();
-      game.socket.emit(SOCKET_CHANNEL, {
-        type: "ops:merchant-barter-request",
-        userId: game.user.id,
-        gmUserId,
-        merchantId: meta.merchantId,
-        actorId: meta.actorId,
-        settlement: meta.settlement
-      });
-      ui.notifications?.info("Barter request sent to GM.");
+      setMerchantTradeDialogBarterStatus(root, { summary: String(resolved.summary ?? "").trim() });
+      refreshMerchantTradeDialogPricing(root);
+      ui.notifications?.info("Barter resolved.");
     } catch (error) {
       console.warn(`${MODULE_ID}: barter request failed`, error);
       setMerchantTradeDialogBarterStatus(root, { error: true });
@@ -31414,6 +31400,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
               return;
             }
             const gmUserId = getPrimaryActiveGmUserId();
+            const barterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
             game.socket.emit(SOCKET_CHANNEL, {
               type: "ops:merchant-trade",
               userId: game.user.id,
@@ -31422,7 +31409,8 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
               actorId: trade.actorId,
               settlement: trade.settlement,
               buyItems: trade.buyItems,
-              sellItems: trade.sellItems
+              sellItems: trade.sellItems,
+              barterResolution: barterResolution?.applied ? barterResolution : null
             });
             clearMerchantBarterResolutionEntryByKey(barterKey);
             ui.notifications?.info("Completing merchant trade...");
@@ -46577,7 +46565,7 @@ async function upsertInjuryEntry(element) {
     };
   });
 
-  if (canAccessAllPlayerOps()) {
+  if (game.user?.isGM) {
     const hasMutationApi = Boolean(getSimpleCalendarMutationApi());
     const syncResult = await syncInjuryWithSimpleCalendar(actorId);
     if (isSimpleCalendarActive() && hasMutationApi && !syncResult.synced) {
@@ -47052,10 +47040,41 @@ function getMarchDoctrineActorRows(state = getMarchingOrderState()) {
 
 function getActiveActorForUser(user = game.user) {
   if (!user) return null;
+  const selectableActors = getSelectablePlayerActorsForUser(user);
+  let storedActorId = "";
+  try {
+    storedActorId = String(sessionStorage.getItem(`po-active-char-${user.id}`) ?? "").trim();
+  } catch {
+    storedActorId = "";
+  }
+  if (storedActorId) {
+    const storedActor = selectableActors.find((actor) => String(actor?.id ?? "").trim() === storedActorId);
+    if (storedActor) return storedActor;
+  }
   if (user.character?.type === "character" && canUserManageDowntimeActor(user, user.character)) {
     return user.character;
   }
-  return getSelectablePlayerActorsForUser(user)[0] ?? null;
+  return selectableActors[0] ?? null;
+}
+
+function buildPlayerActorSelectorContext(user = game.user) {
+  const actors = getSelectablePlayerActorsForUser(user);
+  const activeActor = getActiveActorForUser(user);
+  const activeActorId = String(activeActor?.id ?? "").trim();
+  return {
+    hasChoices: actors.length > 1,
+    activeActorId,
+    activeActorName: String(activeActor?.name ?? "").trim(),
+    options: actors.map((actor) => {
+      const id = String(actor?.id ?? "").trim();
+      return {
+        id,
+        name: String(actor?.name ?? "Unknown").trim() || "Unknown",
+        img: String(actor?.img ?? "").trim(),
+        selected: id === activeActorId
+      };
+    })
+  };
 }
 
 async function promptPlayerActorSelection(actors = [], options = {}) {
@@ -47967,7 +47986,6 @@ async function commitRestWatchEntrySelection(slotIdInput, entryIndexInput, actor
 }
 
 async function updateRestWatchEntrySelection(element) {
-  if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
@@ -47976,7 +47994,6 @@ async function updateRestWatchEntrySelection(element) {
 }
 
 async function clearRestWatchEntrySelection(element) {
-  if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   const entryIndex = Number.parseInt(element?.dataset?.entryIndex ?? "-1", 10);
   if (!slotId || !Number.isInteger(entryIndex) || entryIndex < 0) return;
@@ -48008,7 +48025,6 @@ async function clearRestWatchEntrySelection(element) {
 }
 
 async function addRestWatchVisibleSlot(element) {
-  if (!canAccessAllPlayerOps()) return;
   const slotId = String(element?.dataset?.slotId ?? element?.closest(".po-card")?.dataset?.slotId ?? "").trim();
   if (!slotId) return;
   let nextVisibleIndex = -1;
@@ -48860,25 +48876,30 @@ async function assignActorToRank(element) {
         callback: async (html) => {
           const actorId = html.find("select[name=actorId]").val();
           if (!actorId) return;
-          const updated = await updateMarchingOrderState(
-            (state) => {
-              for (const key of Object.keys(state.ranks)) {
-                state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
-              }
-              clearMarchActorPlacement(state, actorId);
-              if (!state.ranks[rankId]) state.ranks[rankId] = [];
-              const target = state.ranks[rankId];
-              const safeIndex = hasRequestedInsertIndex
-                ? Math.max(0, Math.min(requestedInsertIndex, target.length))
-                : target.length;
-              target.splice(safeIndex, 0, actorId);
-              setMarchActorPlacement(state, rankId, actorId, hasRequestedCellIndex ? requestedCellIndex : null);
-              if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
-                markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
-              }
-            },
-            { skipLocalRefresh: true }
-          );
+          const request = { op: "joinRank", actorId, rankId };
+          if (hasRequestedInsertIndex) request.insertIndex = requestedInsertIndex;
+          if (hasRequestedCellIndex) request.cellIndex = requestedCellIndex;
+          const updated = !game.user?.isGM
+            ? await updateMarchingOrderState(request, { skipLocalRefresh: true })
+            : await updateMarchingOrderState(
+                (state) => {
+                  for (const key of Object.keys(state.ranks)) {
+                    state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== actorId);
+                  }
+                  clearMarchActorPlacement(state, actorId);
+                  if (!state.ranks[rankId]) state.ranks[rankId] = [];
+                  const target = state.ranks[rankId];
+                  const safeIndex = hasRequestedInsertIndex
+                    ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+                    : target.length;
+                  target.splice(safeIndex, 0, actorId);
+                  setMarchActorPlacement(state, rankId, actorId, hasRequestedCellIndex ? requestedCellIndex : null);
+                  if (normalizeMarchingFormation(state.formation ?? "loose") !== "free") {
+                    markDoctrineTriggerPending(state, MARCH_DOCTRINE_TRIGGERS.MAJOR_REPOSITION);
+                  }
+                },
+                { skipLocalRefresh: true }
+              );
           if (!updated) {
             refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
             return;
@@ -51417,10 +51438,6 @@ function toggleCardNotes(element) {
 }
 
 async function toggleCampfire(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can toggle campfire.");
-    return;
-  }
   const state = getRestWatchState();
   const slotId = String(element?.dataset?.slotId ?? "").trim();
   if (!slotId) {
@@ -51428,11 +51445,13 @@ async function toggleCampfire(element) {
     return;
   }
   const newValue = !getRestWatchSlotCampfireState(state, slotId);
-  const updated = await updateRestWatchState((state) => {
-    const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
-    state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
-    state.campfireBySlot[slotId] = newValue;
-  });
+  const updated = game.user?.isGM
+    ? await updateRestWatchState((state) => {
+        const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+        state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, state?.campfire);
+        state.campfireBySlot[slotId] = newValue;
+      })
+    : await updateRestWatchState({ op: "setCampfire", slotId, active: newValue });
   if (!updated) return;
   const slotLabel = String(element?.dataset?.slotLabel ?? "").trim() || "watch";
   const status = newValue ? `Campfire lit for ${slotLabel}` : `Campfire extinguished for ${slotLabel}`;
@@ -51440,23 +51459,21 @@ async function toggleCampfire(element) {
 }
 
 async function toggleCampfireAll() {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can toggle campfire.");
-    return;
-  }
   const state = getRestWatchState();
   const overview = buildRestWatchCampfireOverview(
     buildWatchSlotsView(state, true, state.visibility ?? "names-passives")
   );
   const newValue = !overview.allLit;
-  const updated = await updateRestWatchState((state) => {
-    const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
-    state.campfire = newValue;
-    state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
-    for (const slotId of slotIds) {
-      state.campfireBySlot[slotId] = newValue;
-    }
-  });
+  const updated = game.user?.isGM
+    ? await updateRestWatchState((state) => {
+        const slotIds = getRestWatchSourceSlots(state).map((slot, index) => String(slot?.id ?? `watch-${index + 1}`));
+        state.campfire = newValue;
+        state.campfireBySlot = normalizeRestWatchCampfireBySlot(state?.campfireBySlot, slotIds, newValue);
+        for (const slotId of slotIds) {
+          state.campfireBySlot[slotId] = newValue;
+        }
+      })
+    : await updateRestWatchState({ op: "setCampfireAll", slotId: "all", active: newValue });
   if (!updated) return;
   ui.notifications?.info(newValue ? "Campfire lit for all watches." : "Campfire extinguished for all watches.");
 }

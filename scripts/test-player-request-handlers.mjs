@@ -140,6 +140,45 @@ function buildBaseHandlers(overrides = {}) {
 }
 
 {
+  const { handlers, calls } = buildBaseHandlers({
+    getMerchantBarterResolutionEntryByKey: () => null
+  });
+  await handlers.applyPlayerMerchantTradeRequest({
+    userId: "user-1",
+    merchantId: "merchant-1",
+    actorId: "actor-1",
+    buyItems: [{ itemId: "buy-1", qty: 1 }],
+    barterResolution: {
+      applied: true,
+      source: "local-roll",
+      ability: "cha",
+      abilityLabel: "Charisma",
+      checkTotal: 18,
+      margin: 3,
+      success: true,
+      delta: -0.1,
+      buyMarkupDelta: -0.1,
+      sellRateDelta: 0.1,
+      createdAt: 123
+    }
+  });
+
+  assert.deepEqual(calls.tradeRequests[0].barterResolution, {
+    applied: true,
+    source: "local-roll",
+    ability: "cha",
+    abilityLabel: "Charisma",
+    checkTotal: 18,
+    margin: 3,
+    success: true,
+    delta: -0.1,
+    buyMarkupDelta: -0.1,
+    sellRateDelta: 0.1,
+    createdAt: 123
+  });
+}
+
+{
   const { handlers, calls } = buildBaseHandlers();
   await handlers.applyPlayerLootClaimRequest({
     userId: "user-1",

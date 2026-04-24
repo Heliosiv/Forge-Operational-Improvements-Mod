@@ -48,6 +48,26 @@ export function createPlayerRequestHandlers(options = {}) {
     return rows;
   }
 
+  function normalizeBarterResolution(raw) {
+    const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    if (!source || source.applied !== true) return null;
+    const checkTotal = Number(source.checkTotal ?? 0);
+    if (!Number.isFinite(checkTotal)) return null;
+    return {
+      applied: true,
+      source: String(source.source ?? "resolved"),
+      ability: String(source.ability ?? "cha"),
+      abilityLabel: String(source.abilityLabel ?? "Charisma"),
+      checkTotal,
+      margin: Number(source.margin ?? 0) || 0,
+      success: Boolean(source.success),
+      delta: Number(source.delta ?? 0) || 0,
+      buyMarkupDelta: Number(source.buyMarkupDelta ?? 0) || 0,
+      sellRateDelta: Number(source.sellRateDelta ?? 0) || 0,
+      createdAt: Number(source.createdAt ?? Date.now()) || Date.now()
+    };
+  }
+
   async function applyPlayerMerchantBarterRequest(message, requesterRef = null) {
     const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Merchant barter");
     if (!requester) return;
@@ -142,7 +162,9 @@ export function createPlayerRequestHandlers(options = {}) {
       settlement
     });
     const cachedBarterResolution = getMerchantBarterResolutionEntryByKey(barterKey);
-    if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
+    const messageBarterResolution = normalizeBarterResolution(message?.barterResolution);
+    if (messageBarterResolution?.applied) tradePayload.barterResolution = messageBarterResolution;
+    else if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
     const outcome = await applyMerchantTradeForUser(requester, tradePayload);
     if (!outcome.ok) {
       emitModuleSocket(
