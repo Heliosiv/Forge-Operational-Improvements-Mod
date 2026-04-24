@@ -57,11 +57,42 @@ export const MERCHANT_RARITY_PRICE_MULTIPLIERS = Object.freeze({
 export const MERCHANT_MIN_RARITY_PRICE_MULTIPLIER = 0.1;
 export const MERCHANT_MAX_RARITY_PRICE_MULTIPLIER = 10;
 
+export function normalizeFoundryAssetImagePath(value, { fallback = "icons/svg/item-bag.svg" } = {}) {
+  const raw = String(value ?? "").trim();
+  const fallbackPath = String(fallback ?? "").trim();
+  if (!raw) return fallbackPath;
+  if (!/^https?:\/\//i.test(raw)) return raw;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return fallbackPath;
+  }
+  if (!/assets\.forge-vtt\.com$/i.test(String(url.hostname ?? "").trim())) return raw;
+  let pathname = String(url.pathname ?? "");
+  try {
+    pathname = decodeURIComponent(pathname);
+  } catch {
+    // Leave the encoded path in place; normal Forge Bazaar paths still match below.
+  }
+  const replacements = [
+    ["/bazaar/core/", ""],
+    ["/bazaar/systems/dnd5e/", "systems/dnd5e/"],
+    ["/bazaar/modules/", "modules/"]
+  ];
+  for (const [prefix, replacement] of replacements) {
+    if (!pathname.startsWith(prefix)) continue;
+    const relative = `${replacement}${pathname.slice(prefix.length)}`.replace(/\/+/g, "/");
+    return relative || fallbackPath;
+  }
+  return fallbackPath;
+}
+
 // Stock pressure: relative fill ratio triggers price adjustments on the buy side.
 export const MERCHANT_STOCK_PRESSURE = Object.freeze({
-  LOW_THRESHOLD: 0.33,  // below 33% of target stock → merchant scarce → buy price up
+  LOW_THRESHOLD: 0.33, // below 33% of target stock → merchant scarce → buy price up
   HIGH_THRESHOLD: 0.67, // above 67% of target stock → merchant flush → buy price down
-  LOW_BUY_MODIFIER: 0.20,
+  LOW_BUY_MODIFIER: 0.2,
   HIGH_BUY_MODIFIER: -0.15
 });
 
@@ -93,10 +124,31 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     stockCadenceLabel: "Dependable staples with a few rotating finds.",
     defaultTitle: "General Goods",
     allowedTypes: Object.freeze(["equipment", "consumable", "tool", "backpack", "loot", "trinket", "ammunition"]),
-    buybackAllowedTypes: Object.freeze(["weapon", "equipment", "consumable", "loot", "tool", "backpack", "armor", "ammunition", "trinket"]),
+    buybackAllowedTypes: Object.freeze([
+      "weapon",
+      "equipment",
+      "consumable",
+      "loot",
+      "tool",
+      "backpack",
+      "armor",
+      "ammunition",
+      "trinket"
+    ]),
     preferredTypes: Object.freeze(["equipment", "consumable", "tool", "backpack", "ammunition", "loot", "trinket"]),
     avoidTypes: Object.freeze(["spell"]),
-    focusKeywords: Object.freeze(["rope", "ration", "waterskin", "bedroll", "lamp", "kit", "pack", "torch", "potion", "ammo"]),
+    focusKeywords: Object.freeze([
+      "rope",
+      "ration",
+      "waterskin",
+      "bedroll",
+      "lamp",
+      "kit",
+      "pack",
+      "torch",
+      "potion",
+      "ammo"
+    ]),
     featuredKeywords: Object.freeze(["healing", "climber", "antitoxin", "quiver", "lantern", "pack"]),
     markupPercent: 20,
     sellRatePercent: 55,
@@ -119,7 +171,18 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     buybackAllowedTypes: Object.freeze(["equipment", "backpack", "tool", "consumable", "ammunition"]),
     preferredTypes: Object.freeze(["equipment", "backpack", "tool", "consumable", "ammunition"]),
     avoidTypes: Object.freeze(["trinket", "loot", "spell"]),
-    focusKeywords: Object.freeze(["rope", "bedroll", "tent", "pack", "waterskin", "lantern", "torch", "climber", "piton", "travel"]),
+    focusKeywords: Object.freeze([
+      "rope",
+      "bedroll",
+      "tent",
+      "pack",
+      "waterskin",
+      "lantern",
+      "torch",
+      "climber",
+      "piton",
+      "travel"
+    ]),
     featuredKeywords: Object.freeze(["healing", "climber", "lantern", "quiver", "survival"]),
     markupPercent: 18,
     sellRatePercent: 50,
@@ -165,7 +228,18 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     buybackAllowedTypes: Object.freeze(["weapon", "ammunition", "equipment"]),
     preferredTypes: Object.freeze(["weapon", "ammunition", "equipment", "consumable"]),
     avoidTypes: Object.freeze(["trinket", "loot", "spell", "backpack"]),
-    focusKeywords: Object.freeze(["sword", "bow", "crossbow", "arrow", "bolt", "quiver", "blade", "hammer", "axe", "oil"]),
+    focusKeywords: Object.freeze([
+      "sword",
+      "bow",
+      "crossbow",
+      "arrow",
+      "bolt",
+      "quiver",
+      "blade",
+      "hammer",
+      "axe",
+      "oil"
+    ]),
     featuredKeywords: Object.freeze(["+1", "longbow", "crossbow", "arrow", "bolt", "quiver"]),
     markupPercent: 24,
     sellRatePercent: 48,
@@ -188,7 +262,18 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     buybackAllowedTypes: Object.freeze(["consumable", "tool", "equipment", "loot"]),
     preferredTypes: Object.freeze(["consumable", "tool", "equipment", "loot"]),
     avoidTypes: Object.freeze(["weapon", "armor", "trinket", "spell"]),
-    focusKeywords: Object.freeze(["potion", "healing", "antitoxin", "herbal", "alchemist", "elixir", "acid", "fire", "poison", "remedy"]),
+    focusKeywords: Object.freeze([
+      "potion",
+      "healing",
+      "antitoxin",
+      "herbal",
+      "alchemist",
+      "elixir",
+      "acid",
+      "fire",
+      "poison",
+      "remedy"
+    ]),
     featuredKeywords: Object.freeze(["healing", "greater", "antitoxin", "alchemy", "elixir"]),
     markupPercent: 26,
     sellRatePercent: 45,
@@ -211,7 +296,18 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     buybackAllowedTypes: Object.freeze(["tool", "equipment", "backpack"]),
     preferredTypes: Object.freeze(["tool", "equipment", "backpack", "consumable"]),
     avoidTypes: Object.freeze(["weapon", "armor", "spell", "trinket"]),
-    focusKeywords: Object.freeze(["kit", "tools", "artisan", "smith", "thieves", "healer", "climber", "mess", "cook", "repair"]),
+    focusKeywords: Object.freeze([
+      "kit",
+      "tools",
+      "artisan",
+      "smith",
+      "thieves",
+      "healer",
+      "climber",
+      "mess",
+      "cook",
+      "repair"
+    ]),
     featuredKeywords: Object.freeze(["healer", "thieves", "artisan", "climber"]),
     markupPercent: 20,
     sellRatePercent: 50,
@@ -234,7 +330,18 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
     buybackAllowedTypes: Object.freeze(["consumable", "spell", "equipment", "weapon", "armor", "loot", "trinket"]),
     preferredTypes: Object.freeze(["consumable", "spell", "equipment", "weapon", "armor", "loot", "trinket"]),
     avoidTypes: Object.freeze(["backpack", "tool", "ammunition"]),
-    focusKeywords: Object.freeze(["scroll", "wand", "staff", "ring", "magic", "arcane", "enchanted", "+1", "spell", "focus"]),
+    focusKeywords: Object.freeze([
+      "scroll",
+      "wand",
+      "staff",
+      "ring",
+      "magic",
+      "arcane",
+      "enchanted",
+      "+1",
+      "spell",
+      "focus"
+    ]),
     featuredKeywords: Object.freeze(["rare", "very rare", "legendary", "+1", "scroll", "wand", "staff", "ring"]),
     markupPercent: 32,
     sellRatePercent: 40,
@@ -248,10 +355,10 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
 ]);
 
 // Maximum fractional price deviation that barter/haggling may produce (±10% of base).
-export const MERCHANT_HAGGLE_CAP_PERCENT = 0.10;
+export const MERCHANT_HAGGLE_CAP_PERCENT = 0.1;
 
 // Restock partial-reroll: retain about 60% of existing slots, weighted toward durable staples.
-export const MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.60;
+export const MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.6;
 
 export const MERCHANT_EDITOR_MAX_CURATED_ITEMS = 200;
 export const MERCHANT_EDITOR_CANDIDATE_LIMIT = 400;
@@ -449,14 +556,14 @@ export const MERCHANT_RANDOM_NAME_POOLS = Object.freeze({
 const MERCHANT_RANDOM_NAME_PARTS_FLAT = Object.freeze({
   first: Object.freeze(
     Object.values(MERCHANT_RANDOM_NAME_POOLS)
-      .flatMap((pool) => Array.isArray(pool?.first) ? pool.first : [])
+      .flatMap((pool) => (Array.isArray(pool?.first) ? pool.first : []))
       .map((value) => String(value ?? "").trim())
       .filter(Boolean)
       .filter((value, index, rows) => rows.indexOf(value) === index)
   ),
   last: Object.freeze(
     Object.values(MERCHANT_RANDOM_NAME_POOLS)
-      .flatMap((pool) => Array.isArray(pool?.last) ? pool.last : [])
+      .flatMap((pool) => (Array.isArray(pool?.last) ? pool.last : []))
       .map((value) => String(value ?? "").trim())
       .filter(Boolean)
       .filter((value, index, rows) => rows.indexOf(value) === index)
@@ -527,10 +634,10 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     barterDc: 15,
     barterAbility: "cha",
     // ±10% of buy/sell base is the maximum haggle effect (MERCHANT_HAGGLE_CAP_PERCENT)
-    barterSuccessBuyModifier: -0.10,
-    barterSuccessSellModifier: 0.10,
-    barterFailureBuyModifier: 0.10,
-    barterFailureSellModifier: -0.10
+    barterSuccessBuyModifier: -0.1,
+    barterSuccessSellModifier: 0.1,
+    barterFailureBuyModifier: 0.1,
+    barterFailureSellModifier: -0.1
   }),
   stock: Object.freeze({
     sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
@@ -632,21 +739,32 @@ function deepCloneValue(value, foundryRef = globalThis.foundry) {
 }
 
 function buildMerchantArchetypeMap() {
-  return new Map(MERCHANT_ARCHETYPE_DEFINITIONS.map((entry) => [String(entry.id ?? "").trim().toLowerCase(), entry]));
+  return new Map(
+    MERCHANT_ARCHETYPE_DEFINITIONS.map((entry) => [
+      String(entry.id ?? "")
+        .trim()
+        .toLowerCase(),
+      entry
+    ])
+  );
 }
 
 const MERCHANT_ARCHETYPE_MAP = buildMerchantArchetypeMap();
 
 export function normalizeMerchantArchetype(value = "") {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (MERCHANT_ARCHETYPE_MAP.has(normalized)) return normalized;
   return MERCHANT_DEFAULTS.archetype;
 }
 
 export function getMerchantArchetypeDefinition(archetypeInput = MERCHANT_DEFAULTS.archetype) {
-  return MERCHANT_ARCHETYPE_MAP.get(normalizeMerchantArchetype(archetypeInput))
-    ?? MERCHANT_ARCHETYPE_MAP.get(MERCHANT_DEFAULTS.archetype)
-    ?? MERCHANT_ARCHETYPE_DEFINITIONS[0];
+  return (
+    MERCHANT_ARCHETYPE_MAP.get(normalizeMerchantArchetype(archetypeInput)) ??
+    MERCHANT_ARCHETYPE_MAP.get(MERCHANT_DEFAULTS.archetype) ??
+    MERCHANT_ARCHETYPE_DEFINITIONS[0]
+  );
 }
 
 export function getMerchantArchetypeOptions(selectedInput = MERCHANT_DEFAULTS.archetype) {
@@ -661,7 +779,9 @@ export function getMerchantArchetypeOptions(selectedInput = MERCHANT_DEFAULTS.ar
 
 function merchantHasAdvancedStockConfig(source = {}) {
   const stock = source?.stock && typeof source.stock === "object" ? source.stock : source;
-  const sourceType = normalizeMerchantSourceType(stock?.sourceType ?? source?.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType);
+  const sourceType = normalizeMerchantSourceType(
+    stock?.sourceType ?? source?.sourceType ?? MERCHANT_DEFAULTS.stock.sourceType
+  );
   const sourceRef = String(stock?.sourceRef ?? source?.sourceRef ?? "").trim();
   const sourcePackIds = normalizeMerchantSourcePackIds(stock?.sourcePackIds ?? source?.sourcePackIds ?? [], sourceRef);
   if (sourceType !== MERCHANT_SOURCE_TYPES.WORLD_ITEMS) return true;
@@ -670,7 +790,8 @@ function merchantHasAdvancedStockConfig(source = {}) {
   if (normalizeMerchantTagList(stock?.excludeTags ?? source?.excludeTags ?? []).length > 0) return true;
   if (normalizeMerchantKeywordList(stock?.keywordInclude ?? source?.keywordInclude ?? []).length > 0) return true;
   if (normalizeMerchantKeywordList(stock?.keywordExclude ?? source?.keywordExclude ?? []).length > 0) return true;
-  if (normalizeMerchantCuratedItemUuids(stock?.curatedItemUuids ?? source?.curatedItemUuids ?? []).length > 0) return true;
+  if (normalizeMerchantCuratedItemUuids(stock?.curatedItemUuids ?? source?.curatedItemUuids ?? []).length > 0)
+    return true;
   return false;
 }
 
@@ -689,27 +810,37 @@ function getMerchantArchetypeDefaults(archetypeInput = MERCHANT_DEFAULTS.archety
         definition.rarityPriceMultipliers,
         MERCHANT_DEFAULTS.pricing.rarityPriceMultipliers
       ),
-      buybackAllowedTypes: normalizeMerchantAllowedItemTypes(definition.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes)
+      buybackAllowedTypes: normalizeMerchantAllowedItemTypes(
+        definition.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+      )
     },
     stock: {
       sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
       sourceRef: "",
       sourcePackIds: [],
       allowedTypes: normalizeMerchantAllowedItemTypes(definition.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
-      maxItems: clampMerchantItemCount(definition.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems, MERCHANT_DEFAULTS.stock.maxItems),
+      maxItems: clampMerchantItemCount(
+        definition.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems,
+        MERCHANT_DEFAULTS.stock.maxItems
+      ),
       targetValueGp: Math.max(0, Number(definition.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp) || 0),
-      valueStrictness: clampMerchantValueStrictness(definition.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness, MERCHANT_DEFAULTS.stock.valueStrictness),
+      valueStrictness: clampMerchantValueStrictness(
+        definition.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+        MERCHANT_DEFAULTS.stock.valueStrictness
+      ),
       scarcity: normalizeMerchantScarcity(definition.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity)
     }
   };
 }
 
-function mergeMerchantArchetypeDefaults(source = {}, archetypeInput = source?.archetype ?? MERCHANT_DEFAULTS.archetype, customModeInput = source?.customMode) {
+function mergeMerchantArchetypeDefaults(
+  source = {},
+  archetypeInput = source?.archetype ?? MERCHANT_DEFAULTS.archetype,
+  customModeInput = source?.customMode
+) {
   const archetype = normalizeMerchantArchetype(archetypeInput);
   const definitionDefaults = getMerchantArchetypeDefaults(archetype);
-  const customMode = customModeInput === undefined
-    ? merchantHasAdvancedStockConfig(source)
-    : Boolean(customModeInput);
+  const customMode = customModeInput === undefined ? merchantHasAdvancedStockConfig(source) : Boolean(customModeInput);
   const stockSource = source?.stock && typeof source.stock === "object" ? source.stock : {};
   const pricingSource = source?.pricing && typeof source.pricing === "object" ? source.pricing : {};
   const merged = {
@@ -738,14 +869,12 @@ function mergeMerchantArchetypeDefaults(source = {}, archetypeInput = source?.ar
     merged.stock.keywordExclude = [];
     merged.stock.curatedItemUuids = [];
     merged.stock.allowedTypes = normalizeMerchantAllowedItemTypes(
-      stockSource?.allowedTypes
-      ?? definitionDefaults.stock.allowedTypes
-      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+      stockSource?.allowedTypes ?? definitionDefaults.stock.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
     );
     merged.pricing.buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
-      pricingSource?.buybackAllowedTypes
-      ?? definitionDefaults.pricing.buybackAllowedTypes
-      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+      pricingSource?.buybackAllowedTypes ??
+        definitionDefaults.pricing.buybackAllowedTypes ??
+        MERCHANT_ALLOWED_ITEM_TYPE_LIST
     );
   }
   return merged;
@@ -773,7 +902,8 @@ function clampMerchantItemCount(value, fallback = MERCHANT_DEFAULTS.stock.maxIte
 
 function clampMerchantDuplicateChance(value, fallback = MERCHANT_DEFAULTS.stock.duplicateChance) {
   const raw = Number(value);
-  if (!Number.isFinite(raw)) return Math.max(0, Math.min(MERCHANT_MAX_DUPLICATE_CHANCE, Math.floor(Number(fallback) || 0)));
+  if (!Number.isFinite(raw))
+    return Math.max(0, Math.min(MERCHANT_MAX_DUPLICATE_CHANCE, Math.floor(Number(fallback) || 0)));
   return Math.max(0, Math.min(MERCHANT_MAX_DUPLICATE_CHANCE, Math.floor(raw)));
 }
 
@@ -801,7 +931,8 @@ function clampMerchantMundaneAmmoStackSize(value, fallback = MERCHANT_DEFAULTS.s
 
 export function clampMerchantValueStrictness(value, fallback = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
   const raw = Number(value);
-  if (!Number.isFinite(raw)) return Math.max(50, Math.min(300, Math.round(Number(fallback) || MERCHANT_DEFAULT_VALUE_STRICTNESS)));
+  if (!Number.isFinite(raw))
+    return Math.max(50, Math.min(300, Math.round(Number(fallback) || MERCHANT_DEFAULT_VALUE_STRICTNESS)));
   return Math.max(50, Math.min(300, Math.round(raw)));
 }
 
@@ -810,22 +941,25 @@ function clampMerchantAutoRefreshIntervalDays(value, fallback = MERCHANT_DEFAULT
   if (!Number.isFinite(raw)) {
     return Math.max(
       1,
-      Math.min(MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS, Math.floor(Number(fallback) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays))
+      Math.min(
+        MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS,
+        Math.floor(Number(fallback) || MERCHANT_DEFAULTS.stock.autoRefresh.intervalDays)
+      )
     );
   }
   return Math.max(1, Math.min(MERCHANT_MAX_AUTO_REFRESH_INTERVAL_DAYS, Math.floor(raw)));
 }
 
 export function normalizeMerchantAutoRefreshConfig(raw = {}, fallback = MERCHANT_DEFAULTS.stock.autoRefresh) {
-  const fallbackSource = fallback && typeof fallback === "object" && !Array.isArray(fallback)
-    ? fallback
-    : MERCHANT_DEFAULTS.stock.autoRefresh;
-  const source = raw && typeof raw === "object" && !Array.isArray(raw)
-    ? raw
-    : { enabled: raw };
-  const enabled = source.enabled === undefined
-    ? Boolean(fallbackSource.enabled ?? MERCHANT_DEFAULTS.stock.autoRefresh.enabled)
-    : Boolean(source.enabled);
+  const fallbackSource =
+    fallback && typeof fallback === "object" && !Array.isArray(fallback)
+      ? fallback
+      : MERCHANT_DEFAULTS.stock.autoRefresh;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : { enabled: raw };
+  const enabled =
+    source.enabled === undefined
+      ? Boolean(fallbackSource.enabled ?? MERCHANT_DEFAULTS.stock.autoRefresh.enabled)
+      : Boolean(source.enabled);
   const intervalDays = clampMerchantAutoRefreshIntervalDays(
     source.intervalDays ?? source.days ?? source.refreshIntervalDays ?? fallbackSource.intervalDays,
     fallbackSource.intervalDays
@@ -839,23 +973,40 @@ export function normalizeMerchantAutoRefreshConfig(raw = {}, fallback = MERCHANT
 export function normalizeMerchantTagList(values = []) {
   if (!Array.isArray(values)) return [];
   return values
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
-    .filter((entry, index, rows) => entry.length > 0 && entry.length <= MERCHANT_MAX_TAG_LENGTH && rows.indexOf(entry) === index)
+    .map((entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase()
+    )
+    .filter(
+      (entry, index, rows) =>
+        entry.length > 0 && entry.length <= MERCHANT_MAX_TAG_LENGTH && rows.indexOf(entry) === index
+    )
     .slice(0, MERCHANT_MAX_TAG_COUNT);
 }
 
 export function normalizeMerchantKeywordList(values = []) {
   if (!Array.isArray(values)) return [];
   return values
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
-    .filter((entry, index, rows) => entry.length > 0 && entry.length <= MERCHANT_MAX_KEYWORD_LENGTH && rows.indexOf(entry) === index)
+    .map((entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase()
+    )
+    .filter(
+      (entry, index, rows) =>
+        entry.length > 0 && entry.length <= MERCHANT_MAX_KEYWORD_LENGTH && rows.indexOf(entry) === index
+    )
     .slice(0, MERCHANT_MAX_KEYWORD_COUNT);
 }
 
 export function normalizeMerchantRarity(value) {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (!raw) return "";
-  if (["artifact", "artifacts", "artefact", "artefacts", "superrare", "super-rare", "super rare"].includes(raw)) return "very-rare";
+  if (["artifact", "artifacts", "artefact", "artefacts", "superrare", "super-rare", "super rare"].includes(raw))
+    return "very-rare";
   if (["veryrare", "very rare", "very_rare", "very-rare"].includes(raw)) return "very-rare";
   if (["legend", "legendary"].includes(raw)) return "legendary";
   if (["rare"].includes(raw)) return "rare";
@@ -874,9 +1025,8 @@ export function normalizeMerchantRarityWeights(raw = {}, fallback = MERCHANT_DEF
   const normalized = {};
   for (const bucket of MERCHANT_RARITY_BUCKETS) {
     const sourceValue = bucket === "very-rare" ? (source[bucket] ?? source.veryRare) : source[bucket];
-    const fallbackValue = bucket === "very-rare"
-      ? (fallbackWeights[bucket] ?? fallbackWeights.veryRare)
-      : fallbackWeights[bucket];
+    const fallbackValue =
+      bucket === "very-rare" ? (fallbackWeights[bucket] ?? fallbackWeights.veryRare) : fallbackWeights[bucket];
     const parsed = Number(sourceValue ?? fallbackValue ?? MERCHANT_DEFAULT_RARITY_WEIGHTS[bucket] ?? 1);
     normalized[bucket] = Number.isFinite(parsed)
       ? Math.max(0, Math.min(MERCHANT_MAX_RARITY_WEIGHT, Number(parsed.toFixed(2))))
@@ -891,15 +1041,16 @@ export function normalizeMerchantRarityPriceMultipliers(raw = {}, fallback = MER
   const normalized = {};
   for (const bucket of MERCHANT_RARITY_BUCKETS) {
     const sourceValue = bucket === "very-rare" ? (source[bucket] ?? source.veryRare) : source[bucket];
-    const fallbackValue = bucket === "very-rare"
-      ? (fallbackMultipliers[bucket] ?? fallbackMultipliers.veryRare)
-      : fallbackMultipliers[bucket];
+    const fallbackValue =
+      bucket === "very-rare"
+        ? (fallbackMultipliers[bucket] ?? fallbackMultipliers.veryRare)
+        : fallbackMultipliers[bucket];
     const parsed = Number(sourceValue ?? fallbackValue ?? MERCHANT_RARITY_PRICE_MULTIPLIERS[bucket] ?? 1);
     normalized[bucket] = Number.isFinite(parsed)
       ? Math.max(
-        MERCHANT_MIN_RARITY_PRICE_MULTIPLIER,
-        Math.min(MERCHANT_MAX_RARITY_PRICE_MULTIPLIER, Number(parsed.toFixed(4)))
-      )
+          MERCHANT_MIN_RARITY_PRICE_MULTIPLIER,
+          Math.min(MERCHANT_MAX_RARITY_PRICE_MULTIPLIER, Number(parsed.toFixed(4)))
+        )
       : Number(MERCHANT_RARITY_PRICE_MULTIPLIERS[bucket] ?? 1);
   }
   return normalized;
@@ -909,7 +1060,10 @@ export function normalizeMerchantCityList(values = []) {
   if (!Array.isArray(values)) return [];
   return values
     .map((entry) => String(entry ?? "").trim())
-    .filter((entry, index, rows) => entry.length > 0 && entry.length <= MERCHANT_MAX_CITY_LENGTH && rows.indexOf(entry) === index)
+    .filter(
+      (entry, index, rows) =>
+        entry.length > 0 && entry.length <= MERCHANT_MAX_CITY_LENGTH && rows.indexOf(entry) === index
+    )
     .slice(0, MERCHANT_MAX_CITY_COUNT);
 }
 
@@ -930,14 +1084,21 @@ export function normalizeMerchantSourcePackIds(values = [], fallbackSourceRef = 
   if (String(fallbackSourceRef ?? "").trim()) rows.push(String(fallbackSourceRef ?? "").trim());
   return rows
     .map((entry) => String(entry ?? "").trim())
-    .filter((entry, index, all) => entry.length > 0 && entry.length <= MERCHANT_MAX_PACK_ID_LENGTH && all.indexOf(entry) === index)
+    .filter(
+      (entry, index, all) =>
+        entry.length > 0 && entry.length <= MERCHANT_MAX_PACK_ID_LENGTH && all.indexOf(entry) === index
+    )
     .slice(0, MERCHANT_MAX_PACK_ID_COUNT);
 }
 
 export function normalizeMerchantAllowedItemTypes(values = []) {
   const source = Array.isArray(values) ? values : [];
   const normalized = source
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .map((entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase()
+    )
     .filter((entry, index, all) => MERCHANT_ALLOWED_ITEM_TYPES.has(entry) && all.indexOf(entry) === index);
   if (normalized.length > 0) return normalized;
   return [...MERCHANT_ALLOWED_ITEM_TYPE_LIST];
@@ -947,7 +1108,10 @@ export function normalizeMerchantCuratedItemUuids(values = []) {
   const source = Array.isArray(values) ? values : [];
   return source
     .map((entry) => String(entry ?? "").trim())
-    .filter((entry, index, all) => entry.length > 0 && entry.length <= MERCHANT_MAX_CURATED_UUID_LENGTH && all.indexOf(entry) === index)
+    .filter(
+      (entry, index, all) =>
+        entry.length > 0 && entry.length <= MERCHANT_MAX_CURATED_UUID_LENGTH && all.indexOf(entry) === index
+    )
     .slice(0, MERCHANT_EDITOR_MAX_CURATED_ITEMS);
 }
 
@@ -962,14 +1126,18 @@ export function formatMerchantUuidListInput(values = []) {
 }
 
 export function normalizeMerchantSourceType(value) {
-  const sourceType = String(value ?? "").trim().toLowerCase();
+  const sourceType = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK) return MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK;
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) return MERCHANT_SOURCE_TYPES.WORLD_FOLDER;
   return MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
 }
 
 export function normalizeMerchantScarcity(value) {
-  const scarcity = String(value ?? "").trim().toLowerCase();
+  const scarcity = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (MERCHANT_SCARCITY_PROFILES.some((entry) => entry.value === scarcity)) return scarcity;
   if (scarcity === "veryscarce") return MERCHANT_SCARCITY_LEVELS.VERY_SCARCE;
   if (scarcity === "plenty") return MERCHANT_SCARCITY_LEVELS.PLENTIFUL;
@@ -979,19 +1147,24 @@ export function normalizeMerchantScarcity(value) {
 
 export function getMerchantScarcityProfile(scarcityInput = MERCHANT_SCARCITY_LEVELS.NORMAL) {
   const scarcity = normalizeMerchantScarcity(scarcityInput);
-  return MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === scarcity)
-    ?? MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === MERCHANT_SCARCITY_LEVELS.NORMAL)
-    ?? { value: MERCHANT_SCARCITY_LEVELS.NORMAL, label: "6 - Normal", multiplier: 1 };
+  return (
+    MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === scarcity) ??
+    MERCHANT_SCARCITY_PROFILES.find((entry) => entry.value === MERCHANT_SCARCITY_LEVELS.NORMAL) ?? {
+      value: MERCHANT_SCARCITY_LEVELS.NORMAL,
+      label: "6 - Normal",
+      multiplier: 1
+    }
+  );
 }
 
-export function resolveMerchantValueTolerance(
-  targetValueGp = 0,
-  strictnessInput = MERCHANT_DEFAULT_VALUE_STRICTNESS
-) {
+export function resolveMerchantValueTolerance(targetValueGp = 0, strictnessInput = MERCHANT_DEFAULT_VALUE_STRICTNESS) {
   const strictness = clampMerchantValueStrictness(strictnessInput, MERCHANT_DEFAULT_VALUE_STRICTNESS);
-  const band = MERCHANT_VALUE_STRICTNESS_BANDS.find((entry) => strictness >= entry.min)
-    ?? MERCHANT_VALUE_STRICTNESS_BANDS[MERCHANT_VALUE_STRICTNESS_BANDS.length - 1]
-    ?? { key: "normal", label: "Normal", ratio: 0.2 };
+  const band = MERCHANT_VALUE_STRICTNESS_BANDS.find((entry) => strictness >= entry.min) ??
+    MERCHANT_VALUE_STRICTNESS_BANDS[MERCHANT_VALUE_STRICTNESS_BANDS.length - 1] ?? {
+      key: "normal",
+      label: "Normal",
+      ratio: 0.2
+    };
   const target = Math.max(1, Number(targetValueGp) || 1);
   const ratio = Math.max(0.01, Number(band?.ratio ?? 0.2) || 0.2);
   const toleranceGp = Math.max(1, Number((target * ratio).toFixed(2)));
@@ -1010,7 +1183,9 @@ export function resolveMerchantValueTolerance(
 }
 
 export function normalizeMerchantRace(value) {
-  return String(value ?? "").trim().slice(0, 60);
+  return String(value ?? "")
+    .trim()
+    .slice(0, 60);
 }
 
 export function getMerchantRaceKey(value) {
@@ -1018,10 +1193,18 @@ export function getMerchantRaceKey(value) {
   if (!race) return "default";
   if (race.includes("aasimar")) return "celestial";
   if (race.includes("triton") || race.includes("sea elf") || race.includes("vedalken")) return "aquatic";
-  if (race.includes("eladrin") || race.includes("fairy") || race.includes("satyr") || race.includes("harengon") || race.includes("centaur")) return "fey";
+  if (
+    race.includes("eladrin") ||
+    race.includes("fairy") ||
+    race.includes("satyr") ||
+    race.includes("harengon") ||
+    race.includes("centaur")
+  )
+    return "fey";
   if (race.includes("elf") || race.includes("shadar")) return "elf";
   if (race.includes("dwarf") || race.includes("duergar")) return "dwarf";
-  if (race.includes("goliath") || race.includes("firbolg") || race.includes("giff") || race.includes("loxodon")) return "giantkin";
+  if (race.includes("goliath") || race.includes("firbolg") || race.includes("giff") || race.includes("loxodon"))
+    return "giantkin";
   if (race.includes("halfling")) return "halfling";
   if (race.includes("gnome") || race.includes("autognome") || race.includes("verdan")) return "gnome";
   if (race.includes("dragonborn")) return "dragonborn";
@@ -1030,10 +1213,18 @@ export function getMerchantRaceKey(value) {
   if (race.includes("bugbear") || race.includes("goblin") || race.includes("hobgoblin")) return "goblin";
   if (race.includes("tabaxi") || race.includes("leonin")) return "feline";
   if (race.includes("aarakocra") || race.includes("kenku") || race.includes("owlin")) return "avian";
-  if (race.includes("lizardfolk") || race.includes("kobold") || race.includes("yuan-ti") || race.includes("tortle")) return "reptile";
+  if (race.includes("lizardfolk") || race.includes("kobold") || race.includes("yuan-ti") || race.includes("tortle"))
+    return "reptile";
   if (race.includes("genasi")) return "elemental";
   if (race.includes("warforged")) return "construct";
-  if (race.includes("plasmoid") || race.includes("thri-kreen") || race.includes("gith") || race.includes("kalashtar") || race.includes("changeling")) return "aberrant";
+  if (
+    race.includes("plasmoid") ||
+    race.includes("thri-kreen") ||
+    race.includes("gith") ||
+    race.includes("kalashtar") ||
+    race.includes("changeling")
+  )
+    return "aberrant";
   return "default";
 }
 
@@ -1124,7 +1315,9 @@ export function findMerchantFolderByAliases(aliases = [], folders = []) {
   if (aliasRows.length <= 0) return { id: "", name: "" };
   const folderRows = (Array.isArray(folders) ? folders : [])
     .map((folder) => {
-      const type = String(folder?.type ?? folder?.documentName ?? "").trim().toLowerCase();
+      const type = String(folder?.type ?? folder?.documentName ?? "")
+        .trim()
+        .toLowerCase();
       return {
         id: String(folder?.id ?? "").trim(),
         name: String(folder?.name ?? "").trim(),
@@ -1146,9 +1339,10 @@ export function findMerchantFolderByAliases(aliases = [], folders = []) {
 }
 
 export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {}) {
-  const resolver = typeof options?.resolveFolderByAliases === "function"
-    ? options.resolveFolderByAliases
-    : () => ({ id: "", name: "" });
+  const resolver =
+    typeof options?.resolveFolderByAliases === "function"
+      ? options.resolveFolderByAliases
+      : () => ({ id: "", name: "" });
   const sourceFolder = resolver(blueprint?.folderAliases ?? []);
   const archetype = normalizeMerchantArchetype(blueprint?.archetype ?? MERCHANT_DEFAULTS.archetype);
   const archetypeDefaults = getMerchantArchetypeDefaults(archetype);
@@ -1156,7 +1350,7 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
   const name = String(blueprint?.name ?? `Starter Merchant ${index + 1}`).trim() || `Starter Merchant ${index + 1}`;
   const title = String(blueprint?.title ?? archetypeDefaults?.title ?? "").trim();
   const race = normalizeMerchantRace(blueprint?.race ?? "Human");
-  const img = String(blueprint?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg";
+  const img = normalizeFoundryAssetImagePath(blueprint?.img, { fallback: "icons/svg/item-bag.svg" });
   const markupPercent = clampMerchantMarkupPercent(
     blueprint?.markupPercent,
     Number(archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
@@ -1168,14 +1362,12 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
   );
   const customMode = Boolean(blueprint?.customMode ?? false);
   const allowedTypes = normalizeMerchantAllowedItemTypes(
-    blueprint?.allowedTypes
-    ?? archetypeDefaults?.stock?.allowedTypes
-    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    blueprint?.allowedTypes ?? archetypeDefaults?.stock?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
   const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
-    blueprint?.buybackAllowedTypes
-    ?? archetypeDefaults?.pricing?.buybackAllowedTypes
-    ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+    blueprint?.buybackAllowedTypes ??
+      archetypeDefaults?.pricing?.buybackAllowedTypes ??
+      MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
   );
   const sourceType = customMode
     ? normalizeMerchantSourceType(blueprint?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
@@ -1204,18 +1396,16 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
     pricing: {
       buyMarkup,
       sellRate: Number(
-        blueprint?.sellRate
-        ?? archetypeDefaults?.pricing?.sellRate
-        ?? MERCHANT_DEFAULTS.pricing.sellRate
+        blueprint?.sellRate ?? archetypeDefaults?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate
       ),
       sellEnabled: MERCHANT_DEFAULTS.pricing.sellEnabled,
       cashOnHandGp: Number(
-        blueprint?.cashOnHandGp
-        ?? archetypeDefaults?.pricing?.cashOnHandGp
-        ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+        blueprint?.cashOnHandGp ?? archetypeDefaults?.pricing?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
       ),
       buybackAllowedTypes,
-      taxFeePercent: normalizeMerchantTaxFeePercent(blueprint?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent),
+      taxFeePercent: normalizeMerchantTaxFeePercent(
+        blueprint?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent
+      ),
       rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
       rarityPriceMultipliers: normalizeMerchantRarityPriceMultipliers(
         blueprint?.rarityPriceMultipliers,
@@ -1227,27 +1417,28 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       barterAbility: String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha"),
       barterSuccessBuyModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier,
-        -0.10
+        -0.1
       ),
       barterSuccessSellModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier,
-        0.10
+        0.1
       ),
       barterFailureBuyModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier,
-        0.10
+        0.1
       ),
       barterFailureSellModifier: normalizeMerchantBarterModifier(
         MERCHANT_DEFAULTS.pricing.barterFailureSellModifier,
-        -0.10
+        -0.1
       )
     },
     stock: {
       sourceType,
       sourceRef: sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER ? String(sourceFolder?.id ?? "").trim() : "",
-      sourcePackIds: sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
-        ? normalizeMerchantSourcePackIds(blueprint?.sourcePackIds ?? [], "")
-        : [],
+      sourcePackIds:
+        sourceType === MERCHANT_SOURCE_TYPES.COMPENDIUM_PACK
+          ? normalizeMerchantSourcePackIds(blueprint?.sourcePackIds ?? [], "")
+          : [],
       includeTags: [],
       excludeTags: [],
       keywordInclude: [],
@@ -1255,21 +1446,20 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       allowedTypes,
       curatedItemUuids: [],
       maxItems,
-      targetValueGp: Math.max(0, Number(
-        blueprint?.targetValueGp
-        ?? archetypeDefaults?.stock?.targetValueGp
-        ?? MERCHANT_DEFAULTS.stock.targetValueGp
-      ) || 0),
+      targetValueGp: Math.max(
+        0,
+        Number(
+          blueprint?.targetValueGp ?? archetypeDefaults?.stock?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp
+        ) || 0
+      ),
       valueStrictness: clampMerchantValueStrictness(
-        blueprint?.valueStrictness
-        ?? archetypeDefaults?.stock?.valueStrictness
-        ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+        blueprint?.valueStrictness ??
+          archetypeDefaults?.stock?.valueStrictness ??
+          MERCHANT_DEFAULTS.stock.valueStrictness,
         MERCHANT_DEFAULTS.stock.valueStrictness
       ),
       scarcity: normalizeMerchantScarcity(
-        blueprint?.scarcity
-        ?? archetypeDefaults?.stock?.scarcity
-        ?? MERCHANT_SCARCITY_LEVELS.NORMAL
+        blueprint?.scarcity ?? archetypeDefaults?.stock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL
       ),
       duplicateChance: MERCHANT_DEFAULTS.stock.duplicateChance,
       maxStackSize: MERCHANT_DEFAULTS.stock.maxStackSize,
@@ -1284,29 +1474,24 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
 
 export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const source = formValues && typeof formValues === "object" ? formValues : {};
-  const existingStock = source?.existingStock && typeof source.existingStock === "object"
-    ? source.existingStock
-    : {};
-  const existingPricing = source?.existingPricing && typeof source.existingPricing === "object"
-    ? source.existingPricing
-    : {};
+  const existingStock = source?.existingStock && typeof source.existingStock === "object" ? source.existingStock : {};
+  const existingPricing =
+    source?.existingPricing && typeof source.existingPricing === "object" ? source.existingPricing : {};
   const archetype = normalizeMerchantArchetype(
-    source?.archetype
-    ?? source?.existingArchetype
-    ?? source?.existingMerchant?.archetype
-    ?? MERCHANT_DEFAULTS.archetype
+    source?.archetype ?? source?.existingArchetype ?? source?.existingMerchant?.archetype ?? MERCHANT_DEFAULTS.archetype
   );
   const archetypeDefaults = getMerchantArchetypeDefaults(archetype);
-  const customMode = source?.customMode === undefined
-    ? Boolean(
-      source?.existingCustomMode
-      ?? source?.existingMerchant?.customMode
-      ?? merchantHasAdvancedStockConfig({ stock: existingStock, pricing: existingPricing })
-    )
-    : Boolean(source?.customMode);
+  const customMode =
+    source?.customMode === undefined
+      ? Boolean(
+          source?.existingCustomMode ??
+          source?.existingMerchant?.customMode ??
+          merchantHasAdvancedStockConfig({ stock: existingStock, pricing: existingPricing })
+        )
+      : Boolean(source?.customMode);
   const markupPercentRaw = Number(
-    source?.markupPercent
-    ?? (Number(source?.buyMarkup ?? archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100)
+    source?.markupPercent ??
+      Number(source?.buyMarkup ?? archetypeDefaults?.pricing?.buyMarkup ?? MERCHANT_DEFAULTS.pricing.buyMarkup) * 100
   );
   const markupPercent = clampMerchantMarkupPercent(
     markupPercentRaw,
@@ -1314,103 +1499,112 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   );
   const buyMarkup = Number((markupPercent / 100).toFixed(2));
   const sellRatePercentRaw = Number(
-    source?.sellRatePercent
-    ?? source?.buybackRatePercent
-    ?? (Number(source?.sellRate ?? existingPricing?.sellRate ?? archetypeDefaults?.pricing?.sellRate ?? MERCHANT_DEFAULTS.pricing.sellRate) * 100)
+    source?.sellRatePercent ??
+      source?.buybackRatePercent ??
+      Number(
+        source?.sellRate ??
+          existingPricing?.sellRate ??
+          archetypeDefaults?.pricing?.sellRate ??
+          MERCHANT_DEFAULTS.pricing.sellRate
+      ) * 100
   );
   const sellRate = Number.isFinite(sellRatePercentRaw)
     ? Math.max(0, Math.min(10, Number((sellRatePercentRaw / 100).toFixed(2))))
     : Number(MERCHANT_DEFAULTS.pricing.sellRate);
-  const sellEnabled = source?.sellEnabled === undefined
-    ? Boolean(existingPricing?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
-    : Boolean(source?.sellEnabled);
+  const sellEnabled =
+    source?.sellEnabled === undefined
+      ? Boolean(existingPricing?.sellEnabled ?? MERCHANT_DEFAULTS.pricing.sellEnabled)
+      : Boolean(source?.sellEnabled);
   const cashOnHandGpRaw = Number(
-    source?.cashOnHandGp
-    ?? existingPricing?.cashOnHandGp
-    ?? archetypeDefaults?.pricing?.cashOnHandGp
-    ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp
+    source?.cashOnHandGp ??
+      existingPricing?.cashOnHandGp ??
+      archetypeDefaults?.pricing?.cashOnHandGp ??
+      MERCHANT_DEFAULTS.pricing.cashOnHandGp
   );
   const cashOnHandGp = Number.isFinite(cashOnHandGpRaw)
     ? Math.max(0, Math.min(1000000, Number(cashOnHandGpRaw.toFixed(2))))
     : Number(MERCHANT_DEFAULTS.pricing.cashOnHandGp);
   const buybackAllowedTypes = normalizeMerchantAllowedItemTypes(
-    source?.buybackAllowedTypes
-    ?? existingPricing?.buybackAllowedTypes
-    ?? archetypeDefaults?.pricing?.buybackAllowedTypes
-    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    source?.buybackAllowedTypes ??
+      existingPricing?.buybackAllowedTypes ??
+      archetypeDefaults?.pricing?.buybackAllowedTypes ??
+      MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
-  const barterEnabled = source?.barterEnabled === undefined
-    ? Boolean(existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled)
-    : Boolean(source?.barterEnabled);
+  const barterEnabled =
+    source?.barterEnabled === undefined
+      ? Boolean(existingPricing?.barterEnabled ?? MERCHANT_DEFAULTS.pricing.barterEnabled)
+      : Boolean(source?.barterEnabled);
   const barterDcRaw = Number(source?.barterDc ?? existingPricing?.barterDc ?? MERCHANT_DEFAULTS.pricing.barterDc);
   const barterDc = Number.isFinite(barterDcRaw)
     ? Math.max(1, Math.min(40, Math.floor(barterDcRaw)))
     : Number(MERCHANT_DEFAULTS.pricing.barterDc);
   const barterAbilityRaw = String(
-    source?.barterAbility
-    ?? existingPricing?.barterAbility
-    ?? MERCHANT_DEFAULTS.pricing.barterAbility
-  ).trim().toLowerCase();
+    source?.barterAbility ?? existingPricing?.barterAbility ?? MERCHANT_DEFAULTS.pricing.barterAbility
+  )
+    .trim()
+    .toLowerCase();
   const barterAbility = ["str", "dex", "con", "int", "wis", "cha"].includes(barterAbilityRaw)
     ? barterAbilityRaw
     : String(MERCHANT_DEFAULTS.pricing.barterAbility ?? "cha");
   const barterSuccessBuyModifierPercentRaw = Number(
-    source?.barterSuccessBuyModifierPercent
-    ?? (Number(
-      source?.barterSuccessBuyModifier
-      ?? existingPricing?.barterSuccessBuyModifier
-      ?? MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
-    ) * 100)
+    source?.barterSuccessBuyModifierPercent ??
+      Number(
+        source?.barterSuccessBuyModifier ??
+          existingPricing?.barterSuccessBuyModifier ??
+          MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
+      ) * 100
   );
   const barterSuccessBuyModifier = Number.isFinite(barterSuccessBuyModifierPercentRaw)
     ? normalizeMerchantBarterModifier(
-      barterSuccessBuyModifierPercentRaw / 100,
-      MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
-    )
+        barterSuccessBuyModifierPercentRaw / 100,
+        MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier
+      )
     : Number(MERCHANT_DEFAULTS.pricing.barterSuccessBuyModifier);
   const barterSuccessSellModifierPercentRaw = Number(
-    source?.barterSuccessSellModifierPercent
-    ?? (Number(
-      source?.barterSuccessSellModifier
-      ?? existingPricing?.barterSuccessSellModifier
-      ?? MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
-    ) * 100)
+    source?.barterSuccessSellModifierPercent ??
+      Number(
+        source?.barterSuccessSellModifier ??
+          existingPricing?.barterSuccessSellModifier ??
+          MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
+      ) * 100
   );
   const barterSuccessSellModifier = Number.isFinite(barterSuccessSellModifierPercentRaw)
     ? normalizeMerchantBarterModifier(
-      barterSuccessSellModifierPercentRaw / 100,
-      MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
-    )
+        barterSuccessSellModifierPercentRaw / 100,
+        MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier
+      )
     : Number(MERCHANT_DEFAULTS.pricing.barterSuccessSellModifier);
   const barterFailureBuyModifierPercentRaw = Number(
-    source?.barterFailureBuyModifierPercent
-    ?? (Number(
-      source?.barterFailureBuyModifier
-      ?? existingPricing?.barterFailureBuyModifier
-      ?? MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
-    ) * 100)
+    source?.barterFailureBuyModifierPercent ??
+      Number(
+        source?.barterFailureBuyModifier ??
+          existingPricing?.barterFailureBuyModifier ??
+          MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
+      ) * 100
   );
   const barterFailureBuyModifier = Number.isFinite(barterFailureBuyModifierPercentRaw)
     ? normalizeMerchantBarterModifier(
-      barterFailureBuyModifierPercentRaw / 100,
-      MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
-    )
+        barterFailureBuyModifierPercentRaw / 100,
+        MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier
+      )
     : Number(MERCHANT_DEFAULTS.pricing.barterFailureBuyModifier);
   const barterFailureSellModifierPercentRaw = Number(
-    source?.barterFailureSellModifierPercent
-    ?? (Number(
-      source?.barterFailureSellModifier
-      ?? existingPricing?.barterFailureSellModifier
-      ?? MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
-    ) * 100)
+    source?.barterFailureSellModifierPercent ??
+      Number(
+        source?.barterFailureSellModifier ??
+          existingPricing?.barterFailureSellModifier ??
+          MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
+      ) * 100
   );
   const barterFailureSellModifier = Number.isFinite(barterFailureSellModifierPercentRaw)
     ? normalizeMerchantBarterModifier(
-      barterFailureSellModifierPercentRaw / 100,
-      MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
-    )
+        barterFailureSellModifierPercentRaw / 100,
+        MERCHANT_DEFAULTS.pricing.barterFailureSellModifier
+      )
     : Number(MERCHANT_DEFAULTS.pricing.barterFailureSellModifier);
-  const accessModeRaw = String(source?.accessMode ?? source?.access?.mode ?? "all").trim().toLowerCase();
+  const accessModeRaw = String(source?.accessMode ?? source?.access?.mode ?? "all")
+    .trim()
+    .toLowerCase();
   const accessMode = accessModeRaw === "assigned" ? "assigned" : "all";
   const stockCount = clampMerchantItemCount(
     source?.stockCount ?? source?.maxItems ?? existingStock?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems,
@@ -1420,38 +1614,42 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     ? normalizeMerchantSourceType(source?.sourceType ?? existingStock?.sourceType ?? MERCHANT_SOURCE_TYPES.WORLD_FOLDER)
     : MERCHANT_SOURCE_TYPES.WORLD_ITEMS;
   const sourceRef = String(source?.sourceRef ?? "").trim();
-  const sourceRefs = sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    ? []
-    : normalizeMerchantSourcePackIds(
-      source?.sourceRefs ?? source?.sourcePackIds ?? [],
-      sourceRef
-    );
-  const resolvedSourceRef = sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
-    ? ""
-    : String(sourceRefs[0] ?? sourceRef).trim();
+  const sourceRefs =
+    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS
+      ? []
+      : normalizeMerchantSourcePackIds(source?.sourceRefs ?? source?.sourcePackIds ?? [], sourceRef);
+  const resolvedSourceRef =
+    sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS ? "" : String(sourceRefs[0] ?? sourceRef).trim();
   const sourcePackIds = sourceRefs;
   const allowedTypes = normalizeMerchantAllowedItemTypes(
-    source?.allowedTypes
-    ?? existingStock?.allowedTypes
-    ?? archetypeDefaults?.stock?.allowedTypes
-    ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    source?.allowedTypes ??
+      existingStock?.allowedTypes ??
+      archetypeDefaults?.stock?.allowedTypes ??
+      MERCHANT_ALLOWED_ITEM_TYPE_LIST
   );
-  const includeTags = customMode ? normalizeMerchantTagList(source?.includeTags ?? existingStock?.includeTags ?? []) : [];
-  const excludeTags = customMode ? normalizeMerchantTagList(source?.excludeTags ?? existingStock?.excludeTags ?? []) : [];
-  const keywordInclude = customMode ? normalizeMerchantKeywordList(source?.keywordInclude ?? existingStock?.keywordInclude ?? []) : [];
-  const keywordExclude = customMode ? normalizeMerchantKeywordList(source?.keywordExclude ?? existingStock?.keywordExclude ?? []) : [];
+  const includeTags = customMode
+    ? normalizeMerchantTagList(source?.includeTags ?? existingStock?.includeTags ?? [])
+    : [];
+  const excludeTags = customMode
+    ? normalizeMerchantTagList(source?.excludeTags ?? existingStock?.excludeTags ?? [])
+    : [];
+  const keywordInclude = customMode
+    ? normalizeMerchantKeywordList(source?.keywordInclude ?? existingStock?.keywordInclude ?? [])
+    : [];
+  const keywordExclude = customMode
+    ? normalizeMerchantKeywordList(source?.keywordExclude ?? existingStock?.keywordExclude ?? [])
+    : [];
   const targetValueGpRaw = Number(
-    source?.targetValueGp
-    ?? existingStock?.targetValueGp
-    ?? archetypeDefaults?.stock?.targetValueGp
-    ?? 0
+    source?.targetValueGp ?? existingStock?.targetValueGp ?? archetypeDefaults?.stock?.targetValueGp ?? 0
   );
   const targetValueGp = Number.isFinite(targetValueGpRaw) ? Math.max(0, Number(targetValueGpRaw.toFixed(2))) : 0;
   const valueStrictness = clampMerchantValueStrictness(
     source?.valueStrictness ?? existingStock?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
     MERCHANT_DEFAULTS.stock.valueStrictness
   );
-  const scarcity = normalizeMerchantScarcity(source?.scarcity ?? existingStock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL);
+  const scarcity = normalizeMerchantScarcity(
+    source?.scarcity ?? existingStock?.scarcity ?? MERCHANT_SCARCITY_LEVELS.NORMAL
+  );
   const duplicateChance = clampMerchantDuplicateChance(
     source?.duplicateChance ?? existingStock?.duplicateChance ?? MERCHANT_DEFAULTS.stock.duplicateChance,
     MERCHANT_DEFAULTS.stock.duplicateChance
@@ -1461,7 +1659,9 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     MERCHANT_DEFAULTS.stock.maxStackSize
   );
   const mundaneAmmoWeightBoost = clampMerchantMundaneAmmoWeightBoost(
-    source?.mundaneAmmoWeightBoost ?? existingStock?.mundaneAmmoWeightBoost ?? MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost,
+    source?.mundaneAmmoWeightBoost ??
+      existingStock?.mundaneAmmoWeightBoost ??
+      MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost,
     MERCHANT_DEFAULTS.stock.mundaneAmmoWeightBoost
   );
   const mundaneAmmoStackSize = clampMerchantMundaneAmmoStackSize(
@@ -1475,32 +1675,33 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const autoRefresh = normalizeMerchantAutoRefreshConfig(
     source?.autoRefresh ?? {
       enabled: source?.autoRefreshEnabled ?? existingStock?.autoRefresh?.enabled,
-      intervalDays: source?.autoRefreshIntervalDays ?? source?.refreshIntervalDays ?? existingStock?.autoRefresh?.intervalDays
+      intervalDays:
+        source?.autoRefreshIntervalDays ?? source?.refreshIntervalDays ?? existingStock?.autoRefresh?.intervalDays
     },
     existingStock?.autoRefresh ?? MERCHANT_DEFAULTS.stock.autoRefresh
   );
   const taxFeePercent = normalizeMerchantTaxFeePercent(
     source?.taxFeePercent ?? existingPricing?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent
   );
-  const rarityPricingEnabled = source?.rarityPricingEnabled === undefined
-    ? Boolean(existingPricing?.rarityPricingEnabled ?? MERCHANT_DEFAULTS.pricing.rarityPricingEnabled)
-    : Boolean(source?.rarityPricingEnabled);
+  const rarityPricingEnabled =
+    source?.rarityPricingEnabled === undefined
+      ? Boolean(existingPricing?.rarityPricingEnabled ?? MERCHANT_DEFAULTS.pricing.rarityPricingEnabled)
+      : Boolean(source?.rarityPricingEnabled);
   const rarityPriceMultipliers = normalizeMerchantRarityPriceMultipliers(
     source?.rarityPriceMultipliers ?? existingPricing?.rarityPriceMultipliers,
     archetypeDefaults?.pricing?.rarityPriceMultipliers ?? MERCHANT_DEFAULTS.pricing.rarityPriceMultipliers
   );
-  const stockPressureEnabled = source?.stockPressureEnabled === undefined
-    ? Boolean(existingPricing?.stockPressureEnabled ?? MERCHANT_DEFAULTS.pricing.stockPressureEnabled)
-    : Boolean(source?.stockPressureEnabled);
-  const permissionsSource = source?.permissions && typeof source.permissions === "object"
-    ? source.permissions
-    : {};
+  const stockPressureEnabled =
+    source?.stockPressureEnabled === undefined
+      ? Boolean(existingPricing?.stockPressureEnabled ?? MERCHANT_DEFAULTS.pricing.stockPressureEnabled)
+      : Boolean(source?.stockPressureEnabled);
+  const permissionsSource = source?.permissions && typeof source.permissions === "object" ? source.permissions : {};
   const patch = {
     id: String(source?.id ?? "").trim(),
     name: String(source?.name ?? "").trim(),
     title: String(source?.title ?? archetypeDefaults?.title ?? "").trim(),
     race: normalizeMerchantRace(source?.race ?? ""),
-    img: String(source?.img ?? "").trim(),
+    img: normalizeFoundryAssetImagePath(source?.img, { fallback: "" }),
     settlement: String(source?.settlement ?? "").trim(),
     archetype,
     customMode,
@@ -1511,28 +1712,34 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
     liquidationMode: Boolean(source?.liquidationMode ?? MERCHANT_DEFAULTS.liquidationMode),
     permissions: {
       player: {
-        buy: permissionsSource?.player?.buy === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.player.buy)
-          : Boolean(permissionsSource.player.buy),
-        sell: permissionsSource?.player?.sell === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.player.sell)
-          : Boolean(permissionsSource.player.sell)
+        buy:
+          permissionsSource?.player?.buy === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.player.buy)
+            : Boolean(permissionsSource.player.buy),
+        sell:
+          permissionsSource?.player?.sell === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.player.sell)
+            : Boolean(permissionsSource.player.sell)
       },
       assistant: {
-        edit: permissionsSource?.assistant?.edit === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.edit)
-          : Boolean(permissionsSource.assistant.edit),
-        override: permissionsSource?.assistant?.override === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.override)
-          : Boolean(permissionsSource.assistant.override)
+        edit:
+          permissionsSource?.assistant?.edit === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.edit)
+            : Boolean(permissionsSource.assistant.edit),
+        override:
+          permissionsSource?.assistant?.override === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.assistant.override)
+            : Boolean(permissionsSource.assistant.override)
       },
       gm: {
-        edit: permissionsSource?.gm?.edit === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.gm.edit)
-          : Boolean(permissionsSource.gm.edit),
-        override: permissionsSource?.gm?.override === undefined
-          ? Boolean(MERCHANT_DEFAULTS.permissions.gm.override)
-          : Boolean(permissionsSource.gm.override)
+        edit:
+          permissionsSource?.gm?.edit === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.gm.edit)
+            : Boolean(permissionsSource.gm.edit),
+        override:
+          permissionsSource?.gm?.override === undefined
+            ? Boolean(MERCHANT_DEFAULTS.permissions.gm.override)
+            : Boolean(permissionsSource.gm.override)
       }
     },
     accessMode,
@@ -1586,14 +1793,20 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
 }
 
 function getMerchantOfferTagDefinitionById(tagIdInput = "") {
-  const tagId = String(tagIdInput ?? "").trim().toLowerCase();
+  const tagId = String(tagIdInput ?? "")
+    .trim()
+    .toLowerCase();
   return MERCHANT_OFFER_TAG_DEFINITIONS.find((entry) => entry.id === tagId) ?? null;
 }
 
 function normalizeMerchantOfferTagIds(tagIds = []) {
   const source = Array.isArray(tagIds) ? tagIds : [];
   return source
-    .map((entry) => String(entry ?? "").trim().toLowerCase())
+    .map((entry) =>
+      String(entry ?? "")
+        .trim()
+        .toLowerCase()
+    )
     .filter((entry, index, rows) => entry.length > 0 && rows.indexOf(entry) === index)
     .filter((entry) => Boolean(getMerchantOfferTagDefinitionById(entry)));
 }
@@ -1602,9 +1815,10 @@ export function buildMerchantOfferTagOptions(selectedTypes = []) {
   const allowedTypeSet = new Set(normalizeMerchantAllowedItemTypes(selectedTypes));
   const selectedAll = MERCHANT_ALLOWED_ITEM_TYPE_LIST.every((itemType) => allowedTypeSet.has(itemType));
   return MERCHANT_OFFER_TAG_DEFINITIONS.map((definition) => {
-    const selected = definition.id === "all"
-      ? selectedAll
-      : (!selectedAll && definition.itemTypes.some((itemType) => allowedTypeSet.has(itemType)));
+    const selected =
+      definition.id === "all"
+        ? selectedAll
+        : !selectedAll && definition.itemTypes.some((itemType) => allowedTypeSet.has(itemType));
     return {
       id: definition.id,
       label: definition.label,
@@ -1613,7 +1827,10 @@ export function buildMerchantOfferTagOptions(selectedTypes = []) {
   });
 }
 
-export function resolveMerchantAllowedTypesFromOfferTags(selectedTagIds = [], fallbackTypes = MERCHANT_ALLOWED_ITEM_TYPE_LIST) {
+export function resolveMerchantAllowedTypesFromOfferTags(
+  selectedTagIds = [],
+  fallbackTypes = MERCHANT_ALLOWED_ITEM_TYPE_LIST
+) {
   const selectedTags = normalizeMerchantOfferTagIds(selectedTagIds);
   if (selectedTags.includes("all")) return [...MERCHANT_ALLOWED_ITEM_TYPE_LIST];
   const resolved = new Set();
@@ -1629,7 +1846,9 @@ export function resolveMerchantAllowedTypesFromOfferTags(selectedTagIds = [], fa
 }
 
 export function buildMerchantCityOptions(cityList = [], selectedCityInput = "") {
-  const selectedCity = String(selectedCityInput ?? "").trim().slice(0, MERCHANT_MAX_CITY_LENGTH);
+  const selectedCity = String(selectedCityInput ?? "")
+    .trim()
+    .slice(0, MERCHANT_MAX_CITY_LENGTH);
   const normalized = normalizeMerchantCityList(cityList);
   const options = [
     { value: "", label: "Global", selected: false },
@@ -1642,7 +1861,10 @@ export function buildMerchantCityOptions(cityList = [], selectedCityInput = "") 
         selected: false
       }))
   ];
-  if (selectedCity && !options.some((entry) => String(entry.value ?? "").toLowerCase() === selectedCity.toLowerCase())) {
+  if (
+    selectedCity &&
+    !options.some((entry) => String(entry.value ?? "").toLowerCase() === selectedCity.toLowerCase())
+  ) {
     options.push({
       value: selectedCity,
       label: `${selectedCity} (Custom)`,
@@ -1666,25 +1888,31 @@ export function formatMerchantCp(totalCp) {
 }
 
 export function getMerchantItemUnitPriceCp(itemData = {}, rate = 1, options = {}) {
-  const getItemGpValue = typeof options?.getItemGpValue === "function"
-    ? options.getItemGpValue
-    : (value) => Number(value ?? 0);
+  const getItemGpValue =
+    typeof options?.getItemGpValue === "function" ? options.getItemGpValue : (value) => Number(value ?? 0);
   const baseGp = Math.max(0, Number(getItemGpValue(itemData) || 0));
   const scalar = Number.isFinite(Number(rate)) ? Math.max(0, Number(rate)) : 1;
   return Math.max(0, Math.round(baseGp * scalar * 100));
 }
 
-export function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSourceRefs = [], sourcePackOptions = [], options = {}) {
+export function getMerchantSourceRefOptionsForEditor(
+  sourceTypeInput,
+  selectedSourceRefs = [],
+  sourcePackOptions = [],
+  options = {}
+) {
   const sourceType = normalizeMerchantSourceType(sourceTypeInput);
   const selectedValues = normalizeMerchantSourcePackIds(selectedSourceRefs);
   const selectedSet = new Set(selectedValues);
   const selectedPrimary = String(selectedValues[0] ?? "").trim();
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_ITEMS) {
-    const worldOptions = [{
-      value: "",
-      label: "All World Items",
-      selected: !selectedPrimary
-    }];
+    const worldOptions = [
+      {
+        value: "",
+        label: "All World Items",
+        selected: !selectedPrimary
+      }
+    ];
     if (selectedPrimary) {
       worldOptions.push({
         value: selectedPrimary,
@@ -1695,9 +1923,8 @@ export function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSo
     return worldOptions;
   }
   if (sourceType === MERCHANT_SOURCE_TYPES.WORLD_FOLDER) {
-    const getWorldFolderOptions = typeof options?.getWorldFolderOptions === "function"
-      ? options.getWorldFolderOptions
-      : () => [];
+    const getWorldFolderOptions =
+      typeof options?.getWorldFolderOptions === "function" ? options.getWorldFolderOptions : () => [];
     const rows = getWorldFolderOptions(selectedValues);
     return Array.isArray(rows) ? rows : [];
   }
@@ -1724,12 +1951,14 @@ export function getMerchantSourceRefOptionsForEditor(sourceTypeInput, selectedSo
     });
   }
   if (packOptions.length <= 0) {
-    return [{
-      value: "",
-      label: "No Compendium Packs Available",
-      selected: true,
-      disabled: true
-    }];
+    return [
+      {
+        value: "",
+        label: "No Compendium Packs Available",
+        selected: true,
+        disabled: true
+      }
+    ];
   }
   if (selectedValues.length <= 0) {
     packOptions.unshift({
@@ -1783,9 +2012,13 @@ function chooseWeightedRow(entries = [], weightAccessor = () => 1, randomFn = Ma
 }
 
 function isAmmoCandidate(candidate = {}) {
-  const dataType = String(candidate?.data?.type ?? "").trim().toLowerCase();
+  const dataType = String(candidate?.data?.type ?? "")
+    .trim()
+    .toLowerCase();
   if (dataType === "ammunition") return true;
-  const itemType = String(candidate?.itemType ?? "").trim().toLowerCase();
+  const itemType = String(candidate?.itemType ?? "")
+    .trim()
+    .toLowerCase();
   return itemType === "ammunition";
 }
 
@@ -1798,7 +2031,12 @@ function getAmmoEnchantmentLevel(candidate = {}) {
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   const keywords = Array.isArray(candidate?.keywords) ? candidate.keywords : [];
-  const hasMagicKeyword = keywords.some((value) => String(value ?? "").trim().toLowerCase().includes("magic"));
+  const hasMagicKeyword = keywords.some((value) =>
+    String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .includes("magic")
+  );
   return hasMagicKeyword ? 1 : 0;
 }
 
@@ -1819,7 +2057,12 @@ function getMerchantCandidateTokenSet(candidate = {}) {
   ];
   return new Set(
     rows
-      .flatMap((entry) => String(entry ?? "").trim().toLowerCase().split(/[^a-z0-9+]+/))
+      .flatMap((entry) =>
+        String(entry ?? "")
+          .trim()
+          .toLowerCase()
+          .split(/[^a-z0-9+]+/)
+      )
       .filter(Boolean)
   );
 }
@@ -1827,7 +2070,9 @@ function getMerchantCandidateTokenSet(candidate = {}) {
 function hasMerchantCandidateKeywordMatch(candidate = {}, keywords = []) {
   const tokenSet = getMerchantCandidateTokenSet(candidate);
   return (Array.isArray(keywords) ? keywords : []).some((keyword) => {
-    const normalized = String(keyword ?? "").trim().toLowerCase();
+    const normalized = String(keyword ?? "")
+      .trim()
+      .toLowerCase();
     if (!normalized) return false;
     if (tokenSet.has(normalized)) return true;
     return Array.from(tokenSet).some((token) => token.includes(normalized) || normalized.includes(token));
@@ -1835,9 +2080,16 @@ function hasMerchantCandidateKeywordMatch(candidate = {}, keywords = []) {
 }
 
 function getMerchantSectionMetaForCandidate(candidate = {}, archetypeDefinition = getMerchantArchetypeDefinition()) {
-  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "").trim().toLowerCase();
-  const rareItem = ["rare", "very-rare", "legendary"].includes(getMerchantRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? ""));
-  const featuredHit = rareItem || candidate?.isCurated || hasMerchantCandidateKeywordMatch(candidate, archetypeDefinition?.featuredKeywords ?? []);
+  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "")
+    .trim()
+    .toLowerCase();
+  const rareItem = ["rare", "very-rare", "legendary"].includes(
+    getMerchantRarityBucket(candidate?.rarityBucket ?? candidate?.rarity ?? "")
+  );
+  const featuredHit =
+    rareItem ||
+    candidate?.isCurated ||
+    hasMerchantCandidateKeywordMatch(candidate, archetypeDefinition?.featuredKeywords ?? []);
   if (featuredHit) return { key: "featured", label: "Featured Finds" };
   if (archetypeDefinition?.id === "apothecary" && itemType === "consumable") {
     return { key: "elixirs", label: "Elixirs & Remedies" };
@@ -1858,11 +2110,13 @@ function getMerchantSectionMetaForCandidate(candidate = {}, archetypeDefinition 
 
 function getMerchantArchetypeCandidateScore(candidate = {}, merchant = {}, getRarityBucket = getMerchantRarityBucket) {
   const definition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
-  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "").trim().toLowerCase();
+  const itemType = String(candidate?.data?.type ?? candidate?.itemType ?? "")
+    .trim()
+    .toLowerCase();
   const preferredTypes = Array.isArray(definition?.preferredTypes) ? definition.preferredTypes : [];
   const avoidTypes = new Set(Array.isArray(definition?.avoidTypes) ? definition.avoidTypes : []);
   const typeIndex = preferredTypes.indexOf(itemType);
-  let score = typeIndex >= 0 ? Math.max(0.3, 2.4 - (typeIndex * 0.23)) : 0.55;
+  let score = typeIndex >= 0 ? Math.max(0.3, 2.4 - typeIndex * 0.23) : 0.55;
   if (avoidTypes.has(itemType)) score *= 0.18;
   if (hasMerchantCandidateKeywordMatch(candidate, definition?.focusKeywords ?? [])) score *= 1.5;
   if (hasMerchantCandidateKeywordMatch(candidate, definition?.featuredKeywords ?? [])) score *= 1.2;
@@ -1894,30 +2148,42 @@ function enrichMerchantCandidateForSelection(candidate = {}, merchant = {}, getR
 }
 
 function getMerchantSectionPriority(sectionKey = "") {
-  const normalized = String(sectionKey ?? "").trim().toLowerCase();
+  const normalized = String(sectionKey ?? "")
+    .trim()
+    .toLowerCase();
   if (normalized === "featured") return 99;
-  const order = ["gear", "packs", "tools", "weapons", "ammunition", "armor", "consumables", "elixirs", "arcana", "spells", "misc"];
+  const order = [
+    "gear",
+    "packs",
+    "tools",
+    "weapons",
+    "ammunition",
+    "armor",
+    "consumables",
+    "elixirs",
+    "arcana",
+    "spells",
+    "misc"
+  ];
   const index = order.indexOf(normalized);
   return index >= 0 ? index : 50;
 }
 
 export function selectMerchantStockRows(candidates = [], merchant = {}, options = {}) {
   const customMode = Boolean(merchant?.customMode);
-  const normalizeCuratedItemUuids = typeof options?.normalizeCuratedItemUuids === "function"
-    ? options.normalizeCuratedItemUuids
-    : normalizeMerchantCuratedItemUuids;
-  const normalizeRarityWeights = typeof options?.normalizeRarityWeights === "function"
-    ? options.normalizeRarityWeights
-    : normalizeMerchantRarityWeights;
-  const getTargetCount = typeof options?.getTargetStockCount === "function"
-    ? options.getTargetStockCount
-    : getMerchantTargetStockCount;
-  const getRarityBucket = typeof options?.getRarityBucket === "function"
-    ? options.getRarityBucket
-    : getMerchantRarityBucket;
-  const shuffleRows = typeof options?.shuffleRows === "function"
-    ? options.shuffleRows
-    : shuffleMerchantRows;
+  const normalizeCuratedItemUuids =
+    typeof options?.normalizeCuratedItemUuids === "function"
+      ? options.normalizeCuratedItemUuids
+      : normalizeMerchantCuratedItemUuids;
+  const normalizeRarityWeights =
+    typeof options?.normalizeRarityWeights === "function"
+      ? options.normalizeRarityWeights
+      : normalizeMerchantRarityWeights;
+  const getTargetCount =
+    typeof options?.getTargetStockCount === "function" ? options.getTargetStockCount : getMerchantTargetStockCount;
+  const getRarityBucket =
+    typeof options?.getRarityBucket === "function" ? options.getRarityBucket : getMerchantRarityBucket;
+  const shuffleRows = typeof options?.shuffleRows === "function" ? options.shuffleRows : shuffleMerchantRows;
   const random = typeof options?.randomFn === "function" ? options.randomFn : Math.random;
   const stock = merchant?.stock ?? {};
   const curatedOrder = customMode ? normalizeCuratedItemUuids(stock?.curatedItemUuids ?? []) : [];
@@ -1932,11 +2198,13 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     0.5,
     Math.min(3, Number(valueTolerance?.strictness ?? MERCHANT_DEFAULT_VALUE_STRICTNESS) / 100)
   );
-  const duplicateChance = clampMerchantDuplicateChance(stock?.duplicateChance, MERCHANT_DEFAULTS.stock.duplicateChance) / 100;
+  const duplicateChance =
+    clampMerchantDuplicateChance(stock?.duplicateChance, MERCHANT_DEFAULTS.stock.duplicateChance) / 100;
   const maxStackSize = clampMerchantMaxStackSize(stock?.maxStackSize, MERCHANT_DEFAULTS.stock.maxStackSize);
   const rarityWeights = normalizeRarityWeights(stock?.rarityWeights ?? MERCHANT_DEFAULTS.stock.rarityWeights);
-  const shuffled = shuffleRows(Array.isArray(candidates) ? candidates : [])
-    .map((entry) => enrichMerchantCandidateForSelection(entry, merchant, getRarityBucket));
+  const shuffled = shuffleRows(Array.isArray(candidates) ? candidates : []).map((entry) =>
+    enrichMerchantCandidateForSelection(entry, merchant, getRarityBucket)
+  );
   if (shuffled.length <= 0) return [];
 
   const candidateByKey = new Map();
@@ -1965,9 +2233,16 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     MERCHANT_DEFAULTS.stock.mundaneAmmoStackSize
   );
   const archetypeDefinition = getMerchantArchetypeDefinition(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
-  const coreTarget = Math.max(1, Math.min(targetCount, Math.round(targetCount * Math.max(0.45, Number(archetypeDefinition?.coreRatio ?? 0.7) || 0.7))));
+  const coreTarget = Math.max(
+    1,
+    Math.min(
+      targetCount,
+      Math.round(targetCount * Math.max(0.45, Number(archetypeDefinition?.coreRatio ?? 0.7) || 0.7))
+    )
+  );
   const canAddRows = () => selected.length < targetCount;
-  const canAddRowsBeyondTarget = () => budgetEnabled && runningValue < targetValueGp && selected.length < maxGeneratedRows;
+  const canAddRowsBeyondTarget = () =>
+    budgetEnabled && runningValue < targetValueGp && selected.length < maxGeneratedRows;
 
   const resolveBaseKey = (entry) => String(entry?.sourceKey ?? entry?.key ?? "").trim();
   const getStacksForBaseKey = (baseKey) => selectedStacksByBaseKey.get(baseKey) ?? [];
@@ -1978,7 +2253,10 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     return selected.length < maxGeneratedRows;
   };
   const canDuplicateAnySelected = () => selected.some((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
-  const shouldContinueSelection = () => canAddRows() || canAddRowsBeyondTarget() || (budgetEnabled && runningValue < targetValueGp && canDuplicateAnySelected());
+  const shouldContinueSelection = () =>
+    canAddRows() ||
+    canAddRowsBeyondTarget() ||
+    (budgetEnabled && runningValue < targetValueGp && canDuplicateAnySelected());
 
   const getCandidateBudgetValue = (candidate) => {
     const base = Math.max(0, Number(candidate?.gpValue ?? 0) || 0);
@@ -2048,9 +2326,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const remainingSlots = Math.max(1, targetCount - totalUnits);
     const desiredValue = Math.max(
       0.01,
-      remainingValue > 0
-        ? (remainingValue / remainingSlots)
-        : (targetValueGp / Math.max(1, targetCount))
+      remainingValue > 0 ? remainingValue / remainingSlots : targetValueGp / Math.max(1, targetCount)
     );
     const ratio = Math.max(0.01, value / Math.max(0.01, desiredValue));
     const logDistance = Math.abs(Math.log(ratio));
@@ -2067,7 +2343,7 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     }
     if (remainingValue > 0 && value <= Math.max(0.01, remainingValue + budgetTolerance)) {
       const closenessToGap = 1 - Math.min(1, Math.abs(remainingValue - value) / Math.max(1, remainingValue));
-      weight *= 1 + (Math.max(0, closenessToGap) * 0.45 * valueStrictnessScale);
+      weight *= 1 + Math.max(0, closenessToGap) * 0.45 * valueStrictnessScale;
     }
     return Math.max(0.01, weight);
   };
@@ -2102,7 +2378,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
       const rightScore = Number(right?.merchantArchetypeScore ?? 0) + (right?.isCurated ? 0.4 : 0);
       const leftScore = Number(left?.merchantArchetypeScore ?? 0) + (left?.isCurated ? 0.4 : 0);
       if (rightScore !== leftScore) return rightScore - leftScore;
-      const sectionDiff = getMerchantSectionPriority(left?.merchantSectionKey) - getMerchantSectionPriority(right?.merchantSectionKey);
+      const sectionDiff =
+        getMerchantSectionPriority(left?.merchantSectionKey) - getMerchantSectionPriority(right?.merchantSectionKey);
       if (sectionDiff !== 0) return sectionDiff;
       return String(left?.key ?? "").localeCompare(String(right?.key ?? ""));
     });
@@ -2117,10 +2394,8 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
   while (shouldContinueSelection() && safety < safetyLimit) {
     safety += 1;
     const canAddNewCandidate = canAddRows() || canAddRowsBeyondTarget();
-    const remainingCandidates = shuffled
-      .filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()));
-    const duplicatePool = selected
-      .filter((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
+    const remainingCandidates = shuffled.filter((entry) => !selectedBaseKeys.has(String(entry?.key ?? "").trim()));
+    const duplicatePool = selected.filter((entry) => canDuplicateBaseKey(resolveBaseKey(entry)));
     const affordableCandidates = canAddNewCandidate
       ? remainingCandidates.filter((entry) => canAffordCandidate(entry, getRollQuantity(entry)))
       : [];
@@ -2129,14 +2404,21 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     const canDuplicate = affordableDuplicates.length > 0;
     const shouldDuplicate = canDuplicate && duplicateChance > 0 && random() < duplicateChance;
     if (shouldDuplicate) {
-      const duplicatePick = chooseWeightedRow(affordableDuplicates, (entry) => {
-        const rarityWeight = getRarityWeight(entry);
-        const valueWeight = getBudgetWeight(entry);
-        const value = getCandidateBudgetValue(entry);
-        const affordableBoost = targetValueGp > 0 && value <= Math.max(0, targetValueGp - runningValue) ? 1.1 : 1;
-        const archetypeBoost = Math.max(0.01, Number(entry?.merchantFeaturedWeight ?? entry?.merchantArchetypeScore ?? 1) || 1);
-        return rarityWeight * valueWeight * affordableBoost * archetypeBoost;
-      }, random);
+      const duplicatePick = chooseWeightedRow(
+        affordableDuplicates,
+        (entry) => {
+          const rarityWeight = getRarityWeight(entry);
+          const valueWeight = getBudgetWeight(entry);
+          const value = getCandidateBudgetValue(entry);
+          const affordableBoost = targetValueGp > 0 && value <= Math.max(0, targetValueGp - runningValue) ? 1.1 : 1;
+          const archetypeBoost = Math.max(
+            0.01,
+            Number(entry?.merchantFeaturedWeight ?? entry?.merchantArchetypeScore ?? 1) || 1
+          );
+          return rarityWeight * valueWeight * affordableBoost * archetypeBoost;
+        },
+        random
+      );
       if (duplicatePick) {
         addSelection(duplicatePick, getRollQuantity(duplicatePick), { stockRole: "featured" });
         continue;
@@ -2144,11 +2426,15 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
     }
 
     if (affordableCandidates.length > 0) {
-      const picked = chooseWeightedRow(affordableCandidates, (entry) => {
-        const baseWeight = getSelectionWeight(entry);
-        const featuredWeight = Math.max(0.01, Number(entry?.merchantFeaturedWeight ?? 1) || 1);
-        return baseWeight * featuredWeight;
-      }, random);
+      const picked = chooseWeightedRow(
+        affordableCandidates,
+        (entry) => {
+          const baseWeight = getSelectionWeight(entry);
+          const featuredWeight = Math.max(0.01, Number(entry?.merchantFeaturedWeight ?? 1) || 1);
+          return baseWeight * featuredWeight;
+        },
+        random
+      );
       if (picked) {
         addSelection(picked, getRollQuantity(picked), { stockRole: "featured" });
         continue;
@@ -2174,36 +2460,36 @@ export function selectMerchantStockRows(candidates = [], merchant = {}, options 
 export function buildMerchantStockCandidateRows(documents = [], merchant = {}, options = {}) {
   const getItemData = typeof options?.getItemData === "function" ? options.getItemData : (value) => value ?? {};
   const getItemTags = typeof options?.getItemTags === "function" ? options.getItemTags : () => [];
-  const getItemKeywords = typeof options?.getItemKeywords === "function"
-    ? options.getItemKeywords
-    : (_data, tags) => tags;
+  const getItemKeywords =
+    typeof options?.getItemKeywords === "function" ? options.getItemKeywords : (_data, tags) => tags;
   const matchesTagFilters = typeof options?.matchesTagFilters === "function" ? options.matchesTagFilters : () => true;
-  const matchesKeywordFilters = typeof options?.matchesKeywordFilters === "function" ? options.matchesKeywordFilters : () => true;
+  const matchesKeywordFilters =
+    typeof options?.matchesKeywordFilters === "function" ? options.matchesKeywordFilters : () => true;
   const getItemRarity = typeof options?.getItemRarity === "function" ? options.getItemRarity : () => "";
-  const getRarityBucket = typeof options?.getRarityBucket === "function" ? options.getRarityBucket : getMerchantRarityBucket;
+  const getRarityBucket =
+    typeof options?.getRarityBucket === "function" ? options.getRarityBucket : getMerchantRarityBucket;
   const getItemGpValue = typeof options?.getItemGpValue === "function" ? options.getItemGpValue : () => 0;
-  const allowedItemTypes = options?.allowedItemTypes instanceof Set ? options.allowedItemTypes : MERCHANT_ALLOWED_ITEM_TYPES;
-  const normalizeCuratedUuids = typeof options?.normalizeCuratedItemUuids === "function"
-    ? options.normalizeCuratedItemUuids
-    : normalizeMerchantCuratedItemUuids;
-  const normalizeAllowedTypes = typeof options?.normalizeAllowedItemTypes === "function"
-    ? options.normalizeAllowedItemTypes
-    : normalizeMerchantAllowedItemTypes;
-  const normalizeTags = typeof options?.normalizeTagList === "function"
-    ? options.normalizeTagList
-    : normalizeMerchantTagList;
-  const normalizeKeywords = typeof options?.normalizeKeywordList === "function"
-    ? options.normalizeKeywordList
-    : normalizeMerchantKeywordList;
+  const allowedItemTypes =
+    options?.allowedItemTypes instanceof Set ? options.allowedItemTypes : MERCHANT_ALLOWED_ITEM_TYPES;
+  const normalizeCuratedUuids =
+    typeof options?.normalizeCuratedItemUuids === "function"
+      ? options.normalizeCuratedItemUuids
+      : normalizeMerchantCuratedItemUuids;
+  const normalizeAllowedTypes =
+    typeof options?.normalizeAllowedItemTypes === "function"
+      ? options.normalizeAllowedItemTypes
+      : normalizeMerchantAllowedItemTypes;
+  const normalizeTags =
+    typeof options?.normalizeTagList === "function" ? options.normalizeTagList : normalizeMerchantTagList;
+  const normalizeKeywords =
+    typeof options?.normalizeKeywordList === "function" ? options.normalizeKeywordList : normalizeMerchantKeywordList;
   const customMode = Boolean(merchant?.customMode);
   const stock = merchant?.stock ?? {};
   const archetypeDefaults = getMerchantArchetypeDefaults(merchant?.archetype ?? MERCHANT_DEFAULTS.archetype);
   const curatedUuids = new Set(customMode ? normalizeCuratedUuids(stock?.curatedItemUuids ?? []) : []);
   const allowedTypes = new Set(
     normalizeAllowedTypes(
-      customMode
-        ? (stock?.allowedTypes ?? [])
-        : (archetypeDefaults?.stock?.allowedTypes ?? stock?.allowedTypes ?? [])
+      customMode ? (stock?.allowedTypes ?? []) : (archetypeDefaults?.stock?.allowedTypes ?? stock?.allowedTypes ?? [])
     )
   );
   const includeTags = customMode ? normalizeTags(stock?.includeTags ?? []) : [];
@@ -2211,9 +2497,11 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
   const includeKeywords = customMode ? normalizeKeywords(stock?.keywordInclude ?? []) : [];
   const excludeKeywords = customMode ? normalizeKeywords(stock?.keywordExclude ?? []) : [];
   const rows = [];
-  for (const documentRef of (Array.isArray(documents) ? documents : [])) {
+  for (const documentRef of Array.isArray(documents) ? documents : []) {
     const data = getItemData(documentRef);
-    const itemType = String(data?.type ?? "").trim().toLowerCase();
+    const itemType = String(data?.type ?? "")
+      .trim()
+      .toLowerCase();
     if (!allowedItemTypes.has(itemType)) continue;
     const itemName = String(data?.name ?? "").trim();
     if (!itemName) continue;
@@ -2225,7 +2513,9 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
     if (!isCurated && !matchesTagFilters(tags, includeTags, excludeTags)) continue;
     const keywords = normalizeKeywords(getItemKeywords(data, tags));
     if (!isCurated && !matchesKeywordFilters(keywords, includeKeywords, excludeKeywords)) continue;
-    const rarity = String(getItemRarity(data) ?? "").trim().toLowerCase();
+    const rarity = String(getItemRarity(data) ?? "")
+      .trim()
+      .toLowerCase();
     const gpValue = Math.max(0, Number(getItemGpValue(data) || 0));
     rows.push({
       key: rowKey,
@@ -2248,9 +2538,10 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
 /** Returns the rarity price multiplier for an item, optionally using merchant-specific overrides. */
 export function getMerchantRarityPriceMultiplier(rarityInput = "", overrides = null) {
   const rarity = normalizeMerchantRarity(rarityInput) || "common";
-  const multipliers = overrides && typeof overrides === "object"
-    ? normalizeMerchantRarityPriceMultipliers(overrides, MERCHANT_RARITY_PRICE_MULTIPLIERS)
-    : MERCHANT_RARITY_PRICE_MULTIPLIERS;
+  const multipliers =
+    overrides && typeof overrides === "object"
+      ? normalizeMerchantRarityPriceMultipliers(overrides, MERCHANT_RARITY_PRICE_MULTIPLIERS)
+      : MERCHANT_RARITY_PRICE_MULTIPLIERS;
   return Number(multipliers[rarity] ?? multipliers.common ?? MERCHANT_RARITY_PRICE_MULTIPLIERS.common);
 }
 
@@ -2275,24 +2566,32 @@ export function getMerchantStockPressureMultiplier(currentCount = 0, targetMax =
 
 /** Normalizes a merchant type to a known value or "general". */
 export function normalizeMerchantType(value = "") {
-  const type = String(value ?? "").trim().toLowerCase();
+  const type = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (MERCHANT_TYPE_OPTIONS.some((opt) => opt.value === type)) return type;
   return "general";
 }
 
 /** Normalizes merchant disposition. */
 export function normalizeMerchantDisposition(value = "") {
-  const disp = String(value ?? "").trim().toLowerCase();
+  const disp = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (MERCHANT_DISPOSITION_OPTIONS.some((opt) => opt.value === disp)) return disp;
   return "neutral";
 }
 
 export function normalizeMerchantFaction(value = "") {
-  return String(value ?? "").trim().slice(0, 80);
+  return String(value ?? "")
+    .trim()
+    .slice(0, 80);
 }
 
 export function normalizeMerchantLocation(value = "") {
-  return String(value ?? "").trim().slice(0, 120);
+  return String(value ?? "")
+    .trim()
+    .slice(0, 120);
 }
 
 export function normalizeMerchantTaxFeePercent(value = 0, fallback = 0) {
@@ -2323,10 +2622,11 @@ export function computeMerchantEffectiveBuyMultiplier(options = {}) {
   const maxBase = base * (1 + cap);
   const adjustedBase = Math.max(minBase, Math.min(maxBase, base + Number(barterBuyDelta || 0)));
   const taxFactor = 1 + Math.max(0, Math.min(1, Number(taxFeePercent || 0) / 100));
-  const effective = adjustedBase
-    * Math.max(0.01, Number(rarityMultiplier || 1))
-    * Math.max(0.01, Number(stockPressureMultiplier || 1))
-    * taxFactor;
+  const effective =
+    adjustedBase *
+    Math.max(0.01, Number(rarityMultiplier || 1)) *
+    Math.max(0.01, Number(stockPressureMultiplier || 1)) *
+    taxFactor;
   return Math.max(0, Math.min(50, Number(effective.toFixed(4))));
 }
 
@@ -2335,18 +2635,15 @@ export function computeMerchantEffectiveBuyMultiplier(options = {}) {
  * Barter delta is capped at haggleCapPercent from the base sell rate.
  */
 export function computeMerchantEffectiveSellMultiplier(options = {}) {
-  const {
-    baseSellRate = 0.5,
-    barterSellDelta = 0,
-    haggleCapPercent = MERCHANT_HAGGLE_CAP_PERCENT
-  } = options;
+  const { baseSellRate = 0.5, barterSellDelta = 0, haggleCapPercent = MERCHANT_HAGGLE_CAP_PERCENT } = options;
   const base = Math.max(0, Number(baseSellRate) || 0.5);
   const cap = Math.max(0, Number(haggleCapPercent) || MERCHANT_HAGGLE_CAP_PERCENT);
   const minRate = base * (1 - cap);
   const maxRate = base * (1 + cap);
-  return Math.max(0, Math.min(10, Number(
-    Math.max(minRate, Math.min(maxRate, base + Number(barterSellDelta || 0))).toFixed(4)
-  )));
+  return Math.max(
+    0,
+    Math.min(10, Number(Math.max(minRate, Math.min(maxRate, base + Number(barterSellDelta || 0))).toFixed(4)))
+  );
 }
 
 export function getMerchantTypeOptions(selectedTypeInput = "") {
@@ -2366,9 +2663,15 @@ export function getMerchantDispositionOptions(selectedInput = "") {
 }
 
 function getMerchantRestockRetentionWeight(item = {}) {
-  const itemType = String(item?.itemType ?? item?.type ?? item?.data?.type ?? "").trim().toLowerCase();
-  const stockRole = String(item?.stockRole ?? item?.merchantStockRole ?? "").trim().toLowerCase();
-  const sectionKey = String(item?.sectionKey ?? item?.merchantSectionKey ?? "").trim().toLowerCase();
+  const itemType = String(item?.itemType ?? item?.type ?? item?.data?.type ?? "")
+    .trim()
+    .toLowerCase();
+  const stockRole = String(item?.stockRole ?? item?.merchantStockRole ?? "")
+    .trim()
+    .toLowerCase();
+  const sectionKey = String(item?.sectionKey ?? item?.merchantSectionKey ?? "")
+    .trim()
+    .toLowerCase();
   const rarityBucket = getMerchantRarityBucket(item?.rarityBucket ?? item?.rarity ?? "");
   const quantity = Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1));
   let weight = 1;
@@ -2414,14 +2717,19 @@ function chooseMerchantRetentionRows(items = [], retainCount = 0, random = Math.
  * @param {{randomFn?: Function}} options
  * @returns {{ retainedKeys: Set<string>, retainCount: number, rerollCount: number }}
  */
-export function computeMerchantPartialRestockPlan(currentItems = [], retainRate = MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE, options = {}) {
+export function computeMerchantPartialRestockPlan(
+  currentItems = [],
+  retainRate = MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE,
+  options = {}
+) {
   const items = Array.isArray(currentItems) ? currentItems : [];
-  const rate = Math.max(0, Math.min(1, Number(retainRate ?? MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) || MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE));
+  const rate = Math.max(
+    0,
+    Math.min(1, Number(retainRate ?? MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) || MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE)
+  );
   const totalCount = items.length;
   const requestedRetainCount = Math.round(totalCount * rate);
-  const retainCount = totalCount > 1
-    ? Math.min(totalCount - 1, requestedRetainCount)
-    : 0;
+  const retainCount = totalCount > 1 ? Math.min(totalCount - 1, requestedRetainCount) : 0;
   const random = typeof options?.randomFn === "function" ? options.randomFn : Math.random;
   const retained = chooseMerchantRetentionRows(items, retainCount, random);
   const retainedKeys = new Set(retained.map((entry) => String(entry?.key ?? entry?.id ?? "")).filter(Boolean));

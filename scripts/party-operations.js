@@ -158,7 +158,12 @@ import { createPlayerPermissionDebugTools } from "./core/player-permission-debug
 import { getRenderableElementRoot } from "./core/renderable-element-root.js";
 import { parseFolderOwnershipBatchLevelsFromSubmitData } from "./core/folder-ownership-utils.js";
 import { readSessionStorageJson, writeSessionStorageJson } from "./core/session-storage-json.js";
-import { canAccessAllPlayerOps, hasActiveGmClient, isWritableModuleSettingKey } from "./core/socket-write-policy.js";
+import {
+  canAccessAllPlayerOps,
+  hasActiveGmClient,
+  isActiveGmUserId,
+  isWritableModuleSettingKey
+} from "./core/socket-write-policy.js";
 import { createAppWindowPositionManager } from "./core/window-position-manager.js";
 import {
   preloadPartyOperationsPartialTemplates as preloadPartyOperationsPartialTemplatesSurface,
@@ -271,6 +276,7 @@ import {
   getMerchantTypeOptions as getMerchantTypeOptionsDomain,
   getMerchantDispositionOptions as getMerchantDispositionOptionsDomain,
   computeMerchantPartialRestockPlan,
+  normalizeFoundryAssetImagePath,
   MERCHANT_HAGGLE_CAP_PERCENT,
   MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE,
   MERCHANT_TYPE_OPTIONS,
@@ -1370,6 +1376,7 @@ const MERCHANT_BARTER_ABILITY_LABELS = Object.freeze({
 const NON_GM_READONLY_ACTIONS = new Set([
   "toggle-sop",
   "set-resource",
+  "gather-resource-check",
   "run-gather-preset",
   "clear-gather-history",
   "remove-gather-history-entry",
@@ -19406,7 +19413,7 @@ function buildLootCandidateFromSourceItem(item, context = {}, draft = {}, filter
   return {
     key,
     name: String(data?.name ?? "Item").trim() || "Item",
-    img: String(data?.img ?? "icons/svg/item-bag.svg"),
+    img: normalizeFoundryAssetImagePath(data?.img, { fallback: "icons/svg/item-bag.svg" }),
     itemType,
     rarity,
     rarityBucket,
@@ -27847,7 +27854,7 @@ function buildMerchantCuratedRowsForEditor(curatedItemUuids = []) {
     return {
       uuid,
       name: String(data?.name ?? uuid).trim() || uuid,
-      img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+      img: normalizeFoundryAssetImagePath(data?.img, { fallback: "icons/svg/item-bag.svg" }),
       itemType,
       itemTypeLabel,
       sourceLabel: describeMerchantUuidSource(uuid),
@@ -27913,7 +27920,7 @@ function buildMerchantEditorCandidateRows(editorDraft = {}, options = {}) {
       return {
         uuid,
         name,
-        img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        img: normalizeFoundryAssetImagePath(data?.img, { fallback: "icons/svg/item-bag.svg" }),
         itemType,
         itemTypeLabel: String(LOOT_ITEM_TYPE_LABELS[itemType] ?? itemType).trim() || "Item",
         sourceLabel,
@@ -28145,7 +28152,7 @@ function buildMerchantInventoryRowsForDisplay(merchant = {}) {
         itemUuid: String(item?.uuid ?? ""),
         sourceActorId: merchantActorId,
         name: String(item?.name ?? "Item").trim() || "Item",
-        img: String(item?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+        img: normalizeFoundryAssetImagePath(item?.img, { fallback: "icons/svg/item-bag.svg" }),
         quantity,
         weight,
         weightLabel,
@@ -28941,7 +28948,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
     activeMerchantName: String(activeMerchant?.name ?? "").trim() || "No Merchant Selected",
     activeMerchantTitle: String(activeMerchant?.title ?? "").trim(),
     activeMerchantRace: normalizeMerchantRace(activeMerchant?.race ?? ""),
-    activeMerchantImg: String(activeMerchant?.img ?? "icons/svg/mystery-man.svg").trim() || "icons/svg/mystery-man.svg",
+    activeMerchantImg: normalizeFoundryAssetImagePath(activeMerchant?.img, { fallback: "icons/svg/mystery-man.svg" }),
     activeMerchantStockCount: Math.max(0, Number(activeMerchant?.stockItemCount ?? 0) || 0),
     activeMerchantBuyMarkupLabel: String(activeMerchantInventory?.buyMarkupLabel ?? "1.00"),
     activeMerchantCanOpenShop: Boolean(activeMerchant?.canOpenShop),
@@ -30750,7 +30757,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
       return {
         itemId: String(item?.id ?? ""),
         itemName: String(item?.name ?? "Item"),
-        img: String(item?.img ?? "icons/svg/item-bag.svg"),
+        img: normalizeFoundryAssetImagePath(item?.img, { fallback: "icons/svg/item-bag.svg" }),
         qty,
         baseGp,
         unitCp,
@@ -30813,7 +30820,7 @@ async function buildMerchantTradeDialogContent(merchant, actor, merchantActor, s
           return {
             itemId: String(item?.id ?? ""),
             itemName: String(item?.name ?? "Item"),
-            img: String(item?.img ?? "icons/svg/item-bag.svg"),
+            img: normalizeFoundryAssetImagePath(item?.img, { fallback: "icons/svg/item-bag.svg" }),
             itemType: String(item?.type ?? "")
               .trim()
               .toLowerCase(),
@@ -31256,9 +31263,11 @@ function bindMerchantTradeDialogBarterButton(html) {
         ui.notifications?.warn("No active GM to resolve barter.");
         return;
       }
+      const gmUserId = getPrimaryActiveGmUserId();
       game.socket.emit(SOCKET_CHANNEL, {
         type: "ops:merchant-barter-request",
         userId: game.user.id,
+        gmUserId,
         merchantId: meta.merchantId,
         actorId: meta.actorId,
         settlement: meta.settlement
@@ -31315,6 +31324,14 @@ function syncMerchantBarterStatusForOpenDialogs(payload = {}) {
 
   if (ok) ui.notifications?.info(summary || "Barter resolved by GM.");
   else ui.notifications?.warn(summary || "GM could not resolve barter.");
+}
+
+function getPrimaryActiveGmUserId() {
+  const users = game.users?.contents ?? game.users ?? [];
+  const activeGms = Array.from(users)
+    .filter((user) => Boolean(user?.active) && Boolean(user?.isGM))
+    .sort((left, right) => String(left?.id ?? "").localeCompare(String(right?.id ?? "")));
+  return String(activeGms[0]?.id ?? "").trim();
 }
 
 async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInput = undefined) {
@@ -31388,9 +31405,15 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
               ui.notifications?.info(`Trade complete: ${outcome.actorName} and ${outcome.merchantName}.`);
               return;
             }
+            if (!hasActiveGmClient()) {
+              ui.notifications?.warn("No active GM client is available to complete the trade.");
+              return;
+            }
+            const gmUserId = getPrimaryActiveGmUserId();
             game.socket.emit(SOCKET_CHANNEL, {
               type: "ops:merchant-trade",
               userId: game.user.id,
+              gmUserId,
               merchantId: trade.merchantId,
               actorId: trade.actorId,
               settlement: trade.settlement,
@@ -31398,7 +31421,7 @@ async function openMerchantShopById(merchantIdInput, actorIdInput, settlementInp
               sellItems: trade.sellItems
             });
             clearMerchantBarterResolutionEntryByKey(barterKey);
-            ui.notifications?.info("Merchant trade request sent to GM.");
+            ui.notifications?.info("Completing merchant trade...");
           }
         },
         cancel: { label: "Cancel" }
@@ -40025,14 +40048,17 @@ function triggerGatherResourceButtonAnimation(element) {
 
 async function runGatherResourceCheck() {
   if (!game.user?.isGM) {
-    return promptPlayerGatherRequestDialog();
+    ui.notifications?.warn("Wait for the GM to call for gather requests.");
+    return { ok: false, blocked: true, reason: "GM must initiate gather requests." };
   }
   emitModuleSocket(
     {
       type: "players:openGatherResources",
       userId: "*",
+      gmUserId: String(game.user?.id ?? "").trim(),
       options: {
         promptedBy: String(game.user?.name ?? "GM").trim() || "GM",
+        promptedByUserId: String(game.user?.id ?? "").trim(),
         promptedAt: Date.now()
       }
     },
@@ -40093,6 +40119,15 @@ async function submitQuickPlayerGatherRequest(options = {}) {
 }
 
 async function promptPlayerGatherRequestDialog(options = {}) {
+  const promptedByUserId = String(options?.promptedByUserId ?? "").trim();
+  if (
+    !game.user?.isGM &&
+    (!Number.isFinite(Number(options?.promptedAt ?? NaN)) || !isActiveGmUserId(promptedByUserId))
+  ) {
+    ui.notifications?.warn("Wait for the GM to call for gather requests.");
+    return { ok: false, blocked: true, reason: "GM must initiate gather requests." };
+  }
+
   const actors = getGatherSelectableActorsForUser(game.user);
   if (actors.length <= 0) {
     ui.notifications?.warn("You do not have an eligible character for gather requests.");
@@ -40154,6 +40189,7 @@ async function promptPlayerGatherRequestDialog(options = {}) {
       </select>
     </div>
     <p class="notes">This sends a request to the GM. The GM chooses the environment, hours, terrain, and modifiers, then sends you the final Wisdom (Survival) roll request.</p>
+    <p class="notes">Gather During Travel only marks your intent. During GM resolution, reducing pace records a party travel slowdown; falling behind can trigger the configured Constitution save.</p>
   `;
 
   const dialog = new Dialog({
@@ -42152,7 +42188,7 @@ function buildLootPreviewItemFromDocument(documentRef, options = {}) {
     id: foundry.utils.randomID(),
     uuid,
     name: String(data?.name ?? "Item").trim() || "Item",
-    img: String(data?.img ?? "icons/svg/item-bag.svg").trim() || "icons/svg/item-bag.svg",
+    img: normalizeFoundryAssetImagePath(data?.img, { fallback: "icons/svg/item-bag.svg" }),
     itemType: String(data?.type ?? "").trim(),
     rarity,
     sourceClass,

@@ -275,6 +275,7 @@
         <div id="po-ops-resources" class="po-gm-section">
           <div class="po-section-head-row">
             <div class="po-section-title">Resources</div>
+            {{#if @root.isGM}}
             <button
               type="button"
               class="po-btn po-btn-sm po-gather-launch-btn"
@@ -286,6 +287,7 @@
                 <span class="po-gather-launch-btn-sub">Player Requests</span>
               </span>
             </button>
+            {{/if}}
           </div>
           <div class="po-hint">Track supply forecasts, shared pools, and target bindings here. Call Gather prompts players to submit PC-owned gathering requests for GM resolution.</div>
           <div class="po-info-strip">
@@ -966,6 +968,7 @@
                 <span class="po-pill">Water {{operations.resources.summary.pendingGatherWater}}</span>
               </div>
               <div class="po-op-action-row">
+                {{#if @root.isGM}}
                 <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Call players to choose a PC-owned character for gathering">
                   <i class="fa-solid fa-seedling" aria-hidden="true"></i>
                   <span class="po-gather-launch-btn-copy">
@@ -973,6 +976,7 @@
                     <span class="po-gather-launch-btn-sub">Player Requests</span>
                   </span>
                 </button>
+                {{/if}}
               </div>
               <div class="po-op-divider"></div>
               <div class="po-gather-history-panel po-gather-queue-panel">

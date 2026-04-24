@@ -41,6 +41,24 @@ assert.match(
 );
 
 assert.match(
+  moduleSource,
+  /async function runGatherResourceCheck\(\) \{[\s\S]*if \(!game\.user\?\.isGM\) \{[\s\S]*Wait for the GM to call for gather requests\.[\s\S]*GM must initiate gather requests\./,
+  "Players should not be able to self-initiate the gather request dialog from the operations page."
+);
+
+assert.match(
+  moduleSource,
+  /async function promptPlayerGatherRequestDialog\(options = \{\}\) \{[\s\S]*const promptedByUserId = String\(options\?\.promptedByUserId \?\? ""\)\.trim\(\);[\s\S]*!isActiveGmUserId\(promptedByUserId\)[\s\S]*GM must initiate gather requests\./,
+  "Player gather request dialogs should require a broadcast prompt from an active GM."
+);
+
+assert.match(
+  moduleSource,
+  /Gather During Travel only marks your intent\.[\s\S]*reducing pace records a party travel slowdown[\s\S]*falling behind can trigger the configured Constitution save\./,
+  "Player gather prompt should explain what the during-travel option affects."
+);
+
+assert.match(
   gmDowntimeTemplate,
   /\{\{#if downtime\.submit\.showCraftingFields\}\}[\s\S]*Crafting Catalog[\s\S]*\{\{\/if\}\}/,
   "GM downtime template should only show the crafting catalog while crafting is selected."
@@ -122,6 +140,12 @@ assert.match(
   restWatchTemplate,
   /Pending Requests[\s\S]*Gather History/,
   "Gather panel should render the compact queue-first section order: pending requests, then history."
+);
+
+assert.match(
+  restWatchTemplate,
+  /\{\{#if @root\.isGM\}\}[\s\S]*data-action="gather-resource-check"[\s\S]*\{\{\/if\}\}/,
+  "Call Gather buttons should only render for the GM."
 );
 
 assert.match(

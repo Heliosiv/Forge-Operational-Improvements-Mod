@@ -64,15 +64,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   });
 
-  assert.deepEqual(callOrder, [
-    "api",
-    "features",
-    "preload",
-    "settings",
-    "data",
-    "sync-audio",
-    "feature-settings"
-  ]);
+  assert.deepEqual(callOrder, ["api", "features", "preload", "settings", "data", "sync-audio", "feature-settings"]);
   assert.equal(typeof onSettingsChanged, "function");
   assert.equal(dataSettingsConfig?.moduleId, "party-operations");
   assert.equal(featureSettingsConfig?.moduleId, "party-operations");
@@ -80,9 +72,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   onSettingsChanged("lootConfig");
   onSettingsChanged("debugEnabled");
 
-  assert.deepEqual(refreshes, [
-    { scopes: ["scope:lootConfig"] }
-  ]);
+  assert.deepEqual(refreshes, [{ scopes: ["scope:lootConfig"] }]);
   assert.ok(perfEvents.some((entry) => entry.metricName === "settings.changed" && entry.meta?.key === "lootConfig"));
 }
 
@@ -124,15 +114,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   });
 
-  assert.deepEqual(callOrder, [
-    "api",
-    "features",
-    "preload",
-    "settings",
-    "data",
-    "sync-audio",
-    "feature-settings"
-  ]);
+  assert.deepEqual(callOrder, ["api", "features", "preload", "settings", "data", "sync-audio", "feature-settings"]);
   assert.ok(warnings.some((entry) => entry.includes("failed to register feature modules")));
 }
 
@@ -247,9 +229,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   assert.deepEqual(calls.forceLauncherRecovery, ["ready-self-heal"]);
   assert.equal(calls.notifyDailyInjuryReminders, 1);
   assert.equal(calls.syncManagedAudio, 1);
-  assert.deepEqual(managedAudioSyncCalls, [
-    { reason: "ready", allowAutostart: true }
-  ]);
+  assert.deepEqual(managedAudioSyncCalls, [{ reason: "ready", allowAutostart: true }]);
   assert.deepEqual(calls.schedulePendingSopNoteSync, ["ready"]);
   assert.deepEqual(calls.scheduleIntegrationSync, []);
   assert.equal(calls.autoRefreshTick, 0);
@@ -264,7 +244,9 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   ]);
   assert.equal(calls.registerHooks, 1);
-  assert.ok(perfEvents.some((entry) => entry.metricName === "launcher.ensure" && entry.meta?.reason === "ready-initial"));
+  assert.ok(
+    perfEvents.some((entry) => entry.metricName === "launcher.ensure" && entry.meta?.reason === "ready-initial")
+  );
   assert.ok(perfEvents.some((entry) => entry.metricName === "audio.managed-sync"));
 }
 
@@ -334,9 +316,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 
   assert.deepEqual(calls.schedulePendingSopNoteSync, []);
   assert.deepEqual(calls.scheduleIntegrationSync, ["ready"]);
-  assert.deepEqual(managedAudioSyncCalls, [
-    { reason: "ready", allowAutostart: true }
-  ]);
+  assert.deepEqual(managedAudioSyncCalls, [{ reason: "ready", allowAutostart: true }]);
   assert.equal(calls.autoRefreshTick, 1);
   assert.deepEqual(calls.queueAudioWarmup, [{ delayMs: 0 }]);
   assert.equal(calls.ensureJournalTree, 1);
@@ -348,6 +328,12 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   const gmGame = {
     user: {
       isGM: true
+    },
+    users: {
+      contents: [
+        { id: "gm-1", isGM: true, active: true },
+        { id: "player-1", isGM: false, active: true }
+      ]
     }
   };
   const gatherRequests = [];
@@ -385,7 +371,11 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   });
 
   await handler({ type: "ops:gather-request", requestId: "g-1" });
-  await handler({ type: "players:openGatherResources", options: { promptedBy: "GM" } });
+  await handler({
+    type: "players:openGatherResources",
+    gmUserId: "gm-1",
+    options: { promptedBy: "GM", promptedByUserId: "gm-1", promptedAt: 1 }
+  });
   await handler({ type: "ops:gather-yield-request", requestId: "g-2" });
   await handler({ type: "ops:gather-yield-response", requestId: "g-3" });
   const routedResult = await handler({ type: "refresh" });
@@ -473,6 +463,12 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     game: {
       user: {
         isGM: false
+      },
+      users: {
+        contents: [
+          { id: "gm-1", isGM: true, active: true },
+          { id: "player-1", isGM: false, active: true }
+        ]
       }
     },
     applyPlayerGatherRequest() {
@@ -493,10 +489,19 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   });
 
-  await nonGmHandler({ type: "players:openGatherResources", options: { promptedBy: "GM" } });
+  await nonGmHandler({
+    type: "players:openGatherResources",
+    gmUserId: "gm-1",
+    options: { promptedBy: "GM", promptedByUserId: "gm-1", promptedAt: 1 }
+  });
   await nonGmHandler({ type: "ops:gather-request" });
   await nonGmHandler({ type: "ops:gather-yield-response", requestId: "ignored" });
-  assert.deepEqual(playerGatherPrompts, [{ promptedBy: "GM" }]);
+  await nonGmHandler({
+    type: "players:openGatherResources",
+    gmUserId: "player-1",
+    options: { promptedBy: "Player", promptedByUserId: "player-1", promptedAt: 1 }
+  });
+  assert.deepEqual(playerGatherPrompts, [{ promptedBy: "GM", promptedByUserId: "gm-1", promptedAt: 1 }]);
 }
 
 process.stdout.write("bootstrap lifecycle validation passed\n");

@@ -22,4 +22,43 @@ assert.deepEqual(applied, {
   requester: { id: "player-1" }
 });
 
+applied = "unchanged";
+await routePartyOperationsSocketMessage(
+  { type: "ops:merchant-trade", userId: "player-1", gmUserId: "gm-2", merchantId: "merchant-1", actorId: "actor-1" },
+  {
+    game: {
+      user: { id: "gm-1", isGM: true }
+    },
+    getSocketRequester: () => ({ id: "player-1" }),
+    applyPlayerMerchantTradeRequest: async () => {
+      applied = "wrong-gm";
+    }
+  }
+);
+assert.equal(applied, "unchanged");
+
+const notifications = [];
+const refreshes = [];
+globalThis.ui = {
+  notifications: {
+    info: (message) => notifications.push({ type: "info", message }),
+    warn: (message) => notifications.push({ type: "warn", message })
+  }
+};
+await routePartyOperationsSocketMessage(
+  { type: "ops:merchant-trade-result", userId: "player-1", ok: true, summary: "Trade complete." },
+  {
+    game: {
+      user: { id: "player-1", isGM: false }
+    },
+    normalizeRefreshScopeList: (scopes) => scopes,
+    refreshOpenApps: (payload) => refreshes.push(payload),
+    schedulePendingSopNoteSync: () => {}
+  }
+);
+assert.deepEqual(notifications, [{ type: "info", message: "Trade complete." }]);
+await new Promise((resolve) => setTimeout(resolve, 100));
+assert.deepEqual(refreshes, [{ scopes: ["operations"] }]);
+delete globalThis.ui;
+
 process.stdout.write("socket routes validation passed\n");

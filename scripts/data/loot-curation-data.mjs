@@ -674,7 +674,8 @@ export const NEW_TREASURE = [
     ],
     chatSummary: "An embroidered silk banner made for solemn ceremony and prestigious display.",
     unidentifiedSummary: "The cloth is too fine and too carefully worked to belong to routine camp gear.",
-    unidentifiedHint: "Its value depends on fabric condition, embroidery detail, and whether the symbolism is still wanted."
+    unidentifiedHint:
+      "Its value depends on fabric condition, embroidery detail, and whether the symbolism is still wanted."
   },
   {
     kind: "art",
@@ -691,7 +692,8 @@ export const NEW_TREASURE = [
     ],
     chatSummary: "A three-panel celestial chart blending navigational learning with expensive display.",
     unidentifiedSummary: "The work looks learned, decorative, and too elaborate for a mere teaching aid.",
-    unidentifiedHint: "Its worth depends on the painting, the frame condition, and whether the astronomical details still mean something to a buyer."
+    unidentifiedHint:
+      "Its worth depends on the painting, the frame condition, and whether the astronomical details still mean something to a buyer."
   }
 ];
 
@@ -708,7 +710,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     merchantCategories: ["art", "luxury", "treasure", "loot"],
     variableTreasureKind: "art"
   },
-  "J9jF3TW3E5nMyWPb": {
+  J9jF3TW3E5nMyWPb: {
     img: "icons/commodities/materials/powder-red-green-yellow.webp",
     descriptionParagraphs: [
       "A pouch of mixed mineral scraps, dried petals, and powdered reagents swept together after more careful alchemical work.",
@@ -720,7 +722,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     merchantCategories: ["arcana", "consumable", "ingredient", "tradegood"],
     lootType: "loot.consumable"
   },
-  "KTvBW6HNAMAoqEN7": {
+  KTvBW6HNAMAoqEN7: {
     img: "icons/equipment/shoulder/shoulderpad-fur-leather.webp",
     descriptionParagraphs: [
       "A cleaned deer hide trimmed for trade, thick enough for leatherworking but still showing the natural grain and color of the original coat.",
@@ -731,7 +733,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     unidentifiedHint: "Its value depends on condition, softness, and how much cutting remains.",
     merchantCategories: ["leather", "salvage", "tradegood", "loot"]
   },
-  "KfjmEEE55O83hQdy": {
+  KfjmEEE55O83hQdy: {
     img: "icons/equipment/wrist/bracer-studded-leather-steel.webp",
     descriptionParagraphs: [
       "Soft leather gloves stitched with almost invisible silver thread and reinforced at the fingertips for delicate work.",
@@ -743,7 +745,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     merchantCategories: ["luxury", "magic", "tool"],
     lootType: "loot.tool"
   },
-  "TniiNAWSasgVGZ5V": {
+  TniiNAWSasgVGZ5V: {
     img: "icons/commodities/treasure/incense-burner-silver.webp",
     descriptionParagraphs: [
       "A wrapped bundle of temple-grade incense blended from resin, cedar oil, and crushed flower petals.",
@@ -755,7 +757,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     merchantCategories: ["consumable", "ingredient", "tradegood"],
     lootType: "loot.consumable"
   },
-  "Nlkp0wLiYvwQD0Q9": {
+  Nlkp0wLiYvwQD0Q9: {
     descriptionParagraphs: [
       "A serviceable improvised weapon built from whatever sturdy length of wood, metal, or stubborn desperation was available.",
       "It will never earn a ballad for elegance, but in the right hands it still settles arguments with convincing speed."
@@ -764,7 +766,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     unidentifiedSummary: "The piece looks brutally practical rather than well crafted.",
     unidentifiedHint: "Its worth lies in immediate utility and the nerve of the one swinging it."
   },
-  "mcmslMRPq0C6m4ze": {
+  mcmslMRPq0C6m4ze: {
     img: "icons/commodities/treasure/token-runed-sun-gold.webp",
     descriptionParagraphs: [
       "A lacquer-red token stamped with an old sigil and backed in thin gilt metal.",
@@ -775,7 +777,7 @@ export const CURATED_ITEM_UPDATES_BY_ID = {
     unidentifiedHint: "Collectors pay more when they can tie the mark to a guild, regiment, or noble house.",
     merchantCategories: ["loot", "luxury", "token", "tradegood"]
   },
-  "Y0RmODqf7ZmekBPM": {
+  Y0RmODqf7ZmekBPM: {
     descriptionParagraphs: [
       "A brittle bundle of ritual herbs long past their freshest hour but still potent enough to matter in careful hands.",
       "Old shrines, hedge witches, and frugal alchemists all know that faded ingredients are not always useless ingredients."
@@ -798,7 +800,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its worth is highest in the hands of a buyer who can actually work adamantine.",
     merchantCategories: ["crafting", "luxury", "smithing", "tradegood"]
   },
-  "agate": {
+  agate: {
     descriptionParagraphs: [
       "A polished agate with layered bands of smoke grey, rust, and cream running cleanly across the stone.",
       "Lapidaries buy stones like this in batches for seals, beads, and modest jewelry that still looks deliberate."
@@ -809,7 +811,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "alexandrite": {
+  alexandrite: {
     descriptionParagraphs: [
       "A refined alexandrite whose color shifts from moss green to muted wine depending on the light.",
       "Even a small stone commands attention because buyers know the trick is in the gem itself, not the setting around it."
@@ -820,7 +822,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "amber": {
+  amber: {
     descriptionParagraphs: [
       "A warm honey-colored amber stone clear enough to show trapped flecks and tiny imperfections within.",
       "Pieces like this sell well to charm-makers, carvers, and anyone who wants a jewel that feels older than cut crystal."
@@ -843,7 +845,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "amethyst": {
+  amethyst: {
     descriptionParagraphs: [
       "A purple amethyst polished to a clear violet glow with darker depths near the center.",
       "It is common enough to move easily yet fine enough to appear in respectable rings, pendants, and ceremonial work."
@@ -865,7 +867,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Collectors care about the mint, the ruler, and the lie told about both.",
     merchantCategories: ["loot", "luxury", "tradegood", "treasure"]
   },
-  "aquamarine": {
+  aquamarine: {
     descriptionParagraphs: [
       "A sea-blue aquamarine with enough clarity to resemble still water trapped in crystal.",
       "Sailors, nobles, and romantics all find different excuses to overpay for stones this calm and clean."
@@ -876,7 +878,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "azurite": {
+  azurite: {
     descriptionParagraphs: [
       "A deep blue azurite stone polished enough to bring out its dark midnight swirls.",
       "Though softer than some gems, it is loved by carvers and collectors who want color bold enough to read across a room."
@@ -928,7 +930,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The feather looks deliberately kept rather than randomly dropped.",
     unidentifiedHint: "Its value is small, but niche buyers tend to know why they want it."
   },
-  "diamond": {
+  diamond: {
     descriptionParagraphs: [
       "A clear diamond cut for brilliance rather than subtlety, throwing hard white light from every face.",
       "This is the sort of stone that gets mounted where everyone can see it and whispered about after the room has emptied."
@@ -950,7 +952,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["arcana", "gem", "ingredient", "luxury", "tradegood"],
     variableTreasureKind: "gem"
   },
-  "emerald": {
+  emerald: {
     descriptionParagraphs: [
       "A rich green emerald with small internal threads that prove it is natural and expensive rather than merely pretty.",
       "The stone carries the sort of authority that makes lesser nobles buy it and greater nobles pretend not to care."
@@ -961,7 +963,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "ale": {
+  ale: {
     descriptionParagraphs: [
       "A sturdy serving of ale with enough malt and body to count as morale as well as drink.",
       "It is tavern currency in liquid form, useful for toasts, truces, and getting the table to loosen its shoulders."
@@ -970,7 +972,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The drink looks simple, but honestly made.",
     unidentifiedHint: "Its value is ordinary, though timing can make even ale feel luxurious."
   },
-  "ivory": {
+  ivory: {
     descriptionParagraphs: [
       "A smooth section of ivory pale as old parchment and dense enough for carving, inlay, or ceremonial handles.",
       "Merchants move it as a luxury material because crafters can turn even a modest piece into something princely."
@@ -980,7 +982,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Buyers will judge it by size, color, and how free it is from cracks.",
     merchantCategories: ["art", "loot", "luxury", "tradegood"]
   },
-  "incense": {
+  incense: {
     descriptionParagraphs: [
       "A wrapped bundle of incense blended from resin, cedar oil, and crushed flower petals for slow, fragrant burning.",
       "Even when it is not temple-grade, stock like this moves easily through shrines, noble households, and travelers who want their camp to smell better than their road."
@@ -1013,7 +1015,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "ruby": {
+  ruby: {
     descriptionParagraphs: [
       "A deep red ruby cut to show dense color before raw size.",
       "Stones like this sell on intensity and confidence, the same traits that make them popular in regalia, heirlooms, and vanity gifts."
@@ -1024,7 +1026,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "sapphire": {
+  sapphire: {
     descriptionParagraphs: [
       "A blue sapphire with a cool, disciplined brilliance and a cut that favors clarity over flash.",
       "It carries the polished authority of royal jewelry, temple offerings, and private fortunes meant to look respectable."
@@ -1071,7 +1073,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Both the stone and the band matter when judging its worth.",
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem",
-    weight: 1.20
+    weight: 1.2
   },
   "simple-copper-circlet": {
     img: "icons/equipment/head/circlet-copper-simple.webp",
@@ -1097,7 +1099,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on bronze weight and the precision of the work.",
     merchantCategories: ["art", "jewelry", "loot", "luxury", "treasure"],
     variableTreasureKind: "art",
-    weight: 0.90
+    weight: 0.9
   },
   "pewter-brooch": {
     img: "icons/equipment/accessories/brooch-silver-ornate.webp",
@@ -1175,7 +1177,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its worth rises sharply for any buyer who actually casts spells.",
     merchantCategories: ["arcana", "ingredient", "loot", "tradegood"]
   },
-  "shield": {
+  shield: {
     descriptionParagraphs: [
       "A sturdy shield built to catch blows, ward arrows, and advertise that its bearer intends to still be standing afterward.",
       "Even plain shields carry a kind of blunt dignity, because they exist to keep courage from becoming martyrdom."
@@ -1196,7 +1198,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["art", "loot", "luxury", "treasure"],
     variableTreasureKind: "art"
   },
-  "topaz": {
+  topaz: {
     descriptionParagraphs: [
       "A golden topaz with steady color and a disciplined cut that throws warm light rather than wild sparkle.",
       "Jewelers like stones like this because they lend nobility to a piece without overwhelming the metalwork around them."
@@ -1226,7 +1228,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ration smells practical and durable more than elegant.",
     unidentifiedHint: "Its value is ordinary, but dependable food always sells."
   },
-  "fur": {
+  fur: {
     descriptionParagraphs: [
       "A thick cut of trimmed fur with enough softness to line cloaks, gloves, or winter boots.",
       "Trappers sell pieces like this by touch as much as by size, because no one wants cold luxury."
@@ -1245,7 +1247,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The steam alone promises a better hour than the one before it.",
     unidentifiedHint: "Its value is small, but comfort on demand always has buyers."
   },
-  "junk": {
+  junk: {
     descriptionParagraphs: [
       "A sack of bent metal, cracked handles, chipped ornaments, and other odds and ends too useful to throw away outright.",
       "To most people it is clutter; to tinkerers, scavengers, and desperate smiths it is tomorrow's spare parts."
@@ -1264,7 +1266,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The presentation alone announces expense and intention.",
     unidentifiedHint: "Its value is momentary, but the impression it leaves can outlast the plate."
   },
-  "twigs": {
+  twigs: {
     descriptionParagraphs: [
       "A tied bundle of dry twigs chosen for tinder, kindling, or the sort of ritual work that needs very small fuel.",
       "Humble supplies like this never look impressive, yet camps fail faster without them than without grander things."
@@ -1282,7 +1284,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The food looks fresher and more carefully prepared than common rations.",
     unidentifiedHint: "Its price is modest, but quality cooking rarely goes unappreciated."
   },
-  "abacus": {
+  abacus: {
     descriptionParagraphs: [
       "A hardwood counting frame strung with smooth beads that click softly as tallies move from row to row.",
       "Merchants, quartermasters, and tax collectors trust tools like this when memory alone would cost them money."
@@ -1291,7 +1293,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The frame looks practical, durable, and made for patient hands.",
     unidentifiedHint: "Its value lies in steady workmanship and the habits of people who keep books."
   },
-  "bedroll": {
+  bedroll: {
     descriptionParagraphs: [
       "A tightly rolled bedroll of canvas and rough wool, built to throw between a traveler and bad ground.",
       "It is plain camp gear, but anyone who has slept cold and wet knows exactly how valuable plain camp gear can be."
@@ -1300,7 +1302,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The bundle looks humble, but carefully kept and field ready.",
     unidentifiedHint: "Its worth is ordinary, though comfort on the road is never worthless."
   },
-  "bell": {
+  bell: {
     descriptionParagraphs: [
       "A small brass handbell with a clean, bright note that carries farther than its size suggests.",
       "Such bells serve for alarms, ritual timing, and the sort of polite summons that sounds better than shouting."
@@ -1321,7 +1323,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "blanket": {
+  blanket: {
     descriptionParagraphs: [
       "A folded wool blanket thick enough to cut wind, soften stone, or keep a watch rotation from turning miserable.",
       "It is the kind of simple supply every caravan owns in bulk and every survivor learns not to mock."
@@ -1339,7 +1341,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The pages look studied rather than merely decorative.",
     unidentifiedHint: "Its value depends on subject matter, condition, and who needs the information."
   },
-  "censer": {
+  censer: {
     img: "icons/commodities/treasure/incense-burner-silver.webp",
     descriptionParagraphs: [
       "A hanging censer of worked metal pierced with vents to spill scented smoke in steady curls.",
@@ -1349,7 +1351,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The vessel looks ceremonial long before any coals are lit.",
     unidentifiedHint: "Its value rests in metalwork, balance, and how gracefully it carries smoke."
   },
-  "chicken": {
+  chicken: {
     descriptionParagraphs: [
       "A live chicken trussed for travel, noisy enough to remind everyone that provisions are rarely dignified.",
       "It can become eggs, supper, barter, or tomorrow's worse camp argument depending on how the day goes."
@@ -1358,7 +1360,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The bird is ordinary, lively, and impossible to ignore.",
     unidentifiedHint: "Its value is modest, though practical buyers know better than to laugh at food."
   },
-  "crowbar": {
+  crowbar: {
     descriptionParagraphs: [
       "A heavy iron crowbar with one flattened end and enough leverage to persuade doors, lids, and stubborn stones.",
       "Burglars, laborers, and dungeon delvers all value it for the same simple reason: some things only open after an argument."
@@ -1367,7 +1369,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The tool looks brutish, durable, and very hard on hinges.",
     unidentifiedHint: "Its worth is modest, but its usefulness is immediate anywhere something is stuck."
   },
-  "flour": {
+  flour: {
     descriptionParagraphs: [
       "A sack of milled flour pale with starch and fine enough to dust everything nearby if handled carelessly.",
       "Bakers, cooks, and siege planners all know humble staples like this keep people calmer than speeches do."
@@ -1421,7 +1423,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The tool looks built for repeated hard impacts, not display.",
     unidentifiedHint: "Its price is plain, though buyers will notice the temper of the head and haft."
   },
-  "paper": {
+  paper: {
     descriptionParagraphs: [
       "A clean sheet of paper cut for letters, receipts, maps, or the first draft of a regrettable idea.",
       "Cheap paper vanishes by the stack anywhere people keep records, schemes, or sentiments."
@@ -1430,7 +1432,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The sheet is plain, useful, and easy to ruin with one mistake.",
     unidentifiedHint: "Its price is slight, but it sells anywhere people write."
   },
-  "parchment": {
+  parchment: {
     descriptionParagraphs: [
       "A trimmed sheet of cured parchment tougher than paper and better suited to records meant to survive handling.",
       "Scribes favor it for contracts, maps, and anything important enough to outlast damp weather and bad storage."
@@ -1439,7 +1441,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The sheet feels sturdier and more deliberate than common paper.",
     unidentifiedHint: "Its value is modest, but durability always has buyers among scribes."
   },
-  "perfume": {
+  perfume: {
     descriptionParagraphs: [
       "A stoppered glass vial of concentrated perfume blended from flowers, oils, and whatever memory someone wanted to bottle.",
       "It can dress a noble, disguise a room, or announce a purse with better taste than sense."
@@ -1448,7 +1450,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The vial looks delicate, expensive, and very intentional.",
     unidentifiedHint: "Its value rises with the blend, the bottle, and the buyer's appetite for luxury."
   },
-  "pole": {
+  pole: {
     descriptionParagraphs: [
       "A ten-foot pole of shaved hardwood kept for probing floors, shifting debris, and distrusting everything ahead.",
       "Veterans of ruins and old keeps know that caution often looks exactly like carrying one of these."
@@ -1495,7 +1497,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ring looks more official than decorative at first glance.",
     unidentifiedHint: "Its price depends on the metal, the engraving, and whose mark it bears."
   },
-  "sledgehammer": {
+  sledgehammer: {
     descriptionParagraphs: [
       "A long-handled sledgehammer with a heavy steel head made for demolition, stakes, and arguments with stone.",
       "It is slow, exhausting, and exactly the right answer whenever finesse has already failed."
@@ -1513,7 +1515,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The blade looks domestic and precise rather than martial.",
     unidentifiedHint: "Its worth is modest, but fine fit and finish still matter to careful buyers."
   },
-  "soap": {
+  soap: {
     descriptionParagraphs: [
       "A hard cake of travel soap wrapped against damp, grit, and the indignities of a shared pack.",
       "It is humble gear, but long roads teach people to pay for anything that keeps camp filth from becoming camp misery."
@@ -1522,7 +1524,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The block is plain, practical, and better appreciated after a week on the road.",
     unidentifiedHint: "Its value is small, though it sells anywhere people expect to be near one another."
   },
-  "spyglass": {
+  spyglass: {
     descriptionParagraphs: [
       "A brass spyglass that extends in nested tubes to pull distant sails, towers, and trouble a little closer.",
       "Captains, lookouts, and hunters pay well for the few extra moments of certainty it can buy."
@@ -1540,7 +1542,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The disk is plain, reflective, and built to endure more than vanity.",
     unidentifiedHint: "Its worth is practical, though buyers will inspect the polish closely."
   },
-  "taurine": {
+  taurine: {
     img: "icons/commodities/gems/gem-rough-cushion-purple-pink.webp",
     descriptionParagraphs: [
       "A mauve taurine crystal with smoky inclusions that seem to drift like storm clouds inside the stone.",
@@ -1552,7 +1554,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["gem", "loot", "luxury", "treasure"],
     variableTreasureKind: "gem"
   },
-  "trinket": {
+  trinket: {
     descriptionParagraphs: [
       "A curious personal oddment: the sort of token, charm, keepsake, or pocket nonsense that becomes important once a story attaches to it.",
       "By itself it is worth little, but the right superstition, memory, or lie can make it priceless to exactly one fool."
@@ -1577,9 +1579,10 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     ],
     chatSummary: "A small offering box built for temple alms, donations, and quiet accounting.",
     unidentifiedSummary: "The box looks plain, handled often, and made to collect small coins honestly or otherwise.",
-    unidentifiedHint: "Its price is modest, though buyers may care whether it comes with a key or recognizable religious marks."
+    unidentifiedHint:
+      "Its price is modest, though buyers may care whether it comes with a key or recognizable religious marks."
   },
-  "barrel": {
+  barrel: {
     descriptionParagraphs: [
       "A coopered wooden barrel banded in iron and built to survive carts, cellars, docks, and bad weather.",
       "Useful folk value barrels because they hold more than they look like they should and stack trouble neatly into transportable form."
@@ -1588,7 +1591,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The staves and hoops look serviceable rather than decorative.",
     unidentifiedHint: "Its worth is ordinary, but buyers will notice leaks, splits, and the quality of the hooping."
   },
-  "basket": {
+  basket: {
     descriptionParagraphs: [
       "A woven basket sturdy enough for produce, laundry, offerings, or whatever else needs carrying without much ceremony.",
       "Cheap baskets rarely survive hard travel, so intact weave and handle strength matter more than the humble materials suggest."
@@ -1606,7 +1609,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The material looks worked and aromatic rather than like an ordinary stone or ingot.",
     unidentifiedHint: "Its value is small, but buyers will judge the scent, freshness, and how cleanly it burns."
   },
-  "bucket": {
+  bucket: {
     descriptionParagraphs: [
       "A plain utility bucket of wood or metal meant for water, grain, mortar, ashes, or whatever labor requires next.",
       "No one brags about owning one, but camps, wells, and workshops turn awkward quickly the moment it goes missing."
@@ -1615,7 +1618,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "It looks utilitarian, replaceable, and more important than anyone admits.",
     unidentifiedHint: "Its worth is slight, though buyers will care whether the handle and base still hold up."
   },
-  "chest": {
+  chest: {
     descriptionParagraphs: [
       "A reinforced travel chest built to hold clothes, ledgers, coin sacks, or any possessions important enough to shut behind a lid.",
       "A sound chest is half storage and half promise: what is inside matters, and someone expected it to survive the road."
@@ -1644,7 +1647,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["container", "loot", "storage", "travel"],
     lootType: "loot.container"
   },
-  "flask": {
+  flask: {
     descriptionParagraphs: [
       "A small travel flask sized for a pint of liquid and easy to tuck into a satchel, belt pouch, or kitchen shelf.",
       "Cheap though it is, a sound flask saves more spoiled drink and wasted oil than people remember when pricing it."
@@ -1671,7 +1674,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The pot looks durable, blackened, and built for fire rather than display.",
     unidentifiedHint: "Its price is ordinary, but a buyer will notice warping, pitting, and handle strength."
   },
-  "jug": {
+  jug: {
     descriptionParagraphs: [
       "A broad-bellied jug made for water, ale, lamp oil, or whatever else a household needs to carry in quantity.",
       "It is the sort of ordinary vessel that becomes essential the moment a camp, kitchen, or workroom runs short of containers."
@@ -1703,7 +1706,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["container", "loot", "storage"],
     lootType: "loot.container"
   },
-  "pitcher": {
+  pitcher: {
     descriptionParagraphs: [
       "A common pitcher sized for serving water, wine, broth, or any other liquid that needs to move from cask to cup.",
       "It is a kitchen-table object, but even humble pottery earns its keep whenever a camp or household starts sharing meals."
@@ -1712,7 +1715,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The vessel is ordinary, domestic, and clearly meant for repeated use.",
     unidentifiedHint: "Its price is slight, though a buyer will still check the lip, base, and handle."
   },
-  "quiver": {
+  quiver: {
     descriptionParagraphs: [
       "A leather quiver fitted to carry arrows with enough structure to keep shafts from tangling and feathers from collapsing.",
       "Archers learn quickly that good shooting begins well before the bowstring, with gear that keeps ammunition orderly and dry."
@@ -1721,7 +1724,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The leatherwork is practical and specialized rather than ornamental.",
     unidentifiedHint: "Its worth is modest, though bowyers and hunters will notice stitch quality and strap wear."
   },
-  "sack": {
+  sack: {
     descriptionParagraphs: [
       "A coarse sack for grain, salvage, laundry, trail rations, or any other burden too untidy for a chest.",
       "It is cheap because it is replaceable, but every expedition eventually discovers how many problems can be solved by one more sack."
@@ -1742,7 +1745,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     merchantCategories: ["container", "loot", "storage"],
     lootType: "loot.container"
   },
-  "saddlebags": {
+  saddlebags: {
     descriptionParagraphs: [
       "A paired set of leather saddlebags meant to ride a mount's flanks without shifting too badly over rough ground.",
       "They are common travel gear, but anyone living off a horse learns quickly that good storage is the difference between prepared and miserable."
@@ -1751,7 +1754,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The leatherwork looks built for travel more than display.",
     unidentifiedHint: "Their value depends on the stitching, straps, and whether the pair still rides evenly."
   },
-  "spellbook": {
+  spellbook: {
     descriptionParagraphs: [
       "A leather-bound spellbook filled with blank vellum and the expectation that expensive knowledge will eventually live there.",
       "Even empty, it is a specialist's tool: part notebook, part laboratory ledger, and part invitation to sink gold into ink forever."
@@ -1769,7 +1772,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The cord is humble, flexible, and useful far beyond its price.",
     unidentifiedHint: "Its market value is negligible, though practicality has a way of outranking elegance."
   },
-  "tankard": {
+  tankard: {
     descriptionParagraphs: [
       "A sturdy handled tankard sized for beer, watered wine, or whatever passes for a decent drink where the road ends.",
       "It is ordinary tavern gear, but a solid mug survives rough company better than more delicate tableware ever will."
@@ -1778,7 +1781,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The mug is plain, serviceable, and built for repeated hard use.",
     unidentifiedHint: "Its worth is slight, though buyers will still care about dents, cracks, and balance."
   },
-  "vial": {
+  vial: {
     descriptionParagraphs: [
       "A tiny stoppered vial made for rare liquids, potent reagents, and anything measured more in drops than in cups.",
       "Alchemists and healers hoard vessels like this because the contents are often worth far more than the glass."
@@ -1788,7 +1791,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value is simple, though buyers will inspect the glass and stopper carefully."
   },
   "angels-trumpet": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/plants/herb-marjoram-basil-oregano-leaf-bunch-green.webp",
+    img: "icons/consumables/plants/herb-marjoram-basil-oregano-leaf-bunch-green.webp",
     descriptionParagraphs: [
       "A drooping white blossom with a sweet fragrance and a reputation that shifts sharply depending on whether the speaker is a healer, poisoner, or priest.",
       "Careful apothecaries prize the petals for measured preparations, while careless ones remember too late why the plant is spoken of in warnings."
@@ -1797,8 +1800,8 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The bloom looks delicate, fragrant, and a little too famous to be harmless.",
     unidentifiedHint: "Buyers will care whether it was dried well and whether the blossom kept its potency."
   },
-  "belladonna": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-bottle-skull-label-poison-teal.webp",
+  belladonna: {
+    img: "icons/consumables/potions/potion-bottle-skull-label-poison-teal.webp",
     descriptionParagraphs: [
       "A dark poisonous herb sold in pinches, tinctures, or carefully wrapped leaves to people who know exactly how dangerous beauty can be.",
       "It sits at the edge of medicine, murder, and folklore, which is why respectable merchants prefer not to name it too loudly."
@@ -1808,7 +1811,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its price depends on freshness, preparation, and whether the buyer wants remedy or ruin."
   },
   "cold-firelightning": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/equipment/finger/ring-cabochon-silver-gold-red.webp",
+    img: "icons/equipment/finger/ring-cabochon-silver-gold-red.webp",
     descriptionParagraphs: [
       "A garnet-set ring chased with elemental sigils, warm one moment and cool the next as the stone catches the light.",
       "The enchantment hardens its wearer against multiple elemental harms, making it the sort of ring adventurers keep close and creditors value aggressively."
@@ -1827,7 +1830,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Their worth is slight, though wear, cleanliness, and cloth quality still matter."
   },
   "das-lute": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/tools/instruments/lute-gold-brown.webp",
+    img: "icons/tools/instruments/lute-gold-brown.webp",
     descriptionParagraphs: [
       "A masterwork lute of bardic make, lacquered deep brown and tuned to answer even hesitant hands with unsettling resonance.",
       "Like the famed instruments of old colleges, it rewards an attuned musician with magic while punishing clumsy ambition from anyone who treats it like an ordinary stage prop."
@@ -1837,7 +1840,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its price lies in the enchantment, the craftsmanship, and whose hands it answers."
   },
   "death-cap": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-bottle-skull-label-poison-teal.webp",
+    img: "icons/consumables/potions/potion-bottle-skull-label-poison-teal.webp",
     descriptionParagraphs: [
       "A pale-capped mushroom notorious for how harmless it can look beside far less dangerous table fungi.",
       "Alchemists, assassins, and survival instructors all respect it for the same reason: mistakes involving death caps rarely stay small."
@@ -1847,7 +1850,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on handling, condition, and whether the buyer knows exactly what it is."
   },
   "drum-of-elemental-fusion": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/tools/instruments/drum-brown-red.webp",
+    img: "icons/tools/instruments/drum-brown-red.webp",
     descriptionParagraphs: [
       "An ancient ritual drum banded in warm metal and carved with symbols for fire, water, and air across its shell.",
       "When played by a steady hand it can fold those elements together into a blast, a warding shell, or a whirling force that moves the battlefield as much as the people on it."
@@ -1857,7 +1860,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its worth depends on the enchantment, the remaining charges, and who knows how to play it."
   },
   "eagles-fern": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/plants/fern-lady-green.webp",
+    img: "icons/consumables/plants/fern-lady-green.webp",
     descriptionParagraphs: [
       "A broad, feathered fern whose fronds are dried and bundled for field remedies, poultices, and a handful of highland concoctions.",
       "It is common enough to gather, but a clean preserved specimen still sells because travelers prefer medicine that starts in a satchel instead of a marsh."
@@ -1867,7 +1870,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on freshness and whether the bundle was dried without spoiling."
   },
   "ever-frost-berries": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/bottle-round-corked-blue.webp",
+    img: "icons/consumables/potions/bottle-round-corked-blue.webp",
     descriptionParagraphs: [
       "A handful of deep blue berries that stay cold to the touch long after picking, as if dawn frost never quite left their skins.",
       "Rangers chew them for sharp cold tonics, while alchemists mash them into mixtures that need chill without snow or cellar ice."
@@ -1877,7 +1880,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Their price depends on whether they still hold their uncanny chill."
   },
   "fairy-stool": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/bottle-bulb-corked-purple.webp",
+    img: "icons/consumables/potions/bottle-bulb-corked-purple.webp",
     descriptionParagraphs: [
       "A delicate little mushroom with a translucent cap and a faint glow that makes it look touched by moonlight even underground.",
       "Collectors value it for glamoured draughts, fey-themed rites, and because anything this pretty feels like it ought to cost more than supper."
@@ -1906,7 +1909,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "A buyer will pay for the enchantment as much as the excellent leatherwork."
   },
   "hag-finger": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/tools/cooking/mortar-herbs-yellow.webp",
+    img: "icons/tools/cooking/mortar-herbs-yellow.webp",
     descriptionParagraphs: [
       "A gnarled root twisted like a clutching hand, dried hard and kept by herbalists who know the uglier side of folk remedies.",
       "Its reputation makes it valuable to hedge-witches, poisoners, and anyone who likes their ingredients to look like warnings."
@@ -1916,7 +1919,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on potency, preparation, and how much the buyer enjoys bad reputations."
   },
   "hand-cross-mental-assault": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/weapons/crossbows/crossbow-blue.webp",
+    img: "icons/weapons/crossbows/crossbow-blue.webp",
     descriptionParagraphs: [
       "A compact hand crossbow etched with subtle psychic glyphs along the stock and groove, its mechanism tuned for unnervingly quiet release.",
       "Victims remember the bolt if they survive, but what sells the weapon to specialists is the way the enchantment leaves panic and confusion in the wound's wake."
@@ -1926,14 +1929,15 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its worth lies in the enchantment and the condition of the firing mechanism."
   },
   "morning-dew": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/bottle-round-empty-glass.webp",
+    img: "icons/consumables/potions/bottle-round-empty-glass.webp",
     descriptionParagraphs: [
       "A stoppered vial of dawn-collected dew kept for delicate tonics, sympathetic rites, and mixtures that fail if the water is ordinary.",
       "Most people see only water; healers, priests, and hedge alchemists see a narrow window of usefulness that closes once the day grows old."
     ],
     chatSummary: "A vial of dawn-collected dew valued for delicate rites and careful mixtures.",
     unidentifiedSummary: "The liquid looks simple until the careful bottle and handling say otherwise.",
-    unidentifiedHint: "Its price depends on purity, freshness, and whether the collector can prove it is the real thing."
+    unidentifiedHint:
+      "Its price depends on purity, freshness, and whether the collector can prove it is the real thing."
   },
   "night-shade": {
     img: "icons/magic/nature/leaf-glow-maple-orange-purple.webp",
@@ -1946,7 +1950,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on whether the buyer wants tincture, toxin, or superstition."
   },
   "radiant-fungus": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-flask-corked-blue.webp",
+    img: "icons/consumables/potions/potion-flask-corked-blue.webp",
     descriptionParagraphs: [
       "A blue-green fungus that holds a faint internal glow, bright enough to mark it in darkness before any lantern comes out.",
       "Delvers collect it for light-reactive brews, underdark remedies, and because strange luminous things usually command a better price than sensible ones."
@@ -1956,7 +1960,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on how strong the glow remains after harvest."
   },
   "rainbow-mushroom": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-flask-corked-labeled-pink.webp",
+    img: "icons/consumables/potions/potion-flask-corked-labeled-pink.webp",
     descriptionParagraphs: [
       "A vivid mushroom with a cap that shifts through several bright hues, as if someone painted it fresh each dawn.",
       "Some buyers want it for festival brews and curiosities, while others buy it purely because rare things sell faster when they are impossible to ignore."
@@ -1966,7 +1970,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its price depends on color, freshness, and whether the buyer trusts it enough to use it."
   },
   "red-ammonita": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-bottle-corked-fancy-orange.webp",
+    img: "icons/consumables/potions/potion-bottle-corked-fancy-orange.webp",
     descriptionParagraphs: [
       "A red-capped forest mushroom freckled with pale flecks, striking enough that even non-herbalists remember seeing it once.",
       "It changes hands among cooks, trippers, and alchemists for different reasons, which is usually how a fungus earns a dangerous reputation."
@@ -1975,7 +1979,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The fungus looks memorable, vivid, and not entirely trustworthy.",
     unidentifiedHint: "Its value depends on preparation and whether the buyer knows which parts are useful."
   },
-  "robes": {
+  robes: {
     descriptionParagraphs: [
       "A plain set of long robes suited to study, ritual, or any station that values drape over armor and ceremony over speed.",
       "Robes can look humble or dignified depending on cloth and cut, which is exactly why scholars, priests, and frauds all keep them close."
@@ -1985,14 +1989,15 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Their price is modest, though cloth quality and condition still matter."
   },
   "sentinel-shield": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/equipment/shield/heater-steel-sword-yellow-black.webp",
+    img: "icons/equipment/shield/heater-steel-sword-yellow-black.webp",
     descriptionParagraphs: [
       "A vigilant shield marked with an open eye motif and fitted with an enchantment that keeps its bearer preternaturally alert.",
       "Soldiers like the protection; scouts and paranoid nobles pay for the warning it gives before trouble fully arrives."
     ],
     chatSummary: "An enchanted shield that sharpens awareness and keeps its bearer ready for danger.",
     unidentifiedSummary: "The shield looks martial, magical, and more watchful than decorative.",
-    unidentifiedHint: "Its price depends on both the enchantment and whether the boss, rim, and straps remain serviceable."
+    unidentifiedHint:
+      "Its price depends on both the enchantment and whether the boss, rim, and straps remain serviceable."
   },
   "shield-of-spell-echo": {
     img: "icons/magic/defensive/shield-barrier-flaming-diamond-blue-yellow.webp",
@@ -2002,10 +2007,11 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     ],
     chatSummary: "A rune-work shield built to catch hostile magic and answer with an echoing rebound.",
     unidentifiedSummary: "The shield feels arcane, defensive, and designed for more than ordinary impact.",
-    unidentifiedHint: "Its worth depends on the enchantment, the rune-work, and how much magic its next owner expects to face."
+    unidentifiedHint:
+      "Its worth depends on the enchantment, the rune-work, and how much magic its next owner expects to face."
   },
   "shimmer-cap": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/bottle-round-corked-pink.webp",
+    img: "icons/consumables/potions/bottle-round-corked-pink.webp",
     descriptionParagraphs: [
       "A delicate cap fungus whose surface catches light in oily pinks and silvers as if coated in fine lacquer.",
       "It ends up in glamour draughts, courtly curios, and any apothecary shelf arranged to impress buyers before the negotiation starts."
@@ -2025,13 +2031,14 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Its value depends on freshness, color, and whether the silver sheen remains vivid."
   },
   "strange-hourglass": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/tools/navigation/hourglass-grey.webp",
+    img: "icons/tools/navigation/hourglass-grey.webp",
     descriptionParagraphs: [
       "A silver-framed hourglass filled with luminous sand that falls at a pace just steady enough to feel deliberate rather than natural.",
       "Mages, collectors, and gamblers all want timekeeping devices like this, though never for exactly the same reason."
     ],
     chatSummary: "A luminous enchanted hourglass valued by mages, collectors, and people with dangerous timing.",
-    unidentifiedSummary: "The glass and silverwork feel expensive; the shimmering sand feels wrong in a profitable way.",
+    unidentifiedSummary:
+      "The glass and silverwork feel expensive; the shimmering sand feels wrong in a profitable way.",
     unidentifiedHint: "Its price depends on the enchantment as much as the frame and stones."
   },
   "travelers-clothes": {
@@ -2044,7 +2051,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedHint: "Their worth is modest, though sturdy stitching and weather-worthy fabric improve it."
   },
   "torch-of-gravitation": {
-    img: "https://assets.forge-vtt.com/bazaar/core/icons/sundries/lights/torch-black.webp",
+    img: "icons/sundries/lights/torch-black.webp",
     descriptionParagraphs: [
       "An ornate black-metal torch whose violet flame leans toward nearby motion as if tugged by hidden weight and orbit.",
       "Scholars call it an impossible lamp, while practical adventurers remember it as a light source that makes loose objects, dust, and balance feel slightly wrong."
@@ -2053,7 +2060,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The torch looks ritual, magical, and much too deliberate to be common camp gear.",
     unidentifiedHint: "Its value lies in the enchantment as much as in the metalwork around the flame."
   },
-  "vestments": {
+  vestments: {
     descriptionParagraphs: [
       "A formal set of ceremonial vestments cut for public rites, processions, and the kind of worship meant to be witnessed.",
       "Fine vestments carry authority almost as well as doctrine, which is why temples guard their best sets from moths, mud, and junior clergy."
@@ -2062,7 +2069,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The garments look formal, maintained, and intended for witnessed devotion.",
     unidentifiedHint: "Their value depends on fabric, embroidery, and whether they still match a living tradition."
   },
-  "candle": {
+  candle: {
     descriptionParagraphs: [
       "A simple wax candle meant for a little light, a little comfort, and the illusion that darkness is a problem with an easy answer.",
       "Cheap enough to buy by the handful and useful enough to miss immediately, candles end up in packs, shrines, and bad plans everywhere."
@@ -2098,7 +2105,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ammunition is plain, practical, and worth more in quantity than one at a time.",
     unidentifiedHint: "Its value is slight, though straight shafts and intact fletching still matter to buyers."
   },
-  "handaxe": {
+  handaxe: {
     descriptionParagraphs: [
       "A compact axe balanced to chop in close quarters and fly straight when thrown by a practiced hand.",
       "It earns its place in camp as readily as in a fight, which is why so many packs carry one whether the owner expects battle or wood."
@@ -2113,7 +2120,8 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
       "Cheap rope is one of those purchases people mock right up until the moment they need more of it."
     ],
     chatSummary: "A sturdy hempen rope coil for climbing, hauling, tying, and surviving bad ideas.",
-    unidentifiedSummary: "The rope is plain, strong-looking, and useful in the ways adventurers eventually learn to respect.",
+    unidentifiedSummary:
+      "The rope is plain, strong-looking, and useful in the ways adventurers eventually learn to respect.",
     unidentifiedHint: "Its price is simple, though fraying, damp, and weak splices cut into value fast."
   },
   "hunters-mark-damage": {
@@ -2143,7 +2151,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The cloak looks ceremonial, magical, and built for dangerous company.",
     unidentifiedHint: "Its price follows the warding magic, not the fabric alone."
   },
-  "maul": {
+  maul: {
     descriptionParagraphs: [
       "A brutal two-handed hammer with enough weight behind the head to make armor, bone, and barricades all feel similarly mortal.",
       "There is nothing subtle about a maul; its value lies in ending arguments by applying overwhelming certainty."
@@ -2179,7 +2187,7 @@ export const CURATED_ITEM_UPDATES_BY_IDENTIFIER = {
     unidentifiedSummary: "The ring looks refined, practical, and touched by maritime magic.",
     unidentifiedHint: "Its worth depends on the enchantment and how badly the next buyer needs dry boots."
   },
-  "scimitar": {
+  scimitar: {
     descriptionParagraphs: [
       "A curved sword with a lively balance, prized for quick cuts, fluid handling, and the sort of style that suggests the wielder knows exactly what they are doing.",
       "Merchants sell the shape as exotic grace; veterans recognize it as a serious blade that simply happens to look elegant."

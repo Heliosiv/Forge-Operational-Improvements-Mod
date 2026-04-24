@@ -1,8 +1,37 @@
 export const PARTY_OPERATIONS_SIDEBAR_VIEW_ITEMS = Object.freeze([
-  { id: "rest-watch", action: "rest", label: "Rest", icon: "fas fa-moon", title: "Open Rest Watch", target: "po-panel-rest-watch" },
-  { id: "operations", action: "operations", label: "Operations", icon: "fas fa-clipboard-list", title: "Open Operations", target: "po-panel-operations" },
-  { id: "marching-order", action: "march", label: "March", icon: "fas fa-arrow-up", title: "Open Marching Order", target: "po-march-overview" },
-  { id: "gm", action: "gm", label: "GM", icon: "fas fa-user-shield", title: "Open GM Section", target: "po-panel-operations", gmOnly: true }
+  {
+    id: "rest-watch",
+    action: "rest",
+    label: "Rest",
+    icon: "fas fa-moon",
+    title: "Open Rest Watch",
+    target: "po-panel-rest-watch"
+  },
+  {
+    id: "operations",
+    action: "operations",
+    label: "Ops",
+    icon: "fas fa-clipboard-list",
+    title: "Open Operations",
+    target: "po-panel-operations"
+  },
+  {
+    id: "marching-order",
+    action: "march",
+    label: "March",
+    icon: "fas fa-arrow-up",
+    title: "Open Marching Order",
+    target: "po-march-overview"
+  },
+  {
+    id: "gm",
+    action: "gm",
+    label: "GM",
+    icon: "fas fa-user-shield",
+    title: "Open GM Section",
+    target: "po-panel-operations",
+    gmOnly: true
+  }
 ]);
 
 export function createLauncherUiController(options = {}) {
@@ -47,7 +76,9 @@ export function createLauncherUiController(options = {}) {
   const resolveUi = () => getUi?.() ?? globalThis.ui;
 
   function normalizeLauncherPlacement(value) {
-    const normalized = String(value ?? "").trim().toLowerCase();
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
     if (normalized === launcherPlacements?.SIDEBAR) return launcherPlacements.SIDEBAR;
     if (normalized === launcherPlacements?.BOTH) return launcherPlacements.BOTH;
     return launcherPlacements?.FLOATING ?? "floating";
@@ -208,22 +239,45 @@ export function createLauncherUiController(options = {}) {
   }
 
   function removeSidebarLauncher() {
-    resolveDocument()?.getElementById?.("po-sidebar-launcher")?.remove?.();
+    const documentRef = resolveDocument();
+    documentRef?.getElementById?.("po-sidebar-launcher")?.remove?.();
+    documentRef
+      ?.querySelectorAll?.(".po-sidebar-launcher, [data-po-sidebar-launcher]")
+      ?.forEach?.((launcher) => launcher?.remove?.());
+  }
+
+  function getSidebarLauncherHosts() {
+    const documentRef = resolveDocument();
+    const sidebar = documentRef?.getElementById?.("sidebar");
+    if (!sidebar) return [];
+
+    const selector = [
+      "#sidebar-content .sidebar-tab",
+      "#sidebar-content .tab.sidebar-tab",
+      ".sidebar-content .sidebar-tab",
+      ".sidebar-content .tab.sidebar-tab",
+      "[data-application-part='content'] .sidebar-tab",
+      "[data-application-part='content'] .tab.sidebar-tab"
+    ].join(", ");
+    const hosts = Array.from(sidebar.querySelectorAll?.(selector) ?? []).filter((host) => host && host.nodeType === 1);
+    if (hosts.length > 0) return [...new Set(hosts)];
+
+    const content =
+      sidebar.querySelector?.("#sidebar-content") ??
+      sidebar.querySelector?.(".sidebar-content") ??
+      sidebar.querySelector?.("[data-application-part='content']");
+    return [content ?? sidebar].filter(Boolean);
   }
 
   function getSidebarLauncherHost() {
-    const documentRef = resolveDocument();
-    const sidebar = documentRef?.getElementById?.("sidebar");
-    if (!sidebar) return null;
+    const hosts = getSidebarLauncherHosts();
+    return hosts.find((host) => host?.classList?.contains?.("active")) ?? hosts[0] ?? null;
+  }
 
-    return sidebar.querySelector?.(".sidebar-tab.active")
-      ?? sidebar.querySelector?.(".tab.active.sidebar-tab")
-      ?? sidebar.querySelector?.(".tab.sidebar-tab.active")
-      ?? sidebar.querySelector?.("#sidebar-content .sidebar-tab.active")
-      ?? sidebar.querySelector?.("#sidebar-content")
-      ?? sidebar.querySelector?.(".sidebar-content")
-      ?? sidebar.querySelector?.("[data-application-part='content']")
-      ?? sidebar;
+  function getDirectSidebarLauncher(host) {
+    return (
+      Array.from(host?.children ?? []).find((child) => child?.classList?.contains?.("po-sidebar-launcher")) ?? null
+    );
   }
 
   function scheduleLauncherRecoveryPass() {
@@ -300,7 +354,8 @@ export function createLauncherUiController(options = {}) {
         ? `${playback?.presetLabel}: ${playback?.activeTrackName}`
         : playback?.isPaused && playback?.hasQueue
           ? `${playback?.presetLabel} paused.`
-          : (String(selectedPreset?.description ?? "").trim() || "Pick a preset deck and use the transport controls here.");
+          : String(selectedPreset?.description ?? "").trim() ||
+            "Pick a preset deck and use the transport controls here.";
     return {
       visible: true,
       presets: (getAllAudioMixPresets?.() ?? []).map((preset) => ({
@@ -324,32 +379,28 @@ export function createLauncherUiController(options = {}) {
     const context = buildSidebarLauncherAudioContext();
     if (!context.visible) return "";
     const optionsMarkup = context.presets
-      .map((preset) => `<option value="${poEscapeHtml(preset.id)}" ${preset.selected ? "selected" : ""}>${poEscapeHtml(preset.label)}</option>`)
+      .map(
+        (preset) =>
+          `<option value="${poEscapeHtml(preset.id)}" ${preset.selected ? "selected" : ""}>${poEscapeHtml(preset.label)}</option>`
+      )
       .join("");
-    const statusClass = context.isPlaying
-      ? " is-playing"
-      : (context.isPaused ? " is-paused" : "");
+    const statusClass = context.isPlaying ? " is-playing" : context.isPaused ? " is-paused" : "";
     return `
-    <div class="po-sidebar-launcher-audio-head">
-      <div class="po-sidebar-launcher-audio-title">Audio Deck</div>
-      <div class="po-sidebar-launcher-audio-status${statusClass}">${poEscapeHtml(context.statusLabel)}</div>
-    </div>
-    <label class="po-sidebar-launcher-audio-field">
-      <span>Preset Deck</span>
-      <select class="po-sidebar-launcher-select po-sidebar-launcher-audio-select" data-action="launcher-audio-select">
+    <div class="po-sidebar-launcher-audio-compact${statusClass}" title="${poEscapeHtml(context.statusLabel)}">
+      <select class="po-sidebar-launcher-select po-sidebar-launcher-audio-select" data-action="launcher-audio-select" aria-label="Preset Deck">
         ${optionsMarkup}
       </select>
-    </label>
-    <div class="po-sidebar-launcher-audio-controls">
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn is-primary" data-action="launcher-audio-play" title="${poEscapeHtml(context.playTitle)}" aria-label="${poEscapeHtml(context.playTitle)}" ${context.canPlay ? "" : "disabled"}>
-        <i class="fas fa-play"></i><span>Play</span>
-      </button>
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-next" title="${poEscapeHtml(context.nextTitle)}" aria-label="${poEscapeHtml(context.nextTitle)}" ${context.canNext ? "" : "disabled"}>
-        <i class="fas fa-step-forward"></i><span>Next</span>
-      </button>
-      <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-stop" title="${poEscapeHtml(context.stopTitle)}" aria-label="${poEscapeHtml(context.stopTitle)}" ${context.canStop ? "" : "disabled"}>
-        <i class="fas fa-stop"></i><span>Stop</span>
-      </button>
+      <div class="po-sidebar-launcher-audio-controls">
+        <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn is-primary" data-action="launcher-audio-play" title="${poEscapeHtml(context.playTitle)}" aria-label="${poEscapeHtml(context.playTitle)}" ${context.canPlay ? "" : "disabled"}>
+          <i class="fas fa-play"></i><span>Play</span>
+        </button>
+        <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-next" title="${poEscapeHtml(context.nextTitle)}" aria-label="${poEscapeHtml(context.nextTitle)}" ${context.canNext ? "" : "disabled"}>
+          <i class="fas fa-step-forward"></i><span>Next</span>
+        </button>
+        <button type="button" class="po-sidebar-btn po-sidebar-launcher-audio-btn" data-action="launcher-audio-stop" title="${poEscapeHtml(context.stopTitle)}" aria-label="${poEscapeHtml(context.stopTitle)}" ${context.canStop ? "" : "disabled"}>
+          <i class="fas fa-stop"></i><span>Stop</span>
+        </button>
+      </div>
     </div>
   `;
   }
@@ -372,9 +423,10 @@ export function createLauncherUiController(options = {}) {
   }
 
   function refreshLauncherAudioUi() {
-    const launcher = resolveDocument()?.getElementById?.("po-sidebar-launcher");
-    if (!launcher) return;
-    syncSidebarLauncherAudioUi(launcher);
+    const documentRef = resolveDocument();
+    documentRef?.querySelectorAll?.(".po-sidebar-launcher, [data-po-sidebar-launcher]")?.forEach?.((launcher) => {
+      syncSidebarLauncherAudioUi(launcher);
+    });
   }
 
   function handleSidebarLauncherAudioPresetSelection(element) {
@@ -391,7 +443,8 @@ export function createLauncherUiController(options = {}) {
         const catalog = getAudioLibraryCatalog?.() ?? { items: [] };
         const selectedPreset = getSelectedAudioMixPreset?.() ?? null;
         const playback = getAudioMixPlaybackState?.(catalog) ?? {};
-        const isSelectedPresetActive = String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
+        const isSelectedPresetActive =
+          String(playback?.presetId ?? "").trim() === String(selectedPreset?.id ?? "").trim();
         if (playback?.isPaused && playback?.hasQueue && isSelectedPresetActive) {
           await toggleAudioMixPlayback?.();
         } else {
@@ -432,10 +485,13 @@ export function createLauncherUiController(options = {}) {
       const documentRef = resolveDocument();
       const launcher = context.launcherElement ?? documentRef?.getElementById?.("po-floating-launcher");
       if (!launcher) return;
-      const current = clampFloatingLauncherPosition({
-        left: parseFloat(launcher.style?.left || "16"),
-        top: parseFloat(launcher.style?.top || "180")
-      }, { lockAware: false });
+      const current = clampFloatingLauncherPosition(
+        {
+          left: parseFloat(launcher.style?.left || "16"),
+          top: parseFloat(launcher.style?.top || "180")
+        },
+        { lockAware: false }
+      );
       if (launcher.style) {
         launcher.style.left = `${current.left}px`;
         launcher.style.top = `${current.top}px`;
@@ -486,36 +542,23 @@ export function createLauncherUiController(options = {}) {
   function ensureSidebarLauncher() {
     const documentRef = resolveDocument();
     const sidebar = documentRef?.getElementById?.("sidebar");
-    const host = getSidebarLauncherHost();
-    if (!sidebar || !host) return null;
+    const hosts = getSidebarLauncherHosts();
+    if (!sidebar || hosts.length <= 0) return null;
 
-    let launcher = documentRef?.getElementById?.("po-sidebar-launcher");
-    if (!launcher) {
-      launcher = documentRef?.createElement?.("section");
-      if (!launcher) return null;
-      launcher.id = "po-sidebar-launcher";
-      launcher.classList?.add?.("po-sidebar-launcher");
-    }
-
-    if (launcher.parentElement !== host) {
-      if (host === sidebar) host.appendChild?.(launcher);
-      else host.prepend?.(launcher);
-    } else if (host !== sidebar && host.firstElementChild !== launcher) {
-      host.prepend?.(launcher);
-    }
-
-    const setLauncherMarkup = (target) => {
+    const setLauncherMarkup = (target, host) => {
       const visibleItems = sidebarViewItems.filter((item) => !item.gmOnly || canAccessGmPage?.());
       const buttonsMarkup = visibleItems
-        .map((item) => `
+        .map(
+          (item) => `
         <button type="button" class="po-sidebar-btn${item.gmOnly ? " po-sidebar-gm" : ""}" data-action="${item.action}" data-tab-id="${item.id}" data-target="${item.target}" title="${item.title}" aria-label="${item.title}">
           <i class="${item.icon}"></i><span>${item.label}</span>
-        </button>`)
+        </button>`
+        )
         .join("");
 
       target.innerHTML = `
       <header class="po-sidebar-launcher-header">
-        <h4 class="po-sidebar-launcher-title">Party Operations</h4>
+        <h4 class="po-sidebar-launcher-title">Party Ops</h4>
         <button type="button" class="po-sidebar-btn po-sidebar-dock" data-action="dock-floating" title="Dock launcher on screen" aria-label="Dock launcher on screen">
           <i class="fas fa-external-link-alt"></i>
         </button>
@@ -532,41 +575,62 @@ export function createLauncherUiController(options = {}) {
       });
     };
 
-    const hasRestBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="rest-watch"]'));
-    const hasOperationsBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="operations"]'));
-    const hasMarchBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="marching-order"]'));
-    const hasGmBtn = !canAccessGmPage?.() || Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="gm"]'));
-    const hasDockBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-action="dock-floating"]'));
-    if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
-      setLauncherMarkup(launcher);
-    }
+    let firstLauncher = null;
+    hosts.forEach((host, index) => {
+      let launcher = getDirectSidebarLauncher(host);
+      if (!launcher) {
+        launcher = documentRef?.createElement?.("section");
+        if (!launcher) return;
+        launcher.classList?.add?.("po-sidebar-launcher");
+        if (launcher.dataset) launcher.dataset.poSidebarLauncher = "1";
+      }
+      if (index === 0) launcher.id = "po-sidebar-launcher";
+      else if (launcher.id === "po-sidebar-launcher") launcher.removeAttribute?.("id");
 
-    if (launcher.dataset?.poSidebarLauncherBound !== "1") {
-      if (launcher.dataset) launcher.dataset.poSidebarLauncherBound = "1";
-      launcher.addEventListener?.("click", (event) => {
-        const button = event.target?.closest?.(".po-sidebar-btn");
-        if (!button) return;
-        const action = button.dataset?.action;
-        if (!action) return;
-        logUiDebug?.("sidebar-launcher", "sidebar launcher click", {
-          action,
-          tabId: button.dataset?.tabId,
-          target: button.dataset?.target,
-          template: getTemplateForMainTab?.(button.dataset?.tabId)
+      if (launcher.parentElement !== host) {
+        if (host === sidebar) host.appendChild?.(launcher);
+        else host.prepend?.(launcher);
+      } else if (host !== sidebar && host.firstElementChild !== launcher) {
+        host.prepend?.(launcher);
+      }
+
+      const hasRestBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="rest-watch"]'));
+      const hasOperationsBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="operations"]'));
+      const hasMarchBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="marching-order"]'));
+      const hasGmBtn = !canAccessGmPage?.() || Boolean(launcher.querySelector?.('.po-sidebar-btn[data-tab-id="gm"]'));
+      const hasDockBtn = Boolean(launcher.querySelector?.('.po-sidebar-btn[data-action="dock-floating"]'));
+      if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn) {
+        setLauncherMarkup(launcher, host);
+      }
+
+      if (launcher.dataset?.poSidebarLauncherBound !== "1") {
+        if (launcher.dataset) launcher.dataset.poSidebarLauncherBound = "1";
+        launcher.addEventListener?.("click", (event) => {
+          const button = event.target?.closest?.(".po-sidebar-btn");
+          if (!button) return;
+          const action = button.dataset?.action;
+          if (!action) return;
+          logUiDebug?.("sidebar-launcher", "sidebar launcher click", {
+            action,
+            tabId: button.dataset?.tabId,
+            target: button.dataset?.target,
+            template: getTemplateForMainTab?.(button.dataset?.tabId)
+          });
+          handleLauncherAction(action);
         });
-        handleLauncherAction(action);
-      });
-      launcher.addEventListener?.("change", (event) => {
-        const select = event.target?.closest?.(".po-sidebar-launcher-audio-select");
-        if (!select) return;
-        handleSidebarLauncherAudioPresetSelection(select);
-      });
-    }
+        launcher.addEventListener?.("change", (event) => {
+          const select = event.target?.closest?.(".po-sidebar-launcher-audio-select");
+          if (!select) return;
+          handleSidebarLauncherAudioPresetSelection(select);
+        });
+      }
 
-    const gmButton = launcher.querySelector?.('.po-sidebar-btn[data-tab-id="gm"]');
-    if (gmButton?.style) gmButton.style.display = canAccessGmPage?.() ? "" : "none";
-    syncSidebarLauncherAudioUi(launcher);
-    return launcher;
+      const gmButton = launcher.querySelector?.('.po-sidebar-btn[data-tab-id="gm"]');
+      if (gmButton?.style) gmButton.style.display = canAccessGmPage?.() ? "" : "none";
+      syncSidebarLauncherAudioUi(launcher);
+      if (!firstLauncher) firstLauncher = launcher;
+    });
+    return firstLauncher;
   }
 
   function ensureFloatingLauncher() {
@@ -689,7 +753,15 @@ export function createLauncherUiController(options = {}) {
       const hasDockBtn = Boolean(launcher.querySelector?.('.po-floating-btn[data-action="dock-sidebar"]'));
       const hasLockBtn = Boolean(launcher.querySelector?.('.po-floating-btn[data-action="lock"]'));
       const hasUnlockBtn = Boolean(launcher.querySelector?.('.po-floating-btn[data-action="unlock"]'));
-      if (!hasRestBtn || !hasOperationsBtn || !hasMarchBtn || !hasGmBtn || !hasDockBtn || !hasLockBtn || !hasUnlockBtn) {
+      if (
+        !hasRestBtn ||
+        !hasOperationsBtn ||
+        !hasMarchBtn ||
+        !hasGmBtn ||
+        !hasDockBtn ||
+        !hasLockBtn ||
+        !hasUnlockBtn
+      ) {
         setLauncherMarkup(launcher);
       }
     }
@@ -727,7 +799,7 @@ export function createLauncherUiController(options = {}) {
     const documentRef = resolveDocument();
     const clickOpener = documentRef?.getElementById?.("po-click-opener");
     const floatingLauncher = documentRef?.getElementById?.("po-floating-launcher");
-    const sidebarLauncher = documentRef?.getElementById?.("po-sidebar-launcher");
+    const sidebarLauncher = documentRef?.querySelector?.(".po-sidebar-launcher, [data-po-sidebar-launcher]");
     return {
       ok: Boolean(clickOpener || floatingLauncher || sidebarLauncher) && !error,
       placement,
@@ -742,7 +814,10 @@ export function createLauncherUiController(options = {}) {
     const documentRef = resolveDocument();
     const clickOpener = documentRef?.getElementById?.("po-click-opener");
     const floatingLauncher = documentRef?.getElementById?.("po-floating-launcher");
-    const sidebarLauncher = documentRef?.getElementById?.("po-sidebar-launcher");
+    const sidebarLaunchers = Array.from(
+      documentRef?.querySelectorAll?.(".po-sidebar-launcher, [data-po-sidebar-launcher]") ?? []
+    );
+    const sidebarLauncher = sidebarLaunchers[0] ?? null;
     const sidebarLauncherHost = sidebarLauncher?.parentElement ?? getSidebarLauncherHost();
     const placement = getLauncherPlacement();
     return {
@@ -751,6 +826,7 @@ export function createLauncherUiController(options = {}) {
       clickOpener: Boolean(clickOpener),
       floatingLauncher: Boolean(floatingLauncher),
       sidebarLauncher: Boolean(sidebarLauncher),
+      sidebarLauncherCount: sidebarLaunchers.length,
       sidebarPresent: Boolean(documentRef?.getElementById?.("sidebar")),
       sidebarLauncherHostId: String(sidebarLauncherHost?.id ?? "").trim() || null,
       sidebarLauncherHostClass: String(sidebarLauncherHost?.className ?? "").trim() || null,
@@ -764,13 +840,11 @@ export function createLauncherUiController(options = {}) {
 
     try {
       await setLauncherPlacement(launcherPlacements?.BOTH);
-    } catch {
-    }
+    } catch {}
 
     try {
       await resetFloatingLauncherPosition();
-    } catch {
-    }
+    } catch {}
 
     removeClickOpener();
     removeFloatingLauncher();

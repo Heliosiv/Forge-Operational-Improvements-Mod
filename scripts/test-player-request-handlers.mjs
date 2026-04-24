@@ -34,13 +34,17 @@ function buildBaseHandlers(overrides = {}) {
       };
     },
     emitModuleSocket: (payload, options) => calls.emitted.push({ payload, options }),
-    normalizeMerchantSettlementSelection: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeMerchantSettlementSelection: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     socketChannel: "module.party-operations",
-    getMerchantBarterResolutionKey: ({ userId, actorId, merchantId, settlement }) => `${userId}:${actorId}:${merchantId}:${settlement}`,
+    getMerchantBarterResolutionKey: ({ userId, actorId, merchantId, settlement }) =>
+      `${userId}:${actorId}:${merchantId}:${settlement}`,
     getMerchantBarterResolutionEntryByKey: () => null,
     applyMerchantTradeForUser: async (_requester, payload) => {
       calls.tradeRequests.push(payload);
-      return { ok: true, actorName: "Borin" };
+      return { ok: true, actorName: "Borin", merchantName: "Sel" };
     },
     clearMerchantBarterResolutionEntryByKey: (key) => calls.clearedBarterKeys.push(key),
     applyLootClaimForUser: async (_requester, actorId, itemId, runId) => {
@@ -96,24 +100,53 @@ function buildBaseHandlers(overrides = {}) {
     userId: "user-1",
     merchantId: "merchant-1",
     actorId: "actor-1",
-    buyItems: [{ itemId: "buy-1", qty: 2 }, { itemId: "", qty: 4 }],
-    sellItems: [{ itemId: "sell-1", quantity: 3 }, { itemId: "sell-2", qty: 0 }]
+    buyItems: [
+      { itemId: "buy-1", qty: 2 },
+      { itemId: "", qty: 4 }
+    ],
+    sellItems: [
+      { itemId: "sell-1", quantity: 3 },
+      { itemId: "sell-2", qty: 0 }
+    ]
   });
 
-  assert.deepEqual(calls.tradeRequests, [{
-    merchantId: "merchant-1",
-    actorId: "actor-1",
-    settlement: "waterdeep",
-    buyItems: [{ itemId: "buy-1", qty: 2 }],
-    sellItems: [{ itemId: "sell-1", qty: 3 }],
-    barterResolution: { applied: true, delta: -1 }
-  }]);
+  assert.deepEqual(calls.tradeRequests, [
+    {
+      merchantId: "merchant-1",
+      actorId: "actor-1",
+      settlement: "waterdeep",
+      buyItems: [{ itemId: "buy-1", qty: 2 }],
+      sellItems: [{ itemId: "sell-1", qty: 3 }],
+      barterResolution: { applied: true, delta: -1 }
+    }
+  ]);
   assert.deepEqual(calls.clearedBarterKeys, ["user-1:actor-1:merchant-1:waterdeep"]);
+  assert.deepEqual(calls.emitted, [
+    {
+      payload: {
+        type: "ops:merchant-trade-result",
+        userId: "user-1",
+        merchantId: "merchant-1",
+        actorId: "actor-1",
+        settlement: "waterdeep",
+        ok: true,
+        summary: "Trade complete: Borin and Sel.",
+        actorName: "Borin",
+        merchantName: "Sel"
+      },
+      options: { channel: "module.party-operations" }
+    }
+  ]);
 }
 
 {
   const { handlers, calls } = buildBaseHandlers();
-  await handlers.applyPlayerLootClaimRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1" });
+  await handlers.applyPlayerLootClaimRequest({
+    userId: "user-1",
+    actorId: "actor-1",
+    itemId: "item-1",
+    runId: "run-1"
+  });
   await handlers.applyPlayerLootCurrencyClaimRequest({ userId: "user-1", actorId: "actor-1", runId: "run-1" });
   await handlers.applyPlayerLootCurrencySplitRequest({
     userId: "user-1",
@@ -127,7 +160,9 @@ function buildBaseHandlers(overrides = {}) {
   assert.equal(calls.postedItemClaims.length, 1);
   assert.deepEqual(calls.lootCurrencyClaims, [{ actorId: "actor-1", runId: "run-1" }]);
   assert.equal(calls.postedCurrencyClaims.length, 1);
-  assert.deepEqual(calls.lootCurrencySplits, [{ actorIds: ["actor-1", "actor-2"], runId: "run-1", stashActorId: "stash-1" }]);
+  assert.deepEqual(calls.lootCurrencySplits, [
+    { actorIds: ["actor-1", "actor-2"], runId: "run-1", stashActorId: "stash-1" }
+  ]);
   assert.deepEqual(calls.lootUndos, [{ logId: "log-1", runId: "run-1" }]);
   assert.match(calls.infos.at(-1), /undid a recent loot assignment/);
 }
@@ -136,7 +171,12 @@ function buildBaseHandlers(overrides = {}) {
   const { handlers, calls } = buildBaseHandlers({
     applyLootClaimForUser: async () => ({ ok: false, message: "No share available." })
   });
-  await handlers.applyPlayerLootClaimRequest({ userId: "user-1", actorId: "actor-1", itemId: "item-1", runId: "run-1" });
+  await handlers.applyPlayerLootClaimRequest({
+    userId: "user-1",
+    actorId: "actor-1",
+    itemId: "item-1",
+    runId: "run-1"
+  });
   assert.deepEqual(calls.warns, ["Loot claim failed (Aria): No share available."]);
 }
 
@@ -146,6 +186,28 @@ function buildBaseHandlers(overrides = {}) {
   });
   await handlers.applyPlayerMerchantTradeRequest({ userId: "user-1", merchantId: "merchant-1", actorId: "actor-1" });
   assert.deepEqual(calls.warns, ["Merchant trade failed: unable to resolve an active player requester."]);
+}
+
+{
+  const { handlers, calls } = buildBaseHandlers({
+    applyMerchantTradeForUser: async () => ({ ok: false, message: "Not enough coin." })
+  });
+  await handlers.applyPlayerMerchantTradeRequest({ userId: "user-1", merchantId: "merchant-1", actorId: "actor-1" });
+  assert.deepEqual(calls.emitted, [
+    {
+      payload: {
+        type: "ops:merchant-trade-result",
+        userId: "user-1",
+        merchantId: "merchant-1",
+        actorId: "actor-1",
+        settlement: "waterdeep",
+        ok: false,
+        summary: "Not enough coin."
+      },
+      options: { channel: "module.party-operations" }
+    }
+  ]);
+  assert.deepEqual(calls.warns, ["Merchant trade failed (Aria): Not enough coin."]);
 }
 
 {

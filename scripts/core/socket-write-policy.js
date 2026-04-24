@@ -43,3 +43,19 @@ export function hasActiveGmClient() {
   const users = globalThis.game?.users?.contents ?? globalThis.game?.users ?? [];
   return users.some((user) => Boolean(user?.active) && Boolean(user?.isGM));
 }
+
+/**
+ * Check whether a specific user id belongs to an active GM client.
+ * @param {string} userIdInput - Candidate user id
+ * @param {Object} gameRef - Foundry game object
+ * @returns {boolean} True if the id resolves to an active GM user
+ */
+export function isActiveGmUserId(userIdInput, gameRef = globalThis.game) {
+  const userId = String(userIdInput ?? "").trim();
+  if (!userId) return false;
+  const usersCollection = gameRef?.users;
+  const directUser = usersCollection?.get?.(userId) ?? null;
+  if (directUser) return Boolean(directUser.active && directUser.isGM);
+  const users = usersCollection?.contents ?? usersCollection ?? [];
+  return users.some((user) => String(user?.id ?? "").trim() === userId && Boolean(user?.active) && Boolean(user?.isGM));
+}

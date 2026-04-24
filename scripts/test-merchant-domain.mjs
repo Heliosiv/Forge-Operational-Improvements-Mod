@@ -7,18 +7,35 @@ import {
   buildMerchantDefinitionPatchFromEditorForm,
   buildStarterMerchantPatch,
   computeMerchantPartialRestockPlan,
+  normalizeFoundryAssetImagePath,
   normalizeMerchantAutoRefreshConfig,
   normalizeMerchantRarityPriceMultipliers,
   selectMerchantStockRows
 } from "./features/merchant-domain.js";
 
-assert.deepEqual(
-  normalizeMerchantAutoRefreshConfig({}),
-  {
-    enabled: false,
-    intervalDays: Number(MERCHANT_DEFAULTS.stock.autoRefresh?.intervalDays ?? 7)
-  }
+assert.equal(
+  normalizeFoundryAssetImagePath(
+    "https://assets.forge-vtt.com/bazaar/core/icons/consumables/potions/potion-flask-corked-blue.webp"
+  ),
+  "icons/consumables/potions/potion-flask-corked-blue.webp"
 );
+assert.equal(
+  normalizeFoundryAssetImagePath(
+    "https://assets.forge-vtt.com/bazaar/systems/dnd5e/assets/icons/svg/items/consumable.svg"
+  ),
+  "systems/dnd5e/assets/icons/svg/items/consumable.svg"
+);
+assert.equal(
+  normalizeFoundryAssetImagePath("https://assets.forge-vtt.com/private-user-id/portraits/merchant.webp", {
+    fallback: "icons/svg/mystery-man.svg"
+  }),
+  "icons/svg/mystery-man.svg"
+);
+
+assert.deepEqual(normalizeMerchantAutoRefreshConfig({}), {
+  enabled: false,
+  intervalDays: Number(MERCHANT_DEFAULTS.stock.autoRefresh?.intervalDays ?? 7)
+});
 
 const enabledPatch = buildMerchantDefinitionPatchFromEditorForm({
   name: "Clockwork Curios",
@@ -102,52 +119,57 @@ assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.rare, 2);
 assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers["very-rare"], 2.75);
 assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.legendary, 4);
 assert.equal(getMerchantRarityPriceMultiplier("rare", rarityPricePatch.pricing.rarityPriceMultipliers), 2);
-assert.deepEqual(
-  normalizeMerchantRarityPriceMultipliers({ common: -5, legendary: 25 }),
+assert.deepEqual(normalizeMerchantRarityPriceMultipliers({ common: -5, legendary: 25 }), {
+  common: 0.1,
+  uncommon: 1.2,
+  rare: 1.5,
+  "very-rare": 2,
+  legendary: 10
+});
+
+const realisticRestockPlan = computeMerchantPartialRestockPlan(
+  [
+    {
+      key: "stock.featured-potion",
+      itemType: "consumable",
+      rarityBucket: "rare",
+      stockRole: "featured",
+      sectionKey: "featured",
+      quantity: 1
+    },
+    {
+      key: "stock.core-longsword",
+      itemType: "weapon",
+      rarityBucket: "common",
+      stockRole: "core",
+      sectionKey: "weapons",
+      quantity: 1
+    }
+  ],
+  0.6,
   {
-    common: 0.1,
-    uncommon: 1.2,
-    rare: 1.5,
-    "very-rare": 2,
-    legendary: 10
+    randomFn: () => 0.2
   }
 );
-
-const realisticRestockPlan = computeMerchantPartialRestockPlan([
-  {
-    key: "stock.featured-potion",
-    itemType: "consumable",
-    rarityBucket: "rare",
-    stockRole: "featured",
-    sectionKey: "featured",
-    quantity: 1
-  },
-  {
-    key: "stock.core-longsword",
-    itemType: "weapon",
-    rarityBucket: "common",
-    stockRole: "core",
-    sectionKey: "weapons",
-    quantity: 1
-  }
-], 0.6, {
-  randomFn: () => 0.2
-});
 assert.equal(realisticRestockPlan.retainCount, 1);
 assert.equal(realisticRestockPlan.rerollCount, 1);
 assert.ok(realisticRestockPlan.retainedKeys.has("stock.core-longsword"));
 assert.ok(!realisticRestockPlan.retainedKeys.has("stock.featured-potion"));
 
-const singleItemRestockPlan = computeMerchantPartialRestockPlan([
+const singleItemRestockPlan = computeMerchantPartialRestockPlan(
+  [
+    {
+      key: "stock.only-curio",
+      itemType: "trinket",
+      rarityBucket: "rare",
+      stockRole: "featured"
+    }
+  ],
+  0.6,
   {
-    key: "stock.only-curio",
-    itemType: "trinket",
-    rarityBucket: "rare",
-    stockRole: "featured"
+    randomFn: () => 0
   }
-], 0.6, {
-  randomFn: () => 0
-});
+);
 assert.equal(singleItemRestockPlan.retainCount, 0);
 assert.equal(singleItemRestockPlan.rerollCount, 1);
 
@@ -264,29 +286,41 @@ assert.ok(
   "Expected practical merchants to retain mundane ammo support alongside rarer ammunition."
 );
 assert.equal(
-  Math.max(1, Math.floor(Number(weightedAmmoSelection.find((entry) => (entry.sourceKey ?? entry.key) === "Item.ammo.mundane.arrow")?.quantity ?? 1) || 1)),
+  Math.max(
+    1,
+    Math.floor(
+      Number(
+        weightedAmmoSelection.find((entry) => (entry.sourceKey ?? entry.key) === "Item.ammo.mundane.arrow")?.quantity ??
+          1
+      ) || 1
+    )
+  ),
   20,
   "Expected common mundane ammo rolls to create 20-unit stacks."
 );
 
-const uncommonAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[1]], {
-  stock: {
-    maxItems: 1,
-    targetValueGp: 0,
-    duplicateChance: 0,
-    maxStackSize: 20,
-    rarityWeights: {
-      common: 1,
-      uncommon: 1,
-      rare: 1,
-      "very-rare": 1,
-      legendary: 1
+const uncommonAmmoSelection = selectMerchantStockRows(
+  [ammoWeightCandidates[1]],
+  {
+    stock: {
+      maxItems: 1,
+      targetValueGp: 0,
+      duplicateChance: 0,
+      maxStackSize: 20,
+      rarityWeights: {
+        common: 1,
+        uncommon: 1,
+        rare: 1,
+        "very-rare": 1,
+        legendary: 1
+      }
     }
+  },
+  {
+    randomFn: () => 0.4,
+    shuffleRows: (rows) => rows
   }
-}, {
-  randomFn: () => 0.4,
-  shuffleRows: (rows) => rows
-});
+);
 
 assert.equal(uncommonAmmoSelection.length, 1);
 assert.equal(
@@ -295,26 +329,30 @@ assert.equal(
   "Expected non-common ammunition to remain single-count when rolled."
 );
 
-const tunedAmmoSelection = selectMerchantStockRows([ammoWeightCandidates[0]], {
-  stock: {
-    maxItems: 1,
-    targetValueGp: 0,
-    duplicateChance: 0,
-    maxStackSize: 40,
-    mundaneAmmoWeightBoost: 5,
-    mundaneAmmoStackSize: 40,
-    rarityWeights: {
-      common: 1,
-      uncommon: 1,
-      rare: 1,
-      "very-rare": 1,
-      legendary: 1
+const tunedAmmoSelection = selectMerchantStockRows(
+  [ammoWeightCandidates[0]],
+  {
+    stock: {
+      maxItems: 1,
+      targetValueGp: 0,
+      duplicateChance: 0,
+      maxStackSize: 40,
+      mundaneAmmoWeightBoost: 5,
+      mundaneAmmoStackSize: 40,
+      rarityWeights: {
+        common: 1,
+        uncommon: 1,
+        rare: 1,
+        "very-rare": 1,
+        legendary: 1
+      }
     }
+  },
+  {
+    randomFn: () => 0.4,
+    shuffleRows: (rows) => rows
   }
-}, {
-  randomFn: () => 0.4,
-  shuffleRows: (rows) => rows
-});
+);
 assert.equal(Math.max(1, Math.floor(Number(tunedAmmoSelection[0]?.quantity ?? 1) || 1)), 40);
 
 const archetypeCandidates = [
@@ -344,68 +382,76 @@ const archetypeCandidates = [
   }
 ];
 
-const archetypeSelection = selectMerchantStockRows(archetypeCandidates, {
-  archetype: "weaponsmith",
-  stock: {
-    maxItems: 2,
-    targetValueGp: 0,
-    duplicateChance: 0,
-    maxStackSize: 20,
-    rarityWeights: {
-      common: 1,
-      uncommon: 1,
-      rare: 1,
-      "very-rare": 1,
-      legendary: 1
+const archetypeSelection = selectMerchantStockRows(
+  archetypeCandidates,
+  {
+    archetype: "weaponsmith",
+    stock: {
+      maxItems: 2,
+      targetValueGp: 0,
+      duplicateChance: 0,
+      maxStackSize: 20,
+      rarityWeights: {
+        common: 1,
+        uncommon: 1,
+        rare: 1,
+        "very-rare": 1,
+        legendary: 1
+      }
     }
+  },
+  {
+    randomFn: () => 0.25,
+    shuffleRows: (rows) => rows
   }
-}, {
-  randomFn: () => 0.25,
-  shuffleRows: (rows) => rows
-});
+);
 assert.ok(archetypeSelection.some((entry) => (entry.sourceKey ?? entry.key) === "Item.weapon.longsword"));
 assert.ok(archetypeSelection.some((entry) => String(entry?.merchantSectionLabel ?? "").length > 0));
 assert.ok(archetypeSelection.some((entry) => entry?.merchantStockRole === "core"));
 
-const presetModeIgnoresManualCuratedSelection = selectMerchantStockRows([
+const presetModeIgnoresManualCuratedSelection = selectMerchantStockRows(
+  [
+    {
+      key: "Item.trinket.feywild-circus-amulet",
+      name: "Feywild Circus Amulet",
+      gpValue: 2500,
+      rarityBucket: "rare",
+      isCurated: true,
+      data: { name: "Feywild Circus Amulet", type: "trinket" },
+      keywords: ["curio"]
+    },
+    {
+      key: "Item.armor.chain-shirt",
+      name: "Chain Shirt",
+      gpValue: 50,
+      rarityBucket: "common",
+      data: { name: "Chain Shirt", type: "armor" },
+      keywords: ["armor", "chain"]
+    }
+  ],
   {
-    key: "Item.trinket.feywild-circus-amulet",
-    name: "Feywild Circus Amulet",
-    gpValue: 2500,
-    rarityBucket: "rare",
-    isCurated: true,
-    data: { name: "Feywild Circus Amulet", type: "trinket" },
-    keywords: ["curio"]
+    archetype: "armorer",
+    customMode: false,
+    stock: {
+      curatedItemUuids: ["Item.trinket.feywild-circus-amulet"],
+      maxItems: 1,
+      targetValueGp: 0,
+      duplicateChance: 0,
+      maxStackSize: 20,
+      rarityWeights: {
+        common: 1,
+        uncommon: 1,
+        rare: 1,
+        "very-rare": 1,
+        legendary: 1
+      }
+    }
   },
   {
-    key: "Item.armor.chain-shirt",
-    name: "Chain Shirt",
-    gpValue: 50,
-    rarityBucket: "common",
-    data: { name: "Chain Shirt", type: "armor" },
-    keywords: ["armor", "chain"]
+    randomFn: () => 0.25,
+    shuffleRows: (rows) => rows
   }
-], {
-  archetype: "armorer",
-  customMode: false,
-  stock: {
-    curatedItemUuids: ["Item.trinket.feywild-circus-amulet"],
-    maxItems: 1,
-    targetValueGp: 0,
-    duplicateChance: 0,
-    maxStackSize: 20,
-    rarityWeights: {
-      common: 1,
-      uncommon: 1,
-      rare: 1,
-      "very-rare": 1,
-      legendary: 1
-    }
-  }
-}, {
-  randomFn: () => 0.25,
-  shuffleRows: (rows) => rows
-});
+);
 
 assert.equal(presetModeIgnoresManualCuratedSelection.length, 1);
 assert.equal(

@@ -4,19 +4,20 @@
    Root + Variables
    ========================================================= */
 :is(
-  #rest-watch-app,
-  #rest-watch-player-app,
-  #marching-order-app,
-  #party-operations-global-modifier-summary,
-  #party-operations-gm-environment-page,
-  #party-operations-gm-downtime-page,
-  #party-operations-gm-merchants-page,
-  #party-operations-gm-audio-page,
-  #party-operations-gm-loot-page,
-  #party-operations-gm-loot-claims-board,
-  #party-operations-settings-hub,
-  #party-operations-app
-) > .window-content {
+    #rest-watch-app,
+    #rest-watch-player-app,
+    #marching-order-app,
+    #party-operations-global-modifier-summary,
+    #party-operations-gm-environment-page,
+    #party-operations-gm-downtime-page,
+    #party-operations-gm-merchants-page,
+    #party-operations-gm-audio-page,
+    #party-operations-gm-loot-page,
+    #party-operations-gm-loot-claims-board,
+    #party-operations-settings-hub,
+    #party-operations-app
+  )
+  > .window-content {
   padding: 0;
   height: 100%;
   overflow: hidden;
@@ -262,7 +263,9 @@
     color-mix(in srgb, var(--po-brass) 20%, var(--po-bg-alt))
   );
   color: var(--po-text-strong);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-brass) 48%, transparent), 0 0 12px color-mix(in srgb, var(--po-brass) 24%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--po-brass) 48%, transparent),
+    0 0 12px color-mix(in srgb, var(--po-brass) 24%, transparent);
 }
 
 .party-operations .po-audio-grid,
@@ -406,7 +409,11 @@
   padding: 12px 14px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
   border-radius: 18px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 96%, transparent), color-mix(in srgb, var(--po-bg) 92%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-bg-alt) 96%, transparent),
+    color-mix(in srgb, var(--po-bg) 92%, transparent)
+  );
 }
 
 .party-operations .po-audio-preview-media {
@@ -544,10 +551,18 @@
   border: 1px solid var(--po-border);
   border-radius: var(--po-radius);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 82%, transparent), color-mix(in srgb, var(--po-bg-alt) 72%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 82%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 72%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 720px 720px;
-  background-position: 0 0, center center;
+  background-size:
+    100% 100%,
+    720px 720px;
+  background-position:
+    0 0,
+    center center;
   box-shadow: 0 1px 0 color-mix(in srgb, var(--po-border-strong) 20%, transparent);
 }
 
@@ -610,7 +625,9 @@
   border-right: 2px solid var(--po-muted);
   border-bottom: 2px solid var(--po-muted);
   transform: rotate(45deg);
-  transition: transform 120ms ease, border-color 120ms ease;
+  transition:
+    transform 120ms ease,
+    border-color 120ms ease;
   margin-left: 8px;
   flex: 0 0 auto;
 }
@@ -960,7 +977,11 @@
   background:
     radial-gradient(circle at 18% 14%, color-mix(in srgb, var(--po-accent) 18%, transparent), transparent 52%),
     radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--po-success) 13%, transparent), transparent 46%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 78%, transparent), color-mix(in srgb, var(--po-bg) 86%, transparent));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-bg-alt) 78%, transparent),
+      color-mix(in srgb, var(--po-bg) 86%, transparent)
+    );
 }
 
 .party-operations .po-merchants-player-view .po-merchant-showcase-head {
@@ -1026,8 +1047,16 @@
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 56%, var(--po-border));
   overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 80%, var(--po-wood-light) 20%), color-mix(in srgb, var(--po-bg) 86%, var(--po-select-border) 14%)),
-    linear-gradient(90deg, color-mix(in srgb, var(--po-wood-mid) 28%, transparent), color-mix(in srgb, var(--po-wood-dark) 42%, transparent));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-bg-alt) 80%, var(--po-wood-light) 20%),
+      color-mix(in srgb, var(--po-bg) 86%, var(--po-select-border) 14%)
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--po-wood-mid) 28%, transparent),
+      color-mix(in srgb, var(--po-wood-dark) 42%, transparent)
+    );
 }
 
 .party-operations .po-merchants-player-view .po-merchant-doorway::before {
@@ -1035,7 +1064,13 @@
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--po-shadow-warm) 70%, transparent), transparent 22%, transparent 78%, color-mix(in srgb, var(--po-shadow-warm) 70%, transparent)),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--po-shadow-warm) 70%, transparent),
+      transparent 22%,
+      transparent 78%,
+      color-mix(in srgb, var(--po-shadow-warm) 70%, transparent)
+    ),
     linear-gradient(180deg, color-mix(in srgb, var(--po-shadow-warm-deep) 72%, transparent) 0 12%, transparent 30% 100%);
   pointer-events: none;
 }
@@ -1074,8 +1109,16 @@
   height: 226px;
   transform: translateX(-50%);
   background:
-    radial-gradient(circle at 50% 16%, color-mix(in srgb, var(--po-silhouette-1) 94%, transparent) 0 20%, transparent 23%),
-    radial-gradient(circle at 50% 66%, color-mix(in srgb, var(--po-silhouette-2) 96%, transparent) 0 58%, transparent 60%);
+    radial-gradient(
+      circle at 50% 16%,
+      color-mix(in srgb, var(--po-silhouette-1) 94%, transparent) 0 20%,
+      transparent 23%
+    ),
+    radial-gradient(
+      circle at 50% 66%,
+      color-mix(in srgb, var(--po-silhouette-2) 96%, transparent) 0 58%,
+      transparent 60%
+    );
   filter: blur(0.5px);
   opacity: 0.66;
   pointer-events: none;
@@ -1341,9 +1384,17 @@
   font: inherit;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 45%, var(--po-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 92%, white 8%), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface) 92%, white 8%),
+    color-mix(in srgb, var(--po-surface-2) 94%, transparent)
+  );
   text-align: left;
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .party-operations .po-loot-claim-actor-card:hover {
@@ -1354,15 +1405,25 @@
 
 .party-operations .po-loot-claim-actor-card.is-selected {
   border-color: color-mix(in srgb, var(--po-accent) 72%, var(--po-border-strong));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 22%, transparent), 0 12px 24px color-mix(in srgb, black 16%, transparent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 10%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 92%, transparent));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--po-accent) 22%, transparent),
+    0 12px 24px color-mix(in srgb, black 16%, transparent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-accent) 10%, var(--po-surface)),
+    color-mix(in srgb, var(--po-surface-2) 92%, transparent)
+  );
 }
 
 .party-operations .po-loot-claim-actor-card.is-stash {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-stash-accent) 14%, var(--po-surface)), color-mix(in srgb, var(--po-surface-2) 94%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-stash-accent) 14%, var(--po-surface)),
+    color-mix(in srgb, var(--po-surface-2) 94%, transparent)
+  );
 }
 
-.party-operations .po-loot-claim-actor-card input[name='lootClaimActorId'] {
+.party-operations .po-loot-claim-actor-card input[name="lootClaimActorId"] {
   position: absolute;
   opacity: 0;
   pointer-events: none;
@@ -1462,7 +1523,10 @@
 
 .party-operations .po-loot-claim-thumb[data-po-item-open-target] {
   cursor: pointer;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .party-operations .po-loot-claim-thumb[data-po-item-open-target]:hover {
@@ -1892,157 +1956,157 @@
   margin-bottom: var(--po-space-2);
 }
 
-  .party-operations .po-downtime-area-strip .po-downtime-status-card {
-    min-height: 52px;
-  }
+.party-operations .po-downtime-area-strip .po-downtime-status-card {
+  min-height: 52px;
+}
 
-  .party-operations .po-downtime-planning-strip {
-    margin-top: var(--po-space-1);
-    margin-bottom: var(--po-space-2);
-  }
+.party-operations .po-downtime-planning-strip {
+  margin-top: var(--po-space-1);
+  margin-bottom: var(--po-space-2);
+}
 
-  .party-operations .po-downtime-planning-strip .po-downtime-status-card {
-    min-height: 58px;
-  }
+.party-operations .po-downtime-planning-strip .po-downtime-status-card {
+  min-height: 58px;
+}
 
-  .party-operations .po-downtime-effects-bar {
-    display: flex;
-    align-items: baseline;
-    gap: var(--po-space-2);
-    padding: 7px 12px;
-    margin: var(--po-space-1) 0 var(--po-space-2);
-    background: color-mix(in srgb, var(--po-accent) 10%, var(--po-surface));
-    border: 1px solid color-mix(in srgb, var(--po-accent) 38%, var(--po-border));
-    border-radius: var(--po-radius);
-    font-size: 0.82rem;
-    flex-wrap: wrap;
-  }
+.party-operations .po-downtime-effects-bar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--po-space-2);
+  padding: 7px 12px;
+  margin: var(--po-space-1) 0 var(--po-space-2);
+  background: color-mix(in srgb, var(--po-accent) 10%, var(--po-surface));
+  border: 1px solid color-mix(in srgb, var(--po-accent) 38%, var(--po-border));
+  border-radius: var(--po-radius);
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
 
-  .party-operations .po-downtime-effects-bar-label {
-    font-size: 0.7rem;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: var(--po-muted);
-    flex: 0 0 auto;
-  }
+.party-operations .po-downtime-effects-bar-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--po-muted);
+  flex: 0 0 auto;
+}
 
-  .party-operations .po-downtime-effects-bar-value {
-    color: var(--po-accent-contrast);
-    font-weight: 500;
-  }
+.party-operations .po-downtime-effects-bar-value {
+  color: var(--po-accent-contrast);
+  font-weight: 500;
+}
 
-  .party-operations .po-downtime-action-guidance {
-    margin: 2px 0 var(--po-space-1);
-    padding: 5px 8px;
-    background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
-    border-left: 2px solid var(--po-accent);
-    border-radius: 0 var(--po-radius) var(--po-radius) 0;
-    font-size: 0.8rem;
-    color: var(--po-muted);
-  }
+.party-operations .po-downtime-action-guidance {
+  margin: 2px 0 var(--po-space-1);
+  padding: 5px 8px;
+  background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+  border-left: 2px solid var(--po-accent);
+  border-radius: 0 var(--po-radius) var(--po-radius) 0;
+  font-size: 0.8rem;
+  color: var(--po-muted);
+}
 
-  .party-operations .po-downtime-collect-row {
-    display: flex;
-    align-items: center;
-    gap: var(--po-space-2);
-    margin: var(--po-space-1) 0;
-    flex-wrap: wrap;
-  }
+.party-operations .po-downtime-collect-row {
+  display: flex;
+  align-items: center;
+  gap: var(--po-space-2);
+  margin: var(--po-space-1) 0;
+  flex-wrap: wrap;
+}
 
-  .party-operations .po-downtime-collect-btn {
-    flex: 0 0 auto;
-  }
+.party-operations .po-downtime-collect-btn {
+  flex: 0 0 auto;
+}
 
-  .party-operations .po-downtime-collect-hint {
-    font-size: 0.78rem;
-    color: var(--po-muted);
-    flex: 1 1 auto;
-  }
+.party-operations .po-downtime-collect-hint {
+  font-size: 0.78rem;
+  color: var(--po-muted);
+  flex: 1 1 auto;
+}
 
-  .party-operations .po-downtime-entry-card {
-    border-left: 2px solid var(--po-border-strong);
-    padding-left: var(--po-space-2);
-  }
+.party-operations .po-downtime-entry-card {
+  border-left: 2px solid var(--po-border-strong);
+  padding-left: var(--po-space-2);
+}
 
-  .party-operations .po-downtime-entry-card:has(.po-downtime-collect-btn) {
-    border-left-color: var(--po-success);
-  }
+.party-operations .po-downtime-entry-card:has(.po-downtime-collect-btn) {
+  border-left-color: var(--po-success);
+}
 
-  .party-operations .po-downtime-entry-meta {
-    margin-top: var(--po-space-1);
-    font-size: 0.75rem;
-    color: var(--po-muted);
-  }
+.party-operations .po-downtime-entry-meta {
+  margin-top: var(--po-space-1);
+  font-size: 0.75rem;
+  color: var(--po-muted);
+}
 
-  .party-operations .po-downtime-queue-item-row {
-    margin: 6px 0;
-    padding: 6px 8px;
-    border: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
-    border-radius: calc(var(--po-radius) - 2px);
-    background: color-mix(in srgb, var(--po-surface) 92%, transparent);
-    cursor: grab;
-  }
+.party-operations .po-downtime-queue-item-row {
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 70%, transparent);
+  border-radius: calc(var(--po-radius) - 2px);
+  background: color-mix(in srgb, var(--po-surface) 92%, transparent);
+  cursor: grab;
+}
 
-  .party-operations .po-downtime-queue-item-row.is-drop-target {
-    border-color: color-mix(in srgb, var(--po-accent) 60%, var(--po-border));
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 28%, transparent);
-  }
+.party-operations .po-downtime-queue-item-row.is-drop-target {
+  border-color: color-mix(in srgb, var(--po-accent) 60%, var(--po-border));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 28%, transparent);
+}
 
-  .party-operations .po-downtime-queue-item-row:active {
-    cursor: grabbing;
-  }
+.party-operations .po-downtime-queue-item-row:active {
+  cursor: grabbing;
+}
 
-  .party-operations .po-downtime-queue-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 4px;
-  }
+.party-operations .po-downtime-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
 
-  .party-operations .po-downtime-queue-head-actions {
-    margin-bottom: 6px;
-  }
+.party-operations .po-downtime-queue-head-actions {
+  margin-bottom: 6px;
+}
 
-  .party-operations [data-action="auto-resolve-and-deliver-downtime-entry"],
-  .party-operations [data-action="auto-resolve-all-downtime-entries"] {
-    font-weight: 600;
-  }
+.party-operations [data-action="auto-resolve-and-deliver-downtime-entry"],
+.party-operations [data-action="auto-resolve-all-downtime-entries"] {
+  font-weight: 600;
+}
 
-  .party-operations .po-downtime-queue-disclosure {
-    margin-top: 6px;
-  }
+.party-operations .po-downtime-queue-disclosure {
+  margin-top: 6px;
+}
 
-  .party-operations .po-downtime-queue-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-right: 6px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    border: 1px solid color-mix(in srgb, var(--po-border-strong) 55%, var(--po-border));
-    background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
-    color: var(--po-text-strong);
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
+.party-operations .po-downtime-queue-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 55%, var(--po-border));
+  background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+  color: var(--po-text-strong);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
 
-  .party-operations .po-downtime-queue-badge.is-next {
-    border-color: color-mix(in srgb, var(--po-success) 62%, var(--po-border));
-    background: color-mix(in srgb, var(--po-success) 18%, var(--po-surface));
-  }
+.party-operations .po-downtime-queue-badge.is-next {
+  border-color: color-mix(in srgb, var(--po-success) 62%, var(--po-border));
+  background: color-mix(in srgb, var(--po-success) 18%, var(--po-surface));
+}
 
-  .party-operations .po-downtime-queue-timeline {
-    margin-bottom: 6px;
-    font-weight: 600;
-    color: var(--po-accent-contrast);
-  }
+.party-operations .po-downtime-queue-timeline {
+  margin-bottom: 6px;
+  font-weight: 600;
+  color: var(--po-accent-contrast);
+}
 
-  .party-operations .po-downtime-queue-budget {
-    margin-bottom: 8px;
-    font-weight: 600;
-  }
+.party-operations .po-downtime-queue-budget {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
 .party-operations .po-section-head-row {
   display: flex;
   align-items: center;
@@ -2101,9 +2165,15 @@
 }
 
 @keyframes po-gather-launch-pop {
-  0% { transform: scale(1); }
-  35% { transform: scale(1.04); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 @keyframes po-gather-launch-ring {
@@ -2292,12 +2362,23 @@
   border-radius: calc(var(--po-radius) + 2px);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--po-accent) 7%, transparent), transparent 42%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 84%, transparent), color-mix(in srgb, var(--po-surface) 78%, transparent)),
-    url("./assets/po-gather-history-illustration.svg"),
-    url("./assets/po-cartography-texture.svg");
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-bg-alt) 84%, transparent),
+      color-mix(in srgb, var(--po-surface) 78%, transparent)
+    ),
+    url("./assets/po-gather-history-illustration.svg"), url("./assets/po-cartography-texture.svg");
   background-repeat: no-repeat, no-repeat, no-repeat, repeat;
-  background-size: auto, auto, min(320px, 42%) auto, 720px 720px;
-  background-position: 0 0, 0 0, right 12px bottom 10px, center center;
+  background-size:
+    auto,
+    auto,
+    min(320px, 42%) auto,
+    720px 720px;
+  background-position:
+    0 0,
+    0 0,
+    right 12px bottom 10px,
+    center center;
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, var(--po-accent-contrast) 10%, transparent),
     0 1px 0 color-mix(in srgb, var(--po-border-strong) 20%, transparent);
@@ -2612,7 +2693,10 @@
   border-color: var(--po-rep-accent);
   background: linear-gradient(140deg, var(--po-rep-bg), color-mix(in srgb, var(--po-bg-alt) 78%, transparent));
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-rep-accent) 18%, transparent);
-  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background-color 140ms ease;
 }
 
 .party-operations .po-reputation-standing-pill {
@@ -2904,7 +2988,11 @@
   border-radius: 14px;
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 55%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 86%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent));
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 86%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 92%, transparent)
+    );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 8%, transparent);
 }
 
@@ -3013,8 +3101,11 @@
   gap: 10px;
   min-height: 146px;
   border-color: color-mix(in srgb, var(--po-rep-accent) 26%, var(--po-border));
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 90%, transparent), color-mix(in srgb, var(--po-rep-bg) 58%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-bg-alt) 90%, transparent),
+    color-mix(in srgb, var(--po-rep-bg) 58%, transparent)
+  );
 }
 
 .party-operations .po-reputation-log-meta {
@@ -3095,14 +3186,16 @@
   align-items: start;
 }
 
-.party-operations .po-window[data-tool="gm-factions"]
+.party-operations
+  .po-window[data-tool="gm-factions"]
   :is(
     .po-reputation-filters,
     .po-reputation-builder-grid,
     .po-reputation-detail-grid,
     .po-reputation-player-impact-row,
     .po-reputation-log-row
-  ) > .po-resource-row {
+  )
+  > .po-resource-row {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 6px;
@@ -3128,8 +3221,11 @@
   padding: 16px;
   border: 1px dashed color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
   border-radius: 18px;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 78%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface) 78%, transparent),
+    color-mix(in srgb, var(--po-bg-alt) 92%, transparent)
+  );
 }
 
 .party-operations .po-reputation-gm-tools-row {
@@ -3353,7 +3449,9 @@
     color-mix(in srgb, var(--po-brass) 30%, var(--po-bg-alt))
   );
   color: var(--po-text-strong);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 36%, transparent), 0 0 0 1px color-mix(in srgb, var(--po-brass) 32%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 36%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--po-brass) 32%, transparent);
 }
 
 .party-operations .po-campfire-toggle.is-active,
@@ -3361,7 +3459,9 @@
   border-color: color-mix(in srgb, var(--po-ember-bright) 72%, var(--po-border));
   background: color-mix(in srgb, var(--po-ember) 22%, var(--po-bg-alt));
   color: color-mix(in srgb, white 88%, var(--po-ember-soft));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-ember-bright) 24%, transparent), 0 0 18px color-mix(in srgb, var(--po-ember) 18%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--po-ember-bright) 24%, transparent),
+    0 0 18px color-mix(in srgb, var(--po-ember) 18%, transparent);
 }
 
 .party-operations .po-campfire-toggle.is-active i,
@@ -3457,7 +3557,9 @@
 .party-operations .po-activity-select:focus,
 .party-operations .po-activity-select:focus-visible {
   border-color: var(--po-neon-green);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-neon-green) 55%, transparent), 0 0 8px color-mix(in srgb, var(--po-neon-green) 45%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--po-neon-green) 55%, transparent),
+    0 0 8px color-mix(in srgb, var(--po-neon-green) 45%, transparent);
   outline: none;
 }
 
@@ -3606,7 +3708,10 @@
   min-height: 34px;
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-tabs-ops .po-tab:not(.is-active) {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-tabs-ops
+  .po-tab:not(.is-active) {
   color: var(--po-ops-body);
 }
 
@@ -3619,7 +3724,9 @@
   grid-template-columns: 104px minmax(0, 1fr) 32px;
 }
 
-.party-operations [data-tool="rest-watch"]:is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-card {
+.party-operations
+  [data-tool="rest-watch"]:is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-card {
   grid-template-columns: 104px minmax(0, 1fr) auto;
 }
 
@@ -3668,7 +3775,9 @@
   line-height: 1.4;
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-notes-input::placeholder,
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-notes-input::placeholder,
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-input::placeholder {
   color: color-mix(in srgb, var(--po-muted) 78%, var(--po-text) 22%);
 }
@@ -3711,7 +3820,10 @@
   color: var(--po-ops-body);
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary + .po-op-summary {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-op-summary
+  + .po-op-summary {
   margin-top: 2px;
 }
 
@@ -3722,16 +3834,22 @@
 }
 
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary.is-warn,
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-warn {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-op-role-status.is-warn {
   color: var(--po-warn);
 }
 
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-summary.is-good,
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-ready {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-op-role-status.is-ready {
   color: var(--po-success);
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-role-status.is-missing {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-op-role-status.is-missing {
   color: var(--po-danger);
 }
 
@@ -3755,7 +3873,10 @@
   gap: var(--po-space-2);
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-op-action-row .po-btn {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-op-action-row
+  .po-btn {
   min-height: 32px;
 }
 
@@ -3765,7 +3886,10 @@
   font-size: 0.74rem;
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) #po-ops-recovery .po-btn.po-btn-sm {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  #po-ops-recovery
+  .po-btn.po-btn-sm {
   min-height: 26px;
   padding: 2px 8px;
   font-size: 0.7rem;
@@ -3779,17 +3903,27 @@
   padding: 6px 10px;
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-op-action-row {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-gm-quick-actions
+  .po-op-action-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--po-space-2);
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-op-action-row .po-btn {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-gm-quick-actions
+  .po-op-action-row
+  .po-btn {
   width: 100%;
 }
 
-.party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-gm-quick-panels {
+.party-operations
+  :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+  .po-gm-quick-actions
+  .po-gm-quick-panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--po-space-2);
@@ -3938,10 +4072,18 @@
   gap: 10px;
   padding: 14px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 78%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 94%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 78%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 720px 720px;
-  background-position: 0 0, center center;
+  background-size:
+    100% 100%,
+    720px 720px;
+  background-position:
+    0 0,
+    center center;
 }
 
 .party-operations [data-tool="marching-order"] .po-march-status-card.is-stable {
@@ -3951,14 +4093,22 @@
 .party-operations [data-tool="marching-order"] .po-march-status-card.is-warn {
   border-color: color-mix(in srgb, var(--po-warn) 48%, var(--po-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-warning-surface-1) 50%, transparent), color-mix(in srgb, var(--po-bg-alt) 82%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-warning-surface-1) 50%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 82%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
 }
 
 .party-operations [data-tool="marching-order"] .po-march-status-card.is-alert {
   border-color: color-mix(in srgb, var(--po-danger) 48%, var(--po-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-danger) 10%, transparent), color-mix(in srgb, var(--po-bg-alt) 84%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-danger) 10%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 84%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
 }
 
@@ -3990,7 +4140,11 @@
   width: var(--po-march-health, 100%);
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--po-danger) 78%, #f3c28a 22%), color-mix(in srgb, var(--po-success) 80%, #d9efc2 20%));
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--po-danger) 78%, #f3c28a 22%),
+    color-mix(in srgb, var(--po-success) 80%, #d9efc2 20%)
+  );
 }
 
 .party-operations [data-tool="marching-order"] .po-march-status-grid,
@@ -4336,10 +4490,18 @@
   border: 1px solid var(--po-border, #3a4758);
   border-radius: 10px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent),
+      color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 280px 280px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 10px 24px color-mix(in srgb, #5d3c18 16%, transparent);
+  background-size:
+    100% 100%,
+    280px 280px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    0 10px 24px color-mix(in srgb, #5d3c18 16%, transparent);
   color: var(--po-text, #2b1c0f);
   font-family: var(--po-fantasy-font);
   pointer-events: auto;
@@ -4355,12 +4517,16 @@
   text-align: center;
   border: 1px solid var(--po-border, #3a4758);
   border-radius: 8px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%),
+    color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
 }
 
 #po-click-opener,
-#po-sidebar-launcher {
+.po-sidebar-launcher {
   --po-bg: #dcc9a4;
   --po-bg-alt: #f2e3c0;
   --po-surface: #f8edd4;
@@ -4391,9 +4557,15 @@
   justify-content: center;
   border-radius: 10px;
   border: 1px solid var(--po-border, #9b7b4a);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 84%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 96%, white 4%),
+    color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 84%, transparent)
+  );
   color: var(--po-text-strong, #1a1008);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 44%, transparent), 0 8px 20px color-mix(in srgb, #5b3b17 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 44%, transparent),
+    0 8px 20px color-mix(in srgb, #5b3b17 18%, transparent);
   cursor: pointer;
 }
 
@@ -4401,130 +4573,119 @@
   border-color: var(--po-accent, #805423);
 }
 
-#po-sidebar-launcher {
+.po-sidebar-launcher {
   position: sticky;
-  top: 8px;
+  top: 4px;
   z-index: 2;
   width: 100%;
   box-sizing: border-box;
   flex: 0 0 auto;
-  margin: 0 0 8px;
-  padding: 8px;
+  margin: 0 0 6px;
+  padding: 6px;
   border: 1px solid var(--po-border, #9b7b4a);
-  border-radius: 10px;
+  border-radius: 8px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 94%, transparent),
+      color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 88%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 280px 280px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 38%, transparent), 0 10px 24px color-mix(in srgb, #5d3c18 16%, transparent);
+  background-size:
+    100% 100%,
+    280px 280px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    0 6px 14px color-mix(in srgb, #5d3c18 12%, transparent);
   color: var(--po-text, #2b1c0f);
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-header {
+.po-sidebar-launcher .po-sidebar-launcher-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 4px;
+  margin-bottom: 5px;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-title {
+.po-sidebar-launcher .po-sidebar-launcher-title {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--po-text-strong, #1a1008);
   text-shadow: 0 1px 0 color-mix(in srgb, white 34%, transparent);
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-grid {
+.po-sidebar-launcher .po-sidebar-launcher-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
 }
 
-#po-sidebar-launcher .po-sidebar-btn {
-  min-height: 30px;
+.po-sidebar-launcher .po-sidebar-btn {
+  min-height: 26px;
   border: 1px solid var(--po-border, #9b7b4a);
-  border-radius: 8px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%), color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent));
+  border-radius: 6px;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated, #fff7e3) 95%, white 5%),
+    color-mix(in srgb, var(--po-bg-alt, #f2e3c0) 82%, transparent)
+  );
   color: var(--po-text, #2b1c0f);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   font-family: inherit;
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 42%, transparent);
   cursor: pointer;
 }
 
-#po-sidebar-launcher .po-sidebar-btn:hover {
+.po-sidebar-launcher .po-sidebar-btn:hover {
   border-color: var(--po-accent, #805423);
 }
 
-#po-sidebar-launcher .po-sidebar-dock {
-  width: 30px;
-  min-width: 30px;
+.po-sidebar-launcher .po-sidebar-dock {
+  width: 26px;
+  min-width: 26px;
+  min-height: 24px;
   padding: 0;
 }
 
-#po-sidebar-launcher .po-sidebar-btn span {
-  font-size: 0.72rem;
+.po-sidebar-launcher .po-sidebar-btn span {
+  font-size: 0.66rem;
   font-weight: 600;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio {
-  display: grid;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
+.po-sidebar-launcher .po-sidebar-launcher-audio {
+  display: block;
+  margin-top: 5px;
+  padding-top: 5px;
   border-top: 1px solid color-mix(in srgb, var(--po-border, #9b7b4a) 72%, transparent);
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-head {
+.po-sidebar-launcher .po-sidebar-launcher-audio-compact {
   display: grid;
-  gap: 2px;
-}
-
-#po-sidebar-launcher .po-sidebar-launcher-audio-title {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--po-muted, #6f5940);
-}
-
-#po-sidebar-launcher .po-sidebar-launcher-audio-status {
-  font-size: 0.68rem;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--po-text, #2b1c0f) 82%, transparent);
-}
-
-#po-sidebar-launcher .po-sidebar-launcher-audio-status.is-playing {
-  color: var(--po-accent, #805423);
-}
-
-#po-sidebar-launcher .po-sidebar-launcher-audio-status.is-paused {
-  color: var(--po-warn, #efc872);
-}
-
-#po-sidebar-launcher .po-sidebar-launcher-audio-field {
-  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
+  align-items: center;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-field span {
-  font-size: 0.68rem;
-  font-weight: 600;
-  color: var(--po-muted, #6f5940);
+.po-sidebar-launcher .po-sidebar-launcher-audio-compact.is-playing .po-sidebar-launcher-select {
+  border-color: color-mix(in srgb, var(--po-accent, #805423) 65%, var(--po-border, #9b7b4a));
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-select {
+.po-sidebar-launcher .po-sidebar-launcher-audio-compact.is-paused .po-sidebar-launcher-select {
+  border-color: color-mix(in srgb, var(--po-warn, #efc872) 60%, var(--po-border, #9b7b4a));
+}
+
+.po-sidebar-launcher .po-sidebar-launcher-select {
   width: 100%;
-  min-height: 32px;
+  min-height: 28px;
   border: 1px solid #8f6f3f;
-  border-radius: 8px;
+  border-radius: 6px;
   background: linear-gradient(180deg, #f2e8c9 0%, #d6bc84 100%);
   color: #1d140b;
   color-scheme: light;
@@ -4533,59 +4694,74 @@
   letter-spacing: 0.04em;
   text-shadow: 0 1px 0 color-mix(in srgb, white 42%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 46%, transparent);
-  padding: 0 10px;
+  padding: 0 8px;
+  font-size: 0.72rem;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-select option,
-#po-sidebar-launcher .po-sidebar-launcher-select optgroup {
+.po-sidebar-launcher .po-sidebar-launcher-select option,
+.po-sidebar-launcher .po-sidebar-launcher-select optgroup {
   background: #f2e8c9;
   color: #1d140b;
   font-family: "Cinzel", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   font-weight: 600;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-select:hover {
+.po-sidebar-launcher .po-sidebar-launcher-select:hover {
   border-color: var(--po-accent, #805423);
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-select:focus,
-#po-sidebar-launcher .po-sidebar-launcher-select:focus-visible {
+.po-sidebar-launcher .po-sidebar-launcher-select:focus,
+.po-sidebar-launcher .po-sidebar-launcher-select:focus-visible {
   outline: none;
   border-color: var(--po-accent, #805423);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent, #805423) 35%, transparent);
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-select:disabled {
+.po-sidebar-launcher .po-sidebar-launcher-select:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-controls {
+.po-sidebar-launcher .po-sidebar-launcher-audio-controls {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-btn {
+.po-sidebar-launcher .po-sidebar-launcher-audio-btn {
+  width: 30px;
+  min-width: 30px;
   min-height: 28px;
-  padding: 0 6px;
+  padding: 0;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-btn span {
-  font-size: 0.68rem;
+.po-sidebar-launcher .po-sidebar-launcher-audio-btn span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-btn.is-primary {
+.po-sidebar-launcher .po-sidebar-launcher-audio-btn.is-primary {
   border-color: color-mix(in srgb, var(--po-accent, #805423) 40%, var(--po-border, #9b7b4a));
-  background: linear-gradient(180deg, color-mix(in srgb, #f2e8c9 90%, var(--po-bg-alt, #f2e3c0)), color-mix(in srgb, var(--po-accent, #805423) 18%, var(--po-bg-alt, #f2e3c0)));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, #f2e8c9 90%, var(--po-bg-alt, #f2e3c0)),
+    color-mix(in srgb, var(--po-accent, #805423) 18%, var(--po-bg-alt, #f2e3c0))
+  );
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled {
+.po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-#po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled:hover {
+.po-sidebar-launcher .po-sidebar-launcher-audio-btn:disabled:hover {
   border-color: var(--po-border, #9b7b4a);
 }
 
@@ -4634,7 +4810,11 @@
   gap: var(--po-space-3);
   padding: 12px 14px;
   border-bottom-color: color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 95%, transparent), color-mix(in srgb, var(--po-bg-alt) 86%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 95%, transparent),
+    color-mix(in srgb, var(--po-bg-alt) 86%, transparent)
+  );
   box-shadow: inset 0 -1px 0 color-mix(in srgb, white 24%, transparent);
   backdrop-filter: blur(4px);
 }
@@ -4677,14 +4857,22 @@
   padding: var(--po-space-2);
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
   border-radius: var(--po-radius);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 86%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 94%, transparent),
+    color-mix(in srgb, var(--po-bg-alt) 86%, transparent)
+  );
   box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent);
 }
 
 .party-operations .po-overview-card {
   border: 1px solid var(--po-border);
   border-radius: 10px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-surface) 84%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface-elevated) 94%, transparent),
+    color-mix(in srgb, var(--po-surface) 84%, transparent)
+  );
   padding: 8px 10px;
   display: flex;
   flex-direction: column;
@@ -4842,10 +5030,18 @@
 .party-operations .po-rank-empty {
   border-color: color-mix(in srgb, var(--po-border-strong) 32%, var(--po-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, transparent), color-mix(in srgb, var(--po-bg-alt) 82%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 94%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 82%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 520px 520px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 30%, transparent), 0 8px 22px color-mix(in srgb, #5d3b16 14%, transparent);
+  background-size:
+    100% 100%,
+    520px 520px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
+    0 8px 22px color-mix(in srgb, #5d3b16 14%, transparent);
 }
 
 .party-operations .po-card {
@@ -4890,14 +5086,22 @@
 
 .party-operations .po-note-toggle.has-saved-note {
   border-color: color-mix(in srgb, var(--po-accent) 76%, var(--po-border));
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 24%, var(--po-bg-alt)), color-mix(in srgb, var(--po-accent) 10%, var(--po-surface)));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-accent) 24%, var(--po-bg-alt)),
+    color-mix(in srgb, var(--po-accent) 10%, var(--po-surface))
+  );
   color: var(--po-accent-contrast);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-accent) 18%, transparent);
 }
 
 .party-operations .po-note-toggle.has-saved-note:hover {
   border-color: color-mix(in srgb, var(--po-accent) 88%, white 8%);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-accent) 32%, var(--po-bg-alt)), color-mix(in srgb, var(--po-accent) 14%, var(--po-surface)));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-accent) 32%, var(--po-bg-alt)),
+    color-mix(in srgb, var(--po-accent) 14%, var(--po-surface))
+  );
 }
 
 .party-operations .po-note-toggle.has-saved-note i {
@@ -5037,7 +5241,11 @@
 .party-operations .po-btn,
 .party-operations .po-icon-btn,
 .party-operations .po-tab {
-  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
 }
 
 .party-operations .po-btn:focus-visible,
@@ -5110,12 +5318,24 @@
   cursor: not-allowed;
 }
 
-.party-operations .u-mt-1 { margin-top: var(--po-space-1); }
-.party-operations .u-mt-2 { margin-top: var(--po-space-2); }
-.party-operations .u-mt-3 { margin-top: var(--po-space-3); }
-.party-operations .u-mb-1 { margin-bottom: var(--po-space-1); }
-.party-operations .u-mb-2 { margin-bottom: var(--po-space-2); }
-.party-operations .u-mb-3 { margin-bottom: var(--po-space-3); }
+.party-operations .u-mt-1 {
+  margin-top: var(--po-space-1);
+}
+.party-operations .u-mt-2 {
+  margin-top: var(--po-space-2);
+}
+.party-operations .u-mt-3 {
+  margin-top: var(--po-space-3);
+}
+.party-operations .u-mb-1 {
+  margin-bottom: var(--po-space-1);
+}
+.party-operations .u-mb-2 {
+  margin-bottom: var(--po-space-2);
+}
+.party-operations .u-mb-3 {
+  margin-bottom: var(--po-space-3);
+}
 
 /* =========================================================
    Navigation Consistency Overrides
@@ -5176,7 +5396,9 @@
 }
 
 .party-operations .po-tabs .po-tab.is-active {
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--po-brass) 54%, transparent), 0 0 12px color-mix(in srgb, var(--po-brass) 30%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--po-brass) 54%, transparent),
+    0 0 12px color-mix(in srgb, var(--po-brass) 30%, transparent);
 }
 
 .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-grid {
@@ -5301,7 +5523,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-gm-quick-panels {
+  .party-operations
+    :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+    .po-gm-quick-actions
+    .po-gm-quick-panels {
     grid-template-columns: 1fr;
   }
 
@@ -5357,25 +5582,27 @@
   align-items: start;
 }
 
-.party-operations :is(
-  .po-cards,
-  .po-ranks,
-  .po-gm-panel,
-  .po-content,
-  .po-op-role-row,
-  .po-op-action-row,
-  .po-resource-row,
-  .po-two-col,
-  .po-reputation-grid,
-  .po-recovery-grid,
-  .po-info-strip,
-  .po-loot-preview-panel,
-  .po-loot-pack-grid,
-  .po-roll-table-grid,
-  .po-item-filter-grid,
-  .po-non-party-grid,
-  .po-loot-preview-items-grid
-) > * {
+.party-operations
+  :is(
+    .po-cards,
+    .po-ranks,
+    .po-gm-panel,
+    .po-content,
+    .po-op-role-row,
+    .po-op-action-row,
+    .po-resource-row,
+    .po-two-col,
+    .po-reputation-grid,
+    .po-recovery-grid,
+    .po-info-strip,
+    .po-loot-preview-panel,
+    .po-loot-pack-grid,
+    .po-roll-table-grid,
+    .po-item-filter-grid,
+    .po-non-party-grid,
+    .po-loot-preview-items-grid
+  )
+  > * {
   min-width: 0;
 }
 
@@ -5565,7 +5792,10 @@
   .party-operations .po-resource-config-panel,
   .party-operations .po-resource-config-split,
   .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-recovery-grid,
-  .party-operations :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"]) .po-gm-quick-actions .po-gm-quick-panels {
+  .party-operations
+    :is(.po-window[data-main-tab="operations"], .po-window[data-main-tab="gm"])
+    .po-gm-quick-actions
+    .po-gm-quick-panels {
     grid-template-columns: 1fr;
   }
 
@@ -5625,19 +5855,20 @@
    Marching Order Single-Scroll + Column Layout Fixes
    ========================================================= */
 :is(
-  #rest-watch-app,
-  #rest-watch-player-app,
-  #marching-order-app,
-  #party-operations-global-modifier-summary,
-  #party-operations-gm-environment-page,
-  #party-operations-gm-downtime-page,
-  #party-operations-gm-merchants-page,
-  #party-operations-gm-audio-page,
-  #party-operations-gm-loot-page,
-  #party-operations-gm-loot-claims-board,
-  #party-operations-settings-hub,
-  #party-operations-app
-) > .window-content {
+    #rest-watch-app,
+    #rest-watch-player-app,
+    #marching-order-app,
+    #party-operations-global-modifier-summary,
+    #party-operations-gm-environment-page,
+    #party-operations-gm-downtime-page,
+    #party-operations-gm-merchants-page,
+    #party-operations-gm-audio-page,
+    #party-operations-gm-loot-page,
+    #party-operations-gm-loot-claims-board,
+    #party-operations-settings-hub,
+    #party-operations-app
+  )
+  > .window-content {
   overflow: auto;
 }
 
@@ -5836,7 +6067,11 @@
   line-height: 1.1;
 }
 
-.party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters .po-resource-row :is(.po-input, .po-select) {
+.party-operations
+  [data-tool="gm-merchants"]
+  .po-merchant-collection-filters
+  .po-resource-row
+  :is(.po-input, .po-select) {
   width: 100%;
   min-width: 0;
 }
@@ -6092,20 +6327,31 @@
   align-items: end;
 }
 
-.party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid > .po-resource-row {
+.party-operations
+  [data-tool="gm-merchants"]
+  .po-merchant-collection-filters.po-merchant-filter-grid
+  > .po-resource-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 3px;
   margin: 0;
 }
 
-.party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid > .po-resource-row > span {
+.party-operations
+  [data-tool="gm-merchants"]
+  .po-merchant-collection-filters.po-merchant-filter-grid
+  > .po-resource-row
+  > span {
   margin: 0;
   font-size: 0.72rem;
   line-height: 1.12;
 }
 
-.party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid > .po-resource-row :is(.po-input, .po-select) {
+.party-operations
+  [data-tool="gm-merchants"]
+  .po-merchant-collection-filters.po-merchant-filter-grid
+  > .po-resource-row
+  :is(.po-input, .po-select) {
   width: 100%;
   min-width: 0;
   min-height: 30px;
@@ -6718,7 +6964,9 @@
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 35%, var(--po-border));
   border-radius: 14px;
   background: color-mix(in srgb, var(--po-surface) 90%, transparent);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent), 0 10px 30px color-mix(in srgb, black 10%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 14%, transparent),
+    0 10px 30px color-mix(in srgb, black 10%, transparent);
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-merchant {
@@ -6955,7 +7203,9 @@
     linear-gradient(180deg, color-mix(in srgb, white 5%, transparent), transparent 78%),
     color-mix(in srgb, var(--po-bg-alt) 90%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--po-border-strong) 28%, var(--po-border));
-  transition: background-color 140ms ease, box-shadow 140ms ease;
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .party-operations.po-merchant-shop-dialog-app .po-merchant-trade-table tbody tr:hover {
@@ -7145,7 +7395,9 @@
   gap: var(--po-panel-gap);
 }
 
-.party-operations .po-window[data-tool] :is(.po-gm-section, .po-panel-disclosure, .po-op-role-row, .po-card, .po-rank-col, .po-watch-entry) {
+.party-operations
+  .po-window[data-tool]
+  :is(.po-gm-section, .po-panel-disclosure, .po-op-role-row, .po-card, .po-rank-col, .po-watch-entry) {
   padding: 8px;
   gap: 8px;
 }
@@ -7202,18 +7454,12 @@
   max-width: 1120px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) {
+.party-operations :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"]) {
   --po-primary-shell-max: clamp(980px, 92vw, 1500px);
   --po-primary-sidebar-width: clamp(280px, 23vw, 360px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-primary-shell {
+.party-operations :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"]) .po-primary-shell {
   display: flex;
   flex-direction: column;
   gap: var(--po-panel-gap);
@@ -7222,28 +7468,26 @@
   margin-inline: auto;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-primary-shell > * {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-primary-shell
+  > * {
   width: 100%;
   max-width: none;
   margin-inline: 0;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-grid.po-primary-layout {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-grid.po-primary-layout {
   grid-template-columns: minmax(0, 1fr) minmax(280px, var(--po-primary-sidebar-width));
   gap: 10px;
   align-items: start;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-grid.po-primary-layout.is-rest-watch-layout {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-grid.po-primary-layout.is-rest-watch-layout {
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -7263,25 +7507,28 @@
   max-width: 1200px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) {
+.party-operations
+  :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  ) {
   --po-layout-max: clamp(980px, 92vw, 1500px);
 }
 
-.party-operations :is(
-  .po-window[data-tool="global-modifiers"],
-  .po-window[data-tool="gm-environment"],
-  .po-window[data-tool="gm-downtime"],
-  .po-window[data-tool="gm-merchants"],
-  .po-window[data-tool="gm-loot"],
-  .po-window[data-tool="gm-loot-claims-board"]
-) .po-grid.is-operations-layout {
+.party-operations
+  :is(
+    .po-window[data-tool="global-modifiers"],
+    .po-window[data-tool="gm-environment"],
+    .po-window[data-tool="gm-downtime"],
+    .po-window[data-tool="gm-merchants"],
+    .po-window[data-tool="gm-loot"],
+    .po-window[data-tool="gm-loot-claims-board"]
+  )
+  .po-grid.is-operations-layout {
   grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   gap: 10px;
   align-items: start;
@@ -7320,10 +7567,9 @@
 }
 
 @media (max-width: 1280px) {
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="marching-order"]
-  ) .po-grid.po-primary-layout {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+    .po-grid.po-primary-layout {
     grid-template-columns: 1fr;
   }
 }
@@ -7349,16 +7595,17 @@
   --po-press-shadow: 0 10px 24px color-mix(in srgb, black 32%, transparent);
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-) {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ) {
   position: relative;
   overflow: hidden;
   isolation: isolate;
@@ -7370,16 +7617,17 @@
     transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-)::after {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  )::after {
   content: "";
   position: absolute;
   left: var(--po-click-origin-x);
@@ -7390,61 +7638,72 @@
   pointer-events: none;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.25);
-  background: radial-gradient(circle, color-mix(in srgb, var(--po-click-ring) 76%, white 10%) 0%, color-mix(in srgb, var(--po-click-ring) 24%, transparent) 62%, transparent 100%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--po-click-ring) 76%, white 10%) 0%,
+    color-mix(in srgb, var(--po-click-ring) 24%, transparent) 62%,
+    transparent 100%
+  );
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-):hover {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ):hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 16px color-mix(in srgb, black 18%, transparent);
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-):active {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ):active {
   transform: translateY(1px) scale(0.98);
   box-shadow: 0 2px 8px color-mix(in srgb, black 16%, transparent);
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-).is-click-animating {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ).is-click-animating {
   animation: po-interaction-pop 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: var(--po-press-shadow), 0 0 0 1px color-mix(in srgb, var(--po-click-ring) 42%, transparent);
+  box-shadow:
+    var(--po-press-shadow),
+    0 0 0 1px color-mix(in srgb, var(--po-click-ring) 42%, transparent);
 }
 
-.party-operations :is(
-  .po-btn,
-  .po-icon-btn,
-  .po-tab,
-  .po-entry-handle,
-  .po-char-btn,
-  .po-exh-btn,
-  .po-campfire-toggle,
-  .po-panel-disclosure > summary
-).is-click-animating::after {
+.party-operations
+  :is(
+    .po-btn,
+    .po-icon-btn,
+    .po-tab,
+    .po-entry-handle,
+    .po-char-btn,
+    .po-exh-btn,
+    .po-campfire-toggle,
+    .po-panel-disclosure > summary
+  ).is-click-animating::after {
   animation: po-interaction-ripple 420ms ease-out;
 }
 
@@ -7472,53 +7731,60 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .party-operations :is(
-    .po-btn,
-    .po-icon-btn,
-    .po-tab,
-    .po-entry-handle,
-    .po-char-btn,
-    .po-exh-btn,
-    .po-campfire-toggle,
-    .po-panel-disclosure > summary
-  ) {
-    transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+  .party-operations
+    :is(
+      .po-btn,
+      .po-icon-btn,
+      .po-tab,
+      .po-entry-handle,
+      .po-char-btn,
+      .po-exh-btn,
+      .po-campfire-toggle,
+      .po-panel-disclosure > summary
+    ) {
+    transition:
+      border-color 120ms ease,
+      background-color 120ms ease,
+      box-shadow 120ms ease;
     animation: none !important;
   }
 
-  .party-operations :is(
-    .po-btn,
-    .po-icon-btn,
-    .po-tab,
-    .po-entry-handle,
-    .po-char-btn,
-    .po-exh-btn,
-    .po-campfire-toggle,
-    .po-panel-disclosure > summary
-  )::after {
+  .party-operations
+    :is(
+      .po-btn,
+      .po-icon-btn,
+      .po-tab,
+      .po-entry-handle,
+      .po-char-btn,
+      .po-exh-btn,
+      .po-campfire-toggle,
+      .po-panel-disclosure > summary
+    )::after {
     display: none;
   }
 
-  .party-operations :is(
-    .po-btn,
-    .po-icon-btn,
-    .po-tab,
-    .po-entry-handle,
-    .po-char-btn,
-    .po-exh-btn,
-    .po-campfire-toggle,
-    .po-panel-disclosure > summary
-  ):hover,
-  .party-operations :is(
-    .po-btn,
-    .po-icon-btn,
-    .po-tab,
-    .po-entry-handle,
-    .po-char-btn,
-    .po-exh-btn,
-    .po-campfire-toggle,
-    .po-panel-disclosure > summary
-  ):active {
+  .party-operations
+    :is(
+      .po-btn,
+      .po-icon-btn,
+      .po-tab,
+      .po-entry-handle,
+      .po-char-btn,
+      .po-exh-btn,
+      .po-campfire-toggle,
+      .po-panel-disclosure > summary
+    ):hover,
+  .party-operations
+    :is(
+      .po-btn,
+      .po-icon-btn,
+      .po-tab,
+      .po-entry-handle,
+      .po-char-btn,
+      .po-exh-btn,
+      .po-campfire-toggle,
+      .po-panel-disclosure > summary
+    ):active {
     transform: none;
     box-shadow: none;
   }
@@ -7554,7 +7820,11 @@
   gap: 10px;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] #po-panel-gm-loot-page .po-loot-control-card-encounter-shape .po-resource-row {
+.party-operations
+  .po-window[data-tool="gm-loot"]
+  #po-panel-gm-loot-page
+  .po-loot-control-card-encounter-shape
+  .po-resource-row {
   grid-template-columns: clamp(108px, 10vw, 148px) minmax(0, 1fr);
 }
 
@@ -7643,31 +7913,43 @@
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-warning-card {
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 40%, var(--po-border));
   border-radius: 14px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 90%, transparent), color-mix(in srgb, var(--po-bg-alt) 78%, transparent));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--po-surface) 90%, transparent),
+    color-mix(in srgb, var(--po-bg-alt) 78%, transparent)
+  );
   box-shadow: 0 10px 18px color-mix(in srgb, black 16%, transparent);
 }
 
-.party-operations .po-window[data-tool="gm-loot"] :is(
-  .po-loot-control-card,
-  .po-gm-loot-builder-item-card,
-  .po-loot-roll-card,
-  .po-loot-sidebar-card,
-  .po-loot-source-panel-card,
-  .po-loot-claims-summary-card,
-  .po-loot-warning-card
-) {
-  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+.party-operations
+  .po-window[data-tool="gm-loot"]
+  :is(
+    .po-loot-control-card,
+    .po-gm-loot-builder-item-card,
+    .po-loot-roll-card,
+    .po-loot-sidebar-card,
+    .po-loot-source-panel-card,
+    .po-loot-claims-summary-card,
+    .po-loot-warning-card
+  ) {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background-color 160ms ease;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] :is(
-  .po-loot-control-card,
-  .po-gm-loot-builder-item-card,
-  .po-loot-roll-card,
-  .po-loot-sidebar-card,
-  .po-loot-source-panel-card,
-  .po-loot-claims-summary-card,
-  .po-loot-warning-card
-):hover {
+.party-operations
+  .po-window[data-tool="gm-loot"]
+  :is(
+    .po-loot-control-card,
+    .po-gm-loot-builder-item-card,
+    .po-loot-roll-card,
+    .po-loot-sidebar-card,
+    .po-loot-source-panel-card,
+    .po-loot-claims-summary-card,
+    .po-loot-warning-card
+  ):hover {
   transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--po-accent) 55%, var(--po-border-strong));
   box-shadow: 0 14px 28px color-mix(in srgb, black 20%, transparent);
@@ -7686,7 +7968,11 @@
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-sidebar-card-highlight {
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--po-accent) 18%, transparent), transparent 34%),
-    linear-gradient(160deg, color-mix(in srgb, var(--po-accent) 12%, var(--po-bg-alt)), color-mix(in srgb, var(--po-surface) 84%, transparent));
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--po-accent) 12%, var(--po-bg-alt)),
+      color-mix(in srgb, var(--po-surface) 84%, transparent)
+    );
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-control-card-head {
@@ -7730,12 +8016,10 @@
   padding: 10px 12px;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] :is(
-  .po-loot-mini-metric,
-  .po-loot-sidebar-metric,
-  .po-loot-currency-pill,
-  .po-loot-claims-summary-card
-) span {
+.party-operations
+  .po-window[data-tool="gm-loot"]
+  :is(.po-loot-mini-metric, .po-loot-sidebar-metric, .po-loot-currency-pill, .po-loot-claims-summary-card)
+  span {
   display: block;
   font-size: 0.72rem;
   color: var(--po-muted);
@@ -7743,12 +8027,10 @@
   letter-spacing: 0.08em;
 }
 
-.party-operations .po-window[data-tool="gm-loot"] :is(
-  .po-loot-mini-metric,
-  .po-loot-sidebar-metric,
-  .po-loot-currency-pill,
-  .po-loot-claims-summary-card
-) strong {
+.party-operations
+  .po-window[data-tool="gm-loot"]
+  :is(.po-loot-mini-metric, .po-loot-sidebar-metric, .po-loot-currency-pill, .po-loot-claims-summary-card)
+  strong {
   display: block;
   margin-top: 4px;
   font-size: 0.96rem;
@@ -7778,10 +8060,18 @@
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 34%, var(--po-border));
   border-radius: 16px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%), color-mix(in srgb, var(--po-bg-alt) 90%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface-elevated) 94%, white 6%),
+      color-mix(in srgb, var(--po-bg-alt) 90%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 520px 520px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 32%, transparent), 0 10px 22px color-mix(in srgb, black 12%, transparent);
+  background-size:
+    100% 100%,
+    520px 520px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 32%, transparent),
+    0 10px 22px color-mix(in srgb, black 12%, transparent);
   backdrop-filter: blur(6px);
 }
 
@@ -7823,9 +8113,17 @@
   border-radius: 16px;
   border-width: 2px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-bg-alt) 84%, transparent), color-mix(in srgb, var(--po-surface) 78%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-bg-alt) 84%, transparent),
+      color-mix(in srgb, var(--po-surface) 78%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background-color 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-inline-actions {
@@ -7859,7 +8157,9 @@
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-dropzone.is-drop-active,
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-preview-dropzone:hover {
   border-color: color-mix(in srgb, var(--po-accent) 78%, white 6%);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--po-accent) 20%, transparent), 0 16px 30px color-mix(in srgb, black 18%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--po-accent) 20%, transparent),
+    0 16px 30px color-mix(in srgb, black 18%, transparent);
   transform: translateY(-1px);
 }
 
@@ -7896,7 +8196,10 @@
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-thumb[data-po-item-open-target] {
   cursor: pointer;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-builder-item-thumb[data-po-item-open-target]:hover {
@@ -8065,12 +8368,9 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations .po-window[data-tool="gm-loot"] :is(
-    .po-loot-action-bar,
-    .po-loot-section-head,
-    .po-loot-source-panel-head,
-    .po-gm-loot-pack-toolbar
-  ) {
+  .party-operations
+    .po-window[data-tool="gm-loot"]
+    :is(.po-loot-action-bar, .po-loot-section-head, .po-loot-source-panel-head, .po-gm-loot-pack-toolbar) {
     display: grid;
     grid-template-columns: 1fr;
   }
@@ -8125,8 +8425,14 @@
   border-radius: 16px;
   background:
     linear-gradient(165deg, color-mix(in srgb, var(--po-accent) 8%, transparent), transparent 54%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 88%, transparent), color-mix(in srgb, var(--po-bg-alt) 88%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 7%, transparent), 0 12px 32px color-mix(in srgb, black 12%, transparent);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 88%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 88%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 7%, transparent),
+    0 12px 32px color-mix(in srgb, black 12%, transparent);
 }
 
 .party-operations .po-window[data-tool="gm-loot"] .po-loot-taxonomy-chip-grid,
@@ -8273,8 +8579,14 @@
   border-color: color-mix(in srgb, var(--po-border-strong) 42%, var(--po-border));
   background:
     linear-gradient(145deg, color-mix(in srgb, var(--po-accent) 10%, transparent), transparent 45%),
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 88%, transparent), color-mix(in srgb, var(--po-bg-alt) 92%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 6%, transparent), 0 16px 32px color-mix(in srgb, black 12%, transparent);
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 88%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 92%, transparent)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
+    0 16px 32px color-mix(in srgb, black 12%, transparent);
 }
 
 .party-operations .po-window[data-tool="gm-environment"] .po-env-hero-copy {
@@ -8335,10 +8647,18 @@
   padding: 14px;
   border-color: color-mix(in srgb, var(--po-border-strong) 38%, var(--po-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 90%, transparent), color-mix(in srgb, var(--po-bg-alt) 90%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 90%, transparent),
+      color-mix(in srgb, var(--po-bg-alt) 90%, transparent)
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 720px 720px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent), 0 10px 24px color-mix(in srgb, black 10%, transparent);
+  background-size:
+    100% 100%,
+    720px 720px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent),
+    0 10px 24px color-mix(in srgb, black 10%, transparent);
 }
 
 .party-operations .po-window[data-tool="gm-environment"] .po-env-field-grid {
@@ -8540,12 +8860,26 @@
   padding: 12px;
   border-color: color-mix(in srgb, var(--po-border-strong) 42%, var(--po-border));
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 96%, white 4%), color-mix(in srgb, var(--po-bg-alt) 94%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 96%, white 4%),
+      color-mix(in srgb, var(--po-bg-alt) 94%, transparent)
+    ),
     linear-gradient(135deg, color-mix(in srgb, var(--po-accent) 8%, transparent), transparent 34%),
-    repeating-linear-gradient(90deg, transparent 0 58px, color-mix(in srgb, var(--po-border) 18%, transparent) 58px 60px),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 58px,
+      color-mix(in srgb, var(--po-border) 18%, transparent) 58px 60px
+    ),
     url("./assets/po-cartography-texture.svg");
-  background-size: 100% 100%, 100% 100%, 100% 100%, 720px 720px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, white 5%, transparent), 0 16px 36px color-mix(in srgb, black 18%, transparent);
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    720px 720px;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 5%, transparent),
+    0 16px 36px color-mix(in srgb, black 18%, transparent);
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-head {
@@ -8603,7 +8937,11 @@
   border: 1px solid color-mix(in srgb, var(--po-border-strong) 46%, var(--po-border));
   border-radius: 14px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--po-surface) 94%, white 6%), color-mix(in srgb, var(--po-bg-alt) 92%, transparent)),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--po-surface) 94%, white 6%),
+      color-mix(in srgb, var(--po-bg-alt) 92%, transparent)
+    ),
     linear-gradient(90deg, color-mix(in srgb, var(--po-accent) 10%, transparent), transparent 18%);
 }
 
@@ -8621,11 +8959,17 @@
   justify-content: flex-start;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-shell :is(.po-op-summary, .po-hint, .po-resource-row > span, .po-audio-track-meta, .po-audio-preview-path) {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  .po-audio-mixer-shell
+  :is(.po-op-summary, .po-hint, .po-resource-row > span, .po-audio-track-meta, .po-audio-preview-path) {
   color: color-mix(in srgb, var(--po-text) 70%, var(--po-muted));
 }
 
-.party-operations .po-window[data-tool="gm-audio"] .po-audio-mixer-shell :is(.po-section-title, .po-audio-preview-name) {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  .po-audio-mixer-shell
+  :is(.po-section-title, .po-audio-preview-name) {
   color: color-mix(in srgb, var(--po-accent-contrast) 84%, var(--po-text));
 }
 
@@ -8705,12 +9049,9 @@
   align-items: start;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(
-  .po-audio-config-card,
-  .po-audio-filters-card,
-  .po-audio-results-card,
-  .po-audio-preview-card
-) {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-results-card, .po-audio-preview-card) {
   gap: 10px;
   min-width: 0;
   align-self: start;
@@ -8721,7 +9062,10 @@
   gap: 6px;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor)
+  .po-resource-row {
   display: grid;
   grid-template-columns: 1fr;
   gap: 3px;
@@ -8729,19 +9073,31 @@
   margin: 0;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row > span {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor)
+  .po-resource-row
+  > span {
   margin: 0;
   font-size: 0.68rem;
   line-height: 1.1;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row :is(.po-input, .po-select) {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor)
+  .po-resource-row
+  :is(.po-input, .po-select) {
   width: 100%;
   min-width: 0;
   min-height: 30px;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor) .po-resource-row input[type="range"] {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-config-card, .po-audio-filters-card, .po-audio-custom-editor)
+  .po-resource-row
+  input[type="range"] {
   width: 100%;
   min-width: 0;
 }
@@ -9001,12 +9357,18 @@
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-preset-list .po-audio-track-badges,
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-library-list, .po-audio-candidate-list) .po-audio-track-badges {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-library-list, .po-audio-candidate-list)
+  .po-audio-track-badges {
   width: 100%;
   justify-content: flex-start;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-library-list, .po-audio-candidate-list) .po-audio-track-row {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-library-list, .po-audio-candidate-list)
+  .po-audio-track-row {
   align-items: flex-start;
 }
 
@@ -9084,7 +9446,10 @@
   color: var(--po-muted);
   font-size: 0.72rem;
   line-height: 1.1;
-  transition: border-color 120ms ease, color 120ms ease, background-color 120ms ease;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background-color 120ms ease;
 }
 
 .party-operations .po-window[data-tool="gm-audio"] .po-audio-row-options[open] .po-audio-row-options-toggle,
@@ -9114,7 +9479,10 @@
   justify-content: flex-start;
 }
 
-.party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
+.party-operations
+  .po-window[data-tool="gm-audio"]
+  :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list)
+  .po-audio-track-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
@@ -9166,7 +9534,10 @@
     grid-column: auto;
   }
 
-  .party-operations .po-window[data-tool="gm-audio"] :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list) .po-audio-track-row {
+  .party-operations
+    .po-window[data-tool="gm-audio"]
+    :is(.po-audio-assigned-list, .po-audio-candidate-list, .po-audio-hidden-list)
+    .po-audio-track-row {
     grid-template-columns: 1fr;
   }
 
@@ -9199,36 +9570,32 @@
 /* =========================================================
    Rest Watch Layout Refresh
    ========================================================= */
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-cards {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-cards {
   display: grid;
   grid-template-columns: 1fr;
   gap: 12px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-card {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-card {
   padding: 0;
   overflow: hidden;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-card-shell {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-card-shell {
   display: grid;
   grid-template-columns: minmax(500px, 0.95fr) minmax(760px, 1.75fr);
   min-height: 100%;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) :is(.po-watch-assign-pane, .po-watch-detail-pane) {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  :is(.po-watch-assign-pane, .po-watch-detail-pane) {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -9236,57 +9603,51 @@
   padding: 10px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-assign-pane {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-assign-pane {
   border-right: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
   background:
     linear-gradient(180deg, color-mix(in srgb, white 4%, transparent), transparent 70%),
     color-mix(in srgb, var(--po-bg-alt) 74%, transparent);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-detail-pane {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-detail-pane {
   background:
     radial-gradient(circle at top right, color-mix(in srgb, var(--po-accent) 12%, transparent), transparent 34%),
     color-mix(in srgb, var(--po-surface) 82%, transparent);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) :is(.po-watch-card-head, .po-watch-detail-head) {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  :is(.po-watch-card-head, .po-watch-detail-head) {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) :is(.po-watch-assignment-list, .po-rest-settings-body) {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  :is(.po-watch-assignment-list, .po-rest-settings-body) {
   display: grid;
   gap: 6px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-assignment-row {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-assignment-row {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto auto auto;
   gap: 6px 8px;
   align-items: center;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-assignment-row.is-hidden {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-assignment-row.is-hidden {
   display: none;
 }
 
@@ -9297,10 +9658,9 @@
   background: color-mix(in srgb, var(--po-surface) 78%, transparent);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-assignment-row.is-revealed {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-assignment-row.is-revealed {
   animation: po-rest-watch-slot-reveal 420ms cubic-bezier(0.18, 0.88, 0.24, 1);
 }
 
@@ -9366,17 +9726,15 @@
   width: auto;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-menu {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-menu {
   position: relative;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-summary {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-summary {
   list-style: none;
   display: inline-flex;
   align-items: center;
@@ -9390,44 +9748,39 @@
   cursor: pointer;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-summary::-webkit-details-marker {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-summary::-webkit-details-marker {
   display: none;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-summary::marker {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-summary::marker {
   content: "";
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-summary:hover,
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-menu[open] .po-rest-settings-summary {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-summary:hover,
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-menu[open]
+  .po-rest-settings-summary {
   border-color: color-mix(in srgb, var(--po-accent) 60%, var(--po-border-strong));
   background: color-mix(in srgb, var(--po-accent) 14%, var(--po-bg-alt));
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-summary:focus-visible {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-summary:focus-visible {
   outline: 1px solid color-mix(in srgb, var(--po-accent) 72%, transparent);
   outline-offset: 2px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-menu-panel {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-menu-panel {
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
@@ -9442,10 +9795,10 @@
   box-shadow: 0 14px 28px color-mix(in srgb, black 24%, transparent);
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="marching-order"]
-) .po-rest-settings-menu-panel .po-rest-settings-body {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="marching-order"])
+  .po-rest-settings-menu-panel
+  .po-rest-settings-body {
   padding: 0;
 }
 
@@ -9453,10 +9806,9 @@
   width: auto;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-detail-chips {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-detail-chips {
   margin-top: 0;
 }
 
@@ -9469,10 +9821,9 @@
   min-height: 54px;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-total-grid {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-total-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
@@ -9497,10 +9848,9 @@
   background: color-mix(in srgb, var(--po-warn) 16%, var(--po-bg-alt));
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) .po-watch-total-card-wide {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  .po-watch-total-card-wide {
   grid-column: 1 / -1;
 }
 
@@ -9519,10 +9869,9 @@
   line-height: 1.15;
 }
 
-.party-operations :is(
-  .po-window[data-tool="rest-watch"],
-  .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-) :is(.po-watch-detail-head .po-op-summary, .po-watch-detail-pane .po-op-summary, .po-watch-detail-pane .po-slot-chip) {
+.party-operations
+  :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+  :is(.po-watch-detail-head .po-op-summary, .po-watch-detail-pane .po-op-summary, .po-watch-detail-pane .po-slot-chip) {
   font-size: 0.74rem;
 }
 
@@ -9605,17 +9954,15 @@
 }
 
 @media (max-width: 980px) {
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-card-shell {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-card-shell {
     grid-template-columns: 1fr;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-assign-pane {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-assign-pane {
     border-right: 0;
     border-bottom: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
   }
@@ -9633,46 +9980,40 @@
     grid-template-columns: 1fr;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) :is(.po-watch-card-head, .po-watch-detail-head) {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    :is(.po-watch-card-head, .po-watch-detail-head) {
     flex-direction: column;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-assignment-row {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-assignment-row {
     grid-template-columns: 1fr;
     align-items: start;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-assignment-label {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-assignment-label {
     padding-top: 0;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-assignment-inline {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-assignment-inline {
     justify-items: start;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-watch-total-grid {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-watch-total-grid {
     grid-template-columns: 1fr;
   }
 
-  .party-operations :is(
-    .po-window[data-tool="rest-watch"],
-    .po-window[data-tool="operations-shell"][data-main-tab="rest"]
-  ) .po-rest-settings-menu-panel {
+  .party-operations
+    :is(.po-window[data-tool="rest-watch"], .po-window[data-tool="operations-shell"][data-main-tab="rest"])
+    .po-rest-settings-menu-panel {
     right: auto;
     left: 0;
     width: min(320px, calc(100vw - 48px));
@@ -10095,4 +10436,3 @@
     flex-direction: column;
   }
 }
-

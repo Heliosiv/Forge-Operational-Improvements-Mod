@@ -25,12 +25,9 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     if (!broadcast && targetUserId !== currentUserId) return true;
     if (currentUser?.isGM) return true;
 
-    const actorIdByUserId = message?.actorIdByUserId && typeof message.actorIdByUserId === "object"
-      ? message.actorIdByUserId
-      : null;
-    const preferredActorId = actorIdByUserId
-      ? normalizeLootClaimActorId(actorIdByUserId[currentUserId])
-      : "";
+    const actorIdByUserId =
+      message?.actorIdByUserId && typeof message.actorIdByUserId === "object" ? message.actorIdByUserId : null;
+    const preferredActorId = actorIdByUserId ? normalizeLootClaimActorId(actorIdByUserId[currentUserId]) : "";
     const selectedActorId = preferredActorId || normalizeLootClaimActorId(message.actorId);
     if (selectedActorId) setLootClaimActorSelection(selectedActorId);
     const selectedRunId = normalizeLootClaimRunId(message.runId);
@@ -72,6 +69,17 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     return true;
   }
 
+  if (message.type === "ops:merchant-trade-result") {
+    const targetUserId = String(message.userId ?? "").trim();
+    if (targetUserId && targetUserId !== currentUserId) return true;
+    if (currentUser?.isGM) return true;
+    const summary = String(message.summary ?? "").trim();
+    if (message.ok === false) globalThis.ui?.notifications?.warn?.(summary || "Merchant trade failed.");
+    else globalThis.ui?.notifications?.info?.(summary || "Merchant trade complete.");
+    setTimeout(() => refreshOpenApps({ scopes: ["operations"] }), 75);
+    return true;
+  }
+
   return false;
 }
 
@@ -101,6 +109,8 @@ export async function routeGmSocketMessage(message, context = {}) {
   } = context;
 
   if (!currentUser?.isGM) return false;
+  const targetGmUserId = String(message?.gmUserId ?? "").trim();
+  if (targetGmUserId && targetGmUserId !== String(currentUser?.id ?? "").trim()) return true;
 
   const getActivePlayerRequester = () => getSocketRequester(message, { allowGM: false, requireActive: true });
   const runWithRequester = async (handler) => {

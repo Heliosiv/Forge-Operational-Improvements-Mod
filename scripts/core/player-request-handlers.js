@@ -58,42 +58,53 @@ export function createPlayerRequestHandlers(options = {}) {
       return;
     }
     const merchants = ensureMerchantsState(getOperationsLedger());
-    const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
-      allowStoredPreference: false
-    });
+    const settlement = resolveMerchantSettlementForUser(
+      requester,
+      merchants,
+      clampSocketText(message?.settlement, 120),
+      {
+        allowStoredPreference: false
+      }
+    );
 
     const resolved = await resolveMerchantBarterForUser(requester, { merchantId, actorId, settlement });
-    const resolutionPayload = resolved?.ok && resolved?.resolution
-      ? {
-        applied: true,
-        source: String(resolved.resolution?.source ?? "resolved"),
-        ability: String(resolved.resolution?.ability ?? "cha"),
-        abilityLabel: String(resolved.resolution?.abilityLabel ?? "Charisma"),
-        checkTotal: Number(resolved.resolution?.checkTotal ?? 0),
-        margin: Number(resolved.resolution?.margin ?? 0),
-        success: Boolean(resolved.resolution?.success),
-        delta: Number(resolved.resolution?.delta ?? 0),
-        buyMarkupDelta: Number(resolved.resolution?.buyMarkupDelta ?? 0),
-        sellRateDelta: Number(resolved.resolution?.sellRateDelta ?? 0),
-        createdAt: Number(resolved.resolution?.createdAt ?? Date.now())
-      }
-      : null;
+    const resolutionPayload =
+      resolved?.ok && resolved?.resolution
+        ? {
+            applied: true,
+            source: String(resolved.resolution?.source ?? "resolved"),
+            ability: String(resolved.resolution?.ability ?? "cha"),
+            abilityLabel: String(resolved.resolution?.abilityLabel ?? "Charisma"),
+            checkTotal: Number(resolved.resolution?.checkTotal ?? 0),
+            margin: Number(resolved.resolution?.margin ?? 0),
+            success: Boolean(resolved.resolution?.success),
+            delta: Number(resolved.resolution?.delta ?? 0),
+            buyMarkupDelta: Number(resolved.resolution?.buyMarkupDelta ?? 0),
+            sellRateDelta: Number(resolved.resolution?.sellRateDelta ?? 0),
+            createdAt: Number(resolved.resolution?.createdAt ?? Date.now())
+          }
+        : null;
 
-    emitModuleSocket({
-      type: "ops:merchant-barter-result",
-      userId: String(requester?.id ?? ""),
-      merchantId,
-      actorId,
-      settlement: normalizeMerchantSettlementSelection(resolved?.settlement ?? settlement),
-      ok: Boolean(resolved?.ok),
-      summary: resolved?.ok
-        ? String(resolved?.summary ?? "Barter resolved.")
-        : String(resolved?.message ?? "Barter request failed."),
-      resolution: resolutionPayload
-    }, { channel: socketChannel });
+    emitModuleSocket(
+      {
+        type: "ops:merchant-barter-result",
+        userId: String(requester?.id ?? ""),
+        merchantId,
+        actorId,
+        settlement: normalizeMerchantSettlementSelection(resolved?.settlement ?? settlement),
+        ok: Boolean(resolved?.ok),
+        summary: resolved?.ok
+          ? String(resolved?.summary ?? "Barter resolved.")
+          : String(resolved?.message ?? "Barter request failed."),
+        resolution: resolutionPayload
+      },
+      { channel: socketChannel }
+    );
 
     if (!resolved?.ok) {
-      uiRef?.notifications?.warn?.(`Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`);
+      uiRef?.notifications?.warn?.(
+        `Merchant barter failed (${requester.name}): ${resolved?.message ?? "Unknown error."}`
+      );
       return;
     }
     uiRef?.notifications?.info?.(`Resolved barter for ${requester.name}: ${resolved.summary}`);
@@ -109,9 +120,14 @@ export function createPlayerRequestHandlers(options = {}) {
       return;
     }
     const merchants = ensureMerchantsState(getOperationsLedger());
-    const settlement = resolveMerchantSettlementForUser(requester, merchants, clampSocketText(message?.settlement, 120), {
-      allowStoredPreference: false
-    });
+    const settlement = resolveMerchantSettlementForUser(
+      requester,
+      merchants,
+      clampSocketText(message?.settlement, 120),
+      {
+        allowStoredPreference: false
+      }
+    );
     const tradePayload = {
       merchantId,
       actorId,
@@ -129,10 +145,36 @@ export function createPlayerRequestHandlers(options = {}) {
     if (cachedBarterResolution?.applied) tradePayload.barterResolution = cachedBarterResolution;
     const outcome = await applyMerchantTradeForUser(requester, tradePayload);
     if (!outcome.ok) {
+      emitModuleSocket(
+        {
+          type: "ops:merchant-trade-result",
+          userId: String(requester?.id ?? ""),
+          merchantId,
+          actorId,
+          settlement: normalizeMerchantSettlementSelection(settlement),
+          ok: false,
+          summary: String(outcome.message ?? "Trade failed.")
+        },
+        { channel: socketChannel }
+      );
       uiRef?.notifications?.warn?.(`Merchant trade failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
       return;
     }
     clearMerchantBarterResolutionEntryByKey(barterKey);
+    emitModuleSocket(
+      {
+        type: "ops:merchant-trade-result",
+        userId: String(requester?.id ?? ""),
+        merchantId,
+        actorId,
+        settlement: normalizeMerchantSettlementSelection(settlement),
+        ok: true,
+        summary: `Trade complete: ${outcome.actorName} and ${outcome.merchantName}.`,
+        actorName: String(outcome.actorName ?? ""),
+        merchantName: String(outcome.merchantName ?? "")
+      },
+      { channel: socketChannel }
+    );
     uiRef?.notifications?.info?.(`${requester.name} completed merchant trade for ${outcome.actorName}.`);
   }
 
@@ -192,9 +234,7 @@ export function createPlayerRequestHandlers(options = {}) {
     const requester = resolveActivePlayerRequester(requesterRef, message?.userId, "Currency split");
     if (!requester) return;
     const actorIdsRaw = Array.isArray(message?.actorIds) ? message.actorIds : [];
-    const actorIds = actorIdsRaw
-      .map((entry) => sanitizeSocketIdentifier(entry, { maxLength: 64 }))
-      .filter(Boolean);
+    const actorIds = actorIdsRaw.map((entry) => sanitizeSocketIdentifier(entry, { maxLength: 64 })).filter(Boolean);
     const stashActorId = sanitizeSocketIdentifier(message?.stashActorId, { maxLength: 64 });
     const runId = sanitizeSocketIdentifier(message?.runId, { maxLength: 64 });
     if (actorIds.length <= 0) {
@@ -206,7 +246,9 @@ export function createPlayerRequestHandlers(options = {}) {
       uiRef?.notifications?.warn?.(`Currency split failed (${requester.name}): ${outcome.message ?? "Unknown error."}`);
       return;
     }
-    uiRef?.notifications?.info?.(`${requester.name} split currency across ${outcome.actorShares?.length ?? 0} destination(s).`);
+    uiRef?.notifications?.info?.(
+      `${requester.name} split currency across ${outcome.actorShares?.length ?? 0} destination(s).`
+    );
     if (outcome?.completion?.completed && outcome?.completion?.summary) {
       const summary = outcome.completion.summary;
       uiRef?.notifications?.info?.(

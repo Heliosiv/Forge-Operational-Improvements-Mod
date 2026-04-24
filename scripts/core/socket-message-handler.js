@@ -1,4 +1,5 @@
 import { routePartyOperationsSocketMessage } from "./socket-routes.js";
+import { isActiveGmUserId as defaultIsActiveGmUserId } from "./socket-write-policy.js";
 
 export function createPartyOperationsSocketMessageHandler({
   game = globalThis.game,
@@ -8,12 +9,15 @@ export function createPartyOperationsSocketMessageHandler({
   promptLocalGatherYieldRoll,
   resolvePendingGatherCheckRequest,
   resolvePendingGatherYieldRequest,
+  isActiveGmUserId = defaultIsActiveGmUserId,
   routeSocketDeps = {},
   routeSocketMessage = routePartyOperationsSocketMessage
 } = {}) {
   return async function handlePartyOperationsSocketMessage(message) {
     if (message?.type === "players:openGatherResources") {
-      if (!game?.user?.isGM) await promptPlayerGatherRequest?.(message?.options ?? {});
+      const gmUserId = String(message?.gmUserId ?? message?.options?.promptedByUserId ?? "").trim();
+      if (!game?.user?.isGM && isActiveGmUserId(gmUserId, game))
+        await promptPlayerGatherRequest?.(message?.options ?? {});
       return;
     }
 
