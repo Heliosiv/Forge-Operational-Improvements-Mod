@@ -152,6 +152,40 @@ class FakeElement {
 {
   const state = {
     locked: false,
+    slots: [{ id: "slot-a", entries: [], visibleEntryCount: 1 }]
+  };
+  const saves = [];
+  const requester = { id: "player-1", isGM: false, name: "Clarence" };
+  const actors = new Map([["actor-b", { id: "actor-b", type: "npc" }]]);
+  const deps = {
+    getRestWatchState: () => state,
+    game: { actors: { get: (id) => actors.get(id) ?? null } },
+    resolveRequester: () => requester,
+    canAccessAllPlayerOps: () => true,
+    canUserControlActor: () => false,
+    stampUpdate: (draft) => {
+      draft.lastUpdatedBy = requester.name;
+    },
+    setModuleSettingWithLocalRefreshSuppressed: async (key, value) => {
+      saves.push({ key, value });
+      return true;
+    },
+    settings: { REST_STATE: "restState" },
+    scheduleIntegrationSync: () => {},
+    refreshOpenApps: () => {},
+    refreshScopeKeys: { REST: "rest" },
+    emitSocketRefresh: () => {},
+    logUiDebug: () => {}
+  };
+
+  await applyRestRequest({ op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 0 }, requester, deps);
+  assert.deepEqual(state.slots[0].entries, [{ actorId: "actor-b", notes: "", position: 0 }]);
+  assert.equal(saves.length, 1);
+}
+
+{
+  const state = {
+    locked: false,
     slots: [
       { id: "slot-a", actorId: "actor-a", notes: "Keep watch." },
       { id: "slot-b", entries: [] }

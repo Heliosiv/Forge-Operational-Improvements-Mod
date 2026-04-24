@@ -172,8 +172,10 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
   }
 
   const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
+  const requesterHasSharedPageAccess = Boolean(!requester?.isGM && canAccessAllPlayerOps?.(requester));
   const requesterCanControlActor = Boolean(
-    requestedActor && (requester?.isGM || canUserOperatePartyActor?.(requestedActor, requester))
+    requestedActor &&
+    (requester?.isGM || requesterHasSharedPageAccess || canUserOperatePartyActor?.(requestedActor, requester))
   );
   if (request.op === "assignMe") {
     if (!requesterCanControlActor) return;
@@ -196,7 +198,13 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
 
   if (request.op === "setSlotEntry") {
     const requestedActor = request.actorId ? (game?.actors?.get?.(request.actorId) ?? null) : null;
-    if (requestedActor && !requester?.isGM && !canUserOperatePartyActor?.(requestedActor, requester)) return;
+    if (
+      requestedActor &&
+      !requester?.isGM &&
+      !requesterHasSharedPageAccess &&
+      !canUserOperatePartyActor?.(requestedActor, requester)
+    )
+      return;
     const slot = state.slots.find((entry) => entry.id === request.slotId);
     if (!slot) return;
     ensureRestSlotEntries(slot);

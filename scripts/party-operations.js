@@ -47228,6 +47228,7 @@ async function updateRestWatchState(mutatorOrRequest, options = {}) {
         getRestWatchState,
         game,
         resolveRequester,
+        canAccessAllPlayerOps,
         canUserControlActor,
         canUserOperatePartyActor,
         stampUpdate,
@@ -47313,7 +47314,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
           ui.notifications?.warn("Actor not found for marching order move.");
           return false;
         }
-        if (!canUserOperatePartyActor(actor, game.user)) {
+        if (!canAccessAllPlayerOps(game.user) && !canUserOperatePartyActor(actor, game.user)) {
           ui.notifications?.warn("You don't have permission to update this actor in marching order.");
           return false;
         }
@@ -47333,6 +47334,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
         getMarchingOrderState,
         game,
         resolveRequester,
+        canAccessAllPlayerOps,
         canUserControlActor,
         canUserOperatePartyActor,
         isMarchingOrderPlayerLocked,
@@ -50499,6 +50501,7 @@ function canUserControlActor(actor, user = game.user) {
 
 function canUserOperatePartyActor(actor, user = game.user) {
   if (!user || !actor) return false;
+  if (canAccessAllPlayerOps(user)) return true;
   if (canAccessGmPage(user)) return true;
   const actorType = String(actor?.type ?? "")
     .trim()
@@ -50509,6 +50512,7 @@ function canUserOperatePartyActor(actor, user = game.user) {
 function canDragEntry(actorId, isGM, locked) {
   if (locked) return false;
   if (isGM) return true;
+  if (canAccessAllPlayerOps(game.user)) return true;
   const actorIdText = String(actorId ?? "").trim();
   if (!actorIdText) return false;
   const actor = game?.actors?.get?.(actorIdText) ?? null;

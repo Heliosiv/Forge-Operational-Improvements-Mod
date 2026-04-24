@@ -409,8 +409,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     return;
   }
   const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
+  const requesterHasSharedPageAccess = Boolean(!requester?.isGM && canAccessAllPlayerOps?.(requester));
   const requesterCanControlActor = Boolean(
-    requestedActor && (requester?.isGM || canUserOperatePartyActor?.(requestedActor, requester))
+    requestedActor &&
+    (requester?.isGM || requesterHasSharedPageAccess || canUserOperatePartyActor?.(requestedActor, requester))
   );
 
   if (request.op === "joinRank") {

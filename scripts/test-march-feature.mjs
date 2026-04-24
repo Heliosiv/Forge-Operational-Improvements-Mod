@@ -278,6 +278,42 @@ class FakeElement {
 
 {
   const state = {
+    ranks: { front: [], middle: ["actor-a"], rear: [] },
+    rankPlacements: { front: {}, middle: { "actor-a": 0 }, rear: {} }
+  };
+  const saves = [];
+  const requester = { id: "user-1", isGM: false, name: "Player" };
+  const actor = { id: "actor-a", type: "npc" };
+  const deps = {
+    getMarchingOrderState: () => state,
+    game: { actors: { get: () => actor } },
+    resolveRequester: () => requester,
+    canAccessAllPlayerOps: () => true,
+    canUserControlActor: () => false,
+    isMarchingOrderPlayerLocked: () => false,
+    stampUpdate: (draft) => {
+      draft.lastUpdatedBy = requester.name;
+    },
+    setModuleSettingWithLocalRefreshSuppressed: async (key, value) => {
+      saves.push({ key, value });
+      return true;
+    },
+    settings: { MARCH_STATE: "marchState" },
+    scheduleIntegrationSync: () => {},
+    refreshOpenApps: () => {},
+    refreshScopeKeys: { MARCH: "march" },
+    emitSocketRefresh: () => {},
+    logUiDebug: () => {}
+  };
+
+  await applyMarchRequest({ op: "joinRank", actorId: "actor-a", rankId: "front", cellIndex: 1 }, requester, deps);
+  assert.deepEqual(state.ranks, { front: ["actor-a"], middle: [], rear: [] });
+  assert.deepEqual(state.rankPlacements.front, { "actor-a": 1 });
+  assert.equal(saves.length, 1);
+}
+
+{
+  const state = {
     locked: false,
     ranks: {
       vanguard: [],

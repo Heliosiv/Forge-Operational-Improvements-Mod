@@ -44,6 +44,12 @@ const canUserManageDowntimeActor = instantiateFunction(
   [canUserOwnActor]
 );
 const canUserControlActor = instantiateFunction("canUserControlActor", ["canUserOwnActor"], [canUserOwnActor]);
+let sharedPlayerOpsAccess = false;
+const canUserOperatePartyActor = instantiateFunction(
+  "canUserOperatePartyActor",
+  ["game", "canAccessAllPlayerOps", "canAccessGmPage"],
+  [{ user: null }, () => sharedPlayerOpsAccess, canAccessGmPage]
+);
 const canUserViewItemDocument = instantiateFunction("canUserViewItemDocument", ["game"], [{ user: null }]);
 const canUserPerformMerchantAction = instantiateFunction(
   "canUserPerformMerchantAction",
@@ -141,6 +147,19 @@ assert.equal(
   canUserControlActor(npcActor, sharedOpsUser),
   false,
   "non-owners should not control unrelated non-character actors"
+);
+
+sharedPlayerOpsAccess = true;
+assert.equal(
+  canUserOperatePartyActor(npcActor, sharedOpsUser),
+  true,
+  "players with page editing access should operate actors on Rest Watch and Marching Order"
+);
+sharedPlayerOpsAccess = false;
+assert.equal(
+  canUserOperatePartyActor(npcActor, sharedOpsUser),
+  false,
+  "players without page editing access should not operate unrelated non-character actors"
 );
 
 const merchantParentActor = {
