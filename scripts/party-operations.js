@@ -5026,7 +5026,7 @@ async function syncSceneNonPartyIntegrationActors(globalContext, resolvedMode, o
     targets.map(async (target) => {
       const actor = target?.actor;
       if (!actor) return null;
-      const result = await syncSingleSceneNonPartyActor(actor, config.context, mode, {
+      const result = await syncSingleSceneNonPartyActor(actor, config.context, resolvedMode, {
         includeEnvironment: target.isSceneTarget === true,
         nonParty: true
       });
