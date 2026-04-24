@@ -38,16 +38,17 @@ function instantiateFunction(functionName, dependencyNames = [], dependencyValue
 
 const canAccessGmPage = instantiateFunction("canAccessGmPage");
 const canUserOwnActor = instantiateFunction("canUserOwnActor", ["canAccessGmPage"], [canAccessGmPage]);
-const canUserManageDowntimeActor = instantiateFunction("canUserManageDowntimeActor", ["canUserOwnActor"], [canUserOwnActor]);
+const canUserManageDowntimeActor = instantiateFunction(
+  "canUserManageDowntimeActor",
+  ["canUserOwnActor"],
+  [canUserOwnActor]
+);
 const canUserControlActor = instantiateFunction("canUserControlActor", ["canUserOwnActor"], [canUserOwnActor]);
 const canUserViewItemDocument = instantiateFunction("canUserViewItemDocument", ["game"], [{ user: null }]);
 const canUserPerformMerchantAction = instantiateFunction(
   "canUserPerformMerchantAction",
   ["normalizeMerchantPermissionMatrix", "canAccessGmPage"],
-  [
-    (permissions = {}) => permissions,
-    canAccessGmPage
-  ]
+  [(permissions = {}) => permissions, canAccessGmPage]
 );
 const resolveMerchantSettlementForUser = instantiateFunction(
   "resolveMerchantSettlementForUser",
@@ -63,11 +64,17 @@ const resolveMerchantSettlementForUser = instantiateFunction(
   ],
   [
     { user: null },
-    (value) => String(value ?? "").trim().toLowerCase(),
+    (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     (state) => state,
     () => ({ currentSettlement: "neverwinter" }),
     canAccessGmPage,
-    (session, user) => String(session?.userSettlements?.[String(user?.id ?? "").trim()] ?? "").trim().toLowerCase(),
+    (session, user) =>
+      String(session?.userSettlements?.[String(user?.id ?? "").trim()] ?? "")
+        .trim()
+        .toLowerCase(),
     () => true,
     () => "stored-preference"
   ]
@@ -83,10 +90,18 @@ const getMerchantShopAccessStateForUser = instantiateFunction(
     (session = {}) => ({
       isOpen: session.isOpen === true,
       restrictToSelected: session.restrictToSelected === true,
-      allowedUserIds: Array.isArray(session.allowedUserIds) ? session.allowedUserIds.map((entry) => String(entry ?? "").trim()) : [],
+      allowedUserIds: Array.isArray(session.allowedUserIds)
+        ? session.allowedUserIds.map((entry) => String(entry ?? "").trim())
+        : [],
       userSettlements: session.userSettlements ?? {}
     })
   ]
+);
+let sharedPageAccess = false;
+const applyNonGmOperationsReadonly = instantiateFunction(
+  "applyNonGmOperationsReadonly",
+  ["game", "getAppRootElement", "NON_GM_READONLY_ACTIONS", "canAccessAllPlayerOps"],
+  [{ user: { id: "player-1", isGM: false } }, (root) => root, new Set(["toggle-sop"]), () => sharedPageAccess]
 );
 
 const ownerActor = {
@@ -108,13 +123,25 @@ const gmUser = { id: "gm-user", isGM: true, character: { id: "actor-owner" } };
 const ownerUser = { id: "owner-user", isGM: false, character: { id: "actor-owner" } };
 const sharedOpsUser = { id: "shared-user", isGM: false, character: { id: "actor-owner" } };
 
-assert.equal(canUserManageDowntimeActor(sharedOpsUser, outsiderActor), false, "shared player ops should not grant other-actor mutation rights");
+assert.equal(
+  canUserManageDowntimeActor(sharedOpsUser, outsiderActor),
+  false,
+  "shared player ops should not grant other-actor mutation rights"
+);
 assert.equal(canUserManageDowntimeActor(ownerUser, ownerActor), true, "owners should still manage their own actor");
 assert.equal(canUserManageDowntimeActor(gmUser, outsiderActor), true, "GMs should retain actor authority");
 
-assert.equal(canUserControlActor(outsiderActor, sharedOpsUser), false, "shared player ops should not grant generic actor control");
+assert.equal(
+  canUserControlActor(outsiderActor, sharedOpsUser),
+  false,
+  "shared player ops should not grant generic actor control"
+);
 assert.equal(canUserControlActor(ownerActor, sharedOpsUser), true, "players should still control their own character");
-assert.equal(canUserControlActor(npcActor, sharedOpsUser), false, "non-owners should not control unrelated non-character actors");
+assert.equal(
+  canUserControlActor(npcActor, sharedOpsUser),
+  false,
+  "non-owners should not control unrelated non-character actors"
+);
 
 const merchantParentActor = {
   testUserPermission: (user, level) => String(user?.id ?? "") === "shared-user" && level === "OBSERVER"
@@ -133,22 +160,30 @@ assert.equal(
 );
 
 assert.equal(
-  canUserPerformMerchantAction(sharedOpsUser, {
-    permissions: {
-      assistant: { edit: true, override: true },
-      player: { buy: true, sell: true }
-    }
-  }, "edit"),
+  canUserPerformMerchantAction(
+    sharedOpsUser,
+    {
+      permissions: {
+        assistant: { edit: true, override: true },
+        player: { buy: true, sell: true }
+      }
+    },
+    "edit"
+  ),
   false,
   "merchant edit should now be GM-only"
 );
 assert.equal(
-  canUserPerformMerchantAction(sharedOpsUser, {
-    permissions: {
-      assistant: { edit: true, override: true },
-      player: { buy: true, sell: true }
-    }
-  }, "buy"),
+  canUserPerformMerchantAction(
+    sharedOpsUser,
+    {
+      permissions: {
+        assistant: { edit: true, override: true },
+        player: { buy: true, sell: true }
+      }
+    },
+    "buy"
+  ),
   true,
   "player trading permissions should remain intact"
 );
@@ -199,5 +234,70 @@ assert.equal(
   true,
   "GMs should still bypass shop session restrictions"
 );
+
+function createFakeElement(dataset = {}) {
+  const attributes = new Map();
+  return {
+    dataset: { ...dataset },
+    disabled: false,
+    setAttribute(name, value) {
+      attributes.set(name, String(value));
+    },
+    getAttribute(name) {
+      return attributes.get(name) ?? "";
+    }
+  };
+}
+
+function createOperationsRoot(...elements) {
+  const operationsWindow = {
+    querySelectorAll(selector) {
+      if (selector === "[data-action]") return elements;
+      if (selector.includes(".po-base-site-editor"))
+        return elements.filter((element) => element.dataset.editorControl === "1");
+      return [];
+    }
+  };
+  return {
+    querySelector(selector) {
+      return String(selector).includes("data-main-tab='operations'") ? operationsWindow : null;
+    }
+  };
+}
+
+{
+  sharedPageAccess = true;
+  const actionButton = createFakeElement({ action: "toggle-sop" });
+  const root = createOperationsRoot(actionButton);
+
+  applyNonGmOperationsReadonly(root);
+
+  assert.equal(
+    actionButton.disabled,
+    false,
+    "players with page editing access should not have operations controls disabled after render"
+  );
+}
+
+{
+  sharedPageAccess = false;
+  const actionButton = createFakeElement({ action: "toggle-sop" });
+  const editorInput = createFakeElement({ editorControl: "1" });
+  const root = createOperationsRoot(actionButton, editorInput);
+
+  applyNonGmOperationsReadonly(root);
+
+  assert.equal(
+    actionButton.disabled,
+    true,
+    "players without page editing access should still get readonly operations controls"
+  );
+  assert.equal(
+    editorInput.disabled,
+    true,
+    "players without page editing access should still get readonly editor fields"
+  );
+  assert.equal(actionButton.getAttribute("aria-disabled"), "true");
+}
 
 process.stdout.write("permission split validation passed\n");

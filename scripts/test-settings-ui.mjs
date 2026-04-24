@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { registerPartyOpsUiSettings } from "./core/settings-ui.js";
 
@@ -72,7 +73,12 @@ try {
     },
     validatePartyOpsConfig: (value) => value ?? {},
     notifyUiInfoThrottled: () => {},
-    normalizePlayerHubMode: (value) => String(value ?? "").trim().toLowerCase() === "advanced" ? "advanced" : "simple",
+    normalizePlayerHubMode: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase() === "advanced"
+        ? "advanced"
+        : "simple",
     setModuleSettingWithLocalRefreshSuppressed: async () => {},
     isPartyOpsConfigNormalizationInProgress: () => false,
     setPartyOpsConfigNormalizationInProgress: () => {},
@@ -97,6 +103,15 @@ try {
   globalThis.game = originalGame;
   globalThis.foundry = originalFoundry;
   console.warn = originalConsoleWarn;
+}
+
+{
+  const featureSettingsSource = readFileSync(new URL("./core/settings-features.js", import.meta.url), "utf8");
+  assert.match(
+    featureSettingsSource,
+    /settings\.SHARED_GM_PERMISSIONS[\s\S]*default:\s*true/,
+    "player editing for Rest Watch, Marching Order, and Operations should be enabled by default"
+  );
 }
 
 process.stdout.write("settings ui validation passed\n");

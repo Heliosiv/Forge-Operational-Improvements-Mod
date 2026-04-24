@@ -2357,7 +2357,7 @@ function ensurePartyOperationsClass(appOrElement) {
 }
 
 function applyNonGmOperationsReadonly(appOrElement) {
-  if (game.user?.isGM) return; // Only actual GMs bypass readonly restrictions; shared-perm players still need restrictions
+  if (game.user?.isGM || canAccessAllPlayerOps(game.user)) return;
   const root = getAppRootElement(appOrElement);
   if (!root) return;
   const operationsWindow = root.querySelector(".po-window[data-main-tab='operations'], .po-window[data-main-tab='gm']");
@@ -11977,6 +11977,10 @@ function getAudioLibrarySourceInteractionError(source) {
   return "The Forge file API source requires a Forge API key or Forge sign-in. Set the audio Source to data and use a source-relative folder path like music/Fantasy Complete II MP3, or sign in to The Forge before browsing Forge assets.";
 }
 
+function canManageAudioLibraryAssets() {
+  return Boolean(game.user?.isGM);
+}
+
 function getAudioLibraryUploadSelectionError(source, files = []) {
   const uploadCount = Array.isArray(files) ? files.length : 0;
   if (!isForgeAudioLibrarySource(source)) return "";
@@ -12131,7 +12135,7 @@ const audioLibraryUiDraftActions = createAudioLibraryUiDraftActions({
   normalizeAudioLibraryPickerSelection
 });
 const audioLibraryUiPickerUploadActions = createAudioLibraryUiPickerUploadActions({
-  canAccessAllPlayerOps,
+  canAccessAllPlayerOps: canManageAudioLibraryAssets,
   ui,
   getAudioLibraryDraftState,
   filePickerClass: FilePicker,
@@ -12167,7 +12171,7 @@ async function scanAudioLibraryCatalog({ source, rootPath, forceRescan = false }
   return perfTracker.time(
     "audio-library-scan",
     async () => {
-      if (!canAccessAllPlayerOps()) {
+      if (!canManageAudioLibraryAssets()) {
         throw new Error("GM permissions are required to scan audio libraries.");
       }
       const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
@@ -12278,7 +12282,7 @@ async function scanAudioLibraryCatalog({ source, rootPath, forceRescan = false }
 }
 
 async function clearAudioLibraryCatalog() {
-  if (!canAccessAllPlayerOps()) {
+  if (!canManageAudioLibraryAssets()) {
     ui.notifications?.warn("Only the GM can clear the audio library catalog.");
     return false;
   }

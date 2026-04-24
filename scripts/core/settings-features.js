@@ -29,10 +29,18 @@ export function registerPartyOpsFeatureSettings({
   });
 
   for (const [settingKey, label, hint] of [
-    [settings.AUTO_INV_WEAPON_PACK, "Auto Inventory Weapon Pack", "Compendium pack ID used for weapon lookups (for example dnd5e.items)."],
+    [
+      settings.AUTO_INV_WEAPON_PACK,
+      "Auto Inventory Weapon Pack",
+      "Compendium pack ID used for weapon lookups (for example dnd5e.items)."
+    ],
     [settings.AUTO_INV_ARMOR_PACK, "Auto Inventory Armor Pack", "Compendium pack ID used for armor/shield lookups."],
     [settings.AUTO_INV_GEAR_PACK, "Auto Inventory Gear Pack", "Compendium pack ID used for adventuring gear lookups."],
-    [settings.AUTO_INV_CONSUMABLES_PACK, "Auto Inventory Consumables Pack", "Compendium pack ID used for potions and consumables lookups."]
+    [
+      settings.AUTO_INV_CONSUMABLES_PACK,
+      "Auto Inventory Consumables Pack",
+      "Compendium pack ID used for potions and consumables lookups."
+    ]
   ]) {
     game.settings.register(moduleId, settingKey, {
       name: label,
@@ -156,16 +164,66 @@ export function registerPartyOpsFeatureSettings({
   });
 
   for (const [settingKey, label, hint, defaultValue] of [
-    [settings.GATHER_DC_LUSH, "Gather DC: Lush Forest / River Valley", "Base DC for lush forest or river valley gather attempts.", gatherDefaults.baseDc.lush_forest_or_river_valley],
-    [settings.GATHER_DC_TEMPERATE, "Gather DC: Temperate Hills / Light Woodland", "Base DC for temperate hills or light woodland gather attempts.", gatherDefaults.baseDc.temperate_hills_or_light_woodland],
-    [settings.GATHER_DC_SPARSE, "Gather DC: Sparse Plains / Rocky", "Base DC for sparse plains or rocky terrain gather attempts.", gatherDefaults.baseDc.sparse_plains_or_rocky],
-    [settings.GATHER_DC_COLD, "Gather DC: Cold Mountains / Swamp", "Base DC for cold mountains or swamp gather attempts.", gatherDefaults.baseDc.cold_mountains_or_swamp],
-    [settings.GATHER_DC_DESERT, "Gather DC: Desert / Blighted Wasteland", "Base DC for desert or blighted wasteland gather attempts.", gatherDefaults.baseDc.desert_blighted_wasteland],
-    [settings.GATHER_DEFAULT_SEASON_MOD, "Gather Default Season Modifier", "Default DC modifier from season shifts.", gatherDefaults.seasonMod],
-    [settings.GATHER_DEFAULT_WEATHER_MOD, "Gather Default Weather Modifier", "Default DC modifier from weather conditions.", gatherDefaults.weatherMod],
-    [settings.GATHER_DEFAULT_CORRUPTION_MOD, "Gather Default Corruption Modifier", "Default DC modifier from corruption effects.", gatherDefaults.corruptionMod],
-    [settings.GATHER_CORRUPTION_SAVE_DC, "Gather: Corruption Water Con Save DC", "Constitution save DC used when contaminated water is found.", gatherDefaults.corruptionConSaveDc],
-    [settings.GATHER_TRAVEL_CON_SAVE_DC, "Gather: Travel Con Save DC", "Constitution save DC when the actor falls behind during travel gathering.", gatherDefaults.travelConSaveDc]
+    [
+      settings.GATHER_DC_LUSH,
+      "Gather DC: Lush Forest / River Valley",
+      "Base DC for lush forest or river valley gather attempts.",
+      gatherDefaults.baseDc.lush_forest_or_river_valley
+    ],
+    [
+      settings.GATHER_DC_TEMPERATE,
+      "Gather DC: Temperate Hills / Light Woodland",
+      "Base DC for temperate hills or light woodland gather attempts.",
+      gatherDefaults.baseDc.temperate_hills_or_light_woodland
+    ],
+    [
+      settings.GATHER_DC_SPARSE,
+      "Gather DC: Sparse Plains / Rocky",
+      "Base DC for sparse plains or rocky terrain gather attempts.",
+      gatherDefaults.baseDc.sparse_plains_or_rocky
+    ],
+    [
+      settings.GATHER_DC_COLD,
+      "Gather DC: Cold Mountains / Swamp",
+      "Base DC for cold mountains or swamp gather attempts.",
+      gatherDefaults.baseDc.cold_mountains_or_swamp
+    ],
+    [
+      settings.GATHER_DC_DESERT,
+      "Gather DC: Desert / Blighted Wasteland",
+      "Base DC for desert or blighted wasteland gather attempts.",
+      gatherDefaults.baseDc.desert_blighted_wasteland
+    ],
+    [
+      settings.GATHER_DEFAULT_SEASON_MOD,
+      "Gather Default Season Modifier",
+      "Default DC modifier from season shifts.",
+      gatherDefaults.seasonMod
+    ],
+    [
+      settings.GATHER_DEFAULT_WEATHER_MOD,
+      "Gather Default Weather Modifier",
+      "Default DC modifier from weather conditions.",
+      gatherDefaults.weatherMod
+    ],
+    [
+      settings.GATHER_DEFAULT_CORRUPTION_MOD,
+      "Gather Default Corruption Modifier",
+      "Default DC modifier from corruption effects.",
+      gatherDefaults.corruptionMod
+    ],
+    [
+      settings.GATHER_CORRUPTION_SAVE_DC,
+      "Gather: Corruption Water Con Save DC",
+      "Constitution save DC used when contaminated water is found.",
+      gatherDefaults.corruptionConSaveDc
+    ],
+    [
+      settings.GATHER_TRAVEL_CON_SAVE_DC,
+      "Gather: Travel Con Save DC",
+      "Constitution save DC when the actor falls behind during travel gathering.",
+      gatherDefaults.travelConSaveDc
+    ]
   ]) {
     game.settings.register(moduleId, settingKey, {
       name: label,
@@ -173,21 +231,75 @@ export function registerPartyOpsFeatureSettings({
       scope: "world",
       config: showAdvancedSettings,
       type: Number,
-      range: { min: settingKey === settings.GATHER_DEFAULT_SEASON_MOD || settingKey === settings.GATHER_DEFAULT_WEATHER_MOD || settingKey === settings.GATHER_DEFAULT_CORRUPTION_MOD ? -10 : 1, max: 30, step: 1 },
+      range: {
+        min:
+          settingKey === settings.GATHER_DEFAULT_SEASON_MOD ||
+          settingKey === settings.GATHER_DEFAULT_WEATHER_MOD ||
+          settingKey === settings.GATHER_DEFAULT_CORRUPTION_MOD
+            ? -10
+            : 1,
+        max: 30,
+        step: 1
+      },
       default: defaultValue
     });
   }
 
   for (const [settingKey, label, hint, defaultValue] of [
-    [settings.GATHER_ENABLE_HERBALISM_ADVANTAGE, "Gather: Herbalism Advantage", "Allow advantage for plant gathering mode when enabled by the GM.", gatherDefaults.herbalismAdvantageEnabled],
-    [settings.GATHER_ENABLE_HOSTILE_FAIL_FLAG, "Gather: Hostile Terrain Encounter Flag", "On failure in hostile terrain, flag for encounter checks.", gatherDefaults.hostileEncounterFlagEnabled],
-    [settings.GATHER_ENABLE_FAIL_BY5_COMPLICATION, "Gather: Fail by 5+ Complication", "Apply optional complications when the check fails by 5 or more.", gatherDefaults.failBy5ComplicationEnabled],
-    [settings.GATHER_ENABLE_SUCCESS_BY5_DOUBLE, "Gather: Success by 5+ Doubles Rations", "Double rations on checks that succeed by 5 or more.", gatherDefaults.successBy5DoubleEnabled],
-    [settings.GATHER_ENABLE_NAT20_BONUS, "Gather: Natural 20 Bonus", "Natural 20 grants +1d4 rations and safe campsite flag.", gatherDefaults.nat20BonusEnabled],
-    [settings.GATHER_ENABLE_NAT1_FLAG, "Gather: Natural 1 Complication", "Natural 1 triggers spoiled/poison/attract-danger complication flag.", gatherDefaults.nat1ComplicationEnabled],
-    [settings.GATHER_ENABLE_CORRUPTION_WATER_CHECK, "Gather: Corruption Water Check", "When gathering water in corrupted regions, run contamination check.", gatherDefaults.corruptionWaterCheckEnabled],
-    [settings.GATHER_ENABLE_WATER_AUTO_FOUND, "Gather: Water Auto-Found Toggle", "Allow the obvious-water-source toggle to auto-find water.", gatherDefaults.waterAutoFoundEnabled],
-    [settings.GATHER_ENABLE_TRAVEL_TRADEOFF, "Gather: Travel Tradeoff Enabled", "Apply travel tradeoff when gathering during travel.", gatherDefaults.travelTradeoffEnabled]
+    [
+      settings.GATHER_ENABLE_HERBALISM_ADVANTAGE,
+      "Gather: Herbalism Advantage",
+      "Allow advantage for plant gathering mode when enabled by the GM.",
+      gatherDefaults.herbalismAdvantageEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_HOSTILE_FAIL_FLAG,
+      "Gather: Hostile Terrain Encounter Flag",
+      "On failure in hostile terrain, flag for encounter checks.",
+      gatherDefaults.hostileEncounterFlagEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_FAIL_BY5_COMPLICATION,
+      "Gather: Fail by 5+ Complication",
+      "Apply optional complications when the check fails by 5 or more.",
+      gatherDefaults.failBy5ComplicationEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_SUCCESS_BY5_DOUBLE,
+      "Gather: Success by 5+ Doubles Rations",
+      "Double rations on checks that succeed by 5 or more.",
+      gatherDefaults.successBy5DoubleEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_NAT20_BONUS,
+      "Gather: Natural 20 Bonus",
+      "Natural 20 grants +1d4 rations and safe campsite flag.",
+      gatherDefaults.nat20BonusEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_NAT1_FLAG,
+      "Gather: Natural 1 Complication",
+      "Natural 1 triggers spoiled/poison/attract-danger complication flag.",
+      gatherDefaults.nat1ComplicationEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_CORRUPTION_WATER_CHECK,
+      "Gather: Corruption Water Check",
+      "When gathering water in corrupted regions, run contamination check.",
+      gatherDefaults.corruptionWaterCheckEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_WATER_AUTO_FOUND,
+      "Gather: Water Auto-Found Toggle",
+      "Allow the obvious-water-source toggle to auto-find water.",
+      gatherDefaults.waterAutoFoundEnabled
+    ],
+    [
+      settings.GATHER_ENABLE_TRAVEL_TRADEOFF,
+      "Gather: Travel Tradeoff Enabled",
+      "Apply travel tradeoff when gathering during travel.",
+      gatherDefaults.travelTradeoffEnabled
+    ]
   ]) {
     game.settings.register(moduleId, settingKey, {
       name: label,
@@ -269,12 +381,12 @@ export function registerPartyOpsFeatureSettings({
   });
 
   game.settings.register(moduleId, settings.SHARED_GM_PERMISSIONS, {
-    name: "Shared GM Permissions (Module)",
-    hint: "When enabled, all players can use GM-level Party Operations controls. Changes still execute through the active GM client.",
+    name: "Players Can Edit Party Operations",
+    hint: "When enabled, non-GM players can use full editing controls on Rest Watch, Marching Order, and Operations. The GM page stays GM-only, and writes still execute through the active GM client.",
     scope: "world",
     config: true,
     type: Boolean,
-    default: false,
+    default: true,
     onChange: () => refreshOpenApps({ scope: refreshScopeKeys.SETTINGS })
   });
 

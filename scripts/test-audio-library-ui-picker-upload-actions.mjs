@@ -62,7 +62,10 @@ class FakeFilePicker {
     buildAudioLibraryUploadRootPath: () => "music",
     ensureAudioLibraryUploadDirectories: async () => {},
     getAudioLibraryUploadDirectoryPath: () => "music",
-    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeAudioLibrarySource: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     notifyUiInfoThrottled: () => {},
     scanAudioLibraryCatalog: async () => {},
     pauseAudioLibraryUpload: async () => {}
@@ -92,7 +95,13 @@ class FakeFilePicker {
 
   const actions = createAudioLibraryUiPickerUploadActions({
     canAccessAllPlayerOps: () => true,
-    ui: { notifications: { warn(message) { notifications.push(message); } } },
+    ui: {
+      notifications: {
+        warn(message) {
+          notifications.push(message);
+        }
+      }
+    },
     getAudioLibraryDraftState: () => ({ source: "forgevtt", rootPath: "music" }),
     filePickerClass: BlockingFilePicker,
     getAudioLibraryPickerCurrentPath: (value) => value,
@@ -114,7 +123,10 @@ class FakeFilePicker {
     buildAudioLibraryUploadRootPath: () => "music",
     ensureAudioLibraryUploadDirectories: async () => {},
     getAudioLibraryUploadDirectoryPath: () => "music",
-    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeAudioLibrarySource: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     getAudioLibrarySourceInteractionError: () => "Use data source instead.",
     notifyUiInfoThrottled: () => {},
     scanAudioLibraryCatalog: async () => {},
@@ -125,6 +137,60 @@ class FakeFilePicker {
   assert.equal(result, false);
   assert.equal(rendered, 0);
   assert.deepEqual(notifications, ["Use data source instead."]);
+}
+
+{
+  const notifications = [];
+  let rendered = 0;
+  const BlockingFilePicker = class extends FakeFilePicker {
+    render() {
+      rendered += 1;
+    }
+  };
+
+  const actions = createAudioLibraryUiPickerUploadActions({
+    canAccessAllPlayerOps: () => false,
+    ui: {
+      notifications: {
+        warn(message) {
+          notifications.push(message);
+        }
+      }
+    },
+    getAudioLibraryDraftState: () => ({ source: "data", rootPath: "music" }),
+    filePickerClass: BlockingFilePicker,
+    getAudioLibraryPickerCurrentPath: (value) => value,
+    audioLibraryUiDraftActions: {
+      setDraftFromPickerSelection() {},
+      setDraftFromCatalog() {}
+    },
+    clearAudioLibraryError: () => {},
+    documentRef: {
+      body: { appendChild() {} },
+      createElement() {
+        return {};
+      }
+    },
+    audioLibraryExtensions: ["mp3"],
+    isUploadableAudioLibraryFile: () => true,
+    getAudioLibraryUploadRelativePath: () => "",
+    getAudioLibraryUploadSelectionError: () => "",
+    buildAudioLibraryUploadRootPath: () => "music",
+    ensureAudioLibraryUploadDirectories: async () => {},
+    getAudioLibraryUploadDirectoryPath: () => "music",
+    normalizeAudioLibrarySource: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
+    notifyUiInfoThrottled: () => {},
+    scanAudioLibraryCatalog: async () => {},
+    pauseAudioLibraryUpload: async () => {}
+  });
+
+  const result = await actions.openAudioLibraryRootPicker();
+  assert.equal(result, false);
+  assert.equal(rendered, 0);
+  assert.deepEqual(notifications, ["Only the GM can browse audio asset folders."]);
 }
 
 {
@@ -157,7 +223,13 @@ class FakeFilePicker {
 
   const actions = createAudioLibraryUiPickerUploadActions({
     canAccessAllPlayerOps: () => true,
-    ui: { notifications: { warn(message) { notifications.push(message); } } },
+    ui: {
+      notifications: {
+        warn(message) {
+          notifications.push(message);
+        }
+      }
+    },
     getAudioLibraryDraftState: () => ({ source: "data", rootPath: "music" }),
     filePickerClass: FakeFilePicker,
     getAudioLibraryPickerCurrentPath: (value) => value,
@@ -176,18 +248,27 @@ class FakeFilePicker {
     },
     audioLibraryExtensions: ["mp3"],
     isUploadableAudioLibraryFile: () => true,
-    getAudioLibraryUploadRelativePath: (file) => String(file?.webkitRelativePath ?? "").split(/[\\/]/).slice(1).join("/"),
+    getAudioLibraryUploadRelativePath: (file) =>
+      String(file?.webkitRelativePath ?? "")
+        .split(/[\\/]/)
+        .slice(1)
+        .join("/"),
     getAudioLibraryUploadSelectionError: () => "",
     buildAudioLibraryUploadRootPath: (rootPath, localRootName) => `${rootPath}/${localRootName}`,
     ensureAudioLibraryUploadDirectories: async (source, destinationRoot, relativePaths) => {
       directoryCalls.push({ source, destinationRoot, relativePaths });
     },
     getAudioLibraryUploadDirectoryPath: (destinationRoot, relativePath) => {
-      const parts = String(relativePath ?? "").split("/").filter(Boolean);
+      const parts = String(relativePath ?? "")
+        .split("/")
+        .filter(Boolean);
       parts.pop();
       return parts.length > 0 ? `${destinationRoot}/${parts.join("/")}` : destinationRoot;
     },
-    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeAudioLibrarySource: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     notifyUiInfoThrottled: (message, options) => {
       infoNotices.push({ message, options });
     },
@@ -201,11 +282,13 @@ class FakeFilePicker {
 
   const result = await actions.uploadLocalAudioFolderToLibrary();
   assert.equal(result, true);
-  assert.deepEqual(directoryCalls, [{
-    source: "data",
-    destinationRoot: "music/raid",
-    relativePaths: ["one.mp3", "sub/two.mp3"]
-  }]);
+  assert.deepEqual(directoryCalls, [
+    {
+      source: "data",
+      destinationRoot: "music/raid",
+      relativePaths: ["one.mp3", "sub/two.mp3"]
+    }
+  ]);
   assert.deepEqual(FakeFilePicker.uploads, [
     { source: "data", directory: "music/raid", name: "one.mp3" },
     { source: "data", directory: "music/raid/sub", name: "two.mp3" }
@@ -252,17 +335,17 @@ class FakeFilePicker {
     buildAudioLibraryUploadRootPath: () => "music",
     ensureAudioLibraryUploadDirectories: async () => {},
     getAudioLibraryUploadDirectoryPath: () => "music",
-    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    normalizeAudioLibrarySource: (value) =>
+      String(value ?? "")
+        .trim()
+        .toLowerCase(),
     getAudioLibrarySourceInteractionError: () => "Use data source instead.",
     notifyUiInfoThrottled: () => {},
     scanAudioLibraryCatalog: async () => {},
     pauseAudioLibraryUpload: async () => {}
   });
 
-  await assert.rejects(
-    () => actions.uploadLocalAudioFolderToLibrary(),
-    /Use data source instead\./
-  );
+  await assert.rejects(() => actions.uploadLocalAudioFolderToLibrary(), /Use data source instead\./);
   assert.equal(clicked, 0);
 }
 
