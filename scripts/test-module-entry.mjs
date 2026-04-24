@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { createPartyOperationsInitHandler } from "./bootstrap/init.js";
 import { createPartyOperationsReadyHandler } from "./bootstrap/ready.js";
+import { registerPartyOperationsKeybindings } from "./core/keybindings.js";
 import { registerInitHooks } from "./hooks/init.js";
 import { registerReadyHooks } from "./hooks/ready.js";
 
@@ -85,9 +86,7 @@ const originalConsoleWarn = console.warn;
     onInit: initHandler
   });
 
-  assert.deepEqual(registrations, [
-    { event: "init", handler: initHandler }
-  ]);
+  assert.deepEqual(registrations, [{ event: "init", handler: initHandler }]);
 }
 
 {
@@ -109,9 +108,7 @@ const originalConsoleWarn = console.warn;
     onInit: initHandler
   });
 
-  assert.deepEqual(registrations, [
-    { event: "init", handler: initHandler }
-  ]);
+  assert.deepEqual(registrations, [{ event: "init", handler: initHandler }]);
   assert.equal(initCalls, 1);
 }
 
@@ -170,4 +167,48 @@ const originalConsoleWarn = console.warn;
     { event: "ready", handler: extraHandlerTwo }
   ]);
   assert.deepEqual(callOrder, ["ready", "extra-1", "extra-2"]);
+}
+
+{
+  const keybindings = [];
+  const navigationCalls = [];
+
+  const didRegister = registerPartyOperationsKeybindings({
+    moduleId: "party-operations",
+    gameRef: {
+      keybindings: {
+        register(moduleId, key, config) {
+          keybindings.push({ moduleId, key, config });
+        }
+      },
+      modules: {
+        get() {
+          return {
+            api: {
+              navigation: {
+                openRestWatch() {
+                  navigationCalls.push("rest-watch");
+                },
+                openMarchingOrder() {
+                  navigationCalls.push("marching-order");
+                }
+              }
+            }
+          };
+        }
+      }
+    },
+    loadBootstrapModule() {
+      throw new Error("runtime should not load when navigation API is available");
+    }
+  });
+
+  assert.equal(didRegister, true);
+  assert.deepEqual(
+    keybindings.map((entry) => entry.key),
+    ["openRestWatch", "openMarchingOrder"]
+  );
+  assert.equal(keybindings[0].config.onDown(), true);
+  assert.equal(keybindings[1].config.onDown(), true);
+  assert.deepEqual(navigationCalls, ["rest-watch", "marching-order"]);
 }

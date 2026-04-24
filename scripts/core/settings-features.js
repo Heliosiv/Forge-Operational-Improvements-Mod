@@ -13,9 +13,7 @@ export function registerPartyOpsFeatureSettings({
   ensureLauncherUi,
   resetFloatingLauncherPosition,
   refreshOpenApps,
-  refreshScopeKeys,
-  openRestWatchUiForCurrentUser,
-  openMainTab
+  refreshScopeKeys
 } = {}) {
   const showAdvancedSettings = areAdvancedSettingsEnabled();
 
@@ -443,23 +441,5 @@ export function registerPartyOpsFeatureSettings({
       [inventoryHookModes.SYNC]: "Refresh UI + Integration Sync"
     },
     default: inventoryHookModes.SYNC
-  });
-
-  game.keybindings.register(moduleId, "openRestWatch", {
-    name: "Open Rest Watch",
-    editable: [],
-    onDown: () => {
-      openRestWatchUiForCurrentUser({ force: true });
-      return true;
-    }
-  });
-
-  game.keybindings.register(moduleId, "openMarchingOrder", {
-    name: "Open Marching Order",
-    editable: [],
-    onDown: () => {
-      openMainTab("marching-order", { force: true });
-      return true;
-    }
   });
 }
