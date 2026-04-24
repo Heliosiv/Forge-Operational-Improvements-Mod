@@ -1,0 +1,50 @@
+======== LOOT MANIFEST AUDIT ========
+Total items: 1456
+Total issues: 12
+
+--- EXPENSIVE_COMMON (9) ---
+  Berryl Gemstone (loot): common item at 200gp
+  Breastplate (equipment): common item at 200gp
+  Half Plate Armor (equipment): common item at 200gp
+  Mason's Tools (Dwarven) (tool): common item at 150gp
+  Plate Armor (equipment): common item at 200gp
+  Potion of Climbing (consumable): common item at 180gp
+  Splint Armor (equipment): common item at 200gp
+  Spyglass (loot): common item at 200gp
+  Taurine (loot): common item at 200gp
+
+--- ZERO_PRICE (3) ---
+  Ball Bearings (consumable): gpValue=0
+  Ball Bearings (consumable): gpValue=0
+  Sling Bullet (consumable): gpValue=0
+
+--- VALUE BAND DISTRIBUTION ---
+  value.v0: 212
+  value.v1: 172
+  value.v2: 107
+  value.v3: 199
+  value.v4: 267
+  value.v5: 499
+
+--- RARITY DISTRIBUTION ---
+  common: 306
+  legendary: 88
+  none: 253
+  rare: 321
+  uncommon: 275
+  very-rare: 213
+
+--- LOOT TYPE DISTRIBUTION (top 20) ---
+  loot.spell: 337
+  loot.weapon.magic: 249
+  loot.loot: 242
+  loot.consumable: 201
+  loot.equipment.magic: 110
+  loot.armor.magic: 84
+  loot.potion: 62
+  loot.container: 57
+  loot.tool: 41
+  loot.weapon: 40
+  loot.equipment: 17
+  loot.armor: 14
+  loot.poison: 2

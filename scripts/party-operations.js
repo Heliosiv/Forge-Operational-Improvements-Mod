@@ -5009,6 +5009,49 @@ function getSelectablePlayerActorsForUser(user = game.user) {
   return Array.from(unique.values()).sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
+function isActivitySelectableActor(actor) {
+  if (!actor?.id || !actor.hasPlayerOwner) return false;
+  const actorType = String(actor.type ?? "").trim().toLowerCase();
+  if (!["character", "npc"].includes(actorType)) return false;
+  const name = String(actor.name ?? "").trim().toLowerCase();
+  const systemType = String(
+    actor.system?.details?.type?.value
+    ?? actor.system?.details?.type?.subtype
+    ?? actor.system?.details?.type?.custom
+    ?? actor.system?.details?.type
+    ?? ""
+  ).toLowerCase();
+  const search = `${name} ${systemType}`;
+  const blockedTerms = [
+    "stash",
+    "storage",
+    "bank",
+    "treasury",
+    "party chest",
+    "mount",
+    "horse",
+    "pony",
+    "mule",
+    "donkey",
+    "wagon",
+    "cart"
+  ];
+  return !blockedTerms.some((term) => search.includes(term));
+}
+
+function getActivitySelectableActorsForUser(user = game.user) {
+  if (!user) return [];
+  const unique = new Map();
+  const addActor = (actor) => {
+    if (!isActivitySelectableActor(actor)) return;
+    if (!canAccessGmPage(user) && !canUserOwnActor(user, actor, { requireCharacter: false })) return;
+    unique.set(String(actor.id), actor);
+  };
+  if (isActivitySelectableActor(user.character)) addActor(user.character);
+  for (const actor of game.actors?.contents ?? []) addActor(actor);
+  return Array.from(unique.values()).sort((a, b) => String(a?.name ?? "").localeCompare(String(b?.name ?? "")));
+}
+
 async function submitPlayerHubAction(type, payload = {}) {
   const actionType = normalizePlayerHubActionType(type);
   if (!actionType) return { handled: false, rerender: false };
@@ -5980,6 +6023,7 @@ function supportsFocusedInputRestore(element) {
 function captureDisclosureState(root) {
   if (!root) return [];
   return Array.from(root.querySelectorAll("details"))
+    .filter((details) => details?.dataset?.poTransientDisclosure !== "1")
     .map((details) => {
       const key = getElementStatePath(details, root);
       if (!key) return null;
@@ -6000,6 +6044,7 @@ function applyDisclosureState(root, disclosureState) {
   );
   if (map.size === 0) return;
   root.querySelectorAll("details").forEach((details) => {
+    if (details?.dataset?.poTransientDisclosure === "1") return;
     const key = getElementStatePath(details, root);
     if (!key || !map.has(key)) return;
     const shouldOpen = map.get(key) === true;
@@ -7659,6 +7704,11 @@ export class RestWatchApp extends HandlebarsApplicationMixin(ApplicationV2) {
         },
         "merchant-randomize-race": async () => {
           if (randomizeMerchantRaceFromElement(element)) {
+            this.#renderWithPreservedState({ force: true, parts: ["main"] });
+          }
+        },
+        "merchant-apply-preset-defaults": async () => {
+          if (applyMerchantPresetDefaultsFromElement(element)) {
             this.#renderWithPreservedState({ force: true, parts: ["main"] });
           }
         },
@@ -22178,12 +22228,12 @@ function buildDowntimeSummaryContext(downtimeState = {}, options = {}) {
       publishedAtLabel,
       publishedBy: publication.publishedBy || "-",
       statusLabel: publication.isPublished
-        ? `${publication.publishedHoursGranted} hour(s) published to players`
-        : "Not published to players",
+        ? `${publication.publishedHoursGranted} hour(s) open`
+        : "Not open",
       submitHint: publication.isPublished
-        ? `Players can submit up to ${publication.publishedHoursGranted} hour(s) until you republish.`
-        : "Players cannot submit downtime until the GM publishes granted hours.",
-      buttonLabel: publication.isPublished ? "Republish Hours to Players" : "Publish Hours to Players"
+        ? `Players can spend up to ${publication.publishedHoursGranted} hour(s) from this downtime session.`
+        : "Players cannot spend downtime until the GM opens a session.",
+      buttonLabel: publication.isPublished ? "Republish Session to Players" : "Open Session to Players"
     },
     pendingCount,
     resolvedCount,
@@ -26449,7 +26499,7 @@ function buildMerchantsContext(ledger = getOperationsLedger(), options = {}) {
   const editorCustomMode = Boolean(editorDraft?.customMode);
   const editorCityOptions = buildMerchantCityOptions(cityCatalogRows, editorDraft?.settlement ?? "");
   const gmViewTabStored = getMerchantGmViewTab();
-  const gmViewTab = gmViewTabStored === MERCHANT_GM_VIEW_TABS.SETTINGS
+  const gmViewTab = gmViewTabStored === MERCHANT_GM_VIEW_TABS.SETTINGS || gmViewTabStored === MERCHANT_GM_VIEW_TABS.CITY
     ? MERCHANT_GM_VIEW_TABS.EDITOR
     : gmViewTabStored;
   if (gmViewTab !== gmViewTabStored) setMerchantGmViewTab(gmViewTab);
@@ -29011,6 +29061,49 @@ function randomizeMerchantRaceFromElement(element) {
   return true;
 }
 
+function applyMerchantPresetDefaultsFromElement(element) {
+  if (!canAccessGmPage()) {
+    ui.notifications?.warn("Only the GM can apply merchant presets.");
+    return false;
+  }
+  const draft = cacheMerchantEditorDraftFromElement(element, { suppressMissingFormWarning: true })
+    ?? getMerchantDefinitionDraftSource({});
+  const archetype = normalizeMerchantArchetype(draft?.archetype ?? MERCHANT_DEFAULTS.archetype);
+  const definition = getMerchantArchetypeDefinition(archetype);
+  draft.archetype = archetype;
+  draft.customMode = false;
+  draft.title = String(draft?.title ?? "").trim() || String(definition?.defaultTitle ?? "").trim();
+  draft.pricing = {
+    ...(draft.pricing && typeof draft.pricing === "object" ? draft.pricing : {}),
+    buyMarkup: Number((Number(definition?.markupPercent ?? 0) / 100).toFixed(2)),
+    sellRate: Number((Number(definition?.sellRatePercent ?? 0) / 100).toFixed(2)),
+    cashOnHandGp: Number(definition?.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp),
+    buybackAllowedTypes: normalizeMerchantAllowedItemTypes(
+      definition?.buybackAllowedTypes
+      ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes
+      ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST
+    )
+  };
+  draft.stock = {
+    ...(draft.stock && typeof draft.stock === "object" ? draft.stock : {}),
+    sourceType: MERCHANT_SOURCE_TYPES.WORLD_ITEMS,
+    sourceRef: "",
+    sourcePackIds: [],
+    allowedTypes: normalizeMerchantAllowedItemTypes(definition?.allowedTypes ?? MERCHANT_ALLOWED_ITEM_TYPE_LIST),
+    maxItems: Math.max(1, Math.min(100, Math.floor(Number(definition?.maxItems ?? MERCHANT_DEFAULTS.stock.maxItems) || MERCHANT_DEFAULTS.stock.maxItems))),
+    targetValueGp: Math.max(0, Number(definition?.targetValueGp ?? MERCHANT_DEFAULTS.stock.targetValueGp) || 0),
+    valueStrictness: clampMerchantValueStrictness(
+      definition?.valueStrictness ?? MERCHANT_DEFAULTS.stock.valueStrictness,
+      MERCHANT_DEFAULTS.stock.valueStrictness
+    ),
+    scarcity: normalizeMerchantScarcity(definition?.scarcity ?? MERCHANT_DEFAULTS.stock.scarcity),
+    rarityWeights: normalizeMerchantRarityWeights(MERCHANT_DEFAULTS.stock.rarityWeights, MERCHANT_DEFAULTS.stock.rarityWeights)
+  };
+  cacheMerchantEditorDraftFromPatch(draft);
+  ui.notifications?.info(`Applied ${String(definition?.label ?? "merchant").trim() || "merchant"} preset defaults.`);
+  return true;
+}
+
 function resetMerchantEditorSelection() {
   setMerchantEditorSelection("__new__");
   setMerchantEditorDraftState("__new__", getMerchantDefinitionDraftSource({}));
@@ -29487,6 +29580,7 @@ async function setMerchantAssignmentAllFromElement(element, assigned = true) {
   const merchant = getMerchantById(merchantId);
   if (!merchant) return false;
   const result = await setMerchantAssignmentsForAllActors(merchantId, assigned);
+  if (assigned) await setMerchantAccessModeById(merchantId, MERCHANT_ACCESS_MODES.ASSIGNED);
   const merchantName = String(merchant.name ?? "Merchant").trim() || "Merchant";
   const verb = assigned ? "Assigned" : "Cleared";
   ui.notifications?.info(`${verb} ${merchantName} for ${result.updated}/${result.total} actor(s).`);
@@ -29559,7 +29653,9 @@ async function setMerchantAssignmentFromElement(element) {
   const merchantId = String(element?.dataset?.merchantId ?? "").trim();
   if (!actorId || !merchantId) return false;
   const assigned = Boolean(element?.checked);
-  return setMerchantAssignment(actorId, merchantId, assigned);
+  const saved = await setMerchantAssignment(actorId, merchantId, assigned);
+  if (saved && assigned) await setMerchantAccessModeById(merchantId, MERCHANT_ACCESS_MODES.ASSIGNED);
+  return saved;
 }
 
 function setMerchantGmCollectionFilterFromElement(element) {
@@ -30543,7 +30639,7 @@ function ensureLootClaimsState(ledger) {
 }
 
 function getDowntimeSelectableActorsForUser(user = game.user) {
-  return getSelectablePlayerActorsForUser(user);
+  return getActivitySelectableActorsForUser(user);
 }
 
 function canUserManageDowntimeActor(user, actor) {

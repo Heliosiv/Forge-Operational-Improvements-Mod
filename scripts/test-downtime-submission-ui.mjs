@@ -117,8 +117,8 @@ assert.doesNotMatch(
 
 assert.match(
   restWatchTemplate,
-  /Pending Requests[\s\S]*Quick Resolution Defaults[\s\S]*Advanced Review[\s\S]*Gather History/,
-  "Gather panel should render queue-first section order: pending requests, defaults, advanced review, and history."
+  /Pending Requests[\s\S]*Gather History/,
+  "Gather panel should render the compact queue-first section order: pending requests, then history."
 );
 
 assert.match(
@@ -127,10 +127,10 @@ assert.match(
   "Pending request cards should render normalized intent and setup summary labels."
 );
 
-assert.match(
+assert.doesNotMatch(
   restWatchTemplate,
-  /\{\{#each operations\.resources\.gatherDefaults\.weatherOptions\}\}[\s\S]*data-resource="weatherMod:\{\{value\}\}"/,
-  "Quick resolution defaults should include visible weather/default controls for upcoming approvals."
+  /Quick Resolution Defaults|Advanced Review|Apply Daily Upkeep|data-resource="weatherMod:\{\{value\}\}"/,
+  "GM resource workspace should not expose quick defaults, advanced review, manual upkeep, or weather default controls."
 );
 
 assert.match(

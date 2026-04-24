@@ -77,7 +77,9 @@ export function createGmAudioPageApp(deps) {
       super(options);
       this._audioPreviewVolumeSaveTimer = null;
       this._audioLiveMonitorTimer = null;
+      this._audioLiveVolumeSaveTimer = null;
       this._audioQueueDragState = null;
+      this._audioRowOptionsDocumentPointerHandler = null;
     }
 
     static DEFAULT_OPTIONS = foundry.utils.mergeObject(super.DEFAULT_OPTIONS, {
@@ -121,6 +123,14 @@ export function createGmAudioPageApp(deps) {
         window.clearInterval(this._audioLiveMonitorTimer);
         this._audioLiveMonitorTimer = null;
       }
+      if (this._audioLiveVolumeSaveTimer) {
+        window.clearTimeout(this._audioLiveVolumeSaveTimer);
+        this._audioLiveVolumeSaveTimer = null;
+      }
+      if (this._audioRowOptionsDocumentPointerHandler) {
+        document.removeEventListener("pointerdown", this._audioRowOptionsDocumentPointerHandler, true);
+        this._audioRowOptionsDocumentPointerHandler = null;
+      }
       this._resetAudioMixQueueDragState();
       const result = await super.close(options);
       if (typeof syncManagedAudioMixPlaybackForCurrentUser === "function") {
@@ -142,6 +152,41 @@ export function createGmAudioPageApp(deps) {
       this._bindAudioPreviewPlayers();
       this._bindAudioMixQueueDragAndDrop();
       this._bindLiveAudioMonitorCards();
+      this._bindAudioRowOptionMenus();
+    }
+
+    _closeAudioRowOptionMenus(except = null) {
+      const root = this.element;
+      if (!root) return;
+      for (const details of root.querySelectorAll("details.po-audio-row-options[open]")) {
+        if (details === except) continue;
+        details.open = false;
+      }
+    }
+
+    _bindAudioRowOptionMenus() {
+      const root = this.element;
+      if (!root || root.dataset.poAudioRowOptionsBound === "1") return;
+      root.dataset.poAudioRowOptionsBound = "1";
+      root.addEventListener("toggle", (event) => {
+        const details = event.target;
+        if (!(details instanceof HTMLDetailsElement) || !details.classList.contains("po-audio-row-options") || !details.open) return;
+        this._closeAudioRowOptionMenus(details);
+      }, true);
+      root.addEventListener("pointerdown", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest?.("details.po-audio-row-options")) return;
+        this._closeAudioRowOptionMenus();
+      }, true);
+      if (!this._audioRowOptionsDocumentPointerHandler) {
+        this._audioRowOptionsDocumentPointerHandler = (event) => {
+          const rootNow = this.element;
+          const target = event.target instanceof Element ? event.target : null;
+          if (!rootNow || rootNow.contains(target)) return;
+          this._closeAudioRowOptionMenus();
+        };
+        document.addEventListener("pointerdown", this._audioRowOptionsDocumentPointerHandler, true);
+      }
     }
 
     _clearAudioMixQueueDropIndicators() {
@@ -268,6 +313,59 @@ export function createGmAudioPageApp(deps) {
         this._audioPreviewVolumeSaveTimer = null;
         void setAudioPreviewVolumeSetting(normalized);
       }, 120);
+    }
+
+    _queueAudioLiveVolumeSave(input) {
+      if (!(input instanceof HTMLInputElement)) return;
+      if (this._audioLiveVolumeSaveTimer) window.clearTimeout(this._audioLiveVolumeSaveTimer);
+      this._audioLiveVolumeSaveTimer = window.setTimeout(() => {
+        this._audioLiveVolumeSaveTimer = null;
+        void setSelectedAudioMixPresetOption(input);
+      }, 140);
+    }
+
+    _syncAudioLiveVolumeLabel(input) {
+      const label = input?.closest?.(".po-audio-preview-volume")?.querySelector?.("[data-role='live-volume-label']");
+      if (!label) return;
+      const percent = Math.max(0, Math.min(100, Math.round(Number(input.value ?? 0) || 0)));
+      label.textContent = `${percent}%`;
+    }
+
+    _bindLiveVolumeInput(input) {
+      if (!(input instanceof HTMLInputElement) || input.dataset.poAudioLiveVolumeBound === "1") return;
+      input.dataset.poAudioLiveVolumeBound = "1";
+      input.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const min = Number(input.min || 0);
+        const max = Number(input.max || 100);
+        const step = Math.max(1, Number(input.step || 1) || 1);
+        const direction = event.deltaY < 0 ? 1 : -1;
+        const multiplier = event.shiftKey ? 5 : 1;
+        const current = Number(input.value || 0);
+        const next = Math.max(min, Math.min(max, current + (direction * step * multiplier)));
+        if (next === current) return;
+        input.value = String(next);
+        this._syncAudioLiveVolumeLabel(input);
+        this._queueAudioLiveVolumeSave(input);
+      }, { passive: false });
+      input.addEventListener("pointerdown", (event) => {
+        event.stopPropagation();
+      });
+      input.addEventListener("input", (event) => {
+        event.stopPropagation();
+        this._syncAudioLiveVolumeLabel(input);
+        this._queueAudioLiveVolumeSave(input);
+      });
+      input.addEventListener("change", (event) => {
+        event.stopPropagation();
+        this._syncAudioLiveVolumeLabel(input);
+        if (this._audioLiveVolumeSaveTimer) {
+          window.clearTimeout(this._audioLiveVolumeSaveTimer);
+          this._audioLiveVolumeSaveTimer = null;
+        }
+        void setSelectedAudioMixPresetOption(input);
+      });
     }
 
     _bindAudioPreviewPlayers() {
@@ -432,6 +530,7 @@ export function createGmAudioPageApp(deps) {
           if (volumeInput instanceof HTMLInputElement && document.activeElement !== volumeInput) {
             volumeInput.value = String(volumePercent);
           }
+          if (volumeInput instanceof HTMLInputElement) this._bindLiveVolumeInput(volumeInput);
         }
       };
 

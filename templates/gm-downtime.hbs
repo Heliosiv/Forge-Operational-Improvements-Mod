@@ -19,12 +19,12 @@
       <section class="po-gm-section po-gm-page-intro">
         <div class="po-gm-page-copy">
           <div class="po-gm-page-eyebrow">GM Workspace</div>
-          <div class="po-section-title">Downtime Control Board</div>
-          <div class="po-hint">Tune downtime pacing, publish granted hours to players, then automate or manually resolve submitted actions from one queue.</div>
+          <div class="po-section-title">Downtime Sessions</div>
+          <div class="po-hint">Publish a small block of usable hours, let players spend those hours on travel or city activities, then resolve and close the session when the time is spent.</div>
           <div class="po-op-summary {{#if uiActionStatusWarn}}is-warn{{/if}} {{#if uiActionStatusGood}}is-good{{/if}}" data-page-action-status role="status" aria-live="polite" aria-atomic="true">{{uiActionStatusMessage}}</div>
         </div>
         <div class="po-info-strip po-gm-page-stat-grid" role="list" aria-label="Downtime summary">
-          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Draft Hours</span><strong>{{downtime.draftHoursGranted}}</strong></div>
+          <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Session Hours</span><strong>{{downtime.draftHoursGranted}}</strong></div>
           <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Published</span><strong>{{#if downtime.publication.isPublished}}{{downtime.publishedHoursGranted}}{{else}}-{{/if}}</strong></div>
           <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Pending</span><strong>{{downtime.pendingCount}}</strong></div>
           <div class="po-info-chip po-gm-page-stat" role="listitem"><span>Resolved</span><strong>{{downtime.resolvedCount}}</strong></div>
@@ -37,24 +37,24 @@
           <div class="po-col">
             <div class="po-op-role-row">
               <div class="po-op-role-head">
-                <div class="po-op-role-name">Downtime Tuning</div>
+                <div class="po-op-role-name">Session Setup</div>
                 <div class="po-op-role-status">GM</div>
               </div>
               <label class="po-resource-row">
-                <span>Granted Hours</span>
+                <span>Available Hours</span>
                 <input type="number" min="1" max="24" step="1" class="po-input" value="{{downtime.draftHoursGranted}}" data-action="set-downtime-hours" />
               </label>
-              <div class="po-op-summary po-downtime-publication-status {{#if downtime.publication.isPublished}}is-good{{else}}is-warn{{/if}}"><strong>Player Publication:</strong> {{downtime.publication.statusLabel}}</div>
+              <div class="po-op-summary po-downtime-publication-status {{#if downtime.publication.isPublished}}is-good{{else}}is-warn{{/if}}"><strong>Player Session:</strong> {{downtime.publication.statusLabel}}</div>
               <div class="po-op-summary"><strong>Published:</strong> {{downtime.publication.publishedAtLabel}} by {{downtime.publication.publishedBy}}</div>
               {{#unless downtime.publication.isPublished}}
               <div class="po-op-summary is-warn"><strong>Submission gate:</strong> players cannot submit until hours are published.</div>
               {{/unless}}
-              <div class="po-hint">{{downtime.publication.submitHint}}</div>
+              <div class="po-hint">Players spend from this session until you republish or complete their entries. Outcomes and extra benefits stay GM-side until resolved.</div>
               <div class="po-op-action-row">
                 <button type="button" class="po-btn po-btn-sm is-primary" data-action="publish-downtime-hours" title="{{downtime.publication.buttonLabel}}" aria-label="{{downtime.publication.buttonLabel}}">{{downtime.publication.buttonLabel}}</button>
               </div>
               <label class="po-resource-row">
-                <span>Economy</span>
+                  <span>Activity Setting</span>
                 <select class="po-select" data-action="set-downtime-tuning" data-tuning="economy">
                   {{#each downtime.tuning.economyOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -62,7 +62,7 @@
                 </select>
               </label>
               <label class="po-resource-row">
-                <span>Complication Risk</span>
+                  <span>Risk</span>
                 <select class="po-select" data-action="set-downtime-tuning" data-tuning="risk">
                   {{#each downtime.tuning.riskOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -70,7 +70,7 @@
                 </select>
               </label>
               <label class="po-resource-row">
-                <span>Discovery Density</span>
+                  <span>Discovery</span>
                 <select class="po-select" data-action="set-downtime-tuning" data-tuning="discovery">
                   {{#each downtime.tuning.discoveryOptions}}
                   <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
@@ -81,7 +81,7 @@
 
             <div class="po-op-role-row">
               <div class="po-op-role-head">
-                <div class="po-op-role-name">Submit Downtime Action</div>
+                <div class="po-op-role-name">Create Activity Entry</div>
                 <div class="po-op-role-status">Manual</div>
               </div>
               <div class="po-op-summary po-downtime-submit-readiness {{#if downtime.submit.canSubmit}}is-good{{else}}is-warn{{/if}}" role="status" aria-live="polite" aria-atomic="true"><strong>Ready to submit:</strong> {{#if downtime.submit.canSubmit}}Yes{{else}}No{{/if}}</div>
@@ -92,9 +92,9 @@
               <div class="po-op-summary is-warn"><strong>Planned hours exceed cap:</strong> over by {{downtime.submit.overBudgetHours}}h. Adjust hours or queue strategy.</div>
               {{/if}}
               <div class="po-op-summary"><strong>Selected action:</strong> {{#each downtime.submit.actionOptions}}{{#if selected}}{{label}}{{/if}}{{/each}} for {{downtime.submit.hours}} hour(s)</div>
-              <div class="po-op-summary" aria-live="polite">Submitting or refreshing may take a moment while the GM ledger updates.</div>
+              <div class="po-op-summary" aria-live="polite">Use this only when you want to seed an entry yourself; players will normally choose from their published session.</div>
               <label class="po-resource-row">
-                <span>Actor</span>
+                <span>PC-Owned Actor</span>
                 <select name="downtimeActorId" class="po-select" data-action="refresh-downtime-submit-selection">
                   {{#each downtime.submit.actorOptions}}
                   <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
@@ -260,8 +260,8 @@
               {{/if}}
               <div class="po-hint">Choose whether this becomes the actor's active entry or is queued behind the current one.</div>
               <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action-replace" data-queue-mode="replace-current" {{#if downtime.submit.canSubmit}}title="Start this action now and replace the current active entry" aria-label="Start this action now and replace the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Start / Replace Current</button>
-                <button type="button" class="po-btn po-btn-sm" data-action="submit-downtime-action" data-queue-mode="append" {{#if downtime.submit.canSubmit}}title="Queue this action behind the current active entry" aria-label="Queue this action behind the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Queue Next Action</button>
+                <button type="button" class="po-btn po-btn-sm is-primary" data-action="submit-downtime-action-replace" data-queue-mode="replace-current" {{#if downtime.submit.canSubmit}}title="Start this activity now and replace the current active entry" aria-label="Start this activity now and replace the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Start / Replace Current</button>
+                <button type="button" class="po-btn po-btn-sm" data-action="submit-downtime-action" data-queue-mode="append" {{#if downtime.submit.canSubmit}}title="Queue this activity behind the current active entry" aria-label="Queue this activity behind the current active entry"{{else}}title="{{downtime.submit.disabledReason}}" aria-label="{{downtime.submit.disabledReason}}" disabled{{/if}}>Queue Next Activity</button>
               </div>
             </div>
 

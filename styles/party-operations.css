@@ -5817,7 +5817,7 @@
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid {
   display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(140px, 1fr));
+  grid-template-columns: minmax(220px, 1.6fr) repeat(2, minmax(140px, 1fr));
   gap: 6px 10px;
   align-items: end;
 }
@@ -5884,6 +5884,15 @@
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-assign-grid {
   gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-access-panel {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 24%, var(--po-border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--po-bg-alt) 70%, transparent);
 }
 
 @media (max-width: 1180px) {
@@ -6078,7 +6087,7 @@
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-collection-filters.po-merchant-filter-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(130px, 1fr));
+  grid-template-columns: minmax(260px, 2fr) repeat(2, minmax(130px, 1fr));
   gap: 8px 10px;
   align-items: end;
 }
@@ -6257,13 +6266,70 @@
 .party-operations [data-tool="gm-merchants"] .po-merchant-rarity-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 8px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-range-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-range-option > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 0.72rem;
+  line-height: 1.15;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-range-option > span strong {
+  font-weight: 700;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-range-option > span em {
+  font-style: normal;
+  opacity: 0.72;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-range-option input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-buyback-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-check-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--po-border-strong) 22%, var(--po-border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--po-surface) 72%, transparent);
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-check-option input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.party-operations [data-tool="gm-merchants"] .po-merchant-check-option span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .party-operations [data-tool="gm-merchants"] .po-merchant-toolbar {

@@ -693,6 +693,19 @@
   width: fit-content;
 }
 
+.party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-workspace-grid-compact {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-resource-workspace-compact {
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-resource-workspace-compact .po-gm-workspace-meta {
+  margin-top: 0;
+}
+
 .party-operations .po-window[data-tool="rest-watch"][data-main-tab="gm"] .po-gm-session-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1001,4 +1014,3 @@
     grid-template-columns: 1fr;
   }
 }
-

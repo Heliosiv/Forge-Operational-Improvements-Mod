@@ -20,16 +20,16 @@
         <div class="po-merchants-hero-copy po-gm-page-copy">
           <div class="po-gm-page-eyebrow">GM Workspace</div>
           {{#if merchants.gm.viewTabCityEditor}}
-          <div class="po-section-title">Location Editor</div>
-          <div class="po-hint">Manage the location catalog used for merchant setup and assignment.</div>
+          <div class="po-section-title">Configured Merchants</div>
+          <div class="po-hint">Choose which PC actors can trade, then deploy merchants directly to the live merchant workspace.</div>
           {{/if}}
           {{#if merchants.gm.viewTabWorkspace}}
           <div class="po-section-title">Merchant Workspace</div>
-          <div class="po-hint">Edit merchant identity, pricing balance, stock tags, and refresh rules in one workspace.</div>
+          <div class="po-hint">Pick a merchant preset, name the merchant, and only open advanced stock controls when you need an override.</div>
           {{/if}}
           {{#if merchants.gm.viewTabConfiguredMerchants}}
           <div class="po-section-title">Configured Merchants</div>
-          <div class="po-hint">Filter the configured roster by location, access, and stock before opening a shop session.</div>
+          <div class="po-hint">Choose PC actor access on each merchant card, then deploy the merchant to the live workspace.</div>
           {{/if}}
           {{#if merchants.gm.viewTabShopSession}}
           <div class="po-section-title">Shop Session</div>
@@ -45,10 +45,6 @@
               {{#if merchants.gm.viewTabConfiguredMerchants}}Configured Merchants{{/if}}
               {{#if merchants.gm.viewTabShopSession}}Shop Session{{/if}}
             </strong>
-          </div>
-          <div class="po-gm-page-stat" role="listitem">
-            <span>Locations</span>
-            <strong>{{merchants.gm.savedLocationCatalogCount}}</strong>
           </div>
           <div class="po-gm-page-stat" role="listitem">
             <span>Configured</span>
@@ -69,7 +65,6 @@
         <input type="hidden" name="merchantId" value="{{merchants.gm.editor.id}}" />
         <div class="po-merchant-workspace">
           <div class="po-tabs po-tabs-sub po-merchant-view-tabs po-gm-subtabs" aria-label="Merchant workspace tabs">
-            <button type="button" class="po-tab {{#if merchants.gm.viewTabCityEditor}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="city-editor">Location Editor</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabWorkspace}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="editor">Merchant Workspace</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabConfiguredMerchants}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="configured-merchants">Configured Merchants</button>
             <button type="button" class="po-tab {{#if merchants.gm.viewTabShopSession}}is-active{{/if}}" data-action="merchant-gm-view-tab" data-tab="shop-session">Shop Session</button>
@@ -160,15 +155,18 @@
             <div class="po-two-col po-merchant-editor-grid">
               <div class="po-col po-merchant-editor-column">
                 <div class="po-section-title">Merchant Basics</div>
-                <div class="po-hint">Choose the merchant archetype first, then fill in identity and location. Use the advanced stock controls only when you want to override the preset.</div>
+                <div class="po-hint">Choose a preset, then change only the name, title, or race for this merchant.</div>
                 <label class="po-resource-row">
-                  <span>Archetype</span>
+                  <span>Merchant Preset</span>
                   <select class="po-select" name="merchantArchetype" data-action="merchant-editor-draft-change">
                     {{#each merchants.gm.archetypeOptions}}
                     <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
                     {{/each}}
                   </select>
                 </label>
+                <div class="po-op-action-row po-merchant-preset-actions">
+                  <button type="button" class="po-btn po-btn-sm" data-action="merchant-apply-preset-defaults">Apply Preset Defaults</button>
+                </div>
                 <div class="po-op-summary">{{merchants.gm.editor.specialtyLabel}}</div>
                 <div class="po-op-summary">{{merchants.gm.editor.pricePostureLabel}}</div>
                 <div class="po-op-summary">{{merchants.gm.editor.stockCadenceLabel}}</div>
@@ -206,14 +204,6 @@
                   <input type="text" name="merchantImg" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.img}}" placeholder="icons/svg/item-bag.svg" />
                 </label>
                 <label class="po-resource-row">
-                  <span>Location</span>
-                  <select class="po-select" name="merchantSettlement" data-action="merchant-editor-draft-change">
-                    {{#each merchants.gm.cityOptions}}
-                    <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                    {{/each}}
-                  </select>
-                </label>
-                <label class="po-resource-row">
                   <span>Access Mode</span>
                   <select class="po-select" name="merchantAccessMode" data-action="merchant-editor-draft-change">
                     {{#each merchants.gm.accessModeOptions}}
@@ -226,6 +216,12 @@
                   <input type="checkbox" name="merchantCustomMode" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.customMode}}checked{{/if}} />
                 </label>
                 <div class="po-op-summary">{{#if merchants.gm.editor.customMode}}Expert override active. Folder, pack, and rarity controls below are now driving stock.{{else}}Archetype-driven stock is active. Leave manual tuning off for simple shop generation.{{/if}}</div>
+                <details class="po-panel-disclosure po-merchant-advanced-stock" {{#if merchants.gm.editor.customMode}}open{{/if}}>
+                  <summary class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Advanced Stock Overrides</span>
+                    <span class="po-op-summary">Sources, packs, and custom item pools</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
                 <label class="po-resource-row">
                   <span>Stock Source Type</span>
                   <select class="po-select" name="merchantSourceType" data-action="merchant-editor-draft-change">
@@ -299,6 +295,8 @@
                     {{/if}}
                   </div>
                 </div>
+                  </div>
+                </details>
               </div>
 
               <div class="po-col po-merchant-editor-column">
@@ -336,35 +334,43 @@
                   <span>Target Stock Value (gp)</span>
                   <input type="number" min="0" max="1000000" step="1" name="merchantTargetValueGp" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.targetValueGp}}" />
                 </label>
-                <label class="po-resource-row">
-                  <span>Value Strictness</span>
-                  <input type="number" min="50" max="300" step="10" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
-                </label>
-                <div class="po-resource-row po-merchant-rarity-row">
-                  <span>Rarity Weights</span>
-                  <div class="po-op-action-row po-merchant-rarity-grid">
+                <details class="po-panel-disclosure po-merchant-advanced-pricing" {{#if merchants.gm.editor.customMode}}open{{/if}}>
+                  <summary class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Advanced Rarity Balance</span>
+                    <span class="po-op-summary">Only adjust when the preset needs special stock weighting</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
+                    <label class="po-resource-row">
+                      <span>Value Strictness</span>
+                      <input type="number" min="50" max="300" step="10" name="merchantValueStrictness" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.valueStrictness}}" />
+                    </label>
+                    <div class="po-resource-row po-merchant-rarity-row">
+                      <span>Rarity Weights</span>
+                      <div class="po-op-action-row po-merchant-rarity-grid">
                     <label class="po-merchant-range-option">
-                      <span>Common</span>
+                      <span><strong>Common</strong><em>{{merchants.gm.editor.rarityWeightCommon}}</em></span>
                       <input type="range" min="0" max="100" step="1" name="merchantRarityWeightCommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightCommon}}" />
                     </label>
                     <label class="po-merchant-range-option">
-                      <span>Uncommon</span>
+                      <span><strong>Uncommon</strong><em>{{merchants.gm.editor.rarityWeightUncommon}}</em></span>
                       <input type="range" min="0" max="100" step="1" name="merchantRarityWeightUncommon" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightUncommon}}" />
                     </label>
                     <label class="po-merchant-range-option">
-                      <span>Rare</span>
+                      <span><strong>Rare</strong><em>{{merchants.gm.editor.rarityWeightRare}}</em></span>
                       <input type="range" min="0" max="100" step="1" name="merchantRarityWeightRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightRare}}" />
                     </label>
                     <label class="po-merchant-range-option">
-                      <span>Very Rare</span>
+                      <span><strong>Very Rare</strong><em>{{merchants.gm.editor.rarityWeightVeryRare}}</em></span>
                       <input type="range" min="0" max="100" step="1" name="merchantRarityWeightVeryRare" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightVeryRare}}" />
                     </label>
                     <label class="po-merchant-range-option">
-                      <span>Legendary</span>
+                      <span><strong>Legendary</strong><em>{{merchants.gm.editor.rarityWeightLegendary}}</em></span>
                       <input type="range" min="0" max="100" step="1" name="merchantRarityWeightLegendary" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityWeightLegendary}}" />
                     </label>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </details>
                 <label class="po-resource-row">
                   <span>Barter Enabled</span>
                   <input type="checkbox" name="merchantBarterEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.barterEnabled}}checked{{/if}} />
@@ -498,16 +504,8 @@
                   data-action="merchant-gm-filter-change"
                   data-filter-key="search"
                   value="{{merchants.gm.collectionFilterSearch}}"
-                  placeholder="Filter by name, title, or location"
+                  placeholder="Filter by name or title"
                 />
-              </label>
-              <label class="po-resource-row">
-                <span>Location</span>
-                <select class="po-select" data-action="merchant-gm-filter-change" data-filter-key="city">
-                  {{#each merchants.gm.collectionFilterCityOptions}}
-                  <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                  {{/each}}
-                </select>
               </label>
               <label class="po-resource-row">
                 <span>Access</span>
@@ -528,8 +526,8 @@
             </div>
             <div class="po-op-action-row po-merchant-filter-reset-row">
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-gm-filter-reset">Reset Filters</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell">Open Shops</button>
-              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Shops</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-bell">Open Merchant Workspace</button>
+              <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-close" {{#unless merchants.gm.shopSession.isOpen}}disabled{{/unless}}>Close Workspace</button>
               <button type="button" class="po-btn po-btn-sm" data-action="merchant-shop-tradable-none">Deselect All Merchants</button>
             </div>
             {{#if merchants.gm.hasDefinitions}}
@@ -547,7 +545,7 @@
                   </div>
                   <div class="po-merchant-definition-summary-meta">
                     <span class="po-pill po-merchant-definition-summary-status {{#if shopTradable}}is-tradable{{else}}is-disabled{{/if}}">Shop {{shopTradableLabel}}</span>
-                    <span class="po-pill">{{settlementLabel}}</span>
+                    <span class="po-pill">{{accessModeLabel}}</span>
                   </div>
                   {{#if hasCompactPills}}
                   <div class="po-merchant-definition-summary-pills">
@@ -567,7 +565,7 @@
                       data-available="{{#if availableNow}}false{{else}}true{{/if}}"
                       title="{{availabilityActionHint}}"
                     >
-                      {{availabilityActionLabel}}
+                      {{#if availableNow}}Hide from Workspace{{else}}Deploy to Workspace{{/if}}
                     </button>
                     <button
                       type="button"
@@ -582,7 +580,7 @@
                     <div class="po-op-role-status {{#if selectedForEdit}}is-ready{{else}}is-missing{{/if}}">{{#if selectedForEdit}}Editing{{else}}Stored{{/if}}</div>
                   </div>
                   <div class="po-merchant-definition-metadata">
-                    <div class="po-op-summary">Profile: {{raceLabel}} | Location: {{settlementLabel}}</div>
+                    <div class="po-op-summary">Profile: {{raceLabel}} | Access: {{accessModeLabel}}</div>
                     <div class="po-op-summary">Availability: {{availabilityStatusLabel}}</div>
                     <div class="po-op-summary">Allowed Types: {{offerTagSummary}}</div>
                     <div class="po-op-summary">Source: {{sourceTypeLabel}} - {{sourceRefLabel}}</div>
@@ -591,28 +589,19 @@
                     <div class="po-op-summary">Barter: {{#if barterEnabled}}Enabled{{else}}Disabled{{/if}} | Buyback: {{buybackTypeSummary}}</div>
                     <div class="po-op-summary">Stock: {{stockItemCount}} item(s) | Last Refresh: {{lastRefreshedAtLabel}} by {{lastRefreshedBy}}</div>
                   </div>
-                  <label class="po-resource-row">
-                    <span>Assign Location</span>
-                    <select class="po-select" data-action="merchant-assign-city" data-merchant-id="{{id}}">
-                      {{#each cityOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                      {{/each}}
-                    </select>
-                  </label>
-                  <label class="po-resource-row">
-                    <span>Access</span>
-                    <select class="po-select" data-action="merchant-set-access-mode" data-merchant-id="{{id}}">
-                      {{#each accessModeOptions}}
-                      <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
-                      {{/each}}
-                    </select>
-                  </label>
-                  {{#if accessModeIsAssigned}}
-                  <div class="po-op-summary">Assigned: {{assignedCount}} | Unassigned: {{unassignedCount}}</div>
-                  <div class="po-op-action-row po-merchant-assign-toolbar">
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-all" data-merchant-id="{{id}}">Assign All</button>
-                    <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-none" data-merchant-id="{{id}}">Clear All</button>
-                  </div>
+                  <div class="po-merchant-access-panel">
+                    <div class="po-section-head-row">
+                      <div>
+                        <div class="po-section-title">Who Can Trade</div>
+                        <div class="po-hint">Check the PC-owned actors that can use this merchant, then deploy it to the live workspace.</div>
+                      </div>
+                      <div class="po-pill">{{assignedCount}} selected</div>
+                    </div>
+                    <div class="po-op-action-row po-merchant-assign-toolbar">
+                      <button type="button" class="po-btn po-btn-sm {{#if accessModeIsAll}}is-primary{{/if}}" data-action="merchant-set-access-mode" data-merchant-id="{{id}}" data-access-mode="all">All PC Actors</button>
+                      <button type="button" class="po-btn po-btn-sm {{#if accessModeIsAssigned}}is-primary{{/if}}" data-action="merchant-set-access-mode" data-merchant-id="{{id}}" data-access-mode="assigned">Selected Only</button>
+                      <button type="button" class="po-btn po-btn-sm" data-action="merchant-assign-none" data-merchant-id="{{id}}">Clear</button>
+                    </div>
                   {{#if hasAssignmentRows}}
                   <div class="po-op-action-row po-merchant-assign-grid">
                     {{#each assignmentRows}}
@@ -623,7 +612,7 @@
                     {{/each}}
                   </div>
                   {{/if}}
-                  {{/if}}
+                  </div>
                   <div class="po-controls po-merchant-definition-toolbar">
                     <button type="button" class="po-btn po-btn-sm" data-action="merchant-edit" data-merchant-id="{{id}}">Edit</button>
                     <button type="button" class="po-btn po-btn-sm" data-action="merchant-refresh-stock" data-merchant-id="{{id}}">Refresh Stock</button>
