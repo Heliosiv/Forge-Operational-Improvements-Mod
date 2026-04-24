@@ -12,6 +12,7 @@ export function createPartyOperationsSocketHandlerConfig({
   return {
     game,
     applyPlayerGatherRequest: gather.applyPlayerGatherRequest,
+    promptPlayerGatherRequest: gather.promptPlayerGatherRequest,
     promptLocalGatherCheckRoll: gather.promptLocalGatherCheckRoll,
     promptLocalGatherYieldRoll: gather.promptLocalGatherYieldRoll,
     resolvePendingGatherCheckRequest: gather.resolvePendingGatherCheckRequest,

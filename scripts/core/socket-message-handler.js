@@ -3,6 +3,7 @@ import { routePartyOperationsSocketMessage } from "./socket-routes.js";
 export function createPartyOperationsSocketMessageHandler({
   game = globalThis.game,
   applyPlayerGatherRequest,
+  promptPlayerGatherRequest,
   promptLocalGatherCheckRoll,
   promptLocalGatherYieldRoll,
   resolvePendingGatherCheckRequest,
@@ -11,6 +12,11 @@ export function createPartyOperationsSocketMessageHandler({
   routeSocketMessage = routePartyOperationsSocketMessage
 } = {}) {
   return async function handlePartyOperationsSocketMessage(message) {
+    if (message?.type === "players:openGatherResources") {
+      if (!game?.user?.isGM) await promptPlayerGatherRequest?.(message?.options ?? {});
+      return;
+    }
+
     if (message?.type === "ops:gather-request") {
       if (game?.user?.isGM) await applyPlayerGatherRequest?.(message);
       return;

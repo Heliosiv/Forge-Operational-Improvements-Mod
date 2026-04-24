@@ -4717,6 +4717,48 @@
   line-height: 1.25;
 }
 
+.party-operations .po-overview-mini-board {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-operations .po-overview-mini-row {
+  display: grid;
+  grid-template-columns: 4.8rem minmax(0, 1fr) 1.2rem;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.party-operations .po-overview-card .po-overview-mini-row > span,
+.party-operations .po-overview-mini-row > strong {
+  font-size: 0.62rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.party-operations .po-overview-mini-cells {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(8px, 1fr));
+  gap: 2px;
+  min-width: 0;
+}
+
+.party-operations .po-overview-mini-cells i {
+  display: block;
+  min-width: 8px;
+  height: 8px;
+  border: 1px solid color-mix(in srgb, var(--po-border) 80%, transparent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--po-bg-alt) 80%, transparent);
+}
+
+.party-operations .po-overview-mini-cells i.is-filled {
+  background: color-mix(in srgb, var(--po-accent) 70%, var(--po-bg-alt));
+  border-color: color-mix(in srgb, var(--po-accent) 80%, var(--po-border));
+}
+
 .party-operations .po-overview-card.is-alert {
   border-color: color-mix(in srgb, var(--po-warn) 75%, var(--po-border));
   background: color-mix(in srgb, var(--po-warn) 18%, var(--po-bg-alt));
@@ -4724,6 +4766,48 @@
 
 .party-operations .po-overview-card.is-muted {
   opacity: 0.88;
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-grid {
+  display: grid;
+  grid-template-rows: repeat(12, minmax(12px, 1fr));
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 280px;
+  margin: 8px auto 0;
+  border: 1px solid var(--po-border-strong);
+  background: color-mix(in srgb, var(--po-bg-alt) 72%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-row {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 12px;
+  border-right: 1px solid color-mix(in srgb, var(--po-border) 42%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--po-border) 42%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-cell.has-actor {
+  background: color-mix(in srgb, var(--po-accent) 16%, transparent);
+}
+
+.party-operations [data-tool="marching-order"] .po-march-spacing-token {
+  position: absolute;
+  inset: 1px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--po-accent) 78%, var(--po-bg-alt));
+  color: var(--po-accent-contrast);
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1;
+  overflow: hidden;
 }
 
 .party-operations .po-overview-actions {

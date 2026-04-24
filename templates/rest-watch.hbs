@@ -279,15 +279,15 @@
               type="button"
               class="po-btn po-btn-sm po-gather-launch-btn"
               data-action="gather-resource-check"
-              title="Run the hidden resource gathering Wisdom (Survival) check">
+              title="Call players to choose a PC-owned character for gathering">
               <i class="fa-solid fa-seedling" aria-hidden="true"></i>
               <span class="po-gather-launch-btn-copy">
-                <span class="po-gather-launch-btn-main">Gather Resources</span>
-                <span class="po-gather-launch-btn-sub">Wisdom (Survival)</span>
+                <span class="po-gather-launch-btn-main">Call Gather</span>
+                <span class="po-gather-launch-btn-sub">Player Requests</span>
               </span>
             </button>
           </div>
-          <div class="po-hint">Track supply forecasts, shared pools, and target bindings here. GM-only gather controls now live in the GM workspace.</div>
+          <div class="po-hint">Track supply forecasts, shared pools, and target bindings here. Call Gather prompts players to submit PC-owned gathering requests for GM resolution.</div>
           <div class="po-info-strip">
             <div class="po-info-chip" title="Projected food consumed per day"><span>Per Day Food</span><strong>{{operations.resources.summary.foodDrainPerDay}}</strong></div>
             <div class="po-info-chip" title="Steward pool state for food (none, finite stock, or surplus source)"><span>Food Rations</span><strong>{{operations.resources.summary.foodStewardPoolDisplay}}</strong></div>
@@ -1026,11 +1026,11 @@
                 <span class="po-pill">Auto Upkeep {{operations.resources.summary.autoUpkeepPromptLabel}}</span>
               </div>
               <div class="po-op-action-row">
-                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Run the hidden resource gathering Wisdom (Survival) check">
+                <button type="button" class="po-btn po-btn-sm po-gather-launch-btn" data-action="gather-resource-check" title="Call players to choose a PC-owned character for gathering">
                   <i class="fa-solid fa-seedling" aria-hidden="true"></i>
                   <span class="po-gather-launch-btn-copy">
-                    <span class="po-gather-launch-btn-main">Gather Resources</span>
-                    <span class="po-gather-launch-btn-sub">Wisdom (Survival)</span>
+                    <span class="po-gather-launch-btn-main">Call Gather</span>
+                    <span class="po-gather-launch-btn-sub">Player Requests</span>
                   </span>
                 </button>
                 <button type="button" class="po-btn po-btn-sm" data-action="apply-upkeep" title="Apply per-day resource drain scaled by calendar days elapsed">Apply Daily Upkeep</button>

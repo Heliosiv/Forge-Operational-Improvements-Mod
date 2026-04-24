@@ -219,6 +219,7 @@ export function buildMarchFormationSummaryContext({
 
 export function buildMarchOverviewContext({
   totalAssigned = 0,
+  allActorCount = 0,
   laneCounts = {},
   formationLabel = "March Board",
   formationStateLabel = "Active",
@@ -229,43 +230,54 @@ export function buildMarchOverviewContext({
   leadershipCheckDue = false
 } = {}) {
   const hasAlert = leadershipCheckDue || warningCount > 0 || unassignedCount > 0;
+  const miniRows = MARCH_BOARD_RANKS.map((rank) => {
+    const count = Math.max(0, Number(laneCounts?.[rank.id] ?? 0) || 0);
+    const cells = Array.from({ length: Math.max(3, count) }, (_, index) => ({
+      filled: index < count
+    }));
+    return {
+      id: rank.id,
+      label: rank.shortLabel,
+      count,
+      cells
+    };
+  });
+  const safeAllActorCount = Math.max(Number(allActorCount) || 0, totalAssigned + unassignedCount);
   return {
     totalAssigned,
+    allActorCount: safeAllActorCount,
     laneCounts,
     formationLabel,
     formationStateLabel,
     lightSources,
     lockState,
+    miniRows,
     cards: [
       {
-        label: "Assigned Actors",
-        value: String(totalAssigned),
-        detail: unassignedCount > 0 ? `${unassignedCount} still unplaced` : "All visible placements counted",
+        label: "All Actors",
+        value: String(safeAllActorCount),
+        detail: unassignedCount > 0 ? `${unassignedCount} not deployed` : "Roster ready",
         toneClass: unassignedCount > 0 ? "is-alert" : ""
       },
       {
-        label: "Lane Spread",
-        value: MARCH_BOARD_RANKS.map((rank) => Number(laneCounts?.[rank.id] ?? 0)).join(" / "),
-        detail: MARCH_BOARD_RANKS.map((rank) => rank.shortLabel).join(" / "),
-        toneClass: ""
+        label: "Deployed Actors",
+        value: String(totalAssigned),
+        detail: `${totalAssigned} on march board`,
+        toneClass: totalAssigned > 0 ? "" : "is-muted"
       },
       {
-        label: "Board",
-        value: String(formationLabel || "-"),
-        detail: String(formationStateLabel || "-"),
-        toneClass: leadershipCheckDue ? "is-alert" : ""
+        label: "Lane Spread",
+        value: "",
+        detail: "",
+        toneClass: "",
+        isMiniBoard: true,
+        miniRows
       },
       {
         label: "Light Sources",
         value: String(lightSources),
         detail: lightSources > 0 ? "Visible light carriers" : "No mapped light carriers",
         toneClass: lightSources > 0 ? "" : "is-muted"
-      },
-      {
-        label: "Board State",
-        value: String(lockState || "Open"),
-        detail: hasAlert ? `${warningCount} warning${warningCount === 1 ? "" : "s"} active` : "No immediate issues",
-        toneClass: hasAlert ? "is-alert" : ""
       }
     ]
   };
@@ -325,6 +337,18 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
 
   if (op === "leaveRank") {
     return { op, actorId };
+  }
+
+  if (op === "setLight") {
+    return { op, actorId, enabled: Boolean(request.enabled) };
+  }
+
+  if (op === "setLightRange") {
+    const rangeKey = String(request.range ?? "").trim().toLowerCase();
+    if (!["bright", "dim"].includes(rangeKey)) return null;
+    const valueRaw = Number.parseInt(String(request.value ?? ""), 10);
+    const value = Number.isInteger(valueRaw) ? Math.max(0, Math.min(999, valueRaw)) : 0;
+    return { op, actorId, range: rangeKey, value };
   }
 
   return {
@@ -414,6 +438,58 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     if (state.notes) delete state.notes[request.actorId];
     if (state.light) delete state.light[request.actorId];
     if (state.lightRanges) delete state.lightRanges[request.actorId];
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
+
+  if (request.op === "setLight") {
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject setLight (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!state.light) state.light = {};
+    if (!state.lightRanges) state.lightRanges = {};
+    state.light[request.actorId] = Boolean(request.enabled);
+    if (state.light[request.actorId] && !state.lightRanges[request.actorId]) {
+      state.lightRanges[request.actorId] = { bright: 20, dim: 40 };
+    }
+    stampUpdate(state, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
+
+  if (request.op === "setLightRange") {
+    if (!requesterCanControlActor) {
+      logUiDebug?.("marching-order", "socket reject setLightRange (permission denied)", {
+        actorId: request.actorId,
+        requesterId: String(requester?.id ?? ""),
+        requesterName: String(requester?.name ?? "Unknown")
+      });
+      return;
+    }
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!state.lightRanges) state.lightRanges = {};
+    const current = state.lightRanges[request.actorId] ?? { bright: 20, dim: 40 };
+    const bright = request.range === "bright" ? request.value : Math.max(0, Number(current.bright ?? 20) || 0);
+    const dimCandidate = request.range === "dim" ? request.value : Math.max(0, Number(current.dim ?? 40) || 0);
+    state.lightRanges[request.actorId] = {
+      bright,
+      dim: Math.max(bright, dimCandidate)
+    };
+    if (!state.light) state.light = {};
+    if (state.light[request.actorId] === undefined) state.light[request.actorId] = true;
     stampUpdate(state, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, state);
     scheduleIntegrationSync("marching-order-player-mutate");

@@ -57,8 +57,24 @@
     {{#each overview.cards}}
     <article class="po-overview-card {{toneClass}}">
       <span>{{label}}</span>
+      {{#if isMiniBoard}}
+      <div class="po-overview-mini-board" aria-label="Lane spread preview">
+        {{#each miniRows}}
+        <div class="po-overview-mini-row">
+          <span>{{label}}</span>
+          <div class="po-overview-mini-cells">
+            {{#each cells}}
+            <i class="{{#if filled}}is-filled{{/if}}" aria-hidden="true"></i>
+            {{/each}}
+          </div>
+          <strong>{{count}}</strong>
+        </div>
+        {{/each}}
+      </div>
+      {{else}}
       <strong>{{value}}</strong>
       <div class="po-overview-card-detail">{{detail}}</div>
+      {{/if}}
     </article>
     {{/each}}
   </section>
@@ -157,7 +173,6 @@
         </section>
       </div>
 
-      {{#if isGM}}
       <aside class="po-gm-panel po-right">
         <div id="po-march-gm-light" class="po-gm-section po-collapsible {{#if gmSections.lightCollapsed}}is-collapsed{{/if}}" data-section-id="gm-light">
           <header class="po-collapsible-head">
@@ -168,22 +183,48 @@
             <div class="po-march-light-grid">
             {{#each lightToggles}}
             <div class="po-checkbox-target" data-actor-id="{{actorId}}">
-              <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} />
+              <input id="po-light-target-{{actorId}}" type="checkbox" data-action="toggle-light" {{#if hasLight}}checked{{/if}} {{#unless canEdit}}disabled{{/unless}} />
               <label class="po-checkbox-target-label" for="po-light-target-{{actorId}}">{{actorName}}</label>
               <label class="po-sr-only" for="po-light-bright-{{actorId}}">Bright light distance for {{actorName}}</label>
-              <input id="po-light-bright-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="bright" value="{{bright}}" {{#unless hasLight}}disabled{{/unless}} />
+              <input id="po-light-bright-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="bright" value="{{bright}}" {{#unless hasLight}}disabled{{else}}{{#unless canEdit}}disabled{{/unless}}{{/unless}} />
               <span class="po-light-range-label">Bright</span>
               <label class="po-sr-only" for="po-light-dim-{{actorId}}">Dim light distance for {{actorName}}</label>
-              <input id="po-light-dim-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="dim" value="{{dim}}" {{#unless hasLight}}disabled{{/unless}} />
+              <input id="po-light-dim-{{actorId}}" type="number" min="0" max="999" step="1" class="po-input po-light-range-input" data-action="set-light-range" data-range="dim" value="{{dim}}" {{#unless hasLight}}disabled{{else}}{{#unless canEdit}}disabled{{/unless}}{{/unless}} />
               <span class="po-light-range-label">Dim</span>
             </div>
             {{/each}}
+            {{#unless lightToggles.length}}
+            <div class="po-op-summary">Deploy actors on the march board to manage carried light.</div>
+            {{/unless}}
             </div>
           </div>
           {{/unless}}
         </div>
+        <div id="po-march-spacing-grid" class="po-gm-section">
+          <header class="po-collapsible-head">
+            <div>
+              <div class="po-section-title">Spacing Grid</div>
+              <div class="po-op-summary">{{spacingGrid.sourceLabel}} · 60 ft by 60 ft</div>
+            </div>
+          </header>
+          <div class="po-march-spacing-grid" role="grid" aria-label="Party spacing grid">
+            {{#each spacingGrid.rows}}
+            <div class="po-march-spacing-row" role="row">
+              {{#each cells}}
+              <div class="po-march-spacing-cell {{#if hasActors}}has-actor{{/if}}" role="gridcell" title="{{label}}">
+                {{#each actors}}
+                <span class="po-march-spacing-token" title="{{name}} - {{offsetLabel}}">{{initial}}</span>
+                {{/each}}
+              </div>
+              {{/each}}
+            </div>
+            {{/each}}
+          </div>
+          {{#unless spacingGrid.hasActors}}
+          <div class="po-op-summary">Deploy actors on the march board or scene to see spacing.</div>
+          {{/unless}}
+        </div>
       </aside>
-      {{/if}}
     </div>
   </section>
   </div>

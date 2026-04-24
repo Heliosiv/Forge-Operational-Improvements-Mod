@@ -15,6 +15,7 @@ export function createAudioLibraryUiPickerUploadActions({
   ensureAudioLibraryUploadDirectories,
   getAudioLibraryUploadDirectoryPath,
   normalizeAudioLibrarySource,
+  getAudioLibrarySourceInteractionError = () => "",
   notifyUiInfoThrottled,
   scanAudioLibraryCatalog,
   pauseAudioLibraryUpload
@@ -25,6 +26,11 @@ export function createAudioLibraryUiPickerUploadActions({
       return false;
     }
     const { source, rootPath } = getAudioLibraryDraftState();
+    const sourceError = getAudioLibrarySourceInteractionError(source);
+    if (sourceError) {
+      ui.notifications?.warn(sourceError);
+      return false;
+    }
     return new Promise((resolve) => {
       const picker = new filePickerClass({
         type: "folder",
@@ -52,6 +58,8 @@ export function createAudioLibraryUiPickerUploadActions({
 
     const { source, rootPath } = getAudioLibraryDraftState();
     const activeSource = normalizeAudioLibrarySource(source);
+    const sourceError = getAudioLibrarySourceInteractionError(activeSource);
+    if (sourceError) throw new Error(sourceError);
     return new Promise((resolve, reject) => {
       const input = documentRef.createElement("input");
       let settled = false;

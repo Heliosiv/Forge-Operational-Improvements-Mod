@@ -4,6 +4,8 @@ import {
   buildMarchFormationSummaryContext,
   buildMarchOverviewContext,
   MARCH_BOARD_RANKS,
+  normalizeSocketMarchRequest,
+  applyMarchRequest,
   setupMarchingDragAndDrop
 } from "./features/march-feature.js";
 
@@ -132,6 +134,7 @@ class FakeElement {
 {
   const overview = buildMarchOverviewContext({
     totalAssigned: 5,
+    allActorCount: 6,
     laneCounts: {
       vanguard: 0,
       front: 2,
@@ -148,12 +151,13 @@ class FakeElement {
     leadershipCheckDue: false
   });
 
-  assert.equal(overview.cards.length, 5);
-  assert.equal(overview.cards[0].detail, "1 still unplaced");
-  assert.equal(overview.cards[1].value, "0 / 2 / 2 / 1 / 0");
-  assert.equal(overview.cards[1].detail, "Vanguard / Front / Middle / Rear / Reserve");
+  assert.equal(overview.cards.length, 4);
+  assert.equal(overview.cards[0].label, "All Actors");
+  assert.equal(overview.cards[0].value, "6");
+  assert.equal(overview.cards[0].detail, "1 not deployed");
+  assert.equal(overview.cards[2].isMiniBoard, true);
+  assert.equal(overview.cards[2].miniRows.find((row) => row.id === "front").count, 2);
   assert.equal(overview.cards[3].toneClass, "is-muted");
-  assert.equal(overview.cards[4].toneClass, "is-alert");
 }
 
 {
@@ -161,6 +165,70 @@ class FakeElement {
     MARCH_BOARD_RANKS.map((rank) => rank.id),
     ["vanguard", "front", "middle", "rear", "reserve"]
   );
+}
+
+{
+  const ops = new Set(["joinRank", "leaveRank", "setNote", "setLight", "setLightRange"]);
+  const ranks = new Set(["front"]);
+  const normalize = (request) => normalizeSocketMarchRequest(request, {
+    marchOps: ops,
+    marchRanks: ranks,
+    sanitizeSocketIdentifier: (value) => String(value ?? "").trim(),
+    clampSocketText: (value) => String(value ?? "")
+  });
+
+  assert.deepEqual(normalize({ op: "setLight", actorId: "actor-a", enabled: true }), {
+    op: "setLight",
+    actorId: "actor-a",
+    enabled: true
+  });
+  assert.deepEqual(normalize({ op: "setLightRange", actorId: "actor-a", range: "bright", value: 25 }), {
+    op: "setLightRange",
+    actorId: "actor-a",
+    range: "bright",
+    value: 25
+  });
+}
+
+{
+  const state = {
+    ranks: { front: ["actor-a"] },
+    light: {},
+    lightRanges: {}
+  };
+  const saves = [];
+  const refreshes = [];
+  const requester = { id: "user-1", isGM: false, name: "Player" };
+  const actor = { id: "actor-a" };
+  const deps = {
+    getMarchingOrderState: () => state,
+    game: { actors: { get: () => actor } },
+    resolveRequester: () => requester,
+    canUserControlActor: () => true,
+    isMarchingOrderPlayerLocked: () => false,
+    stampUpdate: (draft) => {
+      draft.lastUpdatedBy = requester.name;
+    },
+    setModuleSettingWithLocalRefreshSuppressed: async (key, value) => {
+      saves.push({ key, value });
+      return true;
+    },
+    settings: { MARCH_STATE: "marchState" },
+    scheduleIntegrationSync: () => {},
+    refreshOpenApps: (payload) => refreshes.push(payload),
+    refreshScopeKeys: { MARCH: "march" },
+    emitSocketRefresh: () => {},
+    logUiDebug: () => {}
+  };
+
+  await applyMarchRequest({ op: "setLight", actorId: "actor-a", enabled: true }, requester, deps);
+  assert.equal(state.light["actor-a"], true);
+  assert.deepEqual(state.lightRanges["actor-a"], { bright: 20, dim: 40 });
+
+  await applyMarchRequest({ op: "setLightRange", actorId: "actor-a", range: "bright", value: 35 }, requester, deps);
+  assert.deepEqual(state.lightRanges["actor-a"], { bright: 35, dim: 40 });
+  assert.equal(saves.length, 2);
+  assert.deepEqual(refreshes, [{ scope: "march" }, { scope: "march" }]);
 }
 
 {

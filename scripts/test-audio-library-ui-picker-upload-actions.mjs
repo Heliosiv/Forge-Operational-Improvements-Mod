@@ -82,6 +82,52 @@ class FakeFilePicker {
 }
 
 {
+  const notifications = [];
+  let rendered = 0;
+  const BlockingFilePicker = class extends FakeFilePicker {
+    render() {
+      rendered += 1;
+    }
+  };
+
+  const actions = createAudioLibraryUiPickerUploadActions({
+    canAccessAllPlayerOps: () => true,
+    ui: { notifications: { warn(message) { notifications.push(message); } } },
+    getAudioLibraryDraftState: () => ({ source: "forgevtt", rootPath: "music" }),
+    filePickerClass: BlockingFilePicker,
+    getAudioLibraryPickerCurrentPath: (value) => value,
+    audioLibraryUiDraftActions: {
+      setDraftFromPickerSelection() {},
+      setDraftFromCatalog() {}
+    },
+    clearAudioLibraryError: () => {},
+    documentRef: {
+      body: { appendChild() {} },
+      createElement() {
+        return {};
+      }
+    },
+    audioLibraryExtensions: ["mp3"],
+    isUploadableAudioLibraryFile: () => true,
+    getAudioLibraryUploadRelativePath: () => "",
+    getAudioLibraryUploadSelectionError: () => "",
+    buildAudioLibraryUploadRootPath: () => "music",
+    ensureAudioLibraryUploadDirectories: async () => {},
+    getAudioLibraryUploadDirectoryPath: () => "music",
+    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    getAudioLibrarySourceInteractionError: () => "Use data source instead.",
+    notifyUiInfoThrottled: () => {},
+    scanAudioLibraryCatalog: async () => {},
+    pauseAudioLibraryUpload: async () => {}
+  });
+
+  const result = await actions.openAudioLibraryRootPicker();
+  assert.equal(result, false);
+  assert.equal(rendered, 0);
+  assert.deepEqual(notifications, ["Use data source instead."]);
+}
+
+{
   const draftCalls = [];
   const notifications = [];
   const scans = [];
@@ -170,6 +216,54 @@ class FakeFilePicker {
   assert.equal(infoNotices.length, 1);
   assert.equal(notifications.length, 0);
   assert.equal(typeof cancelHandler, "function");
+}
+
+{
+  let clicked = 0;
+  const actions = createAudioLibraryUiPickerUploadActions({
+    canAccessAllPlayerOps: () => true,
+    ui: { notifications: {} },
+    getAudioLibraryDraftState: () => ({ source: "forgevtt", rootPath: "music" }),
+    filePickerClass: FakeFilePicker,
+    getAudioLibraryPickerCurrentPath: (value) => value,
+    audioLibraryUiDraftActions: {
+      setDraftFromPickerSelection() {},
+      setDraftFromCatalog() {}
+    },
+    clearAudioLibraryError: () => {},
+    documentRef: {
+      body: { appendChild() {} },
+      createElement() {
+        return {
+          style: {},
+          setAttribute() {},
+          addEventListener() {},
+          remove() {},
+          click() {
+            clicked += 1;
+          }
+        };
+      }
+    },
+    audioLibraryExtensions: ["mp3"],
+    isUploadableAudioLibraryFile: () => true,
+    getAudioLibraryUploadRelativePath: () => "",
+    getAudioLibraryUploadSelectionError: () => "",
+    buildAudioLibraryUploadRootPath: () => "music",
+    ensureAudioLibraryUploadDirectories: async () => {},
+    getAudioLibraryUploadDirectoryPath: () => "music",
+    normalizeAudioLibrarySource: (value) => String(value ?? "").trim().toLowerCase(),
+    getAudioLibrarySourceInteractionError: () => "Use data source instead.",
+    notifyUiInfoThrottled: () => {},
+    scanAudioLibraryCatalog: async () => {},
+    pauseAudioLibraryUpload: async () => {}
+  });
+
+  await assert.rejects(
+    () => actions.uploadLocalAudioFolderToLibrary(),
+    /Use data source instead\./
+  );
+  assert.equal(clicked, 0);
 }
 
 process.stdout.write("audio library ui picker upload actions validation passed\n");

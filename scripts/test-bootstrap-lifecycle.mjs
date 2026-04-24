@@ -351,6 +351,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   };
   const gatherRequests = [];
+  const playerGatherPrompts = [];
   const yieldPrompts = [];
   const resolvedYieldResponses = [];
   const routedMessages = [];
@@ -359,6 +360,10 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     game: gmGame,
     applyPlayerGatherRequest(message) {
       gatherRequests.push(message);
+      return Promise.resolve();
+    },
+    promptPlayerGatherRequest(message) {
+      playerGatherPrompts.push(message);
       return Promise.resolve();
     },
     promptLocalGatherYieldRoll(message) {
@@ -380,11 +385,13 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
   });
 
   await handler({ type: "ops:gather-request", requestId: "g-1" });
+  await handler({ type: "players:openGatherResources", options: { promptedBy: "GM" } });
   await handler({ type: "ops:gather-yield-request", requestId: "g-2" });
   await handler({ type: "ops:gather-yield-response", requestId: "g-3" });
   const routedResult = await handler({ type: "refresh" });
 
   assert.deepEqual(gatherRequests, [{ type: "ops:gather-request", requestId: "g-1" }]);
+  assert.deepEqual(playerGatherPrompts, []);
   assert.deepEqual(yieldPrompts, [{ type: "ops:gather-yield-request", requestId: "g-2" }]);
   assert.deepEqual(resolvedYieldResponses, [
     {
@@ -461,6 +468,7 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
 }
 
 {
+  const playerGatherPrompts = [];
   const nonGmHandler = createPartyOperationsSocketMessageHandler({
     game: {
       user: {
@@ -469,6 +477,10 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     },
     applyPlayerGatherRequest() {
       throw new Error("Non-GM gather requests should not be applied");
+    },
+    promptPlayerGatherRequest(options) {
+      playerGatherPrompts.push(options);
+      return Promise.resolve();
     },
     promptLocalGatherYieldRoll() {
       return Promise.resolve();
@@ -481,8 +493,10 @@ import { createPartyOperationsSocketMessageHandler } from "./core/socket-message
     }
   });
 
+  await nonGmHandler({ type: "players:openGatherResources", options: { promptedBy: "GM" } });
   await nonGmHandler({ type: "ops:gather-request" });
   await nonGmHandler({ type: "ops:gather-yield-response", requestId: "ignored" });
+  assert.deepEqual(playerGatherPrompts, [{ promptedBy: "GM" }]);
 }
 
 process.stdout.write("bootstrap lifecycle validation passed\n");

@@ -9718,6 +9718,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const miniVizUi = buildMiniVizUiContext();
     const lightToggles = buildLightToggles(state, ranks, isGM);
     const formationBoard = buildMarchFormationBoardContext(state, formationSnapshot, isGM, ranks);
+    const spacingGrid = buildMarchSpacingGridContext(state, formationBoard);
     const laneCounts = Object.fromEntries(
       getMarchBoardRankIds().map((rankId) => [rankId, ranks.find((rank) => rank.id === rankId)?.entries?.length ?? 0])
     );
@@ -9726,6 +9727,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
     const lockState = state.locked ? (isGM ? "Locked for players" : "Locked by GM") : "Open";
     const overview = buildMarchOverviewContext({
       totalAssigned,
+      allActorCount: formationBoard.restWatchRosterCount,
       laneCounts,
       formationLabel: "March Board",
       formationStateLabel: "Active",
@@ -9753,6 +9755,7 @@ export class MarchingOrderApp extends HandlebarsApplicationMixin(ApplicationV2) 
       usageToggleIcon: "fa-chevron-up",
       ranks,
       formationBoard,
+      spacingGrid,
       gmNotes: state.gmNotes ?? "",
       lightToggles,
       gmSections: {
@@ -11285,6 +11288,11 @@ function isForgeAudioLibrarySource(source) {
   return String(source ?? "").trim().toLowerCase() === AUDIO_LIBRARY_FORGE_SOURCE;
 }
 
+function getAudioLibrarySourceInteractionError(source) {
+  if (!isForgeAudioLibrarySource(source)) return "";
+  return "The Forge file API source requires a Forge API key or Forge sign-in. Set the audio Source to data and use a source-relative folder path like music/Fantasy Complete II MP3, or sign in to The Forge before browsing Forge assets.";
+}
+
 function getAudioLibraryUploadSelectionError(source, files = []) {
   const uploadCount = Array.isArray(files) ? files.length : 0;
   if (!isForgeAudioLibrarySource(source)) return "";
@@ -11455,6 +11463,7 @@ const audioLibraryUiPickerUploadActions = createAudioLibraryUiPickerUploadAction
   ensureAudioLibraryUploadDirectories,
   getAudioLibraryUploadDirectoryPath,
   normalizeAudioLibrarySource,
+  getAudioLibrarySourceInteractionError,
   notifyUiInfoThrottled,
   scanAudioLibraryCatalog,
   pauseAudioLibraryUpload
@@ -11477,6 +11486,8 @@ async function scanAudioLibraryCatalog({ source, rootPath, forceRescan = false }
     }
     const nextSource = normalizeAudioLibrarySource(source ?? getAudioLibraryDraftState().source);
     const nextRootPath = normalizeAudioLibraryRootPath(rootPath ?? getAudioLibraryDraftState().rootPath);
+    const sourceValidationMessage = getAudioLibrarySourceInteractionError(nextSource);
+    if (sourceValidationMessage) throw new Error(sourceValidationMessage);
     const pathValidationMessage = validateAudioLibraryPathForSource(nextSource, nextRootPath);
     if (pathValidationMessage) throw new Error(pathValidationMessage);
 
@@ -36948,9 +36959,18 @@ function triggerGatherResourceButtonAnimation(element) {
 
 async function runGatherResourceCheck() {
   if (!canAccessAllPlayerOps()) {
-    return submitQuickPlayerGatherRequest();
+    return promptPlayerGatherRequestDialog();
   }
-  return runGatherResourcesAction({ showDialog: true });
+  emitModuleSocket({
+    type: "players:openGatherResources",
+    userId: "*",
+    options: {
+      promptedBy: String(game.user?.name ?? "GM").trim() || "GM",
+      promptedAt: Date.now()
+    }
+  }, { channel: SOCKET_CHANNEL });
+  ui.notifications?.info("Gather resource call sent to players.");
+  return { ok: true, promptedPlayers: true };
 }
 
 async function submitQuickPlayerGatherRequest(options = {}) {
@@ -43642,7 +43662,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
 
     if (mutatorOrRequest && typeof mutatorOrRequest === "object") {
       const requestedOp = String(mutatorOrRequest.op ?? "").trim();
-      if (requestedOp === "joinRank" || requestedOp === "leaveRank") {
+      if (["joinRank", "leaveRank", "setLight", "setLightRange"].includes(requestedOp)) {
         const actorId = String(mutatorOrRequest.actorId ?? "").trim();
         const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
         if (!actor) {
@@ -43650,7 +43670,7 @@ async function updateMarchingOrderState(mutatorOrRequest, options = {}) {
           return false;
         }
         if (!canUserControlActor(actor, game.user)) {
-          ui.notifications?.warn("You don't have permission to move this actor in marching order.");
+          ui.notifications?.warn("You don't have permission to update this actor in marching order.");
           return false;
         }
       }
@@ -45206,6 +45226,13 @@ async function toggleLight(element) {
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const checked = element?.checked ?? element?.querySelector?.("input")?.checked;
   if (!actorId) return;
+  if (!canAccessAllPlayerOps()) {
+    const updated = await updateMarchingOrderState({ op: "setLight", actorId, enabled: Boolean(checked) });
+    if (!updated) {
+      refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    }
+    return;
+  }
   const updated = await updateMarchingOrderState((state) => {
     if (!state.light) state.light = {};
     if (!state.lightRanges) state.lightRanges = {};
@@ -45228,12 +45255,18 @@ async function toggleLight(element) {
 }
 
 async function setLightRange(element) {
-  if (!canAccessAllPlayerOps()) return;
   const actorId = element?.closest("[data-actor-id]")?.dataset?.actorId;
   const rangeKey = String(element?.dataset?.range ?? "").trim().toLowerCase();
   if (!actorId || !["bright", "dim"].includes(rangeKey)) return;
   const fallback = rangeKey === "bright" ? DEFAULT_MARCH_LIGHT_BRIGHT : DEFAULT_MARCH_LIGHT_DIM;
   const value = normalizeLightDistance(element?.value, fallback);
+  if (!canAccessAllPlayerOps()) {
+    const updated = await updateMarchingOrderState({ op: "setLightRange", actorId, range: rangeKey, value });
+    if (!updated) {
+      refreshSingleAppPreservingView(getPartyOpsAppInstance(APP_INSTANCE_KEYS.MARCHING_ORDER));
+    }
+    return;
+  }
   const updated = await updateMarchingOrderState((state) => {
     if (!state.lightRanges) state.lightRanges = {};
     const current = getMarchLightRange(state, actorId);
@@ -45982,7 +46015,7 @@ function buildNotesView(state, ranks, isGM) {
 }
 
 function buildLightToggles(state, ranks, isGM) {
-  if (!isGM) return [];
+  const lockedForUser = isLockedForUser(state, isGM);
   const actorIds = ranks.flatMap((rank) => rank.entries.map((entry) => entry.actorId));
   const uniqueIds = Array.from(new Set(actorIds));
   return uniqueIds
@@ -45990,15 +46023,98 @@ function buildLightToggles(state, ranks, isGM) {
       const actor = game.actors.get(actorId);
       if (!actor) return null;
       const range = getMarchLightRange(state, actorId);
+      const canEdit = !lockedForUser && (isGM || userOwnsActor(actor));
       return {
         actorId,
         actorName: actor.name,
         hasLight: Boolean(state.light?.[actorId]),
         bright: range.bright,
-        dim: range.dim
+        dim: range.dim,
+        canEdit
       };
     })
     .filter(Boolean);
+}
+
+function buildMarchSpacingGridContext(state, formationBoard) {
+  const size = 12;
+  const centerCell = Math.floor(size / 2);
+  const tokenPositions = getMarchingTokenPositions(state);
+  const tokenEntries = Object.entries(tokenPositions);
+  const gridUnitPixels = getMarchingGridUnitPixels();
+  const actors = [];
+
+  if (tokenEntries.length > 0) {
+    const centroid = tokenEntries.reduce((acc, [, position]) => ({
+      x: acc.x + position.x,
+      y: acc.y + position.y
+    }), { x: 0, y: 0 });
+    centroid.x /= tokenEntries.length;
+    centroid.y /= tokenEntries.length;
+
+    for (const [actorId, position] of tokenEntries) {
+      const actor = game.actors.get(actorId);
+      if (!actor) continue;
+      const dxFeet = Math.round(((position.x - centroid.x) / gridUnitPixels) * 5);
+      const dyFeet = Math.round(((position.y - centroid.y) / gridUnitPixels) * 5);
+      const column = Math.max(0, Math.min(size - 1, centerCell + Math.round(dxFeet / 5)));
+      const row = Math.max(0, Math.min(size - 1, centerCell + Math.round(dyFeet / 5)));
+      actors.push({
+        actorId,
+        name: actor.name,
+        initial: String(actor.name ?? "?").trim().slice(0, 1).toUpperCase() || "?",
+        row,
+        column,
+        offsetLabel: `${dxFeet >= 0 ? "+" : ""}${dxFeet} ft, ${dyFeet >= 0 ? "+" : ""}${dyFeet} ft`
+      });
+    }
+  } else {
+    const rows = Array.isArray(formationBoard?.rows) ? formationBoard.rows : [];
+    rows.forEach((rankRow, rowIndex) => {
+      const cells = Array.isArray(rankRow?.cells) ? rankRow.cells : [];
+      cells.forEach((cell) => {
+        if (!cell?.hasActor || !cell?.actorId) return;
+        const actor = game.actors.get(cell.actorId);
+        if (!actor) return;
+        const columnCount = Math.max(1, Number(formationBoard?.columnCount ?? cells.length) || cells.length || 1);
+        const column = Math.max(0, Math.min(size - 1, Math.round(((Number(cell.column ?? 0) + 0.5) / columnCount) * (size - 1))));
+        const row = Math.max(0, Math.min(size - 1, Math.round(((rowIndex + 0.5) / Math.max(1, rows.length)) * (size - 1))));
+        actors.push({
+          actorId: cell.actorId,
+          name: actor.name,
+          initial: String(actor.name ?? "?").trim().slice(0, 1).toUpperCase() || "?",
+          row,
+          column,
+          offsetLabel: `${rankRow.label}, column ${Number(cell.column ?? 0) + 1}`
+        });
+      });
+    });
+  }
+
+  const actorsByCell = new Map();
+  for (const actor of actors) {
+    const key = `${actor.row}:${actor.column}`;
+    if (!actorsByCell.has(key)) actorsByCell.set(key, []);
+    actorsByCell.get(key).push(actor);
+  }
+
+  const rows = Array.from({ length: size }, (_, rowIndex) => ({
+    cells: Array.from({ length: size }, (_, columnIndex) => {
+      const cellActors = actorsByCell.get(`${rowIndex}:${columnIndex}`) ?? [];
+      return {
+        hasActors: cellActors.length > 0,
+        actors: cellActors,
+        label: cellActors.map((actor) => `${actor.name} (${actor.offsetLabel})`).join(", ")
+      };
+    })
+  }));
+
+  return {
+    rows,
+    actors,
+    hasActors: actors.length > 0,
+    sourceLabel: tokenEntries.length > 0 ? "Canvas token spacing" : "March board spacing"
+  };
 }
 
 function getActorTokenImage(actor) {
@@ -47306,6 +47422,7 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
     game,
     gather: {
       applyPlayerGatherRequest,
+      promptPlayerGatherRequest: promptPlayerGatherRequestDialog,
       promptLocalGatherCheckRoll,
       promptLocalGatherYieldRoll,
       resolvePendingGatherCheckRequest,
