@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 
-import {
-  buildPartyOperationsSocketRouteDeps,
-  createPartyOperationsSocketHandler
-} from "./core/socket-route-deps.js";
+import { buildPartyOperationsSocketRouteDeps, createPartyOperationsSocketHandler } from "./core/socket-route-deps.js";
 
 {
   const settings = { REST_STATE: "restWatchState" };
@@ -133,6 +130,7 @@ import {
       getMarchingOrderState: "get-march-state",
       game,
       resolveRequester: "resolve-requester",
+      canAccessAllPlayerOps: "can-access-player-ops",
       canUserControlActor: "can-control-actor",
       isMarchingOrderPlayerLocked: "is-player-locked",
       stampUpdate: "stamp-update",

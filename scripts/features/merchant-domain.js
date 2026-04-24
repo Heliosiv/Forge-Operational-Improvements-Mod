@@ -54,6 +54,8 @@ export const MERCHANT_RARITY_PRICE_MULTIPLIERS = Object.freeze({
   "very-rare": 2.0,
   legendary: 3.0
 });
+export const MERCHANT_MIN_RARITY_PRICE_MULTIPLIER = 0.1;
+export const MERCHANT_MAX_RARITY_PRICE_MULTIPLIER = 10;
 
 // Stock pressure: relative fill ratio triggers price adjustments on the buy side.
 export const MERCHANT_STOCK_PRESSURE = Object.freeze({
@@ -248,7 +250,7 @@ export const MERCHANT_ARCHETYPE_DEFINITIONS = Object.freeze([
 // Maximum fractional price deviation that barter/haggling may produce (±10% of base).
 export const MERCHANT_HAGGLE_CAP_PERCENT = 0.10;
 
-// Restock partial-reroll: retain 60% of existing slots, reroll 40%.
+// Restock partial-reroll: retain about 60% of existing slots, weighted toward durable staples.
 export const MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.60;
 
 export const MERCHANT_EDITOR_MAX_CURATED_ITEMS = 200;
@@ -519,6 +521,7 @@ export const MERCHANT_DEFAULTS = Object.freeze({
     taxFeePercent: 0,
     // Whether rarity multipliers and stock pressure are applied to prices
     rarityPricingEnabled: true,
+    rarityPriceMultipliers: Object.freeze({ ...MERCHANT_RARITY_PRICE_MULTIPLIERS }),
     stockPressureEnabled: true,
     barterEnabled: true,
     barterDc: 15,
@@ -682,6 +685,10 @@ function getMerchantArchetypeDefaults(archetypeInput = MERCHANT_DEFAULTS.archety
       buyMarkup: Number((Number(definition.markupPercent ?? 0) / 100).toFixed(2)),
       sellRate: Number((Number(definition.sellRatePercent ?? 0) / 100).toFixed(2)),
       cashOnHandGp: Number(definition.cashOnHandGp ?? MERCHANT_DEFAULTS.pricing.cashOnHandGp),
+      rarityPriceMultipliers: normalizeMerchantRarityPriceMultipliers(
+        definition.rarityPriceMultipliers,
+        MERCHANT_DEFAULTS.pricing.rarityPriceMultipliers
+      ),
       buybackAllowedTypes: normalizeMerchantAllowedItemTypes(definition.buybackAllowedTypes ?? MERCHANT_DEFAULTS.pricing.buybackAllowedTypes)
     },
     stock: {
@@ -874,6 +881,26 @@ export function normalizeMerchantRarityWeights(raw = {}, fallback = MERCHANT_DEF
     normalized[bucket] = Number.isFinite(parsed)
       ? Math.max(0, Math.min(MERCHANT_MAX_RARITY_WEIGHT, Number(parsed.toFixed(2))))
       : Number(MERCHANT_DEFAULT_RARITY_WEIGHTS[bucket] ?? 1);
+  }
+  return normalized;
+}
+
+export function normalizeMerchantRarityPriceMultipliers(raw = {}, fallback = MERCHANT_RARITY_PRICE_MULTIPLIERS) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const fallbackMultipliers = fallback && typeof fallback === "object" ? fallback : MERCHANT_RARITY_PRICE_MULTIPLIERS;
+  const normalized = {};
+  for (const bucket of MERCHANT_RARITY_BUCKETS) {
+    const sourceValue = bucket === "very-rare" ? (source[bucket] ?? source.veryRare) : source[bucket];
+    const fallbackValue = bucket === "very-rare"
+      ? (fallbackMultipliers[bucket] ?? fallbackMultipliers.veryRare)
+      : fallbackMultipliers[bucket];
+    const parsed = Number(sourceValue ?? fallbackValue ?? MERCHANT_RARITY_PRICE_MULTIPLIERS[bucket] ?? 1);
+    normalized[bucket] = Number.isFinite(parsed)
+      ? Math.max(
+        MERCHANT_MIN_RARITY_PRICE_MULTIPLIER,
+        Math.min(MERCHANT_MAX_RARITY_PRICE_MULTIPLIER, Number(parsed.toFixed(4)))
+      )
+      : Number(MERCHANT_RARITY_PRICE_MULTIPLIERS[bucket] ?? 1);
   }
   return normalized;
 }
@@ -1190,6 +1217,10 @@ export function buildStarterMerchantPatch(blueprint = {}, index = 0, options = {
       buybackAllowedTypes,
       taxFeePercent: normalizeMerchantTaxFeePercent(blueprint?.taxFeePercent ?? MERCHANT_DEFAULTS.pricing.taxFeePercent),
       rarityPricingEnabled: Boolean(MERCHANT_DEFAULTS.pricing.rarityPricingEnabled),
+      rarityPriceMultipliers: normalizeMerchantRarityPriceMultipliers(
+        blueprint?.rarityPriceMultipliers,
+        archetypeDefaults?.pricing?.rarityPriceMultipliers ?? MERCHANT_DEFAULTS.pricing.rarityPriceMultipliers
+      ),
       stockPressureEnabled: Boolean(MERCHANT_DEFAULTS.pricing.stockPressureEnabled),
       barterEnabled: MERCHANT_DEFAULTS.pricing.barterEnabled,
       barterDc: MERCHANT_DEFAULTS.pricing.barterDc,
@@ -1454,6 +1485,10 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
   const rarityPricingEnabled = source?.rarityPricingEnabled === undefined
     ? Boolean(existingPricing?.rarityPricingEnabled ?? MERCHANT_DEFAULTS.pricing.rarityPricingEnabled)
     : Boolean(source?.rarityPricingEnabled);
+  const rarityPriceMultipliers = normalizeMerchantRarityPriceMultipliers(
+    source?.rarityPriceMultipliers ?? existingPricing?.rarityPriceMultipliers,
+    archetypeDefaults?.pricing?.rarityPriceMultipliers ?? MERCHANT_DEFAULTS.pricing.rarityPriceMultipliers
+  );
   const stockPressureEnabled = source?.stockPressureEnabled === undefined
     ? Boolean(existingPricing?.stockPressureEnabled ?? MERCHANT_DEFAULTS.pricing.stockPressureEnabled)
     : Boolean(source?.stockPressureEnabled);
@@ -1514,6 +1549,7 @@ export function buildMerchantDefinitionPatchFromEditorForm(formValues = {}) {
       buybackAllowedTypes,
       taxFeePercent,
       rarityPricingEnabled,
+      rarityPriceMultipliers,
       stockPressureEnabled,
       barterEnabled,
       barterDc,
@@ -2209,10 +2245,13 @@ export function buildMerchantStockCandidateRows(documents = [], merchant = {}, o
 
 // ─── Merchant Rework v1 helpers ──────────────────────────────────────────────
 
-/** Returns the rarity price multiplier for an item: C 1.0 | U 1.2 | R 1.5 | VR 2.0 | L 3.0 */
-export function getMerchantRarityPriceMultiplier(rarityInput = "") {
+/** Returns the rarity price multiplier for an item, optionally using merchant-specific overrides. */
+export function getMerchantRarityPriceMultiplier(rarityInput = "", overrides = null) {
   const rarity = normalizeMerchantRarity(rarityInput) || "common";
-  return Number(MERCHANT_RARITY_PRICE_MULTIPLIERS[rarity] ?? MERCHANT_RARITY_PRICE_MULTIPLIERS.common);
+  const multipliers = overrides && typeof overrides === "object"
+    ? normalizeMerchantRarityPriceMultipliers(overrides, MERCHANT_RARITY_PRICE_MULTIPLIERS)
+    : MERCHANT_RARITY_PRICE_MULTIPLIERS;
+  return Number(multipliers[rarity] ?? multipliers.common ?? MERCHANT_RARITY_PRICE_MULTIPLIERS.common);
 }
 
 /**
@@ -2326,19 +2365,65 @@ export function getMerchantDispositionOptions(selectedInput = "") {
   }));
 }
 
+function getMerchantRestockRetentionWeight(item = {}) {
+  const itemType = String(item?.itemType ?? item?.type ?? item?.data?.type ?? "").trim().toLowerCase();
+  const stockRole = String(item?.stockRole ?? item?.merchantStockRole ?? "").trim().toLowerCase();
+  const sectionKey = String(item?.sectionKey ?? item?.merchantSectionKey ?? "").trim().toLowerCase();
+  const rarityBucket = getMerchantRarityBucket(item?.rarityBucket ?? item?.rarity ?? "");
+  const quantity = Math.max(1, Math.floor(Number(item?.quantity ?? 1) || 1));
+  let weight = 1;
+
+  if (stockRole === "core") weight *= 1.35;
+  if (stockRole === "featured") weight *= 0.7;
+  if (sectionKey === "featured") weight *= 0.75;
+  if (["weapon", "armor", "equipment", "tool", "backpack"].includes(itemType)) weight *= 1.2;
+  if (itemType === "ammunition") weight *= quantity > 1 ? 1.05 : 0.9;
+  if (itemType === "consumable") weight *= 0.55;
+  if (["loot", "trinket", "spell"].includes(itemType)) weight *= 0.75;
+
+  const rarityRetention = {
+    common: 1.15,
+    uncommon: 1,
+    rare: 0.82,
+    "very-rare": 0.58,
+    legendary: 0.42
+  };
+  weight *= Number(rarityRetention[rarityBucket] ?? 1);
+
+  if (quantity >= 10 && ["ammunition", "consumable"].includes(itemType)) weight *= 0.8;
+  return Math.max(0.01, Number(weight.toFixed(4)));
+}
+
+function chooseMerchantRetentionRows(items = [], retainCount = 0, random = Math.random) {
+  const retained = [];
+  const pool = [...items];
+  while (retained.length < retainCount && pool.length > 0) {
+    const picked = chooseWeightedRow(pool, getMerchantRestockRetentionWeight, random);
+    if (!picked) break;
+    retained.push(picked);
+    const index = pool.indexOf(picked);
+    if (index >= 0) pool.splice(index, 1);
+  }
+  return retained;
+}
+
 /**
  * Selects items to RETAIN when performing a partial restock.
  * @param {Array} currentItems - current stock item rows (each with unique key)
  * @param {number} retainRate - fraction to keep (default: MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE = 0.60)
- * @returns {{ retainedKeys: Set<string>, rerollCount: number }}
+ * @param {{randomFn?: Function}} options
+ * @returns {{ retainedKeys: Set<string>, retainCount: number, rerollCount: number }}
  */
-export function computeMerchantPartialRestockPlan(currentItems = [], retainRate = MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) {
+export function computeMerchantPartialRestockPlan(currentItems = [], retainRate = MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE, options = {}) {
   const items = Array.isArray(currentItems) ? currentItems : [];
   const rate = Math.max(0, Math.min(1, Number(retainRate ?? MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE) || MERCHANT_PARTIAL_RESTOCK_RETAIN_RATE));
   const totalCount = items.length;
-  const retainCount = Math.round(totalCount * rate);
-  const shuffled = [...items].sort(() => Math.random() - 0.5);
-  const retained = shuffled.slice(0, retainCount);
+  const requestedRetainCount = Math.round(totalCount * rate);
+  const retainCount = totalCount > 1
+    ? Math.min(totalCount - 1, requestedRetainCount)
+    : 0;
+  const random = typeof options?.randomFn === "function" ? options.randomFn : Math.random;
+  const retained = chooseMerchantRetentionRows(items, retainCount, random);
   const retainedKeys = new Set(retained.map((entry) => String(entry?.key ?? entry?.id ?? "")).filter(Boolean));
   return {
     retainedKeys,

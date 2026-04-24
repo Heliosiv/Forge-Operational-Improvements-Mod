@@ -250,6 +250,7 @@ export function createGmMerchantsPageApp(deps) {
     buildContext,
     openMainTab,
     cacheMerchantEditorDraftFromElement,
+    cacheMerchantEditorDraftChangeFromElement,
     normalizeMerchantEditorFilter,
     getMerchantEditorSourceFilter,
     setMerchantEditorSourceFilter,
@@ -339,7 +340,7 @@ export function createGmMerchantsPageApp(deps) {
         },
         "gm-panel-tab": openPanelTab("merchants", openGmPanelByKey),
         "merchant-editor-draft-change": async (actionElement) => {
-          const draft = cacheMerchantEditorDraftFromElement(actionElement, { suppressMissingFormWarning: true });
+          const draft = cacheMerchantEditorDraftChangeFromElement(actionElement, { suppressMissingFormWarning: true });
           if (!draft) return;
           const inputName = String(actionElement?.name ?? "").trim();
           const isTagCheckbox = actionElement instanceof HTMLInputElement

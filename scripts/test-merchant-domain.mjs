@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 
 import {
   getMerchantArchetypeOptions,
+  getMerchantRarityPriceMultiplier,
   MERCHANT_DEFAULTS,
   buildMerchantDefinitionPatchFromEditorForm,
   buildStarterMerchantPatch,
+  computeMerchantPartialRestockPlan,
   normalizeMerchantAutoRefreshConfig,
+  normalizeMerchantRarityPriceMultipliers,
   selectMerchantStockRows
 } from "./features/merchant-domain.js";
 
@@ -78,6 +81,75 @@ assert.ok(starterPatch.pricing.cashOnHandGp > 0);
 assert.ok(starterPatch.pricing.buybackAllowedTypes.length > 0);
 assert.equal(starterPatch.pricing.sellEnabled, MERCHANT_DEFAULTS.pricing.sellEnabled);
 assert.equal(starterPatch.pricing.taxFeePercent, Number(MERCHANT_DEFAULTS.pricing.taxFeePercent ?? 0));
+assert.equal(starterPatch.pricing.rarityPriceMultipliers.common, 1);
+assert.equal(starterPatch.pricing.rarityPriceMultipliers.rare, 1.5);
+
+const rarityPricePatch = buildMerchantDefinitionPatchFromEditorForm({
+  name: "Inflated Curios",
+  rarityPriceMultipliers: {
+    common: 1.15,
+    uncommon: 1.35,
+    rare: 2,
+    "very-rare": 2.75,
+    legendary: 4
+  },
+  existingStock: {},
+  existingPricing: {}
+});
+assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.common, 1.15);
+assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.uncommon, 1.35);
+assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.rare, 2);
+assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers["very-rare"], 2.75);
+assert.equal(rarityPricePatch.pricing.rarityPriceMultipliers.legendary, 4);
+assert.equal(getMerchantRarityPriceMultiplier("rare", rarityPricePatch.pricing.rarityPriceMultipliers), 2);
+assert.deepEqual(
+  normalizeMerchantRarityPriceMultipliers({ common: -5, legendary: 25 }),
+  {
+    common: 0.1,
+    uncommon: 1.2,
+    rare: 1.5,
+    "very-rare": 2,
+    legendary: 10
+  }
+);
+
+const realisticRestockPlan = computeMerchantPartialRestockPlan([
+  {
+    key: "stock.featured-potion",
+    itemType: "consumable",
+    rarityBucket: "rare",
+    stockRole: "featured",
+    sectionKey: "featured",
+    quantity: 1
+  },
+  {
+    key: "stock.core-longsword",
+    itemType: "weapon",
+    rarityBucket: "common",
+    stockRole: "core",
+    sectionKey: "weapons",
+    quantity: 1
+  }
+], 0.6, {
+  randomFn: () => 0.2
+});
+assert.equal(realisticRestockPlan.retainCount, 1);
+assert.equal(realisticRestockPlan.rerollCount, 1);
+assert.ok(realisticRestockPlan.retainedKeys.has("stock.core-longsword"));
+assert.ok(!realisticRestockPlan.retainedKeys.has("stock.featured-potion"));
+
+const singleItemRestockPlan = computeMerchantPartialRestockPlan([
+  {
+    key: "stock.only-curio",
+    itemType: "trinket",
+    rarityBucket: "rare",
+    stockRole: "featured"
+  }
+], 0.6, {
+  randomFn: () => 0
+});
+assert.equal(singleItemRestockPlan.retainCount, 0);
+assert.equal(singleItemRestockPlan.rerollCount, 1);
 
 const barterPatch = buildMerchantDefinitionPatchFromEditorForm({
   name: "Silver Tongue Supplies",

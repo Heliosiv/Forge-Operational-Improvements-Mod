@@ -5,11 +5,14 @@ const moduleSource = readFileSync(new URL("./party-operations.js", import.meta.u
 const gmDowntimeTemplate = readFileSync(new URL("../templates/gm-downtime.hbs", import.meta.url), "utf8");
 const gmShellStyles = readFileSync(new URL("../styles/po-gm-shell.css", import.meta.url), "utf8");
 const restWatchTemplate = readFileSync(new URL("../templates/rest-watch.hbs", import.meta.url), "utf8");
-const playerDowntimeTemplate = readFileSync(new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url), "utf8");
+const playerDowntimeTemplate = readFileSync(
+  new URL("../templates/partials/rest-watch-player/simple-downtime.hbs", import.meta.url),
+  "utf8"
+);
 
 assert.match(
   moduleSource,
-  /function normalizeDowntimeSubmission\(raw = \{\}, downtimeState = \{\}, options = \{\}\) \{[\s\S]*const rawActionData = raw\?\.actionData[\s\S]*normalizePhase1ActionData\(actionDef\.key, \{[\s\S]*\.\.\.rawActionData,[\s\S]*\.\.\.raw,[\s\S]*areaSettings[\s\S]*\}, \{/,
+  /function normalizeDowntimeSubmission\(raw = \{\}, downtimeState = \{\}, options = \{\}\) \{[\s\S]*const rawActionData =[\s\S]*raw\?\.actionData[\s\S]*normalizePhase1ActionData\(\s*actionDef\.key,\s*\{[\s\S]*\.\.\.rawActionData,[\s\S]*\.\.\.raw,[\s\S]*areaSettings[\s\S]*\},\s*\{/,
   "Downtime submission normalization should preserve nested actionData when entries are re-normalized."
 );
 

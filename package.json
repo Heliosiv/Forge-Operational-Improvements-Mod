@@ -5,6 +5,11 @@
   "description": "Tooling for packaging and validating the Party Operations Foundry module.",
   "scripts": {
     "check": "node scripts/run-checks.mjs",
+    "lint": "eslint \"scripts/**/*.js\" \"scripts/**/*.mjs\"",
+    "lint:fix": "eslint \"scripts/**/*.js\" \"scripts/**/*.mjs\" --fix",
+    "format": "node scripts/prettier-files.mjs --write",
+    "format:check": "node scripts/prettier-files.mjs --check",
+    "quality": "npm run lint && npm run check:baseline",
     "check:baseline": "node scripts/validate-module.mjs && node scripts/validate-governance.mjs && node scripts/verify-check-coverage.mjs",
     "check:calendar-bridge": "node scripts/test-calendar-bridge.mjs",
     "check:config-access": "node scripts/test-config-access.mjs",
@@ -45,6 +50,7 @@
     "check:note-draft-cache": "node scripts/test-note-draft-cache.mjs",
     "check:perf": "node scripts/test-perf.mjs",
     "check:permission-split": "node scripts/test-permission-split.mjs",
+    "check:player-ui-overrides": "node scripts/test-player-ui-overrides.mjs",
     "check:player-hub-actions": "node scripts/test-player-hub-actions.mjs",
     "check:player-request-handlers": "node scripts/test-player-request-handlers.mjs",
     "check:template-loader": "node scripts/test-template-loader.mjs",
@@ -114,5 +120,11 @@
   "bugs": {
     "url": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/issues"
   },
-  "homepage": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod#readme"
+  "homepage": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod#readme",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0",
+    "prettier": "^3.8.3"
+  }
 }

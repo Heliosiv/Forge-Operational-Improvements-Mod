@@ -18,14 +18,12 @@ export function createPlayerUiOverrideTools({
   readSessionStorageJson,
   writeSessionStorageJson,
   deepClone,
-  canAccessAllPlayerOps,
   hasActiveGmClient,
   overrideSettingKeys
 } = {}) {
   const playerUiLocalSettingOverridesMemory = new Map();
-  const allowedKeys = overrideSettingKeys instanceof Set
-    ? new Set(overrideSettingKeys)
-    : getDefaultOverrideSettingKeys();
+  const allowedKeys =
+    overrideSettingKeys instanceof Set ? new Set(overrideSettingKeys) : getDefaultOverrideSettingKeys();
 
   function getPlayerUiLocalOverrideStorageKey() {
     return `po-player-ui-setting-overrides-${gameRef?.user?.id ?? "anon"}`;
@@ -39,9 +37,7 @@ export function createPlayerUiOverrideTools({
   }
 
   function writePlayerUiLocalSettingOverrides(overrides = {}) {
-    const normalized = overrides && typeof overrides === "object" && !Array.isArray(overrides)
-      ? overrides
-      : {};
+    const normalized = overrides && typeof overrides === "object" && !Array.isArray(overrides) ? overrides : {};
     playerUiLocalSettingOverridesMemory.clear();
     for (const [key, value] of Object.entries(normalized)) {
       playerUiLocalSettingOverridesMemory.set(String(key ?? "").trim(), deepClone(value));
@@ -69,12 +65,7 @@ export function createPlayerUiOverrideTools({
   function canUsePlayerUiLocalOverride(settingKey, user = gameRef?.user) {
     const normalizedSettingKey = String(settingKey ?? "").trim();
     return Boolean(
-      normalizedSettingKey
-      && allowedKeys.has(normalizedSettingKey)
-      && user
-      && !user.isGM
-      && canAccessAllPlayerOps(user)
-      && !hasActiveGmClient()
+      normalizedSettingKey && allowedKeys.has(normalizedSettingKey) && user && !user.isGM && !hasActiveGmClient()
     );
   }
 

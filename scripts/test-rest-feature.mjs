@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-import { setupRestWatchDragAndDrop } from "./features/rest-feature.js";
+import { applyRestRequest, normalizeSocketRestRequest, setupRestWatchDragAndDrop } from "./features/rest-feature.js";
 
 class FakeClassList {
   constructor() {
@@ -62,6 +62,94 @@ class FakeElement {
 }
 
 {
+  const ops = new Set([
+    "assignMe",
+    "clearEntry",
+    "setEntryNotes",
+    "moveSlot",
+    "setSlotEntry",
+    "setVisibleEntryCount",
+    "replaceState"
+  ]);
+  const normalize = (request) =>
+    normalizeSocketRestRequest(request, {
+      restOps: ops,
+      sanitizeSocketIdentifier: (value) => String(value ?? "").trim(),
+      clampSocketText: (value) => String(value ?? ""),
+      normalizeRestNoteSaveSource: (value) => String(value ?? "")
+    });
+
+  assert.deepEqual(normalize({ op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 1 }), {
+    op: "setSlotEntry",
+    slotId: "slot-a",
+    actorId: "actor-b",
+    entryIndex: 1
+  });
+  assert.deepEqual(normalize({ op: "setSlotEntry", slotId: "slot-a", actorId: "", entryIndex: 1 }), {
+    op: "setSlotEntry",
+    slotId: "slot-a",
+    actorId: "",
+    entryIndex: 1
+  });
+  assert.deepEqual(normalize({ op: "setVisibleEntryCount", slotId: "slot-a", visibleEntryCount: 3 }), {
+    op: "setVisibleEntryCount",
+    slotId: "slot-a",
+    visibleEntryCount: 3
+  });
+  assert.deepEqual(normalize({ op: "replaceState", state: { slots: [] } }), {
+    op: "replaceState",
+    state: { slots: [] }
+  });
+}
+
+{
+  const state = {
+    locked: false,
+    slots: [{ id: "slot-a", entries: [{ actorId: "actor-a", notes: "Old", position: 0 }], visibleEntryCount: 1 }]
+  };
+  const saves = [];
+  const refreshes = [];
+  const requester = { id: "player-1", isGM: false, name: "Clarence" };
+  const actors = new Map([["actor-b", { id: "actor-b", type: "character" }]]);
+  const deps = {
+    getRestWatchState: () => state,
+    game: { actors: { get: (id) => actors.get(id) ?? null } },
+    resolveRequester: () => requester,
+    canAccessAllPlayerOps: () => true,
+    canUserControlActor: () => false,
+    canUserOperatePartyActor: (actor) => actor?.type === "character",
+    stampUpdate: (draft) => {
+      draft.lastUpdatedBy = requester.name;
+    },
+    setModuleSettingWithLocalRefreshSuppressed: async (key, value) => {
+      saves.push({ key, value });
+      return true;
+    },
+    settings: { REST_STATE: "restState" },
+    scheduleIntegrationSync: () => {},
+    refreshOpenApps: (payload) => refreshes.push(payload),
+    refreshScopeKeys: { REST: "rest" },
+    emitSocketRefresh: () => {},
+    logUiDebug: () => {}
+  };
+
+  await applyRestRequest({ op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 1 }, requester, deps);
+  assert.deepEqual(state.slots[0].entries, [
+    { actorId: "actor-a", notes: "Old", position: 0 },
+    { actorId: "actor-b", notes: "", position: 1 }
+  ]);
+  assert.equal(state.slots[0].visibleEntryCount, 2);
+  assert.equal(saves.length, 1);
+  assert.deepEqual(refreshes, [{ scope: "rest" }]);
+
+  await applyRestRequest({ op: "setVisibleEntryCount", slotId: "slot-a", visibleEntryCount: 1 }, requester, deps);
+  assert.equal(state.slots[0].visibleEntryCount, 1);
+
+  await applyRestRequest({ op: "replaceState", state: { slots: [], locked: false } }, requester, deps);
+  assert.deepEqual(saves.at(-1).value, { slots: [], locked: false, lastUpdatedBy: "Clarence" });
+}
+
+{
   const state = {
     locked: false,
     slots: [
@@ -75,7 +163,7 @@ class FakeElement {
   const sourceCard = new FakeElement({ dataset: { slotId: "slot-a" }, classes: ["po-card"] });
   const targetCard = new FakeElement({ dataset: { slotId: "slot-b" }, classes: ["po-card"] });
   const entry = new FakeElement({ dataset: { actorId: "actor-a" }, classes: ["po-watch-entry"] });
-  entry.closestResolver = (selector) => selector === ".po-card" ? sourceCard : null;
+  entry.closestResolver = (selector) => (selector === ".po-card" ? sourceCard : null);
 
   const html = {
     querySelectorAll(selector) {
@@ -152,7 +240,7 @@ class FakeElement {
   await targetCard.dispatch("drop", {
     preventDefault: () => prevented.push(true),
     dataTransfer: {
-      getData: (type) => type === "text/plain" ? dragPayload.get(type) : ""
+      getData: (type) => (type === "text/plain" ? dragPayload.get(type) : "")
     }
   });
 
@@ -179,7 +267,7 @@ class FakeElement {
 {
   const entry = new FakeElement({ dataset: { actorId: "actor-a" }, classes: ["po-watch-entry"] });
   const card = new FakeElement({ dataset: { slotId: "slot-a" }, classes: ["po-card"] });
-  entry.closestResolver = (selector) => selector === ".po-card" ? card : null;
+  entry.closestResolver = (selector) => (selector === ".po-card" ? card : null);
   const html = {
     querySelectorAll(selector) {
       if (selector === ".po-watch-entry") return [entry];

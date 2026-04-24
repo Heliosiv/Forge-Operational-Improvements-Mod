@@ -10,7 +10,9 @@ export function buildRestSocketRouteDeps({
   getRestWatchState,
   game,
   resolveRequester,
+  canAccessAllPlayerOps,
   canUserControlActor,
+  canUserOperatePartyActor,
   stampUpdate,
   setModuleSettingWithLocalRefreshSuppressed,
   settings,
@@ -25,39 +27,44 @@ export function buildRestSocketRouteDeps({
   getRestActivities
 } = {}) {
   return {
-    normalizeSocketRestRequest: (request) => normalizeSocketRestRequest(request, {
-      restOps,
-      sanitizeSocketIdentifier,
-      clampSocketText,
-      clampRestWatchRichNoteText,
-      noteMaxLength: socketNoteMaxLength,
-      normalizeRestNoteSaveSource
-    }),
-    applyRestRequest: (request, requesterRef) => applyRestRequest(request, requesterRef, {
-      getRestWatchState,
-      game,
-      resolveRequester,
-      canUserControlActor,
-      stampUpdate,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh,
-      logUiDebug
-    }),
-    applyPlayerActivityUpdateRequest: (message) => applyPlayerActivityUpdateRequestFeature(message, null, {
-      getSocketRequester,
-      sanitizeSocketIdentifier,
-      normalizeSocketActivityType,
-      getRestActivities,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh
-    })
+    normalizeSocketRestRequest: (request) =>
+      normalizeSocketRestRequest(request, {
+        restOps,
+        sanitizeSocketIdentifier,
+        clampSocketText,
+        clampRestWatchRichNoteText,
+        noteMaxLength: socketNoteMaxLength,
+        normalizeRestNoteSaveSource
+      }),
+    applyRestRequest: (request, requesterRef) =>
+      applyRestRequest(request, requesterRef, {
+        getRestWatchState,
+        game,
+        resolveRequester,
+        ...(canAccessAllPlayerOps ? { canAccessAllPlayerOps } : {}),
+        canUserControlActor,
+        ...(canUserOperatePartyActor ? { canUserOperatePartyActor } : {}),
+        stampUpdate,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings,
+        scheduleIntegrationSync,
+        refreshOpenApps,
+        refreshScopeKeys,
+        emitSocketRefresh,
+        logUiDebug
+      }),
+    applyPlayerActivityUpdateRequest: (message) =>
+      applyPlayerActivityUpdateRequestFeature(message, null, {
+        getSocketRequester,
+        sanitizeSocketIdentifier,
+        normalizeSocketActivityType,
+        getRestActivities,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings,
+        refreshOpenApps,
+        refreshScopeKeys,
+        emitSocketRefresh
+      })
   };
 }
 
@@ -72,7 +79,9 @@ export function buildMarchSocketRouteDeps({
   getMarchingOrderState,
   game,
   resolveRequester,
+  canAccessAllPlayerOps,
   canUserControlActor,
+  canUserOperatePartyActor,
   isMarchingOrderPlayerLocked,
   stampUpdate,
   setModuleSettingWithLocalRefreshSuppressed,
@@ -84,28 +93,32 @@ export function buildMarchSocketRouteDeps({
   logUiDebug
 } = {}) {
   return {
-    normalizeSocketMarchRequest: (request) => normalizeSocketMarchRequest(request, {
-      marchOps,
-      marchRanks,
-      sanitizeSocketIdentifier,
-      clampSocketText,
-      noteMaxLength: socketNoteMaxLength
-    }),
-    applyMarchRequest: (request, requesterRef) => applyMarchRequest(request, requesterRef, {
-      getMarchingOrderState,
-      game,
-      resolveRequester,
-      canUserControlActor,
-      isMarchingOrderPlayerLocked,
-      stampUpdate,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh,
-      logUiDebug
-    })
+    normalizeSocketMarchRequest: (request) =>
+      normalizeSocketMarchRequest(request, {
+        marchOps,
+        marchRanks,
+        sanitizeSocketIdentifier,
+        clampSocketText,
+        noteMaxLength: socketNoteMaxLength
+      }),
+    applyMarchRequest: (request, requesterRef) =>
+      applyMarchRequest(request, requesterRef, {
+        getMarchingOrderState,
+        game,
+        resolveRequester,
+        ...(canAccessAllPlayerOps ? { canAccessAllPlayerOps } : {}),
+        canUserControlActor,
+        ...(canUserOperatePartyActor ? { canUserOperatePartyActor } : {}),
+        isMarchingOrderPlayerLocked,
+        stampUpdate,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings,
+        scheduleIntegrationSync,
+        refreshOpenApps,
+        refreshScopeKeys,
+        emitSocketRefresh,
+        logUiDebug
+      })
   };
 }
 
@@ -129,32 +142,34 @@ export function buildSettingsSocketRouteDeps({
   refreshScopeKeys
 } = {}) {
   return {
-    applyPlayerSettingWriteRequest: (message, requesterRef) => applyPlayerSettingWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      isWritableModuleSettingKey,
-      game,
-      foundry,
-      moduleId,
-      suppressNextSettingRefresh,
-      refreshOpenApps,
-      getRefreshScopesForSettingKey,
-      emitSocketRefresh,
-      logUiFailure
-    }),
-    applyPlayerFolderOwnershipWriteRequest: (message, requesterRef) => applyPlayerFolderOwnershipWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      sanitizeSocketIdentifier,
-      constDocOwnershipLevels,
-      game,
-      foundry,
-      ui,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh,
-      moduleId
-    })
+    applyPlayerSettingWriteRequest: (message, requesterRef) =>
+      applyPlayerSettingWriteRequestFeature(message, requesterRef, {
+        resolveRequester,
+        canAccessAllPlayerOps,
+        isWritableModuleSettingKey,
+        game,
+        foundry,
+        moduleId,
+        suppressNextSettingRefresh,
+        refreshOpenApps,
+        getRefreshScopesForSettingKey,
+        emitSocketRefresh,
+        logUiFailure
+      }),
+    applyPlayerFolderOwnershipWriteRequest: (message, requesterRef) =>
+      applyPlayerFolderOwnershipWriteRequestFeature(message, requesterRef, {
+        resolveRequester,
+        canAccessAllPlayerOps,
+        sanitizeSocketIdentifier,
+        constDocOwnershipLevels,
+        game,
+        foundry,
+        ui,
+        refreshOpenApps,
+        refreshScopeKeys,
+        emitSocketRefresh,
+        moduleId
+      })
   };
 }
 
@@ -178,27 +193,29 @@ export function buildOperationsSocketRouteDeps({
   emitSocketRefresh
 } = {}) {
   return {
-    applyPlayerSopNoteRequest: (message, requesterRef) => applyPlayerSopNoteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      sopKeys,
-      clampSocketText,
-      noteMaxLength: socketNoteMaxLength,
-      updateOperationsLedger,
-      setSharedSopNoteText
-    }),
-    applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) => applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
-      resolveRequester,
-      canAccessAllPlayerOps,
-      buildDefaultOperationsLedger,
-      foundry,
-      setModuleSettingWithLocalRefreshSuppressed,
-      settings,
-      scheduleIntegrationSync,
-      refreshOpenApps,
-      refreshScopeKeys,
-      emitSocketRefresh
-    })
+    applyPlayerSopNoteRequest: (message, requesterRef) =>
+      applyPlayerSopNoteRequestFeature(message, requesterRef, {
+        resolveRequester,
+        canAccessAllPlayerOps,
+        sopKeys,
+        clampSocketText,
+        noteMaxLength: socketNoteMaxLength,
+        updateOperationsLedger,
+        setSharedSopNoteText
+      }),
+    applyPlayerOperationsLedgerWriteRequest: (message, requesterRef) =>
+      applyPlayerOperationsLedgerWriteRequestFeature(message, requesterRef, {
+        resolveRequester,
+        canAccessAllPlayerOps,
+        buildDefaultOperationsLedger,
+        foundry,
+        setModuleSettingWithLocalRefreshSuppressed,
+        settings,
+        scheduleIntegrationSync,
+        refreshOpenApps,
+        refreshScopeKeys,
+        emitSocketRefresh
+      })
   };
 }
 
@@ -221,37 +238,41 @@ export function buildDowntimeSocketRouteDeps({
   getDowntimeCollectionSummary
 } = {}) {
   return {
-    applyPlayerDowntimeSubmitRequest: (message, requesterRef) => applyPlayerDowntimeSubmitRequestFeature(message, requesterRef, {
-      resolveRequester,
-      getOperationsLedger,
-      ensureDowntimeState,
-      normalizeDowntimeSubmission,
-      sanitizeSocketIdentifier,
-      applyDowntimeSubmissionForUser
-    }),
-    applyPlayerDowntimeClearRequest: (message, requesterRef) => applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
-      game,
-      canUserManageDowntimeActor,
-      updateOperationsLedger,
-      ensureDowntimeState
-    }),
-    applyPlayerDowntimeQueueEditRequest: (message, requesterRef) => applyPlayerDowntimeQueueEditRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
-      game,
-      canUserManageDowntimeActor,
-      updateOperationsLedger,
-      ensureDowntimeState
-    }),
-    applyPlayerDowntimeCollectRequest: (message, requesterRef) => applyPlayerDowntimeCollectRequestFeature(message, requesterRef, {
-      resolveRequester,
-      sanitizeSocketIdentifier,
-      applyDowntimeCollectionForUser,
-      ui,
-      getDowntimeCollectionSummary
-    })
+    applyPlayerDowntimeSubmitRequest: (message, requesterRef) =>
+      applyPlayerDowntimeSubmitRequestFeature(message, requesterRef, {
+        resolveRequester,
+        getOperationsLedger,
+        ensureDowntimeState,
+        normalizeDowntimeSubmission,
+        sanitizeSocketIdentifier,
+        applyDowntimeSubmissionForUser
+      }),
+    applyPlayerDowntimeClearRequest: (message, requesterRef) =>
+      applyPlayerDowntimeClearRequestFeature(message, requesterRef, {
+        resolveRequester,
+        sanitizeSocketIdentifier,
+        game,
+        canUserManageDowntimeActor,
+        updateOperationsLedger,
+        ensureDowntimeState
+      }),
+    applyPlayerDowntimeQueueEditRequest: (message, requesterRef) =>
+      applyPlayerDowntimeQueueEditRequestFeature(message, requesterRef, {
+        resolveRequester,
+        sanitizeSocketIdentifier,
+        game,
+        canUserManageDowntimeActor,
+        updateOperationsLedger,
+        ensureDowntimeState
+      }),
+    applyPlayerDowntimeCollectRequest: (message, requesterRef) =>
+      applyPlayerDowntimeCollectRequestFeature(message, requesterRef, {
+        resolveRequester,
+        sanitizeSocketIdentifier,
+        applyDowntimeCollectionForUser,
+        ui,
+        getDowntimeCollectionSummary
+      })
   };
 }
 

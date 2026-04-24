@@ -32,7 +32,7 @@ expect(
 );
 
 expect(
-  /function queueManagedAudioMixPlaybackResync\(delayMs = 60, options = \{\}\)\s*\{[\s\S]*?window\.setTimeout\(async \(\) => \{[\s\S]*?if \(game\.user\?\.isGM && options\?\.syncState !== false\) \{[\s\S]*?await syncManagedAudioMixStateFromPlaylist\([\s\S]*?\);[\s\S]*?\}[\s\S]*?await syncManagedAudioMixPlaybackForCurrentUser\(\{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?\}/,
+  /function queueManagedAudioMixPlaybackResync\(delayMs = 60, options = \{\}\)\s*\{[\s\S]*?window\.setTimeout\(\s*async \(\) => \{[\s\S]*?if \(game\.user\?\.isGM && options\?\.syncState !== false\) \{[\s\S]*?await syncManagedAudioMixStateFromPlaylist\([\s\S]*?\);[\s\S]*?\}[\s\S]*?await syncManagedAudioMixPlaybackForCurrentUser\(\{[\s\S]*?refresh: options\?\.refresh === true[\s\S]*?\}\);[\s\S]*?\}/,
   "Playback resync should refresh GM playlist state before reconciling client playback state."
 );
 

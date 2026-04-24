@@ -1,0 +1,16 @@
+node_modules/
+dist/
+release/
+reports/
+baseline-*/
+head-*/
+.staging-local-test/
+.tmp_level/
+.playwright-cli/
+tmp-*
+.tmp_*
+ALL_CODE.txt
+check-output.txt
+check_output.txt
+isolate-*.log
+*.tar

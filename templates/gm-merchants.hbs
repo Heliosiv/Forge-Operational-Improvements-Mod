@@ -310,6 +310,39 @@
                   <span>Sell Rate Percent</span>
                   <input type="number" min="0" max="1000" step="0.01" name="merchantSellRatePercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.sellRatePercent}}" />
                 </label>
+                <details class="po-panel-disclosure po-merchant-price-scale">
+                  <summary class="po-panel-disclosure-summary">
+                    <span class="po-section-title">Rarity Price Scale</span>
+                    <span class="po-op-summary">Standard cost by rarity</span>
+                  </summary>
+                  <div class="po-panel-disclosure-body">
+                    <div class="po-resource-row po-merchant-rarity-row">
+                      <span>Buy Price Multipliers</span>
+                      <div class="po-op-action-row po-merchant-rarity-grid">
+                        <label class="po-merchant-range-option">
+                          <span><strong>Common</strong><em>{{merchants.gm.editor.rarityPriceCommonPercent}}%</em></span>
+                          <input type="range" min="25" max="500" step="5" name="merchantRarityPriceCommonPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityPriceCommonPercent}}" />
+                        </label>
+                        <label class="po-merchant-range-option">
+                          <span><strong>Uncommon</strong><em>{{merchants.gm.editor.rarityPriceUncommonPercent}}%</em></span>
+                          <input type="range" min="25" max="500" step="5" name="merchantRarityPriceUncommonPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityPriceUncommonPercent}}" />
+                        </label>
+                        <label class="po-merchant-range-option">
+                          <span><strong>Rare</strong><em>{{merchants.gm.editor.rarityPriceRarePercent}}%</em></span>
+                          <input type="range" min="25" max="500" step="5" name="merchantRarityPriceRarePercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityPriceRarePercent}}" />
+                        </label>
+                        <label class="po-merchant-range-option">
+                          <span><strong>Very Rare</strong><em>{{merchants.gm.editor.rarityPriceVeryRarePercent}}%</em></span>
+                          <input type="range" min="25" max="500" step="5" name="merchantRarityPriceVeryRarePercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityPriceVeryRarePercent}}" />
+                        </label>
+                        <label class="po-merchant-range-option">
+                          <span><strong>Legendary</strong><em>{{merchants.gm.editor.rarityPriceLegendaryPercent}}%</em></span>
+                          <input type="range" min="25" max="500" step="5" name="merchantRarityPriceLegendaryPercent" class="po-input" data-action="merchant-editor-draft-change" value="{{merchants.gm.editor.rarityPriceLegendaryPercent}}" />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </details>
                 <label class="po-resource-row">
                   <span>Buy from Players</span>
                   <input type="checkbox" name="merchantSellEnabled" data-action="merchant-editor-draft-change" {{#if merchants.gm.editor.sellEnabled}}checked{{/if}} />

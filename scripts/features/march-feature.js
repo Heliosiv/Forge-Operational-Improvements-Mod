@@ -26,23 +26,29 @@ export function buildMarchFormationSummaryContext({
   const doctrine = formationSnapshot?.doctrine ?? {};
   const formationState = formationSnapshot?.formationState ?? {};
   const formationReasons = Array.isArray(validity?.reasons) ? validity.reasons : [];
-  const tokenCoverageFallbackReason = formationReasons.find((reason) => String(reason?.code ?? "") === "missing-token-positions") ?? null;
+  const tokenCoverageFallbackReason =
+    formationReasons.find((reason) => String(reason?.code ?? "") === "missing-token-positions") ?? null;
   const invalidReasons = formationReasons.filter((reason) => String(reason?.code ?? "") !== "missing-token-positions");
-  const doctrineStateCode = String(doctrine?.state ?? "").trim().toLowerCase();
+  const doctrineStateCode = String(doctrine?.state ?? "")
+    .trim()
+    .toLowerCase();
   const failureStreakCount = Math.max(0, Number(tracker?.failureStreakCount ?? 0));
   const consecutiveSuccessCount = Math.max(0, Number(tracker?.consecutiveSuccessCount ?? 0));
-  const leadersCommandUsedThisCombat = Boolean(activeCombatId) && String(tracker?.leadersCommandCombatId ?? "") === activeCombatId;
-  const leadershipCheckDue = Boolean(
-    doctrine?.cohesionCheckRequired
-    && String(doctrine?.pendingTrigger ?? "").trim()
-  );
+  const leadersCommandUsedThisCombat =
+    Boolean(activeCombatId) && String(tracker?.leadersCommandCombatId ?? "") === activeCombatId;
+  const leadershipCheckDue = Boolean(doctrine?.cohesionCheckRequired && String(doctrine?.pendingTrigger ?? "").trim());
   const canUseLeadersCommand = !leadersCommandUsedThisCombat;
-  const brokenState = String(doctrineStates?.BROKEN ?? "").trim().toLowerCase();
-  const strainedState = String(doctrineStates?.STRAINED ?? "").trim().toLowerCase();
-  const shouldShowRecoveryGuidance = leadershipCheckDue
-    || doctrineStateCode === strainedState
-    || doctrineStateCode === brokenState
-    || failureStreakCount > 0;
+  const brokenState = String(doctrineStates?.BROKEN ?? "")
+    .trim()
+    .toLowerCase();
+  const strainedState = String(doctrineStates?.STRAINED ?? "")
+    .trim()
+    .toLowerCase();
+  const shouldShowRecoveryGuidance =
+    leadershipCheckDue ||
+    doctrineStateCode === strainedState ||
+    doctrineStateCode === brokenState ||
+    failureStreakCount > 0;
 
   const recoveryGuidance = (() => {
     if (!shouldShowRecoveryGuidance) {
@@ -106,7 +112,9 @@ export function buildMarchFormationSummaryContext({
   })();
 
   const recoveryRecommendedActionLabel = (() => {
-    const action = String(recoveryGuidance.recommendedAction ?? "").trim().toLowerCase();
+    const action = String(recoveryGuidance.recommendedAction ?? "")
+      .trim()
+      .toLowerCase();
     if (action === "doctrine-check") return "Joint Leadership";
     if (action === "rally-check") return "Rally Check";
     if (action === "leaders-command") return "Leader's Command";
@@ -128,15 +136,20 @@ export function buildMarchFormationSummaryContext({
     return `${consecutiveSuccessCount} successes (+${bonus} momentum bonus)`;
   })();
   const healthTrendIndicator = Boolean(tracker?.lastCheckWasSuccess ?? false) ? "Improving" : "Declining";
-  const formationHealthPercent = Math.max(0, 100 - (failureStreakCount * 15));
-  const statusToneClass = leadershipCheckDue || doctrineStateCode === brokenState
-    ? "is-alert"
-    : (failureStreakCount > 0 || doctrineStateCode === strainedState ? "is-warn" : "is-stable");
+  const formationHealthPercent = Math.max(0, 100 - failureStreakCount * 15);
+  const statusToneClass =
+    leadershipCheckDue || doctrineStateCode === brokenState
+      ? "is-alert"
+      : failureStreakCount > 0 || doctrineStateCode === strainedState
+        ? "is-warn"
+        : "is-stable";
   const statusHeadline = leadershipCheckDue
     ? "Leadership Check Due"
-    : (doctrineStateCode === brokenState
+    : doctrineStateCode === brokenState
       ? "Formation Broken"
-      : (failureStreakCount > 0 ? "Pressure Building" : "Formation Stable"));
+      : failureStreakCount > 0
+        ? "Pressure Building"
+        : "Formation Stable";
   const statusDetail = leadershipCheckDue
     ? `Triggered by ${String(doctrine?.pendingTriggerLabel ?? "current pressure").trim() || "current pressure"}.`
     : recoveryGuidance.text;
@@ -149,7 +162,7 @@ export function buildMarchFormationSummaryContext({
     {
       label: consecutiveSuccessCount >= 3 ? "Momentum Bonus" : "Momentum",
       value: successStreakLabel,
-      toneClass: consecutiveSuccessCount >= 3 ? "is-positive" : (consecutiveSuccessCount > 0 ? "is-neutral" : "is-muted")
+      toneClass: consecutiveSuccessCount >= 3 ? "is-positive" : consecutiveSuccessCount > 0 ? "is-neutral" : "is-muted"
     }
   ];
   const metaBlocks = [
@@ -308,17 +321,16 @@ function setActorPlacement(state, rankId, actorId, cellIndex) {
 }
 
 export function normalizeSocketMarchRequest(request, deps = {}) {
-  const {
-    marchOps,
-    marchRanks,
-    sanitizeSocketIdentifier,
-    clampSocketText,
-    noteMaxLength
-  } = deps;
+  const { marchOps, marchRanks, sanitizeSocketIdentifier, clampSocketText, noteMaxLength } = deps;
 
   if (!request || typeof request !== "object") return null;
   const op = String(request.op ?? "").trim();
   if (!marchOps?.has?.(op)) return null;
+  if (op === "replaceState") {
+    const state =
+      request.state && typeof request.state === "object" && !Array.isArray(request.state) ? request.state : null;
+    return state ? { op, state } : null;
+  }
   const actorId = sanitizeSocketIdentifier(request.actorId, { maxLength: 64 });
   if (!actorId) return null;
 
@@ -344,7 +356,9 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
   }
 
   if (op === "setLightRange") {
-    const rangeKey = String(request.range ?? "").trim().toLowerCase();
+    const rangeKey = String(request.range ?? "")
+      .trim()
+      .toLowerCase();
     if (!["bright", "dim"].includes(rangeKey)) return null;
     const valueRaw = Number.parseInt(String(request.value ?? ""), 10);
     const value = Number.isInteger(valueRaw) ? Math.max(0, Math.min(999, valueRaw)) : 0;
@@ -363,7 +377,9 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     getMarchingOrderState,
     game,
     resolveRequester,
+    canAccessAllPlayerOps,
     canUserControlActor,
+    canUserOperatePartyActor = canUserControlActor,
     isMarchingOrderPlayerLocked,
     stampUpdate,
     setModuleSettingWithLocalRefreshSuppressed,
@@ -379,10 +395,22 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
   const state = getMarchingOrderState();
   const requester = resolveRequester(requesterRef, { allowGM: true });
   if (!requester) return;
+
+  if (request.op === "replaceState") {
+    if (!requester?.isGM && !canAccessAllPlayerOps?.(requester)) return;
+    const nextState =
+      request.state && typeof request.state === "object" && !Array.isArray(request.state) ? request.state : null;
+    if (!nextState) return;
+    stampUpdate(nextState, requester);
+    await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, nextState);
+    scheduleIntegrationSync("marching-order-player-mutate");
+    refreshOpenApps({ scope: refreshScopeKeys.MARCH });
+    emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return;
+  }
   const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
   const requesterCanControlActor = Boolean(
-    requestedActor
-    && (requester?.isGM || canUserControlActor?.(requestedActor, requester))
+    requestedActor && (requester?.isGM || canUserOperatePartyActor?.(requestedActor, requester))
   );
 
   if (request.op === "joinRank") {
@@ -402,9 +430,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     if (!state.ranks[request.rankId]) state.ranks[request.rankId] = [];
     const target = state.ranks[request.rankId];
     const requestedInsertIndex = Number.parseInt(String(request.insertIndex ?? ""), 10);
-    const safeIndex = Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0
-      ? Math.max(0, Math.min(requestedInsertIndex, target.length))
-      : target.length;
+    const safeIndex =
+      Number.isInteger(requestedInsertIndex) && requestedInsertIndex >= 0
+        ? Math.max(0, Math.min(requestedInsertIndex, target.length))
+        : target.length;
     target.splice(safeIndex, 0, request.actorId);
     const requestedCellIndex = Number.parseInt(String(request.cellIndex ?? ""), 10);
     setActorPlacement(
@@ -501,9 +530,9 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
   if (request.op === "setNote") {
     if (!requesterCanControlActor) return;
     if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
-    const inFormation = Object.values(state.ranks ?? {}).some((actorIds) => (
-      Array.isArray(actorIds) && actorIds.includes(request.actorId)
-    ));
+    const inFormation = Object.values(state.ranks ?? {}).some(
+      (actorIds) => Array.isArray(actorIds) && actorIds.includes(request.actorId)
+    );
     if (!inFormation) {
       logUiDebug("march-notes", "socket reject setNote (actor not in formation)", {
         actorId: request.actorId,
@@ -531,7 +560,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
 export function setupMarchingDragAndDrop(html, deps = {}) {
   const {
     getMarchingOrderState,
-    isActualGM = false,  // Actual GM status for drag-and-drop interaction permissions
+    isActualGM = false, // Actual GM status for drag-and-drop interaction permissions
     canDragEntry,
     isLockedForUser,
     notifyUiWarnThrottled,
