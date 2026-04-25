@@ -5,7 +5,7 @@
   "url": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod",
   "manifest": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.json",
   "download": "https://github.com/Heliosiv/Forge-Operational-Improvements-Mod/releases/latest/download/module.zip",
-  "version": "2.2.10",
+  "version": "2.2.11",
   "authors": [
     {
       "name": "Heliosiv"
@@ -13,8 +13,7 @@
   ],
   "compatibility": {
     "minimum": "12",
-    "verified": "12",
-    "maximum": "12"
+    "verified": "14"
   },
   "esmodules": ["scripts/module.js"],
   "styles": ["styles/party-operations.css", "styles/po-gm-shell.css", "styles/po-controls.css"],

@@ -59,6 +59,15 @@ async function main() {
 
   if (!String(manifest?.id ?? "").trim()) errors.push("Manifest id is required.");
   if (!String(manifest?.version ?? "").trim()) errors.push("Manifest version is required.");
+  if (manifest?.compatibility?.maximum != null) {
+    errors.push(
+      "Manifest compatibility.maximum should be omitted so Forge does not hide the package on newer Foundry versions."
+    );
+  }
+  const verifiedVersion = Number.parseInt(String(manifest?.compatibility?.verified ?? ""), 10);
+  if (!Number.isFinite(verifiedVersion) || verifiedVersion < 14) {
+    errors.push("Manifest compatibility.verified should be at least 14 for the current Forge/Foundry package index.");
+  }
   if (!Array.isArray(manifest?.esmodules) || manifest.esmodules.length === 0) {
     errors.push("Manifest must declare at least one esmodule.");
   }
