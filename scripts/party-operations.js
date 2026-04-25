@@ -24177,9 +24177,14 @@ function getIntegrationModeLabel(mode) {
   return "Auto";
 }
 
-function getResourceOwnerActors() {
+function getResourceOwnerActors(user = game.user) {
+  const canManage = canAccessAllPlayerOps(user);
   return game.actors.contents
-    .filter((actor) => actor && (actor.type === "character" || actor.hasPlayerOwner))
+    .filter((actor) => {
+      if (!actor || actor.type !== "character") return false;
+      if (canManage) return Boolean(actor.hasPlayerOwner);
+      return canUserOwnActor(user, actor, { requireCharacter: true });
+    })
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
@@ -24195,10 +24200,11 @@ function getResourceInventoryItems(actor) {
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 }
 
-function buildResourceSelectionContext(resourcesState, resourceKey) {
+function buildResourceSelectionContext(resourcesState, resourceKey, options = {}) {
+  const user = options?.user ?? game.user;
   const selectedActorId = String(resourcesState?.itemSelections?.[resourceKey]?.actorId ?? "");
   const selectedItemId = String(resourcesState?.itemSelections?.[resourceKey]?.itemId ?? "");
-  const actors = getResourceOwnerActors();
+  const actors = getResourceOwnerActors(user);
   const actorOptions = [
     { id: "", name: "None", selected: !selectedActorId },
     ...actors.map((actor) => ({ id: actor.id, name: actor.name, selected: actor.id === selectedActorId }))
@@ -24824,9 +24830,9 @@ function buildOperationsContext() {
       torches: resourcesNumeric.torches,
       stewardPools,
       itemSelections: {
-        food: buildResourceSelectionContext(resourcesState, "food"),
-        water: buildResourceSelectionContext(resourcesState, "water"),
-        torches: buildResourceSelectionContext(resourcesState, "torches")
+        food: buildResourceSelectionContext(resourcesState, "food", { user: game.user }),
+        water: buildResourceSelectionContext(resourcesState, "water", { user: game.user }),
+        torches: buildResourceSelectionContext(resourcesState, "torches", { user: game.user })
       },
       gatherDefaults,
       gatherWeatherOptions: gatherDefaults.weatherOptions,
@@ -35154,12 +35160,16 @@ async function toggleOperationalSOP(element, options = {}) {
 }
 
 async function setOperationalResource(element) {
-  if (!canAccessAllPlayerOps()) {
-    ui.notifications?.warn("Only the GM can edit resources.");
-    return { rerender: false };
-  }
   const resourceKey = element?.dataset?.resource;
   if (!resourceKey) return { rerender: false };
+  const itemLinkKeys = new Set(RESOURCE_TRACK_KEYS);
+  const isItemSelectionActor = resourceKey.startsWith("itemSelectionActor:");
+  const isItemSelectionItem = resourceKey.startsWith("itemSelectionItem:");
+  const isPlayerAllowedResourceSelection = !canAccessAllPlayerOps() && (isItemSelectionActor || isItemSelectionItem);
+  if (!canAccessAllPlayerOps() && !isPlayerAllowedResourceSelection) {
+    ui.notifications?.warn("Only the GM can edit resource rules.");
+    return { rerender: false };
+  }
   const upkeepNumericKeys = new Set([
     "partySize",
     "foodPerMember",
@@ -35174,7 +35184,7 @@ async function setOperationalResource(element) {
     partyWaterRations: "water",
     torches: "torches"
   };
-  const shouldRerender = resourceKey.startsWith("itemSelectionActor:") || resourceKey.startsWith("itemSelectionItem:");
+  const shouldRerender = isItemSelectionActor || isItemSelectionItem;
 
   await updateOperationsLedger((ledger) => {
     if (!ledger.resources) ledger.resources = {};
@@ -35183,24 +35193,35 @@ async function setOperationalResource(element) {
       ledger.resources.encumbrance = element?.value ?? "light";
       return;
     }
-    const itemLinkKeys = new Set(RESOURCE_TRACK_KEYS);
-    if (resourceKey.startsWith("itemSelectionActor:")) {
+    if (isItemSelectionActor) {
       const selectionKey = resourceKey.split(":")[1] ?? "";
       if (!itemLinkKeys.has(selectionKey)) return;
       const actorId = String(element?.value ?? "");
+      const actor = actorId ? game.actors.get(actorId) : null;
+      if (actorId && !canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: true })) {
+        ui.notifications?.warn("Choose one of your owned characters for that resource target.");
+        return;
+      }
       ledger.resources.itemSelections[selectionKey].actorId = actorId;
       if (!actorId) ledger.resources.itemSelections[selectionKey].itemId = "";
       else {
-        const actor = game.actors.get(actorId);
         const itemId = ledger.resources.itemSelections[selectionKey].itemId;
         if (!itemId || !actor?.items?.get(itemId)) ledger.resources.itemSelections[selectionKey].itemId = "";
       }
       return;
     }
-    if (resourceKey.startsWith("itemSelectionItem:")) {
+    if (isItemSelectionItem) {
       const selectionKey = resourceKey.split(":")[1] ?? "";
       if (!itemLinkKeys.has(selectionKey)) return;
-      ledger.resources.itemSelections[selectionKey].itemId = String(element?.value ?? "");
+      const actorId = String(ledger.resources.itemSelections[selectionKey]?.actorId ?? "");
+      const actor = actorId ? game.actors.get(actorId) : null;
+      if (!canAccessAllPlayerOps() && !canUserOwnActor(game.user, actor, { requireCharacter: true })) {
+        ui.notifications?.warn("Choose one of your owned characters before selecting a resource item.");
+        return;
+      }
+      const itemId = String(element?.value ?? "");
+      if (itemId && !actor?.items?.get(itemId)) return;
+      ledger.resources.itemSelections[selectionKey].itemId = itemId;
       return;
     }
     if (resourceKey.startsWith("weatherMod:")) {
@@ -46282,8 +46303,12 @@ function buildInjuryCalendarPayload(actor, entry) {
   const rawDueTimestamp = Number(entry?.recoveryDueTs);
   const fallbackDueTimestamp = addCalendarDaysBridge(worldNow, recoveryDays, { gameRef: game, globalRef: globalThis });
   const dueTimestamp = Number.isFinite(rawDueTimestamp) ? rawDueTimestamp : fallbackDueTimestamp;
-  const startTimestamp = Math.floor(dueTimestamp);
-  const endTimestamp = startTimestamp + 60;
+  const startTimestamp = Math.floor(worldNow);
+  const minimumEndTimestamp = addCalendarDaysBridge(startTimestamp, Math.max(1, recoveryDays), {
+    gameRef: game,
+    globalRef: globalThis
+  });
+  const endTimestamp = Math.max(Math.floor(dueTimestamp), Math.floor(minimumEndTimestamp));
   const injuryName = String(entry?.injuryName ?? "Injury");
   const stabilized = Boolean(entry?.stabilized);
   const permanent = Boolean(entry?.permanent);
@@ -46302,7 +46327,10 @@ function buildInjuryCalendarPayload(actor, entry) {
     endTimestamp,
     allDay: true,
     playerVisible: true,
+    visibleToPlayers: true,
+    visible: true,
     public: true,
+    isPrivate: false,
     flags: {
       [MODULE_ID]: {
         injuryActorId: actor?.id ?? "",
@@ -47619,11 +47647,12 @@ function getCachedRestWatchSelectOptions(
   return options;
 }
 
-function buildRestWatchPlayerActorOptions() {
-  const actors = getOwnedPcActors()
+function buildRestWatchPlayerActorOptions(user = game.user) {
+  const canManage = canAccessAllPlayerOps(user);
+  const actors = (canManage ? getOwnedPcActors() : getSelectablePlayerActorsForUser(user))
     .slice()
     .sort((left, right) => String(left?.name ?? "").localeCompare(String(right?.name ?? "")));
-  const key = buildRestWatchActorOptionsCacheKey(actors);
+  const key = `${String(user?.id ?? "anon")}:${canManage ? "all" : "owned"}:${buildRestWatchActorOptionsCacheKey(actors)}`;
   if (restWatchActorOptionsCache.key === key && Array.isArray(restWatchActorOptionsCache.options)) {
     return restWatchActorOptionsCache.options;
   }
@@ -49490,7 +49519,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
   const hasSelectablePlayerActor = !isGM && getSelectablePlayerActorsForUser(game.user).length > 0;
   const activities = getRestActivities();
   const sourceSlots = getRestWatchSourceSlots(state);
-  const playerActorOptions = isGM ? buildRestWatchPlayerActorOptions() : [];
+  const playerActorOptions = buildRestWatchPlayerActorOptions(game.user);
 
   const buildNoteButtonContext = (actorNameInput, noteTextInput) => {
     const actorName = String(actorNameInput ?? "Actor").trim() || "Actor";
@@ -49604,7 +49633,7 @@ function buildWatchSlotsView(state, isGM, visibility) {
       openCount: Math.max(0, visibleEntryCount - entriesView.length),
       isFull: visibleEntryCount >= REST_WATCH_MAX_ENTRIES,
       canAddVisibleSlot: visibleEntryCount < REST_WATCH_MAX_ENTRIES,
-      canAssign: isGM,
+      canAssign: !lockedForUser && playerActorOptions.length > 0,
       canAssignMe: hasSelectablePlayerActor && !lockedForUser
     };
   });
@@ -50385,6 +50414,7 @@ async function createSimpleCalendarEntry(api, payload) {
           signatureError = nestedError;
         }
         const variantDate = variant.startDate ?? variant.date ?? null;
+        const variantEndDate = variant.endDate ?? variant.end ?? null;
         if (variantDate) {
           try {
             const result = await fn.call(ctx, variantDate, variant);
@@ -50401,6 +50431,31 @@ async function createSimpleCalendarEntry(api, payload) {
           } catch (dateSecondError) {
             lastError = dateSecondError;
             signatureError = dateSecondError;
+          }
+          if (variantEndDate) {
+            try {
+              const result = await fn.call(
+                ctx,
+                variant.title ?? variant.name,
+                variant.content ?? variant.description,
+                variantDate,
+                variantEndDate,
+                variant
+              );
+              const id = extractCalendarEntryId(result);
+              return { success: true, id };
+            } catch (expandedError) {
+              lastError = expandedError;
+              signatureError = expandedError;
+            }
+            try {
+              const result = await fn.call(ctx, variant.name ?? variant.title, variantDate, variantEndDate, variant);
+              const id = extractCalendarEntryId(result);
+              return { success: true, id };
+            } catch (expandedShortError) {
+              lastError = expandedShortError;
+              signatureError = expandedShortError;
+            }
           }
         }
         logSimpleCalendarSyncDebug("Create method signature attempts failed", {
@@ -51420,6 +51475,8 @@ const handlePartyOperationsSocketMessage = createPartyOperationsSocketHandler(
       schedulePendingSopNoteSync,
       syncMerchantBarterStatusForOpenDialogs,
       getSocketRequester,
+      emitModuleSocket,
+      socketChannel: SOCKET_CHANNEL,
       sanitizeSocketIdentifier,
       normalizeSocketActivityType,
       getRestActivities,

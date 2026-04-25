@@ -226,7 +226,12 @@ class FakeElement {
     logUiDebug: () => {}
   };
 
-  await applyMarchRequest({ op: "setLight", actorId: "actor-a", enabled: true }, requester, deps);
+  const setLightResult = await applyMarchRequest(
+    { op: "setLight", actorId: "actor-a", enabled: true },
+    requester,
+    deps
+  );
+  assert.deepEqual(setLightResult, { ok: true, summary: "", scope: "march" });
   assert.equal(state.light["actor-a"], true);
   assert.deepEqual(state.lightRanges["actor-a"], { bright: 20, dim: 40 });
 
@@ -234,6 +239,36 @@ class FakeElement {
   assert.deepEqual(state.lightRanges["actor-a"], { bright: 35, dim: 40 });
   assert.equal(saves.length, 2);
   assert.deepEqual(refreshes, [{ scope: "march" }, { scope: "march" }]);
+}
+
+{
+  const state = {
+    ranks: { front: [] },
+    rankPlacements: { front: {} }
+  };
+  const requester = { id: "user-1", isGM: false, name: "Player" };
+  const actor = { id: "actor-a" };
+  const result = await applyMarchRequest(
+    { op: "joinRank", actorId: "actor-a", rankId: "front", cellIndex: 1 },
+    requester,
+    {
+      getMarchingOrderState: () => state,
+      game: { actors: { get: () => actor } },
+      resolveRequester: () => requester,
+      canUserControlActor: () => true,
+      isMarchingOrderPlayerLocked: () => true,
+      stampUpdate: () => {},
+      setModuleSettingWithLocalRefreshSuppressed: async () => true,
+      settings: { MARCH_STATE: "marchState" },
+      scheduleIntegrationSync: () => {},
+      refreshOpenApps: () => {},
+      refreshScopeKeys: { MARCH: "march" },
+      emitSocketRefresh: () => {},
+      logUiDebug: () => {}
+    }
+  );
+
+  assert.deepEqual(result, { ok: false, summary: "Marching order is locked by the GM.", scope: "march" });
 }
 
 {

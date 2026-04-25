@@ -33,6 +33,8 @@ export function createPartyOperationsSocketHandlerConfig({
     schedulePendingSopNoteSync: shared.schedulePendingSopNoteSync,
     syncMerchantBarterStatusForOpenDialogs: shared.syncMerchantBarterStatusForOpenDialogs,
     getSocketRequester: shared.getSocketRequester,
+    emitModuleSocket: shared.emitModuleSocket,
+    socketChannel: shared.socketChannel,
     sanitizeSocketIdentifier: shared.sanitizeSocketIdentifier,
     normalizeSocketActivityType: shared.normalizeSocketActivityType,
     getRestActivities: shared.getRestActivities,

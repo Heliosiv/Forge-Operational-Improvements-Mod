@@ -248,7 +248,13 @@
         <nav class="po-tabs po-tabs-ops" role="tablist" aria-label="Operations Pages">
           <button type="button" class="po-tab {{#if operationsPagePlanning}}is-active{{/if}}" data-action="operations-page" data-page="planning" title="Track resources and loot operations">Planning</button>
           <button type="button" class="po-tab {{#if operationsPageReputation}}is-active{{/if}}" data-action="operations-page" data-page="reputation" title="Track faction standing and access levels">Reputation</button>
+          {{#if @root.isGM}}
           <button type="button" class="po-tab {{#if operationsPageMerchants}}is-active{{/if}}" data-action="operations-page" data-page="merchants" title="Track merchant contacts, routes, and procurement priorities">Merchants</button>
+          {{else}}
+          {{#if operations.merchants.shopOpen}}
+          <button type="button" class="po-tab {{#if operationsPageMerchants}}is-active{{/if}}" data-action="operations-page" data-page="merchants" title="Track merchant contacts, routes, and procurement priorities">Merchants</button>
+          {{/if}}
+          {{/if}}
           <button type="button" class="po-tab {{#if operationsPageRecovery}}is-active{{/if}}" data-action="operations-page" data-page="recovery" title="Track injuries, stabilization, and recovery cycles">Recovery</button>
         </nav>
         {{/if}}
@@ -275,21 +281,8 @@
         <div id="po-ops-resources" class="po-gm-section">
           <div class="po-section-head-row">
             <div class="po-section-title">Resources</div>
-            {{#if @root.isGM}}
-            <button
-              type="button"
-              class="po-btn po-btn-sm po-gather-launch-btn"
-              data-action="gather-resource-check"
-              title="Call players to choose a PC-owned character for gathering">
-              <i class="fa-solid fa-seedling" aria-hidden="true"></i>
-              <span class="po-gather-launch-btn-copy">
-                <span class="po-gather-launch-btn-main">Call Gather</span>
-                <span class="po-gather-launch-btn-sub">Player Requests</span>
-              </span>
-            </button>
-            {{/if}}
           </div>
-          <div class="po-hint">Track supply forecasts, shared pools, and target bindings here. Call Gather prompts players to submit PC-owned gathering requests for GM resolution.</div>
+          <div class="po-hint">Track supply forecasts, shared pools, and target bindings here.</div>
           <div class="po-info-strip">
             <div class="po-info-chip" title="Projected food consumed per day"><span>Per Day Food</span><strong>{{operations.resources.summary.foodDrainPerDay}}</strong></div>
             <div class="po-info-chip" title="Steward pool state for food (none, finite stock, or surplus source)"><span>Food Rations</span><strong>{{operations.resources.summary.foodStewardPoolDisplay}}</strong></div>
@@ -308,10 +301,16 @@
           <div class="po-op-summary {{#if operations.resources.gatherFoodCoveredNextUpkeep}}is-good{{else}}{{#if operations.resources.gatherWaterCoveredNextUpkeep}}is-good{{else}}is-warn{{/if}}{{/if}}" title="Gathered food and water are held in a pending pool, consumed by upkeep first, then any remainder is pushed into the configured targets.">
             Pending Gather Pool - Food: {{operations.resources.summary.pendingGatherFood}} - Water: {{operations.resources.summary.pendingGatherWater}}
           </div>
+          {{#if @root.isGM}}
           <div class="po-op-divider"></div>
           <div class="po-hint">Track supply pools and linked target items here. GM-only gather presets, upkeep tuning, DCs, and pending requests now live in the GM workspace.</div>
+          {{else}}
+          <div class="po-op-divider"></div>
+          <div class="po-hint">Choose your own character-owned target items for food, water, and torches.</div>
+          {{/if}}
           <div class="po-resource-config-panel po-resource-config-panel-compact">
             <div class="po-resource-config-split po-resource-config-split-compact">
+              {{#if @root.isGM}}
               <div class="po-resource-config-col">
                 <div class="po-section-title">Steward Pools</div>
                 <div class="po-hint">Optional surplus in addition to Resource Targets. Use <strong>Surplus Source</strong> for location abundance (river, inn, stocked camp), or <strong>Finite Stock</strong> when a place has a limited extra pool.</div>
@@ -342,6 +341,7 @@
                 </div>
                 {{/each}}
               </div>
+              {{/if}}
 
               <div class="po-resource-config-col">
                 <div class="po-section-title">Resource Targets</div>
@@ -652,41 +652,21 @@
             <button type="button" class="po-btn po-btn-sm" data-action="clear-reputation-filters">Clear Filters</button>
           </div>
           {{#if operations.reputation.visibleCount}}
-          <div class="po-reputation-grid">
+          <div class="po-reputation-list" role="list">
             {{#each operations.reputation.filteredFactions}}
-            <section class="po-op-role-row po-reputation-faction-card {{standingClass}}" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
-              <div class="po-reputation-card-head">
-                <div class="po-reputation-card-title">
-                  <div class="po-op-role-name">{{label}}</div>
-                  <div class="po-reputation-card-subtitle">Revealed faction</div>
-                </div>
-                <div class="po-op-role-status po-reputation-standing-pill">Standing {{score}} | {{access}}</div>
+            <button type="button" class="po-reputation-row {{standingClass}}" data-action="show-reputation-brief" data-faction="{{id}}" data-standing="{{score}}" style="{{standingStyle}}">
+              <div class="po-reputation-row-main">
+                <span class="po-reputation-row-title">{{label}}</span>
+                <span class="po-reputation-row-meta">{{categoryLabel}}{{#if hasRepresents}} · {{represents}}{{/if}}</span>
               </div>
-              <div class="po-reputation-detail-chips">
-                <span class="po-reputation-log-chip">Type: {{categoryLabel}}</span>
-                {{#if hasRepresents}}<span class="po-reputation-log-chip">Represents: {{represents}}</span>{{/if}}
-                <span class="po-reputation-log-chip">Access: {{access}}</span>
+              <div class="po-reputation-row-status">
+                <span class="po-reputation-standing-pill">{{score}}</span>
+                <span>{{access}}</span>
               </div>
-              <div class="po-reputation-readonly">
-                <div class="po-op-summary">Type: {{categoryLabel}}</div>
-                <div class="po-op-summary">Standing: {{score}} ({{access}})</div>
-                {{#if hasRepresents}}<div class="po-op-summary">Represents: {{represents}}</div>{{/if}}
-                {{#if hasOperationsSummary}}
-                <div class="po-sop-note-view po-reputation-log-view">
-                  <div class="po-sop-note-view-body">{{operationsSummary}}</div>
-                </div>
-                {{/if}}
-                <div class="po-sop-note-view po-reputation-log-view">
-                  <div class="po-sop-note-view-body {{#unless hasOperationsNote}}is-empty{{/unless}}">
-                    {{#if hasOperationsNote}}
-                    {{operationsNote}}
-                    {{else}}
-                    No current posted faction update.
-                    {{/if}}
-                  </div>
-                </div>
+              <div class="po-reputation-row-note">
+                {{#if hasOperationsNote}}{{operationsNote}}{{else}}{{#if hasOperationsSummary}}{{operationsSummary}}{{else}}No current posted faction update.{{/if}}{{/if}}
               </div>
-            </section>
+            </button>
             {{/each}}
           </div>
           {{else}}
@@ -708,6 +688,12 @@
 
         <div id="po-ops-merchants" class="po-gm-section po-merchants-page po-merchants-player-view">
           <div class="po-section-title">Merchants</div>
+          {{#unless operations.merchants.shopOpen}}
+          <div class="po-op-role-row">
+            <div class="po-section-title">Shops Closed</div>
+            <div class="po-op-summary">The GM has not opened merchant access.</div>
+          </div>
+          {{else}}
           <div class="po-hint">Review your GM-assigned location, browse assigned merchant tabs, and review stocked wares before opening a shop.</div>
 
           <div class="po-merchant-showcase">
@@ -836,6 +822,7 @@
             </details>
             {{/if}}
           </div>
+          {{/unless}}
         </div>
 
         {{/if}}

@@ -1,7 +1,4 @@
-import {
-  routeGmSocketMessage,
-  routePlayerFacingSocketMessage
-} from "./socket-route-handlers.js";
+import { routeGmSocketMessage, routePlayerFacingSocketMessage } from "./socket-route-handlers.js";
 
 export async function routePartyOperationsSocketMessage(message, deps = {}) {
   if (!message || typeof message !== "object") return false;
@@ -40,7 +37,9 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
     applyPlayerLootCurrencySplitRequest,
-    applyPlayerLootUndoClaimRequest
+    applyPlayerLootUndoClaimRequest,
+    emitModuleSocket,
+    socketChannel
   } = deps;
 
   const currentUser = game?.user ?? null;
@@ -86,6 +85,8 @@ export async function routePartyOperationsSocketMessage(message, deps = {}) {
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
     applyPlayerLootCurrencySplitRequest,
-    applyPlayerLootUndoClaimRequest
+    applyPlayerLootUndoClaimRequest,
+    emitModuleSocket,
+    socketChannel
   });
 }

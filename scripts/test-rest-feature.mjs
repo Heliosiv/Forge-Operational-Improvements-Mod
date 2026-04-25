@@ -148,7 +148,12 @@ class FakeElement {
     logUiDebug: () => {}
   };
 
-  await applyRestRequest({ op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 1 }, requester, deps);
+  const assignResult = await applyRestRequest(
+    { op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 1 },
+    requester,
+    deps
+  );
+  assert.deepEqual(assignResult, { ok: true, summary: "", scope: "rest" });
   assert.deepEqual(state.slots[0].entries, [
     { actorId: "actor-a", notes: "Old", position: 0 },
     { actorId: "actor-b", notes: "", position: 1 }
@@ -203,6 +208,35 @@ class FakeElement {
   await applyRestRequest({ op: "setSlotEntry", slotId: "slot-a", actorId: "actor-b", entryIndex: 0 }, requester, deps);
   assert.deepEqual(state.slots[0].entries, [{ actorId: "actor-b", notes: "", position: 0 }]);
   assert.equal(saves.length, 1);
+}
+
+{
+  const state = {
+    locked: true,
+    slots: [{ id: "slot-a", entries: [], visibleEntryCount: 1 }]
+  };
+  const requester = { id: "player-1", isGM: false, name: "Clarence" };
+  const result = await applyRestRequest(
+    { op: "setSlotEntry", slotId: "slot-a", actorId: "", entryIndex: 0 },
+    requester,
+    {
+      getRestWatchState: () => state,
+      game: { actors: { get: () => null } },
+      resolveRequester: () => requester,
+      canAccessAllPlayerOps: () => false,
+      canUserControlActor: () => false,
+      stampUpdate: () => {},
+      setModuleSettingWithLocalRefreshSuppressed: async () => true,
+      settings: { REST_STATE: "restState" },
+      scheduleIntegrationSync: () => {},
+      refreshOpenApps: () => {},
+      refreshScopeKeys: { REST: "rest" },
+      emitSocketRefresh: () => {},
+      logUiDebug: () => {}
+    }
+  );
+
+  assert.deepEqual(result, { ok: false, summary: "Rest watch is locked by the GM.", scope: "rest" });
 }
 
 {

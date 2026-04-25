@@ -154,6 +154,12 @@ assert.match(
   "Assign Gather buttons should only render for the GM."
 );
 
+assert.doesNotMatch(
+  restWatchTemplate,
+  /Call Gather[\s\S]*Player Requests|Call Gather prompts players/,
+  "Operations resources summary should not render the removed Call Gather player-request panel."
+);
+
 assert.match(
   restWatchTemplate,
   /\{\{#each operations\.resources\.gatherRequests\.rows\}\}[\s\S]*\{\{resourceTypeLabel\}\}[\s\S]*\{\{gatherModeLabel\}\}[\s\S]*\{\{travelModeLabel\}\}[\s\S]*\{\{environmentLabel\}\}[\s\S]*\{\{modifierSummary\}\}/,

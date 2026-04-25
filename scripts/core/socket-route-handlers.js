@@ -19,6 +19,18 @@ export async function routePlayerFacingSocketMessage(message, context = {}) {
     openRestWatchUiForCurrentUser
   } = context;
 
+  if (message.type === "ops:player-action-result") {
+    const targetUserId = String(message.userId ?? "").trim();
+    if (!targetUserId || targetUserId !== currentUserId) return true;
+    if (currentUser?.isGM) return true;
+    const summary = String(message.summary ?? "").trim();
+    if (message.ok === false) globalThis.ui?.notifications?.warn?.(summary || "Player action failed.");
+    else globalThis.ui?.notifications?.info?.(summary || "Player action complete.");
+    const scopes = normalizeRefreshScopeList?.(message?.scopes ?? message?.scope) ?? [];
+    if (scopes.length) setTimeout(() => refreshOpenApps({ scopes }), 75);
+    return true;
+  }
+
   if (message.type === "players:openLootClaims") {
     const targetUserId = String(message.userId ?? "").trim();
     const broadcast = !targetUserId || targetUserId === "*" || targetUserId.toLowerCase() === "all";
@@ -105,7 +117,9 @@ export async function routeGmSocketMessage(message, context = {}) {
     applyPlayerLootClaimRequest,
     applyPlayerLootCurrencyClaimRequest,
     applyPlayerLootCurrencySplitRequest,
-    applyPlayerLootUndoClaimRequest
+    applyPlayerLootUndoClaimRequest,
+    emitModuleSocket,
+    socketChannel
   } = context;
 
   if (!currentUser?.isGM) return false;
@@ -113,6 +127,29 @@ export async function routeGmSocketMessage(message, context = {}) {
   if (targetGmUserId && targetGmUserId !== String(currentUser?.id ?? "").trim()) return true;
 
   const getActivePlayerRequester = () => getSocketRequester(message, { allowGM: false, requireActive: true });
+  const notifyPlayerActionResult = (result, fallbackSummary, fallbackScopes = []) => {
+    const targetUserId = String(message?.userId ?? "").trim();
+    if (!targetUserId || !emitModuleSocket) return;
+    const scopes = Array.isArray(result?.scopes)
+      ? result.scopes
+      : result?.scope
+        ? [result.scope]
+        : Array.isArray(fallbackScopes)
+          ? fallbackScopes
+          : fallbackScopes
+            ? [fallbackScopes]
+            : [];
+    emitModuleSocket(
+      {
+        type: "ops:player-action-result",
+        userId: targetUserId,
+        ok: result?.ok !== false,
+        summary: String(result?.summary ?? fallbackSummary ?? "").trim(),
+        scopes
+      },
+      { channel: socketChannel }
+    );
+  };
   const runWithRequester = async (handler) => {
     const requester = getActivePlayerRequester();
     if (!requester) return true;
@@ -127,21 +164,43 @@ export async function routeGmSocketMessage(message, context = {}) {
 
   if (message.type === "rest:mutate") {
     const request = normalizeSocketRestRequest(message.request);
-    if (!request) return true;
+    if (!request) {
+      notifyPlayerActionResult({ ok: false, scope: "rest" }, "Rest watch request was not valid.");
+      return true;
+    }
     // Allow request to proceed; applyRestRequest will check per-actor permissions
     // Requester may be null if userId not in message (after SBP-001 fix)
-    const requester = getActivePlayerRequester() || { id: null, name: "Unknown" };
-    await applyRestRequest(request, requester);
+    const requester = getActivePlayerRequester();
+    if (!requester) {
+      notifyPlayerActionResult(
+        { ok: false, scope: "rest" },
+        "Rest watch request could not be matched to your active player session."
+      );
+      return true;
+    }
+    const result = await applyRestRequest(request, requester);
+    if (result?.ok === false) notifyPlayerActionResult(result, "Rest watch request was not applied.", "rest");
     return true;
   }
 
   if (message.type === "march:mutate") {
     const request = normalizeSocketMarchRequest(message.request);
-    if (!request) return true;
+    if (!request) {
+      notifyPlayerActionResult({ ok: false, scope: "march" }, "Marching order request was not valid.");
+      return true;
+    }
     // Allow request to proceed; applyMarchRequest will check per-actor permissions
     // Requester may be null if userId not in message (after SBP-001 fix)
-    const requester = getActivePlayerRequester() || { id: null, name: "Unknown" };
-    await applyMarchRequest(request, requester);
+    const requester = getActivePlayerRequester();
+    if (!requester) {
+      notifyPlayerActionResult(
+        { ok: false, scope: "march" },
+        "Marching order request could not be matched to your active player session."
+      );
+      return true;
+    }
+    const result = await applyMarchRequest(request, requester);
+    if (result?.ok === false) notifyPlayerActionResult(result, "Marching order request was not applied.", "march");
     return true;
   }
 

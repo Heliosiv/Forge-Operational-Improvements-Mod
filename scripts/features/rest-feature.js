@@ -141,6 +141,18 @@ function restSlotHasActor(slot, actorIdInput) {
   return slot.entries.some((entry) => String(entry?.actorId ?? "").trim() === actorId);
 }
 
+function restRequestResult(ok, summary, scope) {
+  return { ok, summary, scope };
+}
+
+function restRequestFailure(summary, scope) {
+  return restRequestResult(false, summary, scope);
+}
+
+function restRequestSuccess(scope) {
+  return restRequestResult(true, "", scope);
+}
+
 export async function applyRestRequest(request, requesterRef, deps = {}) {
   const {
     getRestWatchState,
@@ -159,24 +171,27 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     logUiDebug
   } = deps;
 
-  if (!request || typeof request !== "object") return;
+  const restScope = refreshScopeKeys?.REST ?? "rest";
+  if (!request || typeof request !== "object")
+    return restRequestFailure("Rest watch request was not valid.", restScope);
   const state = getRestWatchState();
   const requester = resolveRequester(requesterRef, { allowGM: true });
-  if (!requester) return;
-  if (state.locked) return;
-  if (request.op === "clearAll") return;
+  if (!requester) return restRequestFailure("Rest watch request could not be matched to a player.", restScope);
+  if (state.locked) return restRequestFailure("Rest watch is locked by the GM.", restScope);
+  if (request.op === "clearAll") return restRequestFailure("Only the GM can clear all rest watch entries.", restScope);
 
   if (request.op === "replaceState") {
-    if (!requester?.isGM && !canAccessAllPlayerOps?.(requester)) return;
+    if (!requester?.isGM && !canAccessAllPlayerOps?.(requester))
+      return restRequestFailure("Only shared party operators can replace the rest watch.", restScope);
     const nextState =
       request.state && typeof request.state === "object" && !Array.isArray(request.state) ? request.state : null;
-    if (!nextState) return;
+    if (!nextState) return restRequestFailure("Rest watch replacement was not valid.", restScope);
     stampUpdate(nextState, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.REST_STATE, nextState);
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
@@ -186,14 +201,17 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     (requester?.isGM || requesterHasSharedPageAccess || canUserOperatePartyActor?.(requestedActor, requester))
   );
   if (request.op === "assignMe") {
-    if (!requesterCanControlActor) return;
+    if (!requesterCanControlActor)
+      return restRequestFailure("You do not have permission to assign that actor to rest watch.", restScope);
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(slot);
-    if (restSlotHasActor(slot, request.actorId)) return;
-    if ((slot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES) return;
+    if (restSlotHasActor(slot, request.actorId))
+      return restRequestFailure("That actor is already assigned to this rest watch slot.", restScope);
+    if ((slot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES)
+      return restRequestFailure("That rest watch slot is full.", restScope);
     const position = getNextOpenRestSlotPosition(slot);
-    if (position === -1) return;
+    if (position === -1) return restRequestFailure("That rest watch slot has no open position.", restScope);
     slot.entries.push({ actorId: request.actorId, notes: "", position });
     normalizeRestSlotEntries(slot);
     stampUpdate(state, requester);
@@ -201,23 +219,25 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "setSlotEntry") {
     const requestedActor = request.actorId ? (game?.actors?.get?.(request.actorId) ?? null) : null;
+    if (request.actorId && !requestedActor) return restRequestFailure("Actor not found for rest watch.", restScope);
     if (
       requestedActor &&
       !requester?.isGM &&
       !requesterHasSharedPageAccess &&
       !canUserOperatePartyActor?.(requestedActor, requester)
     )
-      return;
+      return restRequestFailure("You do not have permission to assign that actor to rest watch.", restScope);
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(slot);
     const entryIndex = Number.parseInt(String(request.entryIndex ?? ""), 10);
-    if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_SLOT_MAX_ENTRIES) return;
+    if (!Number.isInteger(entryIndex) || entryIndex < 0 || entryIndex >= REST_SLOT_MAX_ENTRIES)
+      return restRequestFailure("That rest watch position is not valid.", restScope);
     slot.entries = slot.entries.filter((entry) => String(entry?.actorId ?? "") !== request.actorId);
     const existingIndex = slot.entries.findIndex(
       (entry) => normalizeRestSlotEntryPosition(entry?.position) === entryIndex
@@ -231,12 +251,12 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "setVisibleEntryCount") {
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     const visibleEntryCount = Math.max(0, Math.min(REST_SLOT_MAX_ENTRIES, Number(request.visibleEntryCount ?? 0) || 0));
     slot.visibleEntryCount = visibleEntryCount;
     stampUpdate(state, requester);
@@ -244,12 +264,12 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "setCampfire") {
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     if (!state.campfireBySlot || typeof state.campfireBySlot !== "object" || Array.isArray(state.campfireBySlot)) {
       state.campfireBySlot = {};
     }
@@ -259,7 +279,7 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "setCampfireAll") {
@@ -277,16 +297,17 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "clearEntry") {
-    if (!requesterCanControlActor) return;
+    if (!requesterCanControlActor)
+      return restRequestFailure("You do not have permission to clear that rest watch actor.", restScope);
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(slot);
     const entryIndex = slot.entries.findIndex((entry) => entry.actorId === request.actorId);
-    if (entryIndex === -1) return;
+    if (entryIndex === -1) return restRequestFailure("That actor is not assigned to this rest watch slot.", restScope);
     slot.entries.splice(entryIndex, 1);
     normalizeRestSlotEntries(slot);
     stampUpdate(state, requester);
@@ -294,13 +315,14 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "setEntryNotes") {
-    if (!requesterCanControlActor) return;
+    if (!requesterCanControlActor)
+      return restRequestFailure("You do not have permission to update notes for that rest watch actor.", restScope);
     const slot = state.slots.find((entry) => entry.id === request.slotId);
-    if (!slot) return;
+    if (!slot) return restRequestFailure("That rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(slot);
     const entry = slot.entries.find((slotEntry) => slotEntry.actorId === request.actorId);
     if (!entry) {
@@ -309,7 +331,7 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
         actorId: request.actorId,
         requesterId: String(requester?.id ?? "")
       });
-      return;
+      return restRequestFailure("That actor is not assigned to this rest watch slot.", restScope);
     }
     entry.notes = String(request.text ?? "");
     logUiDebug("rest-watch-notes", "socket apply setEntryNotes", {
@@ -324,25 +346,29 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
-    return;
+    return restRequestSuccess(restScope);
   }
 
   if (request.op === "moveSlot") {
-    if (!requesterCanControlActor) return;
+    if (!requesterCanControlActor)
+      return restRequestFailure("You do not have permission to move that rest watch actor.", restScope);
     const sourceSlot = state.slots.find((s) => s.id === request.fromSlotId);
-    if (!sourceSlot) return;
+    if (!sourceSlot) return restRequestFailure("The original rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(sourceSlot);
     const entryIndex = sourceSlot.entries.findIndex((e) => e.actorId === request.actorId);
-    if (entryIndex === -1) return;
+    if (entryIndex === -1)
+      return restRequestFailure("That actor is not assigned to the original rest watch slot.", restScope);
     const [movedEntry] = sourceSlot.entries.splice(entryIndex, 1);
     normalizeRestSlotEntries(sourceSlot);
     const targetSlot = state.slots.find((s) => s.id === request.slotId);
-    if (!targetSlot) return;
+    if (!targetSlot) return restRequestFailure("The target rest watch slot no longer exists.", restScope);
     ensureRestSlotEntries(targetSlot);
-    if (restSlotHasActor(targetSlot, request.actorId)) return;
-    if ((targetSlot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES) return;
+    if (restSlotHasActor(targetSlot, request.actorId))
+      return restRequestFailure("That actor is already assigned to the target rest watch slot.", restScope);
+    if ((targetSlot.entries?.length ?? 0) >= REST_SLOT_MAX_ENTRIES)
+      return restRequestFailure("The target rest watch slot is full.", restScope);
     const position = getNextOpenRestSlotPosition(targetSlot);
-    if (position === -1) return;
+    if (position === -1) return restRequestFailure("The target rest watch slot has no open position.", restScope);
     targetSlot.entries.push({ actorId: request.actorId, notes: movedEntry?.notes ?? "", position });
     normalizeRestSlotEntries(targetSlot);
     stampUpdate(state, requester);
@@ -350,7 +376,9 @@ export async function applyRestRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("rest-watch-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.REST });
     emitSocketRefresh({ scope: refreshScopeKeys.REST });
+    return restRequestSuccess(restScope);
   }
+  return restRequestFailure("Rest watch action is not supported.", restScope);
 }
 
 export function setupRestWatchDragAndDrop(html, deps = {}) {

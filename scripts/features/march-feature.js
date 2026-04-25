@@ -372,6 +372,18 @@ export function normalizeSocketMarchRequest(request, deps = {}) {
   };
 }
 
+function marchRequestResult(ok, summary, scope) {
+  return { ok, summary, scope };
+}
+
+function marchRequestFailure(summary, scope) {
+  return marchRequestResult(false, summary, scope);
+}
+
+function marchRequestSuccess(scope) {
+  return marchRequestResult(true, "", scope);
+}
+
 export async function applyMarchRequest(request, requesterRef, deps = {}) {
   const {
     getMarchingOrderState,
@@ -391,22 +403,25 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     logUiDebug
   } = deps;
 
-  if (!request || typeof request !== "object") return;
+  const marchScope = refreshScopeKeys?.MARCH ?? "march";
+  if (!request || typeof request !== "object")
+    return marchRequestFailure("Marching order request was not valid.", marchScope);
   const state = getMarchingOrderState();
   const requester = resolveRequester(requesterRef, { allowGM: true });
-  if (!requester) return;
+  if (!requester) return marchRequestFailure("Marching order request could not be matched to a player.", marchScope);
 
   if (request.op === "replaceState") {
-    if (!requester?.isGM && !canAccessAllPlayerOps?.(requester)) return;
+    if (!requester?.isGM && !canAccessAllPlayerOps?.(requester))
+      return marchRequestFailure("Only shared party operators can replace marching order.", marchScope);
     const nextState =
       request.state && typeof request.state === "object" && !Array.isArray(request.state) ? request.state : null;
-    if (!nextState) return;
+    if (!nextState) return marchRequestFailure("Marching order replacement was not valid.", marchScope);
     stampUpdate(nextState, requester);
     await setModuleSettingWithLocalRefreshSuppressed(settings.MARCH_STATE, nextState);
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
-    return;
+    return marchRequestSuccess(marchScope);
   }
   const requestedActor = game?.actors?.get?.(request.actorId) ?? null;
   const requesterHasSharedPageAccess = Boolean(!requester?.isGM && canAccessAllPlayerOps?.(requester));
@@ -422,9 +437,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
         requesterId: String(requester?.id ?? ""),
         requesterName: String(requester?.name ?? "Unknown")
       });
-      return;
+      return marchRequestFailure("You do not have permission to move that actor in marching order.", marchScope);
     }
-    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
     for (const key of Object.keys(state.ranks)) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
     }
@@ -449,7 +465,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
-    return;
+    return marchRequestSuccess(marchScope);
   }
 
   if (request.op === "leaveRank") {
@@ -459,9 +475,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
         requesterId: String(requester?.id ?? ""),
         requesterName: String(requester?.name ?? "Unknown")
       });
-      return;
+      return marchRequestFailure("You do not have permission to remove that actor from marching order.", marchScope);
     }
-    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
     for (const key of Object.keys(state.ranks ?? {})) {
       state.ranks[key] = (state.ranks[key] ?? []).filter((entryId) => entryId !== request.actorId);
     }
@@ -474,7 +491,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
-    return;
+    return marchRequestSuccess(marchScope);
   }
 
   if (request.op === "setLight") {
@@ -484,9 +501,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
         requesterId: String(requester?.id ?? ""),
         requesterName: String(requester?.name ?? "Unknown")
       });
-      return;
+      return marchRequestFailure("You do not have permission to update that actor's light.", marchScope);
     }
-    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
     if (!state.light) state.light = {};
     if (!state.lightRanges) state.lightRanges = {};
     state.light[request.actorId] = Boolean(request.enabled);
@@ -498,7 +516,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
-    return;
+    return marchRequestSuccess(marchScope);
   }
 
   if (request.op === "setLightRange") {
@@ -508,9 +526,10 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
         requesterId: String(requester?.id ?? ""),
         requesterName: String(requester?.name ?? "Unknown")
       });
-      return;
+      return marchRequestFailure("You do not have permission to update that actor's light range.", marchScope);
     }
-    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
     if (!state.lightRanges) state.lightRanges = {};
     const current = state.lightRanges[request.actorId] ?? { bright: 20, dim: 40 };
     const bright = request.range === "bright" ? request.value : Math.max(0, Number(current.bright ?? 20) || 0);
@@ -526,12 +545,14 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
-    return;
+    return marchRequestSuccess(marchScope);
   }
 
   if (request.op === "setNote") {
-    if (!requesterCanControlActor) return;
-    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester)) return;
+    if (!requesterCanControlActor)
+      return marchRequestFailure("You do not have permission to update that marching order note.", marchScope);
+    if (!requester?.isGM && isMarchingOrderPlayerLocked?.(requester))
+      return marchRequestFailure("Marching order is locked by the GM.", marchScope);
     const inFormation = Object.values(state.ranks ?? {}).some(
       (actorIds) => Array.isArray(actorIds) && actorIds.includes(request.actorId)
     );
@@ -541,7 +562,7 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
         requesterId: String(requester?.id ?? ""),
         requesterName: String(requester?.name ?? "Unknown")
       });
-      return;
+      return marchRequestFailure("That actor is not currently in the marching order.", marchScope);
     }
     if (!state.notes) state.notes = {};
     state.notes[request.actorId] = String(request.text ?? "");
@@ -556,7 +577,9 @@ export async function applyMarchRequest(request, requesterRef, deps = {}) {
     scheduleIntegrationSync("marching-order-player-mutate");
     refreshOpenApps({ scope: refreshScopeKeys.MARCH });
     emitSocketRefresh({ scope: refreshScopeKeys.MARCH });
+    return marchRequestSuccess(marchScope);
   }
+  return marchRequestFailure("Marching order action is not supported.", marchScope);
 }
 
 export function setupMarchingDragAndDrop(html, deps = {}) {

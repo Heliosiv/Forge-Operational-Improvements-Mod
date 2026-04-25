@@ -2685,6 +2685,65 @@
   gap: var(--po-space-2);
 }
 
+.party-operations .po-reputation-list {
+  display: grid;
+  gap: var(--po-space-2);
+}
+
+.party-operations .po-reputation-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.35rem 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--po-rep-accent, var(--po-border-strong)) 45%, var(--po-border));
+  border-radius: 6px;
+  background: var(--po-rep-bg, var(--po-bg-alt));
+  color: var(--po-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.party-operations .po-reputation-row:hover,
+.party-operations .po-reputation-row:focus-visible {
+  border-color: var(--po-rep-accent, var(--po-accent));
+  outline: none;
+}
+
+.party-operations .po-reputation-row-main,
+.party-operations .po-reputation-row-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.party-operations .po-reputation-row-main {
+  flex-wrap: wrap;
+}
+
+.party-operations .po-reputation-row-status {
+  justify-content: flex-end;
+  white-space: nowrap;
+}
+
+.party-operations .po-reputation-row-title {
+  font-weight: 700;
+}
+
+.party-operations .po-reputation-row-meta,
+.party-operations .po-reputation-row-note {
+  color: var(--po-text-muted);
+  font-size: 0.9rem;
+}
+
+.party-operations .po-reputation-row-note {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .party-operations .po-reputation-faction-card {
   --po-rep-accent: color-mix(in srgb, var(--po-border-strong) 50%, var(--po-border));
   --po-rep-bg: color-mix(in srgb, var(--po-surface) 80%, transparent);
